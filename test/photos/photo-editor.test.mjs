@@ -372,9 +372,26 @@ const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
     };
 });
 
+const deletePhotoStoreRecord = (indexedDB, storeName, key) => new Promise((resolve, reject) => {
+    const opened = indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+        const database = opened.result;
+        const transaction = database.transaction(storeName, 'readwrite');
+        transaction.objectStore(storeName).delete(key);
+        transaction.oncomplete = () => {
+            database.close();
+            resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+    };
+});
+
 const seedUploadedLibraryPhoto = async (indexedDB, {
     localId = 'copy-url-photo',
     url = 'https://i.ibb.co/a/topo.jpg',
+    withoutThumbnail = false,
 } = {}) => {
     const store = await Store.createPhotoStore({ indexedDB });
     const sourceSha256 = 'a'.repeat(64);
@@ -416,6 +433,7 @@ const seedUploadedLibraryPhoto = async (indexedDB, {
         expiresAt: null,
     }, '2026-08-02T12:00:00.000Z'));
     store.close();
+    if (withoutThumbnail) await deletePhotoStoreRecord(indexedDB, 'thumbnails', localId);
     return photo;
 };
 
@@ -493,6 +511,157 @@ const failNextDraftTransactionWithQuota = indexedDB => {
         restore: () => { database.transaction = transaction; },
     };
 };
+
+test('Edit as new version has one owner across rapid same-card and cross-card actions', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'first-version' });
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'second-version' });
+    let deferred;
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        startMode: 'library',
+        onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
+    });
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    t.after(() => {
+        deferred.restore();
+        deferred.release();
+        page.dom.window.close();
+    });
+    const edits = [...page.doc.querySelectorAll('.photo-card button')]
+        .filter(button => button.textContent === 'Edit as new version');
+    assert.equal(edits.length, 2);
+
+    edits[0].click();
+    edits[0].dispatchEvent(new page.win.Event('click', { bubbles: true }));
+    edits[1].dispatchEvent(new page.win.Event('click', { bubbles: true }));
+    assert.equal(edits[0].disabled, true);
+    assert.equal(edits[0].getAttribute('aria-busy'), 'true');
+    await deferred.started;
+    deferred.restore();
+    deferred.release();
+
+    const photos = await waitForPhotoStore(page.win, 'photos', records => records.length === 3);
+    const children = photos.filter(photo => photo.lineage.parentLocalId);
+    assert.equal(children.length, 1, 'one action owner creates at most one child draft');
+    await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Edit as new version closes its fallback bitmap after successful ownership transfer', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, {
+        localId: 'missing-thumbnail-success',
+        withoutThumbnail: true,
+    });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    t.after(() => page.dom.window.close());
+    const edit = [...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Edit as new version');
+
+    edit.click();
+    await waitForPhotoStore(page.win, 'photos', records => records.length === 2).catch(error => {
+        error.message += `; toast=${JSON.stringify(page.doc.getElementById('toast-message').textContent)}`
+            + ` decoded=${page.decodedBitmaps.length} errors=${JSON.stringify(page.errors)}`;
+        throw error;
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(page.decodedBitmaps.length, 2,
+        'thumbnail fallback and editor load each decode their own bitmap');
+    assert.equal(page.decodedBitmaps[0].closed, true, 'temporary thumbnail pixels are released');
+    assert.equal(page.decodedBitmaps[1].closed, false, 'the editor owns its live source bitmap');
+    assert.deepEqual(page.errors, []);
+});
+
+test('Edit as new version releases decoded pixels and its owner when thumbnailing or storage fails', async t => {
+    await t.test('thumbnail failure', async () => {
+        const indexedDB = new IDBFactory();
+        await seedUploadedLibraryPhoto(indexedDB, {
+            localId: 'thumbnail-failure',
+            withoutThumbnail: true,
+        });
+        const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+        Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+        page.win.HTMLCanvasElement.prototype.toBlob = callback => callback(null);
+        const edit = [...page.doc.querySelectorAll('.photo-card button')]
+            .find(button => button.textContent === 'Edit as new version');
+
+        edit.click();
+        await waitFor(page.dom, () => /could not be saved/i.test(
+            page.doc.getElementById('toast-message').textContent));
+        assert.equal(page.decodedBitmaps.length, 1);
+        assert.equal(page.decodedBitmaps[0].closed, true);
+        assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+        assert.equal(edit.disabled, false);
+        assert.equal(edit.getAttribute('aria-busy'), 'false');
+        assert.deepEqual(page.errors, []);
+        page.dom.window.close();
+    });
+
+    await t.test('draft transaction failure', async () => {
+        const indexedDB = new IDBFactory();
+        await seedUploadedLibraryPhoto(indexedDB, {
+            localId: 'storage-failure',
+            withoutThumbnail: true,
+        });
+        let quotaFailure;
+        const page = await loadEditor({
+            indexedDB,
+            pickPhoto: false,
+            startMode: 'library',
+            onStoreReady: () => { quotaFailure = failNextDraftTransactionWithQuota(indexedDB); },
+        });
+        Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+        const edit = [...page.doc.querySelectorAll('.photo-card button')]
+            .find(button => button.textContent === 'Edit as new version');
+
+        edit.click();
+        await waitFor(page.dom, () => /could not be saved/i.test(
+            page.doc.getElementById('toast-message').textContent));
+        assert.equal(quotaFailure.triggered(), true);
+        assert.equal(page.decodedBitmaps.length, 1);
+        assert.equal(page.decodedBitmaps[0].closed, true);
+        assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+        assert.equal(edit.disabled, false);
+        assert.deepEqual(page.errors, []);
+        quotaFailure.restore();
+        page.dom.window.close();
+    });
+});
+
+test('a committed new version stays recoverable when its editor load fails', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, {
+        localId: 'editor-load-failure',
+        withoutThumbnail: true,
+    });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    t.after(() => page.dom.window.close());
+    const decode = page.win.createImageBitmap;
+    let decodeAttempts = 0;
+    page.win.createImageBitmap = (...args) => {
+        decodeAttempts += 1;
+        if (decodeAttempts > 1) return Promise.reject(new Error('injected editor decode failure'));
+        return decode(...args);
+    };
+    const edit = [...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Edit as new version');
+
+    edit.click();
+    await waitFor(page.dom, () => /new version was saved.*reopen it from the library/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    const photos = await readPhotoStore(page.win, 'photos');
+    assert.equal(photos.length, 2);
+    assert.equal(photos.filter(photo => photo.lineage.parentLocalId === 'editor-load-failure').length, 1);
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal(page.decodedBitmaps[0].closed, true);
+    assert.equal(page.doc.getElementById('library-view').hidden, false);
+    assert.equal(page.doc.querySelectorAll('.photo-card').length, 2);
+    assert.deepEqual(page.errors, []);
+});
 
 const imgbbSuccess = {
     data: {

@@ -231,6 +231,7 @@ let libraryPage = 0;
 let librarySearchTimer = null;
 let libraryMaintenanceTimer = null;
 let photoBackupBusy = false;
+let newVersionTransaction = null;
 // A new mark inherits the last style the user chose, the way every drawing tool
 // behaves: dial the opacity back once and the rest of the topo matches instead
 // of needing the same three adjustments on every symbol.
@@ -2075,37 +2076,70 @@ const insertFromLibrary = async (item, control = null) => {
     await renderLibrary();
 };
 
-const editAsNewVersion = async item => {
-    if (busy) return;
-    const bundle = await store.getBundle(item.localId);
-    if (!bundle.original || !bundle.project) {
-        toast('The original photo is not available on this device.');
-        return;
+const editAsNewVersion = async (item, control = null) => {
+    if (busy || newVersionTransaction) return;
+    const owner = {};
+    newVersionTransaction = owner;
+    if (control) {
+        control.disabled = true;
+        control.setAttribute('aria-busy', 'true');
     }
-    const localId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const nextProject = Project.cleanProject({
-        ...bundle.project,
-        localId,
-        updatedAt: now,
-    });
-    const nextPhoto = Library.createDraft({
-        localId,
-        title: `${item.title} revision`.slice(0, Library.TITLE_LIMIT),
-        alt: item.alt,
-        source: item.source,
-        parentLocalId: item.localId,
-        now,
-    });
-    await store.putDraft({
-        photo: nextPhoto,
-        project: nextProject,
-        original: bundle.original,
-        thumbnail: bundle.thumbnail || await makeThumbnail(await decodeBlob(bundle.original)),
-    });
-    notifyBackupChanged();
-    await loadBundle(await store.getBundle(localId));
-    toast('Editing a new version. The existing image will stay unchanged.');
+    let decodedBitmap = null;
+    let committed = false;
+    try {
+        const bundle = await store.getBundle(item.localId);
+        if (!bundle.original || !bundle.project) {
+            toast('The original photo is not available on this device.');
+            return;
+        }
+        const localId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const nextProject = Project.cleanProject({
+            ...bundle.project,
+            localId,
+            updatedAt: now,
+        });
+        const nextPhoto = Library.createDraft({
+            localId,
+            title: `${item.title} revision`.slice(0, Library.TITLE_LIMIT),
+            alt: item.alt,
+            source: item.source,
+            parentLocalId: item.localId,
+            now,
+        });
+        let thumbnail = bundle.thumbnail;
+        if (!thumbnail) {
+            decodedBitmap = await decodeBlob(bundle.original);
+            thumbnail = await makeThumbnail(decodedBitmap);
+        }
+        await store.putDraft({
+            photo: nextPhoto,
+            project: nextProject,
+            original: bundle.original,
+            thumbnail,
+        });
+        committed = true;
+        notifyBackupChanged();
+        const savedBundle = await store.getBundle(localId);
+        if (!await loadBundle(savedBundle)) throw new Error('saved draft could not be loaded');
+        toast('Editing a new version. The existing image will stay unchanged.');
+    } catch {
+        if (committed) {
+            await renderLibrary();
+            toast('The new version was saved, but the editor could not open it. Reopen it from the library.', {
+                duration: 9000,
+            });
+        } else {
+            toast('A new version could not be saved. Try again from the library.', { duration: 9000 });
+        }
+    } finally {
+        decodedBitmap?.close?.();
+        if (newVersionTransaction === owner) newVersionTransaction = null;
+        if (control) {
+            control.disabled = false;
+            control.setAttribute('aria-busy', 'false');
+        }
+    }
 };
 
 // The return leg of Download project. A bundle whose id is still free is
@@ -2381,7 +2415,8 @@ const cardFor = (item, thumbnail, objectUrls) => {
             event => void insertFromLibrary(item, event.currentTarget), 'secondary-button'));
     }
     if (!item.deletedAt && item.assets.originalRetained && item.assets.projectRetained) {
-        actions.append(makeButton('Edit as new version', () => void editAsNewVersion(item)));
+        actions.append(makeButton('Edit as new version',
+            event => void editAsNewVersion(item, event.currentTarget)));
         actions.append(makeButton('Download project', () => void downloadProject(item)));
     }
     if (!item.deletedAt && item.remote.viewerUrl) {
