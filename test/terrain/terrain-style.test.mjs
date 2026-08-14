@@ -9,10 +9,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { terrainStyle as TerrainStyle } from '../../src/terrain/terrain-style.js';
 
-const STYLE_URL = 'https://tiles.example.test/styles/liberty';
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const style = (overrides = {}) => ({ version: 8, sources: {}, layers: [], ...overrides });
-const respond = (body, { ok = true, status = 200 } = {}) => ({
-    ok, status, json: async () => body,
+const respond = (body, { ok = true, status = 200, url = STYLE_URL, headers = {} } = {}) => ({
+    ok, status, url,
+    headers: { get: name => headers[name.toLowerCase()] ?? null },
+    text: async () => typeof body === 'string' ? body : JSON.stringify(body),
 });
 
 test('a valid style document is fetched without credentials or a referrer', async () => {
@@ -62,7 +64,13 @@ test('a style body that stalls mid-parse also fails on the deadline', async () =
     const loader = TerrainStyle.createVectorStyleLoader({
         styleUrl: STYLE_URL,
         timeoutMs: 10,
-        fetch: async () => ({ ok: true, status: 200, json: () => new Promise(() => {}) }),
+        fetch: async () => ({
+            ok: true,
+            status: 200,
+            url: STYLE_URL,
+            headers: { get: () => null },
+            text: () => new Promise(() => {}),
+        }),
     });
     await assert.rejects(loader.load(), /deadline/i);
 });
@@ -111,6 +119,89 @@ test('a non-ok response names its status for the frame’s notice', async () => 
             fetch: async () => respond(null, { ok: false, status }),
         });
         await assert.rejects(loader.load(), new RegExp(String(status)));
+    }
+});
+
+test('the loader rejects redirects and every foreign nested resource URL', async () => {
+    const valid = style({
+        glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+        sprite: 'https://tiles.openfreemap.org/sprites/liberty',
+        sources: {
+            map: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
+        },
+        layers: [{ id: 'land', type: 'fill', source: 'map', 'source-layer': 'landcover' }],
+    });
+    const redirected = TerrainStyle.createVectorStyleLoader({
+        styleUrl: STYLE_URL,
+        fetch: async () => respond(valid, { url: 'https://foreign.example/style' }),
+    });
+    await assert.rejects(redirected.load(), /redirected outside/);
+
+    for (const mutate of [
+        value => { value.glyphs = 'https://foreign.example/fonts/{fontstack}/{range}.pbf'; },
+        value => { value.sprite = 'https://foreign.example/sprite'; },
+        value => { value.sources.map.url = 'https://foreign.example/planet'; },
+        value => { value.sources.map.url = 'https://user:secret@tiles.openfreemap.org/planet'; },
+        value => { value.sources.map.url = 'https://tiles.openfreemap.org/planet#fragment'; },
+        value => {
+            value.sources.map = {
+                type: 'vector',
+                tiles: ['https://foreign.example/{z}/{x}/{y}.pbf'],
+            };
+        },
+    ]) {
+        const candidate = structuredClone(valid);
+        mutate(candidate);
+        const loader = TerrainStyle.createVectorStyleLoader({
+            styleUrl: STYLE_URL,
+            fetch: async () => respond(candidate),
+        });
+        await assert.rejects(loader.load(), /Unexpected vector style shape/);
+    }
+});
+
+test('the style byte and structure budgets reject before normalization', async () => {
+    let read = false;
+    const declared = TerrainStyle.createVectorStyleLoader({
+        styleUrl: STYLE_URL,
+        fetch: async () => ({
+            ...respond(style(), {
+                headers: { 'content-length': String(TerrainStyle.STYLE_MAX_BYTES + 1) },
+            }),
+            body: { cancel: async () => {} },
+            text: async () => { read = true; return '{}'; },
+        }),
+    });
+    await assert.rejects(declared.load(), /byte limit/);
+    assert.equal(read, false);
+
+    const tooManySources = Object.fromEntries(Array.from(
+        { length: TerrainStyle.MAX_SOURCES + 1 },
+        (_, index) => [`source-${index}`, {
+            type: 'vector', url: `https://tiles.openfreemap.org/planet-${index}`,
+        }],
+    ));
+    const excessive = TerrainStyle.createVectorStyleLoader({
+        styleUrl: STYLE_URL,
+        fetch: async () => respond(style({ sources: tooManySources })),
+    });
+    await assert.rejects(excessive.load(), /Unexpected vector style shape/);
+});
+
+test('normalization rejects invalid, duplicate, unsupported, and disconnected layers', () => {
+    const base = {
+        version: 8,
+        sources: { map: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } },
+        layers: [{ id: 'land', type: 'fill', source: 'map', 'source-layer': 'landcover' }],
+    };
+    for (const candidate of [
+        { ...base, layers: [...base.layers, { ...base.layers[0] }] },
+        { ...base, layers: [{ ...base.layers[0], id: 'bad id' }] },
+        { ...base, layers: [{ ...base.layers[0], type: 'custom' }] },
+        { ...base, layers: [{ ...base.layers[0], source: 'missing' }] },
+        { ...base, sources: { map: { type: 'geojson', data: {} } } },
+    ]) {
+        assert.equal(TerrainStyle.normalizeStyle(candidate), null);
     }
 });
 

@@ -225,6 +225,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const tiltWarmedTiles = new Set();
     let activeRouteStyle = { ...settingsSchema.ROUTE_STYLE };
     let vectorActive = false;
+    let vectorInstalling = false;
     const vectorStyleLoader = TerrainStyle.createVectorStyleLoader({ styleUrl: VECTOR_BASEMAP.styleUrl });
     let vectorSwapToken = 0;
     let vectorLayerIds = [];
@@ -386,6 +387,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         routeHasTrackIds = false;
         hoveredRouteTrack = null;
         vectorActive = false;
+        vectorInstalling = false;
         vectorSwapToken++;
         vectorLayerIds = [];
         vectorSourceIds = [];
@@ -862,60 +864,97 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // map.setStyle, so the Mapterhorn terrain mesh, hillshade, and route
     // layers survive untouched. Everything is added under prefixed ids so it
     // can be removed wholesale and can never collide with extension layers.
+    const restoreVectorResources = resources => {
+        if (!resources) return;
+        try {
+            if (typeof map.setGlyphs === 'function') map.setGlyphs(resources.glyphs);
+        } catch (error) { /* The style may be tearing down. */ }
+        try {
+            if (typeof map.setSprite === 'function') map.setSprite(resources.sprite);
+        } catch (error) { /* The style may be tearing down. */ }
+    };
+
+    const removeVectorResources = ({ layers, sources, resources }) => {
+        let pendingLayers = [...layers].reverse();
+        for (let pass = 0; pass < 2 && pendingLayers.length; pass++) {
+            const failed = [];
+            for (const id of pendingLayers) {
+                try {
+                    if (typeof map.getLayer === 'function' && map.getLayer(id)) map.removeLayer(id);
+                } catch (error) { failed.push(id); }
+            }
+            pendingLayers = failed;
+        }
+        let pendingSources = [...sources].reverse();
+        for (let pass = 0; pass < 2 && pendingSources.length; pass++) {
+            const failed = [];
+            for (const id of pendingSources) {
+                try {
+                    if (map.getSource(id) && typeof map.removeSource === 'function') map.removeSource(id);
+                } catch (error) { failed.push(id); }
+            }
+            pendingSources = failed;
+        }
+        restoreVectorResources(resources);
+    };
+
     const addVectorBasemap = style => {
         const currentStyle = typeof map.getStyle === 'function' ? map.getStyle() : null;
         const currentSprite = currentStyle?.sprite;
-        vectorStyleResources = {
+        const resources = {
             glyphs: typeof currentStyle?.glyphs === 'string' ? currentStyle.glyphs : null,
             sprite: typeof currentSprite === 'string'
                 ? currentSprite
                 : Array.isArray(currentSprite) ? currentSprite.map(item => ({ ...item })) : null
         };
-        if (typeof style.glyphs === 'string' && typeof map.setGlyphs === 'function') map.setGlyphs(style.glyphs);
-        if (typeof style.sprite === 'string' && typeof map.setSprite === 'function') map.setSprite(style.sprite);
-        for (const [id, source] of Object.entries(style.sources)) {
-            const prefixed = `${VECTOR_PREFIX}${id}`;
-            map.addSource(prefixed, source);
-            vectorSourceIds.push(prefixed);
-        }
-        const hasLayer = id => typeof map.getLayer === 'function' && map.getLayer(id);
-        for (const layer of style.layers) {
-            const copy = { ...layer, id: `${VECTOR_PREFIX}${layer.id}` };
-            if (typeof copy.source === 'string') copy.source = `${VECTOR_PREFIX}${copy.source}`;
-            // Ground geometry slides under the hillshade so relief keeps
-            // shading the map exactly as it does raster drapes; labels go
-            // above the route (below the hover highlight) so text stays
-            // crisp, upright, and readable over both terrain and track.
-            const before = layer.type === 'symbol'
-                ? (hasLayer('bpb-highlight') ? 'bpb-highlight' : undefined)
-                : (hasLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
-            map.addLayer(copy, before);
-            vectorLayerIds.push(copy.id);
+        const addedLayers = [];
+        const addedSources = [];
+        vectorInstalling = true;
+        try {
+            if (typeof style.glyphs === 'string' && typeof map.setGlyphs === 'function') map.setGlyphs(style.glyphs);
+            if (typeof style.sprite === 'string' && typeof map.setSprite === 'function') map.setSprite(style.sprite);
+            for (const [id, source] of Object.entries(style.sources)) {
+                const prefixed = `${VECTOR_PREFIX}${id}`;
+                map.addSource(prefixed, source);
+                addedSources.push(prefixed);
+            }
+            const hasLayer = id => typeof map.getLayer === 'function' && map.getLayer(id);
+            for (const layer of style.layers) {
+                const copy = { ...layer, id: `${VECTOR_PREFIX}${layer.id}` };
+                if (typeof copy.source === 'string') copy.source = `${VECTOR_PREFIX}${copy.source}`;
+                // Ground geometry slides under the hillshade so relief keeps
+                // shading the map exactly as it does raster drapes; labels go
+                // above the route (below the hover highlight) so text stays
+                // crisp, upright, and readable over both terrain and track.
+                const before = layer.type === 'symbol'
+                    ? (hasLayer('bpb-highlight') ? 'bpb-highlight' : undefined)
+                    : (hasLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
+                map.addLayer(copy, before);
+                addedLayers.push(copy.id);
+            }
+            vectorLayerIds = addedLayers;
+            vectorSourceIds = addedSources;
+            vectorStyleResources = resources;
+            vectorActive = true;
+        } catch (error) {
+            removeVectorResources({ layers: addedLayers, sources: addedSources, resources });
+            throw error;
+        } finally {
+            vectorInstalling = false;
         }
     };
 
     const removeVectorBasemap = () => {
-        const previousResources = vectorStyleResources;
-        try {
-            for (const id of vectorLayerIds) {
-                if (typeof map.getLayer === 'function' && map.getLayer(id)) map.removeLayer(id);
-            }
-            for (const id of vectorSourceIds) {
-                if (map.getSource(id) && typeof map.removeSource === 'function') map.removeSource(id);
-            }
-        } catch (error) { /* A partially-added style may already be absent. */ }
-        if (previousResources) {
-            try {
-                if (typeof map.setGlyphs === 'function') map.setGlyphs(previousResources.glyphs);
-            } catch (error) { /* The style may be tearing down. */ }
-            try {
-                if (typeof map.setSprite === 'function') map.setSprite(previousResources.sprite);
-            } catch (error) { /* The style may be tearing down. */ }
-        }
+        removeVectorResources({
+            layers: vectorLayerIds,
+            sources: vectorSourceIds,
+            resources: vectorStyleResources,
+        });
         vectorLayerIds = [];
         vectorSourceIds = [];
         vectorStyleResources = null;
         vectorActive = false;
+        vectorInstalling = false;
     };
 
     // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
@@ -932,16 +971,19 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         activeBasemapIndex = -1;
         activeBasemap = null;
         if (selection === 'vector') {
-            vectorActive = true;
             renderPicker();
+            showNotice(`Loading ${VECTOR_BASEMAP.name}…`);
             const token = vectorSwapToken;
             fetchVectorStyle()
                 .then(style => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
                     addVectorBasemap(style);
+                    renderPicker();
+                    showNotice('');
                 })
                 .catch(() => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
+                    removeVectorBasemap();
                     vectorActive = false;
                     renderPicker();
                     showNotice(`${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
@@ -1792,18 +1834,36 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 // The cost is memory and it is bounded: retention is a multiple
                 // of the *visible* tile count, measured by terrain:lod at 96
                 // rather than 60 retained elevation tiles for an 1100x700 frame.
-                maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS
+                maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS,
+                transformRequest: (url, resourceType) => {
+                    if (!(vectorInstalling || vectorActive)) return { url };
+                    if (TerrainStyle.providerUrl(url)) {
+                        return { url, credentials: 'omit' };
+                    }
+                    let parsed;
+                    try { parsed = new URL(url); } catch { return { url }; }
+                    if (['Source', 'Tile', 'Glyphs', 'SpriteImage', 'SpriteJSON'].includes(resourceType)
+                        && (parsed.protocol === 'https:' || parsed.protocol === 'http:')) {
+                        throw new Error('Vector basemap requested an unapproved provider origin.');
+                    }
+                    return { url };
+                }
             });
             const terrainMap = map;
             // Register the failure route before controls or canvas inspection:
             // MapLibre 6 reports WebGL2 initialization through its error event,
             // and no setup step may race ahead and leave the host on a spinner.
             terrainMap.on('error', event => {
+                if (map !== terrainMap) return;
                 if (event && event.sourceId === 'basemap') {
                     basemapErrored = true;
                     return;
                 }
-                if (map !== terrainMap) return;
+                if (event?.sourceId?.startsWith(VECTOR_PREFIX)) {
+                    swapBasemap(-1);
+                    showNotice(`${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
+                    return;
+                }
                 // Loaded source errors are ordinary network gaps and remain
                 // fail-open. A source-less error is a renderer/style failure,
                 // which cannot recover into a trustworthy interactive map.

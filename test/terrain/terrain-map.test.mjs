@@ -1183,12 +1183,19 @@ test('the extension-provided vector entry grafts the provider style under the ex
         on(type, callback) { this.handlers.set(type, callback); }
         addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
         addLayer(layer, before) {
+            if (this.failAddLayerId === layer.id) throw new Error('injected addLayer failure');
             const index = before ? this.layers.findIndex(existing => existing.id === before) : -1;
             if (index >= 0) this.layers.splice(index, 0, layer);
             else this.layers.push(layer);
         }
         getLayer(id) { return this.layers.find(layer => layer.id === id); }
-        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        removeLayer(id) {
+            if (this.failRemoveLayerId === id) {
+                this.failRemoveLayerId = null;
+                throw new Error('injected removeLayer failure');
+            }
+            this.layers = this.layers.filter(layer => layer.id !== id);
+        }
         getSource(id) { return this.sources.get(id); }
         removeSource(id) { this.sources.delete(id); }
         getStyle() {
@@ -1222,7 +1229,13 @@ test('the extension-provided vector entry grafts the provider style under the ex
     window.fetch = url => {
         fetches.push(url);
         if (failFetch) return Promise.reject(new Error('offline'));
-        return Promise.resolve({ ok: true, json: () => Promise.resolve(providerStyle) });
+        return Promise.resolve({
+            ok: true,
+            status: 200,
+            url,
+            headers: { get: () => null },
+            text: () => Promise.resolve(JSON.stringify(providerStyle)),
+        });
     };
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
     window.maplibregl = {
@@ -1304,6 +1317,44 @@ test('the extension-provided vector entry grafts the provider style under the ex
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(fetches.length, 2, 'a successful style fetch is cached for the frame lifetime');
     assert.ok(map.getSource('bpb-vector:openmaptiles'), 'the cached style is re-grafted');
+    assert.deepEqual(JSON.parse(JSON.stringify(map.options.transformRequest(
+        'https://tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'))), {
+        url: 'https://tiles.openfreemap.org/planet/1/2/3.pbf',
+        credentials: 'omit',
+    });
+    assert.throws(() => map.options.transformRequest('https://foreign.example/1/2/3.pbf', 'Tile'),
+        /unapproved provider origin/,
+        'a TileJSON response cannot redirect vector tiles to another provider');
+    assert.throws(() => map.options.transformRequest('https://foreign.example/source.json', 'Source'),
+        /unapproved provider origin/);
+    assert.throws(() => map.options.transformRequest(
+        'https://user:secret@tiles.openfreemap.org/planet/1/2/3.pbf', 'Tile'),
+    /unapproved provider origin/);
+    assert.throws(() => map.options.transformRequest(
+        'https://tiles.openfreemap.org/planet/1/2/3.pbf#fragment', 'Tile'),
+    /unapproved provider origin/);
+
+    map.handlers.get('error')({ sourceId: 'bpb-vector:openmaptiles' });
+    assert.equal(picker().value, 'terrain', 'a late TileJSON or tile failure rolls the vector graft back');
+    assert.equal(map.getSource('bpb-vector:openmaptiles'), undefined);
+    assert.ok(!map.layers.some(layer => layer.id.startsWith('bpb-vector:')));
+    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /unavailable/);
+
+    // A later install failure rolls back every mutation. A one-shot cleanup
+    // failure cannot skip the remaining layers or source, and is retried.
+    map.failAddLayerId = 'bpb-vector:place-label';
+    map.failRemoveLayerId = 'bpb-vector:road';
+    picker().value = 'vector';
+    picker().dispatchEvent(new window.Event('change'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(picker().value, 'terrain', 'an incomplete graft is never marked active');
+    assert.equal(map.getSource('bpb-vector:openmaptiles'), undefined,
+        'rollback removes the added source after independently retrying layer cleanup');
+    assert.ok(!map.layers.some(layer => layer.id.startsWith('bpb-vector:')),
+        'no provider layer survives a failed transaction');
+    assert.equal(map.glyphs, frameGlyphs);
+    assert.equal(map.sprite, frameSprite);
+    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /unavailable/);
 
     dom.window.close();
 });

@@ -789,6 +789,16 @@ slow OpenTopoMap or other drape therefore streams progressively instead of
 gating the entire 3D boot; a picker change made during boot is queued and
 applied after the base style becomes ready.
 
+The optional OpenFreeMap style is a bounded, normalized transaction rather
+than a trusted MapLibre style. Its decoded document stops at 2 MiB; source,
+layer, identifier, URL, and parsed-structure limits are checked before any map
+mutation. Glyphs, sprites, TileJSON, inline tiles, and late TileJSON-derived
+tile requests must stay on `https://tiles.openfreemap.org` without credentials
+or fragments. Sources and layers are installed under extension-prefixed IDs;
+any failure independently rolls back every added layer and source and restores
+the prior glyph/sprite configuration before the picker can show Vector as
+active.
+
 ### Bounded DEM cache
 
 Successful Mapterhorn responses may be kept in CacheStorage. Before MapLibre or
