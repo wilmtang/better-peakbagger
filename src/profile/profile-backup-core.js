@@ -107,6 +107,20 @@ const DEFAULT_BATCH_BYTES = 4 * 1024 * 1024;
 const DEFAULT_BUFFER_ITEMS = 30;
 const DEFAULT_BUFFER_BYTES = 32 * 1024 * 1024;
 
+const cancellableSleep = (ms, { signal } = {}) => new Promise(resolve => {
+    let settled = false;
+    const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', finish);
+        resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    if (signal?.aborted) finish();
+    else signal?.addEventListener('abort', finish, { once: true });
+});
+
 const utf8Bytes = value => new TextEncoder().encode(typeof value === 'string' ? value : '').byteLength;
 const backupPayloadBytes = data => {
     let snapshot = '';
@@ -121,7 +135,7 @@ const createRunner = ({
     refreshAll = false,
     loadItem,
     pushBatch,
-    sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    sleep = cancellableSleep,
     onState = () => {},
     paceMs = 2000,
     retryDelays = [4000, 15000],
@@ -173,6 +187,8 @@ const createRunner = ({
     let consecutiveTransientFailures = 0;
     let activeRun = null;
     let halt = null;
+    let activeReadController = null;
+    let activeWaitController = null;
     const waiters = new Set();
 
     const notify = () => {
@@ -193,8 +209,34 @@ const createRunner = ({
         publish({ completed: state.completed + 1 });
     };
     const safeLoad = async (item, options) => {
-        try { return await loadItem(item, options); }
+        const controller = new AbortController();
+        activeReadController = controller;
+        try { return await loadItem(item, { ...options, signal: controller.signal }); }
         catch (error) { return { kind: 'transient', reason: error && error.message ? error.message : 'Network request failed.' }; }
+        finally {
+            if (activeReadController === controller) activeReadController = null;
+        }
+    };
+    const wait = async ms => {
+        const controller = new AbortController();
+        activeWaitController = controller;
+        let resolveInterrupted;
+        const interrupted = new Promise(resolve => { resolveInterrupted = resolve; });
+        const interrupt = () => resolveInterrupted(false);
+        controller.signal.addEventListener('abort', interrupt, { once: true });
+        const delay = Promise.resolve()
+            .then(() => sleep(ms, { signal: controller.signal }))
+            .then(() => true, () => !controller.signal.aborted);
+        try { return await Promise.race([delay, interrupted]); }
+        finally {
+            controller.signal.removeEventListener('abort', interrupt);
+            if (activeWaitController === controller) activeWaitController = null;
+        }
+    };
+    const interruptRetractableWork = () => {
+        activeReadController?.abort();
+        activeWaitController?.abort();
+        notify();
     };
     const stopFor = (reason, patch = {}) => {
         if (!halt) halt = { reason, patch };
@@ -229,19 +271,20 @@ const createRunner = ({
             while (true) {
                 loaded = await safeLoad(item, { probe: !!challengeProbeUrl, probeUrl: challengeProbeUrl });
                 challengeProbeUrl = null;
+                if (cancelled || pauseRequested) break;
                 if (loaded && loaded.kind === 'transient' && transientAttempts < retryDelays.length) {
-                    await sleep(retryDelays[transientAttempts]);
+                    const completedWait = await wait(retryDelays[transientAttempts]);
                     transientAttempts += 1;
-                    if (cancelled) break;
+                    if (!completedWait || cancelled || pauseRequested) break;
                     continue;
                 }
                 break;
             }
 
-            // A fetch already in flight cannot be undone. Cancellation discards
-            // its result before it can enter a GitHub batch; pause/error states
-            // retain a completed successful fetch in the bounded buffer.
-            if (cancelled) break;
+            // A user request aborts retractable reads and discards their result
+            // before it can enter a GitHub batch. Challenge/error pauses retain
+            // a completed successful fetch in the bounded buffer.
+            if (cancelled || pauseRequested) break;
 
             if (loaded && loaded.kind === 'challenged') {
                 challenged = true;
@@ -271,7 +314,7 @@ const createRunner = ({
                 notify();
             }
             if (nextLoadIndex < work.length && !cancelled && !pauseRequested && !halt) {
-                await sleep(challenged ? paceMs * 2 : paceMs);
+                await wait(challenged ? paceMs * 2 : paceMs);
             }
         }
         producerDone = nextLoadIndex >= work.length;
@@ -349,7 +392,8 @@ const createRunner = ({
         pause() {
             if (!cancelled && state.status === 'running') {
                 pauseRequested = true;
-                notify();
+                publish({ status: 'pause-requested' });
+                interruptRetractableWork();
             }
         },
         resume() {
@@ -359,10 +403,12 @@ const createRunner = ({
             return this.run();
         },
         cancel() {
+            if (cancelled) return;
             cancelled = true;
             pauseRequested = false;
-            notify();
-            if (!activeRun) publish({ status: 'cancelled', current: null });
+            interruptRetractableWork();
+            if (activeRun) publish({ status: 'cancel-requested' });
+            else publish({ status: 'cancelled', current: null });
         },
     };
 };

@@ -31,6 +31,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const button = (text, onclick, primary = false) => node('button', {
         type: 'button', class: `bpb-profile-btn${primary ? ' bpb-profile-primary' : ''}`, text, onclick,
     });
+    const disabledButton = text => node('button', {
+        type: 'button', class: 'bpb-profile-btn', text, disabled: true,
+    });
     const removePanel = () => {
         if (panel) panel.remove();
         panel = null;
@@ -213,6 +216,38 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     };
 
     const renderState = state => {
+        panel.setAttribute('aria-busy', String(
+            state.status === 'pause-requested' || state.status === 'cancel-requested'));
+        if (state.status === 'pause-requested' || state.status === 'cancel-requested') {
+            const focusWasInPanel = panel.contains(document.activeElement);
+            const cancelling = state.status === 'cancel-requested';
+            const writing = state.uploading > 0;
+            const statusCopy = node('div', {
+                class: 'bpb-profile-copy', tabindex: '-1',
+            }, [
+                node('strong', { text: cancelling ? 'Stopping profile backup' : 'Pause requested' }),
+                node('span', {
+                    text: writing
+                        ? cancelling
+                            ? 'Stopping after the current GitHub batch…'
+                            : 'Pausing after the current GitHub batch…'
+                        : cancelling ? 'Stopping…' : 'Pausing…',
+                }),
+            ]);
+            body(
+                statusCopy,
+                node('progress', {
+                    class: 'bpb-profile-progress', max: Math.max(1, state.total), value: state.completed,
+                }),
+                node('div', { class: 'bpb-profile-actions' }, cancelling
+                    ? [disabledButton('Cancel requested')]
+                    : [disabledButton('Pause requested'), button('Cancel', () => runner.cancel())]),
+            );
+            if (focusWasInPanel) {
+                (panel.querySelector('button:not(:disabled)') || statusCopy).focus();
+            }
+            return;
+        }
         if (state.status === 'paused' && state.pauseReason === 'challenge') return renderChallenge(state);
         if (state.status === 'complete' || state.status === 'cancelled') {
             const summary = state.status === 'complete'
@@ -280,8 +315,8 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         );
     };
 
-    const responseText = (url, kind) => Source.fetchPeakbaggerResource(url, { kind });
-    const responseDocument = (url, kind) => Source.fetchPeakbaggerDocument(url, { kind });
+    const responseText = (url, kind, signal) => Source.fetchPeakbaggerResource(url, { kind, signal });
+    const responseDocument = (url, kind, signal) => Source.fetchPeakbaggerDocument(url, { kind, signal });
     const rejectedPage = (url, kind, code) => {
         const error = PeakbaggerError.failure(code, { resource: kind });
         return { kind: 'wrong-content', url, error, reason: PeakbaggerError.message(error) };
@@ -343,14 +378,14 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         }
     };
 
-    const loadAscent = async (item, { probeUrl = null } = {}) => {
+    const loadAscent = async (item, { probeUrl = null, signal } = {}) => {
         if (probeUrl) {
             const kind = /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(new URL(probeUrl, location.href).pathname) ? 'gpx' : 'edit';
-            const probe = await responseText(probeUrl, kind);
+            const probe = await responseText(probeUrl, kind, signal);
             if (probe.kind !== 'ok') return probe;
         }
         const editUrl = new URL(`/climber/AscentEdit.aspx?aid=${item.aid}`, location.origin).toString();
-        const edit = await responseDocument(editUrl, 'edit');
+        const edit = await responseDocument(editUrl, 'edit', signal);
         if (edit.kind !== 'ok') return edit;
         const parsed = Source.snapshotFromEditDocument({
             doc: edit.document,
@@ -373,7 +408,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             // what the GPX analyzer reads. The old GetAscentGPX.aspx endpoint was
             // renamed and now 302s to a 200 HTML error page.
             const gpxUrl = Source.storedGpxUrl({ origin: location.origin, ascentId: item.aid });
-            const track = await responseText(gpxUrl, 'gpx');
+            const track = await responseText(gpxUrl, 'gpx', signal);
             if (track.kind !== 'ok') return track;
             gpx = track.text;
         }

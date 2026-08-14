@@ -415,6 +415,118 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent, /Backed up 1; skipped 37; failed 0/);
 });
 
+test('Pause immediately acknowledges and aborts a retractable Peakbagger read', async () => {
+    let readStarted;
+    const started = new Promise(resolve => { readStarted = resolve; });
+    let readAborted = false;
+    const sent = [];
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            const aids = [...dom.window.document.querySelectorAll('a[href*="/ascent.aspx?aid="]')]
+                .map(anchor => Number(new dom.window.URL(anchor.href).searchParams.get('aid')));
+            const existing = aids.slice(1).map(aid => `2020-01-01-peak-a${aid}`);
+            prepareRuntime(dom, message => {
+                sent.push(message);
+                if (message.type === 'GITHUB_BACKUP_STATUS') {
+                    return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                }
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') {
+                    return { ok: true, enabled: true, connected: true, folders: existing };
+                }
+                return null;
+            });
+            dom.window.fetch = (_url, init) => new Promise((_resolve, reject) => {
+                readStarted();
+                init.signal.addEventListener('abort', () => {
+                    readAborted = true;
+                    reject(new dom.window.DOMException('cancelled', 'AbortError'));
+                }, { once: true });
+            });
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    panel.querySelector('.bpb-profile-primary').click();
+    await started;
+    const pause = [...panel.querySelectorAll('button')]
+        .find(control => control.textContent === 'Pause');
+    pause.focus();
+    pause.click();
+
+    assert.match(panel.textContent, /Pause requested.*Pausing…/s);
+    assert.equal(panel.getAttribute('aria-busy'), 'true');
+    assert.equal([...panel.querySelectorAll('button')]
+        .find(control => control.textContent === 'Pause requested').disabled, true);
+    assert.equal(dom.window.document.activeElement.textContent, 'Cancel');
+    await waitFor(dom, () => /Profile backup paused/.test(panel.textContent));
+    assert.equal(readAborted, true);
+    assert.equal(panel.getAttribute('aria-busy'), 'false');
+    assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_PROFILE_BATCH'), false);
+});
+
+test('Cancel during a GitHub write says it will stop after that batch and counts the result', async () => {
+    let releaseBatch;
+    let batchStarted;
+    const started = new Promise(resolve => { batchStarted = resolve; });
+    const pending = new Promise(resolve => { releaseBatch = resolve; });
+    const pushes = [];
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            const aids = [...dom.window.document.querySelectorAll('a[href*="/ascent.aspx?aid="]')]
+                .map(anchor => Number(new dom.window.URL(anchor.href).searchParams.get('aid')));
+            const existing = aids.slice(1).map(aid => `2020-01-01-peak-a${aid}`);
+            dom.window.chrome.runtime.sendMessage = message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') {
+                    return Promise.resolve({
+                        enabled: true, connected: true, repo: { fullName: 'me/backup' },
+                    });
+                }
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') {
+                    return Promise.resolve({ ok: true, enabled: true, connected: true, folders: existing });
+                }
+                if (message.type === 'GITHUB_BACKUP_PROFILE_BATCH') {
+                    pushes.push(message.entries.map(entry => entry.aid));
+                    batchStarted();
+                    return pending;
+                }
+                return Promise.resolve(null);
+            };
+            dom.window.fetch = async url => ({
+                ok: true,
+                status: 200,
+                url: String(url),
+                headers: { get: () => null },
+                text: async () => editHtml,
+            });
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    panel.querySelector('.bpb-profile-primary').click();
+    await started;
+    const cancel = [...panel.querySelectorAll('button')]
+        .find(control => control.textContent === 'Cancel');
+    cancel.focus();
+    cancel.click();
+
+    assert.match(panel.textContent, /Stopping profile backup.*Stopping after the current GitHub batch…/s);
+    assert.equal(panel.getAttribute('aria-busy'), 'true');
+    assert.equal(panel.querySelector('button').textContent, 'Cancel requested');
+    assert.equal(panel.querySelector('button').disabled, true);
+    assert.equal(dom.window.document.activeElement.classList.contains('bpb-profile-copy'), true);
+    releaseBatch({ ok: true, result: { count: 1 } });
+    await waitFor(dom, () => /Profile backup stopped/.test(panel.textContent));
+    assert.match(panel.textContent, /Cancelled\. Backed up 1; skipped 37; failed 0; not backed up 0/);
+    assert.deepEqual(JSON.parse(JSON.stringify(pushes)), [[9100001]]);
+    assert.equal(panel.getAttribute('aria-busy'), 'false');
+});
+
 test('a GPS-flagged ascent fetches its track from the current GPXFile endpoint', async () => {
     const gpxBody = '<?xml version="1.0"?><gpx version="1.1" creator="Peakbagger.com"><trk/></gpx>';
     const requested = [];

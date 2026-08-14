@@ -498,8 +498,11 @@ disclosure.
 
 ### Pause, challenge, cancel, and closure
 
-- **User Pause:** both loops stop at their next safe asynchronous boundary;
-  prepared ascents remain in memory.
+- **User Pause:** the runner immediately publishes `pause-requested`. An owned
+  Peakbagger read, retry backoff, pacing delay, or producer-buffer wait is
+  interrupted; prepared ascents remain in memory. An already-issued GitHub
+  batch finishes without automatic retry, the UI says it is pausing after that
+  batch, and no later read or write starts.
 - **Peakbagger challenge:** the producer stops on the interrupted URL. Resume
   probes that URL before retrying the item; it is not skipped. **Open check**
   first acquires a blank tab and navigates it only after success. If popup
@@ -511,10 +514,12 @@ disclosure.
   transient items pause before requesting the next ascent.
 - **GitHub failure:** the rejected batch remains at the front of the buffer;
   Resume retries it without refetching its ascents.
-- **Cancel during Peakbagger fetch:** the completed response is discarded before
-  it reaches the buffer.
+- **Cancel during Peakbagger fetch or wait:** the runner immediately publishes
+  `cancel-requested`, aborts the request signal or cancellable wait, and starts
+  no later read or write.
 - **Cancel during GitHub write:** an already-issued atomic write cannot be
-  retracted; it may finish, but no later batch starts.
+  retracted or safely retried; the UI says it is stopping after that batch. A
+  confirmed success is counted, and no later batch starts.
 - **Tab refresh/closure:** discards the in-memory buffer. Repository data remains
   consistent, and the next run diffs committed folders again.
 - **Worker restart:** there is no durable worker-side batch queue. Repository

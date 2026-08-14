@@ -72,6 +72,41 @@ test('transient errors use the injected backoff schedule and fail only after two
     assert.deepEqual(result.failures.map(failure => [failure.aid, failure.kind]), [[1, 'transient']]);
 });
 
+test('pause interrupts a retry backoff and publishes the request before settling', async () => {
+    let startedWait;
+    const waiting = new Promise(resolve => { startedWait = resolve; });
+    let waitAborted = false;
+    let attempts = 0;
+    const runner = Core.createRunner({
+        ascents: [items[0]],
+        loadItem: async () => {
+            attempts += 1;
+            return { kind: 'transient', reason: 'offline' };
+        },
+        sleep: (_ms, { signal }) => new Promise(resolve => {
+            startedWait();
+            signal.addEventListener('abort', () => {
+                waitAborted = true;
+                resolve();
+            }, { once: true });
+        }),
+        pushBatch: async () => ({ ok: true }),
+    });
+
+    const running = runner.run();
+    await waiting;
+    runner.pause();
+    assert.equal(runner.state.status, 'pause-requested');
+    runner.pause();
+    assert.equal(runner.state.status, 'pause-requested', 'a repeated request is idempotent');
+    const result = await running;
+    assert.equal(waitAborted, true);
+    assert.equal(attempts, 1);
+    assert.equal(result.status, 'paused');
+    assert.equal(result.pauseReason, 'user');
+    assert.equal(result.notReached, 1);
+});
+
 test('consecutive exhausted transients pause before requesting the next ascent', async () => {
     const calls = [];
     const runner = Core.createRunner({
@@ -156,22 +191,104 @@ test('a GitHub failure pauses on the current ascent and resume retries it', asyn
     assert.deepEqual(pushed, [[1, 2, 3], [1, 2, 3]]);
 });
 
-test('cancelling during an in-flight fetch stops before the GitHub write boundary', async () => {
-    let release;
+test('cancelling aborts an in-flight read and stops before the GitHub write boundary', async () => {
+    let started;
+    const readStarted = new Promise(resolve => { started = resolve; });
+    let aborted = false;
     let pushed = false;
-    const pending = new Promise(resolve => { release = resolve; });
     const runner = Core.createRunner({
         ascents: [items[0]],
-        loadItem: async () => { await pending; return ok; },
+        loadItem: async (_item, { signal }) => new Promise(resolve => {
+            started();
+            signal.addEventListener('abort', () => {
+                aborted = true;
+                resolve({ kind: 'transient', reason: 'cancelled' });
+            }, { once: true });
+        }),
         pushBatch: async () => { pushed = true; return { ok: true }; },
     });
     const running = runner.run();
+    await readStarted;
     runner.cancel();
-    release();
+    assert.equal(runner.state.status, 'cancel-requested');
+    runner.cancel();
     const result = await running;
+    assert.equal(aborted, true);
     assert.equal(result.status, 'cancelled');
     assert.equal(pushed, false);
     assert.equal(result.notReached, 1);
+});
+
+test('pause during a GitHub mutation waits for that batch, counts it, and starts no later work', async () => {
+    let releaseBatch;
+    let batchStarted;
+    const started = new Promise(resolve => { batchStarted = resolve; });
+    const pending = new Promise(resolve => { releaseBatch = resolve; });
+    const loaded = [];
+    const batches = [];
+    const runner = Core.createRunner({
+        ascents: items,
+        batchItems: 1,
+        bufferItems: 1,
+        paceMs: 0,
+        sleep: async () => {},
+        loadItem: async item => { loaded.push(item.aid); return ok; },
+        pushBatch: async batch => {
+            batches.push(batch.map(entry => entry.item.aid));
+            batchStarted();
+            await pending;
+            return { ok: true };
+        },
+    });
+
+    const running = runner.run();
+    await started;
+    runner.pause();
+    assert.equal(runner.state.status, 'pause-requested');
+    assert.equal(runner.state.uploading, 1);
+    releaseBatch();
+    const result = await running;
+    assert.equal(result.status, 'paused');
+    assert.equal(result.pauseReason, 'user');
+    assert.equal(result.backedUp, 1, 'the unambiguous completed GitHub batch is counted');
+    assert.equal(result.completed, 1);
+    assert.equal(result.notReached, 2);
+    assert.deepEqual(loaded, [1]);
+    assert.deepEqual(batches, [[1]]);
+});
+
+test('cancel during a GitHub mutation waits for that batch and starts no later work', async () => {
+    let releaseBatch;
+    let batchStarted;
+    const started = new Promise(resolve => { batchStarted = resolve; });
+    const pending = new Promise(resolve => { releaseBatch = resolve; });
+    const loaded = [];
+    const runner = Core.createRunner({
+        ascents: items,
+        batchItems: 1,
+        bufferItems: 1,
+        paceMs: 0,
+        sleep: async () => {},
+        loadItem: async item => { loaded.push(item.aid); return ok; },
+        pushBatch: async () => {
+            batchStarted();
+            await pending;
+            return { ok: true };
+        },
+    });
+
+    const running = runner.run();
+    await started;
+    runner.cancel();
+    assert.equal(runner.state.status, 'cancel-requested');
+    assert.equal(runner.state.uploading, 1);
+    releaseBatch();
+    const result = await running;
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.backedUp, 1);
+    assert.equal(result.completed, 1);
+    assert.equal(result.notReached, 2);
+    assert.deepEqual(loaded, [1]);
 });
 
 test('the producer fills only the bounded buffer while a GitHub batch is in flight', async () => {
