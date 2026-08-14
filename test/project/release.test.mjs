@@ -17,7 +17,10 @@ import {
     validateReviewedDependencyMetadata,
 } from '../../scripts/dependency-metadata.mjs';
 import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mjs';
-import { publishChrome } from '../../scripts/publish-chrome.mjs';
+import {
+    ChromeWebStoreRequestError,
+    publishChrome,
+} from '../../scripts/publish-chrome.mjs';
 import {
     assertReleasedSectionsUnchanged,
     releaseSection,
@@ -862,6 +865,15 @@ function jsonResponse(body, status = 200) {
     });
 }
 
+function submittedStatus(version = '1.4.0', state = 'PENDING_REVIEW') {
+    return {
+        submittedItemRevisionStatus: {
+            state,
+            distributionChannels: [{ crxVersion: version }],
+        },
+    };
+}
+
 function chromeArguments(overrides = {}) {
     return {
         token: 'test-token',
@@ -881,6 +893,7 @@ test('Chrome publisher waits for upload processing before publishing', async () 
         jsonResponse({ uploadState: 'IN_PROGRESS' }),
         jsonResponse({ lastAsyncUploadState: 'SUCCEEDED' }),
         jsonResponse({ state: 'PENDING_REVIEW' }),
+        jsonResponse(submittedStatus()),
     ];
     const result = await publishChrome(chromeArguments({
         fetchImpl: async (url, options) => {
@@ -891,11 +904,12 @@ test('Chrome publisher waits for upload processing before publishing', async () 
     }));
 
     assert.equal(result.uploadedVersion, '1.4.0');
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 5);
     assert.match(calls[0].url, /:fetchStatus$/);
     assert.match(calls[1].url, /\/upload\/v2\/publishers\/publisher-123\/items\//);
     assert.match(calls[2].url, /:fetchStatus$/);
     assert.match(calls[3].url, /:publish$/);
+    assert.match(calls[4].url, /:fetchStatus$/);
     assert.deepEqual(JSON.parse(calls[3].options.body), {
         publishType: 'DEFAULT_PUBLISH',
         blockOnWarnings: true,
@@ -943,10 +957,17 @@ test('Chrome publisher treats store warnings as a failed release', async () => {
 test('Chrome publisher checks for a consumed or ambiguous version before upload', async () => {
     for (const [status, message] of [
         [{
-            submittedItemRevisionStatus: {
+            publishedItemRevisionStatus: {
                 distributionChannels: [{ crxVersion: '1.4.0' }],
             },
-        }, /already published or submitted/],
+        }, /already published/],
+        [submittedStatus('1.3.0'), /already has submitted version/],
+        [{
+            submittedItemRevisionStatus: {
+                state: 'PENDING_REVIEW',
+                distributionChannels: [],
+            },
+        }, /without distribution-channel version evidence/],
         [{ lastAsyncUploadState: 'UPLOAD_SUCCEEDED' }, /Inspect its version/],
     ]) {
         const calls = [];
@@ -962,4 +983,182 @@ test('Chrome publisher checks for a consumed or ambiguous version before upload'
         assert.equal(calls.length, 1);
         assert.match(calls[0], /:fetchStatus$/);
     }
+});
+
+test('Chrome publisher treats an already reconciled expected submission as success', async () => {
+    const calls = [];
+    const result = await publishChrome(chromeArguments({
+        fetchImpl: async (url) => {
+            calls.push(url);
+            return jsonResponse(submittedStatus());
+        },
+    }));
+
+    assert.equal(result.uploadedVersion, '1.4.0');
+    assert.equal(result.publishState, 'PENDING_REVIEW');
+    assert.equal(result.reconciled, true);
+    assert.equal(calls.length, 1);
+});
+
+test('Chrome publisher requires the expected remote submitted revision', async () => {
+    for (const [status, message] of [
+        [submittedStatus('1.3.0'), /submitted version\(s\) 1\.3\.0; expected 1\.4\.0/],
+        [{
+            submittedItemRevisionStatus: {
+                state: 'PENDING_REVIEW',
+                distributionChannels: [],
+            },
+        }, /no distribution-channel version/],
+        [{ lastAsyncUploadState: 'UPLOAD_SUCCEEDED' }, /no submitted revision was visible/],
+        [submittedStatus('1.4.0', 'REJECTED'), /unexpected state REJECTED/],
+    ]) {
+        const responses = [
+            jsonResponse({}),
+            jsonResponse({ uploadState: 'SUCCEEDED' }),
+            jsonResponse({ state: 'PENDING_REVIEW' }),
+            jsonResponse(status),
+        ];
+        await assert.rejects(
+            publishChrome(chromeArguments({
+                fetchImpl: async () => responses.shift(),
+                maxPolls: 1,
+            })),
+            message,
+        );
+        assert.equal(responses.length, 0);
+    }
+});
+
+test('Chrome publisher bounds headers, bodies, and malformed responses', async () => {
+    await assert.rejects(
+        publishChrome(chromeArguments({
+            fetchImpl: async (_url, { signal }) => new Promise((resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+            }),
+            requestTimeoutMs: 5,
+        })),
+        error => error instanceof ChromeWebStoreRequestError
+            && error.code === 'deadline-exceeded'
+            && error.phase === 'preflight'
+            && /:fetchStatus$/.test(error.endpoint),
+    );
+
+    await assert.rejects(
+        publishChrome(chromeArguments({
+            fetchImpl: async () => new Response(new ReadableStream({ start() {} })),
+            requestTimeoutMs: 5,
+        })),
+        error => error instanceof ChromeWebStoreRequestError
+            && error.code === 'deadline-exceeded'
+            && error.phase === 'preflight',
+    );
+
+    await assert.rejects(
+        publishChrome(chromeArguments({
+            fetchImpl: async () => new Response('x'.repeat(65), {
+                status: 500,
+                headers: { 'Content-Length': '65' },
+            }),
+            maxResponseBytes: 64,
+        })),
+        error => error instanceof ChromeWebStoreRequestError
+            && error.code === 'response-too-large'
+            && error.status === 500,
+    );
+
+    await assert.rejects(
+        publishChrome(chromeArguments({
+            fetchImpl: async () => new Response('{not json'),
+        })),
+        error => error instanceof ChromeWebStoreRequestError
+            && error.code === 'malformed-json'
+            && error.phase === 'preflight',
+    );
+});
+
+test('Chrome publisher clears every request deadline', async () => {
+    let scheduled = 0;
+    let cleared = 0;
+    const responses = [jsonResponse({}), jsonResponse({ uploadState: 'FAILED' })];
+    await assert.rejects(
+        publishChrome(chromeArguments({
+            fetchImpl: async () => responses.shift(),
+            setTimeoutImpl: () => {
+                scheduled += 1;
+                return scheduled;
+            },
+            clearTimeoutImpl: () => { cleared += 1; },
+        })),
+        /upload did not succeed/,
+    );
+    assert.equal(scheduled, 2);
+    assert.equal(cleared, scheduled);
+});
+
+test('Chrome publisher reconciles an upload timeout without replaying the mutation', async () => {
+    const calls = [];
+    const result = await publishChrome(chromeArguments({
+        fetchImpl: async (url, { signal } = {}) => {
+            calls.push(url);
+            if (calls.length === 1) return jsonResponse({});
+            if (calls.length === 2) {
+                return new Promise((resolve, reject) => {
+                    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                });
+            }
+            return jsonResponse(submittedStatus());
+        },
+        requestTimeoutMs: 5,
+    }));
+
+    assert.equal(result.uploadedVersion, '1.4.0');
+    assert.equal(result.reconciled, true);
+    assert.equal(calls.filter(url => url.includes(':upload')).length, 1);
+    assert.equal(calls.filter(url => url.includes(':publish')).length, 0);
+});
+
+test('Chrome publisher reconciles a publish timeout without replaying the mutation', async () => {
+    const calls = [];
+    const result = await publishChrome(chromeArguments({
+        fetchImpl: async (url, { signal } = {}) => {
+            calls.push(url);
+            if (calls.length === 1) return jsonResponse({});
+            if (calls.length === 2) {
+                return jsonResponse({ uploadState: 'SUCCEEDED', crxVersion: '1.4.0' });
+            }
+            if (calls.length === 3) {
+                return new Promise((resolve, reject) => {
+                    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                });
+            }
+            return jsonResponse(submittedStatus());
+        },
+        requestTimeoutMs: 5,
+    }));
+
+    assert.equal(result.uploadedVersion, '1.4.0');
+    assert.equal(result.publishState, 'PENDING_REVIEW');
+    assert.equal(calls.filter(url => url.includes(':publish')).length, 1);
+});
+
+test('Chrome publisher stops after an unreconciled mutation timeout', async () => {
+    const calls = [];
+    await assert.rejects(
+        publishChrome(chromeArguments({
+            fetchImpl: async (url, { signal } = {}) => {
+                calls.push(url);
+                if (calls.length === 1) return jsonResponse({});
+                if (calls.length === 2) {
+                    return new Promise((resolve, reject) => {
+                        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                    });
+                }
+                return jsonResponse({ lastAsyncUploadState: 'UPLOAD_SUCCEEDED' });
+            },
+            requestTimeoutMs: 5,
+        })),
+        /outcome is unknown.*not replayed/,
+    );
+    assert.equal(calls.filter(url => url.includes(':upload')).length, 1);
+    assert.equal(calls.filter(url => url.includes(':publish')).length, 0);
 });
