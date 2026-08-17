@@ -962,8 +962,8 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#github-connection',
-            '#github-settings-backup', '#github-favorites-backup', '#github-photos-backup',
-            '#github-backup']);
+            '#github-backup', '#github-settings-backup', '#github-favorites-backup',
+            '#github-photos-backup']);
     for (const link of subLinks) {
         const target = doc.getElementById(link.getAttribute('href').slice(1));
         assert.ok(target && target.classList.contains('subsection'),
@@ -971,6 +971,11 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
         assert.equal(target.getAttribute('role'), 'group');
         assert.equal(target.getAttribute('aria-labelledby'), target.querySelector('h3').id);
     }
+    assert.deepEqual(
+        Array.from(doc.querySelectorAll('#github > .subsection'), section => `#${section.id}`),
+        subLinks.slice(6).map(link => link.getAttribute('href')),
+        'Backup & sync subsections should follow their sidebar order',
+    );
 });
 
 const activeLinks = dom =>

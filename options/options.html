@@ -43,10 +43,10 @@
                 <a class="nav-item" href="#github">Backup &amp; sync</a>
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#github-connection">GitHub connection</a></li>
+                    <li><a class="nav-subitem" href="#github-backup">Ascent backup</a></li>
                     <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
                     <li><a class="nav-subitem" href="#github-favorites-backup">Favorite climbers backup</a></li>
                     <li><a class="nav-subitem" href="#github-photos-backup">Photo library backup</a></li>
-                    <li><a class="nav-subitem" href="#github-backup">Ascent backup</a></li>
                 </ul>
             </li>
             <li><a class="nav-item" href="#about">About</a></li>
@@ -439,6 +439,28 @@
                 </div>
             </div>
 
+            <div class="subsection" id="github-backup" role="group" aria-labelledby="github-backup-heading">
+                <h3 class="subsection-title" id="github-backup-heading">Ascent backup</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Back up ascents to GitHub</span>
+                            <span class="desc">Show manual backup controls for saved ascents and My Ascents. Automatic backup is a separate choice after this is enabled.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="enable-github-backup">
+                                <input type="checkbox" id="enable-github-backup">
+                                <span>Enable ascent backup</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row github-detail" id="github-ascent-detail" hidden>
+                        <div class="github-panel" id="github-ascent-panel" role="group" aria-label="Ascent backup options"></div>
+                    </div>
+                </div>
+            </div>
+
             <div class="subsection" id="github-settings-backup" role="group" aria-labelledby="github-settings-backup-heading">
                 <h3 class="subsection-title" id="github-settings-backup-heading">Settings backup</h3>
                 <div class="card">
@@ -565,27 +587,6 @@
                 </div>
             </div>
 
-            <div class="subsection" id="github-backup" role="group" aria-labelledby="github-backup-heading">
-                <h3 class="subsection-title" id="github-backup-heading">Ascent backup</h3>
-                <div class="card">
-                    <div class="row">
-                        <div class="label">
-                            <span class="title">Back up ascents to GitHub</span>
-                            <span class="desc">Show manual backup controls for saved ascents and My Ascents. Automatic backup is a separate choice after this is enabled.</span>
-                        </div>
-                        <div class="control">
-                            <label class="check" for="enable-github-backup">
-                                <input type="checkbox" id="enable-github-backup">
-                                <span>Enable ascent backup</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="row github-detail" id="github-ascent-detail" hidden>
-                        <div class="github-panel" id="github-ascent-panel" role="group" aria-label="Ascent backup options"></div>
-                    </div>
-                </div>
-            </div>
         </section>
 
         <section id="about" class="settings-section" aria-labelledby="about-heading">
