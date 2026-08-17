@@ -58,6 +58,37 @@ const chooseGpx = async (dom, { name = 'walk.gpx', content = GPX, size = null } 
     return input;
 };
 
+const installDropFileList = d => {
+    class DataTransferMock {
+        constructor() {
+            this.files = [];
+            this.items = { add: file => this.files.push(file) };
+        }
+    }
+    d.window.DataTransfer = DataTransferMock;
+    Object.defineProperty(d.window.document.getElementById('GPXUpload'), 'files', {
+        value: [], configurable: true, writable: true,
+    });
+};
+
+const transferEvent = (win, type, transfer) => {
+    const event = new win.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: transfer });
+    return event;
+};
+
+const fileTransfer = files => ({
+    types: ['Files'],
+    items: files.map(file => ({
+        kind: 'file',
+        type: file.type,
+        getAsFile: () => file,
+        webkitGetAsEntry: () => ({ isDirectory: false }),
+    })),
+    files,
+    dropEffect: 'none',
+});
+
 const processButton = dom => dom.window.document.querySelector('.bpb-process-button');
 const uploadStatus = dom => dom.window.document.querySelector('.bpb-upload-status');
 
@@ -122,6 +153,10 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
     const hint = dom.window.document.getElementById('bpb-capture-hint');
     assert.equal(hint.parentElement, dom.window.document.getElementById('GPXUpload').closest('td'));
     assert.match(hint.textContent, /Garmin or Strava.*browser toolbar.*capture it directly/);
+    assert.equal(dom.window.document.getElementById('bpb-gpx-drop-hint').textContent,
+        'Or drag a GPX file here.');
+    assert.match(dom.window.document.getElementById('GPXUpload').getAttribute('aria-describedby'),
+        /\bbpb-gpx-drop-hint\b/);
     assert.equal(button.getAttribute('aria-busy'), null);
     const native = dom.window.document.getElementById('GPXPreview');
     assert.equal(native.classList.contains('bpb-native-preview-hidden'), true,
@@ -156,6 +191,95 @@ test('the capture draft flow’s programmatic change never triggers the swap', a
     Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
     input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(processButton(dom), null, 'a synthetic (untrusted) change must not swap the buttons');
+});
+
+test('dragging one GPX cues the drop and attaches it through the normal selection binding', async () => {
+    const dom = await loadEditor({
+        prepare: installDropFileList,
+        respond: () => ({ action: 'ignore' }),
+    });
+    const { document } = dom.window;
+    const target = document.getElementById('GPXUpload').closest('td');
+    const file = new dom.window.File([GPX], 'dragged-walk.gpx', { type: 'application/gpx+xml' });
+    const transfer = fileTransfer([file]);
+
+    const enter = transferEvent(dom.window, 'dragenter', transfer);
+    target.dispatchEvent(enter);
+    assert.equal(enter.defaultPrevented, true);
+    assert.equal(target.classList.contains('is-gpx-drag-over'), true);
+    assert.equal(document.getElementById('bpb-gpx-drop-hint').textContent,
+        'Release to choose this GPX file.');
+
+    const over = transferEvent(dom.window, 'dragover', transfer);
+    target.dispatchEvent(over);
+    assert.equal(over.defaultPrevented, true);
+    assert.equal(transfer.dropEffect, 'copy');
+
+    const drop = transferEvent(dom.window, 'drop', transfer);
+    target.dispatchEvent(drop);
+    assert.equal(drop.defaultPrevented, true);
+    assert.equal(target.classList.contains('is-gpx-drag-over'), false);
+    assert.equal(document.getElementById('bpb-gpx-drop-hint').textContent,
+        'Or drag a GPX file here.');
+    await waitFor(dom, () => processButton(dom));
+
+    const input = document.getElementById('GPXUpload');
+    assert.equal(input.files.length, 1);
+    assert.equal(input.files[0], file, 'the exact dropped file becomes Peakbagger’s native upload');
+    const invalidation = dom.messages.find(message => message.type === 'GPX_PROCESS_INVALIDATE');
+    assert.equal(invalidation.fileIdentity.name, 'dragged-walk.gpx');
+    assert.equal(processButton(dom).disabled, false);
+});
+
+test('multi-file and folder drops are explicit future cases and never choose the first file', async () => {
+    const dom = await loadEditor({
+        prepare: installDropFileList,
+        respond: () => ({ action: 'ignore' }),
+    });
+    const { document } = dom.window;
+    const target = document.getElementById('GPXUpload').closest('td');
+    const first = new dom.window.File([GPX], 'first.gpx', { type: 'application/gpx+xml' });
+    const second = new dom.window.File([GPX], 'second.gpx', { type: 'application/gpx+xml' });
+
+    target.dispatchEvent(transferEvent(dom.window, 'drop', fileTransfer([first, second])));
+    assert.match(uploadStatus(dom).textContent,
+        /Drop one GPX file at a time.*Multiple files and folders aren’t supported yet/);
+    assert.equal(document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(processButton(dom), null);
+
+    const folderTransfer = {
+        types: ['Files'],
+        items: [{
+            kind: 'file', type: '', getAsFile: () => null,
+            webkitGetAsEntry: () => ({ isDirectory: true }),
+        }],
+        files: [],
+        dropEffect: 'none',
+    };
+    target.dispatchEvent(transferEvent(dom.window, 'drop', folderTransfer));
+    assert.match(uploadStatus(dom).textContent, /Multiple files and folders aren’t supported yet/);
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_INVALIDATE'), false,
+        'rejected collections must not create or invalidate a file-selection generation');
+});
+
+test('non-GPX drops stay local, actionable, and do not disturb an existing selection', async () => {
+    const dom = await loadEditor({ prepare: installDropFileList });
+    await chooseGpx(dom, { name: 'kept.gpx' });
+    const { document } = dom.window;
+    const target = document.getElementById('GPXUpload').closest('td');
+    const photo = new dom.window.File(['pixels'], 'summit.jpg', { type: 'image/jpeg' });
+
+    const textDrop = transferEvent(dom.window, 'drop', {
+        types: ['text/plain'], items: [], files: [], dropEffect: 'none',
+    });
+    target.dispatchEvent(textDrop);
+    assert.equal(textDrop.defaultPrevented, false, 'ordinary page drags stay outside the file intake');
+
+    target.dispatchEvent(transferEvent(dom.window, 'drop', fileTransfer([photo])));
+
+    assert.equal(uploadStatus(dom).textContent, 'Drop a .gpx file to choose it.');
+    assert.equal(document.getElementById('GPXUpload').files[0].name, 'kept.gpx');
+    assert.ok(processButton(dom));
 });
 
 test('selecting file B invalidates file A while capture settings are still loading', async () => {
@@ -763,5 +887,7 @@ test('the stylesheet keeps its reduced-motion and dark-theme guards', async () =
     assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-process-button/);
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-capture-hint/);
+    assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-gpx-drop-zone\.is-gpx-drag-over/);
+    assert.match(css, /\.bpb-gpx-drop-zone \{ transition: none; \}/);
     assert.match(css, /animation: none !important/);
 });

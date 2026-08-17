@@ -122,8 +122,22 @@ import tzlookup from 'tz-lookup';
             const hint = document.createElement('p');
             hint.id = 'bpb-capture-hint';
             hint.className = 'bpb-capture-hint';
-            hint.textContent = 'Garmin or Strava activity? Open it there, then click Better Peakbagger in the browser toolbar to capture it directly.';
+            const captureHint = document.createElement('span');
+            captureHint.textContent = 'Garmin or Strava activity? Open it there, then click Better Peakbagger in the browser toolbar to capture it directly.';
+            const dropHint = document.createElement('span');
+            dropHint.id = 'bpb-gpx-drop-hint';
+            dropHint.className = 'bpb-gpx-drop-hint';
+            dropHint.textContent = 'Or drag a GPX file here.';
+            hint.append(captureHint, dropHint);
             uploadCell.append(hint);
+        }
+        uploadCell?.classList.add('bpb-gpx-drop-zone');
+        const dropHint = document.getElementById('bpb-gpx-drop-hint');
+        if (dropHint) {
+            const describedBy = new Set((upload.getAttribute('aria-describedby') || '')
+                .split(/\s+/).filter(Boolean));
+            describedBy.add(dropHint.id);
+            upload.setAttribute('aria-describedby', [...describedBy].join(' '));
         }
 
         let button = null;
@@ -133,6 +147,7 @@ import tzlookup from 'tz-lookup';
         let requestToken = 0;
         let selectionGeneration = 0;
         let selectedFile = null;
+        let dropDepth = 0;
         const pageSessionId = (() => {
             try { return globalThis.crypto.randomUUID(); }
             catch (error) { return `page-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
@@ -551,14 +566,119 @@ import tzlookup from 'tz-lookup';
             showProcessButton();
         };
 
+        // Keep drop discovery collection-shaped even while this page admits a
+        // single GPX. A later batch flow can resolve directories and hand the
+        // resulting ordered files to the same admission seam instead of
+        // teaching the event handlers to silently pick one transfer item.
+        const transferHasFiles = transfer => {
+            if (!transfer) return false;
+            if ([...(transfer.types || [])].includes('Files')) return true;
+            return [...(transfer.items || [])].some(item => item.kind === 'file');
+        };
+
+        const transferIncludesDirectory = transfer => [...(transfer?.items || [])]
+            .some(item => {
+                try { return item.webkitGetAsEntry?.()?.isDirectory === true; }
+                catch (error) { return false; }
+            });
+
+        const filesFromTransfer = transfer => {
+            const itemFiles = [...(transfer?.items || [])]
+                .filter(item => item.kind === 'file')
+                .map(item => item.getAsFile?.())
+                .filter(Boolean);
+            return itemFiles.length ? itemFiles : [...(transfer?.files || [])];
+        };
+
+        const droppedFileCollection = transfer => ({
+            files: filesFromTransfer(transfer),
+            includesDirectory: transferIncludesDirectory(transfer),
+        });
+
+        const droppedFileAdmission = collection => {
+            if (collection.includesDirectory || collection.files.length > 1) {
+                return {
+                    error: 'Drop one GPX file at a time. Multiple files and folders aren’t supported yet.',
+                    files: collection.files,
+                };
+            }
+            if (collection.files.length !== 1 || !/\.gpx$/i.test(collection.files[0].name || '')) {
+                return { error: 'Drop a .gpx file to choose it.', files: collection.files };
+            }
+            return { files: collection.files };
+        };
+
+        const attachUploadFiles = files => {
+            const transfer = new DataTransfer();
+            files.forEach(file => transfer.items.add(file));
+            upload.files = transfer.files;
+            const attached = [...upload.files];
+            if (attached.length !== files.length) throw new Error('native file list rejected the drop');
+            return attached;
+        };
+
+        const resetDropCue = () => {
+            dropDepth = 0;
+            uploadCell?.classList.remove('is-gpx-drag-over');
+            if (dropHint) dropHint.textContent = 'Or drag a GPX file here.';
+        };
+
+        const onDragEnter = event => {
+            if (!uploadCell || !transferHasFiles(event.dataTransfer)) return;
+            event.preventDefault();
+            dropDepth += 1;
+            uploadCell.classList.add('is-gpx-drag-over');
+            if (dropHint) dropHint.textContent = 'Release to choose this GPX file.';
+        };
+
+        const onDragOver = event => {
+            if (!uploadCell || !transferHasFiles(event.dataTransfer)) return;
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        };
+
+        const onDragLeave = event => {
+            if (!uploadCell?.classList.contains('is-gpx-drag-over')) return;
+            event.preventDefault();
+            dropDepth = Math.max(0, dropDepth - 1);
+            if (!dropDepth) resetDropCue();
+        };
+
+        const onDrop = event => {
+            if (!uploadCell || !transferHasFiles(event.dataTransfer)) return;
+            event.preventDefault();
+            resetDropCue();
+            const admission = droppedFileAdmission(droppedFileCollection(event.dataTransfer));
+            if (admission.error) {
+                showStatus('error', admission.error);
+                return;
+            }
+            try {
+                const attached = attachUploadFiles(admission.files);
+                void handleFileChange(attached[0]);
+            } catch (error) {
+                console.error('Better Peakbagger: dropped GPX attachment failed', error);
+                showStatus('error', 'The dropped GPX could not be attached. Choose it with the file picker instead.');
+            }
+        };
+
         upload.addEventListener('change', event => {
             // The capture draft flow attaches files programmatically; its
             // synthetic change is not trusted and must not trigger the swap.
             if (!event.isTrusted) return;
             void handleFileChange(upload.files && upload.files[0]);
         });
+        uploadCell?.addEventListener('dragenter', onDragEnter);
+        uploadCell?.addEventListener('dragover', onDragOver);
+        uploadCell?.addEventListener('dragleave', onDragLeave);
+        uploadCell?.addEventListener('drop', onDrop);
+        window.addEventListener('dragend', resetDropCue);
+        window.addEventListener('drop', resetDropCue);
         document.getElementById('GPXRemove')?.addEventListener('click', () => restoreNative());
-        window.addEventListener('pagehide', restoreNative, { once: true });
+        window.addEventListener('pagehide', () => {
+            resetDropCue();
+            restoreNative();
+        }, { once: true });
     };
 
     autofillDate();
