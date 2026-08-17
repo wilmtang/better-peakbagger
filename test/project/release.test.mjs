@@ -345,10 +345,11 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
         new URL('../../package-lock.json', import.meta.url),
         'utf8',
     ));
+    const dependencyVersions = dependencyVersionsFromLock(packageLock);
     const metadata = buildAmoMetadata({
         licenseText: 'GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3',
         description: 'Better Peakbagger streamlines trip planning.\n\ncoordinate corridor boxes\nWaypoint coordinates and names are included by default',
-        dependencyVersions: dependencyVersionsFromLock(packageLock),
+        dependencyVersions,
     });
     assert.throws(() => buildAmoMetadata({
         licenseText: 'license',
@@ -360,14 +361,19 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
     assert.match(metadata.version.custom_license.name['en-US'], /or later/);
     assert.match(metadata.version.custom_license.text['en-US'], /at your option/);
     assert.match(metadata.version.custom_license.text['en-US'], /GNU AFFERO/);
-    assert.match(metadata.version.approval_notes, /esbuild 0\.28\.1/);
-    assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
-    assert.match(metadata.version.approval_notes, /Marked 18\.0\.9/);
-    assert.match(metadata.version.approval_notes, /MapLibre GL JS 6\.2\.0/);
+    for (const [label, key] of [
+        ['esbuild', 'esbuild'],
+        ['Chart.js', 'chart'],
+        ['Marked', 'marked'],
+        ['MapLibre GL JS', 'maplibre'],
+        ['tz-lookup', 'tzLookup'],
+    ]) {
+        assert.ok(metadata.version.approval_notes.includes(`${label} ${dependencyVersions[key]}`),
+            `approval notes must name locked ${label} ${dependencyVersions[key]}`);
+    }
     assert.match(metadata.version.approval_notes, /maplibre-gl\.mjs/);
     assert.match(metadata.version.approval_notes, /maplibre-gl-worker\.mjs/);
     assert.match(metadata.version.approval_notes, /imported directly by the native terrain-frame module/);
-    assert.match(metadata.version.approval_notes, /tz-lookup 6\.1\.25/);
     assert.match(metadata.version.approval_notes, /THIRD_PARTY_NOTICES\.txt/);
     assert.match(metadata.version.approval_notes, /CodeMirror\/Lezer/);
     assert.match(metadata.version.approval_notes, /TipTap\/ProseMirror/);
