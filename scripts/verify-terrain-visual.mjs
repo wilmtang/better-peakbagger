@@ -474,6 +474,25 @@ const measureToggleGap = cdp => evaluate(cdp, `(() => {
     return { toggleBottom: Math.round(tr.bottom), navTop: Math.round(fr.top + nr.top), gap: Math.round((fr.top + nr.top) - tr.bottom) };
 })()`);
 
+// The gesture hint is transient, but attribution is mandatory for the whole
+// frame lifetime. Keep them in separate rows even during the hint's brief
+// teaching window; a negative gap means their boxes overlap vertically.
+const measureGestureHintGap = cdp => evaluate(cdp, `(() => {
+    const frame = document.getElementById('bpb-terrain-frame');
+    const doc = frame && frame.contentDocument;
+    const hint = doc && doc.querySelector('.bpb-terrain-hint');
+    const attribution = doc && doc.querySelector('.maplibregl-ctrl-attrib');
+    if (!hint || !attribution) return { gap: NaN };
+    const hr = hint.getBoundingClientRect();
+    const ar = attribution.getBoundingClientRect();
+    return {
+        hintBottom: Math.round(hr.bottom),
+        attributionTop: Math.round(ar.top),
+        gap: Math.round(ar.top - hr.bottom),
+        dismissed: hint.classList.contains('bpb-terrain-hint-dismissed')
+    };
+})()`);
+
 // Same, for the 2D state: the toggle's bottom against the native Leaflet zoom
 // (inside the same-origin MasterMap iframe). This exercises the same live
 // measurement the extension uses to anchor the toggle in 2D.
@@ -999,7 +1018,25 @@ try {
     const ascentMetrics = await measureToggleGap(cdp);
     if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
     if (ascentMetrics.gap > 40) throw new Error(`Ascent 3D toggle floats too far above the zoom controls (gap ${ascentMetrics.gap}px)`);
+    const wideHintGap = await measureGestureHintGap(cdp);
+    if (!Number.isFinite(wideHintGap.gap) || wideHintGap.gap < 0) {
+        throw new Error(`Wide terrain gesture hint overlaps attribution: ${JSON.stringify(wideHintGap)}`);
+    }
     await capture(cdp, path.join(outputDir, 'terrain-wide-800.png'));
+    const dismissedHint = await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const hint = frame && frame.contentDocument && frame.contentDocument.querySelector('.bpb-terrain-hint');
+        const opacity = hint ? Number(getComputedStyle(hint).opacity) : NaN;
+        return {
+            ready: hint && hint.classList.contains('bpb-terrain-hint-dismissed')
+                && hint.getAttribute('aria-hidden') === 'true' && opacity < 0.01,
+            className: hint && hint.className,
+            ariaHidden: hint && hint.getAttribute('aria-hidden'),
+            opacity
+        };
+    })()`, 8000);
+    if (!dismissedHint.ready) throw new Error(`Gesture hint did not auto-dismiss: ${JSON.stringify(dismissedHint)}`);
+    await capture(cdp, path.join(outputDir, 'terrain-wide-hint-dismissed.png'));
 
     // Peak dots: the 3D camera settle must query the native feed with the
     // parameters from the MasterMap iframe URL (ascent map: type + climber
@@ -1262,6 +1299,10 @@ try {
     })()`);
     await delay(800);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+    const narrowHintGap = await measureGestureHintGap(cdp);
+    if (!Number.isFinite(narrowHintGap.gap) || narrowHintGap.gap < 0) {
+        throw new Error(`Narrow terrain gesture hint overlaps attribution: ${JSON.stringify(narrowHintGap)}`);
+    }
     await capture(cdp, path.join(outputDir, 'terrain-dark-450.png'));
 
     // Full Screen BigMap: the floating toggle sits over the native map in 2D…

@@ -46,6 +46,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const TERRAIN_EXAGGERATION = 1;
     const TERRAIN_SOURCE_MAX_ZOOM = 18;
     const MAP_LOAD_TIMEOUT_MS = 15000;
+    const GESTURE_HINT_TIMEOUT_MS = 6000;
     // Warming the elevation tiles a tilt is about to ask for. A tilt from a warm
     // cache re-levels the picture invisibly; the visible collapse is the wait for
     // a download, so the fix is to have already done it.
@@ -184,6 +185,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let contextLostHandler = null;
     let resizeObserver = null;
     let loadTimer = null;
+    let gestureHintTimer = null;
+    let gestureHintElement = null;
     let loaded = false;
     let parentOrigin = null;
     let authorized = false;
@@ -310,8 +313,37 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }
     };
 
+    const clearGestureHintDismissal = () => {
+        if (gestureHintTimer !== null) {
+            clearTimeout(gestureHintTimer);
+            gestureHintTimer = null;
+        }
+        if (!mapElement) return;
+        mapElement.removeEventListener('pointerdown', dismissGestureHint);
+        mapElement.removeEventListener('wheel', dismissGestureHint);
+        mapElement.removeEventListener('keydown', dismissGestureHint);
+    };
+
+    function dismissGestureHint() {
+        clearGestureHintDismissal();
+        if (!gestureHintElement) return;
+        gestureHintElement.classList.add('bpb-terrain-hint-dismissed');
+        gestureHintElement.setAttribute('aria-hidden', 'true');
+    }
+
+    const armGestureHintDismissal = () => {
+        if (!mapElement || !gestureHintElement) return;
+        gestureHintElement.hidden = false;
+        mapElement.addEventListener('pointerdown', dismissGestureHint, { passive: true });
+        mapElement.addEventListener('wheel', dismissGestureHint, { passive: true });
+        mapElement.addEventListener('keydown', dismissGestureHint);
+        gestureHintTimer = setTimeout(dismissGestureHint, GESTURE_HINT_TIMEOUT_MS);
+    };
+
     const removeTerrain = () => {
         removeLoadTimer();
+        clearGestureHintDismissal();
+        gestureHintElement = null;
         if (resizeObserver) {
             resizeObserver.disconnect();
             resizeObserver = null;
@@ -1772,10 +1804,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         renderPicker();
 
         // Scroll zooms directly, matching the native 2D map. Pan and tilt are
-        // still not discoverable, so keep a persistent hint for those.
+        // still not discoverable, so briefly teach those gestures without
+        // permanently covering the map or its attribution.
         const hint = document.createElement('p');
         hint.className = 'bpb-terrain-hint';
         hint.textContent = 'Drag to pan · scroll to zoom · right-drag to tilt';
+        hint.hidden = true;
+        gestureHintElement = hint;
 
         const status = document.createElement('p');
         status.className = 'bpb-terrain-status';
@@ -2011,6 +2046,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';
+                armGestureHintDismissal();
                 post('loaded', {
                     navTop: measureNavTop(),
                     camera: terrainCamera.fromMapLibre(terrainMap)

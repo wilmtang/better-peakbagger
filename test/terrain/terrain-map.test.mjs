@@ -575,7 +575,17 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     const protocolHandlers = new Map();
     const popups = [];
     const markers = [];
+    const gestureHintTimers = [];
     let workerUrl = '';
+
+    const realSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) => {
+        if (delay === 6000) {
+            gestureHintTimers.push(callback);
+            return 6000;
+        }
+        return realSetTimeout(callback, delay, ...args);
+    };
 
     class MapStub {
         constructor(options) {
@@ -722,6 +732,8 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             attribution: '<a href="https://example.com/copyright">© Example Maps</a><script>alert(1)</script>'
         }
     });
+    assert.equal(window.document.querySelector('.bpb-terrain-hint')?.hidden, true,
+        'gesture instructions stay hidden while the terrain map is still loading');
     await new Promise(resolve => window.queueMicrotask(resolve));
 
     assert.equal(maps.length, 1);
@@ -751,12 +763,26 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.ok(Array.from(picker().options).some(option => option.textContent === 'Terrain only'),
         'the picker always offers a terrain-only choice');
     const hint = window.document.querySelector('.bpb-terrain-hint');
-    assert.ok(hint, 'a persistent gesture hint is shown');
+    assert.ok(hint, 'a gesture hint is shown when the terrain map becomes interactive');
+    assert.equal(hint.hidden, false, 'the hint waits until the map is usable before starting its teaching window');
     assert.match(hint.textContent, /Drag to pan/);
     assert.match(hint.textContent, /scroll to zoom/);
     assert.match(hint.textContent, /right-drag to tilt/);
     assert.doesNotMatch(hint.textContent, /⌘|Ctrl/,
         'plain scroll zooms — the hint must not demand a modifier key');
+    assert.equal(gestureHintTimers.length, 1, 'the gesture hint gets one post-load dismissal timer');
+    window.document.getElementById('bpb-terrain-map').dispatchEvent(new window.Event('wheel', { bubbles: true }));
+    assert.equal(hint.classList.contains('bpb-terrain-hint-dismissed'), true,
+        'the first map interaction immediately dismisses the gesture hint');
+    assert.equal(hint.getAttribute('aria-hidden'), 'true',
+        'a dismissed visual hint also leaves the accessibility tree');
+    hint.classList.remove('bpb-terrain-hint-dismissed');
+    hint.removeAttribute('aria-hidden');
+    gestureHintTimers[0]();
+    assert.equal(hint.classList.contains('bpb-terrain-hint-dismissed'), true,
+        'the post-load timeout dismisses an unread gesture hint');
+    assert.match(terrainCss, /\.bpb-terrain-hint-dismissed\s*\{[^}]*opacity:\s*0/s,
+        'the dismissed state visually clears the attribution');
     assert.ok(!map.options.cooperativeGestures,
         'cooperative gestures would require a modifier to scroll-zoom, unlike the 2D map');
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data)), {
