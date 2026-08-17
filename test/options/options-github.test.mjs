@@ -660,7 +660,10 @@ test('the ImgBB key setting explains the service and links its key page and term
     const { load } = loadImgbb();
     const dom = await load;
     const desc = el(dom, 'imgbb-key-desc');
-    assert.match(desc.textContent, /free image hosting site/i);
+    assert.equal(desc.textContent.replace(/\s+/g, ' ').trim(),
+        'The photo topo editor uploads your image to ImgBB, a free image hosting site, and puts the public link in your trip report. '
+        + 'Sign in there, choose Get API key, and paste the key here. Uploads are yours and follow ImgBB’s terms of service. '
+        + 'The saved key remains in device-local extension storage. Read the photo guide for more info.');
     assert.deepEqual([...desc.querySelectorAll('a')].map(link => ({
         label: link.textContent,
         href: link.getAttribute('href'),
@@ -673,8 +676,6 @@ test('the ImgBB key setting explains the service and links its key page and term
         { label: 'Read the photo guide', href: '../photos/guide.html', target: '_blank', rel: 'noopener noreferrer' },
     ]);
     assert.equal(el(dom, 'imgbb-key').type, 'password');
-    assert.match(desc.textContent, /never exposed to Peakbagger, another website, GitHub, browser sync, or status UI/i);
-    assert.match(desc.textContent, /exact packaged photo page.*direct upload to ImgBB/i);
 });
 
 test('the ImgBB key saves through the worker with upload access, and is never read back', async () => {

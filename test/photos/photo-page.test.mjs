@@ -310,12 +310,11 @@ test('maintained photo documentation separates decode, upload, and project-archi
     }
 });
 
-test('every public photo surface states the exact saved-key disclosure boundary', () => {
+test('every detailed photo surface states the exact saved-key disclosure boundary', () => {
     const surfaces = {
         ...maintainedPhotoDocs,
         'photos/photos.html': html,
         'photos/guide.html': guideHtml,
-        'options/options.html': optionsHtml,
     };
     for (const [name, contents] of Object.entries(surfaces)) {
         const normalized = contents.replace(/\s+/g, ' ');
