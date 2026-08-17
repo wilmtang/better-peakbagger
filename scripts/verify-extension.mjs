@@ -1921,14 +1921,45 @@ try {
     }
 
     const retryPage = await context.newPage();
+    const retryErrors = [];
+    retryPage.on('pageerror', error => retryErrors.push(String(error)));
+    retryPage.on('console', message => {
+        if (message.type() === 'error') retryErrors.push(message.text());
+    });
     await retryPage.goto(
         `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-retry`,
         { waitUntil: 'load' },
     );
-    await retryPage.waitForFunction(() =>
-        document.querySelector('.bpb-gpx-retry:not([hidden])')
-        && /temporarily unavailable/i.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''),
-    null, { timeout: 5000 });
+    try {
+        await retryPage.waitForFunction(() =>
+            document.querySelector('.bpb-gpx-retry:not([hidden])')
+            && /temporarily unavailable/i.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''),
+        null, { timeout: 15_000 });
+    } catch (error) {
+        const domState = await retryPage.evaluate(() => {
+            const panel = document.getElementById('bpb-gpx-analysis');
+            const stats = panel?.querySelector('.bpb-gpx-stats');
+            const retry = panel?.querySelector('.bpb-gpx-retry');
+            return {
+                isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme'),
+                panelExists: !!panel,
+                stats: stats?.textContent || null,
+                statsState: stats?.dataset.state || null,
+                retryExists: !!retry,
+                retryHidden: retry?.hidden ?? null,
+                retryDisabled: retry?.disabled ?? null,
+            };
+        }).catch(readError => ({ unavailable: readError.message }));
+        const current = {
+            ...domState,
+            requests: fixture.requests.analyzerTracks.retry || 0,
+            runtimeErrors: retryErrors,
+        };
+        throw new Error(
+            `Timed out waiting for the retryable Analyzer failure; current value: ${JSON.stringify(current)}`,
+            { cause: error },
+        );
+    }
     await retryPage.locator('.bpb-gpx-retry').click();
     const recoveredAnalyzer = await retryPage.waitForFunction(() => {
         const canvas = document.querySelector('#bpb-gpx-analysis canvas');

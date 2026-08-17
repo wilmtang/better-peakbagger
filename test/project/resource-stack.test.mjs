@@ -186,6 +186,17 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(chromeVerifier,
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
+    const retryProbeStart = chromeVerifier.indexOf('const retryPage =');
+    const retryProbeEnd = chromeVerifier.indexOf("await retryPage.locator('.bpb-gpx-retry').click();");
+    assert.notEqual(retryProbeStart, -1);
+    assert.notEqual(retryProbeEnd, -1);
+    const retryProbe = chromeVerifier.slice(retryProbeStart, retryProbeEnd);
+    assert.match(retryProbe, /timeout: 15_000/,
+        'the retry fixture must allow for extension injection on a loaded CI runner');
+    assert.match(retryProbe, /current value:/,
+        'the retry fixture must report its live DOM state when readiness times out');
+    assert.match(retryProbe, /fixture\.requests\.analyzerTracks\.retry/,
+        'the retry fixture must report whether its GPX request reached the server');
     assert.match(
         chromeVerifier,
         /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,
