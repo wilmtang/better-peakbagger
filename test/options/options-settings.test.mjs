@@ -166,7 +166,7 @@ test('trip report credit is off by default and persists as an explicit opt-in', 
     const row = checkbox.closest('.row');
 
     assert.equal(checkbox.checked, false);
-    assert.match(row.querySelector('.title').textContent, /^Credit Better Peakbagger in trip reports$/);
+    assert.match(row.querySelector('.title').textContent, /^Support development by crediting Better Peakbagger$/);
     assert.match(row.querySelector('.desc').textContent, /small, editable store link.*change or remove/i);
     const invalidDom = await loadOptions({ addReportCredit: 'yes' });
     assert.equal(el(invalidDom, 'add-report-credit').checked, false);
