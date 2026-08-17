@@ -169,7 +169,7 @@ project JSON, local/report identity, API key, and delete URL.
 | --- | --- |
 | Local limits | Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
 | Upload | Only after **Upload and insert**, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
-| API key | Stored only in device-local `storage.local`. It is not exposed to Peakbagger, other sites, GitHub backup, browser sync, or status UI. Removing it does not affect earlier uploads. |
+| API key | The saved key remains in device-local extension storage. The background worker gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Removing it does not affect earlier uploads. |
 | Catalog | Stores public URLs, source/export metadata and hashes, upload/reachability state, lineage, report references, and local asset availability because ImgBB's v1 API has no account-gallery listing operation. |
 | Delete URL | Stored separately in device-local IndexedDB. It is never placed in a report or GitHub backup. Removing a local entry or report reference does not delete the remote ImgBB image. |
 | Recently Deleted | Removed items can be restored locally. After 30 days their image and project assets become eligible for pruning; tombstones remain to prevent older backups from resurrecting them. |
