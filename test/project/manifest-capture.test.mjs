@@ -89,7 +89,7 @@ test('extension panels share one pre-paint theme bootstrap', () => {
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
     assert.deepEqual(bundleSources('popup/popup-head.js'),
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
-    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'capture/match-confidence.js', 'peakbagger/peakbagger-origin.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js']);
+    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'capture/match-confidence.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-origin.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js']);
 });
 
 test('the site theme runs its tiny fallback before the full dynamic bundle', () => {

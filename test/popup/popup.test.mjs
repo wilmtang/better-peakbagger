@@ -784,6 +784,58 @@ test('popup shows a neutral unsupported-page state with discoverable Settings', 
     dom.window.close();
 });
 
+test('popup turns a Peakbagger human check into a direct recovery flow', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const opened = [];
+    const starts = [];
+    const job = {
+        phase: 'error',
+        provider: 'garmin',
+        error: {
+            code: 'cloudflare',
+            message: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.'
+        }
+    };
+    dom.window.chrome = {
+        tabs: {
+            query: async () => [{ id: 9 }],
+            create: async details => { opened.push(details); return { id: 10, ...details }; }
+        },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START') {
+                    starts.push(message.force);
+                    return job;
+                }
+                return null;
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const state = dom.window.document.getElementById('state');
+    await waitFor(() => /Peakbagger is asking for a human check/.test(state.textContent));
+
+    const actions = [...state.querySelectorAll('button')];
+    assert.deepEqual(actions.map(action => action.textContent), [
+        'Complete check on Peakbagger',
+        'I’ve completed it — try again',
+    ]);
+    assert.equal(actions[0].classList.contains('primary'), true,
+        'completing the blocking check is the obvious primary action');
+    actions[0].click();
+    await waitFor(() => opened.length === 1);
+    assert.equal(opened[0].url, 'https://www.peakbagger.com/Default.aspx');
+
+    actions[1].click();
+    await waitFor(() => starts.length === 2);
+    assert.deepEqual(starts, [false, true]);
+    dom.window.close();
+});
+
 test('popup can cancel an in-progress capture without retaining track data', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

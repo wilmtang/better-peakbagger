@@ -191,7 +191,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const peakbaggerLogin = async () => {
         const response = await fetchPeakbaggerResource(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html' });
-        if (response.kind !== 'ok') throw PeakbaggerError.exception(response.error);
+        if (response.kind !== 'ok') {
+            const failure = PeakbaggerError.exception(response.error);
+            // PeakbaggerError owns stable recovery copy, but only PublicError
+            // messages may cross the worker boundary. Promote the typed
+            // Peakbagger failure here so a human check, outage, or rate limit
+            // is not collapsed into the generic unexpected-capture fallback.
+            throw PublicErrors.exception(
+                failure.code || 'peakbagger-unavailable',
+                failure.message,
+                { cause: failure },
+            );
+        }
         const html = response.text;
         const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
             || /href=["'][^"']*\/climber\/(?:climberedit|ascentedit)\.aspx\?[^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?(?:Edit Account|Add Ascent)/i.exec(html);

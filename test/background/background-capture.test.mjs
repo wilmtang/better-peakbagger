@@ -28,6 +28,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     beforePeakbaggerLogin = null,
     beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
     afterSessionSet = null, clock = null, groupError = null, faults = {},
+    loginResponse = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -216,7 +217,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) {
             if (beforePeakbaggerLogin) await beforePeakbaggerLogin();
-            return { ok: true, text: async () => loginHtml };
+            return loginResponse || { ok: true, text: async () => loginHtml };
         }
         if (value.includes('/Async/pllbb2.aspx')) {
             if (beforePeakFetch) await beforePeakFetch({ options, number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length });
@@ -685,6 +686,27 @@ test('Peakbagger login accepts signed-in account controls and reports ambiguous 
     assert.equal(failed.error.code, 'peakbagger-signed-out');
     assert.match(failed.error.message, /login could not be verified/i);
     assert.doesNotMatch(failed.error.message, /^Sign in to Peakbagger/);
+});
+
+test('toolbar capture preserves actionable Peakbagger human-check recovery', async () => {
+    const harness = createHarness({
+        loginResponse: {
+            ok: false,
+            status: 403,
+            headers: { get: name => name.toLowerCase() === 'cf-mitigated' ? 'challenge' : null },
+            text: async () => '<html><title>Just a moment...</title><p>PRIVATE CHALLENGE BODY</p></html>',
+        },
+    });
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'cloudflare',
+        message: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.',
+    });
+    assert.doesNotMatch(JSON.stringify(harness.values), /PRIVATE CHALLENGE BODY/,
+        'challenge HTML must not be retained with the capture job');
 });
 
 test('coordinate-only provider GPX still produces a valid Peakbagger draft', async () => {

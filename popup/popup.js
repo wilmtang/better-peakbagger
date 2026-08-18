@@ -3,6 +3,7 @@
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
 import { matchLabel } from '../src/capture/match-confidence.js';
+import { peakbaggerCloudflare as Cloudflare } from '../src/peakbagger/peakbagger-cloudflare.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
@@ -88,6 +89,7 @@ import { units as Units } from '../src/ui/units.js';
         const signedOut = code === 'peakbagger-signed-out';
         const providerSignedOut = code === 'provider-signed-out';
         const notOwner = code === 'not-owner';
+        const humanCheck = code === 'cloudflare';
         if (code === 'unsupported') {
             stateCard(
                 'Open an activity to begin',
@@ -96,29 +98,46 @@ import { units as Units } from '../src/ui/units.js';
             );
             return;
         }
+        let title = 'Capture stopped';
+        let actions = [{ label: 'Try again', onClick: retry }];
+        if (notOwner) {
+            title = 'This activity isn’t yours';
+            actions = [];
+        } else if (signedOut) {
+            title = 'Check your Peakbagger session';
+            actions = [
+                { label: 'Open Peakbagger', onClick: () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` }) },
+                { label: 'I’m signed in — try again', onClick: retry }
+            ];
+        } else if (humanCheck) {
+            title = Cloudflare.copy.title;
+            actions = [
+                {
+                    label: Cloudflare.copy.action,
+                    primary: true,
+                    onClick: () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` })
+                },
+                { label: 'I’ve completed it — try again', onClick: retry }
+            ];
+        } else if (providerSignedOut) {
+            actions = [
+                {
+                    label: `Open ${currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava'} sign in`,
+                    onClick: () => ext.tabs.create({
+                        url: currentJob?.provider === 'garmin'
+                            ? 'https://connect.garmin.com/signin/'
+                            : 'https://www.strava.com/login'
+                    })
+                },
+                { label: 'I’m signed in — try again', onClick: retry }
+            ];
+        }
         stateCard(
-            notOwner ? 'This activity isn’t yours' : signedOut ? 'Check your Peakbagger session' : 'Capture stopped',
+            title,
             error?.message || 'The activity could not be captured.',
             {
                 kind: notOwner ? 'locked' : 'error',
-                actions: signedOut
-                    ? [
-                        { label: 'Open Peakbagger', onClick: () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` }) },
-                        { label: 'I’m signed in — try again', onClick: retry }
-                    ]
-                    : providerSignedOut
-                        ? [
-                            {
-                                label: `Open ${currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava'} sign in`,
-                                onClick: () => ext.tabs.create({
-                                    url: currentJob?.provider === 'garmin'
-                                        ? 'https://connect.garmin.com/signin/'
-                                        : 'https://www.strava.com/login'
-                                })
-                            },
-                            { label: 'I’m signed in — try again', onClick: retry }
-                        ]
-                        : (notOwner ? [] : [{ label: 'Try again', onClick: retry }])
+                actions
             }
         );
     };
