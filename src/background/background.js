@@ -16,6 +16,7 @@ import { createPhotoRoutes } from './photo-routes.js';
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
+import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
@@ -2253,6 +2254,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return serializeLifecycle(sourceTabId, () => cleanupSource(sourceTabId, cutoff));
         }));
         await githubRoutes.cleanup(cutoff);
+        await trustedActions.cleanup(cutoff);
         await photoRoutes.cleanup(cutoff);
         await reportDraftRoutes.cleanup(cutoff);
     };
@@ -2281,6 +2283,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const terrainActivation = TerrainActivation.create({
         isPeakbaggerSender,
         isTerrainFrameSender,
+        now,
+    });
+    const trustedActions = TrustedActions.create({
+        storage,
+        isPeakbaggerSender,
         now,
     });
 
@@ -2435,6 +2442,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             case 'DRAFT_READY': return draftReady(message, sender);
             case 'DRAFT_PREVIEW_STARTED': return previewStarted(message, sender);
             case 'DRAFT_DAY_STATS_APPLIED': return dayStatsApplied(message, sender);
+            case TrustedActions.ISSUE_TYPE: return trustedActions.issue(message, sender);
+            case TrustedActions.BEGIN_TYPE: return trustedActions.begin(message, sender);
+            case TrustedActions.END_TYPE: return trustedActions.end(message, sender);
             case TerrainActivation.ISSUE_TYPE: return terrainActivation.issue(message, sender);
             case TerrainActivation.CONSUME_TYPE: return terrainActivation.consumeFrame(message, sender);
             case 'TERRAIN_PREFETCH': return terrainPrefetch.handle(message, sender);
@@ -2488,6 +2498,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     ext.tabs.onRemoved.addListener(tabId => {
         terrainActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
+        runDetachedCleanup('trusted action cleanup', () => trustedActions.forgetTab(tabId));
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
         runDetachedCleanup('report draft tab cleanup', () => reportDraftRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {
