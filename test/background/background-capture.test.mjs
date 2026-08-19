@@ -427,7 +427,10 @@ test('background capture persists a private job, opens grouped drafts, and previ
     // Default-on: the captured Strava link is rebuilt from provider+activityId.
     assert.equal(apply.fields.externalUrl, 'https://www.strava.com/activities/123');
     assert.match(apply.gpx, /<gpx/);
-    assert.equal(await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } }).then(value => value.ok), true);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
 
     const banner = await harness.send({
         type: 'DRAFT_READY', pid: '7', cid: '77',
@@ -444,8 +447,62 @@ test('background capture persists a private job, opens grouped drafts, and previ
         'a previewed job must still refocus its draft for the user to review and save');
     assert.equal(harness.tabs.get(100).active, true);
 
-    const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
+    const duplicate = await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('draft apply leases are exclusive, persisted, expiring, and one-use', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({ clock });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+
+    const apply = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 100 } },
+    );
+    assert.equal(apply.action, 'apply');
+    assert.equal(typeof apply.applyLeaseToken, 'string');
+    assert.deepEqual(harness.values.bpbDraftTabs['100'].applyLease, {
+        token: apply.applyLeaseToken,
+        expiresAt: clock.now + 30_000,
+    });
+
+    const duplicateReady = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 100 } },
+    );
+    assert.equal(duplicateReady.action, 'wait');
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: 'forged-lease',
+    }, { tab: { id: 100 } }).then(value => value.ok), false);
+    assert.equal(harness.values.bpbDraftTabs['100'].applyLease.token, apply.applyLeaseToken);
+
+    clock.now += 30_001;
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), false);
+    assert.equal(harness.values.bpbDraftTabs['100'].applyLease, null);
+
+    const retry = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 100 } },
+    );
+    assert.equal(retry.action, 'apply');
+    assert.notEqual(retry.applyLeaseToken, apply.applyLeaseToken);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77,
+        applyLeaseToken: retry.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77,
+        applyLeaseToken: retry.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), false);
 });
 
 test('toolbar capture and local GPX create identical new sibling draft records', async () => {
@@ -1102,7 +1159,8 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
     }, { tab: { id: 100 } }).then(value => value.ok), true);
 
     const failure = await harness.send({
@@ -1120,7 +1178,8 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     assert.equal(retry.action, 'apply');
     assert.match(retry.gpx, /<ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time>/);
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77,
+        applyLeaseToken: retry.applyLeaseToken,
     }, { tab: { id: 100 } }).then(value => value.ok), true);
     const unconfirmed = await harness.send({
         type: 'DRAFT_READY', pid: '7', cid: '77',
@@ -1700,6 +1759,9 @@ test('installing a replacement job removes records owned by the prior generation
         'completed draft tabs may remain open for review, but no stale record may join the replacement lifecycle');
     assert.equal(harness.tabs.has(opened.tabIds[0]), true,
         'replacement does not close a completed user-visible draft tab');
+    assert.ok(harness.tabMessages.some(({ tabId, message }) =>
+        tabId === opened.tabIds[0] && message.type === 'DRAFT_CLEARED'),
+    'the open page is told to roll back any in-flight apply owned by the removed generation');
 });
 
 test('an old Preview completion cannot clear a replacement job GPX', async () => {
@@ -1721,6 +1783,7 @@ test('an old Preview completion cannot clear a replacement job GPX', async () =>
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     await harness.send({
         type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
     }, { tab: { id: 100 } });
 
     const completion = harness.send({
@@ -1799,12 +1862,14 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.deepEqual({ ...first.fields.tripInfo }, { sequence: 1, name: 'Afternoon Hike', nightsOut: 2 });
     assert.equal(waiting.action, 'wait');
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 7, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 7, cid: 77,
+        applyLeaseToken: first.applyLeaseToken,
     }, { tab: { id: 101 } }).then(value => value.ok), false,
     'a queued draft must not start a concurrent Preview');
 
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 8, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 8, cid: 77,
+        applyLeaseToken: first.applyLeaseToken,
     }, { tab: { id: 100 } }).then(value => value.ok), true);
     const confirmed = await harness.send({
         type: 'DRAFT_READY', pid: '8', cid: '77',
@@ -1832,7 +1897,8 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.equal(first.fields.fillAscentDetails, true);
     assert.equal(first.fields.dayStats.length, 3);
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId, pid: 7, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId, pid: 7, cid: 77,
+        applyLeaseToken: second.applyLeaseToken,
     }, { tab: { id: 101 } }).then(value => value.ok), true);
     const finished = await harness.send({
         type: 'DRAFT_READY', pid: '7', cid: '77',

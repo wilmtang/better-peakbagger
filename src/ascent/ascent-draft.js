@@ -23,6 +23,83 @@ import { units as Units } from '../ui/units.js';
         'preview-conflict': 'Preview was already started or the draft identity changed.',
     });
     const draftError = code => Object.assign(new Error(DRAFT_FAILURES[code]), { code });
+    let draftConnectionGeneration = 0;
+    let activeApply = null;
+
+    const controlState = element => {
+        if (element instanceof HTMLInputElement && element.type === 'file') {
+            return { kind: 'files', files: [...(element.files || [])] };
+        }
+        if (element instanceof HTMLInputElement
+            && (element.type === 'checkbox' || element.type === 'radio')) {
+            return { kind: 'checked', checked: element.checked };
+        }
+        return { kind: 'value', value: element.value };
+    };
+
+    const sameControlState = (left, right) => {
+        if (!left || !right || left.kind !== right.kind) return false;
+        if (left.kind === 'files') {
+            return left.files.length === right.files.length
+                && left.files.every((file, index) => file === right.files[index]);
+        }
+        return left.kind === 'checked' ? left.checked === right.checked : left.value === right.value;
+    };
+
+    const restoreControl = (element, state) => {
+        if (state.kind === 'files') {
+            const transfer = new DataTransfer();
+            state.files.forEach(file => transfer.items.add(file));
+            element.files = transfer.files;
+        } else if (state.kind === 'checked') {
+            element.checked = state.checked;
+        } else {
+            element.value = state.value;
+        }
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const beginApply = payload => {
+        const form = document.getElementById('Form1') || document.querySelector('form');
+        if (!form) throw draftError('form-unavailable');
+        const transaction = {
+            token: payload.applyLeaseToken,
+            connectionGeneration: draftConnectionGeneration,
+            originals: new Map([...form.elements].map(element => [element, controlState(element)])),
+            owned: new Map(),
+            cancelled: false,
+            rolledBack: false,
+        };
+        activeApply = transaction;
+        return transaction;
+    };
+
+    const assertApplyActive = transaction => {
+        if (!transaction) return;
+        if (activeApply !== transaction || transaction.cancelled
+            || transaction.connectionGeneration !== draftConnectionGeneration) {
+            throw draftError('preview-conflict');
+        }
+    };
+
+    const recordApplyWrite = (transaction, element) => {
+        if (!transaction) return;
+        assertApplyActive(transaction);
+        transaction.owned.set(element, controlState(element));
+    };
+
+    const rollbackApply = transaction => {
+        if (!transaction || transaction.rolledBack) return;
+        transaction.rolledBack = true;
+        for (const [element, owned] of transaction.owned) {
+            const original = transaction.originals.get(element);
+            if (original && sameControlState(controlState(element), owned)) {
+                restoreControl(element, original);
+            }
+        }
+        if (activeApply === transaction) activeApply = null;
+    };
 
     const pageIds = () => {
         const params = new URLSearchParams(location.search);
@@ -96,65 +173,72 @@ import { units as Units } from '../ui/units.js';
         }
     };
 
-    const setField = async (id, value, digits = 0) => {
+    const setField = async (id, value, digits = 0, transaction = null) => {
         const element = document.getElementById(id);
         if (!element || value === null || value === undefined || !Number.isFinite(Number(value))) return false;
+        assertApplyActive(transaction);
         const numeric = Number(value);
         element.value = digits ? numeric.toFixed(digits) : String(Math.round(numeric));
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
+        recordApplyWrite(transaction, element);
         await new Promise(resolve => setTimeout(resolve, 0));
+        assertApplyActive(transaction);
         return true;
     };
 
-    const setTextField = (id, value) => {
+    const setTextField = (id, value, transaction = null) => {
         const element = document.getElementById(id);
         if (!element) return false;
+        assertApplyActive(transaction);
         element.value = value || '';
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
+        recordApplyWrite(transaction, element);
         return true;
     };
 
-    const setFieldIfEmpty = async (id, value, digits = 0) => {
+    const setFieldIfEmpty = async (id, value, digits = 0, transaction = null) => {
         const element = document.getElementById(id);
         if (!element || String(element.value || '').trim()) return false;
-        return setField(id, value, digits);
+        return setField(id, value, digits, transaction);
     };
 
-    const setTextFieldIfEmpty = (id, value, { replaceAutofilled = false } = {}) => {
+    const setTextFieldIfEmpty = (id, value, { replaceAutofilled = false, transaction = null } = {}) => {
         const element = document.getElementById(id);
         if (!element) return false;
         const hasValue = !!String(element.value || '').trim();
         const mayReplaceGenerated = replaceAutofilled && element.dataset.bpbAutofilled === 'date';
         if (hasValue && !mayReplaceGenerated) return false;
-        return setTextField(id, value);
+        return setTextField(id, value, transaction);
     };
 
-    const setSelectValue = (id, value, dispatchChange = true) => {
+    const setSelectValue = (id, value, dispatchChange = true, transaction = null) => {
         const element = document.getElementById(id);
         if (!element || element.tagName !== 'SELECT') return false;
         const stringValue = String(value);
         if (![...element.options].some(option => option.value === stringValue)) return false;
+        assertApplyActive(transaction);
         element.value = stringValue;
         element.dispatchEvent(new Event('input', { bubbles: true }));
         if (dispatchChange) element.dispatchEvent(new Event('change', { bubbles: true }));
+        recordApplyWrite(transaction, element);
         return true;
     };
 
-    const selectNewTrip = () => {
+    const selectNewTrip = transaction => {
         const element = document.getElementById('TripDD');
         if (!element || element.tagName !== 'SELECT') return false;
         const option = [...element.options].find(candidate => /^\s*\*\*\s*Add New Trip\s*$/i.test(candidate.textContent || ''));
-        return option ? setSelectValue('TripDD', option.value) : false;
+        return option ? setSelectValue('TripDD', option.value, true, transaction) : false;
     };
 
-    const setDuration = async (prefix, duration, preserveExistingFields = false) => {
+    const setDuration = async (prefix, duration, preserveExistingFields = false, transaction = null) => {
         if (!duration) return;
         const write = preserveExistingFields ? setFieldIfEmpty : setField;
-        await write(`${prefix}Day`, duration.days);
-        await write(`${prefix}Hr`, duration.hours);
-        await write(`${prefix}Min`, duration.minutes);
+        await write(`${prefix}Day`, duration.days, 0, transaction);
+        await write(`${prefix}Hr`, duration.hours, 0, transaction);
+        await write(`${prefix}Min`, duration.minutes, 0, transaction);
     };
 
     const tripInfoIsEmpty = () => {
@@ -164,26 +248,26 @@ import { units as Units } from '../ui/units.js';
             .every(id => !String(document.getElementById(id)?.value || '').trim());
     };
 
-    const fillDayStats = async dayStats => {
+    const fillDayStats = async (dayStats, transaction = null) => {
         if (!Array.isArray(dayStats)) return;
         for (let index = 0; index < dayStats.length; index++) {
             const row = dayStats[index];
             const sequence = index + 1;
-            setTextFieldIfEmpty(`Date${sequence}`, row.date);
-            await setFieldIfEmpty(`GainFt${sequence}`, row.gainM === null ? null : row.gainM * FEET_PER_METER);
-            await setFieldIfEmpty(`GainM${sequence}`, row.gainM);
-            await setFieldIfEmpty(`LossFt${sequence}`, row.lossM === null ? null : row.lossM * FEET_PER_METER);
-            await setFieldIfEmpty(`LossM${sequence}`, row.lossM);
+            setTextFieldIfEmpty(`Date${sequence}`, row.date, { transaction });
+            await setFieldIfEmpty(`GainFt${sequence}`, row.gainM === null ? null : row.gainM * FEET_PER_METER, 0, transaction);
+            await setFieldIfEmpty(`GainM${sequence}`, row.gainM, 0, transaction);
+            await setFieldIfEmpty(`LossFt${sequence}`, row.lossM === null ? null : row.lossM * FEET_PER_METER, 0, transaction);
+            await setFieldIfEmpty(`LossM${sequence}`, row.lossM, 0, transaction);
             await setFieldIfEmpty(`DistMi${sequence}`, row.distanceM === null
-                ? null : row.distanceM / METERS_PER_MILE, 3);
+                ? null : row.distanceM / METERS_PER_MILE, 3, transaction);
             await setFieldIfEmpty(`DistKm${sequence}`, row.distanceM === null
-                ? null : row.distanceM / 1000, 2);
+                ? null : row.distanceM / 1000, 2, transaction);
             await setFieldIfEmpty(`MaxFt${sequence}`, row.maxElevationM === null
-                ? null : row.maxElevationM * FEET_PER_METER);
-            await setFieldIfEmpty(`MaxM${sequence}`, row.maxElevationM);
+                ? null : row.maxElevationM * FEET_PER_METER, 0, transaction);
+            await setFieldIfEmpty(`MaxM${sequence}`, row.maxElevationM, 0, transaction);
             await setFieldIfEmpty(`CampFt${sequence}`, row.campElevationM === null
-                ? null : row.campElevationM * FEET_PER_METER);
-            await setFieldIfEmpty(`CampM${sequence}`, row.campElevationM);
+                ? null : row.campElevationM * FEET_PER_METER, 0, transaction);
+            await setFieldIfEmpty(`CampM${sequence}`, row.campElevationM, 0, transaction);
         }
     };
 
@@ -209,62 +293,68 @@ import { units as Units } from '../ui/units.js';
     // Capture opens fresh draft tabs and keeps its full-fill behavior. Local
     // GPX processing can reuse a form the user has already started, so that
     // path writes only blank controls (apart from our own generated date).
-    const fillForm = async (fields, preserveExistingFields = false) => {
+    const fillForm = async (fields, preserveExistingFields = false, transaction = null) => {
         if (!formIsReady()) throw draftError('form-unavailable');
+        assertApplyActive(transaction);
         // A timeless GPX derives no date; keep whatever the field already
         // holds (typically the fresh-form today autofill) instead of clearing.
         if (fields.date) {
             if (preserveExistingFields) {
-                setTextFieldIfEmpty('DateText', fields.date, { replaceAutofilled: true });
+                setTextFieldIfEmpty('DateText', fields.date, {
+                    replaceAutofilled: true,
+                    transaction,
+                });
             } else {
-                setTextField('DateText', fields.date);
+                setTextField('DateText', fields.date, transaction);
             }
         }
-        const writeText = preserveExistingFields ? setTextFieldIfEmpty : setTextField;
+        const writeText = (id, value) => preserveExistingFields
+            ? setTextFieldIfEmpty(id, value, { transaction })
+            : setTextField(id, value, transaction);
         const writeNumber = preserveExistingFields ? setFieldIfEmpty : setField;
         writeText('SuffixText', fields.suffix || '');
         // The captured activity link goes into the external-trip-report field
         // only when empty — a URL the user typed is never clobbered.
         if (typeof fields.externalUrl === 'string' && fields.externalUrl) {
-            setTextFieldIfEmpty('URLTB', fields.externalUrl);
+            setTextFieldIfEmpty('URLTB', fields.externalUrl, { transaction });
         }
 
         if (fields.fillAscentDetails !== false) {
-            await writeNumber('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);
-            await writeNumber('StartM', fields.startElevationM);
-            await writeNumber('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER);
-            await writeNumber('EndM', fields.endElevationM);
+            await writeNumber('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER, 0, transaction);
+            await writeNumber('StartM', fields.startElevationM, 0, transaction);
+            await writeNumber('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER, 0, transaction);
+            await writeNumber('EndM', fields.endElevationM, 0, transaction);
 
             await writeNumber('UpMi', fields.upDistanceM === null
-                ? null : fields.upDistanceM / METERS_PER_MILE, 2);
+                ? null : fields.upDistanceM / METERS_PER_MILE, 2, transaction);
             await writeNumber('UpKm', fields.upDistanceM === null
-                ? null : fields.upDistanceM / 1000, 2);
+                ? null : fields.upDistanceM / 1000, 2, transaction);
             await writeNumber('DnMi', fields.downDistanceM === null
-                ? null : fields.downDistanceM / METERS_PER_MILE, 2);
+                ? null : fields.downDistanceM / METERS_PER_MILE, 2, transaction);
             await writeNumber('DnKm', fields.downDistanceM === null
-                ? null : fields.downDistanceM / 1000, 2);
-            await setDuration('Up', fields.upDuration, preserveExistingFields);
-            await setDuration('Dn', fields.downDuration, preserveExistingFields);
+                ? null : fields.downDistanceM / 1000, 2, transaction);
+            await setDuration('Up', fields.upDuration, preserveExistingFields, transaction);
+            await setDuration('Dn', fields.downDuration, preserveExistingFields, transaction);
 
             const gainFt = Number.parseFloat(document.getElementById('GainFt')?.value);
             const gainM = Number.parseFloat(document.getElementById('GainM')?.value);
             if (Number.isFinite(gainFt) && Number.isFinite(fields.upGainM)) {
-                await writeNumber('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
+                await writeNumber('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt), 0, transaction);
             }
             if (Number.isFinite(gainM) && Number.isFinite(fields.upGainM)) {
-                await writeNumber('ExUpM', Math.max(0, fields.upGainM - gainM));
+                await writeNumber('ExUpM', Math.max(0, fields.upGainM - gainM), 0, transaction);
             }
             await writeNumber('ExDnFt', fields.downGainM === null
-                ? null : fields.downGainM * FEET_PER_METER);
-            await writeNumber('ExDnM', fields.downGainM);
-            await fillDayStats(fields.dayStats);
+                ? null : fields.downGainM * FEET_PER_METER, 0, transaction);
+            await writeNumber('ExDnM', fields.downGainM, 0, transaction);
+            await fillDayStats(fields.dayStats, transaction);
         }
 
         if (fields.tripInfo && (!preserveExistingFields || tripInfoIsEmpty())) {
-            selectNewTrip();
-            setTextField('TripSeqText', String(fields.tripInfo.sequence));
-            setTextField('TripNameText', fields.tripInfo.name);
-            setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut));
+            selectNewTrip(transaction);
+            setTextField('TripSeqText', String(fields.tripInfo.sequence), transaction);
+            setTextField('TripNameText', fields.tripInfo.name, transaction);
+            setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut), transaction);
         }
 
         if (fields.wildernessNightsOut !== null && fields.wildernessNightsOut !== undefined) {
@@ -273,9 +363,10 @@ import { units as Units } from '../ui/units.js';
             // synthetic change here would reload before GPX Preview; its
             // selected value is still included in the Preview form post.
             if (!preserveExistingFields || !existingNights || String(existingNights) === '0') {
-                setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false);
+                setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false, transaction);
             }
         }
+        assertApplyActive(transaction);
     };
 
     const validatePrivateGpx = (gpx, allowWaypoints = false) => {
@@ -336,47 +427,64 @@ import { units as Units } from '../ui/units.js';
                 && (name.textContent || '').length <= 200);
     };
 
-    const attachGpx = (gpx, allowWaypoints) => {
+    const attachGpx = (gpx, allowWaypoints, transaction = null) => {
         if (!validatePrivateGpx(gpx, allowWaypoints)) throw draftError('privacy-check');
+        assertApplyActive(transaction);
         const input = document.getElementById('GPXUpload');
         const transfer = new DataTransfer();
         transfer.items.add(new File([gpx], 'track.gpx', { type: 'application/gpx+xml' }));
         input.files = transfer.files;
         input.dispatchEvent(new Event('change', { bubbles: true }));
+        recordApplyWrite(transaction, input);
     };
 
     const applyAndPreview = async payload => {
-        await fillForm(payload.fields, payload.preserveExistingFields === true);
-        attachGpx(payload.gpx, payload.allowWaypoints);
-        const acknowledgment = await ext.runtime.sendMessage({
-            type: 'DRAFT_PREVIEW_STARTED',
-            jobId: payload.jobId,
-            pid: payload.pid,
-            cid: payload.cid
-        });
-        if (!acknowledgment?.ok) throw draftError('preview-conflict');
-        const preview = document.getElementById('GPXPreview');
-        showBanner(matchTone(payload.classification),
-            `${matchLabel(payload.classification)} match · ${payload.confidence}% confidence. Preparing GPS Preview…`);
-        preview.click();
+        if (typeof payload.applyLeaseToken !== 'string' || !payload.applyLeaseToken) {
+            throw draftError('preview-conflict');
+        }
+        const transaction = beginApply(payload);
+        try {
+            await fillForm(payload.fields, payload.preserveExistingFields === true, transaction);
+            attachGpx(payload.gpx, payload.allowWaypoints, transaction);
+            assertApplyActive(transaction);
+            const acknowledgment = await ext.runtime.sendMessage({
+                type: 'DRAFT_PREVIEW_STARTED',
+                jobId: payload.jobId,
+                pid: payload.pid,
+                cid: payload.cid,
+                applyLeaseToken: transaction.token,
+            });
+            assertApplyActive(transaction);
+            if (!acknowledgment?.ok) throw draftError('preview-conflict');
+            activeApply = null;
+            rememberPeakName(payload, pageIds());
+            const preview = document.getElementById('GPXPreview');
+            showBanner(matchTone(payload.classification),
+                `${matchLabel(payload.classification)} match · ${payload.confidence}% confidence. Preparing GPS Preview…`);
+            preview.click();
+        } catch (error) {
+            rollbackApply(transaction);
+            throw error;
+        }
     };
 
     const runInitialize = async () => {
         const ids = pageIds();
         if (!ids.pid || !ids.cid) return;
+        const connectionGeneration = draftConnectionGeneration;
         try {
             const response = await ext.runtime.sendMessage({
                 type: 'DRAFT_READY',
                 ...ids,
                 previewResult: readPreviewResult()
             });
-            if (response?.action === 'ignore') return;
+            if (connectionGeneration !== draftConnectionGeneration || response?.action === 'ignore') return;
             if (!response || response.action === 'error') {
                 showBanner('error', response?.message || 'This ascent draft could not be prepared.');
                 return;
             }
-            rememberPeakName(response, ids);
             if (response.action === 'banner') {
+                rememberPeakName(response, ids);
                 if (response.dayStatsPending) {
                     await fillDayStats(response.dayStats);
                     try {
@@ -425,6 +533,11 @@ import { units as Units } from '../ui/units.js';
     ext.runtime.onMessage?.addListener(message => {
         if (message?.type === 'DRAFT_PROCEED') void initialize();
         if (message?.type === 'DRAFT_CLEARED') {
+            draftConnectionGeneration++;
+            if (activeApply) {
+                activeApply.cancelled = true;
+                rollbackApply(activeApply);
+            }
             showBanner('error', 'The cached capture was discarded. This draft is no longer connected; return to the activity to capture again.');
         }
     });

@@ -247,7 +247,8 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     assert.match(apply.gpx, /<gpx/);
     assert.equal(apply.fields.date, '2026-07-01');
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
     }).then(value => value.ok), true);
     const banner = await harness.send({
         type: 'DRAFT_READY', pid: '7', cid: '77',
@@ -257,7 +258,8 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, null);
     assert.equal(await harness.send({
-        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
     }).then(value => value.ok), false, 'Preview fires exactly once per draft');
 });
 

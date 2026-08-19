@@ -44,7 +44,10 @@ const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent'
         runtime: {
             sendMessage: async message => {
                 messages.push(message);
-                return responseFactory(message);
+                const response = await responseFactory(message);
+                return message.type === 'DRAFT_READY' && response?.action === 'apply'
+                    ? { applyLeaseToken: 'test-draft-apply-lease', ...response }
+                    : response;
             },
             onMessage: { addListener: listener => runtimeListeners.push(listener) }
         }
@@ -148,6 +151,83 @@ test('unexpected draft exceptions are logged without entering the page banner', 
     assert.match(banner.textContent, /Draft preparation stopped unexpectedly/);
     assert.doesNotMatch(banner.textContent, /RAW_DRAFT_SENTINEL|chrome\.runtime/);
     assert.match(errors.flat().map(String).join('\n'), /RAW_DRAFT_SENTINEL/);
+    dom.window.close();
+});
+
+test('a rejected apply lease rolls back owned fields and GPX without clobbering a newer user edit', async () => {
+    let previewClicks = 0;
+    let saveClicks = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: 'a', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 },
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000</ele></trkpt></trkseg></trk></gpx>',
+    };
+    const context = loadDraft(message => {
+        if (message.type === 'DRAFT_READY') return payload;
+        if (message.type === 'DRAFT_PREVIEW_STARTED') {
+            context.dom.window.document.getElementById('DateText').value = 'user correction';
+            return { ok: false };
+        }
+        return { ok: true };
+    }, {
+        html: formHtml.replace('<input id="SuffixText">', '<input id="SuffixText" value="original">'),
+    });
+    const { dom, messages } = context;
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    dom.window.document.getElementById('SaveButton').addEventListener('click', () => { saveClicks++; });
+    await waitForCondition(() => /identity changed/.test(
+        dom.window.document.getElementById('bpb-draft-banner')?.textContent || ''));
+
+    assert.equal(dom.window.document.getElementById('DateText').value, 'user correction');
+    assert.equal(dom.window.document.getElementById('SuffixText').value, 'original');
+    assert.equal(dom.window.document.getElementById('StartM').value, '');
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(previewClicks, 0);
+    assert.equal(saveClicks, 0);
+    const confirmation = messages.find(message => message.type === 'DRAFT_PREVIEW_STARTED');
+    assert.equal(confirmation.applyLeaseToken, 'test-draft-apply-lease');
+    dom.window.close();
+});
+
+test('clearing a claimed draft during field application stops and rolls back the transaction', async () => {
+    let dispatchRuntimeMessage;
+    let previewClicks = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: 'a', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 },
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"/></trkseg></trk></gpx>',
+    };
+    const context = loadDraft(message => {
+        if (message.type === 'DRAFT_READY') {
+            setTimeout(() => dispatchRuntimeMessage({ type: 'DRAFT_CLEARED' }), 0);
+            return payload;
+        }
+        return { ok: true };
+    }, {
+        html: formHtml.replace('<input id="SuffixText">', '<input id="SuffixText" value="original">'),
+    });
+    ({ dispatchRuntimeMessage } = context);
+    const { dom, messages } = context;
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => /no longer connected/.test(
+        dom.window.document.getElementById('bpb-draft-banner')?.textContent || ''));
+    await waitForAsync();
+
+    assert.equal(dom.window.document.getElementById('SuffixText').value, 'original');
+    assert.equal(dom.window.document.getElementById('StartFt').value, '');
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
+    assert.equal(previewClicks, 0);
     dom.window.close();
 });
 
@@ -564,6 +644,8 @@ test('privacy guard still blocks non-allowlisted GPX extensions', async () => {
     const banner = dom.window.document.getElementById('bpb-draft-banner');
     assert.ok(banner);
     assert.match(banner.textContent, /privacy check/);
+    assert.equal(dom.window.document.getElementById('StartM').value, '');
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
     dom.window.close();
 });
 

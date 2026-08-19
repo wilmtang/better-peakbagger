@@ -39,6 +39,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const JOBS_KEY = 'bpbCaptureJobs';
     const DRAFTS_KEY = 'bpbDraftTabs';
     const JOB_TTL_MS = 30 * 60 * 1000;
+    const DRAFT_APPLY_LEASE_MS = 30 * 1000;
     // Save-time GitHub backup snapshots, keyed by climber+peak+date+source tab,
     // expiring on the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
@@ -1300,6 +1301,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
             previewOrder,
             previewStarted: false,
+            applyLease: null,
             complete: false,
             dayStatsPending: false,
             focusOnReady,
@@ -1324,17 +1326,25 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const installLifecycleJob = job => {
         const operation = mutationQueue.then(async () => {
             const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
-            let removedDraft = false;
+            const removedDraftTabIds = [];
             Object.entries(drafts).forEach(([draftTabId, draft]) => {
                 if (Number(draft.sourceTabId) === Number(job.sourceTabId) && draft.jobId !== job.id) {
                     delete drafts[draftTabId];
-                    removedDraft = true;
+                    removedDraftTabIds.push(Number(draftTabId));
                 }
             });
             jobs[job.sourceTabId] = job;
             const patch = { [JOBS_KEY]: jobs };
-            if (removedDraft) patch[DRAFTS_KEY] = drafts;
+            if (removedDraftTabIds.length) patch[DRAFTS_KEY] = drafts;
             await storage().set(patch);
+            await Promise.all(removedDraftTabIds.map(async draftTabId => {
+                try {
+                    await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
+                } catch (_error) {
+                    // Closed or still-loading draft tabs already lost their
+                    // page transaction and need no further cleanup.
+                }
+            }));
         });
         mutationQueue = operation.catch(() => {});
         return operation;
@@ -2105,6 +2115,20 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 if (sameDraftIdentity(map[tabId], draft)) map[tabId].focusOnReady = false;
             });
         }
+        const applyLeaseToken = makeId();
+        const applyLeaseExpiresAt = now() + DRAFT_APPLY_LEASE_MS;
+        const claimed = await mutateMap(DRAFTS_KEY, map => {
+            const current = map[tabId];
+            const first = current ? firstPendingDraft(map, current.jobId) : null;
+            if (!sameDraftIdentity(current, draft) || !isFresh(current)
+                || first?.tabId !== tabId || current.previewStarted || current.complete
+                || (current.applyLease && current.applyLease.expiresAt > now())) return false;
+            current.applyLease = { token: applyLeaseToken, expiresAt: applyLeaseExpiresAt };
+            return true;
+        });
+        if (!claimed) {
+            return { action: 'wait', peakName, message: 'This draft is already being prepared.' };
+        }
         return {
             action: 'apply',
             peakName,
@@ -2113,6 +2137,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             cid: draft.cid,
             classification: draft.classification,
             confidence: draft.confidence,
+            applyLeaseToken,
+            applyLeaseExpiresAt,
             preserveExistingFields: draft.preserveExistingFields === true,
             fields: {
                 ...match.draftFields,
@@ -2146,9 +2172,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const draft = drafts[tabId];
             const currentDraft = draft ? firstPendingDraft(drafts, draft.jobId) : null;
             if (!isFresh(draft) || currentDraft?.tabId !== tabId || draft.jobId !== message.jobId
-                || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete) {
+                || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete
+                || typeof message.applyLeaseToken !== 'string'
+                || draft.applyLease?.token !== message.applyLeaseToken
+                || draft.applyLease.expiresAt <= now()) {
+                if (draft?.applyLease?.expiresAt <= now()) draft.applyLease = null;
                 return { ok: false };
             }
+            draft.applyLease = null;
             draft.previewStarted = true;
             draft.expiresAt = now() + JOB_TTL_MS;
             return { ok: true };
@@ -2180,17 +2211,28 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     const cleanupSource = async (sourceTabId, cutoff) => {
-        const drafts = await mutateMap(DRAFTS_KEY, map => {
+        const result = await mutateMap(DRAFTS_KEY, map => {
+            const removedDraftTabIds = [];
             Object.entries(map).forEach(([tabId, draft]) => {
-                if (Number(draft.sourceTabId) === Number(sourceTabId) && draft.expiresAt <= cutoff) delete map[tabId];
+                if (Number(draft.sourceTabId) === Number(sourceTabId) && draft.expiresAt <= cutoff) {
+                    delete map[tabId];
+                    removedDraftTabIds.push(Number(tabId));
+                }
             });
-            return { ...map };
+            return { drafts: { ...map }, removedDraftTabIds };
         });
-        const activeJobIds = new Set(Object.values(drafts).map(draft => draft.jobId));
+        const activeJobIds = new Set(Object.values(result.drafts).map(draft => draft.jobId));
         await mutateMap(JOBS_KEY, jobs => {
             const job = jobs[sourceTabId];
             if (job?.expiresAt <= cutoff && !activeJobIds.has(job.id)) delete jobs[sourceTabId];
         });
+        await Promise.all(result.removedDraftTabIds.map(async draftTabId => {
+            try {
+                await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
+            } catch (_error) {
+                // Closed or still-loading tabs require no page rollback.
+            }
+        }));
     };
 
     const cleanup = async () => {
