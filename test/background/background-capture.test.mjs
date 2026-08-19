@@ -475,12 +475,7 @@ test('toolbar capture and local GPX create identical new sibling draft records',
     const selection = {
         pageSessionId: 'capture-parity-session',
         selectionGeneration: 1,
-        fileIdentity: {
-            name: 'test-traverse.gpx',
-            size: 1234,
-            lastModified: 1_786_000_000_001,
-            type: 'application/gpx+xml'
-        }
+        selectionNonce: 'capture-parity-selection-nonce',
     };
     assert.equal(await harness.send({
         type: 'GPX_PROCESS_INVALIDATE', ...selection
