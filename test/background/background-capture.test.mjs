@@ -497,6 +497,41 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
     assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
 });
 
+test('only a Peakbagger tab can open the Has beta settings section', async () => {
+    const harness = createHarness();
+    const allowed = await harness.send(
+        { type: 'OPEN_BETA_SETTINGS' },
+        {
+            tab: { id: 5, windowId: 9 },
+            url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+        }
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.tabs.get(100))), {
+        id: 100,
+        windowId: 9,
+        url: 'chrome-extension://test-extension/options/options.html#beta',
+        active: true,
+        status: 'complete',
+    });
+
+    const before = harness.tabs.size;
+    assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
+        { type: 'OPEN_BETA_SETTINGS' },
+        {
+            tab: { id: 6, windowId: 9 },
+            url: 'https://peakbagger.com.evil.example/climber/PeakAscents.aspx?pid=1039',
+        }
+    ))), {
+        ok: false,
+        error: {
+            code: 'forbidden',
+            message: 'Beta settings can only be opened from a Peakbagger page.',
+        },
+    });
+    assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
+});
+
 test('browser, storage, and page-world exceptions stay behind the public worker boundary', async () => {
     const sentinel = 'RAW_BROWSER_SENTINEL: chrome.runtime.lastError';
     const expectedOuter = {
@@ -529,6 +564,23 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
         },
     });
     assertPrivate(tabCreate, createResponse);
+
+    const betaTabCreate = createHarness({ faults: { tabCreate: sentinel } });
+    const betaCreateResponse = await betaTabCreate.send(
+        { type: 'OPEN_BETA_SETTINGS' },
+        {
+            tab: { id: 5, windowId: 9 },
+            url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+        }
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(betaCreateResponse)), {
+        ok: false,
+        error: {
+            code: 'beta-settings-open-failed',
+            message: 'Settings could not be opened. Try again.',
+        },
+    });
+    assertPrivate(betaTabCreate, betaCreateResponse);
 
     const sessionStorage = createHarness({ faults: { sessionGet: sentinel } });
     const sessionResponse = await sessionStorage.send({ type: 'CAPTURE_STATUS', tabId: 1 });

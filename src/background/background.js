@@ -54,6 +54,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         code: 'draft-manager-open-failed',
         message: 'Report drafts could not be opened. Try again.',
     });
+    const BETA_SETTINGS_OPEN_ERROR = Object.freeze({
+        code: 'beta-settings-open-failed',
+        message: 'Settings could not be opened. Try again.',
+    });
     const processes = new Map();
     const captureAdmissions = new Map();
     const captureCancellationEpochs = new Map();
@@ -2194,6 +2198,31 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
     };
 
+    const openBetaSettings = async sender => {
+        if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
+            return {
+                ok: false,
+                error: {
+                    code: 'forbidden',
+                    message: 'Beta settings can only be opened from a Peakbagger page.',
+                },
+            };
+        }
+        try {
+            const tab = await ext.tabs.create({
+                url: ext.runtime.getURL('options/options.html#beta'),
+                active: true,
+                ...(Number.isInteger(sender.tab.windowId) ? { windowId: sender.tab.windowId } : {}),
+            });
+            return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
+        } catch (error) {
+            return {
+                ok: false,
+                error: publicFailure('beta settings tab opening', error, BETA_SETTINGS_OPEN_ERROR),
+            };
+        }
+    };
+
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
@@ -2238,6 +2267,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     };
                 }
                 return favoriteMutations.mutate(message.mutation);
+            case 'OPEN_BETA_SETTINGS': return openBetaSettings(sender);
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {

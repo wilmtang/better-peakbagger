@@ -538,6 +538,7 @@ html[data-bpb-theme="dark"] {
    the pbaf-control exemption without also opting out of the site's link
    semantics elsewhere; this one declaration outranks it from inside the bar. */
 #pbaf-bar .pbaf-note a { color: var(--pbaf-link) !important; font-weight: 600; }
+#pbaf-bar .pbaf-note a:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-table-sort { appearance: none; border: 0; padding: 0; background: transparent; color: var(--pbaf-sort-text);
     font: inherit; font-weight: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 1px; }
 .pbaf-table-sort:hover { color: var(--pbaf-sort-hover); }
@@ -779,10 +780,8 @@ const init = async () => {
     const joinOr = parts => parts.length < 2
         ? parts[0]
         : `${parts.slice(0, -1).join(', ')}${parts.length > 2 ? ',' : ''} or ${parts.at(-1)}`;
-    const betaDefinition = () => `Counts ${joinOr(betaParts(false))}.`;
     const betaTooltip = () => `Only ascents with ${joinOr(betaParts(true))} — hides entries with no climb beta. `
                 + 'What counts as beta is configurable in the extension settings. Remembered across visits.';
-    let betaDefinitionEl = null;
     const refreshBeta = () => {
         counts.beta = 0;
         for (const record of dataRows) {
@@ -793,7 +792,6 @@ const init = async () => {
             chips.beta.querySelector('.pbaf-count').textContent = String(counts.beta);
             chips.beta.title = betaTooltip();
         }
-        if (betaDefinitionEl) betaDefinitionEl.textContent = betaDefinition();
     };
 
     const state = loadState();
@@ -977,22 +975,41 @@ const init = async () => {
 
     const betaGroup = document.createElement('span');
     betaGroup.className = 'pbaf-beta-group';
-    betaDefinitionEl = document.createElement('span');
+    const betaDefinitionEl = document.createElement('span');
     betaDefinitionEl.className = 'pbaf-beta-definition';
-    betaDefinitionEl.setAttribute('aria-live', 'polite');
+    betaDefinitionEl.classList.add('pbaf-note');
+    const betaSettingsLink = document.createElement('a');
+    betaSettingsLink.href = chrome.runtime.getURL('options/options.html#beta');
+    betaSettingsLink.target = '_blank';
+    betaSettingsLink.rel = 'noopener';
+    betaSettingsLink.textContent = 'Change what “Has beta” means →';
+    const openBetaSettings = async event => {
+        if (event.type === 'auxclick' && event.button !== 1) return;
+        event.preventDefault();
+        try {
+            const response = await chrome.runtime.sendMessage({ type: 'OPEN_BETA_SETTINGS' });
+            if (response?.ok) return;
+        } catch { /* surface the same actionable failure for worker and transport errors */ }
+        betaSettingsLink.textContent = 'Couldn’t open Settings — try again';
+        betaSettingsLink.title = 'Reload this page if Settings still will not open.';
+    };
+    betaSettingsLink.addEventListener('click', event => { void openBetaSettings(event); });
+    betaSettingsLink.addEventListener('auxclick', event => { void openBetaSettings(event); });
+    betaDefinitionEl.appendChild(betaSettingsLink);
     betaGroup.append(makeChip('beta', 'Has beta', ''), betaDefinitionEl);
 
-    const filterControls = [
-        betaGroup,
+    const filterControls = [];
+    if (isPeakAscentsPage) filterControls.push(makeChip('fav', '', ''));
+    filterControls.push(
+        makeChip('gps', 'GPS track',
+            'Only ascents with a GPS track.'),
         makeChip('tr', 'Trip report',
             'Only ascents with a written trip report of at least the chosen word count.'),
         wordsWrap,
-        makeChip('gps', 'GPS track',
-            'Only ascents with a GPS track.'),
         makeChip('link', 'Link',
             'Only ascents with an external link (blog, Strava, forum, ...).'),
-    ];
-    if (isPeakAscentsPage) filterControls.push(makeChip('fav', '', ''));
+        betaGroup,
+    );
     bar.append(
         ...filterControls,
         spacer,

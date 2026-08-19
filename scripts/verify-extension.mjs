@@ -2658,7 +2658,8 @@ try {
                 first: document.querySelector('table.gray tr td')?.textContent.trim(),
                 controls: document.querySelectorAll('.pbaf-table-sort').length,
                 resetHidden: document.querySelector('.pbaf-reset')?.hidden,
-                definition: document.querySelector('.pbaf-beta-definition')?.textContent
+                labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
+                settingsLink: document.querySelector('.pbaf-beta-definition a')?.href
             }));
             const hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
             await hasBeta.focus();
@@ -2744,10 +2745,24 @@ try {
                         && getComputedStyle(row).display !== 'none').length,
                 first: document.querySelector('table.gray tr td')?.textContent.trim()
             }));
+            const optionsPagePromise = context.waitForEvent('page');
+            await filterPage.locator('.pbaf-beta-definition a').click();
+            const linkedOptionsPage = await optionsPagePromise;
+            await linkedOptionsPage.waitForLoadState('domcontentloaded');
+            const linkedOptionsState = await linkedOptionsPage.evaluate(() => ({
+                href: location.href,
+                heading: document.querySelector('#beta-settings-heading')?.textContent
+            }));
+            await linkedOptionsPage.close();
             check(before.controls > 1 && before.visible === before.total && before.resetHidden === true
-                && /Counts .*trip report.*GPS track.*link/i.test(before.definition || '')
+                && JSON.stringify(before.labels) === JSON.stringify([
+                    'Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta'
+                ])
+                && before.settingsLink?.endsWith('/options/options.html#beta')
+                && linkedOptionsState.href.endsWith('/options/options.html#beta')
+                && linkedOptionsState.heading === 'Ascent beta filter'
                 && after.visible < before.visible && after.first !== before.first,
-            `the Chrome ascent filter did not preserve first-use rows, filter, and sort by keyboard: ${JSON.stringify({ before, after })}`);
+            `the Chrome ascent filter did not preserve order, Settings navigation, first-use rows, filtering, and keyboard sorting: ${JSON.stringify({ before, after, linkedOptionsState })}`);
         }
         await filterPage.close();
     }

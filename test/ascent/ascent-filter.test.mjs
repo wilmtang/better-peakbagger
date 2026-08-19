@@ -139,16 +139,34 @@ test('the ascent table stays concealed until remembered settings and row state r
     assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('sort'), 'ascentdated');
 });
 
-test('filter chips form one group without a divider after Has beta', async () => {
+test('filter chips prioritize climbers and direct Has beta configuration to Settings', async () => {
+    const messages = [];
     const dom = await loadPageWithBar('1039-default-full-columns.html', {
-        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+        prepare: page => {
+            page.chrome.runtime.sendMessage = async message => {
+                messages.push(message);
+                return { ok: true };
+            };
+        },
     });
 
     assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
     assert.deepEqual(
         [...bar(dom).querySelectorAll('.pbaf-chip')].map(control => control.childNodes[1].textContent.trim()),
-        ['Has beta', 'Trip report', 'GPS track', 'Link', 'Climbing buddies']
+        ['Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta']
     );
+    const settingsLink = bar(dom).querySelector('.pbaf-beta-definition a');
+    assert.equal(settingsLink.textContent, 'Change what “Has beta” means →');
+    assert.equal(settingsLink.href, 'chrome-extension://test-extension/options/options.html#beta');
+    assert.equal(settingsLink.target, '_blank');
+    assert.equal(settingsLink.rel, 'noopener');
+    assert.doesNotMatch(bar(dom).textContent, /Counts trip report/i);
+    const click = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+    settingsLink.dispatchEvent(click);
+    await waitFor(dom, () => messages.length === 1);
+    assert.equal(click.defaultPrevented, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_BETA_SETTINGS' }]);
 });
 
 test('Fav climbers counts climber rows and AND-composes with Has beta', async () => {
@@ -414,7 +432,8 @@ test('the synced Has-beta definition and page-local trip-report threshold visibl
     assert.equal(visibleRows(dom).length, expected);
     assert.equal(chip(dom, 'Has beta').getAttribute('aria-pressed'), 'true');
     assert.equal(chip(dom, 'Trip report').getAttribute('aria-pressed'), 'true');
-    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent, 'Counts GPS track.');
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent,
+        'Change what “Has beta” means →');
     assert.equal(dom.window.document.querySelector('.pbaf-words input').value, '100');
 });
 
@@ -444,7 +463,8 @@ test('"has beta" definition comes from settings (GPS-only)', async () => {
     assert.equal(visibleRows(dom).length, expected);
     assert.match(chip(dom, 'Has beta').title, /GPS track/);
     assert.doesNotMatch(chip(dom, 'Has beta').title, /trip report/);
-    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent, 'Counts GPS track.');
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent,
+        'Change what “Has beta” means →');
 });
 
 test('beta trip-report signal honors its own word threshold', async () => {
@@ -462,7 +482,7 @@ test('beta trip-report signal honors its own word threshold', async () => {
     assert.equal(visibleRows(dom).length, expected);
     assert.match(chip(dom, 'Has beta').title, /≥ 100 words/);
     assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent,
-        'Counts trip report ≥ 100 words.');
+        'Change what “Has beta” means →');
 });
 
 test('an all-off beta definition falls back to all-on', async () => {
@@ -489,7 +509,8 @@ test('beta definition changes apply live via storage.onChanged', async () => {
 
     assert.equal(chipCount(dom, 'Has beta'), String(expected));
     assert.equal(visibleRows(dom).length, expected);
-    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent, 'Counts GPS track.');
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent,
+        'Change what “Has beta” means →');
 });
 
 test('the date header is one persistent toggle with no backend links', async () => {
