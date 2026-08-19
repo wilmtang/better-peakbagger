@@ -142,6 +142,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
             __bpbTerrainFrame: true,
             dir: 'toParent',
             type: 'loaded',
+            generation: init.generation,
             camera: { center: [48.73, -121.78], zoom: 13.25 }
         }
     }));
@@ -157,6 +158,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
             __bpbTerrainFrame: true,
             dir: 'toParent',
             type: 'camera',
+            generation: init.generation,
             camera: { center: [48.74, -121.77], zoom: 14 }
         }
     }));
@@ -168,6 +170,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         __bpbTerrainFrame: true,
         dir: 'toFrame',
         type: 'cameraRequest',
+        generation: init.generation,
         requestId: 7
     });
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -177,6 +180,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
             __bpbTerrainFrame: true,
             dir: 'toParent',
             type: 'camera',
+            generation: init.generation,
             requestId: 7,
             camera: { center: [48.75, -121.76], zoom: 14.25 }
         }
@@ -189,6 +193,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         __bpbTerrainFrame: true,
         dir: 'toFrame',
         type: 'highlight',
+        generation: init.generation,
         coordinates: [-121.81, 48.71],
         series: 'time'
     }, 'the isolated-world bridge preserves the series discriminator');
@@ -197,7 +202,10 @@ test('3D terrain waits for the extension frame handshake before sending route co
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
         origin: 'chrome-extension://test-id',
-        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'view', bearing: 12.5, pitch: 47 }
+        data: {
+            __bpbTerrainFrame: true, dir: 'toParent', type: 'view',
+            generation: init.generation, bearing: 12.5, pitch: 47
+        }
     }));
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
         __bpbTerrain: true, dir: 'toPage', type: 'view', bearing: 12.5, pitch: 47
@@ -206,14 +214,14 @@ test('3D terrain waits for the extension frame handshake before sending route co
     // …and the page's reset command travels back to the frame.
     dispatchPage({ type: 'resetNorth' });
     assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
-        __bpbTerrainFrame: true, dir: 'toFrame', type: 'resetNorth'
+        __bpbTerrainFrame: true, dir: 'toFrame', type: 'resetNorth', generation: init.generation
     }, 'the bridge relays the compass reset to the frame');
 
     // Escape inside the cross-origin frame reaches the page only as a request.
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
         origin: 'chrome-extension://test-id',
-        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'exit' }
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'exit', generation: init.generation }
     }));
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
         __bpbTerrain: true, dir: 'toPage', type: 'exit'
@@ -276,10 +284,19 @@ const bootLoadedFrame = async (initOverrides = {}) => {
     const frame = window.document.getElementById('bpb-terrain-frame');
     frame.contentWindow.postMessage = message => { frameMessages.push(message); };
 
-    const dispatchFrame = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: frame.contentWindow, origin: 'chrome-extension://test-id',
-        data: { __bpbTerrainFrame: true, dir: 'toParent', ...data }
-    }));
+    const dispatchFrame = data => {
+        const outboundGeneration = [...frameMessages].reverse()
+            .find(message => message.type === 'init' || message.type === 'resume')?.generation;
+        window.dispatchEvent(new window.MessageEvent('message', {
+            source: frame.contentWindow, origin: 'chrome-extension://test-id',
+            data: {
+                __bpbTerrainFrame: true,
+                dir: 'toParent',
+                ...(data.type !== 'ready' ? { generation: outboundGeneration } : {}),
+                ...data,
+            }
+        }));
+    };
     dispatchFrame({ type: 'ready' });
     dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
 
@@ -317,6 +334,58 @@ test('a loaded 3D frame suspends on destroy and resumes on re-entry without a ne
     // The frame's normal 'loaded' reply restores the frame to visible.
     dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
     assert.equal(frame.style.opacity, '1');
+    ctx.dom.window.close();
+});
+
+test('the bridge ignores wrong-origin and stale-generation replies from the current frame window', async () => {
+    const ctx = await bootLoadedFrame();
+    const { window, frame, dispatchPage, frameMessages, pageMessages } = ctx;
+    const firstGeneration = frameMessages.find(message => message.type === 'init').generation;
+
+    dispatchPage({ type: 'destroy' });
+    frameMessages.length = 0;
+    pageMessages.length = 0;
+    for (const data of [
+        { type: 'ready' },
+        { type: 'loaded', camera: { center: [48.7, -121.8], zoom: 12 } },
+        { type: 'camera', camera: { center: [48.7, -121.8], zoom: 12 } },
+        { type: 'metrics', navTop: 20 },
+        { type: 'view', bearing: 90, pitch: 45 },
+        { type: 'peaksRequest', requestId: 8, bounds: {} },
+        { type: 'exit' },
+        { type: 'error', reason: 'renderer' },
+    ]) {
+        window.dispatchEvent(new window.MessageEvent('message', {
+            source: frame.contentWindow,
+            origin: 'https://attacker.example',
+            data: { __bpbTerrainFrame: true, dir: 'toParent', generation: firstGeneration, ...data },
+        }));
+    }
+    assert.equal(frame.style.opacity, '0');
+    assert.equal(frame.style.pointerEvents, 'none');
+    assert.deepEqual(frameMessages, [], 'wrong-origin ready must not disclose the pending route');
+    assert.deepEqual(pageMessages, [], 'wrong-origin replies must not reach the page coordinator');
+
+    armTerrain(window);
+    dispatchPage(ctx.initData);
+    await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
+    const resumed = frameMessages.find(message => message.type === 'resume');
+    assert.ok(resumed.generation > firstGeneration);
+    pageMessages.length = 0;
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: {
+            __bpbTerrainFrame: true,
+            dir: 'toParent',
+            type: 'loaded',
+            generation: firstGeneration,
+            camera: { center: [0, 0], zoom: 1 },
+        },
+    }));
+    assert.equal(frame.style.opacity, '0', 'a stale loaded reply cannot expose the resumed frame');
+    assert.deepEqual(pageMessages, []);
+
     ctx.dom.window.close();
 });
 
@@ -513,6 +582,8 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
     });
     const { window } = dom;
     const maps = [];
+    const messages = [];
+    let removals = 0;
     const validTokens = new Set(['one-use']);
     window.authorizeTerrain = ({ token, action }) => {
         if (action !== 'init' || !validTokens.delete(token)) return false;
@@ -523,7 +594,7 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
         addControl() {}
         once() {}
         on() {}
-        remove() {}
+        remove() { removals += 1; }
     }
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
     window.maplibregl = {
@@ -534,9 +605,9 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
         setWorkerUrl() {}, addProtocol() {}, removeProtocol() {}
     };
     window.fetch = () => { throw new Error('authorization failure must not fetch'); };
-    window.postMessage = () => {};
+    window.postMessage = message => { messages.push(message); };
     window.eval(frameBundle);
-    const dispatch = activation => window.dispatchEvent(new window.MessageEvent('message', {
+    const dispatch = (activation, generation) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
         data: {
@@ -544,21 +615,31 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
             dir: 'toFrame',
             type: 'init',
             activation,
+            generation,
             routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
         }
     }));
 
-    dispatch(undefined);
-    dispatch('guessed');
+    dispatch(undefined, 5);
+    dispatch('guessed', 6);
     assert.equal(maps.length, 0);
-    dispatch('one-use');
+    dispatch('one-use', 7);
     assert.equal(maps.length, 1);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
-        data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'destroy' }
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'destroy', generation: 6 }
     }));
-    dispatch('one-use');
+    assert.equal(removals, 0, 'a stale generation cannot tear down the active renderer');
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'destroy', generation: 7 }
+    }));
+    assert.equal(removals, 1);
+    assert.equal(messages.at(-1).type, 'destroyed');
+    assert.equal(messages.at(-1).generation, 7, 'frame replies echo the generation that authorized them');
+    dispatch('one-use', 8);
     assert.equal(maps.length, 1, 'the consumed token cannot build a second renderer');
     dom.window.close();
 });
@@ -1418,8 +1499,16 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
         origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' }
+    }));
+    const generation = frameMessages.find(message => message.type === 'init').generation;
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
         data: {
             __bpbTerrainFrame: true, dir: 'toParent', type: 'peaksRequest',
+            generation,
             requestId: 3, bounds: { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 }
         }
     }));

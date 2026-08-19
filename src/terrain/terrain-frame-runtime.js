@@ -189,6 +189,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let gestureHintElement = null;
     let loaded = false;
     let parentOrigin = null;
+    let activeGeneration = null;
     let authorized = false;
     let authorizationRevision = 0;
     let activeTheme = 'light';
@@ -276,6 +277,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             [FRAME_MESSAGE_TAG]: true,
             dir: 'toParent',
             type,
+            ...(activeGeneration !== null ? { generation: activeGeneration } : {}),
             ...detail
         }, parentOrigin);
     };
@@ -2161,10 +2163,17 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (event.source !== window.parent || !isPeakbaggerPageOrigin(event.origin)
             || !data || data[FRAME_MESSAGE_TAG] !== true || data.dir !== 'toFrame') return;
         if (data.type === 'init' || data.type === 'resume') {
+            const nextGeneration = data.generation === undefined
+                ? null
+                : Number.isSafeInteger(data.generation) && data.generation > 0
+                    ? data.generation
+                    : undefined;
+            if (nextGeneration === undefined) return;
             const revision = ++authorizationRevision;
             const finishAuthorization = allowed => {
                 if (!allowed || revision !== authorizationRevision) return;
                 parentOrigin = event.origin;
+                activeGeneration = nextGeneration;
                 authorized = true;
                 if (data.type === 'init') createTerrain(data);
                 else if (!resumeTerrain(data)) createTerrain(data);
@@ -2182,12 +2191,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             }
             return;
         }
+        if (activeGeneration !== null && data.generation !== activeGeneration) return;
         if (data.type === 'destroy') {
             authorizationRevision++;
             if (!authorized) return;
             removeTerrain();
             authorized = false;
             post('destroyed');
+            activeGeneration = null;
             return;
         }
         if (!authorized) return;

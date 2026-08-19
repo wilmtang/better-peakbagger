@@ -28,6 +28,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     let suspended = false;
     let suspendTimer = null;
     let frameLoaded = false;
+    let frameGeneration = 0;
+    let awaitingFrameReady = false;
     let terrainEnabled = false;
     let terrainTheme = 'system';
     let settingsRevision = 0;
@@ -105,6 +107,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         clearSuspendTimer();
         suspended = false;
         frameLoaded = false;
+        awaitingFrameReady = false;
         if (!frame) return;
         frame.remove();
         frame = null;
@@ -117,7 +120,17 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     // broadcast: '*' would hand the track to whatever document happened to
     // occupy the frame. The frame pins its reply origin the same way.
     const frameOrigin = () => {
-        try { return new URL(globalThis.chrome.runtime.getURL('terrain/terrain.html')).origin; }
+        try {
+            const parsed = new URL(globalThis.chrome.runtime.getURL('terrain/terrain.html'));
+            // Node/jsdom follows the generic URL standard and reports opaque
+            // origins for browser-extension schemes. Browsers give extension
+            // documents their scheme+host origin; spell out that equivalent so
+            // the same exact-origin contract is testable outside a browser.
+            if (parsed.origin !== 'null') return parsed.origin;
+            return parsed.protocol.endsWith('-extension:') && parsed.host
+                ? `${parsed.protocol}//${parsed.host}`
+                : null;
+        }
         catch { return null; }
     };
 
@@ -129,6 +142,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 [FRAME_MESSAGE_TAG]: true,
                 dir: 'toFrame',
                 type,
+                generation: frameGeneration,
                 ...detail
             }, target);
         } catch (error) {
@@ -388,6 +402,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             clearSuspendTimer();
             suspended = false;
             frameLoaded = false;
+            awaitingFrameReady = false;
+            frameGeneration = frameGeneration >= Number.MAX_SAFE_INTEGER ? 1 : frameGeneration + 1;
             pendingInit = payload;
             postToFrame('resume', { ...payload, activation });
             return;
@@ -412,6 +428,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         }, { once: true });
         pendingInit = { ...payload, activation };
         frameLoaded = false;
+        awaitingFrameReady = true;
+        frameGeneration = frameGeneration >= Number.MAX_SAFE_INTEGER ? 1 : frameGeneration + 1;
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');
         frame = terrainFrame;
         viewport.append(terrainFrame);
@@ -477,14 +495,19 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             return;
         }
 
-        if (!frame || event.source !== frame.contentWindow
+        const expectedFrameOrigin = frameOrigin();
+        if (!frame || event.source !== frame.contentWindow || !expectedFrameOrigin
+            || event.origin !== expectedFrameOrigin
             || !data || data[FRAME_MESSAGE_TAG] !== true || data.dir !== 'toParent') return;
 
         if (data.type === 'ready') {
-            if (pendingInit) {
+            if (awaitingFrameReady && pendingInit) {
+                awaitingFrameReady = false;
                 frameLoaded = false;
                 postToFrame('init', pendingInit);
             }
+        } else if (data.generation !== frameGeneration) {
+            return;
         } else if (data.type === 'loaded') {
             pendingInit = null;
             frameLoaded = true;
