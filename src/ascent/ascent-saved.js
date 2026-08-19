@@ -60,6 +60,11 @@
         } catch (_error) { /* fall through to the success-panel identity */ }
         const photoAid = successPhotoAid();
         if (urlAid && photoAid && urlAid !== photoAid) return null;
+        // Peakbagger can emit aid=1 in the Add-success photo action even though
+        // that historical identity cannot be the newly allocated ascent. Keep
+        // edits of ascent 1 valid through their URL-owned identity, but never
+        // turn the ambiguous Add response into automatic navigation.
+        if (!urlAid && photoAid === '1') return null;
         return urlAid || photoAid;
     };
 

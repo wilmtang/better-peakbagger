@@ -20,13 +20,18 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 // A minimal reproduction of the async-postback success view: #SubTitle inside
 // #UpdatePanelAE, the native "Go Back to Referring Page" anchor followed by the
 // "add a new ascent" text, and the photo link that alone carries the new aid.
-const successHtml = ({ subtitle = 'Ascent Added/Saved Successfully!', photo = true } = {}) => `<!doctype html><body>
+const successHtml = ({
+    subtitle = 'Ascent Added/Saved Successfully!',
+    photo = true,
+    photoAid = '778899',
+    photoText = 'Add Photos',
+} = {}) => `<!doctype html><body>
   <div id="UpdatePanelAE">
     <h1><span id="PageTitle">New Ascent by Alex Doe</span></h1>
     <h2><span id="SubTitle">${subtitle}</span></h2>
     <p>
       <a href="climber/ascentlist.aspx?cid=900001">Go Back to Referring Page</a>, or, add a new ascent on this page.
-      ${photo ? '<a href="Photo.aspx?aid=778899&amp;pid=12&amp;cid=900001">Add Photos</a>' : ''}
+      ${photo ? `<a href="Photo.aspx?aid=${photoAid}&amp;pid=12&amp;cid=900001">${photoText}</a>` : ''}
     </p>
   </div>
 </body>`;
@@ -105,12 +110,40 @@ test('an Add success ignores non-action photo links inside the success panel', (
     dom.window.close();
 });
 
+test('an Add success rejects the live aid=1 photo action', async () => {
+    const messages = [];
+    const navigations = [];
+    const dom = load(successHtml({
+        photoAid: '1',
+        photoText: 'Click here to add a photo for this ascent.',
+    }), {
+        status: { enabled: true, connected: true, auto: true },
+        messages,
+        navigations,
+    });
+    await tick();
+
+    assert.equal(links(dom).length, 0);
+    assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'), false);
+    assert.deepEqual(navigations, []);
+    dom.window.close();
+});
+
 test('an Edit success uses the stable URL aid even without a photo link', () => {
     const dom = load(successHtml({ subtitle: 'Ascent Saved Successfully!', photo: false }), {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
     });
     assert.equal(links(dom).length, 1);
     assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=445566');
+    dom.window.close();
+});
+
+test('an Edit success preserves the historical aid=1 URL identity', () => {
+    const dom = load(successHtml({ subtitle: 'Ascent Saved Successfully!', photo: false }), {
+        url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=1&cid=900001',
+    });
+    assert.equal(links(dom).length, 1);
+    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=1');
     dom.window.close();
 });
 
