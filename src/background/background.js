@@ -1689,27 +1689,17 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             && /^[a-zA-Z0-9:_-]{8,100}$/.test(message.pageSessionId)
             ? message.pageSessionId : null;
         const selectionGeneration = Number(message?.selectionGeneration);
-        const source = message?.fileIdentity;
-        const fileIdentity = source && typeof source === 'object'
-            && typeof source.name === 'string' && source.name.length > 0 && source.name.length <= 255
-            && Number.isSafeInteger(source.size) && source.size >= 0
-            && Number.isFinite(source.lastModified) && source.lastModified >= 0
-            && typeof source.type === 'string' && source.type.length <= 100
-            ? {
-                name: source.name,
-                size: source.size,
-                lastModified: source.lastModified,
-                type: source.type,
-            }
-            : null;
+        const selectionNonce = typeof message?.selectionNonce === 'string'
+            && /^[a-zA-Z0-9:_-]{8,100}$/.test(message.selectionNonce)
+            ? message.selectionNonce : null;
         if (!pageSessionId || !Number.isSafeInteger(selectionGeneration)
-            || selectionGeneration <= 0 || !fileIdentity) return null;
-        return { pageSessionId, selectionGeneration, fileIdentity };
+            || selectionGeneration <= 0 || !selectionNonce) return null;
+        return { pageSessionId, selectionGeneration, selectionNonce };
     };
     const sameUploadSelection = (left, right) => !!left && !!right
         && left.pageSessionId === right.pageSessionId
         && left.selectionGeneration === right.selectionGeneration
-        && JSON.stringify(left.fileIdentity) === JSON.stringify(right.fileIdentity);
+        && left.selectionNonce === right.selectionNonce;
     const uploadSelectionIsCurrent = async (tabId, selection) => {
         const jobs = await readMap(JOBS_KEY);
         return jobs[tabId]?.provider === 'upload'

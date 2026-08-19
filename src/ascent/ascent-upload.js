@@ -152,6 +152,13 @@ import tzlookup from 'tz-lookup';
             try { return globalThis.crypto.randomUUID(); }
             catch (error) { return `page-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
         })();
+        let selectionNonceSequence = 0;
+        const newSelectionNonce = () => {
+            try { return globalThis.crypto.randomUUID(); }
+            catch (error) {
+                return `selection-${++selectionNonceSequence}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            }
+        };
 
         const fileIdentity = file => ({
             name: String(file?.name || '(no file)').slice(0, 255),
@@ -163,10 +170,10 @@ import tzlookup from 'tz-lookup';
         const sameFileIdentity = (left, right) => !!left && !!right
             && left.name === right.name && left.size === right.size
             && left.lastModified === right.lastModified && left.type === right.type;
-        const selectionMessage = (generation, identity) => ({
+        const selectionMessage = (generation, selectionNonce) => ({
             pageSessionId,
             selectionGeneration: generation,
-            fileIdentity: identity,
+            selectionNonce,
         });
 
         const clearStatus = () => {
@@ -203,7 +210,7 @@ import tzlookup from 'tz-lookup';
             resetNativeUi();
             void ext.runtime.sendMessage({
                 type: 'GPX_PROCESS_INVALIDATE',
-                ...selectionMessage(generation, fileIdentity(null)),
+                ...selectionMessage(generation, newSelectionNonce()),
             }).catch(() => {});
         };
 
@@ -263,7 +270,7 @@ import tzlookup from 'tz-lookup';
             if (token !== requestToken || !selectedFile
                 || response.pageSessionId !== pageSessionId
                 || response.selectionGeneration !== selectedFile.generation
-                || !sameFileIdentity(response.fileIdentity, selectedFile.identity)) return;
+                || response.selectionNonce !== selectedFile.nonce) return;
             setBusy(primaryId !== null ? 'Filling form…' : 'Opening drafts…');
             let applied;
             try {
@@ -272,7 +279,7 @@ import tzlookup from 'tz-lookup';
                     jobId: response.jobId,
                     selectedIds,
                     primaryId,
-                    ...selectionMessage(selectedFile.generation, selectedFile.identity),
+                    ...selectionMessage(selectedFile.generation, selectedFile.nonce),
                 });
             } catch (error) {
                 if (token !== requestToken) return;
@@ -508,12 +515,12 @@ import tzlookup from 'tz-lookup';
                     waypoints: parsed.waypoints,
                     trackName: parsed.trackName,
                     utcOffsetMinutes,
-                    ...selectionMessage(selection.generation, selection.identity),
+                    ...selectionMessage(selection.generation, selection.nonce),
                 });
                 if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
                 if (response?.pageSessionId !== pageSessionId
                     || response?.selectionGeneration !== selection.generation
-                    || !sameFileIdentity(response?.fileIdentity, selection.identity)) return;
+                    || response?.selectionNonce !== selection.nonce) return;
                 await handleProcessResult(response, token, displayUnits);
             } catch (error) {
                 if (token !== requestToken) return;
@@ -538,6 +545,7 @@ import tzlookup from 'tz-lookup';
             const token = ++requestToken;
             const generation = ++selectionGeneration;
             const identity = fileIdentity(file);
+            const nonce = newSelectionNonce();
             selectedFile = null;
             clearStatus();
             resetNativeUi();
@@ -545,7 +553,7 @@ import tzlookup from 'tz-lookup';
             try {
                 invalidated = await ext.runtime.sendMessage({
                     type: 'GPX_PROCESS_INVALIDATE',
-                    ...selectionMessage(generation, identity),
+                    ...selectionMessage(generation, nonce),
                 });
             } catch (error) {
                 if (token !== requestToken) return;
@@ -562,7 +570,7 @@ import tzlookup from 'tz-lookup';
                 return;
             }
             if (!file || !/\.gpx$/i.test(file.name || '')) return;
-            selectedFile = { file, identity, generation };
+            selectedFile = { file, identity, nonce, generation };
             showProcessButton();
         };
 

@@ -39,7 +39,7 @@ const loadEditor = ({ prepare = null, url = URL, respond = null, settings = {} }
                         ...response,
                         pageSessionId: message.pageSessionId,
                         selectionGeneration: message.selectionGeneration,
-                        fileIdentity: structuredClone(message.fileIdentity),
+                        selectionNonce: message.selectionNonce,
                     }
                     : response;
             };
@@ -48,9 +48,12 @@ const loadEditor = ({ prepare = null, url = URL, respond = null, settings = {} }
     }
 });
 
-const chooseGpx = async (dom, { name = 'walk.gpx', content = GPX, size = null } = {}) => {
+const chooseGpx = async (dom, {
+    name = 'walk.gpx', content = GPX, size = null,
+    type = 'application/gpx+xml', lastModified = undefined,
+} = {}) => {
     const input = dom.window.document.getElementById('GPXUpload');
-    const file = new dom.window.File([content], name, { type: 'application/gpx+xml' });
+    const file = new dom.window.File([content], name, { type, lastModified });
     if (size !== null) Object.defineProperty(file, 'size', { value: size });
     Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
     fireTrustedEvent(input, 'change', { bubbles: true });
@@ -227,7 +230,9 @@ test('dragging one GPX cues the drop and attaches it through the normal selectio
     assert.equal(input.files.length, 1);
     assert.equal(input.files[0], file, 'the exact dropped file becomes Peakbagger’s native upload');
     const invalidation = dom.messages.find(message => message.type === 'GPX_PROCESS_INVALIDATE');
-    assert.equal(invalidation.fileIdentity.name, 'dragged-walk.gpx');
+    assert.equal(typeof invalidation.selectionNonce, 'string');
+    assert.equal(Object.hasOwn(invalidation, 'fileIdentity'), false);
+    assert.doesNotMatch(JSON.stringify(invalidation), /dragged-walk\.gpx/);
     assert.equal(processButton(dom).disabled, false);
 });
 
@@ -369,7 +374,7 @@ test('a delayed A worker result cannot apply after B is selected, while processe
     const startB = dom.messages.filter(message => message.type === 'GPX_PROCESS_START')[1];
     const applyB = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY');
     assert.equal(applyB.selectionGeneration, startB.selectionGeneration);
-    assert.equal(applyB.fileIdentity.name, 'B.gpx');
+    assert.equal(applyB.selectionNonce, startB.selectionNonce);
 });
 
 test('B selection supersedes an A Apply that settles late', async () => {
@@ -451,7 +456,7 @@ test('clearing, replacing, removing, or navigating invalidates a delayed A resul
     }
 });
 
-test('file selection sends only bounded identity metadata and fails closed with a dead worker', async () => {
+test('file selection sends only an opaque nonce and fails closed with a dead worker', async () => {
     const dom = await loadEditor();
     let reads = 0;
     let invalidation = null;
@@ -467,13 +472,15 @@ test('file selection sends only bounded identity metadata and fails closed with 
 
     await waitFor(dom, () => uploadStatus(dom));
     assert.equal(invalidation.type, 'GPX_PROCESS_INVALIDATE');
-    assert.deepEqual(Object.keys(invalidation.fileIdentity).sort(), ['lastModified', 'name', 'size', 'type']);
-    assert.equal(reads, 0, 'selection identity must not read or hash the GPX body');
+    assert.equal(typeof invalidation.selectionNonce, 'string');
+    assert.equal(Object.hasOwn(invalidation, 'fileIdentity'), false);
+    assert.doesNotMatch(JSON.stringify(invalidation), /private-name\.gpx|application\/gpx\+xml/);
+    assert.equal(reads, 0, 'selection nonce must not read or hash the GPX body');
     assert.equal(processButton(dom), null);
     assert.match(uploadStatus(dom).textContent, /selected GPX could not be prepared/);
 });
 
-test('Process parses on the page, resolves the timezone offline, and auto-applies a single bound match', async () => {
+test('Process parses on the page without disclosing local-file metadata and auto-applies a bound match', async () => {
     const labels = [];
     const dom = await loadEditor({
         settings: { fillTripInfo: false },
@@ -491,7 +498,11 @@ test('Process parses on the page, resolves the timezone offline, and auto-applie
             return undefined;
         }
     });
-    await chooseGpx(dom);
+    await chooseGpx(dom, {
+        name: 'private-hike-unique.gpx',
+        type: 'application/x-private-gpx',
+        lastModified: 1_977_609_599_123,
+    });
     const button = processButton(dom);
     const observer = new dom.window.MutationObserver(() => {
         const label = button.querySelector('.bpb-process-label').textContent;
@@ -511,6 +522,9 @@ test('Process parses on the page, resolves the timezone offline, and auto-applie
     assert.equal(start.trackName, '', 'with Trip Info filling off, the track name never leaves the page');
     assert.doesNotMatch(JSON.stringify(start), /SourceApp|topografix/,
         'no source-XML marker may cross to the worker');
+    assert.doesNotMatch(JSON.stringify(dom.messages),
+        /private-hike-unique\.gpx|application\/x-private-gpx|1977609599123/,
+        'local file metadata must never cross the extension messaging boundary');
 
     const apply = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY');
     assert.deepEqual(JSON.parse(JSON.stringify({
@@ -520,7 +534,7 @@ test('Process parses on the page, resolves the timezone offline, and auto-applie
         primaryId: apply.primaryId,
     })), { type: 'GPX_PROCESS_APPLY', jobId: 'job-1', selectedIds: [7], primaryId: 7 });
     assert.equal(apply.selectionGeneration, start.selectionGeneration);
-    assert.deepEqual(apply.fileIdentity, start.fileIdentity);
+    assert.equal(apply.selectionNonce, start.selectionNonce);
 
     assert.ok(labels.includes('Reading track…') || labels.includes('Finding summits…'),
         'the busy label cycles through real states');

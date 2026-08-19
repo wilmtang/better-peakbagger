@@ -23,15 +23,10 @@ const SEGMENTS = [[
     { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0), invalidTime: false },
     { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0), invalidTime: false }
 ]];
-const uploadSelection = (generation, name = `track-${generation}.gpx`) => ({
+const uploadSelection = generation => ({
     pageSessionId: 'explicit-page-session',
     selectionGeneration: generation,
-    fileIdentity: {
-        name,
-        size: 1234,
-        lastModified: 1_786_000_000_000 + generation,
-        type: 'application/gpx+xml',
-    },
+    selectionNonce: `selection-${generation}-nonce`,
 });
 
 const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, beforePeakFetch = null,
@@ -186,12 +181,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
             currentSelection = {
                 pageSessionId: 'test-page-session',
                 selectionGeneration: ++selectionGeneration,
-                fileIdentity: {
-                    name: `track-${selectionGeneration}.gpx`,
-                    size: 1234,
-                    lastModified: 1_786_000_000_000 + selectionGeneration,
-                    type: 'application/gpx+xml',
-                },
+                selectionNonce: `selection-${selectionGeneration}-nonce`,
             };
             await rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...currentSelection }, sender);
             routed = { ...message, ...currentSelection };
@@ -413,8 +403,8 @@ test('selection invalidation supersedes a start still waiting for capture settin
             return new Promise(resolve => { releaseSettings = resolve; });
         },
     });
-    const firstSelection = uploadSelection(1, 'A.gpx');
-    const secondSelection = uploadSelection(2, 'B.gpx');
+    const firstSelection = uploadSelection(1);
+    const secondSelection = uploadSelection(2);
     assert.equal((await harness.rawSend({
         type: 'GPX_PROCESS_INVALIDATE', ...firstSelection,
     })).ok, true);
@@ -435,7 +425,7 @@ test('selection invalidation supersedes a start still waiting for capture settin
     const abandoned = await first;
     assert.equal(abandoned.error.code, 'superseded');
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
-    assert.equal(harness.values.bpbCaptureJobs['5'].fileIdentity.name, 'B.gpx');
+    assert.equal(harness.values.bpbCaptureJobs['5'].selectionNonce, secondSelection.selectionNonce);
     assert.equal(harness.fetchCalls.some(url => url.includes('/Async/pllbb2.aspx')), false);
 });
 
@@ -450,7 +440,7 @@ test('selection invalidation aborts an A corridor lookup without requiring B pro
             return new Promise(() => {});
         },
     });
-    const firstSelection = uploadSelection(1, 'A.gpx');
+    const firstSelection = uploadSelection(1);
     await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...firstSelection });
     const first = harness.rawSend({
         type: 'GPX_PROCESS_START',
@@ -461,33 +451,34 @@ test('selection invalidation aborts an A corridor lookup without requiring B pro
         ...firstSelection,
     });
     await firstReached;
-    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2, 'B.gpx') });
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2) });
     const abandoned = await first;
 
     assert.equal(firstSignal.aborted, true);
     assert.equal(abandoned.error.code, 'capture-cancelled');
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
-    assert.equal(harness.values.bpbCaptureJobs['5'].fileIdentity.name, 'B.gpx');
+    assert.equal(harness.values.bpbCaptureJobs['5'].selectionNonce,
+        uploadSelection(2).selectionNonce);
 });
 
 test('selection generations reject late invalidation without disturbing the newer sentinel', async () => {
     const harness = createHarness();
-    const newer = uploadSelection(2, 'B.gpx');
+    const newer = uploadSelection(2);
     assert.equal((await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...newer })).ok, true);
 
     const stale = await harness.rawSend({
         type: 'GPX_PROCESS_INVALIDATE',
-        ...uploadSelection(1, 'A.gpx'),
+        ...uploadSelection(1),
     });
 
     assert.equal(stale.ok, false);
     assert.equal(stale.error.code, 'superseded');
     assert.equal(harness.values.bpbCaptureJobs['5'].selectionGeneration, 2);
-    assert.equal(harness.values.bpbCaptureJobs['5'].fileIdentity.name, 'B.gpx');
+    assert.equal(harness.values.bpbCaptureJobs['5'].selectionNonce, newer.selectionNonce);
 });
 
 test('a worker restart retains the current local-file selection binding', async () => {
-    const selection = uploadSelection(1, 'restart.gpx');
+    const selection = uploadSelection(1);
     const firstWorker = createHarness();
     await firstWorker.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...selection });
 
@@ -502,12 +493,32 @@ test('a worker restart retains the current local-file selection binding', async 
     });
 
     assert.equal(result.phase, 'ready');
-    assert.equal(restarted.values.bpbCaptureJobs['5'].fileIdentity.name, 'restart.gpx');
+    assert.equal(restarted.values.bpbCaptureJobs['5'].selectionNonce, selection.selectionNonce);
+});
+
+test('legacy local-file metadata is discarded before the selection reaches session storage', async () => {
+    const harness = createHarness();
+    const result = await harness.rawSend({
+        type: 'GPX_PROCESS_INVALIDATE',
+        ...uploadSelection(1),
+        fileIdentity: {
+            name: 'private-worker-sentinel.gpx',
+            type: 'application/x-private-worker-sentinel',
+            size: 1_234_567,
+            lastModified: 1_977_609_599_123,
+        },
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(Object.keys(result).sort(),
+        ['ok', 'pageSessionId', 'selectionGeneration', 'selectionNonce']);
+    assert.doesNotMatch(JSON.stringify(harness.values),
+        /private-worker-sentinel|1234567|1977609599123/);
 });
 
 test('B selection invalidates A ready and apply generations before any draft opens', async () => {
     const harness = createHarness();
-    const firstSelection = uploadSelection(1, 'A.gpx');
+    const firstSelection = uploadSelection(1);
     await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...firstSelection });
     const ready = await harness.rawSend({
         type: 'GPX_PROCESS_START',
@@ -518,7 +529,7 @@ test('B selection invalidates A ready and apply generations before any draft ope
         ...firstSelection,
     });
     assert.equal(ready.phase, 'ready');
-    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2, 'B.gpx') });
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2) });
 
     const stale = await harness.rawSend({
         type: 'GPX_PROCESS_APPLY',
