@@ -281,7 +281,7 @@ test('the worker compares a complete owner page with GitHub without writing', as
         peak: { id: 2296, name: 'Mount Rainier', elevationFt: 14411, location: 'Washington, USA' },
         report: { markdown: '**Great climb** under blue skies.' },
     };
-    const gpx = '<gpx><trk></trk></gpx>';
+    const gpx = '<gpx><metadata><author><name><![CDATA[Zihao Deng]]></name></author></metadata><trk></trk></gpx>';
     const pushed = await writer.send({
         type: 'GITHUB_BACKUP_ASCENT', pageComplete: true, page, gpx,
     }, PEAK_SENDER);
@@ -339,6 +339,13 @@ test('the worker compares a complete owner page with GitHub without writing', as
     assert.deepEqual(structuredClone(current), { ok: true, current: true });
     assert.ok(reader.session.bpbGithubSnapshots[storedSnapshotKey()],
         'an ordinary passive comparison must preserve the exact Markdown snapshot');
+
+    const renamedAccount = await reader.send({
+        type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page,
+        gpx: gpx.replace('Zihao Deng', 'Zihao D'),
+    }, PEAK_SENDER);
+    assert.deepEqual(structuredClone(renamedAccount), { ok: true, current: true },
+        'a generated GPX author rename must not re-offer backup for an unchanged ascent');
 
     const reconciled = await reader.send({
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx, reconcile: true,

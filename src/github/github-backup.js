@@ -343,7 +343,8 @@ const buildFiles = (snapshot, options = {}) => {
 // content: syncedAt necessarily changes on every push and the extension
 // version can change without the saved ascent changing. Derived Peakbagger
 // links compare by validated entity identity; every user-owned report byte,
-// structured field, GPX byte, and track-presence decision must still match.
+// structured field, route/track GPX byte, other GPX metadata field, and
+// track-presence decision must still match.
 const stableJson = value => {
     if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
     if (value && typeof value === 'object') {
@@ -393,6 +394,43 @@ const comparableReportMarkdown = (content, ascentId) => {
     return `---\n${lines.join('\n')}${content.slice(frontmatterEnd)}`;
 };
 
+const replaceMatch = (source, match, replacement) =>
+    `${source.slice(0, match.index)}${replacement}${source.slice(match.index + match[0].length)}`;
+
+// Peakbagger regenerates the GPX metadata author name from the climber's
+// current account name. A profile rename therefore changes this one generated
+// label even when the stored ascent and every track byte are unchanged. Ignore
+// only the single, unprefixed metadata/author/name value Peakbagger emits; an
+// absent, duplicated, namespaced, or structurally ambiguous field remains an
+// exact-byte comparison so malformed or unfamiliar GPX fails closed.
+const comparableGpx = content => {
+    if (typeof content !== 'string') return content;
+    const metadataMatches = Array.from(content.matchAll(
+        /<metadata(?:\s[^<>]*)?>[\s\S]*?<\/metadata\s*>/gi,
+    ));
+    if (metadataMatches.length !== 1) return content;
+
+    const metadataMatch = metadataMatches[0];
+    const metadata = metadataMatch[0];
+    const authorMatches = Array.from(metadata.matchAll(
+        /<author(?:\s[^<>]*)?>[\s\S]*?<\/author\s*>/gi,
+    ));
+    if (authorMatches.length !== 1) return content;
+
+    const authorMatch = authorMatches[0];
+    const author = authorMatch[0];
+    const nameMatches = Array.from(author.matchAll(
+        /(<name(?:\s[^<>]*)?>)[\s\S]*?(<\/name\s*>)/gi,
+    ));
+    if (nameMatches.length !== 1) return content;
+
+    const nameMatch = nameMatches[0];
+    const normalizedName = `${nameMatch[1]}[peakbagger-account-name]${nameMatch[2]}`;
+    const normalizedAuthor = replaceMatch(author, nameMatch, normalizedName);
+    const normalizedMetadata = replaceMatch(metadata, authorMatch, normalizedAuthor);
+    return replaceMatch(content, metadataMatch, normalizedMetadata);
+};
+
 const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
     if (!contents || typeof contents !== 'object' || Array.isArray(contents)) return false;
     const expected = buildFiles(snapshot, { gpx });
@@ -408,6 +446,7 @@ const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
             return comparableReportMarkdown(actual, ascentId)
                 === comparableReportMarkdown(file.content, ascentId);
         }
+        if (file.name === 'track.gpx') return comparableGpx(actual) === comparableGpx(file.content);
         if (file.name !== 'ascent.json') return actual === file.content;
         const expectedJson = comparableAscentJson(file.content);
         const actualJson = comparableAscentJson(actual);
