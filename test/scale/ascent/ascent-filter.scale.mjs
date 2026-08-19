@@ -26,7 +26,33 @@ const sortControl = dom => [...dom.window.document.querySelectorAll('.pbaf-table
     .find(control => control.firstChild.textContent.trim() === 'Ascent Date');
 
 test('the full Rainier table filters and sorts completely', async () => {
-    const dom = await loadPageWithBar(FIXTURE, { url: URL });
+    const displayWrites = { rows: 0, sections: 0 };
+    const frames = { scheduled: 0, painted: 0 };
+    const dom = await loadPageWithBar(FIXTURE, {
+        url: URL,
+        prepare: page => {
+            const requestFrame = page.window.requestAnimationFrame.bind(page.window);
+            page.window.requestAnimationFrame = callback => {
+                frames.scheduled++;
+                return requestFrame(timestamp => {
+                    frames.painted++;
+                    callback(timestamp);
+                });
+            };
+        },
+    });
+
+    const instrumentDisplay = (style, key) => Object.defineProperty(style, 'display', {
+        configurable: true,
+        get: () => style.getPropertyValue('display'),
+        set: value => {
+            displayWrites[key]++;
+            if (value) style.setProperty('display', value);
+            else style.removeProperty('display');
+        },
+    });
+    dataRows(dom).forEach(row => instrumentDisplay(row.style, 'rows'));
+    sectionRows(dom).forEach(row => instrumentDisplay(row.style, 'sections'));
 
     assert.equal(dataRows(dom).length, 4145);
     assert.equal(sectionRows(dom).length, 75);
@@ -44,6 +70,43 @@ test('the full Rainier table filters and sorts completely', async () => {
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, 4145);
     assert.ok(sectionRows(dom).every(row => row.style.display === ''));
+
+    chip(dom, 'Trip report').click();
+    const beforeRows = dataRows(dom).map(row => row.style.display);
+    const beforeSections = sectionRows(dom).map(row => row.style.display);
+    displayWrites.rows = 0;
+    displayWrites.sections = 0;
+    frames.scheduled = 0;
+    frames.painted = 0;
+    const wordsInput = dom.window.document.querySelector('.pbaf-words input');
+    for (const value of ['1', '10', '100']) {
+        wordsInput.value = value;
+        wordsInput.dispatchEvent(new dom.window.Event('input'));
+    }
+    assert.equal(frames.scheduled, 1, 'one typing burst schedules one render frame');
+    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).minWords, 100,
+        'the accessible control state is persisted immediately');
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+    assert.equal(frames.painted, 2, 'the second frame is only the test wait, not another product render');
+
+    const afterRows = dataRows(dom).map(row => row.style.display);
+    const afterSections = sectionRows(dom).map(row => row.style.display);
+    assert.equal(displayWrites.rows,
+        beforeRows.filter((value, index) => value !== afterRows[index]).length,
+        'only rows whose visibility changed receive a style write');
+    assert.equal(displayWrites.sections,
+        beforeSections.filter((value, index) => value !== afterSections[index]).length,
+        'only sections whose visibility changed receive a style write');
+
+    displayWrites.rows = 0;
+    displayWrites.sections = 0;
+    wordsInput.dispatchEvent(new dom.window.Event('input'));
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+    assert.equal(displayWrites.rows, 0, 'a no-op threshold performs no row style writes');
+    assert.equal(displayWrites.sections, 0, 'a no-op threshold performs no section style writes');
+
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, 4145);
 
     const datesBefore = dateTexts(dom);
     const sectionsBefore = sectionLabels(dom);

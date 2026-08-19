@@ -35,20 +35,40 @@ const favoritesPromise = isPeakAscentsPage
     ? chrome.storage.local.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]).catch(() => ({}))
     : Promise.resolve({});
 
-// Chip on/off states and the Trip report word-count threshold are per-page
-// UI state kept in page localStorage (below). The shared extension settings
-// (chrome.storage) own only the cross-cutting "has beta" definition.
+// Chip on/off states, filter order, and the Trip report word-count threshold
+// are per-page UI state kept in page localStorage (below). The shared extension
+// settings (chrome.storage) own only the cross-cutting "has beta" definition.
 
 const STORAGE_KEY = 'pbAscentBetaFilter.v1';
-const DEFAULT_STATE = { beta: false, tr: false, minWords: 1, gps: false, link: false, fav: false };
+const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
+const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
+const defaultState = () => ({
+    beta: false,
+    tr: false,
+    minWords: 1,
+    gps: false,
+    link: false,
+    fav: false,
+    peakOrder: [...PEAK_FILTER_ORDER],
+    personalOrder: [...PERSONAL_FILTER_ORDER],
+});
+
+const cleanOrder = (value, expected) => Array.isArray(value)
+        && value.length === expected.length
+        && new Set(value).size === expected.length
+        && value.every(key => expected.includes(key))
+    ? [...value]
+    : [...expected];
 
 const cleanState = saved => {
-    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return { ...DEFAULT_STATE };
-    const state = { ...DEFAULT_STATE };
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return defaultState();
+    const state = defaultState();
     for (const key of ['beta', 'tr', 'gps', 'link', 'fav']) {
         if (typeof saved[key] === 'boolean') state[key] = saved[key];
     }
     if (Number.isSafeInteger(saved.minWords) && saved.minWords > 0) state.minWords = saved.minWords;
+    state.peakOrder = cleanOrder(saved.peakOrder, PEAK_FILTER_ORDER);
+    state.personalOrder = cleanOrder(saved.personalOrder, PERSONAL_FILTER_ORDER);
     return state;
 };
 
@@ -57,7 +77,7 @@ const loadState = () => {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
         return cleanState(saved);
     } catch (e) { /* corrupted state -> defaults */ }
-    return { ...DEFAULT_STATE };
+    return defaultState();
 };
 
 const saveState = state => {
@@ -507,19 +527,21 @@ html[data-bpb-theme="dark"] {
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--pbaf-bar-text); }
 #pbaf-bar * { box-sizing: border-box; }
 .pbaf-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--pbaf-label); text-transform: uppercase; margin-right: 2px; }
+.pbaf-filter-item { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; }
+.pbaf-filter-item[data-pbaf-dragging] { opacity: .62; }
 .pbaf-chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px;
-    border: 1px solid var(--pbaf-chip-border); border-radius: 999px; background: var(--pbaf-chip-bg); color: var(--pbaf-chip-text); font: inherit; cursor: pointer;
+    border: 1px solid var(--pbaf-chip-border); border-radius: 999px; background: var(--pbaf-chip-bg); color: var(--pbaf-chip-text); font: inherit; cursor: grab; touch-action: pan-y;
     transition: border-color .12s, background .12s, color .12s; user-select: none; }
+#pbaf-bar[data-pbaf-reordering] .pbaf-chip { cursor: grabbing; }
 .pbaf-chip:hover { border-color: var(--pbaf-hover-border); color: var(--pbaf-hover-text); }
 .pbaf-chip:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-chip[aria-pressed="true"] { background: var(--pbaf-chip-on-bg); border-color: var(--pbaf-chip-on-border); color: var(--pbaf-chip-on-text); }
-.pbaf-chip:disabled { cursor: default; opacity: .55; border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
+.pbaf-chip:disabled { opacity: .55; border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
 .pbaf-chip:disabled:hover { border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
 .pbaf-chip .pbaf-count { font-size: 11px; color: var(--pbaf-count); font-variant-numeric: tabular-nums; }
 .pbaf-chip[aria-pressed="true"] .pbaf-count { color: var(--pbaf-count-on); }
 .pbaf-tick { display: none; font-weight: 700; }
 .pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
-.pbaf-beta-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; }
 .pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; }
 .pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); }
 .pbaf-words[hidden] { display: none; }
@@ -533,6 +555,7 @@ html[data-bpb-theme="dark"] {
 .pbaf-reset:hover { color: var(--pbaf-hover-text); }
 .pbaf-reset:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-reset[hidden] { display: none; }
+.pbaf-order-status { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .pbaf-note { color: var(--pbaf-muted); }
 /* The site sheet repaints every <a> with !important, and a link cannot carry
    the pbaf-control exemption without also opting out of the site's link
@@ -672,7 +695,7 @@ const init = async () => {
         }
         if (row.cells.length === 1) {
             // Year separator row (single td with colspan)
-            currentSection = { row, items: [] };
+            currentSection = { row, items: [], visible: true };
             sections.push(currentSection);
             continue;
         }
@@ -821,6 +844,7 @@ const init = async () => {
     let favoriteAvailable = false;
     let favoriteLoadError = '';
     let buddyRefreshPromise = null;
+    let renderFrame = null;
     const bar = buildBarShell();
     const chips = {};
 
@@ -948,7 +972,7 @@ const init = async () => {
         const value = parseInt(wordsInput.value, 10);
         state.minWords = Number.isFinite(value) && value > 0 ? value : 1;
         saveState(state);
-        render();
+        scheduleRender();
     });
 
     const spacer = document.createElement('span');
@@ -1020,6 +1044,10 @@ const init = async () => {
     refreshFavorites();
 
     const render = () => {
+        if (renderFrame !== null) {
+            cancelAnimationFrame(renderFrame);
+            renderFrame = null;
+        }
         for (const [key, chip] of Object.entries(chips)) {
             const active = !!state[key] && (key !== 'fav' || favoriteAvailable);
             chip.setAttribute('aria-pressed', String(active));
@@ -1035,12 +1063,18 @@ const init = async () => {
             if (state.gps && !record.gps) visible = false;
             if (state.link && !record.link) visible = false;
             if (state.fav && favoriteAvailable && !record.fav) visible = false;
-            record.visible = visible;
-            record.row.style.display = visible ? '' : 'none';
+            if (record.visible !== visible) {
+                record.visible = visible;
+                record.row.style.display = visible ? '' : 'none';
+            }
             if (visible) shown++;
         }
         for (const section of sections) {
-            section.row.style.display = section.items.some(item => item.visible) ? '' : 'none';
+            const visible = section.items.some(item => item.visible);
+            if (section.visible !== visible) {
+                section.visible = visible;
+                section.row.style.display = visible ? '' : 'none';
+            }
         }
 
         const anyActive = state.beta || state.tr || state.gps || state.link
@@ -1059,9 +1093,22 @@ const init = async () => {
         resetButton.hidden = !anyActive;
     };
 
+    const scheduleRender = () => {
+        if (renderFrame !== null) return;
+        renderFrame = requestAnimationFrame(() => {
+            renderFrame = null;
+            render();
+        });
+    };
+
     table.parentNode.insertBefore(bar, table);
     render();
     if (state.fav) void refreshBuddyCache();
+
+    window.addEventListener('pagehide', () => {
+        if (renderFrame !== null) cancelAnimationFrame(renderFrame);
+        renderFrame = null;
+    }, { once: true });
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local') return;
