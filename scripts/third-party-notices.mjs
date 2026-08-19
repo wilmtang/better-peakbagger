@@ -129,9 +129,9 @@ export function renderThirdPartyNotices(records) {
     ].join('\n');
 }
 
-export async function writeThirdPartyNotices({ metafiles }) {
+export async function writeThirdPartyNotices({ metafiles, outputDir = distDir }) {
     const records = await collectThirdPartyNotices({ metafiles });
     const output = renderThirdPartyNotices(records);
-    await writeFile(path.join(distDir, 'THIRD_PARTY_NOTICES.txt'), output);
+    await writeFile(path.join(outputDir, 'THIRD_PARTY_NOTICES.txt'), output);
     return { records, output };
 }

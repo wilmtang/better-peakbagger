@@ -4,6 +4,7 @@ import {
     mkdtemp,
     readdir,
     readFile,
+    rename,
     rm,
     writeFile,
 } from 'node:fs/promises';
@@ -14,7 +15,13 @@ import { fileURLToPath } from 'node:url';
 
 import { ESLint } from 'eslint';
 
-import { formatReloadLog, RELOAD_SIGNAL } from '../../scripts/build.mjs';
+import {
+    BUILD_TREE_PREFIX,
+    cleanupAbandonedBuildTrees,
+    formatReloadLog,
+    publishBuildTree,
+    RELOAD_SIGNAL,
+} from '../../scripts/build.mjs';
 import { ENTRIES, resolvePageSource, root } from '../../scripts/build-config.mjs';
 import { webExtArguments } from '../../scripts/run-development.mjs';
 import {
@@ -110,6 +117,70 @@ test('development reload logs include a local timestamp', () => {
         formatReloadLog(3, localTime),
         /^\[2026-07-19 13:04:05\] Rebuilt \d+ bundles \(development reload 3\)$/,
     );
+});
+
+test('a failed build-tree publication restores the complete prior generation', async () => {
+    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-build-publish-test-'));
+    const targetDir = path.join(temporaryRoot, 'dist');
+    const candidateDir = path.join(temporaryRoot, 'candidate');
+    await mkdir(targetDir, { recursive: true });
+    await mkdir(candidateDir, { recursive: true });
+    await writeFile(path.join(targetDir, 'generation.txt'), 'last-good\n');
+    await writeFile(path.join(targetDir, 'last-good-only.txt'), 'preserved\n');
+    await writeFile(path.join(candidateDir, 'generation.txt'), 'new\n');
+    let renames = 0;
+
+    try {
+        await assert.rejects(publishBuildTree({
+            candidateDir,
+            targetDir,
+            renameTree: async (...args) => {
+                renames++;
+                if (renames === 2) throw new Error('PUBLISH_FAILURE_SENTINEL');
+                return rename(...args);
+            },
+        }), /PUBLISH_FAILURE_SENTINEL/);
+        assert.equal(await readFile(path.join(targetDir, 'generation.txt'), 'utf8'), 'last-good\n');
+        assert.equal(await readFile(path.join(targetDir, 'last-good-only.txt'), 'utf8'), 'preserved\n');
+        assert.equal(await readFile(path.join(candidateDir, 'generation.txt'), 'utf8'), 'new\n');
+        assert.deepEqual((await readdir(temporaryRoot)).sort(), ['candidate', 'dist']);
+    } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
+test('publishing a complete build tree removes stale outputs as one generation', async () => {
+    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-build-swap-test-'));
+    const targetDir = path.join(temporaryRoot, 'dist');
+    const candidateDir = path.join(temporaryRoot, 'candidate');
+    await mkdir(targetDir, { recursive: true });
+    await mkdir(candidateDir, { recursive: true });
+    await writeFile(path.join(targetDir, 'stale.js'), 'old\n');
+    await writeFile(path.join(candidateDir, 'generation.txt'), 'complete\n');
+
+    try {
+        await publishBuildTree({ candidateDir, targetDir });
+        assert.equal(await readFile(path.join(targetDir, 'generation.txt'), 'utf8'), 'complete\n');
+        await assert.rejects(readFile(path.join(targetDir, 'stale.js')), error => error.code === 'ENOENT');
+        assert.deepEqual(await readdir(temporaryRoot), ['dist']);
+    } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
+test('build startup removes only abandoned staging trees', async () => {
+    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-build-cleanup-test-'));
+    const alive = path.join(temporaryRoot, `${BUILD_TREE_PREFIX}${process.pid}-alive`);
+    const abandoned = path.join(temporaryRoot, `${BUILD_TREE_PREFIX}99999999-abandoned`);
+    await mkdir(alive);
+    await mkdir(abandoned);
+
+    try {
+        await cleanupAbandonedBuildTrees({ directory: temporaryRoot });
+        assert.deepEqual(await readdir(temporaryRoot), [path.basename(alive)]);
+    } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
 });
 
 test('development browsers reload only from the completed-build signal', () => {

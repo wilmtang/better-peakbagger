@@ -20,7 +20,16 @@
 //   node scripts/build.mjs --watch    rebuild on source/asset change
 
 import { build, context } from 'esbuild';
-import { readdir, mkdir, rm, copyFile, writeFile } from 'node:fs/promises';
+import {
+    access,
+    copyFile,
+    mkdir,
+    readFile,
+    readdir,
+    rename,
+    rm,
+    writeFile,
+} from 'node:fs/promises';
 import { existsSync, watch as fsWatch } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -41,6 +50,7 @@ const MINIFY = args.has('--minify');
 const WATCH = args.has('--watch');
 
 export const RELOAD_SIGNAL = '.better-peakbagger-reload';
+export const BUILD_TREE_PREFIX = '.better-peakbagger-build-';
 
 export function formatReloadLog(sequence, date = new Date()) {
     const pad = value => String(value).padStart(2, '0');
@@ -62,19 +72,19 @@ async function copyDir(from, to) {
     }
 }
 
-async function copyAssets() {
+async function copyAssets(outputDir) {
     for (const [from, to] of COPY_FILES) {
-        const dest = path.join(distDir, to);
+        const dest = path.join(outputDir, to);
         await mkdir(path.dirname(dest), { recursive: true });
         await copyFile(path.join(root, from), dest);
     }
     for (const [from, to] of COPY_DIRS) {
         const source = path.join(root, from);
-        if (existsSync(source)) await copyDir(source, path.join(distDir, to));
+        if (existsSync(source)) await copyDir(source, path.join(outputDir, to));
     }
     // Vendor browser builds come from npm (node_modules), not a committed dir.
     for (const [from, to] of VENDOR_COPY) {
-        const dest = path.join(distDir, to);
+        const dest = path.join(outputDir, to);
         await mkdir(path.dirname(dest), { recursive: true });
         await copyFile(nodeModule(from), dest);
     }
@@ -95,7 +105,7 @@ function browserImportPlugins(imports = {}) {
     }];
 }
 
-function esbuildOptions(entry, { minify = MINIFY } = {}) {
+function esbuildOptions(entry, { minify = MINIFY, outputDir = distDir } = {}) {
     const imports = entrySources(entry).map(f => `import ${JSON.stringify(f)};`).join('\n');
     return {
         stdin: {
@@ -104,7 +114,7 @@ function esbuildOptions(entry, { minify = MINIFY } = {}) {
             sourcefile: path.join('build-entry', entry.out),
             loader: 'js',
         },
-        outfile: path.join(distDir, entry.out),
+        outfile: path.join(outputDir, entry.out),
         bundle: true,
         format: entry.format || 'iife',
         target: ['chrome128', 'firefox152'],
@@ -118,13 +128,94 @@ function esbuildOptions(entry, { minify = MINIFY } = {}) {
     };
 }
 
+function newBuildTreePath() {
+    return path.join(root,
+        `${BUILD_TREE_PREFIX}${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+}
+
+function processIsAlive(pid) {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return error?.code === 'EPERM';
+    }
+}
+
+export async function cleanupAbandonedBuildTrees({ directory = root, keep = null } = {}) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    await Promise.all(entries
+        .filter(entry => entry.isDirectory() && entry.name.startsWith(BUILD_TREE_PREFIX))
+        .map(async entry => {
+            const candidate = path.join(directory, entry.name);
+            if (candidate === keep) return;
+            const pid = Number(entry.name.slice(BUILD_TREE_PREFIX.length).split('-')[0]);
+            if (processIsAlive(pid)) return;
+            await rm(candidate, { recursive: true, force: true });
+        }));
+}
+
+export async function validateBuildTree(outputDir, { minify = MINIFY } = {}) {
+    const required = [
+        ...ENTRIES.flatMap(entry => [entry.out, ...(!minify ? [`${entry.out}.map`] : [])]),
+        ...COPY_FILES.map(([, to]) => to),
+        ...COPY_DIRS.map(([, to]) => to),
+        ...VENDOR_COPY.map(([, to]) => to),
+        'THIRD_PARTY_NOTICES.txt',
+    ];
+    for (const relative of required) await access(path.join(outputDir, relative));
+}
+
+export async function publishBuildTree({
+    candidateDir,
+    targetDir = distDir,
+    renameTree = rename,
+} = {}) {
+    if (!candidateDir || path.resolve(candidateDir) === path.resolve(targetDir)) {
+        throw new Error('Build publication requires a distinct candidate tree.');
+    }
+    const previousDir = `${targetDir}.previous-${process.pid}-${Date.now()}`;
+    await rm(previousDir, { recursive: true, force: true });
+    const hadPrevious = existsSync(targetDir);
+    if (hadPrevious) await renameTree(targetDir, previousDir);
+    try {
+        await renameTree(candidateDir, targetDir);
+    } catch (publishError) {
+        if (hadPrevious) {
+            try {
+                await renameTree(previousDir, targetDir);
+            } catch (rollbackError) {
+                throw new AggregateError([publishError, rollbackError],
+                    'Build publication and rollback both failed.');
+            }
+        }
+        throw publishError;
+    }
+    await rm(previousDir, { recursive: true, force: true });
+}
+
 export async function buildOnce({ minify = MINIFY } = {}) {
-    await rm(distDir, { recursive: true, force: true });
-    await mkdir(distDir, { recursive: true });
-    const results = await Promise.all(ENTRIES.map(e => build(esbuildOptions(e, { minify }))));
-    await writeThirdPartyNotices({ metafiles: results.map(({ metafile }) => metafile) });
-    await copyAssets();
-    console.log(`Built ${ENTRIES.length} bundles into dist/${minify ? ' (minified)' : ''}`);
+    const stagingRoot = newBuildTreePath();
+    const candidateDir = path.join(stagingRoot, 'generation');
+    await cleanupAbandonedBuildTrees({ keep: stagingRoot });
+    await mkdir(candidateDir, { recursive: true });
+    try {
+        const results = await Promise.all(ENTRIES.map(e => build(esbuildOptions(e, {
+            minify,
+            outputDir: candidateDir,
+        }))));
+        await writeThirdPartyNotices({
+            metafiles: results.map(({ metafile }) => metafile),
+            outputDir: candidateDir,
+        });
+        await copyAssets(candidateDir);
+        await validateBuildTree(candidateDir, { minify });
+        await publishBuildTree({ candidateDir });
+        console.log(`Built ${ENTRIES.length} bundles into dist/${minify ? ' (minified)' : ''}`);
+    } finally {
+        await rm(stagingRoot, { recursive: true, force: true });
+    }
 }
 
 function watchDirectories() {
@@ -147,9 +238,14 @@ export async function watchAll({
     afterBuild = async () => {},
     debounceMs = 80,
 } = {}) {
-    await rm(distDir, { recursive: true, force: true });
-    await mkdir(distDir, { recursive: true });
-    const contexts = await Promise.all(ENTRIES.map(e => context(esbuildOptions(e, { minify: false }))));
+    const stagingRoot = newBuildTreePath();
+    const outputDir = path.join(stagingRoot, 'working');
+    await cleanupAbandonedBuildTrees({ keep: stagingRoot });
+    await mkdir(outputDir, { recursive: true });
+    const contexts = await Promise.all(ENTRIES.map(e => context(esbuildOptions(e, {
+        minify: false,
+        outputDir,
+    }))));
     const watchers = [];
     let sequence = 0;
     let timer = null;
@@ -159,9 +255,27 @@ export async function watchAll({
 
     const rebuild = async () => {
         const nextSequence = sequence + 1;
+        await rm(outputDir, { recursive: true, force: true });
+        await mkdir(outputDir, { recursive: true });
         const results = await Promise.all(contexts.map(buildContext => buildContext.rebuild()));
-        await writeThirdPartyNotices({ metafiles: results.map(({ metafile }) => metafile) });
-        await copyAssets();
+        await writeThirdPartyNotices({
+            metafiles: results.map(({ metafile }) => metafile),
+            outputDir,
+        });
+        await copyAssets(outputDir);
+        await validateBuildTree(outputDir, { minify: false });
+
+        // Preserve the prior token through the tree publication. The new token
+        // is written only after the complete generation is visible at dist/.
+        try {
+            await writeFile(path.join(outputDir, RELOAD_SIGNAL), await readFile(reloadFile));
+        } catch (error) {
+            if (error?.code !== 'ENOENT') throw error;
+        }
+        const candidateDir = path.join(stagingRoot, `generation-${nextSequence}`);
+        await rm(candidateDir, { recursive: true, force: true });
+        await rename(outputDir, candidateDir);
+        await publishBuildTree({ candidateDir });
         await afterBuild({ sequence: nextSequence });
         await writeFile(reloadFile, `${nextSequence}\n`);
         sequence = nextSequence;
@@ -210,6 +324,7 @@ export async function watchAll({
         }));
     } catch (error) {
         await Promise.all(contexts.map(buildContext => buildContext.dispose()));
+        await rm(stagingRoot, { recursive: true, force: true });
         throw error;
     }
 
@@ -224,6 +339,7 @@ export async function watchAll({
             for (const watcher of watchers) watcher.close();
             if (building) await building;
             await Promise.all(contexts.map(buildContext => buildContext.dispose()));
+            await rm(stagingRoot, { recursive: true, force: true });
         },
     };
 }
