@@ -2824,8 +2824,17 @@ const bindEvents = () => {
     bindInspector();
 
     document.addEventListener('keydown', event => {
-        const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName);
+        const path = typeof event.composedPath === 'function'
+            ? event.composedPath()
+            : [event.target];
+        const editing = path.some(node => {
+            if (!node || node.nodeType !== 1) return false;
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)) return true;
+            return node.isContentEditable === true
+                || node.closest?.('[contenteditable]:not([contenteditable="false"])');
+        });
         if (busy) return;
+        if (editing) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
             event.preventDefault();
             if (event.shiftKey) redo();
@@ -2837,7 +2846,7 @@ const bindEvents = () => {
         // the dialog — Cmd+P armed Piton, Ctrl+A armed Anchor — and the user's
         // next click on the photo dropped a mark they never asked for. Shift is
         // not excluded: it is this page's own "nudge further" modifier.
-        if (editing || event.metaKey || event.ctrlKey || event.altKey) return;
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
         if (event.key === 'Escape') {
             // One predictable ladder out of whatever the user is in the middle
             // of: abandon the route, then disarm the tool, then deselect.

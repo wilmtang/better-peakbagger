@@ -2346,6 +2346,53 @@ test('browser shortcuts do not arm a topo tool', async () => {
     assert.deepEqual(page.errors, []);
 });
 
+test('native Undo remains available in every editable photo control', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    assert.equal(page.markCount(), 1);
+
+    const editable = doc.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    const nested = doc.createElement('span');
+    editable.append(nested);
+    doc.body.append(editable);
+
+    const dispatchUndo = (node, init = {}) => {
+        const event = new win.KeyboardEvent('keydown', {
+            key: 'z', metaKey: true, bubbles: true, cancelable: true, ...init,
+        });
+        node.dispatchEvent(event);
+        return event;
+    };
+    for (const node of [
+        doc.getElementById('photo-title'),
+        doc.getElementById('photo-alt'),
+        doc.getElementById('object-text'),
+        doc.getElementById('object-color'),
+        doc.getElementById('object-opacity'),
+        nested,
+    ]) {
+        const undoEvent = dispatchUndo(node);
+        assert.equal(undoEvent.defaultPrevented, false,
+            `${node.id || node.tagName} must retain native Undo`);
+        assert.equal(page.markCount(), 1, 'editable Undo must not consume annotation history');
+        const redoEvent = dispatchUndo(node, { shiftKey: true });
+        assert.equal(redoEvent.defaultPrevented, false,
+            `${node.id || node.tagName} must retain native Redo`);
+        assert.equal(page.markCount(), 1, 'editable Redo must not mutate annotation history');
+    }
+
+    const canvasUndo = dispatchUndo(page.overlay);
+    assert.equal(canvasUndo.defaultPrevented, true, 'canvas Undo is owned by the topo editor');
+    assert.equal(page.markCount(), 0);
+    const toolbarRedo = dispatchUndo(doc.getElementById('redo'), { shiftKey: true });
+    assert.equal(toolbarRedo.defaultPrevented, true, 'non-editable chrome keeps annotation Redo');
+    assert.equal(page.markCount(), 1);
+    assert.deepEqual(page.errors, []);
+});
+
 // Dragging a vertex used to translate only that vertex's own handles, leaving
 // its neighbours' tangents aimed at where the point had been: a smooth route
 // kinked away from the point the user was dragging.
