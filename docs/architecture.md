@@ -139,6 +139,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | --- | --- | --- |
 | Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/terrain-activation.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
+| Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
@@ -149,15 +150,16 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
+| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
 | Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure, one explicit opt-in covering both saved credentials, exact-options-page worker revalidation and reads/writes, live credential validation, confirmation and unencrypted-private-file warning; an export nobody opted in for and every GitHub settings backup stay credential-free |
 
-Extend the owning surface rather than publishing cross-feature globals. The one
-deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
-injects functions into a provider's page realm, where an ES import cannot cross
-the worker-to-page boundary. It is an adapter API, not a general module seam.
+Extend the owning surface rather than publishing cross-feature globals. Two
+deliberate page-realm globals bridge worker-injected functions where an ES
+import cannot cross: `globalThis.BPBProviderPage` owns provider extraction, and
+`globalThis.BPBPeakbaggerPage` owns only capture's login and summit-box request
+shapes. They are adapter APIs, not general module seams.
 
 ### Live Peakbagger reads
 
@@ -175,12 +177,17 @@ and recovery actions for sign-out, network, timeout, rate limit, server, missing
 resource, page drift, parser, identity, and device-storage failures.
 
 The Buddy/favorites surfaces, profile and individual backup, saved-GPX analyzer,
-worker login check, and capture summit lookup all use that boundary. Callers may
-add stricter identity and schema checks, but do not translate transport failures
-again. Two reads deliberately keep surface-specific orchestration: provider GPX
-export is not a Peakbagger request, and native map-marker polling treats an
-aborted superseded camera request as normal. Neither exception duplicates the
-user-facing Peakbagger error mapper.
+login checks, and capture summit lookup all use that boundary. Activity capture
+invokes it in a canonical Peakbagger tab because a worker request can be
+challenged even while the signed-in site works; `src/peakbagger/peakbagger-page.js`
+allows only `/Default.aspx` and bounded `/Async/pllbb2.aspx` queries. It does not
+read cookies. The worker revalidates returned URL, status, byte limit, and body
+shape before using the result. Callers may add stricter identity and schema
+checks, but do not translate transport failures again. Two reads deliberately
+keep surface-specific orchestration: provider GPX export is not a Peakbagger
+request, and native map-marker polling treats an aborted superseded camera
+request as normal. Neither exception duplicates the user-facing Peakbagger
+error mapper.
 
 ### Sidebar section navigation
 

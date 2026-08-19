@@ -20,8 +20,13 @@ import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
-import { PEAKBAGGER_ORIGIN, isPeakbaggerSenderUrl } from '../peakbagger/peakbagger-origin.js';
+import {
+    PEAKBAGGER_ORIGIN,
+    isPeakbaggerSenderUrl,
+    isPeakbaggerUrl,
+} from '../peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
+import { classifyResponse as classifyPeakbaggerResponse } from '../peakbagger/peakbagger-response.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
 (() => {
@@ -55,6 +60,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const localAnalysisOwners = new Map();
     const lifecycleQueues = new Map();
     const lifecycleEpochs = new Map();
+    const peakbaggerPageInjections = new Map();
+    const ownedPeakbaggerTabs = new Set();
     let mutationQueue = Promise.resolve();
 
     const now = () => Date.now();
@@ -189,8 +196,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return finished;
     };
 
-    const peakbaggerLogin = async () => {
-        const response = await fetchPeakbaggerResource(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html' });
+    const peakbaggerLogin = async ({ request = fetchPeakbaggerResource, signal } = {}) => {
+        const response = await request(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html', signal });
         if (response.kind !== 'ok') {
             const failure = PeakbaggerError.exception(response.error);
             // PeakbaggerError owns stable recovery copy, but only PublicError
@@ -214,7 +221,218 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         'Capture was cancelled. Nothing was retained.',
     );
 
-    const fetchBox = async (box, { signal, budget }) => {
+    const peakbaggerPageFailure = cause => PublicErrors.exception(
+        'peakbagger-page-unavailable',
+        'Peakbagger could not be used for this capture. Open or reload Peakbagger, then try again.',
+        { cause },
+    );
+
+    const canonicalPeakbaggerTab = tab => {
+        try { return new URL(tab?.url).origin === PEAKBAGGER_ORIGIN; }
+        catch { return false; }
+    };
+
+    const waitForPeakbaggerTab = async (tabId, signal) => {
+        const deadline = Deadline.createRequestDeadline(20_000);
+        try {
+            while (true) {
+                if (signal?.aborted) throw cancelledCaptureError();
+                const tab = await deadline.run(ext.tabs.get(tabId));
+                if (!canonicalPeakbaggerTab(tab)) {
+                    throw peakbaggerPageFailure(new Error('The Peakbagger request tab navigated away.'));
+                }
+                if (tab.status === 'complete') return tab;
+                if (typeof globalThis.setTimeout !== 'function') {
+                    throw peakbaggerPageFailure(new Error('Tab readiness polling is unavailable.'));
+                }
+                await deadline.run(new Promise(resolve => globalThis.setTimeout(resolve, 50)));
+            }
+        } catch (error) {
+            if (signal?.aborted) throw cancelledCaptureError();
+            if (PublicErrors.isPublic(error)) throw error;
+            throw peakbaggerPageFailure(error);
+        } finally {
+            deadline.clear();
+        }
+    };
+
+    const ensurePeakbaggerPage = tabId => {
+        const current = peakbaggerPageInjections.get(tabId);
+        if (current) return current;
+        const operation = (async () => {
+            const probe = async () => {
+                const results = await ext.scripting.executeScript({
+                    target: { tabId },
+                    func: version => globalThis.BPBPeakbaggerPage?.version === version,
+                    args: [1],
+                    world: 'MAIN',
+                });
+                return results?.[0]?.result === true;
+            };
+            if (await probe()) return;
+            await ext.scripting.executeScript({
+                target: { tabId },
+                files: ['peakbagger-page.js'],
+                world: 'MAIN',
+            });
+            if (!await probe()) throw new Error('The Peakbagger page helper did not start.');
+        })();
+        peakbaggerPageInjections.set(tabId, operation);
+        return operation.finally(() => {
+            if (peakbaggerPageInjections.get(tabId) === operation) peakbaggerPageInjections.delete(tabId);
+        });
+    };
+
+    const closeOwnedPeakbaggerTab = async tabId => {
+        let tab;
+        try {
+            tab = await ext.tabs.get(tabId);
+        } catch {
+            ownedPeakbaggerTabs.delete(tabId);
+            return;
+        }
+        try {
+            // If the user selected the helper or navigated it elsewhere,
+            // ownership has effectively transferred and cleanup leaves it.
+            if (!tab.active && canonicalPeakbaggerTab(tab)) await ext.tabs.remove(tabId);
+        } finally {
+            ownedPeakbaggerTabs.delete(tabId);
+        }
+    };
+
+    const PAGE_FAILURE_KINDS = Object.freeze({
+        cloudflare: 'challenged',
+        'signed-out': 'wrong-content',
+        network: 'transient',
+        timeout: 'transient',
+        cancelled: 'transient',
+        'response-read': 'transient',
+        'response-too-large': 'wrong-content',
+        'rate-limit': 'transient',
+        server: 'transient',
+        'not-found': 'wrong-content',
+        http: 'wrong-content',
+        'unexpected-content': 'wrong-content',
+    });
+
+    const validatePeakbaggerPageResult = (result, requestedUrl, resource) => {
+        if (!result || typeof result !== 'object'
+            || result.requestedUrl !== requestedUrl
+            || !isPeakbaggerUrl(result.url)
+            || !Number.isInteger(result.status) || result.status < 0 || result.status > 599
+            || typeof result.redirected !== 'boolean') {
+            throw peakbaggerPageFailure(new Error('The Peakbagger page returned invalid request metadata.'));
+        }
+        if (result.kind === 'ok') {
+            const limit = CaptureLimits.peakbaggerResponseLimit(resource);
+            if (typeof result.text !== 'string' || result.text.length > limit
+                || new TextEncoder().encode(result.text).byteLength > limit
+                || classifyPeakbaggerResponse(result.status, null, result.text, { kind: resource }) !== 'ok') {
+                throw peakbaggerPageFailure(new Error('The Peakbagger page returned invalid response content.'));
+            }
+            return {
+                kind: 'ok',
+                requestedUrl,
+                url: result.url,
+                status: result.status,
+                redirected: result.redirected,
+                text: result.text,
+            };
+        }
+        const code = typeof result.error?.code === 'string' ? result.error.code : '';
+        if (!code || PAGE_FAILURE_KINDS[code] !== result.kind || 'text' in result) {
+            throw peakbaggerPageFailure(new Error('The Peakbagger page returned an invalid failure.'));
+        }
+        const error = PeakbaggerError.failure(code, { resource, status: result.status });
+        return {
+            kind: result.kind,
+            requestedUrl,
+            url: result.url,
+            status: result.status,
+            redirected: result.redirected,
+            error,
+            reason: PeakbaggerError.message(error),
+        };
+    };
+
+    const requestThroughPeakbaggerPage = async (tabId, url, { kind, signal } = {}) => {
+        if (signal?.aborted) throw cancelledCaptureError();
+        await ensurePeakbaggerPage(tabId);
+        if (signal?.aborted) throw cancelledCaptureError();
+        const requestId = makeId();
+        const operation = ext.scripting.executeScript({
+            target: { tabId },
+            func: (id, requestedUrl, resource) =>
+                globalThis.BPBPeakbaggerPage.request(id, requestedUrl, resource),
+            args: [requestId, url, kind],
+            world: 'MAIN',
+        });
+        operation.catch(() => {});
+        let rejectCancellation;
+        const cancellation = signal ? new Promise((_, reject) => { rejectCancellation = reject; }) : null;
+        cancellation?.catch(() => {});
+        const cancel = () => {
+            void ext.scripting.executeScript({
+                target: { tabId },
+                func: id => globalThis.BPBPeakbaggerPage?.cancel?.(id) === true,
+                args: [requestId],
+                world: 'MAIN',
+            }).catch(() => {});
+            rejectCancellation?.(cancelledCaptureError());
+        };
+        if (signal?.aborted) cancel();
+        else signal?.addEventListener('abort', cancel, { once: true });
+        try {
+            const results = await (cancellation ? Promise.race([operation, cancellation]) : operation);
+            if (!results?.[0]) throw new Error('The Peakbagger page returned no request result.');
+            return validatePeakbaggerPageResult(results[0].result, url, kind);
+        } catch (error) {
+            if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
+            throw peakbaggerPageFailure(error);
+        } finally {
+            signal?.removeEventListener('abort', cancel);
+        }
+    };
+
+    const acquirePeakbaggerPage = async (sourceWindowId, signal) => {
+        if (signal?.aborted) throw cancelledCaptureError();
+        let tab;
+        let created = false;
+        try {
+            const candidates = await ext.tabs.query({
+                windowId: sourceWindowId,
+                url: `${PEAKBAGGER_ORIGIN}/*`,
+            });
+            tab = candidates.find(candidate => canonicalPeakbaggerTab(candidate)
+                && !ownedPeakbaggerTabs.has(candidate.id));
+            if (!tab) {
+                tab = await ext.tabs.create({
+                    active: false,
+                    ...(Number.isInteger(sourceWindowId) ? { windowId: sourceWindowId } : {}),
+                    url: `${PEAKBAGGER_ORIGIN}/Default.aspx`,
+                });
+                created = true;
+                ownedPeakbaggerTabs.add(tab.id);
+            }
+            await waitForPeakbaggerTab(tab.id, signal);
+            await ensurePeakbaggerPage(tab.id);
+            return {
+                request: (url, options) => requestThroughPeakbaggerPage(tab.id, url, options),
+                release: () => created ? closeOwnedPeakbaggerTab(tab.id) : Promise.resolve(),
+            };
+        } catch (error) {
+            if (created && Number.isInteger(tab?.id)) {
+                try { await closeOwnedPeakbaggerTab(tab.id); }
+                catch (cleanupError) {
+                    console.error('Better Peakbagger: temporary request tab cleanup failed', cleanupError);
+                }
+            }
+            if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
+            throw peakbaggerPageFailure(error);
+        }
+    };
+
+    const fetchBox = async (box, { signal, budget, request = fetchPeakbaggerResource }) => {
         const params = new URLSearchParams({
             miny: String(box.miny),
             maxy: String(box.maxy),
@@ -230,7 +448,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     'This GPX needs too many summit requests. Split the activity into shorter tracks and try again.',
                 );
             }
-            const response = await fetchPeakbaggerResource(
+            const response = await request(
                 `https://www.peakbagger.com/Async/pllbb2.aspx?${params}`,
                 { kind: 'peaks', signal }
             );
@@ -259,12 +477,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return results;
     };
 
-    const fetchPeaks = async (boxes, { signal }) => {
+    const fetchPeaks = async (boxes, { signal, request }) => {
         const budget = { requests: 0 };
         const responses = await mapWithConcurrency(
             boxes,
             CaptureLimits.CORRIDOR_CONCURRENCY,
-            box => fetchBox(box, { signal, budget }),
+            box => fetchBox(box, { signal, budget, request }),
         );
         const byId = new Map();
         responses.forEach(text => Core.parsePeakbaggerPeaks(text).forEach(peak => byId.set(peak.id, peak)));
@@ -347,6 +565,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         boundPid = null,
         onPhase = async () => {},
         signal = null,
+        peakbaggerRequest = fetchPeakbaggerResource,
     }) => {
         const deadline = Deadline.createRequestDeadline(CaptureLimits.CORRIDOR_TOTAL_TIMEOUT_MS);
         const cancel = () => deadline.abort();
@@ -411,7 +630,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
             await onPhase('finding-peaks');
             assertActive();
-            const peaks = await deadline.run(fetchPeaks(boxes, { signal: deadline.signal }));
+            const peaks = await deadline.run(fetchPeaks(boxes, {
+                signal: deadline.signal,
+                request: peakbaggerRequest,
+            }));
             assertActive();
             const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
             const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
@@ -495,6 +717,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     const processCapture = async (tabId, expectedUrl, capturePreferences, generation, signal) => {
+        let peakbaggerPage = null;
         try {
             const expectedActivity = providerFromUrl(expectedUrl);
             if (!expectedActivity) {
@@ -544,7 +767,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
-            const cid = await peakbaggerLogin();
+            peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, signal);
+            const cid = await peakbaggerLogin({ request: peakbaggerPage.request, signal });
             if (!cid) {
                 await failCaptureJob(
                     tabId,
@@ -620,6 +844,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 metadata: capture.metadata,
                 capturePreferences,
                 signal,
+                peakbaggerRequest: peakbaggerPage.request,
                 onPhase: phase => updateCaptureJob(tabId, generation, { phase })
             });
             if (analysis.status === 'no-gps') {
@@ -658,6 +883,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
             await failCaptureJob(tabId, generation, failure.code, failure.message);
         } finally {
+            if (peakbaggerPage) {
+                try { await peakbaggerPage.release(); }
+                catch (error) { console.error('Better Peakbagger: temporary request tab cleanup failed', error); }
+            }
             if (processes.get(tabId)?.generation === generation) processes.delete(tabId);
         }
     };

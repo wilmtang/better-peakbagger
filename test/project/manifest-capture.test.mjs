@@ -27,6 +27,8 @@ test('capture permissions are explicit and provider access remains activeTab-onl
     for (const permission of ['activeTab', 'scripting', 'tabGroups', 'storage', 'alarms']) {
         assert.ok(manifest.permissions.includes(permission));
     }
+    assert.equal(manifest.permissions.includes('cookies'), false,
+        'capture must use the site session without reading cookie values');
     assert.ok(manifest.host_permissions.every(pattern => pattern.includes('peakbagger.com')));
     assert.ok(manifest.host_permissions.every(pattern => !/garmin|strava/i.test(pattern)));
     const declarativeMatches = [
@@ -65,6 +67,14 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
         'gpx/gpx-parse.js',
         'net/request-deadline.js',
         'capture/provider-page.js',
+    ]);
+    assert.deepEqual(bundleSources('peakbagger-page.js'), [
+        'peakbagger/peakbagger-origin.js',
+        'peakbagger/peakbagger-cloudflare.js',
+        'peakbagger/peakbagger-response.js',
+        'peakbagger/peakbagger-error.js',
+        'peakbagger/peakbagger-request.js',
+        'peakbagger/peakbagger-page.js',
     ]);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
     assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '152.0');

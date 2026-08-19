@@ -251,6 +251,7 @@ dist/
   manifest.json            # copied from the repo-root manifest.json
   background.js            # the MV3 service worker (one bundle, both browsers)
   provider-page.js         # injected on demand into provider pages
+  peakbagger-page.js        # narrow login/summit transport in a Peakbagger tab
   content/*.js             # one bundle per content-script entry
   terrain/terrain.html + terrain-frame.js
   options/ popup/          # page html + bundled js + css
@@ -339,13 +340,17 @@ To add or update a runtime dependency:
 Dependency updates arrive automatically; see
 [Dependency updates](#dependency-updates) for what merges on its own.
 
-### The intentional provider API
+### The intentional page APIs
 
 `src/capture/provider-page.js` publishes `globalThis.BPBProviderPage`. That is a narrow,
 deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
-the API across the worker→page boundary, where an ES import cannot reach. Do not
-generalize this exception.
+the API across the worker→page boundary, where an ES import cannot reach.
+`src/peakbagger/peakbagger-page.js` uses the same mechanism for capture requests
+that Cloudflare can reject from the worker while accepting from the signed-in
+site. Its API accepts only the canonical login page and bounded summit-box
+endpoint; the worker revalidates its result. Neither API is a general fetch or
+module seam. Do not generalize these exceptions.
 
 ## Dependency updates
 

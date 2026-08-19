@@ -26,7 +26,7 @@ Data leaves the browser only when a feature requires it:
 | --- | --- |
 | `storage` | Stores preferences, credentials, caches, drafts, and other extension data as detailed below. |
 | `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. There is no persistent provider host access. |
-| `scripting` | Injects the packaged provider adapter into that tab to verify ownership and request the authenticated, same-origin GPX export. It never downloads or executes remote code. |
+| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, and into a Peakbagger tab for the login and summit requests described below. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules the one-minute debounce and bounded retries for user-enabled automatic backups. |
 | Peakbagger host access | Supports GPX analysis, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
@@ -66,8 +66,11 @@ Activity capture is a short-lived, user-started transaction:
    become an exported or remote settings backup.
 3. **Local analysis:** raw provider GPX is parsed on the activity page. It is
    never persisted, sent to the developer, or forwarded as source XML.
-4. **Summit lookup:** Peakbagger receives small bounding boxes derived from the
-   track corridor. Every required lookup must succeed before results appear.
+4. **Peakbagger session and summit lookup:** a Peakbagger tab makes the login
+   check and the small bounding-box requests derived from the track corridor.
+   The extension does not request cookie-reading permission or copy cookie
+   values; the site handles its own signed-in session. Every required lookup
+   must succeed before results appear.
 5. **Prepared drafts:** derived ascent fields and a reduced track stay in
    `storage.session`, are bound to the expected tabs, and expire after 30
    minutes.

@@ -1767,6 +1767,75 @@ try {
                 },
             });
         });
+
+        // Cloudflare can accept a request from a signed-in Peakbagger page
+        // while rejecting the extension worker. Exercise the shipped MAIN-
+        // world bridge in real Chrome: exact allowlist, browser credential
+        // policy, and bundle path all remain invisible to jsdom worker tests.
+        const captureLoginUrl = 'https://www.peakbagger.com/Default.aspx';
+        const capturePeaksUrl = 'https://www.peakbagger.com/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4';
+        let captureLoginRequests = 0;
+        let capturePeakRequests = 0;
+        await context.route(captureLoginUrl, route => {
+            captureLoginRequests++;
+            return route.fulfill({
+                status: 200,
+                contentType: 'text/html',
+                body: '<html><a href="/climber/climber.aspx?cid=77">My Home Page</a></html>',
+            });
+        });
+        await context.route(capturePeaksUrl, route => {
+            capturePeakRequests++;
+            return route.fulfill({
+                status: 200,
+                contentType: 'text/xml',
+                body: '<p><t i="7" n="Test Peak" a="1" o="2" e="3" r="4" l="Range"/></p>',
+            });
+        });
+        const captureTransportPage = await context.newPage();
+        await captureTransportPage.goto(captureLoginUrl);
+        const captureTransportState = await optionsPage.evaluate(async ({ loginUrl, peaksUrl }) => {
+            const tab = (await chrome.tabs.query({})).find(candidate => candidate.url === loginUrl);
+            if (!tab?.id) return { error: 'request tab not found' };
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['peakbagger-page.js'],
+                world: 'MAIN',
+            });
+            const call = (requestId, url, kind) => chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: (id, requestedUrl, resource) =>
+                    globalThis.BPBPeakbaggerPage.request(id, requestedUrl, resource),
+                args: [requestId, url, kind],
+                world: 'MAIN',
+            }).then(results => results?.[0]?.result);
+            const [login, peaks, refused] = await Promise.all([
+                call('verify-login', loginUrl, 'html'),
+                call('verify-peaks', peaksUrl, 'peaks'),
+                call('verify-refused', 'https://www.peakbagger.com/climber/ClimberEdit.aspx?cid=77', 'html'),
+            ]);
+            return {
+                login: { kind: login?.kind, signedIn: /\bcid=77\b/.test(login?.text || '') },
+                peaks: { kind: peaks?.kind, hasPeak: /\bi="7"/.test(peaks?.text || '') },
+                refused: refused?.error?.code,
+            };
+        }, { loginUrl: captureLoginUrl, peaksUrl: capturePeaksUrl });
+        check(captureTransportState?.login?.kind === 'ok'
+            && captureTransportState.login.signedIn === true
+            && captureTransportState.peaks?.kind === 'ok'
+            && captureTransportState.peaks.hasPeak === true
+            && captureTransportState.refused === 'invalid-request'
+            && captureLoginRequests === 2
+            && capturePeakRequests === 1,
+        `the Chrome page-context capture transport failed: ${JSON.stringify({
+            captureTransportState,
+            captureLoginRequests,
+            capturePeakRequests,
+        })}`);
+        await captureTransportPage.close();
+        await context.unroute(captureLoginUrl);
+        await context.unroute(capturePeaksUrl);
+
         await optionsPage.locator('#theme').selectOption('system');
         await optionsPage.close();
 
@@ -3985,6 +4054,7 @@ console.log('  - a 49-photo library stays at 48 cards, fits desktop and narrow p
 console.log('  - contextual report sizing stays synchronized in Editor and Library, caps only the');
 console.log('    stage display at desktop and narrow widths, and preserves the full project dimensions');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
+console.log('  - the capture login/summit transport runs in a real Peakbagger MAIN world and refuses other endpoints');
 console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');

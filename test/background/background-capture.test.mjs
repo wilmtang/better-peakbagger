@@ -28,7 +28,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     beforePeakbaggerLogin = null,
     beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
     afterSessionSet = null, clock = null, groupError = null, faults = {},
-    loginResponse = null,
+    peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -38,12 +38,14 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         id: 1,
         windowId: 9,
         url: 'https://www.strava.com/activities/123',
-        active: true
+        active: true,
+        status: 'complete',
     }], [5, {
         id: 5,
         windowId: 9,
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77',
-        active: false
+        active: false,
+        status: 'complete',
     }]]);
     let nextTabId = 100;
     const runtimeMessage = event();
@@ -55,6 +57,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const scriptCalls = [];
     const providerCaptureCalls = [];
     const providerCancelCalls = [];
+    const peakbaggerPageCalls = [];
+    const peakbaggerPageCancelCalls = [];
+    const peakbaggerPageRequests = new Map();
+    const peakbaggerPageInjected = new Set();
     const tabMessages = [];
     const removedTabs = [];
     let tabCreateCalls = 0;
@@ -127,12 +133,70 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             executeScript: async details => {
                 if (faults.scripting) throw new Error(faults.scripting);
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
-                if (details.files) return [];
+                if (details.files) {
+                    if (details.files.includes('peakbagger-page.js')) {
+                        peakbaggerPageInjected.add(details.target.tabId);
+                    }
+                    return [];
+                }
                 const functionSource = String(details.func);
                 const isOwnershipCheck = functionSource.includes('inspectOwnership')
                     || functionSource.includes('inspectExpectedOwnership');
                 const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
                 const isProviderCancel = functionSource.includes('cancelCapture');
+                const isPeakbaggerPageProbe = functionSource.includes('BPBPeakbaggerPage?.version');
+                const isPeakbaggerPageRequest = functionSource.includes('BPBPeakbaggerPage.request');
+                const isPeakbaggerPageCancel = functionSource.includes('BPBPeakbaggerPage?.cancel');
+                if (isPeakbaggerPageProbe) {
+                    return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
+                }
+                if (isPeakbaggerPageCancel) {
+                    const requestId = details.args?.[0];
+                    peakbaggerPageCancelCalls.push(requestId);
+                    const controller = peakbaggerPageRequests.get(requestId);
+                    controller?.abort();
+                    return [{ result: !!controller }];
+                }
+                if (isPeakbaggerPageRequest) {
+                    const [requestId, url, kind] = details.args;
+                    const controller = new AbortController();
+                    peakbaggerPageRequests.set(requestId, controller);
+                    const call = { requestId, url, kind, options: { signal: controller.signal } };
+                    peakbaggerPageCalls.push(call);
+                    const callback = kind === 'html' ? beforePeakbaggerLogin : beforePeakFetch;
+                    const callbackResult = callback?.({
+                        options: call.options,
+                        number: peakbaggerPageCalls.filter(item => item.kind === kind).length,
+                    });
+                    if (callbackResult) {
+                        await Promise.race([
+                            callbackResult,
+                            new Promise(resolve => controller.signal.addEventListener('abort', resolve, { once: true })),
+                        ]);
+                    }
+                    peakbaggerPageRequests.delete(requestId);
+                    if (controller.signal.aborted) {
+                        return [{ result: {
+                            kind: 'transient', requestedUrl: url, url, status: 0, redirected: false,
+                            error: { source: 'peakbagger', code: 'cancelled', resource: kind },
+                        } }];
+                    }
+                    const injectedResult = kind === 'html'
+                        ? peakbaggerPageLoginResult
+                        : peakbaggerPagePeakResult;
+                    if (injectedResult) {
+                        const result = typeof injectedResult === 'function'
+                            ? injectedResult(call)
+                            : injectedResult;
+                        return [{ result: structuredClone(result) }];
+                    }
+                    const text = kind === 'html'
+                        ? loginHtml
+                        : (peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>');
+                    return [{ result: {
+                        kind: 'ok', requestedUrl: url, url, status: 200, redirected: false, text,
+                    } }];
+                }
                 if (isProviderCancel) {
                     providerCancelCalls.push(details.args?.[0]);
                     return [{ result: true }];
@@ -175,10 +239,17 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     faults.tabCreateAt = null;
                     throw new Error(message);
                 }
-                const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active };
+                const tab = {
+                    id: nextTabId++, windowId: details.windowId, url: details.url,
+                    active: details.active, status: 'complete',
+                };
                 tabs.set(tab.id, tab);
                 return structuredClone(tab);
             },
+            query: async details => [...tabs.values()]
+                .filter(tab => details.windowId == null || tab.windowId === details.windowId)
+                .filter(tab => !details.url || tab.url.startsWith(String(details.url).replace(/\*$/, '')))
+                .map(tab => structuredClone(tab)),
             remove: async tabId => {
                 removedTabs.push(tabId);
                 tabs.delete(tabId);
@@ -217,7 +288,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) {
             if (beforePeakbaggerLogin) await beforePeakbaggerLogin();
-            return loginResponse || { ok: true, text: async () => loginHtml };
+            return { ok: true, text: async () => loginHtml };
         }
         if (value.includes('/Async/pllbb2.aspx')) {
             if (beforePeakFetch) await beforePeakFetch({ options, number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length });
@@ -256,6 +327,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
         removedTabs, providerCaptureCalls, providerCancelCalls,
+        peakbaggerPageCalls, peakbaggerPageCancelCalls,
         sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, alarmEvent,
     };
 };
@@ -270,13 +342,18 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(ready.uploadGpx, undefined, 'GPX must not be exposed to the popup response');
     assert.equal(ready.dayStats, undefined, 'day-level draft metrics must not be exposed to the popup response');
     assert.equal(ready.hasCachedGpx, true);
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+    assert.equal(harness.fetchCalls.length, 0,
+        'activity capture must use the signed-in Peakbagger page, not the worker fetch context');
+    assert.equal(harness.removedTabs.includes(5), false,
+        'an existing user Peakbagger tab must never become helper-tab cleanup');
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
     assert.match(storedJob.uploadGpx,
         /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
     assert.doesNotMatch(storedJob.uploadGpx, /<extensions(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
-    assert.deepEqual(harness.scriptCalls.find(call => call.args?.length === 3)?.args[0], {
+    assert.deepEqual(harness.providerCaptureCalls[0].options, {
         retainWaypoints: true,
         includeTripName: true
     });
@@ -689,12 +766,16 @@ test('Peakbagger login accepts signed-in account controls and reports ambiguous 
 });
 
 test('toolbar capture preserves actionable Peakbagger human-check recovery', async () => {
+    const url = 'https://www.peakbagger.com/Default.aspx';
     const harness = createHarness({
-        loginResponse: {
-            ok: false,
+        peakbaggerPageLoginResult: {
+            kind: 'challenged',
+            requestedUrl: url,
+            url,
             status: 403,
-            headers: { get: name => name.toLowerCase() === 'cf-mitigated' ? 'challenge' : null },
-            text: async () => '<html><title>Just a moment...</title><p>PRIVATE CHALLENGE BODY</p></html>',
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'html', status: 403 },
+            reason: 'PRIVATE CHALLENGE BODY',
         },
     });
 
@@ -707,6 +788,58 @@ test('toolbar capture preserves actionable Peakbagger human-check recovery', asy
     });
     assert.doesNotMatch(JSON.stringify(harness.values), /PRIVATE CHALLENGE BODY/,
         'challenge HTML must not be retained with the capture job');
+});
+
+test('activity capture creates and removes an inactive Peakbagger request tab when needed', async () => {
+    const harness = createHarness();
+    harness.tabs.delete(5);
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.equal(harness.tabs.has(100), false);
+    assert.equal(harness.tabs.get(1).active, true,
+        'the provider tab remains active while the helper works in the background');
+});
+
+test('selecting a temporary Peakbagger request tab transfers cleanup ownership to the user', async () => {
+    const harness = createHarness({
+        beforePeakbaggerLogin: () => {
+            harness.tabs.get(1).active = false;
+            harness.tabs.get(100).active = true;
+        },
+    });
+    harness.tabs.delete(5);
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.tabs.has(100), true);
+    assert.deepEqual(harness.removedTabs, []);
+});
+
+test('the worker rejects page-world summit content that does not match the requested resource', async () => {
+    const sentinel = 'UNTRUSTED_PAGE_RESULT_SENTINEL';
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ({
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: `<html>${sentinel}</html>`,
+        }),
+    });
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'peakbagger-page-unavailable',
+        message: 'Peakbagger could not be used for this capture. Open or reload Peakbagger, then try again.',
+    });
+    assert.doesNotMatch(JSON.stringify(harness.values), new RegExp(sentinel));
 });
 
 test('coordinate-only provider GPX still produces a valid Peakbagger draft', async () => {
@@ -864,7 +997,7 @@ test('a capture that finishes for a different activity is not reused after navig
     // the lookup is released, or it would resolve through the (already
     // guarded) same-activity fast path instead of the in-flight one.
     const first = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-    await until(() => harness.fetchCalls.some(call => call.includes('/Async/pllbb2.aspx')));
+    await until(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
     harness.tabs.get(1).url = 'https://www.strava.com/activities/456';
     const second = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -932,7 +1065,8 @@ test('capture rejects a different activity or unsupported origin at the first wo
         assert.equal(result.phase, 'error', nextUrl);
         assert.equal(result.error.code, 'activity-changed', nextUrl);
         assert.equal(harness.scriptCalls.length, 0, 'no provider page code runs after identity changes');
-        assert.equal(harness.fetchCalls.length, 0, 'no login or summit request runs after identity changes');
+        assert.equal(harness.peakbaggerPageCalls.length, 0,
+            'no page-context login or summit request runs after identity changes');
     }
 });
 
@@ -950,7 +1084,7 @@ test('capture rejects a provider-reported SPA navigation after the GPX read', as
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'activity-changed');
     assert.equal(harness.providerCaptureCalls.length, 1);
-    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0,
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0,
         'coordinates from the replacement activity never reach summit lookup');
 });
 
@@ -976,7 +1110,7 @@ test('capture does not follow a same-tab activity navigation after ownership app
     assert.equal(result.error.code, 'activity-changed');
     assert.equal(harness.providerCaptureCalls.length, 0,
         'the provider export is never requested for the replacement activity');
-    assert.equal(harness.fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length, 0,
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0,
         'no coordinates from the replacement activity reach summit analysis');
 });
 
@@ -1025,7 +1159,7 @@ test('cancel during capture admission prevents provider access and reports succe
     assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
     assert.equal(harness.scriptCalls.length, 0,
         'ownership inspection and provider capture must not start after the cancellation intent');
-    assert.equal(harness.fetchCalls.length, 0,
+    assert.equal(harness.peakbaggerPageCalls.length, 0,
         'Peakbagger login and corridor requests must not start after the cancellation intent');
 });
 
@@ -1042,7 +1176,7 @@ test('cancelling an in-progress capture discards its job and ignores later resul
     };
 
     const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-    await until(() => harness.fetchCalls.some(call => call.includes('/Async/pllbb2.aspx')));
+    await until(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
     const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
     assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
     assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
@@ -1076,7 +1210,10 @@ test('cancelling during corridor lookup aborts the background request owner imme
     assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
     assert.deepEqual(harness.providerCancelCalls, [generation],
         'the page-owned provider request is cancelled independently too');
-    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 1,
+    assert.deepEqual(harness.peakbaggerPageCancelCalls,
+        [harness.peakbaggerPageCalls.find(call => call.kind === 'peaks').requestId],
+        'the page-owned Peakbagger request is also aborted');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1,
         'cancellation cannot start the retry attempt');
 });
 
@@ -1565,7 +1702,7 @@ test('changing capture settings invalidates a reusable job for the same activity
 
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
-    assert.deepEqual(harness.scriptCalls.filter(call => call.args?.length === 3).at(-1).args[0], {
+    assert.deepEqual(harness.providerCaptureCalls.at(-1).options, {
         retainWaypoints: false,
         includeTripName: true
     });
@@ -1589,7 +1726,8 @@ test('non-owned activities show the failure badge and never query coordinates', 
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'not-owner');
     assert.ok(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'));
-    assert.equal(harness.fetchCalls.length, 0, 'ownership must fail before any Peakbagger or GPS-coordinate request');
+    assert.equal(harness.peakbaggerPageCalls.length, 0,
+        'ownership must fail before any Peakbagger or GPS-coordinate request');
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
 });
 
@@ -1654,7 +1792,7 @@ test('an activity without a provider GPX ends in a neutral, reusable no-GPS stat
     assert.equal(result.message, 'This activity has no recorded route to capture.');
     assert.equal(result.hasCachedGpx, false);
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
-    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
     assert.equal(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'), false);
 
     const firstJobId = result.id;
@@ -1684,5 +1822,5 @@ test('a nominally successful export with no usable points also ends without an e
     assert.equal(result.phase, 'no-gps');
     assert.equal(result.error, null);
     assert.equal(result.hasCachedGpx, false);
-    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
 });

@@ -197,8 +197,9 @@ are explicit, read Peakbagger ascents one at a time, and skip existing backups
 by default.
 
 Better Peakbagger is an interactive client, not a crawler. It uses your normal
-signed-in session and stops or pauses for rate limits or human checks. It never
-solves CAPTCHAs, rotates identities or proxies, or evades blocks.
+signed-in session through a Peakbagger page, without requesting permission to
+read cookie values, and stops or pauses for rate limits or human checks. It
+never solves CAPTCHAs, rotates identities or proxies, or evades blocks.
 
 ### Why doesn't Better Peakbagger update Peakbagger ascents automatically?
 
