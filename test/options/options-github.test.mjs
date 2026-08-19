@@ -1171,7 +1171,7 @@ test('a failed GitHub disconnect stays connected and does not announce success',
         .some(button => button.textContent === 'Try again'));
 });
 
-test('the connected ascent panel reports repository-backed progress and refreshes on focus', async () => {
+test('the connected ascent panel keeps a fresh repository-backed count across ordinary focus', async () => {
     let ascentCount = 0;
     let summaryReads = 0;
     const status = {
@@ -1223,6 +1223,99 @@ test('the connected ascent panel reports repository-backed progress and refreshe
     el(dom, 'github-ascent-panel').querySelector('.github-backup-summary')
         .dispatchEvent(new dom.window.Event('nothing'));
     assert.ok(summaryReads === readsBeforeFocus, 'sanity: nothing has re-read yet');
+});
+
+test('returning from My Ascents refreshes the backup count once inside its TTL', async () => {
+    let ascentCount = 0;
+    let summaryReads = 0;
+    let opened = null;
+    const target = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999&sort=AscentDate';
+    const status = {
+        enabled: true, connected: true, hasToken: true, permissionGranted: true,
+        account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.tabs = { create: async details => { opened = details.url; } };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'PEAKBAGGER_MY_ASCENTS') reply = { ok: true, url: target };
+                if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
+                    summaryReads++;
+                    reply = { ok: true, count: ascentCount };
+                }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => /No ascents backed up yet/.test(el(dom, 'github-ascent-panel').textContent));
+    Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Open My Ascents').click();
+    await waitFor(dom, () => opened === target);
+
+    ascentCount = 4;
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await waitFor(dom, () => /4 ascents backed up/.test(el(dom, 'github-ascent-panel').textContent));
+    assert.equal(summaryReads, 2);
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await new Promise(resolve => dom.window.setTimeout(resolve, 30));
+    assert.equal(summaryReads, 2, 'the My Ascents return token is consumed exactly once');
+});
+
+test('an expired visible summary refreshes once without blanking the old count', async () => {
+    let now = 1_000;
+    let summaryReads = 0;
+    let ascentCount = 2;
+    let finishRefresh = null;
+    let visibility = 'visible';
+    const status = {
+        enabled: true, connected: true, hasToken: true, permissionGranted: true,
+        account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareWindow: window => {
+            window.Date.now = () => now;
+            Object.defineProperty(window.document, 'visibilityState', {
+                configurable: true,
+                get: () => visibility,
+            });
+        },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
+                    summaryReads++;
+                    reply = finishRefresh
+                        ? new Promise(resolve => { finishRefresh = () => resolve({ ok: true, count: ascentCount }); })
+                        : { ok: true, count: ascentCount };
+                }
+                const result = Promise.resolve(reply);
+                if (typeof callback === 'function') result.then(callback);
+                return result;
+            };
+        },
+    });
+    await waitFor(dom, () => /2 ascents backed up/.test(el(dom, 'github-ascent-panel').textContent));
+    now += 60_001;
+    ascentCount = 5;
+    finishRefresh = () => {};
+    visibility = 'hidden';
+    dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    visibility = 'visible';
+    dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await waitFor(dom, () => /Updating/.test(el(dom, 'github-ascent-panel').textContent));
+    assert.match(el(dom, 'github-ascent-panel').textContent, /2 ascents backed up/,
+        'the previous count stays visible while the refresh is pending');
+    assert.doesNotMatch(el(dom, 'github-ascent-panel').textContent, /Checking existing backups/);
+    assert.equal(summaryReads, 2, 'visibility and focus share one in-flight refresh');
+    finishRefresh();
+    await waitFor(dom, () => /5 ascents backed up/.test(el(dom, 'github-ascent-panel').textContent));
 });
 
 test('the GitHub panel re-checks access only after an actual round trip to GitHub', async () => {
