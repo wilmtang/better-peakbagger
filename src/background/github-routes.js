@@ -12,6 +12,7 @@ import { githubErrors as GithubErrors } from '../github/github-errors.js';
 import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
+import { trustedActions as TrustedActions } from './trusted-actions.js';
 
 const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
 const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
@@ -70,6 +71,7 @@ export function createGithubRoutes({
     createPhotoStore = PhotoStore.createPhotoStore,
     resolveGithubAccess = null,
     photoBackupSettings = Settings,
+    trustedActions = null,
 }) {
     // ---- GitHub ascent backup: auth + repository setup ---------------------
     //
@@ -862,6 +864,14 @@ export function createGithubRoutes({
     // feature is off, disconnected, or the sender is not a Peakbagger tab.
     const backupAscent = async (message, sender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!message?.auto && !(await trustedActions?.consumeGrant(
+            message,
+            sender,
+            TrustedActions.ACTIONS.ASCENT_BACKUP,
+            { oneUse: true },
+        ))) {
+            return { ok: false, error: { code: 'activation-required' } };
+        }
         try {
             return await runAscentGithubOperation(async signal => {
                 const access = await connectedGithubClient({ requireEnabled: true, signal });

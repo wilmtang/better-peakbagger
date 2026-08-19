@@ -7,24 +7,32 @@
 
 const issue = async (ext, event, action, generation) => {
     if (event?.isTrusted !== true) return null;
-    const response = await ext.runtime.sendMessage({
-        type: 'TRUSTED_ACTION_ISSUE',
-        action,
-        generation: String(generation),
-    });
-    return response?.ok ? response : null;
+    try {
+        const response = await ext.runtime.sendMessage({
+            type: 'TRUSTED_ACTION_ISSUE',
+            action,
+            generation: String(generation),
+        });
+        return response?.ok ? response : null;
+    } catch {
+        return null;
+    }
 };
 
 const begin = async (ext, event, action, generation) => {
     const activation = await issue(ext, event, action, generation);
     if (!activation) return null;
-    const response = await ext.runtime.sendMessage({
-        type: 'TRUSTED_ACTION_BEGIN',
-        action,
-        generation: String(generation),
-        activationToken: activation.token,
-    });
-    return response?.ok ? response : null;
+    try {
+        const response = await ext.runtime.sendMessage({
+            type: 'TRUSTED_ACTION_BEGIN',
+            action,
+            generation: String(generation),
+            activationToken: activation.token,
+        });
+        return response?.ok ? response : null;
+    } catch {
+        return null;
+    }
 };
 
 const end = (ext, workflow, generation) => {

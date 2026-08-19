@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { evalBundle, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -44,6 +44,9 @@ const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = tr
                 sent.push(message);
                 let reply = null;
                 if (message.type === 'GITHUB_BACKUP_STATUS') reply = status;
+                else if (message.type === 'TRUSTED_ACTION_ISSUE') reply = { ok: true, token: 'activation-1' };
+                else if (message.type === 'TRUSTED_ACTION_BEGIN') reply = { ok: true, grantToken: 'grant-1' };
+                else if (message.type === 'TRUSTED_ACTION_END') reply = { ok: true };
                 else if (message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT') reply = onPreflight
                     ? onPreflight(message)
                     : { ok: true, fresh: false };
@@ -112,7 +115,7 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/abc', isUpdate: false } }; },
     });
     await waitFor(dom, () => control(dom));
-    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
 
     assert.ok(received, 'a GITHUB_BACKUP_ASCENT message was sent');
@@ -125,11 +128,41 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     assert.equal(received.page.peak.name, 'Mount Rainier');
     assert.match(received.page.report.markdown, /\*\*Great climb\*\*/);
     assert.match(received.gpx, /<gpx>/);           // fetched in the page session
+    assert.equal(received.grantToken, 'grant-1');
+    assert.equal(received.generation, '2');
     // Success state links to the commit.
     const link = control(dom).querySelector('.bpb-gh-link');
     assert.equal(link.getAttribute('href'), 'https://github.com/me/backup/commit/abc');
     // Never touched a Peakbagger Save control (there are none on this page).
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 1);
+});
+
+test('a synthetic host-page click cannot read or send a manual backup', async () => {
+    let editReads = 0;
+    const { dom, sent } = await loadSurface({
+        status: { enabled: true, connected: true },
+        onEditFetch: ({ target, editHtml }) => {
+            editReads += 1;
+            return {
+                ok: true,
+                status: 200,
+                url: String(target),
+                redirected: false,
+                headers: { get: () => 'text/html' },
+                text: async () => editHtml,
+            };
+        },
+    });
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
+    const readsBeforeClick = editReads;
+
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+    assert.equal(editReads, readsBeforeClick);
+    assert.equal(sent.some(message => message.type === 'TRUSTED_ACTION_ISSUE'), false);
+    assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false);
+    assert.match(control(dom).textContent, /Back up to GitHub/);
 });
 
 test('a 200 error page for a displayed track aborts without replacing the backup', async () => {
@@ -149,7 +182,7 @@ test('a 200 error page for a displayed track aborts without replacing the backup
         onBackup: message => { received = message; return { ok: true, result: {} }; },
     });
     await waitFor(dom, () => control(dom));
-    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /unexpected page instead of the GPS track/i.test(control(dom).textContent));
 
     assert.equal(received, null, 'an ambiguous track failure must not send a destructive replacement');
@@ -162,7 +195,7 @@ test('an incomplete edit-form response aborts without sending a sparse backup', 
         editOk: false,
     });
     await waitFor(dom, () => control(dom));
-    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /temporarily unavailable \(HTTP 500\)/i.test(control(dom).textContent));
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
 });
@@ -173,7 +206,7 @@ test('a typed backup error shows an actionable message with a retry', async () =
         onBackup: () => ({ ok: false, error: { code: 'rate-limit' } }),
     });
     await waitFor(dom, () => control(dom));
-    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /rate-limiting/.test(control(dom).textContent));
     assert.ok(Array.from(control(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
@@ -184,20 +217,23 @@ test('an unexpected backup error shows GitHub\'s bounded detail', async () => {
         onBackup: () => ({ ok: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } }),
     });
     await waitFor(dom, () => control(dom));
-    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /Repository service is temporarily unavailable/.test(control(dom).textContent));
     assert.doesNotMatch(control(dom).textContent, /something went wrong/i);
 });
 
 test('automatic mode pushes on load without a click', async () => {
     let received = null;
-    const { dom } = await loadSurface({
+    const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
         onPreflight: () => ({ ok: true, fresh: true }),
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/z', isUpdate: false } }; },
     });
     await waitFor(dom, () => control(dom) && /Backed up/.test(control(dom).textContent));
     assert.ok(received && received.auto === true, 'the push was flagged automatic');
+    assert.equal('grantToken' in received, false);
+    assert.equal(sent.some(message => message.type.startsWith('TRUSTED_ACTION_')), false,
+        'save-owned automatic backup keeps its separate freshness authorization');
 });
 
 test('automatic mode on a revisit falls back to the manual button, not an error', async () => {
@@ -267,7 +303,7 @@ test('slow-backup feedback includes the persisted Peakbagger read', async () => 
         onBackup: () => ({ ok: true, result: {} }),
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
-    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
 
     await waitFor(dom, () => /This backup is taking longer than usual/.test(control(dom).textContent));
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false,

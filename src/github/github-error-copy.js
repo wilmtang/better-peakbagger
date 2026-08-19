@@ -37,6 +37,7 @@ const ERROR_TEXT = Object.freeze({
     'peakbagger-read': 'Better Peakbagger could not read the saved ascent form. Reload the page and try again.',
     'peakbagger-track': 'Better Peakbagger could not read the stored GPS track. Reload the page and try again.',
     'settings-unavailable': 'Settings could not be read, so no backup was changed.',
+    'activation-required': 'This backup needs a fresh click. Try again.',
     'photo-backup-too-large': 'Photo-library metadata is above the 8 MiB GitHub recovery limit. '
         + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.',
     disabled: 'GitHub backup is turned off in extension settings.',

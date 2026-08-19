@@ -2309,6 +2309,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         isFresh,
         readMap,
         mutateMap,
+        trustedActions,
     });
     const photoRoutes = createPhotoRoutes({
         ext,

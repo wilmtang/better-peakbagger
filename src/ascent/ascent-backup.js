@@ -16,6 +16,7 @@ import { githubError as GithubError } from '../github/github-error-copy.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
 (() => {
     'use strict';
@@ -69,7 +70,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             type: 'button',
             class: 'bpb-gh-btn',
             text: 'Back up to GitHub',
-            onclick: () => runBackup(info),
+            onclick: event => runBackup(info, { event }),
         }),
     );
 
@@ -95,7 +96,12 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
     const renderError = (info, error) => setBody(
         el('span', { class: 'bpb-gh-label bpb-gh-err', text: errorText(error) }),
-        el('button', { type: 'button', class: 'bpb-gh-btn', text: 'Try again', onclick: () => runBackup(info) }),
+        el('button', {
+            type: 'button',
+            class: 'bpb-gh-btn',
+            text: 'Try again',
+            onclick: event => runBackup(info, { event }),
+        }),
     );
 
     const responseText = async (url, kind) => {
@@ -168,12 +174,31 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         else renderIdle(info);
     };
 
-    const runBackup = async (info, { auto = false, current = null } = {}) => {
+    const runBackup = async (info, { auto = false, current = null, event = null } = {}) => {
+        // The host page can synthesize DOM events but cannot mint isTrusted.
+        // Refuse before reading owner-only data or changing the control.
+        if (!auto && event?.isTrusted !== true) return;
+        const intendedGeneration = operationGeneration + 1;
+        const workflow = auto ? null : await TrustedAction.begin(
+            ext,
+            event,
+            'ascent-backup',
+            intendedGeneration,
+        );
+        if (!auto && !workflow) {
+            renderError(info, { code: 'activation-required' });
+            return;
+        }
         const generation = beginOperation({ slow: true });
+        if (generation !== intendedGeneration) {
+            if (workflow) void TrustedAction.end(ext, workflow, intendedGeneration);
+            return;
+        }
         renderWorking();
         try {
             current = current || await readCurrentBackup(info);
         } catch (error) {
+            if (workflow) void TrustedAction.end(ext, workflow, generation);
             if (!finishOperation(generation)) return;
             renderError(info, error);
             return;
@@ -185,7 +210,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             pageComplete: true,
             gpx: current.gpx,
             auto,
+            ...(workflow ? { grantToken: workflow.grantToken, generation: String(generation) } : {}),
         });
+        if (workflow) void TrustedAction.end(ext, workflow, generation);
         if (!ownsOperation(generation)) return;
         if (response && response.ok) {
             if (finishOperation(generation)) renderSuccess(response.result);

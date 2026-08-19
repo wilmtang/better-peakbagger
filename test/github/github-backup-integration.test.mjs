@@ -136,15 +136,37 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     };
     const context = vm.createContext({
         browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController,
-        TextEncoder, TextDecoder, atob, btoa, setTimeout: workerSetTimeout, clearTimeout,
+        TextEncoder, TextDecoder, atob, btoa, crypto: globalThis.crypto,
+        setTimeout: workerSetTimeout, clearTimeout,
     });
     context.globalThis = context;
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
     const listener = runtimeMessage.listeners[0];
-    const send = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
+    const rawSend = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
+    let trustedActionSequence = 0;
+    const send = async (message, sender = {}) => {
+        if (message?.type === 'GITHUB_BACKUP_ASCENT' && !message.auto && !message.grantToken) {
+            const generation = `test-ascent-${++trustedActionSequence}`;
+            const issued = await rawSend({
+                type: 'TRUSTED_ACTION_ISSUE',
+                action: 'ascent-backup',
+                generation,
+            }, sender);
+            if (issued?.ok) {
+                const begun = await rawSend({
+                    type: 'TRUSTED_ACTION_BEGIN',
+                    action: 'ascent-backup',
+                    generation,
+                    activationToken: issued.token,
+                }, sender);
+                if (begun?.ok) message = { ...message, generation, grantToken: begun.grantToken };
+            }
+        }
+        return rawSend(message, sender);
+    };
     return {
-        send, session, local, sync, alarms, githubCalls, transientBackoffs,
+        send, rawSend, session, local, sync, alarms, githubCalls, transientBackoffs,
         syncReadCount: () => syncReadCount,
         fireStorageChange: (changes, areaName) => storageChanged.listeners.forEach(l => l(changes, areaName)),
         fireAlarm: name => alarms.onAlarm.listeners.forEach(l => l({ name })),
@@ -195,6 +217,23 @@ const editSnapshot = () => ({
     },
 });
 const storedSnapshotKey = (snapshot = editSnapshot(), sender = EDIT_SENDER) => `${snapshot.key}|tab:${sender.tab.id}`;
+
+test('the worker rejects a manual ascent backup without a consumed trusted-action grant', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const result = await worker.rawSend({
+        type: 'GITHUB_BACKUP_ASCENT',
+        pageComplete: true,
+        page: {
+            ascent: { id: 7654321, date: '2026-07-12' },
+            peak: { id: 2296, name: 'Mount Rainier' },
+        },
+    }, PEAK_SENDER);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'activation-required');
+    assert.equal(worker.githubCalls.length, 0);
+});
 
 test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot consumed', async () => {
     const backend = gitDataBackend();
