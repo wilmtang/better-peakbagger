@@ -953,6 +953,13 @@ export function createGithubRoutes({
     // receives anything.
     const backupProfileBatch = async (message, sender) => {
         if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!(await trustedActions?.consumeGrant(
+            message,
+            sender,
+            TrustedActions.ACTIONS.PROFILE_BACKUP,
+        ))) {
+            return { ok: false, error: { code: 'activation-required' } };
+        }
         const entries = message && message.entries;
         if (!Array.isArray(entries) || entries.length === 0 || entries.length > PROFILE_BACKUP_BATCH_LIMIT) {
             return { ok: false, error: { code: 'no-data' } };

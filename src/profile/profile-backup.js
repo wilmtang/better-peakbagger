@@ -12,6 +12,7 @@ import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-clo
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
 (() => {
     'use strict';
@@ -26,6 +27,8 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     let panel;
     let runner;
     let ownerId;
+    let workflow = null;
+    let workflowGeneration = 0;
 
     const body = (...children) => panel.querySelector('.bpb-profile-body').replaceChildren(...children.filter(Boolean));
     const button = (text, onclick, primary = false) => node('button', {
@@ -66,13 +69,33 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         ? String(error.message).replace(/\s+/g, ' ').trim().slice(0, 220)
         : messageFor(error);
 
+    const endWorkflow = async () => {
+        const ending = workflow;
+        workflow = null;
+        if (ending) await TrustedAction.end(ext, ending, ending.generation);
+    };
+
+    const beginWorkflow = async event => {
+        if (event?.isTrusted !== true) return null;
+        const generation = String(++workflowGeneration);
+        await endWorkflow();
+        const begun = await TrustedAction.begin(ext, event, 'profile-backup', generation);
+        if (!begun) return null;
+        if (generation !== String(workflowGeneration)) {
+            void TrustedAction.end(ext, begun, generation);
+            return undefined;
+        }
+        workflow = { ...begun, generation };
+        return workflow;
+    };
+
     const renderIdle = status => body(
         node('div', { class: 'bpb-profile-copy' }, [
             node('strong', { text: 'Back up your Peakbagger profile' }),
             node('span', { text: `Archive every ascent from every year to ${status.repo.fullName}, even when this page shows only one year. Existing backups are skipped.` }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
-            button('Back up all ascents', () => startBackup(false), true),
+            button('Back up all ascents', event => startBackup(false, event), true),
             button('Refresh all', renderRefreshConfirmation),
         ]),
     );
@@ -83,7 +106,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             node('span', { text: 'This re-syncs every ascent from every year and commits them to GitHub in groups of up to 10, including unchanged entries.' }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
-            button('Refresh every ascent', () => startBackup(true), true),
+            button('Refresh every ascent', event => startBackup(true, event), true),
             button('Cancel', () => initialize()),
         ]),
     );
@@ -200,7 +223,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 result.url,
                 () => renderListChallenge(result, refreshAll, { openFailed: true }),
             ), true),
-            button('Retry', () => startBackup(refreshAll)),
+            button('Retry', event => startBackup(refreshAll, event)),
             button('Cancel', () => initialize()),
         ]),
     );
@@ -250,6 +273,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         }
         if (state.status === 'paused' && state.pauseReason === 'challenge') return renderChallenge(state);
         if (state.status === 'complete' || state.status === 'cancelled') {
+            void endWorkflow();
             const summary = state.status === 'complete'
                 ? `Backed up ${state.backedUp}; skipped ${state.skipped}; failed ${state.failures.length}.`
                 : `Cancelled. Backed up ${state.backedUp}; skipped ${state.skipped}; failed ${state.failures.length}; not backed up ${state.notReached}.`;
@@ -416,8 +440,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     };
 
     const pushAscentBatch = async batch => {
+        if (!workflow) return { ok: false, error: { code: 'activation-required' } };
         const result = await sendBg({
             type: 'GITHUB_BACKUP_PROFILE_BATCH',
+            grantToken: workflow.grantToken,
+            generation: workflow.generation,
             entries: batch.map(({ item, data }) => ({
                 aid: item.aid,
                 snapshot: data.snapshot,
@@ -430,16 +457,33 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         return result;
     };
 
-    const startBackup = async refreshAll => {
+    const startBackup = async (refreshAll, event) => {
+        if (event?.isTrusted !== true) return;
+        const activeWorkflow = await beginWorkflow(event);
+        if (activeWorkflow === undefined) return;
+        if (!activeWorkflow) {
+            return body(
+                node('span', { class: 'bpb-profile-error', text: messageFor({ code: 'activation-required' }) }),
+                button('Try again', retryEvent => startBackup(refreshAll, retryEvent), true),
+            );
+        }
         renderPreparing();
         const list = await completeList();
         if (!list || list.kind) {
+            await endWorkflow();
             if (list && list.kind === 'challenged') return renderListChallenge(list, refreshAll);
-            return body(node('span', { class: 'bpb-profile-error', text: (list && list.reason) || 'Could not read the complete ascent list.' }), button('Try again', () => startBackup(refreshAll)));
+            return body(
+                node('span', { class: 'bpb-profile-error', text: (list && list.reason) || 'Could not read the complete ascent list.' }),
+                button('Try again', retryEvent => startBackup(refreshAll, retryEvent)),
+            );
         }
         const status = await sendBg({ type: 'GITHUB_BACKUP_PROFILE_STATUS' });
         if (!status || !status.ok) {
-            return body(node('span', { class: 'bpb-profile-error', text: messageFor(status && status.error) }), button('Try again', () => startBackup(refreshAll)));
+            await endWorkflow();
+            return body(
+                node('span', { class: 'bpb-profile-error', text: messageFor(status && status.error) }),
+                button('Try again', retryEvent => startBackup(refreshAll, retryEvent)),
+            );
         }
         runner = Core.createRunner({
             ascents: list.ascents,
@@ -453,6 +497,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     };
 
     const initialize = async () => {
+        await endWorkflow();
         runner = null;
         const current = Core.parseAscentList(document, { url: location.href });
         if (!current.isOwner) { removePanel(); return; }

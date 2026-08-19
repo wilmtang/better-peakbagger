@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { evalBundle, loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, fireTrustedEvent, loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
 import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.js';
 
 const PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999';
@@ -14,7 +14,11 @@ const listHtml = await readFile(new URL('../fixtures/pages/climber-ascents.html'
 
 const prepareRuntime = (dom, handler) => {
     dom.window.chrome.runtime.sendMessage = (message, callback) => {
-        const response = handler(message);
+        let response;
+        if (message.type === 'TRUSTED_ACTION_ISSUE') response = { ok: true, token: 'activation-1' };
+        else if (message.type === 'TRUSTED_ACTION_BEGIN') response = { ok: true, grantToken: 'grant-1' };
+        else if (message.type === 'TRUSTED_ACTION_END') response = { ok: true };
+        else response = handler(message);
         if (callback) callback(response);
         return Promise.resolve(response);
     };
@@ -41,6 +45,32 @@ test('owned lists show a restrained full-profile backup entry point', async () =
     assert.match(panel.textContent, /Refresh every ascent\?/);
     assert.match(panel.textContent, /every ascent from every year/);
     assert.match(panel.textContent, /groups of up to 10/);
+});
+
+test('a synthetic host-page click cannot start a profile backup workflow', async () => {
+    const sent = [];
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            dom.window.chrome.runtime.sendMessage = message => {
+                sent.push(message);
+                return Promise.resolve(message.type === 'GITHUB_BACKUP_STATUS'
+                    ? { enabled: true, connected: true, repo: { fullName: 'me/backup' } }
+                    : null);
+            };
+        },
+    });
+    await waitFor(dom, () => dom.window.document.querySelector('.bpb-profile-primary'));
+    sent.length = 0;
+
+    dom.window.document.querySelector('.bpb-profile-primary').click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+    assert.deepEqual(sent, []);
+    assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent,
+        /Back up your Peakbagger profile/);
 });
 
 test('profile backup keeps a retry surface when worker availability is unknown', async () => {
@@ -257,7 +287,7 @@ test('starting from a one-year page fetches the owner\'s complete all-years list
         },
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
-    dom.window.document.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => requestedUrl);
 
     const requested = new URL(requestedUrl);
@@ -282,7 +312,7 @@ test('profile preflight shows GitHub\'s specific failure detail', async () => {
         }),
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
-    dom.window.document.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /Repository service is temporarily unavailable/.test(
         dom.window.document.getElementById('bpb-profile-backup').textContent));
     assert.doesNotMatch(dom.window.document.getElementById('bpb-profile-backup').textContent, /something went wrong/i);
@@ -320,7 +350,7 @@ test('a blocked list-check tab keeps its Peakbagger URL visible and can be retri
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     const panel = dom.window.document.getElementById('bpb-profile-backup');
-    panel.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(panel.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /asking for a human check/.test(panel.textContent));
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Open check').click();
     await waitFor(dom, () => /check tab could not be opened/.test(panel.textContent));
@@ -362,7 +392,7 @@ test('a thrown ascent-check opening keeps the paused runner recoverable', async 
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     const panel = dom.window.document.getElementById('bpb-profile-backup');
-    panel.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(panel.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /interrupted ascent will be retried/.test(panel.textContent));
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Open check').click();
     await waitFor(dom, () => /check tab could not be opened/.test(panel.textContent));
@@ -400,7 +430,7 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
         },
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
-    dom.window.document.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const push = sent.find(message => message.type === 'GITHUB_BACKUP_PROFILE_BATCH');
@@ -412,6 +442,8 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
     assert.equal(push.entries[0].snapshot.peak.id, 990001);
     assert.equal(push.entries[0].snapshot.peak.name, 'Sample Peak 1');
     assert.equal(push.entries[0].gpx, null);
+    assert.equal(push.grantToken, 'grant-1');
+    assert.equal(push.generation, '1');
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent, /Backed up 1; skipped 37; failed 0/);
 });
 
@@ -449,7 +481,7 @@ test('Pause immediately acknowledges and aborts a retractable Peakbagger read', 
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     const panel = dom.window.document.getElementById('bpb-profile-backup');
-    panel.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(panel.querySelector('.bpb-profile-primary'), 'click');
     await started;
     const pause = [...panel.querySelectorAll('button')]
         .find(control => control.textContent === 'Pause');
@@ -481,22 +513,22 @@ test('Cancel during a GitHub write says it will stop after that batch and counts
             const aids = [...dom.window.document.querySelectorAll('a[href*="/ascent.aspx?aid="]')]
                 .map(anchor => Number(new dom.window.URL(anchor.href).searchParams.get('aid')));
             const existing = aids.slice(1).map(aid => `2020-01-01-peak-a${aid}`);
-            dom.window.chrome.runtime.sendMessage = message => {
+            prepareRuntime(dom, message => {
                 if (message.type === 'GITHUB_BACKUP_STATUS') {
-                    return Promise.resolve({
+                    return {
                         enabled: true, connected: true, repo: { fullName: 'me/backup' },
-                    });
+                    };
                 }
                 if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') {
-                    return Promise.resolve({ ok: true, enabled: true, connected: true, folders: existing });
+                    return { ok: true, enabled: true, connected: true, folders: existing };
                 }
                 if (message.type === 'GITHUB_BACKUP_PROFILE_BATCH') {
                     pushes.push(message.entries.map(entry => entry.aid));
                     batchStarted();
                     return pending;
                 }
-                return Promise.resolve(null);
-            };
+                return null;
+            });
             dom.window.fetch = async url => ({
                 ok: true,
                 status: 200,
@@ -508,7 +540,7 @@ test('Cancel during a GitHub write says it will stop after that batch and counts
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     const panel = dom.window.document.getElementById('bpb-profile-backup');
-    panel.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(panel.querySelector('.bpb-profile-primary'), 'click');
     await started;
     const cancel = [...panel.querySelectorAll('button')]
         .find(control => control.textContent === 'Cancel');
@@ -570,7 +602,7 @@ test('a GPS-flagged ascent fetches its track from the current GPXFile endpoint',
         },
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
-    dom.window.document.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const gpxRequest = requested.find(href => /GPXFile\.aspx/i.test(href));
@@ -629,7 +661,7 @@ test('a 200 error page for the track fails with an honest, redirect-naming reaso
         },
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
-    dom.window.document.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');
@@ -670,7 +702,7 @@ test('a GitHub write error pauses visibly and resume retries the same ascent', a
         },
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
-    dom.window.document.querySelector('.bpb-profile-primary').click();
+    fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
     await waitFor(dom, () => /GitHub backup paused/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');

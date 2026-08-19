@@ -146,17 +146,22 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const rawSend = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
     let trustedActionSequence = 0;
     const send = async (message, sender = {}) => {
-        if (message?.type === 'GITHUB_BACKUP_ASCENT' && !message.auto && !message.grantToken) {
-            const generation = `test-ascent-${++trustedActionSequence}`;
+        const action = message?.type === 'GITHUB_BACKUP_ASCENT' && !message.auto
+            ? 'ascent-backup'
+            : message?.type === 'GITHUB_BACKUP_PROFILE_BATCH'
+                ? 'profile-backup'
+                : null;
+        if (action && !message.grantToken) {
+            const generation = `test-${action}-${++trustedActionSequence}`;
             const issued = await rawSend({
                 type: 'TRUSTED_ACTION_ISSUE',
-                action: 'ascent-backup',
+                action,
                 generation,
             }, sender);
             if (issued?.ok) {
                 const begun = await rawSend({
                     type: 'TRUSTED_ACTION_BEGIN',
-                    action: 'ascent-backup',
+                    action,
                     generation,
                     activationToken: issued.token,
                 }, sender);
@@ -218,7 +223,7 @@ const editSnapshot = () => ({
 });
 const storedSnapshotKey = (snapshot = editSnapshot(), sender = EDIT_SENDER) => `${snapshot.key}|tab:${sender.tab.id}`;
 
-test('the worker rejects a manual ascent backup without a consumed trusted-action grant', async () => {
+test('the worker rejects manual backup mutations without consumed trusted-action grants', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({ auth: AUTH, github: backend.handler });
     const result = await worker.rawSend({
@@ -232,6 +237,21 @@ test('the worker rejects a manual ascent backup without a consumed trusted-actio
 
     assert.equal(result.ok, false);
     assert.equal(result.error.code, 'activation-required');
+    assert.equal(worker.githubCalls.length, 0);
+
+    const profile = await worker.rawSend({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH',
+        entries: [{
+            aid: 7654321,
+            snapshot: {
+                ascent: { id: 7654321, date: '2026-07-12' },
+                peak: { id: 2296, name: 'Mount Rainier' },
+            },
+            gpx: null,
+        }],
+    }, LIST_SENDER);
+    assert.equal(profile.ok, false);
+    assert.equal(profile.error.code, 'activation-required');
     assert.equal(worker.githubCalls.length, 0);
 });
 
