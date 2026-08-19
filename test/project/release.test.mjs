@@ -48,6 +48,12 @@ import {
 import { prepareFirefoxSource } from '../../scripts/run-firefox.mjs';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
 import {
+    AUTHORED_SOURCE_ROOTS,
+    ENTRIES,
+    entrySources,
+    root,
+} from '../../scripts/build-config.mjs';
+import {
     expectedReleaseFiles,
     requireArchiveArguments,
     validateArchiveEntries,
@@ -375,6 +381,9 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
     assert.match(metadata.version.approval_notes, /maplibre-gl-worker\.mjs/);
     assert.match(metadata.version.approval_notes, /imported directly by the native terrain-frame module/);
     assert.match(metadata.version.approval_notes, /THIRD_PARTY_NOTICES\.txt/);
+    assert.match(metadata.version.approval_notes,
+        /Runtime source under options\/, photos\/, popup\/, src\//,
+        'reviewer notes must derive every authored runtime root from the build graph');
     assert.match(metadata.version.approval_notes, /CodeMirror\/Lezer/);
     assert.match(metadata.version.approval_notes, /TipTap\/ProseMirror/);
     assert.match(metadata.version.approval_notes, /TipTap core 3\.29\.2/);
@@ -388,6 +397,19 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
     assert.doesNotMatch(metadata.version.approval_notes, /Returning to 2D destroys the renderer/);
     assert.match(metadata.description['en-US'], /coordinate corridor boxes/);
     assert.match(metadata.description['en-US'], /Waypoint coordinates and names are included by default/);
+});
+
+test('every bundle entry belongs to an AMO-declared authored source root', () => {
+    assert.deepEqual(AUTHORED_SOURCE_ROOTS, ['options', 'photos', 'popup', 'src']);
+    for (const entry of ENTRIES) {
+        for (const source of entrySources(entry)) {
+            const relative = path.relative(root, source);
+            assert.ok(!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative),
+                `${entry.out} source must stay inside the repository: ${source}`);
+            assert.ok(AUTHORED_SOURCE_ROOTS.includes(relative.split(path.sep)[0]),
+                `${entry.out} source root must be declared for AMO reviewers: ${relative}`);
+        }
+    }
 });
 
 async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {

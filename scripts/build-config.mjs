@@ -93,6 +93,19 @@ export function entrySources(entry) {
     return entry.sources.map(resolve);
 }
 
+// Reviewer metadata must name every authored top-level source root. Derive the
+// list from the same resolved entry graph the build consumes so adding another
+// page-local root cannot leave the AMO instructions behind.
+export const AUTHORED_SOURCE_ROOTS = Object.freeze([...new Set(
+    ENTRIES.flatMap(entry => entrySources(entry)).map(source => {
+        const relative = path.relative(root, source);
+        if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+            throw new Error(`Bundle source is outside the repository: ${source}`);
+        }
+        return relative.split(path.sep)[0];
+    })
+)].sort());
+
 // Static files copied verbatim into dist. [from (root-relative), to (dist-relative)].
 export const COPY_FILES = [
     ['ACKNOWLEDGEMENTS.md', 'ACKNOWLEDGEMENTS.md'],

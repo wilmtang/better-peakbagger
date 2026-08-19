@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js';
+import { AUTHORED_SOURCE_ROOTS } from './build-config.mjs';
 import { dependencyVersionsFromLock } from './dependency-metadata.mjs';
 
 const terrainKeepAliveMinutes = TERRAIN_FRAME_KEEP_ALIVE_MS / 60_000;
@@ -31,6 +32,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
         throw new Error('Resolved dependency versions are required for reviewer metadata');
     }
     const versions = dependencyVersions;
+    const authoredRoots = AUTHORED_SOURCE_ROOTS.map(rootName => `${rootName}/`).join(', ');
 
     return {
         summary: {
@@ -58,7 +60,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
                 },
             },
             approval_notes: [
-                `Runtime source under src/, options/, and popup/ is authored as ES modules. esbuild ${versions.esbuild} bundles and minifies classic browser entries into self-contained IIFEs under dist/; the extension-owned terrain frame remains a native ESM entry. web-ext packages dist/. Run \`npm ci && npm run build:release\` from the tagged source to reproduce the runtime tree.`,
+                `Runtime source under ${authoredRoots} is authored as ES modules. esbuild ${versions.esbuild} bundles and minifies classic browser entries into self-contained IIFEs under dist/; the extension-owned terrain frame remains a native ESM entry. web-ext packages dist/. Run \`npm ci && npm run build:release\` from the tagged source to reproduce the runtime tree.`,
                 '',
                 'The packaged THIRD_PARTY_NOTICES.txt is generated from esbuild metafiles and separately copied runtime inputs. It records the version, declared license, source notice filenames, SHA-256 notice hash, and full notice text for every shipped npm package root, including the CodeMirror/Lezer and TipTap/ProseMirror editor dependency families. The BetaCreator-derived symbol geometry is the sole reviewed non-package override.',
                 '',
