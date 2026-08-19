@@ -29,6 +29,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             fallback: 'The extension did not return an error description. Reload this ascent and try again.',
         });
     const sendBg = RuntimeMessage.bind(ext);
+    const SLOW_BACKUP_NOTICE_MS = 20_000;
 
     const el = Dom.element;
 
@@ -47,6 +48,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const renderChecking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Checking GitHub…' }));
 
     const renderWorking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Backing up to GitHub…' }));
+
+    const renderSlow = () => setBody(el('span', {
+        class: 'bpb-gh-label',
+        text: 'GitHub is taking longer than usual…',
+    }));
 
     const renderCurrent = () => setBody(
         el('span', { class: 'bpb-gh-label bpb-gh-ok', text: 'Backed up ✓' }),
@@ -104,18 +110,24 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         gpx: info.gpxUrl ? await responseText(info.gpxUrl, 'gpx') : null,
     });
 
-    const checkBackup = async (info, current = null) => {
+    const checkBackup = async (info, current = null, { reconcile = false, failure = null } = {}) => {
         renderChecking();
         let source = current;
         try { source = source || await readCurrentBackup(info); }
-        catch { renderIdle(info); return; }
+        catch (error) {
+            if (failure) renderError(info, error);
+            else renderIdle(info);
+            return;
+        }
         const response = await sendBg({
             type: 'GITHUB_CHECK_ASCENT_BACKUP',
             page: source.page,
             pageComplete: true,
             gpx: source.gpx,
+            reconcile,
         });
         if (response && response.ok && response.current) renderCurrent();
+        else if (failure) renderError(info, response && response.error ? response.error : failure);
         else renderIdle(info);
     };
 
@@ -127,18 +139,36 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             renderError(info, error);
             return;
         }
-        const response = await sendBg({
-            type: 'GITHUB_BACKUP_ASCENT',
-            page: current.page,
-            pageComplete: true,
-            gpx: current.gpx,
-            auto,
-        });
+        const slowTimer = typeof globalThis.setTimeout === 'function'
+            ? globalThis.setTimeout(renderSlow, SLOW_BACKUP_NOTICE_MS)
+            : null;
+        let response;
+        try {
+            response = await sendBg({
+                type: 'GITHUB_BACKUP_ASCENT',
+                page: current.page,
+                pageComplete: true,
+                gpx: current.gpx,
+                auto,
+            });
+        } finally {
+            if (slowTimer !== null && typeof globalThis.clearTimeout === 'function') {
+                globalThis.clearTimeout(slowTimer);
+            }
+        }
         if (response && response.ok) { renderSuccess(response.result); return; }
         // Automatic mode on a revisit must not commit. Reuse the complete page
         // read to report whether GitHub already holds the same owned payload.
         if (auto && response && response.error && response.error.code === 'no-fresh-save') {
             await checkBackup(info, current);
+            return;
+        }
+        // A timed-out write may have reached GitHub even though its response
+        // did not make it back. Compare the complete payload before offering a
+        // retry, and ask the worker to consume the pending save snapshot only
+        // when that read proves the commit landed.
+        if (response && response.error && response.error.code === 'timeout') {
+            await checkBackup(info, current, { reconcile: true, failure: response.error });
             return;
         }
         renderError(info, response && response.error);

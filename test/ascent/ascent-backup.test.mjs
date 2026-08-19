@@ -16,7 +16,9 @@ import { evalBundle, waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = true, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
+const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = true, gpxOk = true,
+    gpxResponse = null, fastSlowBackupNotice = false,
+    url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
     const editDom = new JSDOM(rawEditHtml);
@@ -27,6 +29,11 @@ const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = tr
     editDoc.getElementById('JournalText').textContent = '[b]Great climb[/b] under blue skies.';
     const editHtml = editDom.serialize();
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
+    if (fastSlowBackupNotice) {
+        const setTimeout = dom.window.setTimeout.bind(dom.window);
+        dom.window.setTimeout = (callback, delay, ...args) =>
+            setTimeout(callback, delay === 20_000 ? 0 : delay, ...args);
+    }
     const sent = [];
     dom.window.chrome = {
         runtime: {
@@ -219,6 +226,48 @@ test('a fresh automatic save reports backup work immediately', async () => {
     await waitFor(dom, () => control(dom) && /Backing up to GitHub/.test(control(dom).textContent));
     finishBackup({ ok: true, result: {} });
     await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+});
+
+test('a slow automatic backup stops claiming ordinary progress while it remains pending', async () => {
+    let finishBackup;
+    const backingUp = new Promise(resolve => { finishBackup = resolve; });
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        fastSlowBackupNotice: true,
+        onPreflight: () => ({ ok: true, fresh: true }),
+        onBackup: () => backingUp,
+    });
+
+    await waitFor(dom, () => control(dom) && /taking longer than usual/i.test(control(dom).textContent));
+    finishBackup({ ok: true, result: {} });
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+});
+
+test('a timed-out backup reconciles a commit that reached GitHub before reporting success', async () => {
+    let checked = null;
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onPreflight: () => ({ ok: true, fresh: true }),
+        onBackup: () => ({ ok: false, error: { code: 'timeout' } }),
+        onCheck: message => { checked = message; return { ok: true, current: true }; },
+    });
+
+    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
+    assert.equal(checked.reconcile, true);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn'), null);
+});
+
+test('a timed-out backup offers retry only after reconciliation proves it is not current', async () => {
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onPreflight: () => ({ ok: true, fresh: true }),
+        onBackup: () => ({ ok: false, error: { code: 'timeout' } }),
+        onCheck: () => ({ ok: true, current: false }),
+    });
+
+    await waitFor(dom, () => control(dom)
+        && /GitHub took too long to respond/.test(control(dom).textContent));
+    assert.ok(Array.from(control(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
 test('automatic preflight carries the complete persisted identity without source data', async () => {

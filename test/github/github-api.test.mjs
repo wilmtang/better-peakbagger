@@ -120,6 +120,32 @@ test('a stalled GitHub request fails on its deadline instead of hanging', async 
     assert.equal(aborts.length, 1, 'the deadline must also release the socket, not just reject');
 });
 
+test('a parent operation deadline aborts a stalled request without transport retries', async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    let aborted = false;
+    const api = GithubApi.createGithubApi({
+        token: 't',
+        timeoutMs: 10_000,
+        signal: controller.signal,
+        sleep: async () => { throw new Error('an aborted operation must not retry'); },
+        fetch: async (_url, init) => {
+            calls += 1;
+            init.signal?.addEventListener('abort', () => { aborted = true; });
+            return new Promise(() => {});
+        },
+    });
+
+    const request = api.request('GET', '/repos/me/backup');
+    controller.abort();
+    await assert.rejects(
+        request,
+        error => error instanceof GithubError && error.code === ERROR_CODES.TIMEOUT,
+    );
+    assert.equal(calls, 1);
+    assert.equal(aborted, true, 'the parent deadline must release the active socket');
+});
+
 test('a response whose body stalls times out rather than outliving the deadline', async () => {
     const api = GithubApi.createGithubApi({
         token: 't',

@@ -48,12 +48,13 @@ const createGithubClient = ({
     branch = null,
     sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
     inlineFileLimitBytes = DEFAULT_INLINE_FILE_LIMIT_BYTES,
+    signal = null,
 } = {}) => {
     // One injected clock for both retry policies: the transport's transient
     // read backoff and this module's conflict backoff are steps of the same
     // caller-owned operation, so a caller that can control one must not be
     // left paying real seconds for the other.
-    const api = GithubApi.createGithubApi({ fetch, token, sleep });
+    const api = GithubApi.createGithubApi({ fetch, token, sleep, signal });
     if (!owner || !repo) throw new TypeError('github client requires owner and repo');
     if (!Number.isFinite(inlineFileLimitBytes) || inlineFileLimitBytes < 0) {
         throw new TypeError('github client requires a non-negative inline file limit');

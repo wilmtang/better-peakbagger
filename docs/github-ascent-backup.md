@@ -339,6 +339,15 @@ the same passive comparison, showing **Backed up ✓** or the manual action. Thi
 is how an ordinary revisit avoids a surprise commit without losing current-state
 feedback.
 
+An individual backup or passive comparison also has a two-minute deadline for
+the complete worker operation, including time spent behind the shared write
+queue. The page changes its ordinary progress copy after 20 seconds so a slow
+operation is not presented as routine. A timed-out write has an unknown outcome:
+before showing Retry, the page performs a read-only complete-payload comparison.
+If GitHub already holds the payload, the worker consumes the pending save
+snapshot and reports success; otherwise the snapshot remains available and the
+page exposes the typed timeout with Retry.
+
 ### Merge precedence at the worker
 
 When a pending snapshot exists:
@@ -952,6 +961,14 @@ Two of those exist because a status code cannot report them:
   both aborts the request and rejects the race, because an injected or
   non-conforming fetch may ignore `signal`.
 
+The per-request bound is not the individual-ascent liveness bound. One backup
+uses several requests and may wait behind another branch mutation, so
+`src/background/github-routes.js` gives the whole operation a parent deadline
+and passes its abort signal through `src/github/github-client.js` into the REST
+transport. Reconciliation after an operation timeout is read-only and consumes
+the exact save-time snapshot only after GitHub proves the complete payload is
+current.
+
 The shared REST reader also counts decoded bytes while streaming: ordinary
 responses stop at 2 MiB, file-content responses at 12 MiB, tree responses at
 16 MiB, and error bodies at 256 KiB. Parsed JSON has separate depth, node,
@@ -1067,7 +1084,7 @@ consumes its own snapshot.
 | `test/ascent/ascent-backup.test.mjs` | Compact action, persisted form + actual GPX, manual/auto message shape, fail-closed UI | Real Save transition or GitHub service |
 | `test/ascent/ascent-saved.test.mjs` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
 | `test/profile/profile-backup*.test.mjs` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
-| `test/github/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls | Real extension worker eviction timing |
+| `test/github/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls, whole-operation timeout and reconciliation cleanup | Real extension worker eviction timing |
 | `test/github/github-api.test.mjs` | Shared authenticated request policy, origin gate, response parsing, and status taxonomy | GitHub service-side policy changes |
 | `test/github/github-client.test.mjs` | Git tree/root-file construction, owned deletion, root-file decode, and conflicts | GitHub service-side policy changes |
 | `npm test` | Current built IIFE bundles in jsdom plus pure modules | Real manifest interpretation and browser worker lifecycle |

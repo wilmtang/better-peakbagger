@@ -99,6 +99,7 @@ const createGithubApi = ({
     now = Date.now,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    signal = null,
 } = {}) => {
     if (typeof fetch !== 'function') throw new TypeError('github api requires an injected fetch');
     if (!token) throw new TypeError('github api requires a token');
@@ -123,9 +124,27 @@ const createGithubApi = ({
         withResponse = false,
     } = {}) => {
         const deadline = Deadline.createRequestDeadline(timeoutMs);
+        let operationCancelled = signal?.aborted === true;
+        let rejectCancellation = null;
+        const cancellation = signal ? new Promise((_, reject) => { rejectCancellation = reject; }) : null;
+        cancellation?.catch(() => {});
+        const cancel = () => {
+            operationCancelled = true;
+            deadline.abort();
+            rejectCancellation?.(Object.assign(new Error('GitHub operation deadline expired.'), {
+                name: 'TimeoutError',
+            }));
+        };
+        if (operationCancelled) cancel();
+        else signal?.addEventListener('abort', cancel, { once: true });
+        const run = promise => deadline.run(cancellation ? Promise.race([promise, cancellation]) : promise);
+        const clear = () => {
+            deadline.clear();
+            signal?.removeEventListener('abort', cancel);
+        };
         let response;
         try {
-            response = await deadline.run(fetch(url.href, {
+            response = await run(fetch(url.href, {
                 method,
                 // A stale authenticated ref read can make every bounded conflict
                 // retry rebuild against the same obsolete parent.
@@ -140,14 +159,14 @@ const createGithubApi = ({
                 ...(body === undefined ? {} : { body: JSON.stringify(body) }),
             }));
         } catch (cause) {
-            deadline.clear();
-            throw deadline.expired
+            clear();
+            throw deadline.expired || operationCancelled || Deadline.isTimeout(cause)
                 ? new GithubError(ERROR_CODES.TIMEOUT, 'GitHub did not respond in time.', { cause })
                 : new GithubError(ERROR_CODES.NETWORK, 'Network request to GitHub failed.', { cause });
         }
 
         if (!response || typeof response.text !== 'function') {
-            deadline.clear();
+            clear();
             throw new GithubError(ERROR_CODES.UNKNOWN, 'GitHub returned an unexpected response.');
         }
 
@@ -159,21 +178,21 @@ const createGithubApi = ({
             : /\/contents(?:\/|$)/.test(url.pathname) ? 'content' : 'default';
         const successLimit = RESPONSE_LIMITS[responseKind];
         try {
-            text = await deadline.run(BoundedText.readBoundedResponseText(response, {
+            text = await run(BoundedText.readBoundedResponseText(response, {
                 maxBytes: response.ok ? successLimit : RESPONSE_LIMITS.error,
                 signal: deadline.signal,
                 label: 'GitHub response',
             }));
         }
         catch (cause) {
-            if (deadline.expired) {
-                deadline.clear();
+            if (deadline.expired || operationCancelled || Deadline.isTimeout(cause)) {
+                clear();
                 throw new GithubError(ERROR_CODES.TIMEOUT, 'GitHub stopped responding while sending its answer.', {
                     status: response.status, cause,
                 });
             }
             if (BoundedText.isLimitError(cause)) {
-                deadline.clear();
+                clear();
                 throw new GithubError(ERROR_CODES.INVALID,
                     'GitHub returned more data than this backup operation can safely process.', {
                         status: response.status,
@@ -182,7 +201,7 @@ const createGithubApi = ({
             }
             text = '';
         }
-        deadline.clear();
+        clear();
 
         let data = null;
         try {
@@ -230,10 +249,14 @@ const createGithubApi = ({
         const url = resolveUrl(path);
         const retryable = method === 'GET';
         for (let tries = 0; ; tries += 1) {
+            if (signal?.aborted) {
+                throw new GithubError(ERROR_CODES.TIMEOUT, 'The GitHub operation took too long to complete.');
+            }
             try {
                 return await attempt(method, url, options);
             } catch (error) {
                 if (!retryable
+                    || signal?.aborted
                     || !(error instanceof GithubError)
                     || !TRANSIENT_CODES.has(error.code)
                     || tries >= TRANSIENT_RETRY_DELAYS.length) throw error;

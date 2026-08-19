@@ -127,15 +127,14 @@ test('every third-party transport bounds its requests through this one module', 
         assert.ok(/request-deadline\.js/.test(source), `${file} must bound its requests`);
     }
 
-    // Discover every module that calls the global fetch directly. Two narrow
-    // adapters are explicit exceptions: GitHub routes hand the native fetch to
-    // the deadline-owning clients above, while peak markers keep one abort
-    // timer alive across both fetch and body read for their native same-origin
-    // request. Any new direct owner has to import the shared deadline or make a
-    // reviewed exception here; it cannot disappear from a hand-kept allowlist.
+    // Discover every module that calls the global fetch directly. Peak markers
+    // remain the one narrow exception: they keep one abort timer alive across
+    // both fetch and body read for their native same-origin request. GitHub
+    // routes now own an additional whole-operation deadline on top of the
+    // deadline-owning clients they receive the native fetch through. Any new
+    // direct owner has to import the shared deadline or make a reviewed
+    // exception here; it cannot disappear from a hand-kept allowlist.
     const directExceptions = new Map([
-        ['background/github-routes.js', source => /const netFetch = \(url, init\) => fetch\(url, init\)/.test(source)
-            && /github-client\.js/.test(source) && /github-auth\.js/.test(source)],
         ['maps/peak-markers.js', source => /setTimeout\(\(\) => controller\.abort\(\), REQUEST_TIMEOUT_MS\)/.test(source)
             && /readBoundedResponseText\(response/.test(source)
             && /clearTimeout\(timeout\)/.test(source)],

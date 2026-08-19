@@ -46,6 +46,7 @@ const settleQuietly = () =>
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
     local: sharedLocal = null, failLocalGetAfterClear = false, localSetHook = null, syncReadFailures = [],
+    fastAscentOperationTimeout = false,
     peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
@@ -124,6 +125,9 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const transientBackoffs = [];
     const TRANSIENT_DELAYS = new Set([400, 1200]);
     const workerSetTimeout = (callback, delay = 0, ...args) => {
+        if (fastAscentOperationTimeout && delay === 120_000) {
+            return setTimeout(callback, 0, ...args);
+        }
         if (TRANSIENT_DELAYS.has(delay)) {
             transientBackoffs.push(delay);
             return setTimeout(callback, 0, ...args);
@@ -326,10 +330,22 @@ test('the worker compares a complete owner page with GitHub without writing', as
         return null;
     } });
 
+    await reader.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
+    assert.ok(reader.session.bpbGithubSnapshots[storedSnapshotKey()]);
+
     const current = await reader.send({
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx,
     }, PEAK_SENDER);
     assert.deepEqual(structuredClone(current), { ok: true, current: true });
+    assert.ok(reader.session.bpbGithubSnapshots[storedSnapshotKey()],
+        'an ordinary passive comparison must preserve the exact Markdown snapshot');
+
+    const reconciled = await reader.send({
+        type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx, reconcile: true,
+    }, PEAK_SENDER);
+    assert.deepEqual(structuredClone(reconciled), { ok: true, current: true });
+    assert.equal(reader.session.bpbGithubSnapshots[storedSnapshotKey()], undefined,
+        'outcome reconciliation consumes a snapshot only after the complete remote payload matches');
 
     const changedPage = structuredClone(page);
     changedPage.ascent.route = 'Emmons Glacier';
@@ -1298,6 +1314,34 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     // The status query reports the auto preference to the surface.
     const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, EDIT_SENDER);
     assert.equal(status.auto, true);
+});
+
+test('an individual ascent backup has an overall deadline and retains its snapshot on timeout', async () => {
+    const worker = createWorker({
+        settings: { enableGithubBackup: true, autoGithubBackup: true },
+        auth: AUTH,
+        fastAscentOperationTimeout: true,
+        github: () => new Promise(() => {}),
+    });
+    const pending = editSnapshot();
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, EDIT_SENDER);
+
+    const result = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        auto: true,
+        pageComplete: true,
+        page: {
+            ascent: { id: 7654321, date: '2026-07-12' },
+            peak: { id: 2296, name: 'Mount Rainier' },
+            report: { markdown: '**Great climb** under blue skies.' },
+        },
+        gpx: null,
+    }, PEAK_SENDER);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'timeout');
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)],
+        'an outcome-unknown timeout must retain the save-time snapshot for reconciliation');
 });
 
 test('an edited ascent matches its save snapshot by aid after peak and date changes', async () => {

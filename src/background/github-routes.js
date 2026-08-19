@@ -10,6 +10,7 @@ import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
 import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 
 const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
@@ -30,6 +31,7 @@ const SNAPSHOT_LIMIT = 10;
 const PROFILE_BACKUP_BATCH_LIMIT = 10;
 const ASCENT_DELETE_INTENTS_KEY = 'bpbGithubAscentDeleteIntents';
 const ASCENT_DELETE_TTL_MS = 30 * 60 * 1000;
+const ASCENT_GITHUB_OPERATION_TIMEOUT_MS = 2 * 60 * 1000;
 
 // Keep access policy beside every handler. A bare function is rejected while
 // the worker boots, so adding a route without deciding who may call it cannot
@@ -668,9 +670,9 @@ export function createGithubRoutes({
         }
     };
 
-    const connectedGithubClient = async ({ requireEnabled = false } = {}) => {
+    const connectedGithubClient = async ({ requireEnabled = false, signal = null } = {}) => {
         if (typeof resolveGithubAccess === 'function') {
-            return resolveGithubAccess({ requireEnabled });
+            return resolveGithubAccess({ requireEnabled, signal });
         }
         if (requireEnabled && !(await Settings.get()).enableGithubBackup) {
             return { error: { code: 'disabled' } };
@@ -690,8 +692,33 @@ export function createGithubRoutes({
                 owner: auth.repo.owner,
                 repo: auth.repo.name,
                 branch: auth.repo.branch || undefined,
+                signal,
             }),
         };
+    };
+
+    // One individual-ascent operation can involve several Git reads, a queued
+    // branch mutation, and conflict retry. Per-request deadlines release a
+    // stalled socket, but without a deadline for the whole transaction a busy
+    // queue or a sequence of merely-slow requests can leave the page waiting
+    // forever. The parent signal also stops a queued client before it can begin
+    // a late mutation after the page has already received a timeout.
+    const runAscentGithubOperation = async operation => {
+        const deadline = Deadline.createRequestDeadline(ASCENT_GITHUB_OPERATION_TIMEOUT_MS);
+        try {
+            return await deadline.run(operation(deadline.signal));
+        } catch (error) {
+            if (deadline.expired || Deadline.isTimeout(error)) {
+                throw new GithubErrors.GithubError(
+                    GithubErrors.ERROR_CODES.TIMEOUT,
+                    'The GitHub ascent backup operation took too long to complete.',
+                    { cause: error },
+                );
+            }
+            throw error;
+        } finally {
+            deadline.clear();
+        }
     };
 
     // Every backup surface targets the same mutable branch, so writes are
@@ -835,47 +862,49 @@ export function createGithubRoutes({
     // feature is off, disconnected, or the sender is not a Peakbagger tab.
     const backupAscent = async (message, sender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const access = await connectedGithubClient({ requireEnabled: true });
-        if (access.error) return { ok: false, error: access.error };
-
-        const found = await findSnapshotForPage(message.page, sender);
-        // Automatic backup fires on every saved-ascent page load, so it must push
-        // only right after a save — i.e. when a matching pending snapshot exists.
-        // Without one (an old ascent merely being viewed) it declines quietly so
-        // it never re-pushes on a revisit; the manual button is still offered.
-        if (message.auto && !found) return { ok: false, error: { code: 'no-fresh-save' } };
-        // Without a pending save snapshot, only a complete owner edit-form read
-        // is safe to commit. A sparse display-page payload would erase fields an
-        // existing backup already holds.
-        if (!found && !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
-        const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page, {
-            pageComplete: !!message.pageComplete,
-        });
-        if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
-        const ascentId = positiveAscentId(snapshot.ascent.id);
-        if (!ascentId) return { ok: false, error: { code: 'no-data' } };
-        if (await deletionBlocksBackup([ascentId])) {
-            return { ok: false, error: { code: 'ascent-delete-pending', message: 'This ascent was deleted from Peakbagger, so its GitHub backup was not recreated.' } };
-        }
-        snapshot.backup = {
-            ...(snapshot.backup || {}),
-            syncedAt: new Date().toISOString(),
-            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : (snapshot.backup && snapshot.backup.extensionVersion) || '',
-        };
-
         try {
-            const result = await writeQueue.run(async () => {
+            return await runAscentGithubOperation(async signal => {
+                const access = await connectedGithubClient({ requireEnabled: true, signal });
+                if (access.error) return { ok: false, error: access.error };
+
+                const found = await findSnapshotForPage(message.page, sender);
+                // Automatic backup fires on every saved-ascent page load, so it must push
+                // only right after a save — i.e. when a matching pending snapshot exists.
+                // Without one (an old ascent merely being viewed) it declines quietly so
+                // it never re-pushes on a revisit; the manual button is still offered.
+                if (message.auto && !found) return { ok: false, error: { code: 'no-fresh-save' } };
+                // Without a pending save snapshot, only a complete owner edit-form read
+                // is safe to commit. A sparse display-page payload would erase fields an
+                // existing backup already holds.
+                if (!found && !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
+                const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page, {
+                    pageComplete: !!message.pageComplete,
+                });
+                if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
+                const ascentId = positiveAscentId(snapshot.ascent.id);
+                if (!ascentId) return { ok: false, error: { code: 'no-data' } };
                 if (await deletionBlocksBackup([ascentId])) {
-                    const error = new Error('This ascent has a pending or completed deletion.');
-                    error.code = 'ascent-delete-pending';
-                    throw error;
+                    return { ok: false, error: { code: 'ascent-delete-pending', message: 'This ascent was deleted from Peakbagger, so its GitHub backup was not recreated.' } };
                 }
-                return access.client.pushAscentBackup(snapshot, { gpx: message.gpx });
+                snapshot.backup = {
+                    ...(snapshot.backup || {}),
+                    syncedAt: new Date().toISOString(),
+                    extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : (snapshot.backup && snapshot.backup.extensionVersion) || '',
+                };
+
+                const result = await writeQueue.run(async () => {
+                    if (await deletionBlocksBackup([ascentId])) {
+                        const error = new Error('This ascent has a pending or completed deletion.');
+                        error.code = 'ascent-delete-pending';
+                        throw error;
+                    }
+                    return access.client.pushAscentBackup(snapshot, { gpx: message.gpx });
+                });
+                // The snapshot has served its purpose; drop it so a later view of the
+                // same page does not re-push from stale data.
+                if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
+                return { ok: true, result };
             });
-            // The snapshot has served its purpose; drop it so a later view of the
-            // same page does not re-push from stale data.
-            if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
-            return { ok: true, result };
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
         }
@@ -886,16 +915,23 @@ export function createGithubRoutes({
     // so an incomplete page can never be labelled current from a sparse view.
     const checkAscentBackup = async (message, sender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const access = await connectedGithubClient({ requireEnabled: true });
-        if (access.error) return { ok: false, error: access.error };
         if (!message || !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
-        const snapshot = mergeBackupSnapshot(null, message.page, { pageComplete: true });
-        if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
         try {
-            return {
-                ok: true,
-                current: await access.client.isAscentBackupCurrent(snapshot, { gpx: message.gpx }),
-            };
+            return await runAscentGithubOperation(async signal => {
+                const access = await connectedGithubClient({ requireEnabled: true, signal });
+                if (access.error) return { ok: false, error: access.error };
+                const snapshot = mergeBackupSnapshot(null, message.page, { pageComplete: true });
+                if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
+                const current = await access.client.isAscentBackupCurrent(snapshot, { gpx: message.gpx });
+                // A timed-out write has an unknown outcome. Only this explicit
+                // reconciliation path may consume its save-time snapshot, and
+                // only after GitHub proves that the complete payload landed.
+                if (current && message.reconcile === true) {
+                    const found = await findSnapshotForPage(message.page, sender);
+                    if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
+                }
+                return { ok: true, current };
+            });
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'Could not check the existing backup.') };
         }
