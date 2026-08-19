@@ -11,7 +11,7 @@ const ORIGIN = 'https://www.peakbagger.com';
 const LOGIN_URL = `${ORIGIN}/Default.aspx`;
 const PEAKS_URL = `${ORIGIN}/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4`;
 
-const load = ({ url = LOGIN_URL, fetchFn = async () => ({
+const load = ({ url = LOGIN_URL, html = '<!doctype html><title>Peakbagger</title>', fetchFn = async () => ({
     ok: true,
     status: 200,
     url: LOGIN_URL,
@@ -19,7 +19,7 @@ const load = ({ url = LOGIN_URL, fetchFn = async () => ({
     headers: new Headers(),
     text: async () => '<html><a href="/climber/climber.aspx?cid=77">My Home Page</a></html>',
 }) } = {}) => {
-    const dom = new JSDOM('<!doctype html><title>Peakbagger</title>', { url, runScripts: 'outside-only' });
+    const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
     dom.window.fetch = fetchFn;
     dom.window.eval(source);
     return dom;
@@ -53,7 +53,7 @@ test('the page transport uses the signed-in page fetch policy for its two captur
     });
     const api = dom.window.BPBPeakbaggerPage;
 
-    assert.equal(api.version, 1);
+    assert.equal(api.version, 2);
     assert.equal(Object.isFrozen(api), true);
     assert.equal((await api.request('login-1', LOGIN_URL, 'html')).kind, 'ok');
     assert.equal((await api.request('peaks-1', PEAKS_URL, 'peaks')).kind, 'ok');
@@ -63,6 +63,29 @@ test('the page transport uses the signed-in page fetch policy for its two captur
         assert.equal(init.redirect, 'follow');
         assert.equal(init.cache, 'no-store');
     }
+});
+
+test('fresh-page account evidence exposes only corroborated navigation links', () => {
+    const dom = load({
+        html: `<!doctype html>
+            <a href="/climber/climber.aspx?cid=77">My Home Page</a>
+            <a href="/climber/climberedit.aspx?cid=77">Edit Account</a>
+            <a href="/climber/ascentedit.aspx?cid=77">Add Ascent</a>
+            <a href="/climber/climblistc.aspx?cid=77">My Ascents</a>
+            <a href="/climber/climber.aspx?cid=999">Someone else's profile</a>
+            <a href="/other.aspx?cid=77">My Home Page</a>
+            <p>Private page text and cid=1234 must not cross the boundary.</p>`,
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(dom.window.BPBPeakbaggerPage.accountEvidence())), {
+        pageUrl: LOGIN_URL,
+        links: [
+            { label: 'My Home Page', href: `${ORIGIN}/climber/climber.aspx?cid=77` },
+            { label: 'Edit Account', href: `${ORIGIN}/climber/climberedit.aspx?cid=77` },
+            { label: 'Add Ascent', href: `${ORIGIN}/climber/ascentedit.aspx?cid=77` },
+            { label: 'My Ascents', href: `${ORIGIN}/climber/climblistc.aspx?cid=77` },
+        ],
+    });
 });
 
 test('the page transport refuses arbitrary same-origin and cross-origin requests before fetch', async () => {
@@ -91,6 +114,7 @@ test('a non-canonical Peakbagger page cannot use the transport', async () => {
         url: 'https://peakbagger.com/Default.aspx',
         fetchFn: async () => { fetches++; throw new Error('must not fetch'); },
     });
+    assert.equal(dom.window.BPBPeakbaggerPage.accountEvidence(), null);
     const result = await dom.window.BPBPeakbaggerPage.request('wrong-page', LOGIN_URL, 'html');
     assert.equal(result.error.code, 'invalid-request');
     assert.equal(fetches, 0);

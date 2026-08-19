@@ -69,8 +69,12 @@ Activity capture is a short-lived, user-started transaction:
 4. **Peakbagger session and summit lookup:** a Peakbagger tab makes the login
    check and the small bounding-box requests derived from the track corridor.
    The extension does not request cookie-reading permission or copy cookie
-   values; the site handles its own signed-in session. Every required lookup
-   must succeed before results appear.
+   values; the site handles its own signed-in session. A page freshly opened or
+   loaded for capture may satisfy the login check from a small allowlist of
+   Peakbagger's global account-navigation links and their consistent climber ID;
+   ambiguous evidence and already-loaded tabs use the live account-page check.
+   No arbitrary page text or form data is copied. Every required lookup must
+   succeed before results appear.
 5. **Prepared drafts:** derived ascent fields and a reduced track stay in
    `storage.session`, are bound to the expected tabs, and expire after 30
    minutes.

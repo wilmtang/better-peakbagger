@@ -9,10 +9,11 @@
 // endpoint that capture already uses.
 
 import { PEAKBAGGER_ORIGIN } from './peakbagger-origin.js';
+import { peakbaggerAccount as PeakbaggerAccount } from './peakbagger-account.js';
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { fetchPeakbaggerResource } from './peakbagger-request.js';
 
-const VERSION = 1;
+const VERSION = 2;
 const REQUEST_ID = /^[a-z0-9-]{1,80}$/i;
 const BOX_KEYS = Object.freeze(['miny', 'maxy', 'minx', 'maxx']);
 const activeRequests = new Map();
@@ -52,6 +53,32 @@ const validRequest = (urlValue, kind) => {
     return kind === 'peaks' && validBox(url);
 };
 
+// A tab the worker just opened or waited for has already made a current,
+// authenticated navigation. Return only the small, positive account evidence
+// from Peakbagger's global navigation so the worker can verify that fresh page
+// without downloading Default.aspx a second time. No hidden form fields,
+// cookies, page text, or user-authored content cross the boundary.
+const accountEvidence = () => {
+    if (globalThis.location?.origin !== PEAKBAGGER_ORIGIN) return null;
+    const links = [];
+    const seen = new Set();
+    for (const anchor of globalThis.document?.querySelectorAll?.('a[href]') || []) {
+        const label = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!PeakbaggerAccount.linkPaths[label]) continue;
+        let url;
+        try { url = new URL(anchor.getAttribute('href'), globalThis.location.href); }
+        catch { continue; }
+        const accountLink = PeakbaggerAccount.canonicalAccountLink(label, url.href);
+        if (!accountLink) continue;
+        const key = `${label}\n${accountLink.href}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        links.push({ label, href: accountLink.href });
+        if (links.length === Object.keys(PeakbaggerAccount.linkPaths).length) break;
+    }
+    return { pageUrl: globalThis.location.href, links };
+};
+
 const request = async (requestId, url, kind) => {
     if (!REQUEST_ID.test(requestId || '') || activeRequests.has(requestId)
         || !validRequest(url, kind)) return rejected(kind);
@@ -71,7 +98,7 @@ const cancel = requestId => {
     return true;
 };
 
-const API = Object.freeze({ version: VERSION, request, cancel });
+const API = Object.freeze({ version: VERSION, accountEvidence, request, cancel });
 export const peakbaggerPage = API;
 
 // Deliberate page-world global: the worker can inject this bundle and then

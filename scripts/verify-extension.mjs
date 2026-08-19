@@ -1781,7 +1781,10 @@ try {
             return route.fulfill({
                 status: 200,
                 contentType: 'text/html',
-                body: '<html><a href="/climber/climber.aspx?cid=77">My Home Page</a></html>',
+                body: `<html>
+                    <a href="/climber/climber.aspx?cid=77">My Home Page</a>
+                    <a href="/climber/climberedit.aspx?cid=77">Edit Account</a>
+                </html>`,
             });
         });
         await context.route(capturePeaksUrl, route => {
@@ -1802,6 +1805,11 @@ try {
                 files: ['peakbagger-page.js'],
                 world: 'MAIN',
             });
+            const evidence = await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => globalThis.BPBPeakbaggerPage.accountEvidence(),
+                world: 'MAIN',
+            }).then(results => results?.[0]?.result);
             const call = (requestId, url, kind) => chrome.scripting.executeScript({
                 target: { tabId: tab.id },
                 func: (id, requestedUrl, resource) =>
@@ -1815,12 +1823,17 @@ try {
                 call('verify-refused', 'https://www.peakbagger.com/climber/ClimberEdit.aspx?cid=77', 'html'),
             ]);
             return {
+                evidence,
                 login: { kind: login?.kind, signedIn: /\bcid=77\b/.test(login?.text || '') },
                 peaks: { kind: peaks?.kind, hasPeak: /\bi="7"/.test(peaks?.text || '') },
                 refused: refused?.error?.code,
             };
         }, { loginUrl: captureLoginUrl, peaksUrl: capturePeaksUrl });
-        check(captureTransportState?.login?.kind === 'ok'
+        check(captureTransportState?.evidence?.pageUrl === captureLoginUrl
+            && captureTransportState.evidence.links?.length === 2
+            && captureTransportState.evidence.links[0]?.label === 'My Home Page'
+            && captureTransportState.evidence.links[1]?.label === 'Edit Account'
+            && captureTransportState?.login?.kind === 'ok'
             && captureTransportState.login.signedIn === true
             && captureTransportState.peaks?.kind === 'ok'
             && captureTransportState.peaks.hasPeak === true

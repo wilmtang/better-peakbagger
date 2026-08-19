@@ -251,7 +251,7 @@ dist/
   manifest.json            # copied from the repo-root manifest.json
   background.js            # the MV3 service worker (one bundle, both browsers)
   provider-page.js         # injected on demand into provider pages
-  peakbagger-page.js        # narrow login/summit transport in a Peakbagger tab
+  peakbagger-page.js        # narrow account evidence and capture transport in a Peakbagger tab
   content/*.js             # one bundle per content-script entry
   terrain/terrain.html + terrain-frame.js
   options/ popup/          # page html + bundled js + css
@@ -348,9 +348,12 @@ the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach.
 `src/peakbagger/peakbagger-page.js` uses the same mechanism for capture requests
 that Cloudflare can reject from the worker while accepting from the signed-in
-site. Its API accepts only the canonical login page and bounded summit-box
-endpoint; the worker revalidates its result. Neither API is a general fetch or
-module seam. Do not generalize these exceptions.
+site. Its request API accepts only the canonical login page and bounded
+summit-box endpoint. Its account-evidence API exposes only allowlisted global
+navigation links from a freshly loaded canonical page; it never exposes cookie
+values or arbitrary page text. The worker revalidates both result shapes.
+Neither API is a general fetch, DOM, or module seam. Do not generalize these
+exceptions.
 
 ## Dependency updates
 

@@ -81,6 +81,7 @@ import { units as Units } from '../src/ui/units.js';
     };
 
     const retry = () => beginCapture(true);
+    const openPeakbagger = () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` });
     const openSettings = () => {
         try { void ext.runtime.openOptionsPage(); } catch { /* unavailable in a broken extension context */ }
     };
@@ -90,6 +91,16 @@ import { units as Units } from '../src/ui/units.js';
         const providerSignedOut = code === 'provider-signed-out';
         const notOwner = code === 'not-owner';
         const humanCheck = code === 'cloudflare';
+        const peakbaggerRecoveryTitle = ({
+            'peakbagger-tab-access-failed': 'Couldn’t access Peakbagger',
+            'peakbagger-tab-open-failed': 'Couldn’t open Peakbagger',
+            'peakbagger-tab-load-failed': 'Peakbagger didn’t finish loading',
+            'peakbagger-tab-load-timeout': 'Peakbagger didn’t finish loading',
+            'peakbagger-tab-changed': 'Peakbagger tab changed',
+            'peakbagger-page-connect-failed': 'Couldn’t connect to Peakbagger',
+            'peakbagger-page-unavailable': 'Couldn’t connect to Peakbagger',
+            'peakbagger-response-invalid': 'Peakbagger response changed',
+        })[code];
         if (code === 'unsupported') {
             stateCard(
                 'Open an activity to begin',
@@ -106,7 +117,7 @@ import { units as Units } from '../src/ui/units.js';
         } else if (signedOut) {
             title = 'Check your Peakbagger session';
             actions = [
-                { label: 'Open Peakbagger', onClick: () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` }) },
+                { label: 'Open Peakbagger', onClick: openPeakbagger },
                 { label: 'I’m signed in — try again', onClick: retry }
             ];
         } else if (humanCheck) {
@@ -115,9 +126,15 @@ import { units as Units } from '../src/ui/units.js';
                 {
                     label: Cloudflare.copy.action,
                     primary: true,
-                    onClick: () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` })
+                    onClick: openPeakbagger
                 },
                 { label: 'I’ve completed it — try again', onClick: retry }
+            ];
+        } else if (peakbaggerRecoveryTitle) {
+            title = peakbaggerRecoveryTitle;
+            actions = [
+                { label: 'Open Peakbagger', primary: true, onClick: openPeakbagger },
+                { label: 'Try again', onClick: retry },
             ];
         } else if (providerSignedOut) {
             actions = [

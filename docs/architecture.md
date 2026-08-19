@@ -150,7 +150,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
+| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.js` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
 | Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure, one explicit opt-in covering both saved credentials, exact-options-page worker revalidation and reads/writes, live credential validation, confirmation and unencrypted-private-file warning; an export nobody opted in for and every GitHub settings backup stay credential-free |
@@ -181,10 +181,17 @@ login checks, and capture summit lookup all use that boundary. Activity capture
 invokes it in a canonical Peakbagger tab because a worker request can be
 challenged even while the signed-in site works; `src/peakbagger/peakbagger-page.js`
 allows only `/Default.aspx` and bounded `/Async/pllbb2.aspx` queries. It does not
-read cookies. The worker revalidates returned URL, status, byte limit, and body
-shape before using the result. Callers may add stricter identity and schema
-checks, but do not translate transport failures again. Two reads deliberately
-keep surface-specific orchestration: provider GPX export is not a Peakbagger
+read cookies. When capture has just opened or waited for a Peakbagger page, the
+page adapter may instead return only allowlisted global-account navigation
+links; the worker requires `My Home Page`, a second account control, one
+consistent positive climber ID, and the exact fresh page URL. Ambiguous evidence
+falls back to the live `/Default.aspx` request, while an already-loaded user tab
+always receives that live request. The worker probes/injects the adapter once,
+then each request checks its version inline and permits one bounded reinjection
+if the page lost the helper. The worker revalidates returned URL, status, byte
+limit, and body shape before using the result. Callers may add stricter identity
+and schema checks, but do not translate transport failures again. Two reads
+deliberately keep surface-specific orchestration: provider GPX export is not a Peakbagger
 request, and native map-marker polling treats an aborted superseded camera
 request as normal. Neither exception duplicates the user-facing Peakbagger
 error mapper.

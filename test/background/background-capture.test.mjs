@@ -25,10 +25,12 @@ const waitForCondition = async (predicate, timeoutMs = 2000) => {
 };
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
-    beforePeakbaggerLogin = null,
+    beforePeakbaggerLogin = null, beforePeakbaggerAccountEvidence = null,
     beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
     afterSessionSet = null, clock = null, groupError = null, faults = {},
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
+    peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
+    peakbaggerPageRequestError = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -61,6 +63,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const peakbaggerPageCancelCalls = [];
     const peakbaggerPageRequests = new Map();
     const peakbaggerPageInjected = new Set();
+    const droppedPeakbaggerHelpers = new Set();
     const tabMessages = [];
     const removedTabs = [];
     let tabCreateCalls = 0;
@@ -68,6 +71,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let draftSetCalls = 0;
     let badgeTextCalls = 0;
     let tabGetCalls = 0;
+    let peakbaggerPageProbeCalls = 0;
+    let peakbaggerAccountEvidenceCalls = 0;
     const loggedErrors = [];
     const capture = captureResult || {
         ok: true,
@@ -132,6 +137,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         scripting: {
             executeScript: async details => {
                 if (faults.scripting) throw new Error(faults.scripting);
+                if (faults.peakbaggerScripting && details.target.tabId !== 1) {
+                    throw new Error(faults.peakbaggerScripting);
+                }
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
                 if (details.files) {
                     if (details.files.includes('peakbagger-page.js')) {
@@ -144,10 +152,42 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     || functionSource.includes('inspectExpectedOwnership');
                 const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
                 const isProviderCancel = functionSource.includes('cancelCapture');
+                const isPeakbaggerAccountEvidence = functionSource.includes('accountEvidence');
                 const isPeakbaggerPageProbe = functionSource.includes('BPBPeakbaggerPage?.version');
-                const isPeakbaggerPageRequest = functionSource.includes('BPBPeakbaggerPage.request');
+                const isPeakbaggerPageRequest = functionSource.includes('api.request')
+                    && functionSource.includes('bridge')
+                    && functionSource.includes('missing');
                 const isPeakbaggerPageCancel = functionSource.includes('BPBPeakbaggerPage?.cancel');
+                if (isPeakbaggerAccountEvidence) {
+                    peakbaggerAccountEvidenceCalls++;
+                    if (beforePeakbaggerAccountEvidence) {
+                        await beforePeakbaggerAccountEvidence({
+                            number: peakbaggerAccountEvidenceCalls,
+                            tabId: details.target.tabId,
+                        });
+                    }
+                    if (!peakbaggerPageInjected.has(details.target.tabId)) return [{ result: null }];
+                    const currentTab = tabs.get(details.target.tabId);
+                    const fallback = {
+                        pageUrl: currentTab?.url,
+                        links: [
+                            {
+                                label: 'My Home Page',
+                                href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                            },
+                            {
+                                label: 'Edit Account',
+                                href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=77',
+                            },
+                        ],
+                    };
+                    const result = typeof peakbaggerAccountEvidence === 'function'
+                        ? peakbaggerAccountEvidence({ tab: structuredClone(currentTab) })
+                        : (peakbaggerAccountEvidence || fallback);
+                    return [{ result: structuredClone(result) }];
+                }
                 if (isPeakbaggerPageProbe) {
+                    peakbaggerPageProbeCalls++;
                     return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
                 }
                 if (isPeakbaggerPageCancel) {
@@ -158,7 +198,16 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return [{ result: !!controller }];
                 }
                 if (isPeakbaggerPageRequest) {
-                    const [requestId, url, kind] = details.args;
+                    const [, requestId, url, kind] = details.args;
+                    if (dropPeakbaggerHelperBeforeKind === kind
+                        && !droppedPeakbaggerHelpers.has(kind)) {
+                        droppedPeakbaggerHelpers.add(kind);
+                        peakbaggerPageInjected.delete(details.target.tabId);
+                    }
+                    if (!peakbaggerPageInjected.has(details.target.tabId)) {
+                        return [{ result: { bridge: 'missing' } }];
+                    }
+                    if (peakbaggerPageRequestError) throw new Error(peakbaggerPageRequestError);
                     const controller = new AbortController();
                     peakbaggerPageRequests.set(requestId, controller);
                     const call = { requestId, url, kind, options: { signal: controller.signal } };
@@ -176,10 +225,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     }
                     peakbaggerPageRequests.delete(requestId);
                     if (controller.signal.aborted) {
-                        return [{ result: {
+                        return [{ result: { bridge: 'result', value: {
                             kind: 'transient', requestedUrl: url, url, status: 0, redirected: false,
                             error: { source: 'peakbagger', code: 'cancelled', resource: kind },
-                        } }];
+                        } } }];
                     }
                     const injectedResult = kind === 'html'
                         ? peakbaggerPageLoginResult
@@ -188,14 +237,14 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         const result = typeof injectedResult === 'function'
                             ? injectedResult(call)
                             : injectedResult;
-                        return [{ result: structuredClone(result) }];
+                        return [{ result: { bridge: 'result', value: structuredClone(result) } }];
                     }
                     const text = kind === 'html'
                         ? loginHtml
                         : (peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>');
-                    return [{ result: {
+                    return [{ result: { bridge: 'result', value: {
                         kind: 'ok', requestedUrl: url, url, status: 200, redirected: false, text,
-                    } }];
+                    } } }];
                 }
                 if (isProviderCancel) {
                     providerCancelCalls.push(details.args?.[0]);
@@ -328,6 +377,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
         removedTabs, providerCaptureCalls, providerCancelCalls,
         peakbaggerPageCalls, peakbaggerPageCancelCalls,
+        peakbaggerPageProbeCalls: () => peakbaggerPageProbeCalls,
+        peakbaggerAccountEvidenceCalls: () => peakbaggerAccountEvidenceCalls,
         sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, alarmEvent,
     };
 };
@@ -343,6 +394,10 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(ready.dayStats, undefined, 'day-level draft metrics must not be exposed to the popup response');
     assert.equal(ready.hasCachedGpx, true);
     assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+    assert.equal(harness.peakbaggerPageProbeCalls(), 2,
+        'one helper injection check is shared by login and summit requests');
+    assert.equal(harness.peakbaggerAccountEvidenceCalls(), 0,
+        'an already-loaded user tab still receives the authoritative live login request');
     assert.equal(harness.fetchCalls.length, 0,
         'activity capture must use the signed-in Peakbagger page, not the worker fetch context');
     assert.equal(harness.removedTabs.includes(5), false,
@@ -849,6 +904,9 @@ test('activity capture creates and removes an inactive Peakbagger request tab wh
     const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
 
     assert.equal(ready.phase, 'ready');
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['peaks'],
+        'the freshly loaded account page must not be downloaded a second time');
+    assert.equal(harness.peakbaggerAccountEvidenceCalls(), 1);
     assert.deepEqual(harness.removedTabs, [100]);
     assert.equal(harness.tabs.has(100), false);
     assert.equal(harness.tabs.get(1).active, true,
@@ -857,7 +915,7 @@ test('activity capture creates and removes an inactive Peakbagger request tab wh
 
 test('selecting a temporary Peakbagger request tab transfers cleanup ownership to the user', async () => {
     const harness = createHarness({
-        beforePeakbaggerLogin: () => {
+        beforePeakbaggerAccountEvidence: () => {
             harness.tabs.get(1).active = false;
             harness.tabs.get(100).active = true;
         },
@@ -869,6 +927,79 @@ test('selecting a temporary Peakbagger request tab transfers cleanup ownership t
     assert.equal(ready.phase, 'ready');
     assert.equal(harness.tabs.has(100), true);
     assert.deepEqual(harness.removedTabs, []);
+});
+
+test('ambiguous fresh account evidence falls back to the live login request', async () => {
+    const cases = [
+        {
+            pageUrl: 'https://www.peakbagger.com/Default.aspx',
+            links: [{
+                label: 'My Home Page',
+                href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+            }],
+        },
+        {
+            pageUrl: 'https://www.peakbagger.com/Default.aspx',
+            links: [
+                {
+                    label: 'My Home Page',
+                    href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                },
+                {
+                    label: 'Edit Account',
+                    href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=88',
+                },
+            ],
+        },
+        {
+            pageUrl: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+            links: [
+                {
+                    label: 'My Home Page',
+                    href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                },
+                {
+                    label: 'Edit Account',
+                    href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=77',
+                },
+            ],
+        },
+        {
+            pageUrl: 'https://www.peakbagger.com/Default.aspx',
+            links: [
+                {
+                    label: 'My Home Page',
+                    href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                },
+                {
+                    label: 'Edit Account',
+                    href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=77',
+                },
+            ],
+            pageText: 'must not cross the narrow evidence boundary',
+        },
+    ];
+
+    for (const evidence of cases) {
+        const harness = createHarness({ peakbaggerAccountEvidence: evidence });
+        harness.tabs.delete(5);
+        const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+        assert.equal(ready.phase, 'ready');
+        assert.equal(harness.peakbaggerAccountEvidenceCalls(), 1);
+        assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+    }
+});
+
+test('a page helper lost during capture is reinjected once without repeating the summit request', async () => {
+    const harness = createHarness({ dropPeakbaggerHelperBeforeKind: 'peaks' });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.peakbaggerPageProbeCalls(), 4,
+        'initial injection and one recovery injection each use a bounded before/after probe');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1);
 });
 
 test('the worker rejects page-world summit content that does not match the requested resource', async () => {
@@ -888,10 +1019,44 @@ test('the worker rejects page-world summit content that does not match the reque
 
     assert.equal(failed.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
-        code: 'peakbagger-page-unavailable',
-        message: 'Peakbagger could not be used for this capture. Open or reload Peakbagger, then try again.',
+        code: 'peakbagger-response-invalid',
+        message: 'Peakbagger returned summit data that could not be verified. Reload Peakbagger and try the capture again.',
     });
     assert.doesNotMatch(JSON.stringify(harness.values), new RegExp(sentinel));
+});
+
+test('Peakbagger tab setup failures identify the failed step and a recovery action', async () => {
+    const harness = createHarness({ faults: { tabCreate: 'popup blocked' } });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'peakbagger-tab-open-failed',
+        message: 'Better Peakbagger could not open Peakbagger for account verification. Open Peakbagger in this browser window, then try again.',
+    });
+});
+
+test('Peakbagger page connection failures distinguish an open tab from a changed tab', async () => {
+    const connected = createHarness({ peakbaggerPageRequestError: 'page realm unavailable' });
+    const connectionFailure = await connected.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.deepEqual(JSON.parse(JSON.stringify(connectionFailure.error)), {
+        code: 'peakbagger-page-connect-failed',
+        message: 'Better Peakbagger could not connect to the open Peakbagger page. Reload that page, wait for it to finish, then try again.',
+    });
+
+    const changed = createHarness({
+        peakbaggerPageRequestError: 'page realm unavailable',
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId === 5) tabs.get(5).url = 'https://example.com/';
+        },
+    });
+    const changedFailure = await changed.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.deepEqual(JSON.parse(JSON.stringify(changedFailure.error)), {
+        code: 'peakbagger-tab-changed',
+        message: 'The Peakbagger tab closed or changed during capture. Keep a Peakbagger page open until summit detection finishes, then try again.',
+    });
 });
 
 test('coordinate-only provider GPX still produces a valid Peakbagger draft', async () => {

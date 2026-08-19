@@ -836,6 +836,62 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
     dom.window.close();
 });
 
+test('popup names Peakbagger transport failures and offers direct recovery', async () => {
+    const cases = [
+        {
+            code: 'peakbagger-tab-load-timeout',
+            title: 'Peakbagger didn’t finish loading',
+            message: 'Peakbagger did not finish loading within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
+        },
+        {
+            code: 'peakbagger-response-invalid',
+            title: 'Peakbagger response changed',
+            message: 'Peakbagger returned summit data that could not be verified. Reload Peakbagger and try the capture again.',
+        },
+    ];
+
+    for (const item of cases) {
+        const dom = new JSDOM(html, {
+            url: 'chrome-extension://better-peakbagger/popup/popup.html',
+            runScripts: 'outside-only'
+        });
+        const opened = [];
+        const starts = [];
+        const job = { phase: 'error', provider: 'garmin', error: item };
+        dom.window.chrome = {
+            tabs: {
+                query: async () => [{ id: 9 }],
+                create: async details => { opened.push(details); return { id: 10, ...details }; }
+            },
+            runtime: {
+                sendMessage: async message => {
+                    if (message.type === 'CAPTURE_START') {
+                        starts.push(message.force);
+                        return job;
+                    }
+                    return null;
+                }
+            }
+        };
+
+        dom.window.eval(source);
+        const state = dom.window.document.getElementById('state');
+        await waitFor(() => state.textContent.includes(item.message));
+
+        assert.equal(state.querySelector('.state-title').textContent, item.title);
+        const actions = [...state.querySelectorAll('button')];
+        assert.deepEqual(actions.map(action => action.textContent), ['Open Peakbagger', 'Try again']);
+        assert.equal(actions[0].classList.contains('primary'), true);
+        actions[0].click();
+        await waitFor(() => opened.length === 1);
+        assert.equal(opened[0].url, 'https://www.peakbagger.com/Default.aspx');
+        actions[1].click();
+        await waitFor(() => starts.length === 2);
+        assert.deepEqual(starts, [false, true]);
+        dom.window.close();
+    }
+});
+
 test('popup can cancel an in-progress capture without retaining track data', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
