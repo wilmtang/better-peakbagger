@@ -34,7 +34,35 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const el = Dom.element;
 
     let control = null;
+    let operationGeneration = 0;
+    let operationTimer = null;
     const setBody = (...nodes) => { if (control) control.querySelector('.bpb-gh-body').replaceChildren(...nodes.filter(Boolean)); };
+
+    const clearOperationTimer = () => {
+        if (operationTimer !== null && typeof globalThis.clearTimeout === 'function') {
+            globalThis.clearTimeout(operationTimer);
+        }
+        operationTimer = null;
+    };
+
+    const beginOperation = ({ slow = false } = {}) => {
+        clearOperationTimer();
+        const generation = ++operationGeneration;
+        if (slow && typeof globalThis.setTimeout === 'function') {
+            operationTimer = globalThis.setTimeout(() => {
+                if (generation === operationGeneration) renderSlow();
+            }, SLOW_BACKUP_NOTICE_MS);
+        }
+        return generation;
+    };
+
+    const ownsOperation = generation => generation === operationGeneration;
+
+    const finishOperation = generation => {
+        if (!ownsOperation(generation)) return false;
+        clearOperationTimer();
+        return true;
+    };
 
     const renderIdle = info => setBody(
         el('button', {
@@ -51,7 +79,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
     const renderSlow = () => setBody(el('span', {
         class: 'bpb-gh-label',
-        text: 'GitHub is taking longer than usual…',
+        text: 'This backup is taking longer than usual…',
     }));
 
     const renderCurrent = () => setBody(
@@ -110,15 +138,23 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         gpx: info.gpxUrl ? await responseText(info.gpxUrl, 'gpx') : null,
     });
 
-    const checkBackup = async (info, current = null, { reconcile = false, failure = null } = {}) => {
+    const checkBackup = async (info, current = null, {
+        reconcile = false,
+        failure = null,
+        generation = null,
+    } = {}) => {
+        generation = generation ?? beginOperation();
+        if (!ownsOperation(generation)) return;
         renderChecking();
         let source = current;
         try { source = source || await readCurrentBackup(info); }
         catch (error) {
+            if (!finishOperation(generation)) return;
             if (failure) renderError(info, error);
             else renderIdle(info);
             return;
         }
+        if (!ownsOperation(generation)) return;
         const response = await sendBg({
             type: 'GITHUB_CHECK_ASCENT_BACKUP',
             page: source.page,
@@ -126,41 +162,39 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             gpx: source.gpx,
             reconcile,
         });
+        if (!finishOperation(generation)) return;
         if (response && response.ok && response.current) renderCurrent();
         else if (failure) renderError(info, response && response.error ? response.error : failure);
         else renderIdle(info);
     };
 
     const runBackup = async (info, { auto = false, current = null } = {}) => {
+        const generation = beginOperation({ slow: true });
         renderWorking();
         try {
             current = current || await readCurrentBackup(info);
         } catch (error) {
+            if (!finishOperation(generation)) return;
             renderError(info, error);
             return;
         }
-        const slowTimer = typeof globalThis.setTimeout === 'function'
-            ? globalThis.setTimeout(renderSlow, SLOW_BACKUP_NOTICE_MS)
-            : null;
-        let response;
-        try {
-            response = await sendBg({
-                type: 'GITHUB_BACKUP_ASCENT',
-                page: current.page,
-                pageComplete: true,
-                gpx: current.gpx,
-                auto,
-            });
-        } finally {
-            if (slowTimer !== null && typeof globalThis.clearTimeout === 'function') {
-                globalThis.clearTimeout(slowTimer);
-            }
+        if (!ownsOperation(generation)) return;
+        const response = await sendBg({
+            type: 'GITHUB_BACKUP_ASCENT',
+            page: current.page,
+            pageComplete: true,
+            gpx: current.gpx,
+            auto,
+        });
+        if (!ownsOperation(generation)) return;
+        if (response && response.ok) {
+            if (finishOperation(generation)) renderSuccess(response.result);
+            return;
         }
-        if (response && response.ok) { renderSuccess(response.result); return; }
         // Automatic mode on a revisit must not commit. Reuse the complete page
         // read to report whether GitHub already holds the same owned payload.
         if (auto && response && response.error && response.error.code === 'no-fresh-save') {
-            await checkBackup(info, current);
+            await checkBackup(info, current, { generation });
             return;
         }
         // A timed-out write may have reached GitHub even though its response
@@ -168,27 +202,34 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         // retry, and ask the worker to consume the pending save snapshot only
         // when that read proves the commit landed.
         if (response && response.error && response.error.code === 'timeout') {
-            await checkBackup(info, current, { reconcile: true, failure: response.error });
+            await checkBackup(info, current, { reconcile: true, failure: response.error, generation });
             return;
         }
+        if (!finishOperation(generation)) return;
         renderError(info, response && response.error);
     };
 
     const checkAutomaticBackup = async info => {
+        const generation = beginOperation();
         renderChecking();
         let current;
         try { current = await readCurrentBackup(info); }
-        catch { renderIdle(info); return; }
+        catch {
+            if (finishOperation(generation)) renderIdle(info);
+            return;
+        }
+        if (!ownsOperation(generation)) return;
         const preflight = await sendBg({
             type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT',
             page: current.page,
             pageComplete: true,
         });
+        if (!ownsOperation(generation)) return;
         if (preflight && preflight.ok && preflight.fresh) {
             await runBackup(info, { auto: true, current });
             return;
         }
-        await checkBackup(info, current);
+        await checkBackup(info, current, { generation });
     };
 
     const mountControl = (info, { auto = false } = {}) => {
@@ -214,6 +255,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (!status || !status.enabled || !status.connected) return;
         mountControl(info, { auto: !!status.auto });
     };
+
+    window.addEventListener('pagehide', () => {
+        operationGeneration++;
+        clearOperationTimer();
+    }, { once: true });
 
     void start();
 })();

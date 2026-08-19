@@ -17,7 +17,7 @@ import { evalBundle, waitFor } from '../helpers/load-page.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = true, gpxOk = true,
-    gpxResponse = null, fastSlowBackupNotice = false,
+    gpxResponse = null, onEditFetch = null, fastSlowBackupNotice = false,
     url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
@@ -57,6 +57,7 @@ const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = tr
     };
     dom.window.fetch = async target => {
         if (/ascentedit\.aspx/i.test(String(target))) {
+            if (onEditFetch) return onEditFetch({ target, editHtml });
             return editOk
                 ? { ok: true, status: 200, url: String(target), redirected: false, headers: { get: () => 'text/html' }, text: async () => editHtml }
                 : { ok: false, status: 500, url: String(target), redirected: false, headers: { get: () => 'text/html' }, text: async () => '' };
@@ -240,6 +241,38 @@ test('a slow automatic backup stops claiming ordinary progress while it remains 
 
     await waitFor(dom, () => control(dom) && /taking longer than usual/i.test(control(dom).textContent));
     finishBackup({ ok: true, result: {} });
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+});
+
+test('slow-backup feedback includes the persisted Peakbagger read', async () => {
+    let editReads = 0;
+    let releaseEdit;
+    const stalledEdit = new Promise(resolve => { releaseEdit = resolve; });
+    const normalEditResponse = (target, editHtml) => ({
+        ok: true,
+        status: 200,
+        url: String(target),
+        redirected: false,
+        headers: { get: () => 'text/html' },
+        text: async () => editHtml,
+    });
+    const { dom, sent } = await loadSurface({
+        status: { enabled: true, connected: true },
+        fastSlowBackupNotice: true,
+        onEditFetch: async ({ target, editHtml }) => {
+            editReads += 1;
+            if (editReads === 2) await stalledEdit;
+            return normalEditResponse(target, editHtml);
+        },
+        onBackup: () => ({ ok: true, result: {} }),
+    });
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+
+    await waitFor(dom, () => /This backup is taking longer than usual/.test(control(dom).textContent));
+    assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false,
+        'the notice must be able to appear before the persisted read reaches GitHub');
+    releaseEdit();
     await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
 });
 
