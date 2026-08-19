@@ -1610,6 +1610,31 @@ test('GPX analyzer shows partial time runs without drawing through an invalid ti
     }
 });
 
+test('GPX analyzer keeps mountain time owned by an untimed trailhead across a timezone border', async t => {
+    const cases = [
+        { name: 'missing trailhead time', trailheadTime: '' },
+        { name: 'invalid trailhead time', trailheadTime: '<time>not-a-date</time>' },
+    ];
+
+    for (const { name, trailheadTime } of cases) {
+        await t.test(name, async () => {
+            const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+              <trkpt lat="27.700" lon="86.700"><ele>5000</ele>${trailheadTime}</trkpt>
+              <trkpt lat="27.900" lon="87.100"><ele>5200</ele><time>2026-07-10T00:00:00Z</time></trkpt>
+              <trkpt lat="27.910" lon="87.110"><ele>5100</ele><time>2026-07-10T01:00:00Z</time></trkpt>
+            </trkseg></trk></gpx>`;
+            const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+            await waitFor(dom, () => chartConfig() !== null);
+            assert.match(analysisText(), /Times in the mountain’s local time \(GMT\+5:45\)/,
+                'the untimed Nepal-side trailhead, not the first timed China-side point, owns civil time');
+            assert.doesNotMatch(analysisText(), /GMT\+8/);
+
+            dom.window.close();
+        });
+    }
+});
+
 test('GPX analyzer exposes every chart series as a semantic keyboard toggle', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele><time>2026-07-10T12:00:00Z</time></trkpt>

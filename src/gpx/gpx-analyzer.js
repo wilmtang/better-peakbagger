@@ -1498,11 +1498,11 @@ const run = async () => {
                 totalMs = hasTime ? endMs - startMs : 0;
                 campingSpots = [];
 
-                // The trailhead decides the climb's civil time. When timing is
-                // usable, that is the earliest chronological route point rather
-                // than whichever appended GPX segment happened to be serialized
-                // first; untimed routes retain document order.
-                const startPoint = hasTime ? metrics.timePoints[0] : metrics.routePoints[0];
+                // The trailhead decides the climb's civil time. routePoints is
+                // already ordered by the metrics layer's safe whole-segment
+                // sequencing; timestamp availability must not move timezone
+                // ownership to a later point in a partially timed route.
+                const startPoint = metrics.routePoints[0];
                 if (startPoint) {
                     mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
                     try {
