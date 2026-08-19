@@ -122,7 +122,15 @@ const createGithubApi = ({
         phase = '',
         allowNotFound = false,
         withResponse = false,
+        accept = 'application/vnd.github+json',
+        responseType = 'json',
+        maxBytes = null,
+        maxChars = null,
     } = {}) => {
+        if (!['json', 'text'].includes(responseType)
+            || (responseType === 'text' && (!Number.isSafeInteger(maxBytes) || maxBytes < 1))) {
+            throw new TypeError('github api requires a valid bounded response type');
+        }
         const deadline = Deadline.createRequestDeadline(timeoutMs);
         let operationCancelled = signal?.aborted === true;
         let rejectCancellation = null;
@@ -152,7 +160,7 @@ const createGithubApi = ({
                 signal: deadline.signal,
                 headers: {
                     Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github+json',
+                    Accept: accept,
                     'X-GitHub-Api-Version': '2022-11-28',
                     ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
                 },
@@ -176,12 +184,14 @@ const createGithubApi = ({
         const responseKind = /\/git\/trees(?:\/|$)/.test(url.pathname)
             ? 'tree'
             : /\/contents(?:\/|$)/.test(url.pathname) ? 'content' : 'default';
-        const successLimit = RESPONSE_LIMITS[responseKind];
+        const successLimit = responseType === 'text' ? maxBytes : RESPONSE_LIMITS[responseKind];
         try {
             text = await run(BoundedText.readBoundedResponseText(response, {
                 maxBytes: response.ok ? successLimit : RESPONSE_LIMITS.error,
+                maxChars: response.ok && responseType === 'text' ? (maxChars ?? maxBytes) : undefined,
                 signal: deadline.signal,
                 label: 'GitHub response',
+                fatalUtf8: response.ok && responseType === 'text',
             }));
         }
         catch (cause) {
@@ -199,28 +209,38 @@ const createGithubApi = ({
                         cause,
                     });
             }
-            text = '';
-        }
-        clear();
-
-        let data = null;
-        try {
-            data = text ? JSON.parse(text) : null;
-            if (data != null) {
-                BoundedText.assertBoundedStructure(data, {
-                    ...STRUCTURE_LIMITS[responseKind],
-                    label: 'GitHub response structure',
-                });
-            }
-        } catch (cause) {
-            if (BoundedText.isLimitError(cause)) {
+            if (response.ok && responseType === 'text') {
+                clear();
                 throw new GithubError(ERROR_CODES.INVALID,
-                    'GitHub returned a response structure that was too large to process safely.', {
+                    'GitHub returned a backup file that is not valid UTF-8.', {
                         status: response.status,
                         cause,
                     });
             }
-            data = null;
+            text = '';
+        }
+        clear();
+
+        let data = responseType === 'text' ? text : null;
+        if (responseType === 'json') {
+            try {
+                data = text ? JSON.parse(text) : null;
+                if (data != null) {
+                    BoundedText.assertBoundedStructure(data, {
+                        ...STRUCTURE_LIMITS[responseKind],
+                        label: 'GitHub response structure',
+                    });
+                }
+            } catch (cause) {
+                if (BoundedText.isLimitError(cause)) {
+                    throw new GithubError(ERROR_CODES.INVALID,
+                        'GitHub returned a response structure that was too large to process safely.', {
+                            status: response.status,
+                            cause,
+                        });
+                }
+                data = null;
+            }
         }
 
         if (!response.ok) {

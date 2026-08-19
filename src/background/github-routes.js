@@ -1394,6 +1394,7 @@ export function createGithubRoutes({
                             : merged.prepared.text;
                     },
                     'Back up photo library',
+                    { maxBytes: PhotoBackup.MAX_BYTES },
                 );
                 remoteConfirmed = true;
                 const signature = committed?.signature || local.signature;
@@ -1516,7 +1517,9 @@ export function createGithubRoutes({
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
-            const remoteText = await access.client.readRootFile(PhotoBackup.BACKUP_PATH);
+            const remoteText = await access.client.readRootFile(PhotoBackup.BACKUP_PATH, {
+                maxBytes: PhotoBackup.MAX_BYTES,
+            });
             if (remoteText == null) {
                 return { ok: false, error: { code: 'not-found', message: 'No photo-library backup was found.' } };
             }
@@ -1558,7 +1561,9 @@ export function createGithubRoutes({
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
-            const remoteText = await access.client.readRootFile(PhotoBackup.BACKUP_PATH);
+            const remoteText = await access.client.readRootFile(PhotoBackup.BACKUP_PATH, {
+                maxBytes: PhotoBackup.MAX_BYTES,
+            });
             if (remoteText == null) throw new PhotoBackupError('not-found', 'No photo-library backup was found.');
             const remote = parseRemotePhotoBackup(remoteText);
             const remoteSignature = await PhotoBackup.signature(remote);

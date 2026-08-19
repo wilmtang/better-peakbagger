@@ -28,9 +28,10 @@ const readStream = async (stream, {
     maxChars,
     signal,
     label,
+    fatalUtf8,
 }) => {
     const reader = stream.getReader();
-    const decoder = new TextDecoder();
+    const decoder = new TextDecoder('utf-8', { fatal: fatalUtf8 });
     let bytes = 0;
     let text = '';
     const cancel = () => { void reader.cancel().catch(() => {}); };
@@ -115,6 +116,7 @@ export const readBoundedResponseText = async (response, {
     maxChars = maxBytes,
     signal,
     label = 'Response body',
+    fatalUtf8 = false,
 }) => {
     const declared = Number(response?.headers?.get?.('content-length'));
     if (Number.isFinite(declared) && declared > maxBytes) {
@@ -122,7 +124,7 @@ export const readBoundedResponseText = async (response, {
         throw limitError(label, maxBytes);
     }
     if (response?.body && typeof response.body.getReader === 'function') {
-        return readStream(response.body, { maxBytes, maxChars, signal, label });
+        return readStream(response.body, { maxBytes, maxChars, signal, label, fatalUtf8 });
     }
     if (signal?.aborted) throw abortError();
     return validateText(await response.text(), { maxBytes, maxChars, label });
@@ -133,10 +135,11 @@ export const readBoundedBlobText = async (blob, {
     maxChars = maxBytes,
     signal,
     label = 'File',
+    fatalUtf8 = false,
 }) => {
     if (Number.isFinite(blob?.size) && blob.size > maxBytes) throw limitError(label, maxBytes);
     if (blob?.stream && typeof blob.stream === 'function') {
-        return readStream(blob.stream(), { maxBytes, maxChars, signal, label });
+        return readStream(blob.stream(), { maxBytes, maxChars, signal, label, fatalUtf8 });
     }
     if (signal?.aborted) throw abortError();
     return validateText(await blob.text(), { maxBytes, maxChars, label });

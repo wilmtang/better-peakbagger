@@ -712,6 +712,61 @@ test('a root file is decoded from the selected branch and a missing file returns
     assert.ok(contentReads.every(call => new URL(call.url).searchParams.get('ref') === 'main'));
 });
 
+test('photo recovery reads the root blob as bounded raw UTF-8 through the advertised 8 MiB limit', async () => {
+    const limit = 8 * 1024 * 1024;
+    for (const size of [1024 * 1024, 1024 * 1024 + 1, 1_600_000, limit]) {
+        const text = 'x'.repeat(size);
+        const { fetch, calls } = makeFetch({
+            'GET /repos/me/backup': REPO_OK(),
+            'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+            'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+            'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+                { path: 'photo-library.json', type: 'blob', sha: `photo-${size}`, size },
+            ] }),
+            [`GET /repos/me/backup/git/blobs/photo-${size}`]: () => respond(200, text),
+        });
+        const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+        assert.equal((await client.readRootFile('photo-library.json', { maxBytes: limit })).length, size);
+        const rawCall = calls.find(call => call.path.includes('/git/blobs/photo-'));
+        assert.equal(rawCall.headers.Accept, 'application/vnd.github.raw+json');
+        assert.equal(calls.some(call => call.path.includes('/contents/')), false);
+    }
+});
+
+test('photo recovery rejects oversized and dishonest root blob sizes before parsing', async () => {
+    const limit = 8 * 1024 * 1024;
+    const oversized = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            { path: 'photo-library.json', type: 'blob', sha: 'too-large', size: limit + 1 },
+        ] }),
+    });
+    await assert.rejects(
+        Client.createGithubClient({ fetch: oversized.fetch, token: 't', owner: 'me', repo: 'backup' })
+            .readRootFile('photo-library.json', { maxBytes: limit }),
+        error => error.code === ERROR_CODES.INVALID && /larger/.test(error.message),
+    );
+    assert.equal(oversized.calls.some(call => call.path.includes('/git/blobs/')), false);
+
+    const dishonest = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            { path: 'photo-library.json', type: 'blob', sha: 'dishonest', size: 2 },
+        ] }),
+        'GET /repos/me/backup/git/blobs/dishonest': () => respond(200, 'three'),
+    });
+    await assert.rejects(
+        Client.createGithubClient({ fetch: dishonest.fetch, token: 't', owner: 'me', repo: 'backup' })
+            .readRootFile('photo-library.json', { maxBytes: limit }),
+        error => error.code === ERROR_CODES.INVALID && /size did not match/.test(error.message),
+    );
+});
+
 test('a root file commit preserves the base tree, adopts the repo, and fast-forwards without force', async () => {
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
@@ -835,10 +890,7 @@ test('a semantic root update rereads and remerges after a branch conflict', asyn
     let refReads = 0;
     let patches = 0;
     const seen = [];
-    const blob = text => respond(200, {
-        encoding: 'base64',
-        content: Buffer.from(text, 'utf8').toString('base64'),
-    });
+    const blob = text => respond(200, text);
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': () => {
@@ -849,10 +901,10 @@ test('a semantic root update rereads and remerges after a branch conflict', asyn
         'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
         'GET /repos/me/backup/git/commits/C1': COMMIT('C1', 'T1'),
         'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
-            MARKER, { path: 'photo-library.json', type: 'blob', sha: 'photo0' },
+            MARKER, { path: 'photo-library.json', type: 'blob', sha: 'photo0', size: 13 },
         ] }),
         'GET /repos/me/backup/git/trees/T1': () => respond(200, { tree: [
-            MARKER, { path: 'photo-library.json', type: 'blob', sha: 'photo1' },
+            MARKER, { path: 'photo-library.json', type: 'blob', sha: 'photo1', size: 13 },
         ] }),
         'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
         'GET /repos/me/backup/git/blobs/photo0': () => blob('{"remote":0}\n'),
@@ -877,7 +929,7 @@ test('a semantic root update rereads and remerges after a branch conflict', asyn
     await client.updateRootFile('photo-library.json', current => {
         seen.push(current);
         return `${current.trim()} local\n`;
-    }, 'Back up photo library');
+    }, 'Back up photo library', { maxBytes: 8 * 1024 * 1024 });
 
     assert.deepEqual(seen, ['{"remote":0}\n', '{"remote":1}\n']);
     assert.deepEqual(calls.filter(call => call.key === 'POST /repos/me/backup/git/trees')

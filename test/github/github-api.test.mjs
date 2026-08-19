@@ -16,6 +16,19 @@ const respond = (status, body, headers = {}) => ({
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
 });
 
+const streamResponse = (bytes, headers = {}) => ({
+    ok: true,
+    status: 200,
+    headers: { get: name => headers[name.toLowerCase()] || null },
+    body: new ReadableStream({
+        start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+        },
+    }),
+    text: async () => new TextDecoder().decode(bytes),
+});
+
 test('the shared transport owns authenticated GitHub REST request construction', async () => {
     const calls = [];
     const api = GithubApi.createGithubApi({
@@ -51,6 +64,34 @@ test('response metadata is available for safe pagination without another transpo
     assert.equal(page.headers.get('link'), link);
     assert.equal(page.status, 200);
     assert.equal(page.url, 'https://api.github.com/user/installations');
+});
+
+test('bounded raw Git blobs keep their media type, bytes, and strict UTF-8 contract', async () => {
+    const calls = [];
+    const valid = new TextEncoder().encode('{"name":"Café"}\n');
+    const api = GithubApi.createGithubApi({
+        token: 't',
+        fetch: async (_url, init) => {
+            calls.push(init);
+            return streamResponse(valid, { 'content-length': String(valid.byteLength) });
+        },
+    });
+    assert.equal(await api.request('GET', '/repos/me/backup/git/blobs/photo', {
+        accept: 'application/vnd.github.raw+json',
+        responseType: 'text',
+        maxBytes: valid.byteLength,
+    }), '{"name":"Café"}\n');
+    assert.equal(calls[0].headers.Accept, 'application/vnd.github.raw+json');
+
+    const malformed = GithubApi.createGithubApi({
+        token: 't',
+        fetch: async () => streamResponse(Uint8Array.of(0xc3, 0x28)),
+    });
+    await assert.rejects(malformed.request('GET', '/repos/me/backup/git/blobs/photo', {
+        accept: 'application/vnd.github.raw+json',
+        responseType: 'text',
+        maxBytes: 8,
+    }), error => error.code === ERROR_CODES.INVALID && /UTF-8/.test(error.message));
 });
 
 test('all GitHub REST status classification comes from the shared taxonomy', async () => {

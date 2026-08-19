@@ -119,13 +119,15 @@ const harness = async ({
     let updateCalls = 0;
     let photoSettingsReads = 0;
     const client = {
-        async readRootFile(path) {
+        async readRootFile(path, options) {
             assert.equal(path, Backup.BACKUP_PATH);
+            assert.deepEqual(options, { maxBytes: Backup.MAX_BYTES });
             return remote.text;
         },
-        async updateRootFile(path, update, message) {
+        async updateRootFile(path, update, message, options) {
             updateCalls += 1;
             assert.equal(path, Backup.BACKUP_PATH);
+            assert.deepEqual(options, { maxBytes: Backup.MAX_BYTES });
             if (beforeRemoteUpdate) await beforeRemoteUpdate({ calls: commits.length });
             const previous = remote.text;
             const next = await update(previous);

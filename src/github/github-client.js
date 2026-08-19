@@ -254,6 +254,32 @@ const createGithubClient = ({
         return decodeBase64Utf8(blob.content);
     };
 
+    const readBoundedRawBlobText = async (sha, { maxBytes, expectedSize = null } = {}) => {
+        if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+            throw new TypeError('github client requires a positive root-file byte limit');
+        }
+        if (expectedSize != null && (!Number.isSafeInteger(expectedSize) || expectedSize < 0)) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'GitHub returned an invalid backup file size.');
+        }
+        if (expectedSize > maxBytes) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'The GitHub backup file is larger than this recovery operation can safely process.');
+        }
+        const text = await request('GET', `/git/blobs/${sha}`, {
+            phase: 'read',
+            accept: 'application/vnd.github.raw+json',
+            responseType: 'text',
+            maxBytes,
+            maxChars: maxBytes,
+        });
+        if (expectedSize != null && contentBytes(text) !== expectedSize) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'GitHub returned a backup file whose size did not match its repository entry.');
+        }
+        return text;
+    };
+
     const normalizeBatch = entries => {
         if (!Array.isArray(entries) || entries.length === 0) {
             throw new TypeError('github client requires at least one ascent backup');
@@ -484,8 +510,23 @@ const createGithubClient = ({
         return Backup.matchesBackupFiles(snapshot, { gpx, contents });
     };
 
-    const readRootFile = async path => {
+    const readRootFile = async (path, { maxBytes = null } = {}) => {
         const filePath = rootFilePath(path);
+        if (maxBytes != null) {
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved);
+            if (!head) return null;
+            const entry = (head.root.tree || []).find(node => node.path === filePath);
+            if (!entry) return null;
+            if (entry.type !== 'blob' || !entry.sha) {
+                throw new GithubError(ERROR_CODES.REPO_CONFLICT,
+                    `The repository already uses ${filePath} for something other than a file.`);
+            }
+            return readBoundedRawBlobText(entry.sha, {
+                maxBytes,
+                expectedSize: entry.size ?? null,
+            });
+        }
         const resolved = await resolveRepo();
         const file = await request('GET',
             `/contents/${encodeURIComponent(filePath)}?ref=${encodeURIComponent(resolved.targetBranch)}`,
@@ -584,7 +625,7 @@ const createGithubClient = ({
     // reader/merge callback after every non-fast-forward. Photo-library
     // backup uses this to merge another device's records instead of
     // retrying stale content over a newly advanced branch.
-    const updateRootFileOnce = async (path, update, commitMessage) => {
+    const updateRootFileOnce = async (path, update, commitMessage, { maxBytes = null } = {}) => {
         const filePath = rootFilePath(path);
         if (typeof update !== 'function') {
             throw new TypeError('github client requires a root file update function');
@@ -599,7 +640,14 @@ const createGithubClient = ({
             throw new GithubError(ERROR_CODES.REPO_CONFLICT,
                 `The repository already uses ${filePath} for something other than a file.`);
         }
-        const current = existing ? await readBlobText(existing.sha) : null;
+        const current = existing
+            ? maxBytes == null
+                ? await readBlobText(existing.sha)
+                : await readBoundedRawBlobText(existing.sha, {
+                    maxBytes,
+                    expectedSize: existing.size ?? null,
+                })
+            : null;
         const content = await update(current);
         if (typeof content !== 'string') {
             throw new TypeError('github client root file update must return string content');
@@ -629,8 +677,8 @@ const createGithubClient = ({
         };
     };
 
-    const updateRootFile = (path, update, commitMessage) =>
-        withConflictRetry(() => updateRootFileOnce(path, update, commitMessage));
+    const updateRootFile = (path, update, commitMessage, options) =>
+        withConflictRetry(() => updateRootFileOnce(path, update, commitMessage, options));
 
     return {
         pushAscentBackup,
