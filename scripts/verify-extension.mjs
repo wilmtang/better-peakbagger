@@ -3629,8 +3629,31 @@ try {
                 && /#2471a3/i.test(markdownHex.previewStyle || ''),
             `Markdown mode lost the hex source or preview color (state=${JSON.stringify(markdownHex)})`);
 
-            // Reset through Plain so the existing real-typing scenario still
-            // starts from the fixture's empty report and invalidates mdSource.
+            // Reset through Plain so the boundary scenario does not retain the
+            // Markdown source from the preceding conversion check.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            const linkBoundarySource = 'See [a href="https://example.com/route" target="_blank"]route[/a]';
+            await editorPage.locator('#JournalText').fill(linkBoundarySource);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+            await editorPage.locator('.bpb-re-surface').click();
+            await editorPage.keyboard.press('End');
+            await editorPage.keyboard.type(', next');
+            const linkBoundary = await editorPage.waitForFunction(expected => {
+                const surface = document.querySelector('#bpb-report-editor .bpb-re-surface');
+                const link = surface?.querySelector('a');
+                return document.getElementById('JournalText').value === `${expected}, next`
+                    && link?.textContent === 'route'
+                    && link.nextSibling?.textContent === ', next';
+            }, linkBoundarySource, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(linkBoundary, `typing after a Rich link extended the link boundary (value=${
+                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+
+            // Leave the following real-typing scenario independent of the link
+            // boundary assertion.
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Plain', exact: true
             }).click();

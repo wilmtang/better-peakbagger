@@ -16,6 +16,7 @@
 
 import { Editor, Extension, Mark, Node, ResizableNodeView, getStyleProperty, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
 import Subscript from '@tiptap/extension-subscript';
@@ -369,14 +370,21 @@ const shortcutExtension = handlers => Extension.create({
     }
 });
 
+// A caret at a link's right edge belongs to the surrounding prose. TipTap ties
+// the default link mark's inclusive boundary to autolinking, which otherwise
+// causes every following character to inherit the link. Keep URL detection,
+// but make the editing boundary explicit and predictable.
+const ReportLink = Link.extend({ inclusive: false });
+
 export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts }) => {
     const editor = new Editor({
         element,
         extensions: [
             StarterKit.configure({
                 heading: { levels: [1, 2, 3, 4, 5, 6] },
-                link: { openOnClick: false, autolink: true, defaultProtocol: 'https' }
+                link: false
             }),
+            ReportLink.configure({ openOnClick: false, autolink: true, defaultProtocol: 'https' }),
             Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
             ReportImage.configure({ inline: true }),
             ReportVideo,

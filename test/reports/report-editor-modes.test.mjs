@@ -98,6 +98,67 @@ test('switching rich → markdown → rich keeps the content through the canonic
     assert.equal(doc.getElementById('JournalText').value, 'A [b]bold[/b] start.');
 });
 
+test('typing at a link boundary starts plain text while URL autolinking remains available', async t => {
+    const report = 'See [a href="https://example.com/route" target="_blank"]route[/a]';
+    const linkedTextRange = rich => {
+        let range = null;
+        rich.state.doc.descendants((node, pos) => {
+            if (!range && node.isText && node.marks.some(mark => mark.type.name === 'link')) {
+                range = { from: pos, to: pos + node.nodeSize };
+            }
+            return !range;
+        });
+        assert.ok(range, 'the fixture should contain linked text');
+        return range;
+    };
+
+    for (const suffix of [' next', ', next', 'X']) {
+        await t.test(`plain suffix ${JSON.stringify(suffix)}`, async () => {
+            const dom = await loadEditor({ report });
+            await editorReady(dom);
+            const doc = dom.window.document;
+            const rich = editors(dom).rich;
+            const { to: linkEnd } = linkedTextRange(rich);
+
+            rich.chain().focus().setTextSelection(linkEnd).insertContent(suffix).run();
+
+            await waitFor(dom, () => doc.getElementById('JournalText').value.endsWith(suffix));
+            assert.equal(doc.getElementById('JournalText').value, `${report}${suffix}`);
+        });
+    }
+
+    await t.test('typing inside the link keeps the link', async () => {
+        const dom = await loadEditor({ report });
+        await editorReady(dom);
+        const doc = dom.window.document;
+        const rich = editors(dom).rich;
+        const { from: linkStart } = linkedTextRange(rich);
+
+        rich.chain().focus().setTextSelection(linkStart + 2).insertContent('X').run();
+
+        await waitFor(dom, () => doc.getElementById('JournalText').value.includes('roXute'));
+        assert.equal(doc.getElementById('JournalText').value,
+            'See [a href="https://example.com/route" target="_blank"]roXute[/a]');
+    });
+
+    await t.test('a typed URL is still linked without its terminating space', async () => {
+        const dom = await loadEditor();
+        await editorReady(dom);
+        const rich = editors(dom).rich;
+
+        rich.chain().focus().insertContent('https://example.com ').run();
+
+        const linkRuns = Array.from(rich.getJSON().content[0].content, node => [
+            node.text,
+            Boolean(node.marks?.some(mark => mark.type === 'link'))
+        ].join(':'));
+        assert.deepEqual(linkRuns, [
+            'https://example.com:true',
+            ' :false'
+        ]);
+    });
+});
+
 test('undo cannot cross a mode switch and resurrect the pre-switch document', async () => {
     const dom = await loadEditor({ report: 'first version' });
     await editorReady(dom);
@@ -251,4 +312,3 @@ test('an unrelated Markdown edit preserves hex color in source, form, and previe
     assert.equal(doc.getElementById('JournalText').value, `${bracket} Clear weather.`);
     assert.equal(ui.querySelector('.bpb-re-preview span')?.getAttribute('style'), 'color:#2471a3');
 });
-
