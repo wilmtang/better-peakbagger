@@ -380,6 +380,149 @@ test('concurrent DEM loads validate each response independently', async () => {
     dom.window.close();
 });
 
+test('concurrent identical DEM loads share validation but receive independent buffers', async () => {
+    const { dom, module } = loadCacheModule();
+    let fetches = 0;
+    let releaseFetch;
+    const response = new Promise(resolve => { releaseFetch = resolve; });
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async () => {
+            fetches++;
+            return response;
+        }
+    });
+    const request = { url: 'bpb-dem://3/1/1.webp' };
+    const first = loader.load(request, new AbortController());
+    const second = loader.load(request, new AbortController());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(fetches, 1);
+    releaseFetch(webpResponse(makeWebp(24, 9)));
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.notEqual(firstResult.data, secondResult.data);
+    new Uint8Array(firstResult.data)[20] = 3;
+    assert.equal(new Uint8Array(secondResult.data)[20], 9);
+    dom.window.close();
+});
+
+test('one DEM subscriber can cancel without aborting another subscriber', async () => {
+    const { dom, module } = loadCacheModule();
+    let releaseFetch;
+    let transportAborted = false;
+    const response = new Promise(resolve => { releaseFetch = resolve; });
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async (_url, init) => {
+            init.signal.addEventListener('abort', () => { transportAborted = true; }, { once: true });
+            return response;
+        }
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const request = { url: 'bpb-dem://3/1/1.webp' };
+    const first = loader.load(request, firstController);
+    const second = loader.load(request, secondController);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    firstController.abort();
+    await assert.rejects(first, error => error.name === 'AbortError');
+    assert.equal(transportAborted, false, 'the shared transport remains owned by the second caller');
+    releaseFetch(webpResponse(makeWebp(24, 6)));
+    assert.equal(new Uint8Array((await second).data)[20], 6);
+    dom.window.close();
+});
+
+test('the final cancelled DEM subscriber aborts transport and a later load retries', async () => {
+    const { dom, module } = loadCacheModule();
+    let fetches = 0;
+    let transportAborts = 0;
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: (_url, init) => {
+            fetches++;
+            if (fetches > 1) return Promise.resolve(webpResponse(makeWebp(24, 5)));
+            return new Promise((_resolve, reject) => {
+                init.signal.addEventListener('abort', () => {
+                    transportAborts++;
+                    reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+                }, { once: true });
+            });
+        }
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const request = { url: 'bpb-dem://3/1/1.webp' };
+    const first = loader.load(request, firstController);
+    const second = loader.load(request, secondController);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    firstController.abort();
+    secondController.abort();
+    await Promise.all([
+        assert.rejects(first, error => error.name === 'AbortError'),
+        assert.rejects(second, error => error.name === 'AbortError'),
+    ]);
+    assert.equal(transportAborts, 1);
+    assert.equal(new Uint8Array((await loader.load(request)).data)[20], 5);
+    assert.equal(fetches, 2, 'settled ownership must not poison a retry');
+    dom.window.close();
+});
+
+test('closing the DEM cache settles subscribers and aborts every shared owner', async () => {
+    const { dom, module } = loadCacheModule();
+    let started;
+    const fetchStarted = new Promise(resolve => { started = resolve; });
+    let transportAborts = 0;
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        tileTimeoutMs: 50_000,
+        fetchFn: (_url, init) => {
+            started();
+            init.signal.addEventListener('abort', () => { transportAborts++; }, { once: true });
+            return new Promise(() => {});
+        }
+    });
+    const request = { url: 'bpb-dem://3/1/1.webp' };
+    const pending = loader.load(request);
+    await fetchStarted;
+    await loader.close();
+    await assert.rejects(pending, error => error.name === 'AbortError');
+    assert.equal(transportAborts, 1);
+    await assert.rejects(loader.load(request), error => error.name === 'AbortError');
+    dom.window.close();
+});
+
+test('a shared missing DEM response clears ownership for a retry', async () => {
+    const { dom, module } = loadCacheModule();
+    let fetches = 0;
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async () => ++fetches === 1
+            ? new Response('missing', { status: 404 })
+            : webpResponse(makeWebp(24, 4))
+    });
+    const request = { url: 'bpb-dem://3/1/1.webp' };
+    const outcomes = await Promise.allSettled([loader.load(request), loader.load(request)]);
+    assert.equal(fetches, 1);
+    assert.ok(outcomes.every(outcome => outcome.status === 'rejected' && outcome.reason.status === 404));
+    assert.equal(new Uint8Array((await loader.load(request)).data)[20], 4);
+    assert.equal(fetches, 2);
+    dom.window.close();
+});
+
 test('a DEM tile the provider does not cover is reported as absent, not as a failure', async () => {
     // MapLibre's tile manager reads error.status to tell "this tile does not
     // exist" from "this tile is broken": a 404 keeps its parent/child fallback
@@ -507,7 +650,7 @@ test('MapLibre cancellation tears down a DEM response body already being streame
     dom.window.close();
 });
 
-test('MapLibre cancelling a scrolled-away tile still tears down the request', async () => {
+test('MapLibre cancelling during the cache read starts no DEM request', async () => {
     const { dom, module } = loadCacheModule();
     const aborts = [];
     const loader = module.create({
@@ -535,6 +678,6 @@ test('MapLibre cancelling a scrolled-away tile still tears down the request', as
     controller.abort();
     await assert.rejects(pending, error => !/deadline/i.test(error.message),
         'cancellation must end the tile, not its 50-second deadline');
-    assert.equal(aborts.length, 1);
+    assert.equal(aborts.length, 0, 'an already-gone consumer must not create a network owner');
     dom.window.close();
 });

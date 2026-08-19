@@ -213,6 +213,8 @@ const create = ({
     let statePromise = null;
     let writeQueue = Promise.resolve();
     let saveTimer = null;
+    let closed = false;
+    const inFlight = new Map();
 
     const saveIndex = async state => {
         if (!local || typeof local.set !== 'function' || !state) return;
@@ -333,25 +335,25 @@ const create = ({
         }).catch(() => {});
     };
 
-    const load = async (parameters, abortController) => {
-        const remoteUrl = parseTileUrl(parameters && parameters.url);
-        if (!remoteUrl) throw new Error('Invalid DEM tile URL');
-
-        const cached = await read(remoteUrl);
-        if (cached) return { data: cached };
-
-        // MapLibre's own controller cancels tiles that scroll out of view;
-        // the deadline covers the tile nobody scrolls away from.
+    const startNetworkLoad = remoteUrl => {
+        if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
+        // One owner holds the immutable tile's network request, byte bound,
+        // validation, and cache write. Callers subscribe below; their own
+        // cancellation never tears down work another caller still needs.
         const deadline = Deadline.createRequestDeadline(tileTimeoutMs);
-        const cancel = () => deadline.abort();
-        const caller = abortController?.signal;
-        // The cache read above is awaited, so the camera can move on before
-        // this point is reached. Subscribing without checking first would
-        // miss an abort that already happened and leave the tile fetching
-        // for a view nobody is looking at.
-        if (caller?.aborted) cancel();
-        else caller?.addEventListener?.('abort', cancel, { once: true });
-        try {
+        const owner = {
+            deadline,
+            consumers: 0,
+            settled: false,
+            promise: null,
+            cancel: null,
+            cancelled: null,
+        };
+        owner.cancelled = new Promise((_, reject) => {
+            owner.cancel = () => reject(Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' }));
+        });
+        owner.cancelled.catch(() => {});
+        owner.promise = (async () => {
             const response = await deadline.run(request(remoteUrl, {
                 signal: deadline.signal,
                 credentials: 'omit',
@@ -364,12 +366,64 @@ const create = ({
                 );
             }
             const data = await readBoundedWebp(response, deadline);
-            if (limitBytes > 0) enqueueStore(remoteUrl, data, responseHeader(response, 'content-type'));
-            return { data };
-        } finally {
+            if (!closed && limitBytes > 0) enqueueStore(remoteUrl, data, responseHeader(response, 'content-type'));
+            return data;
+        })().finally(() => {
+            owner.settled = true;
             deadline.clear();
-            caller?.removeEventListener?.('abort', cancel);
+            if (inFlight.get(remoteUrl) === owner) inFlight.delete(remoteUrl);
+        });
+        inFlight.set(remoteUrl, owner);
+        return owner;
+    };
+
+    const cancellationError = signal => signal?.reason instanceof Error
+        ? signal.reason
+        : Object.assign(new Error('DEM tile request was cancelled'), { name: 'AbortError' });
+
+    const subscribe = async (remoteUrl, owner, signal) => {
+        if (signal?.aborted) throw cancellationError(signal);
+        owner.consumers++;
+        let cancel = null;
+        const cancelled = signal && typeof signal.addEventListener === 'function'
+            ? new Promise((_, reject) => {
+                cancel = () => reject(cancellationError(signal));
+                signal.addEventListener('abort', cancel, { once: true });
+            })
+            : null;
+        try {
+            const data = await Promise.race([
+                owner.promise,
+                owner.cancelled,
+                ...(cancelled ? [cancelled] : []),
+            ]);
+            // MapLibre may transfer or mutate the returned buffer. Never hand
+            // two subscribers the same ArrayBuffer identity.
+            return { data: data.slice(0) };
+        } finally {
+            if (cancel) signal.removeEventListener?.('abort', cancel);
+            owner.consumers--;
+            if (owner.consumers === 0 && !owner.settled) {
+                if (inFlight.get(remoteUrl) === owner) inFlight.delete(remoteUrl);
+                owner.deadline.abort();
+            }
         }
+    };
+
+    const load = async (parameters, abortController) => {
+        const remoteUrl = parseTileUrl(parameters && parameters.url);
+        if (!remoteUrl) throw new Error('Invalid DEM tile URL');
+        if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
+
+        const caller = abortController?.signal;
+        const cached = await read(remoteUrl);
+        if (cached) return { data: cached };
+        // The cache read above is awaited, so the camera can move on before a
+        // network owner exists. Do not start work for an already-gone consumer.
+        if (caller?.aborted) throw cancellationError(caller);
+
+        const owner = inFlight.get(remoteUrl) || startNetworkLoad(remoteUrl);
+        return subscribe(remoteUrl, owner, caller);
     };
 
     const flush = async () => {
@@ -382,7 +436,19 @@ const create = ({
         await saveIndex(state);
     };
 
-    return { load, flush };
+    const close = async () => {
+        if (closed) return;
+        closed = true;
+        for (const owner of inFlight.values()) {
+            owner.cancel();
+            owner.deadline.abort();
+            owner.deadline.clear();
+        }
+        inFlight.clear();
+        await flush();
+    };
+
+    return { load, flush, close };
 };
 
 const getUsage = async ({ cacheStorage, storageArea } = {}) => {

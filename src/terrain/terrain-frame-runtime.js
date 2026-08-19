@@ -401,7 +401,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         if (terrainProtocolRegistered && typeof maplibre?.removeProtocol === 'function') {
             try { maplibre.removeProtocol(TerrainCache.PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
         }
-        if (terrainCache) void terrainCache.flush();
+        if (terrainCache) void terrainCache.close();
         terrainCache = null;
         terrainCacheWarmable = false;
         demTilesWithData = 0;
