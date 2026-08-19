@@ -1420,6 +1420,10 @@ async function main() {
         const hasBeta = await driver.findElement(By.xpath(
             '//button[contains(@class,"pbaf-chip")][.//span[normalize-space()="Has beta"]]',
         ));
+        await hasBeta.sendKeys(Key.chord(Key.ALT, Key.ARROW_LEFT));
+        const filterKeyboardOrder = await driver.executeScript(
+            'return [...document.querySelectorAll(".pbaf-chip-label")].map(label => label.textContent);',
+        );
         await hasBeta.sendKeys(Key.ENTER);
         const climberSort = await driver.findElements(By.css('.pbaf-table-sort'));
         await climberSort[0].sendKeys(Key.ENTER);
@@ -1435,11 +1439,14 @@ async function main() {
         && JSON.stringify(filterStateBefore.labels) === JSON.stringify([
             'Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta',
         ])
+        && JSON.stringify(filterKeyboardOrder) === JSON.stringify([
+            'Climbing buddies', 'GPS track', 'Trip report', 'Has beta', 'Link',
+        ])
         && filterStateBefore.settingsLink?.endsWith('/options/options.html#beta')
         && filterStateAfter.visible < filterStateBefore.visible
         && filterStateAfter.first !== filterStateBefore.first,
             'Firefox ascent filter did not preserve first-use rows, filter, and sort by keyboard',
-            { before: filterStateBefore, after: filterStateAfter },
+            { before: filterStateBefore, keyboardOrder: filterKeyboardOrder, after: filterStateAfter },
         );
 
         await driver.get(

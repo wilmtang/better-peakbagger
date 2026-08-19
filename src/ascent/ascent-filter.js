@@ -847,12 +847,21 @@ const init = async () => {
     let renderFrame = null;
     const bar = buildBarShell();
     const chips = {};
+    const filterItems = {};
+    const orderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
+    let suppressChipClick = null;
+    let moveFilterByKeyboard = null;
 
     const makeChip = (key, label, tooltip) => {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'pbaf-chip pbaf-control';
         button.title = tooltip;
+        button.dataset.filterKey = key;
+        button.setAttribute('aria-description',
+            'Drag to reorder. With the keyboard, press Alt plus an arrow key.');
+        button.setAttribute('aria-keyshortcuts',
+            'Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown');
 
         const tick = document.createElement('span');
         tick.className = 'pbaf-tick';
@@ -865,14 +874,29 @@ const init = async () => {
         count.textContent = String(counts[key]);
         button.append(tick, labelEl, count);
 
-        button.addEventListener('click', () => {
+        button.addEventListener('click', event => {
+            if (suppressChipClick?.key === key && Date.now() <= suppressChipClick.until) {
+                event.preventDefault();
+                suppressChipClick = null;
+                return;
+            }
             state[key] = !state[key];
             saveState(state);
             render();
             if (key === 'fav' && state.fav) void refreshBuddyCache();
         });
+        button.addEventListener('keydown', event => moveFilterByKeyboard?.(key, event));
         chips[key] = button;
         return button;
+    };
+
+    const makeFilterItem = (key, ...children) => {
+        const item = document.createElement('span');
+        item.className = 'pbaf-filter-item';
+        item.dataset.filterKey = key;
+        item.append(...children);
+        filterItems[key] = item;
+        return item;
     };
 
     const favoriteTooltip = () => {
@@ -982,6 +1006,11 @@ const init = async () => {
     statusEl.className = 'pbaf-status';
     statusEl.setAttribute('aria-live', 'polite');
 
+    const orderStatusEl = document.createElement('span');
+    orderStatusEl.className = 'pbaf-order-status';
+    orderStatusEl.setAttribute('role', 'status');
+    orderStatusEl.setAttribute('aria-live', 'polite');
+
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.className = 'pbaf-reset pbaf-control';
@@ -997,8 +1026,8 @@ const init = async () => {
         render();
     });
 
-    const betaGroup = document.createElement('span');
-    betaGroup.className = 'pbaf-beta-group';
+    const betaGroup = makeFilterItem('beta');
+    betaGroup.classList.add('pbaf-beta-group');
     const betaDefinitionEl = document.createElement('span');
     betaDefinitionEl.className = 'pbaf-beta-definition';
     betaDefinitionEl.classList.add('pbaf-note');
@@ -1022,23 +1051,144 @@ const init = async () => {
     betaDefinitionEl.appendChild(betaSettingsLink);
     betaGroup.append(makeChip('beta', 'Has beta', ''), betaDefinitionEl);
 
-    const filterControls = [];
-    if (isPeakAscentsPage) filterControls.push(makeChip('fav', '', ''));
-    filterControls.push(
-        makeChip('gps', 'GPS track',
-            'Only ascents with a GPS track.'),
+    if (isPeakAscentsPage) makeFilterItem('fav', makeChip('fav', '', ''));
+    makeFilterItem('gps', makeChip('gps', 'GPS track',
+        'Only ascents with a GPS track.'));
+    makeFilterItem('tr',
         makeChip('tr', 'Trip report',
             'Only ascents with a written trip report of at least the chosen word count.'),
-        wordsWrap,
-        makeChip('link', 'Link',
-            'Only ascents with an external link (blog, Strava, forum, ...).'),
-        betaGroup,
-    );
+        wordsWrap);
+    makeFilterItem('link', makeChip('link', 'Link',
+        'Only ascents with an external link (blog, Strava, forum, ...).'));
+
+    const applyFilterOrder = () => {
+        for (const key of state[orderKey]) {
+            const item = filterItems[key];
+            if (item) bar.insertBefore(item, spacer);
+        }
+    };
+    const announceFilterPosition = key => {
+        const order = state[orderKey];
+        const label = chips[key]?.querySelector('.pbaf-chip-label')?.textContent || 'Filter';
+        orderStatusEl.textContent = `${label} moved to position ${order.indexOf(key) + 1} of ${order.length}.`;
+    };
+    const setFilterOrder = (order, { persist = true, announce = null } = {}) => {
+        if (order.length !== state[orderKey].length
+                || order.some((key, index) => state[orderKey][index] !== key)) {
+            state[orderKey] = [...order];
+            applyFilterOrder();
+            if (persist) saveState(state);
+            if (announce) announceFilterPosition(announce);
+            return true;
+        }
+        return false;
+    };
+    const moveFilterBeside = (key, targetKey, after, options) => {
+        if (key === targetKey) return false;
+        const order = state[orderKey];
+        if (!order.includes(key) || !order.includes(targetKey)) return false;
+        const next = order.filter(itemKey => itemKey !== key);
+        const targetIndex = next.indexOf(targetKey);
+        next.splice(targetIndex + (after ? 1 : 0), 0, key);
+        return setFilterOrder(next, options);
+    };
+
+    moveFilterByKeyboard = (key, event) => {
+        if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1
+            : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1
+                : 0;
+        if (!direction) return;
+        event.preventDefault();
+        const order = state[orderKey];
+        const from = order.indexOf(key);
+        const to = from + direction;
+        if (from < 0 || to < 0 || to >= order.length) {
+            const label = chips[key]?.querySelector('.pbaf-chip-label')?.textContent || 'Filter';
+            orderStatusEl.textContent = `${label} is already ${direction < 0 ? 'first' : 'last'}.`;
+            return;
+        }
+        const next = [...order];
+        [next[from], next[to]] = [next[to], next[from]];
+        setFilterOrder(next, { announce: key });
+    };
+
+    let pointerDrag = null;
+    const finishPointerReorder = cancelled => {
+        if (!pointerDrag) return;
+        const drag = pointerDrag;
+        pointerDrag = null;
+        if (!drag.dragging) return;
+        drag.item.removeAttribute('data-pbaf-dragging');
+        bar.removeAttribute('data-pbaf-reordering');
+        suppressChipClick = { key: drag.key, until: Date.now() + 500 };
+        if (cancelled) {
+            state[orderKey] = drag.startOrder;
+            applyFilterOrder();
+            orderStatusEl.textContent = 'Filter reordering canceled.';
+            return;
+        }
+        saveState(state);
+        announceFilterPosition(drag.key);
+    };
+    bar.addEventListener('pointerdown', event => {
+        if (pointerDrag || event.isPrimary === false
+                || (event.pointerType === 'mouse' && event.button !== 0)) return;
+        const chip = event.target.closest?.('.pbaf-chip');
+        const item = chip?.closest('.pbaf-filter-item');
+        const key = item?.dataset.filterKey;
+        if (!key || !state[orderKey].includes(key)) return;
+        pointerDrag = {
+            pointerId: event.pointerId,
+            key,
+            item,
+            startX: event.clientX,
+            startY: event.clientY,
+            startOrder: [...state[orderKey]],
+            dragging: false,
+        };
+    }, true);
+    window.addEventListener('pointermove', event => {
+        const drag = pointerDrag;
+        if (!drag || event.pointerId !== drag.pointerId) return;
+        if (!drag.dragging) {
+            const dx = event.clientX - drag.startX;
+            const dy = event.clientY - drag.startY;
+            if (Math.hypot(dx, dy) < 6) return;
+            drag.dragging = true;
+            drag.item.setAttribute('data-pbaf-dragging', '');
+            bar.setAttribute('data-pbaf-reordering', '');
+        }
+        if (event.cancelable) event.preventDefault();
+        const target = document.elementFromPoint(event.clientX, event.clientY)
+            ?.closest?.('.pbaf-filter-item');
+        const targetKey = target?.dataset.filterKey;
+        if (!targetKey || targetKey === drag.key) return;
+        const rect = target.getBoundingClientRect();
+        const sameRow = event.clientY >= rect.top && event.clientY <= rect.bottom;
+        const after = sameRow
+            ? event.clientX > rect.left + rect.width / 2
+            : event.clientY > rect.top + rect.height / 2;
+        moveFilterBeside(drag.key, targetKey, after, { persist: false });
+    }, { capture: true, passive: false });
+    window.addEventListener('pointerup', event => {
+        if (pointerDrag && event.pointerId === pointerDrag.pointerId) finishPointerReorder(false);
+    }, true);
+    window.addEventListener('pointercancel', event => {
+        if (pointerDrag && event.pointerId === pointerDrag.pointerId) finishPointerReorder(true);
+    }, true);
+    window.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || !pointerDrag?.dragging) return;
+        event.preventDefault();
+        finishPointerReorder(true);
+    }, true);
+
     bar.append(
-        ...filterControls,
+        ...state[orderKey].map(key => filterItems[key]).filter(Boolean),
         spacer,
         statusEl,
-        resetButton
+        resetButton,
+        orderStatusEl,
     );
     refreshBeta();
     refreshFavorites();

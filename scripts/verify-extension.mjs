@@ -2674,7 +2674,31 @@ try {
                 labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
                 settingsLink: document.querySelector('.pbaf-beta-definition a')?.href
             }));
-            const hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
+            let hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
+            await hasBeta.focus();
+            await filterPage.keyboard.press('Alt+ArrowLeft');
+            const keyboardOrder = await filterPage.locator('.pbaf-chip-label').allTextContents();
+            const favorite = filterPage.locator('.pbaf-chip').filter({ hasText: 'Climbing buddies' });
+            const [betaBox, favoriteBox] = await Promise.all([hasBeta.boundingBox(), favorite.boundingBox()]);
+            if (betaBox && favoriteBox) {
+                await filterPage.mouse.move(betaBox.x + betaBox.width / 2, betaBox.y + betaBox.height / 2);
+                await filterPage.mouse.down();
+                await filterPage.mouse.move(betaBox.x + betaBox.width / 2 - 10, betaBox.y + betaBox.height / 2);
+                await filterPage.mouse.move(favoriteBox.x + favoriteBox.width / 2,
+                    favoriteBox.y + favoriteBox.height / 2, { steps: 4 });
+                await filterPage.mouse.up();
+            }
+            const dragState = await filterPage.evaluate(() => ({
+                labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
+                betaPressed: [...document.querySelectorAll('.pbaf-chip')]
+                    .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'Has beta')
+                    ?.getAttribute('aria-pressed'),
+                announcement: document.querySelector('.pbaf-order-status')?.textContent,
+            }));
+            await filterPage.reload({ waitUntil: 'load' });
+            await filterPage.locator('#pbaf-bar').waitFor({ state: 'visible', timeout: 10000 });
+            const persistedOrder = await filterPage.locator('.pbaf-chip-label').allTextContents();
+            hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
             await hasBeta.focus();
             await filterPage.keyboard.press('Enter');
             const tripReport = filterPage.locator('.pbaf-chip').filter({ hasText: 'Trip report' });
@@ -2771,11 +2795,20 @@ try {
                 && JSON.stringify(before.labels) === JSON.stringify([
                     'Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta'
                 ])
+                && JSON.stringify(keyboardOrder) === JSON.stringify([
+                    'Climbing buddies', 'GPS track', 'Trip report', 'Has beta', 'Link'
+                ])
+                && JSON.stringify(dragState.labels) === JSON.stringify([
+                    'Has beta', 'Climbing buddies', 'GPS track', 'Trip report', 'Link'
+                ])
+                && dragState.betaPressed === 'false'
+                && /Has beta moved to position 1 of 5/.test(dragState.announcement || '')
+                && JSON.stringify(persistedOrder) === JSON.stringify(dragState.labels)
                 && before.settingsLink?.endsWith('/options/options.html#beta')
                 && linkedOptionsState.href.endsWith('/options/options.html#beta')
                 && linkedOptionsState.heading === 'Ascent beta filter'
                 && after.visible < before.visible && after.first !== before.first,
-            `the Chrome ascent filter did not preserve order, Settings navigation, first-use rows, filtering, and keyboard sorting: ${JSON.stringify({ before, after, linkedOptionsState })}`);
+            `the Chrome ascent filter did not preserve reorder, Settings navigation, first-use rows, filtering, and keyboard sorting: ${JSON.stringify({ before, keyboardOrder, dragState, persistedOrder, after, linkedOptionsState })}`);
         }
         await filterPage.close();
     }

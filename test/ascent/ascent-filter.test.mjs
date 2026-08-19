@@ -28,6 +28,8 @@ const chip = (dom, label) =>
     [...dom.window.document.querySelectorAll('.pbaf-chip')]
         .find(c => c.querySelector('.pbaf-chip-label')?.textContent === label);
 const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').textContent;
+const filterLabels = dom => [...bar(dom).querySelectorAll('.pbaf-chip-label')]
+    .map(label => label.textContent);
 
 // Same row classification the content script uses: table.rows skips rows of
 // nested icon tables; >1 cells excludes year-separator and stray empty rows.
@@ -104,7 +106,8 @@ test('malformed remembered filter types fail to the all-off first-use state', as
     const dom = await loadPageWithBar(SMALL, {
         url: SMALL_URL,
         prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
-            beta: 'false', tr: 1, minWords: '100', gps: null, link: {}, fav: []
+            beta: 'false', tr: 1, minWords: '100', gps: null, link: {}, fav: [],
+            peakOrder: ['beta', 'beta'], personalOrder: ['link'],
         }))
     });
 
@@ -113,6 +116,7 @@ test('malformed remembered filter types fail to the all-off first-use state', as
     assert.ok([...bar(dom).querySelectorAll('.pbaf-chip')]
         .every(control => control.getAttribute('aria-pressed') === 'false'));
     assert.equal(dom.window.document.querySelector('.pbaf-words input').value, '1');
+    assert.deepEqual(filterLabels(dom), ['Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta']);
 });
 
 test('the ascent table stays concealed until remembered settings and row state reconcile', async () => {
@@ -152,10 +156,9 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
     });
 
     assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
-    assert.deepEqual(
-        [...bar(dom).querySelectorAll('.pbaf-chip')].map(control => control.childNodes[1].textContent.trim()),
-        ['Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta']
-    );
+    assert.deepEqual(filterLabels(dom), ['Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta']);
+    assert.match(chip(dom, 'Has beta').getAttribute('aria-description'), /Drag to reorder/);
+    assert.match(chip(dom, 'Has beta').getAttribute('aria-keyshortcuts'), /Alt\+ArrowLeft/);
     const settingsLink = bar(dom).querySelector('.pbaf-beta-definition a');
     assert.equal(settingsLink.textContent, 'Change what “Has beta” means →');
     assert.equal(settingsLink.href, 'chrome-extension://test-extension/options/options.html#beta');
@@ -167,6 +170,68 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
     await waitFor(dom, () => messages.length === 1);
     assert.equal(click.defaultPrevented, true);
     assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_BETA_SETTINGS' }]);
+});
+
+test('remembered filter order keeps dependent controls with their chips', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        prepare: page => rememberFilterState(page, {
+            peakOrder: ['beta', 'tr', 'link', 'gps', 'fav'],
+        }),
+    });
+
+    assert.deepEqual(filterLabels(dom), ['Has beta', 'Trip report', 'Link', 'GPS track', 'Climbing buddies']);
+    assert.ok(chip(dom, 'Trip report').closest('.pbaf-filter-item')
+        .contains(dom.window.document.querySelector('.pbaf-words')));
+    assert.ok(chip(dom, 'Has beta').closest('.pbaf-filter-item')
+        .contains(dom.window.document.querySelector('.pbaf-beta-definition a')));
+});
+
+test('Alt+Arrow reorders a focused filter without toggling it', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const hasBeta = chip(dom, 'Has beta');
+    const move = new dom.window.KeyboardEvent('keydown', {
+        key: 'ArrowLeft', altKey: true, bubbles: true, cancelable: true,
+    });
+    hasBeta.dispatchEvent(move);
+
+    assert.equal(move.defaultPrevented, true);
+    assert.deepEqual(filterLabels(dom), ['Climbing buddies', 'GPS track', 'Trip report', 'Has beta', 'Link']);
+    assert.equal(hasBeta.getAttribute('aria-pressed'), 'false');
+    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'));
+    assert.deepEqual(saved.peakOrder, ['fav', 'gps', 'tr', 'beta', 'link']);
+    assert.equal(saved.beta, false);
+    assert.equal(dom.window.document.querySelector('.pbaf-order-status').textContent,
+        'Has beta moved to position 4 of 5.');
+});
+
+test('pointer drag reorders a filter and suppresses the release click', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const hasBeta = chip(dom, 'Has beta');
+    const favorite = chip(dom, 'Climbing buddies');
+    const favoriteItem = favorite.closest('.pbaf-filter-item');
+    favoriteItem.getBoundingClientRect = () => ({
+        x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 40, width: 100, height: 40,
+    });
+    dom.window.document.elementFromPoint = () => favorite;
+
+    hasBeta.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
+        bubbles: true, cancelable: true, button: 0, clientX: 300, clientY: 20,
+    }));
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', {
+        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
+    }));
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', {
+        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
+    }));
+    hasBeta.click();
+
+    assert.deepEqual(filterLabels(dom), ['Has beta', 'Climbing buddies', 'GPS track', 'Trip report', 'Link']);
+    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'));
+    assert.deepEqual(saved.peakOrder, ['beta', 'fav', 'gps', 'tr', 'link']);
+    assert.equal(saved.beta, false, 'finishing a drag must not activate the filter');
+    assert.equal(dom.window.document.querySelector('.pbaf-order-status').textContent,
+        'Has beta moved to position 1 of 5.');
 });
 
 test('Fav climbers counts climber rows and AND-composes with Has beta', async () => {
@@ -745,11 +810,15 @@ test('default views sort their current rows without adopting backend-link params
 test('personal ClimbListC pages retain the beta bar and persistent date toggle', async () => {
     const dom = await loadPage('climber-ascents.html', {
         fixtures: PAGE_FIXTURES,
-        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786'
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786',
+        prepare: page => rememberFilterState(page, {
+            personalOrder: ['beta', 'link', 'gps', 'tr'],
+        }),
     });
     await waitFor(dom, () => bar(dom) && sortControl(dom));
 
     assert.ok(bar(dom));
+    assert.deepEqual(filterLabels(dom), ['Has beta', 'Link', 'GPS track', 'Trip report']);
     assert.equal(status(dom), '38 ascents');
     assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
     assert.equal(sortControl(dom).tabIndex, 0);
