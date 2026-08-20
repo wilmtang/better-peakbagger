@@ -544,7 +544,7 @@ html[data-bpb-theme="dark"] {
 .pbaf-tick { display: none; font-weight: 700; }
 .pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
 .pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; }
-.pbaf-settings-link { appearance: none; border: 0; background: none; padding: 0; color: inherit;
+.pbaf-settings-link { appearance: none; border: 0; background: none; padding: 0; color: var(--pbaf-link);
     font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .pbaf-settings-link:hover { color: var(--pbaf-hover-text); }
 .pbaf-settings-link:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
