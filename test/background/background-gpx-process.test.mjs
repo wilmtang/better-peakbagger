@@ -90,7 +90,10 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
             },
             onChanged: { addListener: () => {} }
         },
-        runtime: { onMessage: { listeners: [], addListener(listener) { this.listeners.push(listener); } } },
+        runtime: {
+            getURL: path => `chrome-extension://test-extension/${path}`,
+            onMessage: { listeners: [], addListener(listener) { this.listeners.push(listener); } },
+        },
         scripting: { executeScript: async () => [] },
         action: {
             setBadgeBackgroundColor: async () => {},
