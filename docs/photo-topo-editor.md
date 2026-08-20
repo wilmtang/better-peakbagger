@@ -153,6 +153,11 @@ selection — and a new object inherits the last style chosen. The route being
 drawn renders its first point and rubber-bands the next segment through a
 preview group that is never part of the project and never exports.
 
+Editor shortcuts yield to native editing controls. Cmd/Ctrl+Z and
+Cmd/Ctrl+Shift+Z inside text inputs, textareas, selects, and contenteditable
+regions remain browser Undo/Redo; annotation history handles those shortcuts
+only when focus is outside an editable control.
+
 `src/photos/photo-renderer.js` is the export boundary. It serializes a clean SVG
 representation, decodes that into Canvas, and exports a newly encoded image.
 Opacity rides on each object's own group, which dims a route's referenced

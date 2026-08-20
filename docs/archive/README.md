@@ -82,6 +82,12 @@ living docs in [`docs/`](../).
   settings-import, recovery-UX, cancellation, and Chrome-publication findings,
   with crash-durability, native/assistive UI, live-service, dependency-policy,
   and store-publication proof gaps preserved in the closure ledger.
+- [Code, performance, and UX audit — 2026-08-19](codebase-audit-2026-08-19.md) —
+  completed remediation of 14 trusted-action, capture/draft lease, privacy,
+  photo-recovery, terrain/time correctness, interaction-performance, atomic
+  build, and AMO-metadata findings, with native/assistive UI, abrupt-loss,
+  live-service, dependency-policy, hardware breadth, and store-review proof
+  gaps preserved in the closure ledger.
 - [UX and engineering audit follow-up — 2026-08-08](ux-engineering-audit-2026-08-08.md) —
   completed remediation of 17 release, transaction, GPX, recovery UX, resource,
   compatibility, and first-use findings, with remote-policy, crash-durability,

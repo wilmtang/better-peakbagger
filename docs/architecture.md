@@ -392,6 +392,13 @@ event replaces Peakbagger's Preview action with **Process**; the draft filler's
 synthetic file change is ignored so it cannot recursively process its own
 cleaned upload. The original disk file is never changed.
 
+The page sends only an opaque page-session id, monotonically increasing
+selection generation, and random selection nonce before analysis starts. File
+name, size, modification time, MIME type, and file bytes remain page-owned;
+only parsed allowlisted analysis fields can enter the worker job. Replacing or
+clearing the selection invalidates that identity before any late result can
+apply.
+
 ### 3. Validation and complete summit lookup
 
 `src/background/background.js` funnels both entry points through `analyzeTrack()` and the
@@ -459,6 +466,15 @@ actionable error and is never silently truncated into a partial summit result.
 Cancellation, job replacement, source closure, and expiry abort both the
 page-owned provider request and the worker-owned Peakbagger lookup generation.
 
+Peakbagger login and summit requests made through a signed-in page are one
+bounded capture-owned transaction. Every tab query, helper probe/injection,
+account read, and page request races the capture signal and a 20-second
+deadline; an abandoned page promise can settle only into a terminal handler.
+Temporary request tabs carry a generation-bound `storage.session` lease with
+their exact URL. Activation or navigation permanently transfers ownership to
+the user, while release or restart cleanup may remove only an expired,
+unadopted tab whose current URL still exactly matches the lease.
+
 ### 6. Reduction and serialization
 
 Peakbagger accepts at most 3,000 uploaded points and at most 50 track segments.
@@ -502,6 +518,12 @@ whitespace-normalized and limited to 200 characters.
 `src/ascent/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated
 handshake offers recovery instead of clicking Preview again. No extension path
 clicks either Save control; the user reviews all derived values and saves.
+
+Before the page mutates a field or attaches GPX, it claims a short-lived,
+one-use apply lease for the exact draft generation. The page snapshots every
+target, rechecks ownership through the transaction, and confirms only after the
+mutation completes. Rejection, expiry, source replacement, or clearing rolls
+back values still owned by that lease without overwriting a later user edit.
 
 For local files, one detected summit fills immediately. Multiple summits open an
 on-page picker; siblings become ordinary prepared draft tabs. A bound page whose
@@ -913,6 +935,14 @@ is printed beside that chip. The inline control is explicitly labelled “Trip
 report filter” so activating both concepts reads as the AND operation it is.
 Year separators disappear when a filtered section is empty and return with their
 original rows.
+
+Threshold input is coalesced to one animation-frame render. Rendering compares
+the next row and year-section visibility to the applied state and writes only
+actual changes, so a no-op value performs zero row writes instead of repainting
+the full ascent table. The inline beta Settings control is a button with link
+styling: only trusted keyboard/pointer activation mints its one-use navigation
+capability, modifier intent is preserved, and the worker reuses the exact
+registered Settings tab rather than accumulating duplicates.
 
 The target table keeps its layout but remains unpainted during the short initial
 settings/favorites reconciliation. It is revealed after remembered filters and

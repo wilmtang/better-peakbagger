@@ -68,6 +68,11 @@ This validation happens before timezone resolution. A displayed mountain time
 therefore always comes from a usable UTC sequence; timezone conversion cannot
 repair incorrect source chronology.
 
+Partial timing never changes the geographic owner. The timezone anchor is the
+first coordinate-valid route point even when that point has no timestamp; the
+first later timed point supplies timing evidence only and cannot silently move
+a cross-border trailhead into another civil zone.
+
 ## Why an offline whole-earth lookup can still fail
 
 Every point on earth has a zone, but two failure paths are real, and both of

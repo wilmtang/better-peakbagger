@@ -112,11 +112,13 @@ lock or damage a profile opened concurrently by another browser process. See
 the [web-ext profile options](https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#firefox-profile)
 for the upstream behavior and Firefox warning.
 
-The reload is transactional. A change rebuilds all browser bundles and copies
-all runtime assets; only after every operation succeeds does the build change
-the single file watched by web-ext. A syntax or copy error is printed but does
-not reload the browser into a partly updated extension. Fix the error and save
-again to retry.
+The reload is transactional. Each generation builds every browser bundle,
+notice, and runtime asset into its own staging tree, validates the complete
+inventory there, then publishes the tree with a directory swap. The previous
+`dist/` remains available until publication succeeds; a bundle, copy, notice,
+or swap failure therefore leaves both the on-disk runtime and web-ext reload
+token at the last complete generation. Startup and teardown remove only
+identified abandoned staging trees. Fix the error and save again to retry.
 
 Extension reload is not page reload. Content scripts already injected into an
 open Peakbagger, Garmin, or Strava tab keep their old page instance, so refresh
@@ -333,7 +335,9 @@ To add or update a runtime dependency:
    to `VENDOR_COPY`; generate a wrapper only when an entry must stay a separate
    global.
 3. Update `ACKNOWLEDGEMENTS.md` and Firefox review metadata when distributed
-   third-party code or its version changes.
+   third-party code or its version changes. Authored source roots in the AMO
+   instructions are derived from `scripts/build-config.mjs`; do not maintain a
+   second directory list when adding a page-local bundle root.
 4. Run `npm test`, the relevant real-browser check, and `npm run package` when
    packaging paths or vendor outputs changed.
 

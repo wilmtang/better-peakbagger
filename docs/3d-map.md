@@ -443,6 +443,11 @@ remain inside the Peakbagger tab plus the extension frame embedded in that tab.
 The public privacy contract remains [PRIVACY.md](../PRIVACY.md); this document
 explains mechanics rather than replacing that disclosure.
 
+Frame replies are accepted only from the current iframe window **and** the
+packaged extension origin, with the expected request/generation identity.
+Same-window messages carrying a forged or opaque origin are ignored before
+they can complete readiness, settings, peak, DEM, or camera work.
+
 ## DEM cache and prefetch
 
 MapLibre reads DEM through the custom `bpb-dem` protocol. The protocol accepts
@@ -463,6 +468,9 @@ best-effort `storage.local` LRU index. Important properties:
 - network bodies are streamed under the whole-request deadline, so absent or
   dishonest `Content-Length` cannot bypass the ceiling and an honest oversized
   response is rejected before its body is read;
+- concurrent consumers of one uncached tile share one fetch and validation
+  owner, but receive independent response buffers; one subscriber may cancel
+  without aborting the others, and the final cancellation aborts transport;
 - writes are serialized, validated tiles larger than the selected total cache
   budget are not stored, and oldest entries are trimmed first;
 - quota pressure, index-write failure, or browser eviction never makes terrain

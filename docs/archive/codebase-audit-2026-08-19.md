@@ -1,9 +1,9 @@
 # Code, performance, and UX audit — 2026-08-19
 
-Status: **active remediation plan.** This audit found four P1 findings, five P2
-findings, and five P3 findings. It is a source-grounded plan, not an
-implementation: no runtime, build, manifest, dependency, or product-copy change
-was made as part of the audit.
+Status: **completed and archived on 2026-08-19.** This audit found four P1
+findings, five P2 findings, and five P3 findings. All 14 received focused
+remediation and regression coverage; the closure ledger preserves the policy
+decisions and evidence that remain external or incomplete.
 
 Baseline: clean local `main` at `35e4b868`, 12 commits ahead of `origin/main`.
 This pass reconciled the current tree with the completed
@@ -22,7 +22,7 @@ GPX/timezone analysis, terrain messaging and caching, ascent filtering, GitHub
 ascent and photo recovery, Photo Topos editing, options-page status, watch
 builds, dependency policy, and Firefox reviewer metadata.
 
-Current-turn verification established this baseline:
+Audit-time verification established this baseline:
 
 - `npm test`: **1,519 passed, 0 failed** after rebuilding all 28 shipped
   bundles in `dist/`.
@@ -47,9 +47,10 @@ Current-turn verification established this baseline:
   duplicate concurrent DEM fetches, native text Undo interception, and 4,220
   style writes for one threshold input on the scale fixture.
 
-No browser window was launched. Unit, lint, scale, and deterministic harness
-evidence do not prove native modifier/focus behavior, visible layout, browser
-chrome, screen-reader speech, touch, physical devices, live
+No browser window was launched while creating the plan. That initial unit,
+lint, scale, and deterministic harness evidence did not prove native
+modifier/focus behavior, visible layout, browser chrome, screen-reader speech,
+touch, physical devices, live
 Garmin/Strava/Peakbagger/GitHub/ImgBB/OpenFreeMap/Mapterhorn behavior, abrupt
 process loss, AMO review, legal sufficiency, or store acceptance.
 
@@ -621,8 +622,92 @@ native/live proof gap.
 
 ### Fixed and verified
 
-- None. This audit created and indexed the plan only; runtime remediation has
-  not started.
+- **F1 — trusted host-page actions (`fe9d14f`, `118afa8`, `6c6ab87`,
+  `97f74a8`, corrected by `6ff3c2a`):** one reusable trusted-action boundary
+  now gates manual ascent backup, full-profile backup, and beta Settings
+  navigation. Automatic saved-ascent backup stays on its fresh-snapshot route;
+  Settings preserves modifier intent and reuses one registered exact tab.
+  Synthetic-event, expiry/replay, restart, cancellation, dark-theme, and real
+  hidden Chrome/Firefox interaction coverage passed.
+- **F2 — bounded durable Peakbagger helper lease (`7e17a00`):** every helper
+  lookup, probe, injection, account read, and page request races the capture
+  signal and a typed deadline. Temporary tabs carry session-backed,
+  generation-bound exact-URL leases; activation or navigation permanently
+  transfers ownership. Eight before/after-dispatch stalls, source closure,
+  cancellation, deadline, late-result, ID-reuse, expiry, and restart cases
+  passed, followed by the actual hidden Chrome MV3 worker check.
+- **F3 — draft apply lease (`42a5c36`):** a persisted 30-second one-use claim is
+  required before form mutation. The page snapshots owned fields/file state,
+  rolls back only values it still owns, and stops on source replacement,
+  clearing, or lease loss. One hundred thirteen focused draft/worker cases
+  passed.
+- **F4 — full-size photo recovery reads (`aa4f2be`):** photo update, preview,
+  and restore now use bounded raw Git blobs with declared-size checks, strict
+  UTF-8, and the existing 8 MiB document ceiling instead of the smaller
+  base64-expanded Contents envelope. Seventy-three focused recovery/client
+  cases passed.
+- **F5 — opaque local-GPX selection (`62d3411`, fixture correction
+  `85b3d87`):** the worker receives only page session, selection generation,
+  and nonce before parsed analysis fields; file name, type, size, modification
+  time, and file bytes remain page-owned. Sixty focused upload/worker cases
+  passed.
+- **F6 — origin-authenticated terrain replies (`57c6275`):** the bridge now
+  requires both the current frame window and the packaged extension origin for
+  every reply. Twenty-three focused lifecycle/authorization cases and the
+  final real GPU/browser gates passed.
+- **F7 — trailhead-owned mountain time (`d072e37`):** timezone resolution stays
+  anchored to the first coordinate-valid route point even when the first timed
+  point occurs later across a zone border. The build and 42 analyzer cases
+  passed.
+- **F8 — native text Undo in Photo Topos (`82a4610`):** annotation history now
+  yields Cmd/Ctrl+Z and Redo inside native/contenteditable controls while
+  retaining canvas history elsewhere. The build and 55 editor cases passed.
+- **F9 — refreshed bulk-backup count (`e8a5eb4`):** Settings rereads the
+  authoritative ascent summary when it regains focus, so returning from My
+  Ascents cannot leave the pre-backup count indefinitely. Forty-one options and
+  GitHub cases passed.
+- **F10 — first-read backup timing (`e298cec`):** the individual-backup
+  operation timer now starts before persisted Peakbagger reads, so delayed page
+  acquisition enters truthful long-operation feedback. Eighteen focused cases
+  passed.
+- **F11 — shared in-flight DEM owners (`a19da6f`):** identical uncached tile
+  consumers share fetch and validation while retaining independent buffers and
+  subscriber cancellation. Forty-three cache/map cases plus hardware-GPU
+  Chrome and Firefox verification passed.
+- **F12 — coalesced threshold rendering (`8de9ae2`):** input schedules at most
+  one animation-frame render and applies only changed row/section visibility.
+  Forty-four filter cases and the instrumented 4,145-row scale case passed.
+- **F13 — complete build-generation publication (`36bad335`):** bundles,
+  notices, and assets build into a generation staging tree, pass inventory
+  validation, and publish by directory swap before the reload token advances.
+  Failure injection preserves the prior hashes; startup/teardown removes
+  identified abandoned trees. Fifty-three development/release cases and a real
+  watch startup/teardown passed.
+- **F14 — build-derived AMO source roots (`96e9758`):** Firefox approval notes
+  derive the sorted authored-root set from the same resolved entry graph used
+  by the build, including `photos/`. Forty-four release cases passed.
+
+Final combined-tree verification recorded before archival:
+
+- `npm test`: **1,577 passed, 0 failed**, after rebuilding all 28 shipped
+  bundles.
+- `npm run lint`: passed ESLint, rebuilt `dist/`, and passed web-ext lint with
+  the eight exact owner-reviewed warnings (one cross-browser worker warning,
+  five MapLibre warnings, one ProseMirror warning, and one TipTap warning).
+- `npm run test:scale`: **6 passed, 0 failed** across the 4,145-row Rainier
+  table, 1,500 favorites, 20,000-point provider contract and contract+1
+  rejection, and 1,200-photo library.
+- `npm run audit:ci`: passed only the two exact high `image-size` advisories in
+  the development-only `web-ext`/`addons-linter` path through 2026-08-21.
+- `npm run verify:browsers`: passed the real unpacked extension in hidden
+  Chrome for Testing 151.0.7922.34 new-headless and hidden Firefox 154.0 at
+  1000×760. The Chrome verifier exercised the actual MV3 helper lease and both
+  browsers exercised trusted Settings modifier semantics and exact-tab reuse.
+- `npm run terrain:verify`: passed hidden at 798×448 and 448×448 on `ANGLE
+  Metal Renderer: Apple M3 Pro`; `npm run terrain:verify:firefox` passed hidden
+  at 1000×760 in Firefox 153.0 on its reported Apple hardware renderer.
+  Verifier processes exited, and the exact disposable terrain screenshots were
+  removed after inspection.
 
 ### Intentionally not changed
 
@@ -637,12 +722,37 @@ native/live proof gap.
 - The two exact development-only advisories remain accepted only through
   2026-08-21 pending the dated owner decision above.
 - Previously archived findings remain closed absent new contrary evidence.
+- No version bump, release tag, push, live provider/GitHub write, browser-store
+  submission, or publication was performed. Those actions require separate
+  authority.
 
 ### Changed but not fully proven
 
-- The repository now contains this documentation-only plan and active-plan index
-  entry. No runtime behavior changed.
-- Deterministic probes establish the listed broken invariants, but no visible
-  browser, hardware-GPU, live provider, authenticated GitHub recovery, abrupt
-  process-loss, assistive-technology, legal, AMO-review, or store-publication
-  proof was performed in this audit turn.
+- **F1, F8, F9, and F10:** hidden browser interaction and DOM assertions do not
+  prove native browser chrome, visible focus/window placement, screen-reader
+  speech, touch/switch control, OS-native Undo presentation, or every physical
+  input device.
+- **F2 and F3:** deterministic cancellation, late-result, restart, expiry, and
+  rollback coverage proves the running-browser ownership rules. Browser APIs
+  already dispatched cannot be physically retracted, and abrupt browser/OS
+  loss at every lease or form-mutation persistence boundary was not induced.
+- **F4, F5, and F9:** bounded fake-server/fixture coverage and isolated browser
+  startup passed, but no authenticated live 8 MiB GitHub recovery document,
+  native file-picker presentation, or controlled live repository count change
+  was exercised.
+- **F6 and F11:** hardware-GPU fixtures passed on the local Apple/Metal stack.
+  Future Mapterhorn/MapLibre policy, other GPU/driver combinations, visible
+  WebGL failure UI, and live-provider outages remain external evidence.
+- **F7:** trailhead ownership and fallback behavior are fixture-proven; every
+  historical/future timezone-border and bundled raster edge is not.
+- **F12:** deterministic write counts and the scale suite passed, but no
+  repeated real-browser production-table timing budget was established; jsdom
+  wall time is not paint or interaction-latency evidence.
+- **F13:** failure injection and ordinary watch teardown passed. An OS crash at
+  every directory-swap filesystem boundary was not induced.
+- **F14:** generated metadata/package tests prove the authored-root inventory;
+  actual AMO reviewer acceptance remains external.
+- The two reviewed development-only `image-size` advisories remain accepted
+  only through 2026-08-21; this is not a clean full dependency graph. Legal
+  review, privacy-policy sufficiency, signing, store acceptance, and
+  post-publication behavior remain release-owner evidence.

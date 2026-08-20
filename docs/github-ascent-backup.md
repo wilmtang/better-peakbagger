@@ -318,6 +318,13 @@ background status check never strands the user. There is no fixed or sticky
 banner, and none of these reads run while the feature is disabled or GitHub is
 disconnected.
 
+Manual individual and full-profile backup begin only from a trusted DOM
+activation. The content script exchanges that event for a short-lived one-use
+capability bound to the sender tab and action; profile backup upgrades it to a
+cancelable session grant and renews that grant per batch. Automatic backup
+after a fresh saved-ascent snapshot remains a separate opt-in route and cannot
+be manufactured from a page-script click.
+
 The Settings ascent-backup panel performs a separate, extension-page-only
 repository summary read. It reports either **No ascents backed up yet** or the
 count of marker-validated ascent folders and links to the selected repository.
@@ -541,13 +548,13 @@ disclosure.
 | `GITHUB_BACKUP_SNAPSHOT` | Peakbagger Add/Edit tab | Peakbagger hostname, feature enabled, nonempty key/snapshot; worker adds source tab and expiry | No token returned |
 | `GITHUB_BACKUP_STATUS` | Peakbagger tab | Peakbagger hostname | Only enabled/auto/connected and repository display name |
 | `GITHUB_CHECK_ASCENT_BACKUP` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; complete persisted payload and final aid; marker/folder/blob validation | Boolean current state or typed error, never token |
-| `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
+| `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; one-use trusted-action grant for manual; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
 | `GITHUB_ASCENT_DELETE_INTENT` | Existing `AscentEdit.aspx?aid=…` | Exact edit pathname; positive message aid equals URL aid; setting/auth/repo; worker adds source tab and expiry | Success or typed error, never token |
 | `GITHUB_ASCENT_DELETE_PENDING` | `ClimbListC.aspx` | Exact list pathname and same source tab; returns only fresh pending aids | Pending aid list, never token |
 | `GITHUB_ASCENT_DELETE_CONFIRM` | `ClimbListC.aspx` | Pending same-tab intent; complete all-years ids; signed-in climber recheck; setting/auth/repo | Commit/no-op metadata or typed error |
 | `GITHUB_ASCENT_BACKUP_SUMMARY` | Extension options page | Extension origin; auth/repo; marker-validated repository tree | Ascent count only, never folder names or token |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
-| `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
+| `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; active trusted-action session grant; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
 | `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads and cleans `bpbFavoriteClimbers`; fixed `favorite-climbers.json` path | Commit metadata, never token |
 | `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorite-climbers.json` path | File text or `null`, never token |
 | `GITHUB_SETTINGS_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads settings through the shared schema and exports known keys only; fixed `settings.json` path | Commit metadata, never token |
@@ -714,6 +721,12 @@ and upload. It also prepares and bounds the merged remote representation before
 the repository mutation. An over-capacity generation reports its measured and
 maximum sizes with a stable cleanup action; automatic runs stay blocked until a
 new catalog generation makes another attempt meaningful.
+
+Remote `photo-library.json` reads use the Git Data tree/blob path rather than
+the Contents response envelope, whose base64 expansion becomes unreachable
+below the advertised capacity. The worker checks the tree's declared blob size,
+streams at most 8 MiB of raw bytes, requires strict UTF-8, and routes backup,
+preview, and restore through that same reader.
 
 Automatic photo backup is a third independent, default-off alarm. Catalog
 mutations atomically advance an IndexedDB generation and request the one-minute
