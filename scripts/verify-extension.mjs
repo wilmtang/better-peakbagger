@@ -2896,10 +2896,23 @@ try {
                     windowCount: windows.length,
                 };
             });
+            await waitForCondition(() => linkedOptionsPage.evaluate(async () => {
+                const [current, stored] = await Promise.all([
+                    chrome.tabs.getCurrent(),
+                    chrome.storage.session.get('bpbBetaSettingsTabs'),
+                ]);
+                return current?.id && stored.bpbBetaSettingsTabs?.[current.id]
+                    ? current.id
+                    : null;
+            }), { description: 'the exact Settings tab to register with the worker', timeoutMs: 5_000 });
             const prepareSettingsActivation = async () => {
                 await linkedOptionsPage.evaluate(() => { location.hash = 'github'; });
                 await linkedOptionsPage.waitForURL(url => url.hash === '#github');
                 await filterPage.bringToFront();
+                await waitForCondition(async () => {
+                    const topology = await readSettingsTopology();
+                    return topology.source?.active === true ? topology : null;
+                }, { description: 'the source tab to become active', timeoutMs: 5_000 });
             };
             const activateSettings = async activate => {
                 await prepareSettingsActivation();
