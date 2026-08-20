@@ -2672,7 +2672,7 @@ try {
                 controls: document.querySelectorAll('.pbaf-table-sort').length,
                 resetHidden: document.querySelector('.pbaf-reset')?.hidden,
                 labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
-                settingsLink: document.querySelector('.pbaf-beta-definition a')?.href
+                settingsControl: document.querySelector('.pbaf-settings-link')?.tagName
             }));
             let hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
             await hasBeta.focus();
@@ -2783,13 +2783,87 @@ try {
                 first: document.querySelector('table.gray tr td')?.textContent.trim()
             }));
             const optionsPagePromise = context.waitForEvent('page');
-            await filterPage.locator('.pbaf-beta-definition a').click();
+            await filterPage.locator('.pbaf-settings-link').click();
             const linkedOptionsPage = await optionsPagePromise;
             await linkedOptionsPage.waitForLoadState('domcontentloaded');
             const linkedOptionsState = await linkedOptionsPage.evaluate(() => ({
                 href: location.href,
                 heading: document.querySelector('#beta-settings-heading')?.textContent
             }));
+            const readSettingsTopology = () => linkedOptionsPage.evaluate(async () => {
+                const [tabs, windows, current] = await Promise.all([
+                    chrome.tabs.query({}),
+                    chrome.windows.getAll(),
+                    chrome.tabs.getCurrent(),
+                ]);
+                const source = tabs.find(tab => /\/climber\/PeakAscents\.aspx/i.test(tab.url || ''));
+                return {
+                    options: current
+                        ? [{ id: current.id, windowId: current.windowId, active: current.active }]
+                        : [],
+                    source: source ? { id: source.id, windowId: source.windowId, active: source.active } : null,
+                    windowCount: windows.length,
+                };
+            });
+            const prepareSettingsActivation = async () => {
+                await linkedOptionsPage.evaluate(() => { location.hash = 'github'; });
+                await linkedOptionsPage.waitForURL(url => url.hash === '#github');
+                await filterPage.bringToFront();
+            };
+            const activateSettings = async activate => {
+                await prepareSettingsActivation();
+                await activate();
+                const route = await waitForCondition(async () => {
+                    const optionsPages = context.pages().filter(page =>
+                        /\/options\/options\.html/.test(page.url()));
+                    const betaPages = optionsPages.filter(page => page.url().endsWith('#beta'));
+                    return betaPages.length ? {
+                        betaPages,
+                        urls: optionsPages.map(page => page.url()),
+                        controlText: await settingsControl.textContent(),
+                    } : null;
+                }, { description: 'trusted Settings navigation', timeoutMs: 5_000 });
+                if (!route.betaPages.includes(linkedOptionsPage) || route.betaPages.length !== 1) {
+                    throw new Error(`Settings navigation did not reuse the exact tab: ${JSON.stringify({
+                        urls: route.urls,
+                        controlText: route.controlText,
+                    })}`);
+                }
+                return readSettingsTopology();
+            };
+            const settingsControl = filterPage.locator('.pbaf-settings-link');
+            const shortcutTopology = await activateSettings(() => settingsControl.click({
+                modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'],
+            }));
+            const middleTopology = await activateSettings(() =>
+                settingsControl.click({ button: 'middle' }));
+            const keyboardTopology = await activateSettings(async () => {
+                await settingsControl.focus();
+                await filterPage.keyboard.press('Enter');
+            });
+            await prepareSettingsActivation();
+            const beforeNewWindow = await readSettingsTopology();
+            await settingsControl.click({ modifiers: ['Shift'] });
+            await linkedOptionsPage.waitForURL(url => url.hash === '#beta');
+            const newWindowTopology = await waitForCondition(async () => {
+                const topology = await readSettingsTopology();
+                return topology.options[0]?.windowId !== topology.source?.windowId
+                    && topology.windowCount === beforeNewWindow.windowCount + 1
+                    ? topology
+                    : null;
+            }, { description: 'trusted Settings new-window disposition', timeoutMs: 5_000 });
+            const exactSettingsReuse = [shortcutTopology, middleTopology, keyboardTopology, newWindowTopology]
+                .every(state => state.options.length === 1);
+            const backgroundIntent = [shortcutTopology, middleTopology].every(state =>
+                state.source?.active === true
+                && state.options[0]?.active === false
+                && state.source.windowId === state.options[0]?.windowId);
+            const keyboardIntent = keyboardTopology.options[0]?.active === true
+                && keyboardTopology.source?.active === false;
+            const newWindowIntent = newWindowTopology.options[0]?.active === true
+                && newWindowTopology.source?.active === true
+                && newWindowTopology.options[0]?.windowId !== newWindowTopology.source?.windowId
+                && newWindowTopology.windowCount === beforeNewWindow.windowCount + 1;
             await linkedOptionsPage.close();
             check(before.controls > 1 && before.visible === before.total && before.resetHidden === true
                 && JSON.stringify(before.labels) === JSON.stringify([
@@ -2804,11 +2878,24 @@ try {
                 && dragState.betaPressed === 'false'
                 && /Has beta moved to position 1 of 5/.test(dragState.announcement || '')
                 && JSON.stringify(persistedOrder) === JSON.stringify(dragState.labels)
-                && before.settingsLink?.endsWith('/options/options.html#beta')
+                && before.settingsControl === 'BUTTON'
                 && linkedOptionsState.href.endsWith('/options/options.html#beta')
                 && linkedOptionsState.heading === 'Ascent beta filter'
+                && exactSettingsReuse && backgroundIntent && keyboardIntent && newWindowIntent
                 && after.visible < before.visible && after.first !== before.first,
-            `the Chrome ascent filter did not preserve reorder, Settings navigation, first-use rows, filtering, and keyboard sorting: ${JSON.stringify({ before, keyboardOrder, dragState, persistedOrder, after, linkedOptionsState })}`);
+            `the Chrome ascent filter did not preserve reorder, trusted Settings dispositions and exact-tab reuse, first-use rows, filtering, and keyboard sorting: ${JSON.stringify({
+                before,
+                keyboardOrder,
+                dragState,
+                persistedOrder,
+                after,
+                linkedOptionsState,
+                shortcutTopology,
+                middleTopology,
+                keyboardTopology,
+                beforeNewWindow,
+                newWindowTopology,
+            })}`);
         }
         await filterPage.close();
     }
@@ -4155,6 +4242,7 @@ console.log('  - the Full Screen BigMap receives settings and shows an enabled 3
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - keyboard-opening Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter starts unfiltered, then filters and sorts by keyboard in place');
+console.log('  - trusted keyboard/pointer Settings actions preserve modifier disposition and reuse one exact tab');
 console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
 console.log('  - Peak Lists expose eight in-place sort controls, preserve the URL, and fit the viewport');
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');

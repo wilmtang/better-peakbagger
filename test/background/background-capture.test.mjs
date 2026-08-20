@@ -52,6 +52,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let nextTabId = 100;
     const runtimeMessage = event();
     const tabRemoved = event();
+    const tabUpdated = event();
     const alarmEvent = event();
     const grouped = [];
     const groupUpdates = [];
@@ -66,6 +67,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const droppedPeakbaggerHelpers = new Set();
     const tabMessages = [];
     const removedTabs = [];
+    const windowCreates = [];
+    const windowUpdates = [];
+    let nextWindowId = 20;
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
     let draftSetCalls = 0;
@@ -325,9 +329,32 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 if (groupError) throw new Error(groupError);
                 return 3;
             },
-            onRemoved: tabRemoved
+            onRemoved: tabRemoved,
+            onUpdated: tabUpdated,
         },
         tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
+        windows: {
+            create: async details => {
+                const windowId = nextWindowId++;
+                windowCreates.push(structuredClone(details));
+                let tab;
+                if (Number.isInteger(details.tabId)) {
+                    tab = tabs.get(details.tabId);
+                    if (tab) Object.assign(tab, { windowId, active: true });
+                } else if (details.url) {
+                    tab = {
+                        id: nextTabId++, windowId, url: details.url,
+                        active: true, status: 'complete',
+                    };
+                    tabs.set(tab.id, tab);
+                }
+                return { id: windowId, focused: details.focused, tabs: tab ? [structuredClone(tab)] : [] };
+            },
+            update: async (windowId, patch) => {
+                windowUpdates.push([windowId, structuredClone(patch)]);
+                return { id: windowId, ...structuredClone(patch) };
+            },
+        },
         alarms: { create: () => {}, onAlarm: alarmEvent }
     };
 
@@ -365,6 +392,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         AbortController,
         TextEncoder,
         TextDecoder,
+        crypto: globalThis.crypto,
     });
     context.globalThis = context;
     context.self = context;
@@ -375,12 +403,30 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     });
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
+        windowCreates, windowUpdates,
         removedTabs, providerCaptureCalls, providerCancelCalls,
         peakbaggerPageCalls, peakbaggerPageCancelCalls,
         peakbaggerPageProbeCalls: () => peakbaggerPageProbeCalls,
         peakbaggerAccountEvidenceCalls: () => peakbaggerAccountEvidenceCalls,
-        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, alarmEvent,
+        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, tabUpdated, alarmEvent,
     };
+};
+
+let betaSettingsGeneration = 0;
+const openBetaSettings = async (harness, sender, disposition = 'foreground-tab') => {
+    const generation = `test-beta-${++betaSettingsGeneration}`;
+    const activation = await harness.send({
+        type: 'TRUSTED_ACTION_ISSUE',
+        action: 'beta-settings',
+        generation,
+    }, sender);
+    assert.equal(activation.ok, true);
+    return harness.send({
+        type: 'OPEN_BETA_SETTINGS',
+        generation,
+        activationToken: activation.token,
+        disposition,
+    }, sender);
 };
 
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
@@ -606,14 +652,21 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
 
 test('only a Peakbagger tab can open the Has beta settings section', async () => {
     const harness = createHarness();
-    const allowed = await harness.send(
-        { type: 'OPEN_BETA_SETTINGS' },
-        {
-            tab: { id: 5, windowId: 9 },
-            url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
-        }
-    );
-    assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
+    const sender = {
+        tab: { id: 5, windowId: 9 },
+        documentId: 'peak-list-document',
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+    };
+    const withoutActivation = await harness.send({
+        type: 'OPEN_BETA_SETTINGS',
+        disposition: 'foreground-tab',
+    }, sender);
+    assert.equal(withoutActivation.error.code, 'activation-required');
+    assert.equal(harness.tabs.size, 2);
+
+    const allowed = await openBetaSettings(harness, sender);
+    assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100, reused: false });
+    assert.deepEqual(harness.values.bpbBetaSettingsTabs, { 100: { owned: true } });
     assert.deepEqual(JSON.parse(JSON.stringify(harness.tabs.get(100))), {
         id: 100,
         windowId: 9,
@@ -621,6 +674,25 @@ test('only a Peakbagger tab can open the Has beta settings section', async () =>
         active: true,
         status: 'complete',
     });
+
+    const reused = await openBetaSettings(harness, sender, 'background-tab');
+    assert.deepEqual(JSON.parse(JSON.stringify(reused)), { ok: true, tabId: 100, reused: true });
+    assert.equal(harness.tabs.size, 3, 'the exact options tab is reused');
+
+    const moved = await openBetaSettings(harness, sender, 'new-window');
+    assert.deepEqual(JSON.parse(JSON.stringify(moved)), { ok: true, tabId: 100, reused: true });
+    assert.deepEqual(harness.windowCreates.at(-1), { tabId: 100, focused: true });
+    assert.equal(harness.tabs.size, 3, 'moving the existing tab does not duplicate it');
+
+    harness.tabs.get(100).url = 'https://example.com/user-owned';
+    harness.tabUpdated.listeners.forEach(listener => listener(100, {
+        url: 'https://example.com/user-owned',
+    }, structuredClone(harness.tabs.get(100))));
+    await waitForCondition(() => !harness.values.bpbBetaSettingsTabs?.['100']);
+    const afterNavigation = await openBetaSettings(harness, sender, 'background-tab');
+    assert.deepEqual(JSON.parse(JSON.stringify(afterNavigation)), { ok: true, tabId: 101, reused: false });
+    assert.equal(harness.tabs.get(100).url, 'https://example.com/user-owned',
+        'a tab navigated away from Settings is never reclaimed');
 
     const before = harness.tabs.size;
     assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
@@ -637,6 +709,24 @@ test('only a Peakbagger tab can open the Has beta settings section', async () =>
         },
     });
     assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
+});
+
+test('rapid trusted Settings activations serialize to one exact options tab', async () => {
+    const harness = createHarness();
+    const sender = {
+        tab: { id: 5, windowId: 9 },
+        documentId: 'peak-list-document',
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+    };
+    const [first, second] = await Promise.all([
+        openBetaSettings(harness, sender, 'foreground-tab'),
+        openBetaSettings(harness, sender, 'background-tab'),
+    ]);
+
+    assert.equal(first.reused, false);
+    assert.equal(second.reused, true);
+    assert.equal([...harness.tabs.values()].filter(tab =>
+        tab.url === 'chrome-extension://test-extension/options/options.html#beta').length, 1);
 });
 
 test('browser, storage, and page-world exceptions stay behind the public worker boundary', async () => {
@@ -673,13 +763,10 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
     assertPrivate(tabCreate, createResponse);
 
     const betaTabCreate = createHarness({ faults: { tabCreate: sentinel } });
-    const betaCreateResponse = await betaTabCreate.send(
-        { type: 'OPEN_BETA_SETTINGS' },
-        {
-            tab: { id: 5, windowId: 9 },
-            url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
-        }
-    );
+    const betaCreateResponse = await openBetaSettings(betaTabCreate, {
+        tab: { id: 5, windowId: 9 },
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+    });
     assert.deepEqual(JSON.parse(JSON.stringify(betaCreateResponse)), {
         ok: false,
         error: {

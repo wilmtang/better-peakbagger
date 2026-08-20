@@ -45,6 +45,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // expiring on the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
+    const BETA_SETTINGS_TABS_KEY = 'bpbBetaSettingsTabs';
     const PEAKBAGGER_PAGE_VERSION = 2;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
         code: 'capture-failed',
@@ -2355,7 +2356,50 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
     };
 
-    const openBetaSettings = async sender => {
+    const optionsPageUrl = ext.runtime.getURL('options/options.html');
+    const isOptionsPageUrl = value => {
+        try {
+            const actual = new URL(value);
+            const expected = new URL(optionsPageUrl);
+            return actual.origin === expected.origin && actual.pathname === expected.pathname;
+        } catch { return false; }
+    };
+    const rememberBetaSettingsTab = tabId => mutateMap(BETA_SETTINGS_TABS_KEY, tabs => {
+        for (const key of Object.keys(tabs)) delete tabs[key];
+        if (Number.isInteger(tabId)) tabs[tabId] = { owned: true };
+    });
+    const forgetBetaSettingsTab = async tabId => {
+        const records = await readMap(BETA_SETTINGS_TABS_KEY);
+        if (!Object.hasOwn(records, tabId)) return;
+        await mutateMap(BETA_SETTINGS_TABS_KEY, tabs => { delete tabs[tabId]; });
+    };
+    const registeredBetaSettingsTab = async () => {
+        const records = await readMap(BETA_SETTINGS_TABS_KEY);
+        const tabId = Number(Object.keys(records)[0]);
+        if (!Number.isInteger(tabId)) return null;
+        try {
+            const tab = await ext.tabs.get(tabId);
+            if (tab?.url && !isOptionsPageUrl(tab.url)) {
+                await forgetBetaSettingsTab(tabId);
+                return null;
+            }
+            return Number.isInteger(tab?.id) ? tab : null;
+        } catch {
+            await forgetBetaSettingsTab(tabId);
+            return null;
+        }
+    };
+    const registerBetaSettingsTab = async sender => {
+        if (!isExtensionPage(sender) || !isOptionsPageUrl(sender?.url)
+            || !Number.isInteger(sender?.tab?.id)) {
+            return { ok: false, error: { code: 'forbidden' } };
+        }
+        await rememberBetaSettingsTab(sender.tab.id);
+        return { ok: true };
+    };
+
+    let betaSettingsQueue = Promise.resolve();
+    const openBetaSettings = async (message, sender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return {
                 ok: false,
@@ -2365,19 +2409,63 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 },
             };
         }
-        try {
-            const tab = await ext.tabs.create({
-                url: ext.runtime.getURL('options/options.html#beta'),
-                active: true,
-                ...(Number.isInteger(sender.tab.windowId) ? { windowId: sender.tab.windowId } : {}),
-            });
-            return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
-        } catch (error) {
-            return {
-                ok: false,
-                error: publicFailure('beta settings tab opening', error, BETA_SETTINGS_OPEN_ERROR),
-            };
+        if (!trustedActions.consumeCapability(message, sender, TrustedActions.ACTIONS.BETA_SETTINGS)) {
+            return { ok: false, error: { code: 'activation-required' } };
         }
+        const disposition = ['foreground-tab', 'background-tab', 'new-window'].includes(message?.disposition)
+            ? message.disposition
+            : null;
+        if (!disposition) return { ok: false, error: { code: 'invalid-request' } };
+
+        const operation = betaSettingsQueue.then(async () => {
+            try {
+                const targetUrl = ext.runtime.getURL('options/options.html#beta');
+                const optionsUrl = new URL(ext.runtime.getURL('options/options.html'));
+                const tabs = await ext.tabs.query({});
+                const existing = await registeredBetaSettingsTab() || tabs.find(tab => {
+                    try {
+                        const url = new URL(tab.url);
+                        return url.origin === optionsUrl.origin && url.pathname === optionsUrl.pathname;
+                    } catch { return false; }
+                });
+
+                if (existing && Number.isInteger(existing.id)) {
+                    await ext.tabs.update(existing.id, {
+                        url: targetUrl,
+                        ...(disposition === 'foreground-tab' ? { active: true } : {}),
+                    });
+                    if (disposition === 'new-window') {
+                        await ext.windows.create({ tabId: existing.id, focused: true });
+                    } else if (disposition === 'foreground-tab'
+                        && Number.isInteger(existing.windowId)) {
+                        await ext.windows.update(existing.windowId, { focused: true });
+                    }
+                    await rememberBetaSettingsTab(existing.id);
+                    return { ok: true, tabId: existing.id, reused: true };
+                }
+
+                if (disposition === 'new-window') {
+                    const createdWindow = await ext.windows.create({ url: targetUrl, focused: true });
+                    const tab = createdWindow?.tabs?.[0];
+                    if (Number.isInteger(tab?.id)) await rememberBetaSettingsTab(tab.id);
+                    return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null, reused: false };
+                }
+                const tab = await ext.tabs.create({
+                    url: targetUrl,
+                    active: disposition === 'foreground-tab',
+                    ...(Number.isInteger(sender.tab.windowId) ? { windowId: sender.tab.windowId } : {}),
+                });
+                if (Number.isInteger(tab?.id)) await rememberBetaSettingsTab(tab.id);
+                return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null, reused: false };
+            } catch (error) {
+                return {
+                    ok: false,
+                    error: publicFailure('beta settings tab opening', error, BETA_SETTINGS_OPEN_ERROR),
+                };
+            }
+        });
+        betaSettingsQueue = operation.catch(() => {});
+        return operation;
     };
 
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -2424,7 +2512,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     };
                 }
                 return favoriteMutations.mutate(message.mutation);
-            case 'OPEN_BETA_SETTINGS': return openBetaSettings(sender);
+            case 'OPTIONS_TAB_REGISTER': return registerBetaSettingsTab(sender);
+            case 'OPEN_BETA_SETTINGS': return openBetaSettings(message, sender);
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
@@ -2500,6 +2589,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         terrainActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
         runDetachedCleanup('trusted action cleanup', () => trustedActions.forgetTab(tabId));
+        runDetachedCleanup('settings tab cleanup', () => forgetBetaSettingsTab(tabId));
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
         runDetachedCleanup('report draft tab cleanup', () => reportDraftRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {
@@ -2510,6 +2600,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             invalidateLifecycle(sourceTabId);
             await serializeLifecycle(sourceTabId, () => cleanupRemovedTab(tabId));
         });
+    });
+    ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+        if (changeInfo?.url && !isOptionsPageUrl(changeInfo.url)) {
+            runDetachedCleanup('settings tab navigation cleanup', () => forgetBetaSettingsTab(tabId));
+        }
     });
 
     // Register synchronously: a storage event can be the event that wakes the

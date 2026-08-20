@@ -13,6 +13,7 @@ import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
 const pageParams = new URLSearchParams(location.search);
 const pagePathname = location.pathname.toLowerCase();
@@ -543,6 +544,10 @@ html[data-bpb-theme="dark"] {
 .pbaf-tick { display: none; font-weight: 700; }
 .pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
 .pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; }
+.pbaf-settings-link { appearance: none; border: 0; background: none; padding: 0; color: inherit;
+    font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.pbaf-settings-link:hover { color: var(--pbaf-hover-text); }
+.pbaf-settings-link:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); }
 .pbaf-words[hidden] { display: none; }
 .pbaf-words input { width: 4.6em; padding: 2px 5px; border: 1px solid var(--pbaf-chip-border); border-radius: 6px; font: inherit; color: var(--pbaf-input-text); background: var(--pbaf-chip-bg); }
@@ -1031,23 +1036,58 @@ const init = async () => {
     const betaDefinitionEl = document.createElement('span');
     betaDefinitionEl.className = 'pbaf-beta-definition';
     betaDefinitionEl.classList.add('pbaf-note');
-    const betaSettingsLink = document.createElement('a');
-    betaSettingsLink.href = chrome.runtime.getURL('options/options.html#beta');
-    betaSettingsLink.target = '_blank';
-    betaSettingsLink.rel = 'noopener';
+    const betaSettingsLink = document.createElement('button');
+    betaSettingsLink.type = 'button';
+    betaSettingsLink.className = 'pbaf-settings-link';
     betaSettingsLink.textContent = 'Change what “Has beta” means →';
+    let betaSettingsGeneration = 0;
+    let suppressKeyboardClick = false;
     const openBetaSettings = async event => {
         if (event.type === 'auxclick' && event.button !== 1) return;
+        if (event.type === 'click' && event.button !== 0) return;
+        if (event.type === 'keydown' && !['Enter', ' '].includes(event.key)) return;
+        if (event?.isTrusted !== true) return;
         event.preventDefault();
+        const generation = `beta-${++betaSettingsGeneration}`;
+        const activation = await TrustedAction.issue(
+            chrome,
+            event,
+            'beta-settings',
+            generation,
+        );
         try {
-            const response = await chrome.runtime.sendMessage({ type: 'OPEN_BETA_SETTINGS' });
+            const disposition = event.shiftKey
+                ? 'new-window'
+                : event.metaKey || event.ctrlKey || event.type === 'auxclick'
+                    ? 'background-tab'
+                    : 'foreground-tab';
+            const response = activation && await chrome.runtime.sendMessage({
+                type: 'OPEN_BETA_SETTINGS',
+                generation,
+                activationToken: activation.token,
+                disposition,
+            });
             if (response?.ok) return;
         } catch { /* surface the same actionable failure for worker and transport errors */ }
         betaSettingsLink.textContent = 'Couldn’t open Settings — try again';
         betaSettingsLink.title = 'Reload this page if Settings still will not open.';
     };
-    betaSettingsLink.addEventListener('click', event => { void openBetaSettings(event); });
+    betaSettingsLink.addEventListener('click', event => {
+        if (suppressKeyboardClick) {
+            suppressKeyboardClick = false;
+            event.preventDefault();
+            return;
+        }
+        void openBetaSettings(event);
+    });
     betaSettingsLink.addEventListener('auxclick', event => { void openBetaSettings(event); });
+    betaSettingsLink.addEventListener('keydown', event => {
+        if (event.isTrusted !== true || event.repeat
+            || (!event.shiftKey && !event.ctrlKey && !event.metaKey)) return;
+        suppressKeyboardClick = true;
+        globalThis.setTimeout(() => { suppressKeyboardClick = false; }, 0);
+        void openBetaSettings(event);
+    });
     betaDefinitionEl.appendChild(betaSettingsLink);
     betaGroup.append(makeChip('beta', 'Has beta', ''), betaDefinitionEl);
 

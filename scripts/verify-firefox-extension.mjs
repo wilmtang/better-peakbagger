@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { Builder, By, Key, until } from 'selenium-webdriver';
+import { Button } from 'selenium-webdriver/lib/input.js';
 import firefox from 'selenium-webdriver/firefox.js';
 
 import {
@@ -1405,6 +1406,7 @@ async function main() {
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/PeakAscents.aspx?pid=1039`,
         );
+        const filterHandle = await driver.getWindowHandle();
         await driver.wait(until.elementLocated(By.id('pbaf-bar')), 10_000);
         const filterStateBefore = await driver.executeScript(`return {
       visible: [...document.querySelectorAll("table.gray tr")]
@@ -1415,7 +1417,7 @@ async function main() {
       controls: document.querySelectorAll(".pbaf-table-sort").length,
       resetHidden: document.querySelector(".pbaf-reset")?.hidden,
       labels: [...document.querySelectorAll(".pbaf-chip-label")].map(label => label.textContent),
-      settingsLink: document.querySelector(".pbaf-beta-definition a")?.href,
+      settingsControl: document.querySelector(".pbaf-settings-link")?.tagName,
     };`);
         const hasBeta = await driver.findElement(By.xpath(
             '//button[contains(@class,"pbaf-chip")][.//span[normalize-space()="Has beta"]]',
@@ -1432,6 +1434,107 @@ async function main() {
         .filter(row => row.cells.length > 1 && row.cells[0].tagName === "TD" && getComputedStyle(row).display !== "none").length,
       first: document.querySelector("table.gray tr td")?.textContent.trim(),
     };`);
+        const initialHandles = await driver.getAllWindowHandles();
+        const settingsControl = await driver.findElement(By.css('.pbaf-settings-link'));
+        await settingsControl.click();
+        const openedHandles = await driver.wait(async () => {
+            const handles = await driver.getAllWindowHandles();
+            return handles.length === initialHandles.length + 1 ? handles : false;
+        }, 10_000);
+        const settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
+        await driver.switchTo().window(settingsHandle);
+        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000);
+        const linkedSettingsState = await driver.executeScript(`return {
+      href: location.href,
+      heading: document.querySelector('#beta-settings-heading')?.textContent,
+    };`);
+        const readSettingsTopology = () => driver.executeAsyncScript(done => {
+            const api = globalThis.browser || globalThis.chrome;
+            Promise.all([api.tabs.query({}), api.windows.getAll(), api.tabs.getCurrent()])
+                .then(([tabs, windows, current]) => {
+                    const source = tabs.find(tab => /\/climber\/PeakAscents\.aspx/i.test(tab.url || ''));
+                    done({
+                        options: current
+                            ? [{ id: current.id, windowId: current.windowId, active: current.active }]
+                            : [],
+                        source: source ? { id: source.id, windowId: source.windowId, active: source.active } : null,
+                        windowCount: windows.length,
+                    });
+                }, error => done({ error: String(error) }));
+        });
+        const activateSettings = async activate => {
+            await driver.switchTo().window(settingsHandle);
+            await driver.executeScript('location.hash = "github";');
+            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000);
+            await driver.switchTo().window(filterHandle);
+            const control = await driver.findElement(By.css('.pbaf-settings-link'));
+            await activate(control);
+            await driver.switchTo().window(settingsHandle);
+            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000);
+            const topology = await readSettingsTopology();
+            assertState(topology.options?.length === 1,
+                'Firefox Settings activation duplicated the exact options tab', topology);
+            return topology;
+        };
+        const settingsModifier = process.platform === 'darwin' ? Key.COMMAND : Key.CONTROL;
+        const shortcutTopology = await activateSettings(control => driver.actions({ async: true })
+            .keyDown(settingsModifier).click(control).keyUp(settingsModifier).perform());
+        const middleTopology = await activateSettings(control => driver.actions({ async: true })
+            .move({ origin: control }).press(Button.MIDDLE).release(Button.MIDDLE).perform());
+        const keyboardTopology = await activateSettings(control => control.sendKeys(Key.ENTER));
+        await driver.switchTo().window(settingsHandle);
+        await driver.executeScript('location.hash = "github";');
+        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000);
+        const beforeNewWindow = await readSettingsTopology();
+        await driver.switchTo().window(filterHandle);
+        const shiftControl = await driver.findElement(By.css('.pbaf-settings-link'));
+        await driver.executeScript(`
+      window.__bpbSettingsShift = null;
+      document.querySelector('.pbaf-settings-link').addEventListener('keydown', event => {
+        window.__bpbSettingsShift = {
+          type: event.type,
+          isTrusted: event.isTrusted,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          button: event.button,
+        };
+      }, { once: true });
+    `);
+        await shiftControl.sendKeys(Key.chord(Key.SHIFT, Key.ENTER));
+        const shiftEvent = await driver.executeScript(`return {
+      event: window.__bpbSettingsShift,
+      text: document.querySelector('.pbaf-settings-link')?.textContent,
+    };`);
+        await driver.switchTo().window(settingsHandle);
+        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000);
+        let newWindowTopology;
+        try {
+            newWindowTopology = await driver.wait(async () => {
+                const topology = await readSettingsTopology();
+                return topology.options?.[0]?.windowId !== topology.source?.windowId
+                    && topology.windowCount === beforeNewWindow.windowCount + 1
+                    ? topology
+                    : false;
+            }, 5_000);
+        } catch (error) {
+            const topology = await readSettingsTopology();
+            throw new Error(`Firefox Shift Settings activation did not create a window: ${JSON.stringify({
+                shiftEvent,
+                topology,
+                beforeNewWindow,
+                cause: error.message,
+            })}`);
+        }
+        const reusedSettingsTab = [shortcutTopology, middleTopology, keyboardTopology, newWindowTopology]
+            .every(state => state.options?.length === 1);
+        const modifierStayedInWindow = [shortcutTopology, middleTopology]
+            .every(state => state.options[0]?.windowId === state.source?.windowId);
+        const shiftCreatedWindow = newWindowTopology.options[0]?.windowId !== newWindowTopology.source?.windowId
+            && newWindowTopology.windowCount === beforeNewWindow.windowCount + 1;
+        await driver.close();
+        const [remainingFilterHandle] = await driver.getAllWindowHandles();
+        await driver.switchTo().window(remainingFilterHandle);
         assertState(
             filterStateBefore.controls > 1
         && filterStateBefore.visible === filterStateBefore.total
@@ -1442,11 +1545,24 @@ async function main() {
         && JSON.stringify(filterKeyboardOrder) === JSON.stringify([
             'Climbing buddies', 'GPS track', 'Trip report', 'Has beta', 'Link',
         ])
-        && filterStateBefore.settingsLink?.endsWith('/options/options.html#beta')
+        && filterStateBefore.settingsControl === 'BUTTON'
+        && linkedSettingsState.href.endsWith('/options/options.html#beta')
+        && linkedSettingsState.heading === 'Ascent beta filter'
+        && reusedSettingsTab && modifierStayedInWindow && shiftCreatedWindow
         && filterStateAfter.visible < filterStateBefore.visible
         && filterStateAfter.first !== filterStateBefore.first,
             'Firefox ascent filter did not preserve first-use rows, filter, and sort by keyboard',
-            { before: filterStateBefore, keyboardOrder: filterKeyboardOrder, after: filterStateAfter },
+            {
+                before: filterStateBefore,
+                keyboardOrder: filterKeyboardOrder,
+                after: filterStateAfter,
+                linkedSettingsState,
+                shortcutTopology,
+                middleTopology,
+                keyboardTopology,
+                beforeNewWindow,
+                newWindowTopology,
+            },
         );
 
         await driver.get(
@@ -1802,6 +1918,7 @@ async function main() {
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
         console.log('  - forged page/frame messages, synthetic clicks, and direct embedding started no terrain work');
+        console.log('  - trusted keyboard/pointer Settings actions preserved modifiers and reused one exact tab');
         console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and trusted 3D frame creation passed');
         console.log('  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved');
         console.log('  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested');

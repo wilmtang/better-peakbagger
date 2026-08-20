@@ -268,7 +268,12 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
 export const fireTrustedEvent = (element, type, attributes = { bubbles: true }) => {
     const { fireAnEvent } = require(path.join(root, 'node_modules/jsdom/lib/jsdom/living/helpers/events.js'));
     const { implForWrapper } = require(path.join(root, 'node_modules/jsdom/lib/generated/idl/utils.js'));
-    fireAnEvent(type, implForWrapper(element), undefined, attributes);
+    const eventInterface = /^(?:auxclick|click|dblclick|mousedown|mouseup|mousemove)$/.test(type)
+        ? require(path.join(root, 'node_modules/jsdom/lib/generated/idl/MouseEvent.js'))
+        : /^(?:keydown|keyup)$/.test(type)
+            ? require(path.join(root, 'node_modules/jsdom/lib/generated/idl/KeyboardEvent.js'))
+            : undefined;
+    fireAnEvent(type, implForWrapper(element), eventInterface, attributes);
 };
 
 export const waitFor = async (dom, predicate, ms = 5000) => {

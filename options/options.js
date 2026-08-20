@@ -17,6 +17,10 @@ import { initSectionNav } from '../src/ui/section-nav.js';
 (() => {
     'use strict';
     const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
+    try {
+        const registration = extensionApi.runtime.sendMessage({ type: 'OPTIONS_TAB_REGISTER' });
+        if (registration?.catch) void registration.catch(() => {});
+    } catch { /* the worker will discover or create the tab on demand */ }
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
     const enable3dMapEl = document.getElementById('enable-3d-map');

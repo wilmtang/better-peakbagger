@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
 
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const BUDDY_CACHE_KEY = 'bpbBuddyCache';
@@ -150,7 +150,9 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
         prepare: page => {
             page.chrome.runtime.sendMessage = async message => {
                 messages.push(message);
-                return { ok: true };
+                return message.type === 'TRUSTED_ACTION_ISSUE'
+                    ? { ok: true, token: `activation-${messages.length}` }
+                    : { ok: true };
             };
         },
     });
@@ -159,17 +161,56 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
     assert.deepEqual(filterLabels(dom), ['Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta']);
     assert.match(chip(dom, 'Has beta').getAttribute('aria-description'), /Drag to reorder/);
     assert.match(chip(dom, 'Has beta').getAttribute('aria-keyshortcuts'), /Alt\+ArrowLeft/);
-    const settingsLink = bar(dom).querySelector('.pbaf-beta-definition a');
+    const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
     assert.equal(settingsLink.textContent, 'Change what “Has beta” means →');
-    assert.equal(settingsLink.href, 'chrome-extension://test-extension/options/options.html#beta');
-    assert.equal(settingsLink.target, '_blank');
-    assert.equal(settingsLink.rel, 'noopener');
+    assert.equal(settingsLink.tagName, 'BUTTON');
+    assert.equal(settingsLink.type, 'button');
     assert.doesNotMatch(bar(dom).textContent, /Counts trip report/i);
-    const click = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
-    settingsLink.dispatchEvent(click);
-    await waitFor(dom, () => messages.length === 1);
-    assert.equal(click.defaultPrevented, true);
-    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_BETA_SETTINGS' }]);
+
+    settingsLink.click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.deepEqual(messages, [], 'a synthetic host-page click remains inert');
+
+    fireTrustedEvent(settingsLink, 'click', { bubbles: true, cancelable: true, button: 0 });
+    await waitFor(dom, () => messages.length === 2);
+    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
+        { type: 'TRUSTED_ACTION_ISSUE', action: 'beta-settings', generation: 'beta-1' },
+        {
+            type: 'OPEN_BETA_SETTINGS',
+            generation: 'beta-1',
+            activationToken: 'activation-1',
+            disposition: 'foreground-tab',
+        },
+    ]);
+});
+
+test('trusted Settings activations preserve background-tab and new-window intent', async () => {
+    const messages = [];
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+        prepare: page => {
+            page.chrome.runtime.sendMessage = async message => {
+                messages.push(message);
+                return message.type === 'TRUSTED_ACTION_ISSUE'
+                    ? { ok: true, token: `activation-${messages.length}` }
+                    : { ok: true };
+            };
+        },
+    });
+    const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
+    const activate = async (type, attributes) => {
+        const before = messages.length;
+        fireTrustedEvent(settingsLink, type, { bubbles: true, cancelable: true, ...attributes });
+        await waitFor(dom, () => messages.length === before + 2);
+        return messages.at(-1);
+    };
+
+    assert.equal((await activate('click', { button: 0, ctrlKey: true })).disposition, 'background-tab');
+    assert.equal((await activate('click', { button: 0, metaKey: true })).disposition, 'background-tab');
+    assert.equal((await activate('auxclick', { button: 1 })).disposition, 'background-tab');
+    assert.equal((await activate('click', { button: 0, shiftKey: true })).disposition, 'new-window');
+    assert.equal((await activate('keydown', { key: 'Enter', shiftKey: true })).disposition, 'new-window');
+    assert.equal((await activate('click', { button: 0, detail: 0 })).disposition, 'foreground-tab');
 });
 
 test('remembered filter order keeps dependent controls with their chips', async () => {
@@ -184,7 +225,7 @@ test('remembered filter order keeps dependent controls with their chips', async 
     assert.ok(chip(dom, 'Trip report').closest('.pbaf-filter-item')
         .contains(dom.window.document.querySelector('.pbaf-words')));
     assert.ok(chip(dom, 'Has beta').closest('.pbaf-filter-item')
-        .contains(dom.window.document.querySelector('.pbaf-beta-definition a')));
+        .contains(dom.window.document.querySelector('.pbaf-settings-link')));
 });
 
 test('Alt+Arrow reorders a focused filter without toggling it', async () => {
