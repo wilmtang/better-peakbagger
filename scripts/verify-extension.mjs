@@ -1925,7 +1925,7 @@ try {
                 ]);
                 return tabGone && !leases[scratch.id];
             },
-                'unadopted helper removal');
+            'unadopted helper removal');
             const leasesAfterCleanup = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
             chrome.alarms.create(cleanupAlarm, { periodInMinutes: 5 });
             return {
