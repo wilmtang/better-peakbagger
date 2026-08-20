@@ -26,17 +26,19 @@ const waitForCondition = async (predicate, timeoutMs = 2000) => {
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
     beforePeakbaggerLogin = null, beforePeakbaggerAccountEvidence = null,
+    beforePeakbaggerScript = null, afterPeakbaggerScript = null,
     beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
     afterSessionSet = null, clock = null, groupError = null, faults = {},
+    sessionValues = null, browserTabs = null, timerDelayCap = null,
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
-    const values = {};
+    const values = sessionValues || {};
     const localValues = {};
     let sessionGetCalls = 0;
     const syncValues = { bpbSettings: structuredClone(settings) };
-    const tabs = new Map([[1, {
+    const tabs = browserTabs || new Map([[1, {
         id: 1,
         windowId: 9,
         url: 'https://www.strava.com/activities/123',
@@ -49,10 +51,11 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         active: false,
         status: 'complete',
     }]]);
-    let nextTabId = 100;
+    let nextTabId = Math.max(100, ...[...tabs.keys()].map(tabId => tabId + 1));
     const runtimeMessage = event();
     const tabRemoved = event();
     const tabUpdated = event();
+    const tabActivated = event();
     const alarmEvent = event();
     const grouped = [];
     const groupUpdates = [];
@@ -77,7 +80,14 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let tabGetCalls = 0;
     let peakbaggerPageProbeCalls = 0;
     let peakbaggerAccountEvidenceCalls = 0;
+    const peakbaggerScriptPhaseCalls = new Map();
     const loggedErrors = [];
+    const runPeakbaggerScriptHook = async (hook, phase, details, advance = false) => {
+        const number = (peakbaggerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
+        if (advance) peakbaggerScriptPhaseCalls.set(phase, number);
+        if (!hook) return;
+        await hook({ phase, number, tabId: details.target.tabId, details });
+    };
     const capture = captureResult || {
         ok: true,
         provider: 'strava',
@@ -147,7 +157,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
                 if (details.files) {
                     if (details.files.includes('peakbagger-page.js')) {
+                        await runPeakbaggerScriptHook(beforePeakbaggerScript, 'injection', details, true);
                         peakbaggerPageInjected.add(details.target.tabId);
+                        await runPeakbaggerScriptHook(afterPeakbaggerScript, 'injection', details);
                     }
                     return [];
                 }
@@ -163,7 +175,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     && functionSource.includes('missing');
                 const isPeakbaggerPageCancel = functionSource.includes('BPBPeakbaggerPage?.cancel');
                 if (isPeakbaggerAccountEvidence) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'account-evidence', details, true);
                     peakbaggerAccountEvidenceCalls++;
+                    await runPeakbaggerScriptHook(afterPeakbaggerScript, 'account-evidence', details);
                     if (beforePeakbaggerAccountEvidence) {
                         await beforePeakbaggerAccountEvidence({
                             number: peakbaggerAccountEvidenceCalls,
@@ -191,7 +205,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return [{ result: structuredClone(result) }];
                 }
                 if (isPeakbaggerPageProbe) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'probe', details, true);
                     peakbaggerPageProbeCalls++;
+                    await runPeakbaggerScriptHook(afterPeakbaggerScript, 'probe', details);
                     return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
                 }
                 if (isPeakbaggerPageCancel) {
@@ -202,6 +218,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return [{ result: !!controller }];
                 }
                 if (isPeakbaggerPageRequest) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'request', details, true);
                     const [, requestId, url, kind] = details.args;
                     if (dropPeakbaggerHelperBeforeKind === kind
                         && !droppedPeakbaggerHelpers.has(kind)) {
@@ -216,6 +233,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     peakbaggerPageRequests.set(requestId, controller);
                     const call = { requestId, url, kind, options: { signal: controller.signal } };
                     peakbaggerPageCalls.push(call);
+                    await runPeakbaggerScriptHook(afterPeakbaggerScript, 'request', details);
                     const callback = kind === 'html' ? beforePeakbaggerLogin : beforePeakFetch;
                     const callbackResult = callback?.({
                         options: call.options,
@@ -331,6 +349,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             },
             onRemoved: tabRemoved,
             onUpdated: tabUpdated,
+            onActivated: tabActivated,
         },
         tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
         windows: {
@@ -393,6 +412,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         TextEncoder,
         TextDecoder,
         crypto: globalThis.crypto,
+        setTimeout: timerDelayCap === null
+            ? setTimeout
+            : (callback, delay, ...args) => setTimeout(callback, Math.min(delay, timerDelayCap), ...args),
+        clearTimeout,
     });
     context.globalThis = context;
     context.self = context;
@@ -408,7 +431,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         peakbaggerPageCalls, peakbaggerPageCancelCalls,
         peakbaggerPageProbeCalls: () => peakbaggerPageProbeCalls,
         peakbaggerAccountEvidenceCalls: () => peakbaggerAccountEvidenceCalls,
-        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, tabUpdated, alarmEvent,
+        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
     };
 };
 
@@ -1068,6 +1091,125 @@ test('selecting a temporary Peakbagger request tab transfers cleanup ownership t
     assert.deepEqual(harness.removedTabs, []);
 });
 
+test('a temporary Peakbagger tab stays user-owned after it is selected and then left', async () => {
+    const harness = createHarness({
+        beforePeakbaggerAccountEvidence: () => {
+            harness.tabs.get(1).active = false;
+            harness.tabs.get(100).active = true;
+            harness.tabActivated.listeners[0]({ tabId: 100, windowId: 9 });
+            harness.tabs.get(100).active = false;
+            harness.tabs.get(1).active = true;
+        },
+    });
+    harness.tabs.delete(5);
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.tabs.has(100), true);
+    assert.deepEqual(harness.removedTabs, []);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined,
+        'release forgets the transferred lease without deleting its tab');
+});
+
+test('navigation, closure, and tab-ID reuse all fail open during helper cleanup', async t => {
+    await t.test('navigation transfers ownership', async () => {
+        const harness = createHarness({
+            beforePeakFetch: () => {
+                const url = 'https://example.com/user-destination';
+                harness.tabs.get(100).url = url;
+                harness.tabUpdated.listeners[0](100, { url }, harness.tabs.get(100));
+            },
+        });
+        harness.tabs.delete(5);
+        assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+        assert.equal(harness.tabs.get(100).url, 'https://example.com/user-destination');
+        assert.deepEqual(harness.removedTabs, []);
+    });
+
+    await t.test('an already-closed helper leaves no stale lease', async () => {
+        const harness = createHarness({
+            beforePeakFetch: () => {
+                harness.tabs.delete(100);
+                harness.tabRemoved.listeners[0](100, { windowId: 9, isWindowClosing: false });
+            },
+        });
+        harness.tabs.delete(5);
+        assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+        await waitForCondition(() => !harness.values.bpbPeakbaggerHelperLeases?.['100']);
+        assert.deepEqual(harness.removedTabs, []);
+    });
+
+    await t.test('an ID-reused tab is never removed', async () => {
+        const harness = createHarness({
+            beforePeakFetch: () => {
+                harness.tabs.set(100, {
+                    id: 100,
+                    windowId: 9,
+                    url: 'https://example.com/reused-id',
+                    active: false,
+                    status: 'complete',
+                });
+            },
+        });
+        harness.tabs.delete(5);
+        assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+        assert.equal(harness.tabs.get(100).url, 'https://example.com/reused-id');
+        assert.deepEqual(harness.removedTabs, []);
+    });
+});
+
+test('worker restart cleans only expired, unadopted, exact-match helper leases', async t => {
+    const helperUrl = 'https://www.peakbagger.com/Default.aspx';
+    const boot = async ({ adopted = false, url = helperUrl, expired = true } = {}) => {
+        const clock = { now: Date.now() };
+        const values = {
+            bpbPeakbaggerHelperLeases: {
+                100: {
+                    tabId: 100,
+                    generation: 'capture-generation',
+                    createdAt: clock.now - 60_000,
+                    expiresAt: expired ? clock.now - 1 : clock.now + 60_000,
+                    expectedUrl: helperUrl,
+                    adopted,
+                },
+            },
+        };
+        const tabs = new Map([[100, {
+            id: 100,
+            windowId: 9,
+            url,
+            active: false,
+            status: 'complete',
+        }]]);
+        const harness = createHarness({ clock, sessionValues: values, browserTabs: tabs });
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return harness;
+    };
+
+    await t.test('expired exact helper is removed', async () => {
+        const harness = await boot();
+        assert.deepEqual(harness.removedTabs, [100]);
+        assert.equal(harness.tabs.has(100), false);
+    });
+    await t.test('adopted helper is retained', async () => {
+        const harness = await boot({ adopted: true });
+        assert.deepEqual(harness.removedTabs, []);
+        assert.equal(harness.tabs.has(100), true);
+    });
+    await t.test('navigated or ID-reused helper is retained', async () => {
+        const harness = await boot({ url: 'https://example.com/reused-id' });
+        assert.deepEqual(harness.removedTabs, []);
+        assert.equal(harness.tabs.has(100), true);
+    });
+    await t.test('unexpired helper is retained for its live capture', async () => {
+        const harness = await boot({ expired: false });
+        assert.deepEqual(harness.removedTabs, []);
+        assert.equal(harness.tabs.has(100), true);
+        assert.ok(harness.values.bpbPeakbaggerHelperLeases['100']);
+    });
+});
+
 test('ambiguous fresh account evidence falls back to the live login request', async () => {
     const cases = [
         {
@@ -1519,6 +1661,125 @@ test('cancel during capture admission prevents provider access and reports succe
         'ownership inspection and provider capture must not start after the cancellation intent');
     assert.equal(harness.peakbaggerPageCalls.length, 0,
         'Peakbagger login and corridor requests must not start after the cancellation intent');
+});
+
+test('cancellation promptly abandons every page-helper executeScript phase', async t => {
+    for (const phase of ['probe', 'injection', 'account-evidence', 'request']) {
+        for (const stage of ['before', 'after']) {
+            await t.test(`${stage} ${phase} dispatch`, async () => {
+                let reached;
+                const phaseReached = new Promise(resolve => { reached = resolve; });
+                const stall = call => {
+                    if (call.phase !== phase || call.number !== 1) return undefined;
+                    reached();
+                    return new Promise(() => {});
+                };
+                const harness = createHarness({
+                    ...(stage === 'before'
+                        ? { beforePeakbaggerScript: stall }
+                        : { afterPeakbaggerScript: stall }),
+                });
+                harness.tabs.delete(5);
+
+                const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                await phaseReached;
+                const settled = Promise.all([
+                    capture,
+                    harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+                ]);
+                const [started, cancelled] = await Promise.race([
+                    settled,
+                    new Promise((_, reject) => setTimeout(
+                        () => reject(new Error(`cancel did not settle stalled ${stage} ${phase}`)),
+                        500,
+                    )),
+                ]);
+
+                assert.equal(started, null);
+                assert.equal(cancelled.cancelled, true);
+                assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+                assert.deepEqual(harness.removedTabs, [100]);
+                assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined);
+            });
+        }
+    }
+});
+
+test('closing the source tab abandons stalled helper setup and releases its lease', async () => {
+    let reached;
+    const evidenceReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforePeakbaggerScript: call => {
+            if (call.phase !== 'account-evidence') return undefined;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    harness.tabs.delete(5);
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await evidenceReached;
+    harness.tabs.delete(1);
+    harness.tabRemoved.listeners[0](1, { windowId: 9, isWindowClosing: false });
+    const result = await Promise.race([
+        capture,
+        new Promise((_, reject) => setTimeout(
+            () => reject(new Error('source-tab closure did not settle stalled helper setup')),
+            500,
+        )),
+    ]);
+
+    assert.equal(result, null);
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined);
+});
+
+test('a stalled page-helper operation returns one typed public deadline failure', async () => {
+    const harness = createHarness({
+        timerDelayCap: 5,
+        beforePeakbaggerScript: call => call.phase === 'probe'
+            ? new Promise(() => {})
+            : undefined,
+    });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'peakbagger-page-timeout',
+        message: 'Peakbagger did not respond within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
+    });
+    assert.deepEqual(harness.removedTabs, [100]);
+});
+
+test('a tab created after its caller deadline is leased and removed without resurrecting capture', async () => {
+    let releaseCreate;
+    let createReached;
+    const createGate = new Promise(resolve => { releaseCreate = resolve; });
+    const reached = new Promise(resolve => { createReached = resolve; });
+    const harness = createHarness({
+        timerDelayCap: 5,
+        beforeTabCreate: async () => {
+            createReached();
+            await createGate;
+        },
+    });
+    harness.tabs.delete(5);
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await reached;
+    const failed = await capture;
+    assert.equal(failed.error.code, 'peakbagger-page-timeout');
+    assert.equal(harness.tabs.has(100), false);
+
+    releaseCreate();
+    await waitForCondition(() => harness.removedTabs.includes(100));
+    assert.equal(harness.tabs.has(100), false);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'error',
+        'the late tab result cannot resume or replace the failed generation');
 });
 
 test('cancelling an in-progress capture discards its job and ignores later results', async () => {

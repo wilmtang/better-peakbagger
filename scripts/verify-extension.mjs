@@ -1845,6 +1845,97 @@ try {
             captureLoginRequests,
             capturePeakRequests,
         })}`);
+
+        // Exercise the actual worker's durable helper lease, including the
+        // activation event that a VM harness can only emulate. Selection must
+        // transfer ownership permanently even after the user returns to the
+        // original tab; an expired never-selected exact helper remains safe to
+        // reclaim. The one-shot alarms make both checks deterministic without
+        // waiting for the production five-minute sweep.
+        const helperLeaseState = await optionsPage.evaluate(async loginUrl => {
+            const leaseKey = 'bpbPeakbaggerHelperLeases';
+            const cleanupAlarm = 'bpb-capture-cleanup';
+            const wait = async (predicate, description) => {
+                const deadline = Date.now() + 5000;
+                while (!await predicate()) {
+                    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${description}`);
+                    await new Promise(resolve => setTimeout(resolve, 25));
+                }
+            };
+            const optionsTab = await chrome.tabs.getCurrent();
+            const transportTab = (await chrome.tabs.query({})).find(tab => tab.url === loginUrl);
+            if (!optionsTab?.id || !transportTab?.id) return { error: 'lease test tabs not found' };
+            const makeLease = (tab, generation, expiresAt) => ({
+                tabId: tab.id,
+                generation,
+                createdAt: Date.now() - 1000,
+                expiresAt,
+                expectedUrl: tab.url,
+                adopted: false,
+            });
+
+            // Playwright's most recently opened page is commonly already the
+            // active tab. Establish a different active tab first so selecting
+            // the helper below necessarily emits tabs.onActivated.
+            await chrome.tabs.update(optionsTab.id, { active: true });
+            await chrome.storage.session.set({
+                [leaseKey]: {
+                    [transportTab.id]: makeLease(
+                        transportTab,
+                        'verify-adopted-helper',
+                        Date.now() + 60_000,
+                    ),
+                },
+            });
+            await chrome.tabs.update(transportTab.id, { active: true });
+            await chrome.tabs.update(optionsTab.id, { active: true });
+            await wait(async () => {
+                const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
+                return leases[transportTab.id]?.adopted === true;
+            }, 'durable helper adoption');
+            const adoptedLeases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
+            adoptedLeases[transportTab.id].expiresAt = Date.now() - 1;
+            await chrome.storage.session.set({ [leaseKey]: adoptedLeases });
+            chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
+            await wait(async () => {
+                const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
+                return !leases[transportTab.id];
+            }, 'adopted helper lease release');
+            const adoptedRetained = await chrome.tabs.get(transportTab.id)
+                .then(() => true, () => false);
+
+            const scratch = await chrome.tabs.create({ active: false, url: loginUrl });
+            await wait(async () => (await chrome.tabs.get(scratch.id)).status === 'complete',
+                'scratch helper load');
+            const loadedScratch = await chrome.tabs.get(scratch.id);
+            await chrome.storage.session.set({
+                [leaseKey]: {
+                    [scratch.id]: makeLease(
+                        loadedScratch,
+                        'verify-unadopted-helper',
+                        Date.now() - 1,
+                    ),
+                },
+            });
+            chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
+            await wait(async () => {
+                const [tabGone, leases] = await Promise.all([
+                    chrome.tabs.get(scratch.id).then(() => false, () => true),
+                    chrome.storage.session.get(leaseKey).then(value => value[leaseKey] || {}),
+                ]);
+                return tabGone && !leases[scratch.id];
+            },
+                'unadopted helper removal');
+            const leasesAfterCleanup = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
+            chrome.alarms.create(cleanupAlarm, { periodInMinutes: 5 });
+            return {
+                adoptedRetained,
+                unadoptedRemoved: !leasesAfterCleanup[scratch.id],
+            };
+        }, captureLoginUrl).catch(error => ({ error: String(error) }));
+        check(helperLeaseState.adoptedRetained === true
+            && helperLeaseState.unadoptedRemoved === true,
+        `the Chrome worker helper lease did not preserve adoption or reclaim scratch safely: ${JSON.stringify(helperLeaseState)}`);
         await captureTransportPage.close();
         await context.unroute(captureLoginUrl);
         await context.unroute(capturePeaksUrl);
@@ -4226,6 +4317,7 @@ console.log('  - contextual report sizing stays synchronized in Editor and Libra
 console.log('    stage display at desktop and narrow widths, and preserves the full project dimensions');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - the capture login/summit transport runs in a real Peakbagger MAIN world and refuses other endpoints');
+console.log('  - the worker persists selected helper-tab adoption and reclaims only expired exact scratch tabs');
 console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');

@@ -46,6 +46,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const BETA_SETTINGS_TABS_KEY = 'bpbBetaSettingsTabs';
+    const PEAKBAGGER_HELPER_LEASES_KEY = 'bpbPeakbaggerHelperLeases';
+    const PEAKBAGGER_HELPER_URL = `${PEAKBAGGER_ORIGIN}/Default.aspx`;
+    const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
+    const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
     const PEAKBAGGER_PAGE_VERSION = 2;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
         code: 'capture-failed',
@@ -69,8 +73,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const localAnalysisOwners = new Map();
     const lifecycleQueues = new Map();
     const lifecycleEpochs = new Map();
-    const peakbaggerPageInjections = new Map();
-    const ownedPeakbaggerTabs = new Set();
+    // Events can arrive in the narrow interval after tabs.create() returns but
+    // before its durable lease write finishes. Remember them synchronously so
+    // that adoption cannot be lost behind storage latency.
+    const recentHelperActivations = new Map();
+    const recentHelperNavigations = new Map();
     let mutationQueue = Promise.resolve();
 
     const now = () => Date.now();
@@ -250,12 +257,214 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         catch { return false; }
     };
 
+    const canonicalPeakbaggerUrl = value => {
+        try {
+            const url = new URL(value);
+            return url.origin === PEAKBAGGER_ORIGIN ? url.href : null;
+        } catch {
+            return null;
+        }
+    };
+
+    const peakbaggerOperationTimeoutError = (phase, cause) => peakbaggerPageError(
+        'peakbagger-page-timeout',
+        'Peakbagger did not respond within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
+        Object.assign(new Error(`Peakbagger page operation timed out during ${phase}.`), { cause }),
+    );
+
+    // Browser promises are not abortable. Every page-realm operation therefore
+    // races the capture owner and one explicit deadline. The abandoned promise
+    // retains a rejection handler so a renderer that responds late cannot wake
+    // the worker with an unhandled rejection or resume the capture pipeline.
+    const runPeakbaggerBrowserOperation = async ({
+        phase,
+        operation,
+        signal = null,
+        timeoutMs = PEAKBAGGER_OPERATION_TIMEOUT_MS,
+        onCancel = null,
+        onLateResult = null,
+    }) => {
+        if (signal?.aborted) throw cancelledCaptureError();
+        const deadline = Deadline.createRequestDeadline(timeoutMs);
+        let rejectCancellation = null;
+        const cancellation = signal
+            ? new Promise((_, reject) => { rejectCancellation = reject; })
+            : null;
+        cancellation?.catch(() => {});
+        const cancel = () => {
+            deadline.abort();
+            try { onCancel?.(); }
+            catch (_error) { /* best-effort page cancellation */ }
+            rejectCancellation?.(cancelledCaptureError());
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
+        const pending = Promise.resolve().then(operation);
+        pending.catch(() => {});
+        let abandoned = false;
+        if (onLateResult) {
+            void pending.then(value => {
+                if (abandoned) return onLateResult(value);
+                return undefined;
+            }).catch(() => {});
+        }
+        try {
+            const bounded = deadline.run(pending);
+            return await (cancellation ? Promise.race([bounded, cancellation]) : bounded);
+        } catch (error) {
+            abandoned = true;
+            if (signal?.aborted) throw cancelledCaptureError();
+            if (deadline.expired || Deadline.isTimeout(error)) {
+                try { onCancel?.(); }
+                catch (_cancelError) { /* best-effort page cancellation */ }
+                throw peakbaggerOperationTimeoutError(phase, error);
+            }
+            throw error;
+        } finally {
+            signal?.removeEventListener('abort', cancel);
+            deadline.clear();
+        }
+    };
+
+    const cleanPeakbaggerHelperLease = value => {
+        const expectedUrl = canonicalPeakbaggerUrl(value?.expectedUrl);
+        return Number.isInteger(value?.tabId)
+            && typeof value?.generation === 'string' && value.generation
+            && Number.isFinite(value?.createdAt)
+            && Number.isFinite(value?.expiresAt)
+            && expectedUrl
+            && typeof value?.adopted === 'boolean'
+            ? {
+                tabId: value.tabId,
+                generation: value.generation,
+                createdAt: value.createdAt,
+                expiresAt: value.expiresAt,
+                expectedUrl,
+                adopted: value.adopted,
+            }
+            : null;
+    };
+
+    const forgetPeakbaggerHelperLease = (tabId, generation = null) =>
+        mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, leases => {
+            const lease = cleanPeakbaggerHelperLease(leases[tabId]);
+            if (lease && (generation === null || lease.generation === generation)) delete leases[tabId];
+        });
+
+    const markPeakbaggerHelperAdopted = (tabId, navigatedUrl = null) =>
+        mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, leases => {
+            const lease = cleanPeakbaggerHelperLease(leases[tabId]);
+            if (!lease) return;
+            const navigation = navigatedUrl === null ? null : canonicalPeakbaggerUrl(navigatedUrl);
+            if (navigatedUrl !== null && navigation === lease.expectedUrl) return;
+            leases[tabId] = { ...lease, adopted: true };
+        });
+
+    const rememberRecentHelperEvent = (events, tabId, value) => {
+        if (!Number.isInteger(tabId)) return;
+        const cutoff = now() - 60_000;
+        for (const [candidateId, event] of events) {
+            if (event.at < cutoff) events.delete(candidateId);
+        }
+        events.set(tabId, { at: now(), value });
+    };
+
+    const createPeakbaggerHelperLease = async (tab, generation, createdAt) => {
+        const expectedUrl = canonicalPeakbaggerUrl(tab?.url) || PEAKBAGGER_HELPER_URL;
+        const activation = recentHelperActivations.get(tab.id);
+        const navigation = recentHelperNavigations.get(tab.id);
+        const navigatedAway = navigation?.at >= createdAt
+            && canonicalPeakbaggerUrl(navigation.value) !== expectedUrl;
+        const lease = {
+            tabId: tab.id,
+            generation,
+            createdAt,
+            expiresAt: createdAt + JOB_TTL_MS,
+            expectedUrl,
+            adopted: tab.active === true || activation?.at >= createdAt || navigatedAway,
+        };
+        await mutateMap(PEAKBAGGER_HELPER_LEASES_KEY, leases => {
+            leases[tab.id] = lease;
+        });
+        recentHelperActivations.delete(tab.id);
+        recentHelperNavigations.delete(tab.id);
+        return lease;
+    };
+
+    const closePeakbaggerHelperLease = async (tabId, generation) => {
+        const leases = await readMap(PEAKBAGGER_HELPER_LEASES_KEY);
+        const lease = cleanPeakbaggerHelperLease(leases[tabId]);
+        if (!lease || lease.generation !== generation) return;
+        const activated = recentHelperActivations.get(tabId);
+        const navigated = recentHelperNavigations.get(tabId);
+        const wasAdopted = lease.adopted
+            || activated?.at >= lease.createdAt
+            || (navigated?.at >= lease.createdAt
+                && canonicalPeakbaggerUrl(navigated.value) !== lease.expectedUrl);
+        if (wasAdopted) {
+            await forgetPeakbaggerHelperLease(tabId, generation);
+            return;
+        }
+
+        let tab;
+        try {
+            tab = await runPeakbaggerBrowserOperation({
+                phase: 'temporary-tab cleanup check',
+                timeoutMs: PEAKBAGGER_CLEANUP_TIMEOUT_MS,
+                operation: () => ext.tabs.get(tabId),
+            });
+        } catch (error) {
+            // A rejected get means the tab is already gone. A deadline is
+            // ambiguous, so retain the lease for the next bounded cleanup.
+            if (!PublicErrors.isPublic(error)) await forgetPeakbaggerHelperLease(tabId, generation);
+            return;
+        }
+        if (!tab) {
+            await forgetPeakbaggerHelperLease(tabId, generation);
+            return;
+        }
+        if (tab.active || canonicalPeakbaggerUrl(tab.url) !== lease.expectedUrl) {
+            await forgetPeakbaggerHelperLease(tabId, generation);
+            return;
+        }
+
+        try {
+            await runPeakbaggerBrowserOperation({
+                phase: 'temporary-tab cleanup',
+                timeoutMs: PEAKBAGGER_CLEANUP_TIMEOUT_MS,
+                operation: () => ext.tabs.remove(tabId),
+            });
+            await forgetPeakbaggerHelperLease(tabId, generation);
+        } catch (_error) {
+            // Fail open. The still-durable lease permits a later exact-match
+            // cleanup without risking a user-owned or ID-reused tab.
+        }
+    };
+
+    const cleanupExpiredPeakbaggerHelperLeases = async cutoff => {
+        const leases = await readMap(PEAKBAGGER_HELPER_LEASES_KEY);
+        await Promise.all(Object.values(leases).map(value => {
+            const lease = cleanPeakbaggerHelperLease(value);
+            if (!lease || lease.expiresAt > cutoff) return Promise.resolve();
+            return closePeakbaggerHelperLease(lease.tabId, lease.generation);
+        }));
+    };
+
     const waitForPeakbaggerTab = async (tabId, signal) => {
-        const deadline = Deadline.createRequestDeadline(20_000);
+        const expiresAt = now() + PEAKBAGGER_OPERATION_TIMEOUT_MS;
         try {
             while (true) {
                 if (signal?.aborted) throw cancelledCaptureError();
-                const tab = await deadline.run(ext.tabs.get(tabId));
+                const remaining = expiresAt - now();
+                if (remaining <= 0) throw peakbaggerOperationTimeoutError(
+                    'temporary-tab readiness',
+                    new Error('Peakbagger request tab did not finish loading.'),
+                );
+                const tab = await runPeakbaggerBrowserOperation({
+                    phase: 'temporary-tab readiness',
+                    operation: () => ext.tabs.get(tabId),
+                    signal,
+                    timeoutMs: remaining,
+                });
                 if (!canonicalPeakbaggerTab(tab)) {
                     throw peakbaggerTabChangedError(new Error('The Peakbagger request tab navigated away.'));
                 }
@@ -267,64 +476,67 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         new Error('Tab readiness polling is unavailable.'),
                     );
                 }
-                await deadline.run(new Promise(resolve => globalThis.setTimeout(resolve, 50)));
+                await runPeakbaggerBrowserOperation({
+                    phase: 'temporary-tab readiness',
+                    operation: () => new Promise(resolve => globalThis.setTimeout(resolve, 50)),
+                    signal,
+                    timeoutMs: remaining,
+                });
             }
         } catch (error) {
             if (signal?.aborted) throw cancelledCaptureError();
             if (PublicErrors.isPublic(error)) throw error;
-            if (deadline.expired || Deadline.isTimeout(error)) {
-                throw peakbaggerPageError(
-                    'peakbagger-tab-load-timeout',
-                    'Peakbagger did not finish loading within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
-                    error,
-                );
-            }
             throw peakbaggerTabChangedError(error);
-        } finally {
-            deadline.clear();
         }
     };
 
-    const ensurePeakbaggerPage = tabId => {
-        const current = peakbaggerPageInjections.get(tabId);
-        if (current) return current;
-        const operation = (async () => {
-            const probe = async () => {
-                const results = await ext.scripting.executeScript({
+    const ensurePeakbaggerPage = async (tabId, signal) => {
+        const probe = async () => {
+            const results = await runPeakbaggerBrowserOperation({
+                phase: 'page-helper probe',
+                signal,
+                operation: () => ext.scripting.executeScript({
                     target: { tabId },
                     func: version => globalThis.BPBPeakbaggerPage?.version === version,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
-                });
-                return results?.[0]?.result === true;
-            };
-            if (await probe()) return;
-            await ext.scripting.executeScript({
+                }),
+            });
+            return results?.[0]?.result === true;
+        };
+        if (await probe()) return;
+        await runPeakbaggerBrowserOperation({
+            phase: 'page-helper injection',
+            signal,
+            operation: () => ext.scripting.executeScript({
                 target: { tabId },
                 files: ['peakbagger-page.js'],
                 world: 'MAIN',
-            });
-            if (!await probe()) throw new Error('The Peakbagger page helper did not start.');
-        })();
-        peakbaggerPageInjections.set(tabId, operation);
-        return operation.finally(() => {
-            if (peakbaggerPageInjections.get(tabId) === operation) peakbaggerPageInjections.delete(tabId);
+            }),
         });
+        if (!await probe()) throw new Error('The Peakbagger page helper did not start.');
     };
 
     const readFreshPeakbaggerAccount = async (tabId, signal) => {
         if (signal?.aborted) throw cancelledCaptureError();
         try {
-            const results = await ext.scripting.executeScript({
-                target: { tabId },
-                func: version => globalThis.BPBPeakbaggerPage?.version === version
-                    ? globalThis.BPBPeakbaggerPage.accountEvidence()
-                    : null,
-                args: [PEAKBAGGER_PAGE_VERSION],
-                world: 'MAIN',
+            const results = await runPeakbaggerBrowserOperation({
+                phase: 'account-evidence read',
+                signal,
+                operation: () => ext.scripting.executeScript({
+                    target: { tabId },
+                    func: version => globalThis.BPBPeakbaggerPage?.version === version
+                        ? globalThis.BPBPeakbaggerPage.accountEvidence()
+                        : null,
+                    args: [PEAKBAGGER_PAGE_VERSION],
+                    world: 'MAIN',
+                }),
             });
-            if (signal?.aborted) throw cancelledCaptureError();
-            const tab = await ext.tabs.get(tabId);
+            const tab = await runPeakbaggerBrowserOperation({
+                phase: 'account-evidence tab check',
+                signal,
+                operation: () => ext.tabs.get(tabId),
+            });
             if (!canonicalPeakbaggerTab(tab) || tab.status !== 'complete') return null;
             return PeakbaggerAccount.freshAccountCid(results?.[0]?.result, tab.url);
         } catch (error) {
@@ -332,23 +544,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // Evidence is only a fresh-page optimization. Any ambiguity or
             // page-realm failure falls back to the authoritative live request.
             return null;
-        }
-    };
-
-    const closeOwnedPeakbaggerTab = async tabId => {
-        let tab;
-        try {
-            tab = await ext.tabs.get(tabId);
-        } catch {
-            ownedPeakbaggerTabs.delete(tabId);
-            return;
-        }
-        try {
-            // If the user selected the helper or navigated it elsewhere,
-            // ownership has effectively transferred and cleanup leaves it.
-            if (!tab.active && canonicalPeakbaggerTab(tab)) await ext.tabs.remove(tabId);
-        } finally {
-            ownedPeakbaggerTabs.delete(tabId);
         }
     };
 
@@ -416,10 +611,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         };
     };
 
-    const peakbaggerPageConnectionError = async (tabId, cause) => {
+    const peakbaggerPageConnectionError = async (tabId, cause, signal = null) => {
         let tab;
-        try { tab = await ext.tabs.get(tabId); }
-        catch { return peakbaggerTabChangedError(cause); }
+        try {
+            tab = await runPeakbaggerBrowserOperation({
+                phase: 'page-helper connection check',
+                signal,
+                operation: () => ext.tabs.get(tabId),
+            });
+        } catch (error) {
+            if (signal?.aborted || PublicErrors.isPublic(error)) return error;
+            return peakbaggerTabChangedError(cause);
+        }
         if (!canonicalPeakbaggerTab(tab)) return peakbaggerTabChangedError(cause);
         return peakbaggerPageError(
             'peakbagger-page-connect-failed',
@@ -431,44 +634,38 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const requestThroughPeakbaggerPage = async (tabId, url, { kind, signal } = {}) => {
         if (signal?.aborted) throw cancelledCaptureError();
         let requestId = null;
-        let rejectCancellation;
-        const cancellation = signal ? new Promise((_, reject) => { rejectCancellation = reject; }) : null;
-        cancellation?.catch(() => {});
-        const cancel = () => {
-            if (requestId === null) {
-                rejectCancellation?.(cancelledCaptureError());
-                return;
-            }
+        const cancelPageRequest = () => {
+            if (requestId === null) return;
             void ext.scripting.executeScript({
                 target: { tabId },
                 func: id => globalThis.BPBPeakbaggerPage?.cancel?.(id) === true,
                 args: [requestId],
                 world: 'MAIN',
             }).catch(() => {});
-            rejectCancellation?.(cancelledCaptureError());
         };
-        if (signal?.aborted) cancel();
-        else signal?.addEventListener('abort', cancel, { once: true });
         const attempt = async () => {
             if (signal?.aborted) throw cancelledCaptureError();
             requestId = makeId();
-            const operation = ext.scripting.executeScript({
-                target: { tabId },
-                func: async (version, id, requestedUrl, resource) => {
-                    const api = globalThis.BPBPeakbaggerPage;
-                    if (api?.version !== version || typeof api.request !== 'function') {
-                        return { bridge: 'missing' };
-                    }
-                    return {
-                        bridge: 'result',
-                        value: await api.request(id, requestedUrl, resource),
-                    };
-                },
-                args: [PEAKBAGGER_PAGE_VERSION, requestId, url, kind],
-                world: 'MAIN',
+            const results = await runPeakbaggerBrowserOperation({
+                phase: `${kind || 'resource'} page request`,
+                signal,
+                onCancel: cancelPageRequest,
+                operation: () => ext.scripting.executeScript({
+                    target: { tabId },
+                    func: async (version, id, requestedUrl, resource) => {
+                        const api = globalThis.BPBPeakbaggerPage;
+                        if (api?.version !== version || typeof api.request !== 'function') {
+                            return { bridge: 'missing' };
+                        }
+                        return {
+                            bridge: 'result',
+                            value: await api.request(id, requestedUrl, resource),
+                        };
+                    },
+                    args: [PEAKBAGGER_PAGE_VERSION, requestId, url, kind],
+                    world: 'MAIN',
+                }),
             });
-            operation.catch(() => {});
-            const results = await (cancellation ? Promise.race([operation, cancellation]) : operation);
             if (!results?.[0]) throw new Error('The Peakbagger page returned no request result.');
             return results[0].result;
         };
@@ -476,7 +673,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             let bridge = await attempt();
             if (bridge?.bridge === 'missing') {
                 if (signal?.aborted) throw cancelledCaptureError();
-                await ensurePeakbaggerPage(tabId);
+                await ensurePeakbaggerPage(tabId, signal);
                 bridge = await attempt();
             }
             if (bridge?.bridge !== 'result') {
@@ -485,40 +682,60 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return validatePeakbaggerPageResult(bridge.value, url, kind);
         } catch (error) {
             if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
-            throw await peakbaggerPageConnectionError(tabId, error);
-        } finally {
-            signal?.removeEventListener('abort', cancel);
+            throw await peakbaggerPageConnectionError(tabId, error, signal);
         }
     };
 
-    const acquirePeakbaggerPage = async (sourceWindowId, signal) => {
+    const acquirePeakbaggerPage = async (sourceWindowId, generation, signal) => {
         if (signal?.aborted) throw cancelledCaptureError();
         let tab;
         let created = false;
+        let leaseCreatedAt = null;
         try {
             let candidates;
             try {
-                candidates = await ext.tabs.query({
-                    windowId: sourceWindowId,
-                    url: `${PEAKBAGGER_ORIGIN}/*`,
+                const leasedTabs = await readMap(PEAKBAGGER_HELPER_LEASES_KEY);
+                candidates = await runPeakbaggerBrowserOperation({
+                    phase: 'Peakbagger tab lookup',
+                    signal,
+                    operation: () => ext.tabs.query({
+                        windowId: sourceWindowId,
+                        url: `${PEAKBAGGER_ORIGIN}/*`,
+                    }),
                 });
+                candidates = candidates.filter(candidate =>
+                    !cleanPeakbaggerHelperLease(leasedTabs[candidate.id]));
             } catch (error) {
+                if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
                 throw peakbaggerPageError(
                     'peakbagger-tab-access-failed',
                     'Better Peakbagger could not access a Peakbagger tab for this capture. Open Peakbagger in this browser window, then try again.',
                     error,
                 );
             }
-            tab = candidates.find(candidate => canonicalPeakbaggerTab(candidate)
-                && !ownedPeakbaggerTabs.has(candidate.id));
+            tab = candidates.find(candidate => canonicalPeakbaggerTab(candidate));
             if (!tab) {
                 try {
-                    tab = await ext.tabs.create({
-                        active: false,
-                        ...(Number.isInteger(sourceWindowId) ? { windowId: sourceWindowId } : {}),
-                        url: `${PEAKBAGGER_ORIGIN}/Default.aspx`,
+                    leaseCreatedAt = now();
+                    tab = await runPeakbaggerBrowserOperation({
+                        phase: 'temporary-tab creation',
+                        signal,
+                        onLateResult: lateTab => runDetachedCleanup(
+                            'late temporary Peakbagger tab cleanup',
+                            async () => {
+                                if (!Number.isInteger(lateTab?.id)) return;
+                                await createPeakbaggerHelperLease(lateTab, generation, leaseCreatedAt);
+                                await closePeakbaggerHelperLease(lateTab.id, generation);
+                            },
+                        ),
+                        operation: () => ext.tabs.create({
+                            active: false,
+                            ...(Number.isInteger(sourceWindowId) ? { windowId: sourceWindowId } : {}),
+                            url: PEAKBAGGER_HELPER_URL,
+                        }),
                     });
                 } catch (error) {
+                    if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
                     throw peakbaggerPageError(
                         'peakbagger-tab-open-failed',
                         'Better Peakbagger could not open Peakbagger for account verification. Open Peakbagger in this browser window, then try again.',
@@ -526,27 +743,29 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     );
                 }
                 created = true;
-                ownedPeakbaggerTabs.add(tab.id);
+                await createPeakbaggerHelperLease(tab, generation, leaseCreatedAt);
             }
             const accountEvidenceIsFresh = created || tab.status !== 'complete';
             await waitForPeakbaggerTab(tab.id, signal);
-            await ensurePeakbaggerPage(tab.id);
+            await ensurePeakbaggerPage(tab.id, signal);
             return {
                 freshAccount: () => accountEvidenceIsFresh
                     ? readFreshPeakbaggerAccount(tab.id, signal)
                     : Promise.resolve(null),
                 request: (url, options) => requestThroughPeakbaggerPage(tab.id, url, options),
-                release: () => created ? closeOwnedPeakbaggerTab(tab.id) : Promise.resolve(),
+                release: () => created
+                    ? closePeakbaggerHelperLease(tab.id, generation)
+                    : Promise.resolve(),
             };
         } catch (error) {
             if (created && Number.isInteger(tab?.id)) {
-                try { await closeOwnedPeakbaggerTab(tab.id); }
+                try { await closePeakbaggerHelperLease(tab.id, generation); }
                 catch (cleanupError) {
                     console.error('Better Peakbagger: temporary request tab cleanup failed', cleanupError);
                 }
             }
             if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
-            if (Number.isInteger(tab?.id)) throw await peakbaggerPageConnectionError(tab.id, error);
+            if (Number.isInteger(tab?.id)) throw await peakbaggerPageConnectionError(tab.id, error, signal);
             throw peakbaggerPageError(
                 'peakbagger-tab-access-failed',
                 'Better Peakbagger could not access Peakbagger for this capture. Open Peakbagger in this browser window, then try again.',
@@ -890,7 +1109,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
-            peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, signal);
+            peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, generation, signal);
             const cid = await peakbaggerPage.freshAccount()
                 || await peakbaggerLogin({ request: peakbaggerPage.request, signal });
             if (!cid) {
@@ -2258,6 +2477,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         await trustedActions.cleanup(cutoff);
         await photoRoutes.cleanup(cutoff);
         await reportDraftRoutes.cleanup(cutoff);
+        await cleanupExpiredPeakbaggerHelperLeases(cutoff);
     };
 
     const isPeakbaggerSender = sender =>
@@ -2586,8 +2806,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     ext.tabs.onRemoved.addListener(tabId => {
+        recentHelperActivations.delete(tabId);
+        recentHelperNavigations.delete(tabId);
         terrainActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
+        runDetachedCleanup('temporary Peakbagger tab cleanup', () =>
+            forgetPeakbaggerHelperLease(tabId));
         runDetachedCleanup('trusted action cleanup', () => trustedActions.forgetTab(tabId));
         runDetachedCleanup('settings tab cleanup', () => forgetBetaSettingsTab(tabId));
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
@@ -2601,7 +2825,17 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             await serializeLifecycle(sourceTabId, () => cleanupRemovedTab(tabId));
         });
     });
+    ext.tabs.onActivated?.addListener(({ tabId }) => {
+        rememberRecentHelperEvent(recentHelperActivations, tabId, true);
+        runDetachedCleanup('temporary Peakbagger tab adoption', () =>
+            markPeakbaggerHelperAdopted(tabId));
+    });
     ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+        if (changeInfo?.url) {
+            rememberRecentHelperEvent(recentHelperNavigations, tabId, changeInfo.url);
+            runDetachedCleanup('temporary Peakbagger tab navigation', () =>
+                markPeakbaggerHelperAdopted(tabId, changeInfo.url));
+        }
         if (changeInfo?.url && !isOptionsPageUrl(changeInfo.url)) {
             runDetachedCleanup('settings tab navigation cleanup', () => forgetBetaSettingsTab(tabId));
         }
@@ -2616,6 +2850,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // debounce. Nudging favorites here makes enabling its toggle create the
     // first backup; equal signatures make other settings changes free.
     Settings.subscribe(githubRoutes.onSettingsChanged);
+    runDetachedCleanup('temporary Peakbagger tab recovery', () =>
+        cleanupExpiredPeakbaggerHelperLeases(now()));
     runDetachedCleanup('photo backup watchdog startup', () =>
         githubRoutes.startPhotoBackupWatchdog());
 
