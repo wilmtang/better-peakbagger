@@ -192,6 +192,9 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     'the verifier must send a real coordinator message before requiring the lazy worker target');
     assert.match(chromeVerifier, /waitForFunction\([\s\S]*Interactive Stats:/);
     assert.match(chromeVerifier,
+        /name: 'Restore draft'[\s\S]{0,900}markdownVisible[\s\S]{0,500}restoring the draft did not reach a visible Markdown editor/,
+        'draft recovery must reach its visible Markdown postcondition before the verifier types into CodeMirror');
+    assert.match(chromeVerifier,
         /disabledFrameElement\.contentFrame\(\)\.locator\('body'\)[\s\S]{0,200}waitFor\(/,
         'the disabled terrain forgery must follow its live frame and accept a browser-level API denial');
     assert.match(chromeVerifier, /current value:/);

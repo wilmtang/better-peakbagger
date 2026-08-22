@@ -4105,13 +4105,20 @@ try {
                     name: 'Insert image', exact: true
                 }).click();
                 await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Restore draft', exact: true }).click();
-                const restored = await editorPage.evaluate(() => ({
-                    mode: document.getElementById('bpb-report-editor').dataset.mode,
-                    value: document.getElementById('JournalText').value
-                }));
-                check(restored.mode === 'markdown'
-                    && restored.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]',
-                `restoring the draft did not bring back content and mode (state=${JSON.stringify(restored)})`);
+                const restored = await editorPage.waitForFunction(() => {
+                    const editor = document.getElementById('bpb-report-editor');
+                    const content = editor?.querySelector('.bpb-re-mdpane .cm-content');
+                    const rect = content?.getBoundingClientRect();
+                    const state = {
+                        mode: editor?.dataset.mode,
+                        value: document.getElementById('JournalText')?.value,
+                        markdownVisible: !!rect && rect.width > 0 && rect.height > 0,
+                    };
+                    return state.mode === 'markdown'
+                        && state.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]'
+                        && state.markdownVisible ? state : false;
+                }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+                if (!restored) throw new Error('restoring the draft did not reach a visible Markdown editor');
             }
 
             // Exercise the broader Marked-token pipeline through the real
