@@ -513,6 +513,10 @@ test('Chrome verifier accepts an exact externally installed floor binary', async
     );
     assert.match(verifier, /process\.env\.CHROME_BIN/);
     assert.match(verifier, /chromeBinary \? \{ executablePath: chromeBinary \}/);
+    assert.match(verifier, /const backgroundShortcut = process\.platform === 'darwin' \? 'Meta\+Enter' : 'Control\+Enter'/,
+        'background-tab disposition must use a real modified keyboard activation in hidden Chrome');
+    assert.match(verifier, /keyboard\.press\('Shift\+Enter'\)/,
+        'new-window disposition must use a real modified keyboard activation in hidden Chrome');
     const analyzerStart = verifier.indexOf('const openAscent =');
     assert.ok(analyzerStart > verifier.indexOf("locator('#units').selectOption('imperial')"),
         'the Chrome verifier must pin imperial units before asserting the exact Capitol signature');

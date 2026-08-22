@@ -2986,18 +2986,56 @@ try {
                 }, { description: 'the source tab to become active', timeoutMs: 5_000 });
             };
             const activateSettings = async activate => {
-                await prepareSettingsActivation();
-                await activate();
-                const route = await waitForCondition(async () => {
-                    const optionsPages = context.pages().filter(page =>
-                        /\/options\/options\.html/.test(page.url()));
-                    const betaPages = optionsPages.filter(page => page.url().endsWith('#beta'));
-                    return betaPages.length ? {
-                        betaPages,
-                        urls: optionsPages.map(page => page.url()),
-                        controlText: await settingsControl.textContent(),
-                    } : null;
-                }, { description: 'trusted Settings navigation', timeoutMs: 5_000 });
+                let activationAttempts = 0;
+                const attemptActivation = async () => {
+                    activationAttempts += 1;
+                    await prepareSettingsActivation();
+                    await activate();
+                    return waitForCondition(async () => {
+                        const optionsPages = context.pages().filter(page =>
+                            /\/options\/options\.html/.test(page.url()));
+                        const betaPages = optionsPages.filter(page => page.url().endsWith('#beta'));
+                        const controlText = await settingsControl.textContent();
+                        return betaPages.length || /try again/i.test(controlText || '') ? {
+                            betaPages,
+                            urls: optionsPages.map(page => page.url()),
+                            controlText,
+                        } : null;
+                    }, { description: 'trusted Settings navigation', timeoutMs: 5_000 });
+                };
+                let route;
+                try {
+                    route = await attemptActivation();
+                    if (!route.betaPages.length && /try again/i.test(route.controlText || '')) {
+                        route = await attemptActivation();
+                    }
+                } catch (error) {
+                    const [topology, control, registration] = await Promise.all([
+                        readSettingsTopology().catch(readError => ({ error: readError.message })),
+                        settingsControl.evaluate(element => ({
+                            text: element.textContent,
+                            disabled: element.disabled,
+                            status: document.querySelector('.pbaf-settings-status')?.textContent || '',
+                        })).catch(readError => ({ error: readError.message })),
+                        linkedOptionsPage.evaluate(async () => {
+                            const [current, stored] = await Promise.all([
+                                chrome.tabs.getCurrent(),
+                                chrome.storage.session.get('bpbBetaSettingsTabs'),
+                            ]);
+                            return {
+                                currentId: current?.id || null,
+                                registered: !!(current?.id && stored.bpbBetaSettingsTabs?.[current.id]),
+                            };
+                        }).catch(readError => ({ error: readError.message })),
+                    ]);
+                    throw new Error(`Trusted Settings navigation did not settle: ${JSON.stringify({
+                        urls: context.pages().map(page => page.url()),
+                        topology,
+                        control,
+                        registration,
+                        activationAttempts,
+                    })}`, { cause: error });
+                }
                 if (!route.betaPages.includes(linkedOptionsPage) || route.betaPages.length !== 1) {
                     throw new Error(`Settings navigation did not reuse the exact tab: ${JSON.stringify({
                         urls: route.urls,
@@ -3007,9 +3045,11 @@ try {
                 return readSettingsTopology();
             };
             const settingsControl = filterPage.locator('.pbaf-settings-link');
-            const shortcutTopology = await activateSettings(() => settingsControl.click({
-                modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'],
-            }));
+            const backgroundShortcut = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+            const shortcutTopology = await activateSettings(async () => {
+                await settingsControl.focus();
+                await filterPage.keyboard.press(backgroundShortcut);
+            });
             const middleTopology = await activateSettings(() =>
                 settingsControl.click({ button: 'middle' }));
             const keyboardTopology = await activateSettings(async () => {
@@ -3018,7 +3058,8 @@ try {
             });
             await prepareSettingsActivation();
             const beforeNewWindow = await readSettingsTopology();
-            await settingsControl.click({ modifiers: ['Shift'] });
+            await settingsControl.focus();
+            await filterPage.keyboard.press('Shift+Enter');
             await linkedOptionsPage.waitForURL(url => url.hash === '#beta');
             const newWindowTopology = await waitForCondition(async () => {
                 const topology = await readSettingsTopology();
