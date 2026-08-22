@@ -187,7 +187,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
     const retryProbeStart = chromeVerifier.indexOf('const unavailableCases =');
-    const retryProbeEnd = chromeVerifier.indexOf('await unavailablePage.close();');
+    const retryProbeEnd = chromeVerifier.indexOf('const offPage = sitePage;');
     assert.notEqual(retryProbeStart, -1);
     assert.notEqual(retryProbeEnd, -1);
     const retryProbe = chromeVerifier.slice(retryProbeStart, retryProbeEnd);
@@ -204,6 +204,9 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'terminal Analyzer cases must not churn through disposable browser targets');
     assert.doesNotMatch(retryProbe, /openRetryPage|retryPage\.reload/,
         'the retry fixture must not create an unnecessary late target or mask missing injection');
+    assert.match(chromeVerifier,
+        /let sitePage = await openAscent\(unavailablePage\);[\s\S]*const sourcePage = sitePage;/,
+        'the current-Chrome verifier must reuse its proven site target across sequential surfaces');
     const buddyClick = chromeVerifier.indexOf("await optionsPage.locator('#favorites-merge-buddies').click();");
     assert.notEqual(buddyClick, -1);
     const buddyReadiness = chromeVerifier.slice(Math.max(0, buddyClick - 500), buddyClick);
@@ -214,7 +217,6 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         chromeVerifier,
         /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,
     );
-
     for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mjs']) {
         const source = sources.find(entry => entry.verifierPath === verifierPath).source;
         assert.match(source, /manageChildProcess\(resources, chrome/,
