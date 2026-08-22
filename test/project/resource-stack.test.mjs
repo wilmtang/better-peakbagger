@@ -197,6 +197,12 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'the retry fixture must report its live DOM state when readiness times out');
     assert.match(retryProbe, /fixture\.requests\.analyzerTracks\.retry/,
         'the retry fixture must report whether its GPX request reached the server');
+    assert.match(retryProbe, /const noInjection = firstState\.isolatedWorldReady === null[\s\S]*firstState\.requests === 0[\s\S]*firstState\.runtimeErrors\.length === 0/,
+        'the retry fixture must distinguish a zero-injection browser navigation from a product failure');
+    assert.match(retryProbe, /await retryPage\.reload\(\{ waitUntil: 'load' \}\)/,
+        'the retry fixture may reload once only after proving the first navigation received no extension injection');
+    assert.match(retryProbe, /after \$\{retryAttempts\} navigation attempt/,
+        'the retry fixture must report whether its bounded navigation retry was consumed');
     assert.match(
         chromeVerifier,
         /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,

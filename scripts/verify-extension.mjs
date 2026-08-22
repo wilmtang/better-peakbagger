@@ -1941,6 +1941,13 @@ try {
         await context.unroute(capturePeaksUrl);
 
         await optionsPage.locator('#theme').selectOption('system');
+        // The Capitol fixture has one exact regression signature. Do not let
+        // the host or browser locale silently choose metric units and turn a
+        // compatibility-floor check into a locale assertion.
+        await optionsPage.locator('#units').selectOption('imperial');
+        await optionsPage.waitForFunction(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'imperial',
+        null, { timeout: 5000 });
         await optionsPage.close();
 
         const popupPage = await context.newPage();
@@ -2103,12 +2110,20 @@ try {
         `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-retry`,
         { waitUntil: 'load' },
     );
-    try {
-        await retryPage.waitForFunction(() =>
-            document.querySelector('.bpb-gpx-retry:not([hidden])')
-            && /temporarily unavailable/i.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''),
-        null, { timeout: 15_000 });
-    } catch (error) {
+    let retryWaitError = null;
+    const waitForRetryableFailure = async () => {
+        try {
+            await retryPage.waitForFunction(() =>
+                document.querySelector('.bpb-gpx-retry:not([hidden])')
+                && /temporarily unavailable/i.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''),
+            null, { timeout: 15_000 });
+            return true;
+        } catch (error) {
+            retryWaitError = error;
+            return false;
+        }
+    };
+    const readRetryState = async () => {
         const domState = await retryPage.evaluate(() => {
             const panel = document.getElementById('bpb-gpx-analysis');
             const stats = panel?.querySelector('.bpb-gpx-stats');
@@ -2123,14 +2138,32 @@ try {
                 retryDisabled: retry?.disabled ?? null,
             };
         }).catch(readError => ({ unavailable: readError.message }));
-        const current = {
+        return {
             ...domState,
             requests: fixture.requests.analyzerTracks.retry || 0,
-            runtimeErrors: retryErrors,
+            runtimeErrors: [...retryErrors],
         };
+    };
+
+    let retryAttempts = 1;
+    let retryReady = await waitForRetryableFailure();
+    if (!retryReady) {
+        const firstState = await readRetryState();
+        const noInjection = firstState.isolatedWorldReady === null
+            && firstState.panelExists === false
+            && firstState.requests === 0
+            && firstState.runtimeErrors.length === 0;
+        if (noInjection) {
+            retryAttempts += 1;
+            await retryPage.reload({ waitUntil: 'load' });
+            retryReady = await waitForRetryableFailure();
+        }
+    }
+    if (!retryReady) {
+        const current = await readRetryState();
         throw new Error(
-            `Timed out waiting for the retryable Analyzer failure; current value: ${JSON.stringify(current)}`,
-            { cause: error },
+            `Timed out waiting for the retryable Analyzer failure after ${retryAttempts} navigation attempt(s); current value: ${JSON.stringify(current)}`,
+            { cause: retryWaitError },
         );
     }
     await retryPage.locator('.bpb-gpx-retry').click();

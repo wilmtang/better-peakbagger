@@ -513,6 +513,9 @@ test('Chrome verifier accepts an exact externally installed floor binary', async
     );
     assert.match(verifier, /process\.env\.CHROME_BIN/);
     assert.match(verifier, /chromeBinary \? \{ executablePath: chromeBinary \}/);
+    const analyzerStart = verifier.indexOf('const openAscent =');
+    assert.ok(analyzerStart > verifier.indexOf("locator('#units').selectOption('imperial')"),
+        'the Chrome verifier must pin imperial units before asserting the exact Capitol signature');
 });
 
 test('Firefox verification waits for rendered postconditions instead of fixed frames', async () => {
