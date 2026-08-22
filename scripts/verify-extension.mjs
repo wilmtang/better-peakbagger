@@ -1987,11 +1987,15 @@ try {
             }, null, { timeout: 15_000 });
         } catch (error) {
             const domState = await page.evaluate(() => ({
+                url: location.href,
+                title: document.title,
+                isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme'),
                 stats: document.querySelector('#bpb-gpx-analysis .bpb-gpx-stats')?.textContent || null,
                 legendButtons: document.querySelectorAll('#bpb-gpx-chart-legend button').length,
                 terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled ?? null,
+                body: (document.body?.innerText || '').slice(0, 500),
             })).catch(readError => ({ unavailable: readError.message }));
-            const current = { ...domState, runtimeErrors };
+            const current = { ...domState, runtimeErrors, priorFailures: [...failures] };
             throw new Error(
                 `Timed out waiting for the analyzer's final visible state; current value: ${JSON.stringify(current)}`,
                 { cause: error },
