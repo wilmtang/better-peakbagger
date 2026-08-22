@@ -73,7 +73,10 @@ jobs:
 
   chrome:
     name: Chrome extension smoke
-    runs-on: ubuntu-latest
+    # Chrome 151 on hosted Linux omits command-line extensions in both new
+    # headless and Xvfb, while this same hidden verifier passes with the same
+    # Chrome for Testing build on macOS. Chrome 128 remains the Linux floor.
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - name: Check out source
