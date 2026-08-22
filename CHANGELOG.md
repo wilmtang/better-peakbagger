@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+- **Trust the release bytes and the browsers that run them.** Tags must come
+  from protected `main`, every prior changelog section remains immutable, and
+  reviewer notes, packaged acknowledgements, compatibility floors, and store
+  status are checked against the locked build instead of maintained guesses.
+
+- **Keep drafts and GPX results bound to the work you can still see.** Report
+  deletion, Undo, and autosave now serialize around the latest edit; replacing
+  a local GPX invalidates its old analysis; and failed or empty GPX loads remove
+  unavailable chart controls instead of leaving a blank interactive shell.
+
+- **Make Photo Topos recovery durable at full-library scale.** Backup freshness
+  follows the exact catalog generation committed remotely, reconciliation and
+  expiry drain in bounded batches, and oversized recovery data is rejected
+  before a remote write. Failed clipboard access exposes selectable URLs or
+  Markdown, while failed editor opens and duplicate version creation roll back
+  cleanly.
+
+- **Bound remote map, image, settings, and backup data before it reaches
+  memory.** Terrain styles can load resources only from reviewed origins and
+  install transactionally; DEM tiles, GitHub blobs, ImgBB responses, settings
+  imports, and photo sources now have explicit streaming, format, and size
+  limits with actionable failure states.
+
+- **Preserve the native ascent list until you choose a filter.** First use no
+  longer hides Peakbagger rows. You can drop a GPX directly onto an ascent form,
+  and the filter bar keeps its related controls together, supports accessible
+  drag or keyboard reordering, follows the pointer smoothly, and remembers
+  separate Peak Ascents and personal-list layouts.
+
+- **Make activity capture recover through Peakbagger human checks.** Capture
+  uses a narrowly validated signed-in Peakbagger page session without exposing
+  cookies, gives a direct recovery action when a human check intervenes, and
+  reuses trustworthy account evidence without weakening ambiguous-login or
+  activity-identity checks.
+
+- **Keep saved-ascent GitHub backup status truthful.** Slow and timed-out work
+  is measured from the first Peakbagger read, uncertain writes reconcile the
+  complete remote file before Retry, profile renames do not make unchanged GPX
+  stale, and returning from a successful bulk backup refreshes the summary
+  without flashing away the last known count.
+
+- **Preserve editing intent at text and time boundaries.** Rich links stop at
+  their right edge while automatic URL linking still works, text fields in
+  Photo Topos retain native Undo and Redo, and mountain-local time remains
+  owned by the route start even when that first point has no timestamp.
+
+- **Require a real user action before external effects.** One-use capabilities
+  bind manual ascent and profile backups, Settings navigation, prepared-draft
+  application, and temporary Peakbagger helper pages to the initiating tab,
+  document, action, and generation. Local GPX file metadata stays on the page,
+  stale or synthetic actions fail closed, and the extension never clicks Save.
+
 ## 3.5.0 — 2026-08-09
 
 - **Keep experimental 3D maps current and dependable.** The packaged renderer
