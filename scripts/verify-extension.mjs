@@ -2033,7 +2033,6 @@ try {
         ['no-valid-points', /No valid track points/i, false],
     ];
     let unavailableVisualPage = null;
-    let retryPage = null;
     const retryErrors = [];
     for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
         const page = await context.newPage();
@@ -2112,26 +2111,28 @@ try {
             : /Full Screen Map/.test(nextTabStop.text),
         `the ${analyzerCase} Analyzer failure left the wrong next tab stop: ${JSON.stringify(nextTabStop)}`);
 
-        if (analyzerCase === 'retry') retryPage = page;
-        else if (analyzerCase === 'challenge') unavailableVisualPage = page;
+        if (analyzerCase === 'retry') {
+            // Recover while the already-proven target is still current. A
+            // resource-constrained Chrome runner may discard an inactive
+            // renderer while the remaining terminal cases are exercised.
+            await page.locator('.bpb-gpx-retry').click();
+            const recoveredAnalyzer = await page.waitForFunction(() => {
+                const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+                return canvas?.getAttribute('role') === 'application'
+                    && canvas.tabIndex === 0
+                    && canvas.parentElement?.hidden === false
+                    && /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || '');
+            }, null, { timeout: 15_000 }).then(() => true).catch(() => false);
+            check(recoveredAnalyzer && fixture.requests.analyzerTracks.retry === 2,
+                `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
+                    recoveredAnalyzer,
+                    requests: fixture.requests.analyzerTracks.retry,
+                    runtimeErrors: retryErrors,
+                })}`);
+            await page.close();
+        } else if (analyzerCase === 'challenge') unavailableVisualPage = page;
         else await page.close();
     }
-
-    await retryPage.locator('.bpb-gpx-retry').click();
-    const recoveredAnalyzer = await retryPage.waitForFunction(() => {
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-        return canvas?.getAttribute('role') === 'application'
-            && canvas.tabIndex === 0
-            && canvas.parentElement?.hidden === false
-            && /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || '');
-    }, null, { timeout: 15_000 }).then(() => true).catch(() => false);
-    check(recoveredAnalyzer && fixture.requests.analyzerTracks.retry === 2,
-        `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
-            recoveredAnalyzer,
-            requests: fixture.requests.analyzerTracks.retry,
-            runtimeErrors: retryErrors,
-        })}`);
-    await retryPage.close();
 
     if (unavailableVisualPage) {
         if (process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT) {

@@ -187,15 +187,16 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
     const retryProbeStart = chromeVerifier.indexOf('const unavailableCases =');
-    const retryProbeEnd = chromeVerifier.indexOf("await retryPage.locator('.bpb-gpx-retry').click();");
+    const retryProbeEnd = chromeVerifier.indexOf('if (unavailableVisualPage)');
     assert.notEqual(retryProbeStart, -1);
     assert.notEqual(retryProbeEnd, -1);
     const retryProbe = chromeVerifier.slice(retryProbeStart, retryProbeEnd);
     assert.ok(retryProbe.indexOf("['retry', /temporarily unavailable/i, true]")
         < retryProbe.indexOf("['signed-out', /sign in/i, true]"),
     'the retry fixture must reuse the first already-injected Analyzer error page');
-    assert.match(retryProbe, /if \(analyzerCase === 'retry'\) retryPage = page;/,
-        'the retry fixture must preserve its proven error page for the recovery click');
+    assert.match(retryProbe,
+        /if \(analyzerCase === 'retry'\) \{[\s\S]*await page\.locator\('\.bpb-gpx-retry'\)\.click\(\);/,
+        'the retry fixture must recover immediately on its proven error page');
     assert.doesNotMatch(retryProbe, /openRetryPage|retryPage\.reload/,
         'the retry fixture must not create an unnecessary late target or mask missing injection');
     const buddyClick = chromeVerifier.indexOf("await optionsPage.locator('#favorites-merge-buddies').click();");
