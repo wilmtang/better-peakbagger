@@ -92,12 +92,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Verify the real Chrome extension
-        # Chrome 151 on Linux new-headless can omit declared content scripts on
-        # the ascent fixture while the same binary passes under an isolated
-        # virtual display. Xvfb stays hidden and never touches a user session.
-        env:
-          BPB_VERIFY_HEADLESS: "false"
-        run: xvfb-run -a npm run verify:chrome
+        run: npm run verify:chrome
 
   chrome-floor:
     name: Chrome 128 extension smoke

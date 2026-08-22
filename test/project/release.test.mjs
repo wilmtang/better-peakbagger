@@ -479,8 +479,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     // release callers from accidentally selecting only one half.
     assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm test[\s\S]*?run: npm run lint\n/);
     assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
-    assert.match(workflow,
-        /chrome:\s*\n[\s\S]*?BPB_VERIFY_HEADLESS: "false"[\s\S]*?run: xvfb-run -a npm run verify:chrome/);
+    assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: 128/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
@@ -514,8 +513,6 @@ test('Chrome verifier accepts an exact externally installed floor binary', async
     );
     assert.match(verifier, /process\.env\.CHROME_BIN/);
     assert.match(verifier, /chromeBinary \? \{ executablePath: chromeBinary \}/);
-    assert.match(verifier, /const chromeHeadless = process\.env\.BPB_VERIFY_HEADLESS !== 'false'/);
-    assert.match(verifier, /headless: chromeHeadless/);
     assert.match(verifier, /const backgroundShortcut = process\.platform === 'darwin' \? 'Meta\+Enter' : 'Control\+Enter'/,
         'background-tab disposition must use a real modified keyboard activation in hidden Chrome');
     assert.match(verifier, /keyboard\.press\('Shift\+Enter'\)/,
