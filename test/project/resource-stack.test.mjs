@@ -191,6 +191,9 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         < workerProbe.indexOf("check(!!worker, 'the extension service worker never started after a coordinator message')"),
     'the verifier must send a real coordinator message before requiring the lazy worker target');
     assert.match(chromeVerifier, /waitForFunction\([\s\S]*Interactive Stats:/);
+    assert.match(chromeVerifier,
+        /disabledFrameElement\.contentFrame\(\)\.locator\('body'\)[\s\S]{0,200}waitFor\(/,
+        'the disabled terrain forgery must follow its live frame and accept a browser-level API denial');
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,
         'terminal Chrome readiness errors must retain earlier accumulated surface failures');

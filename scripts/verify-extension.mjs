@@ -2423,16 +2423,17 @@ try {
     }, extensionId);
     const disabledFrameElement = offPage.locator('#bpb-forged-terrain-frame');
     await disabledFrameElement.waitFor({ state: 'attached', timeout: 3000 });
-    const disabledFrame = await (await disabledFrameElement.elementHandle()).contentFrame();
-    const disabledFrameGate = await disabledFrame.evaluate(async () => {
-        const api = (globalThis.browser || globalThis.chrome);
-        const stored = await api.storage.sync.get('bpbSettings');
-        const rejected = await api.runtime.sendMessage({
+    const disabledFrameBody = disabledFrameElement.contentFrame().locator('body');
+    await disabledFrameBody.waitFor({ state: 'attached', timeout: 5000 });
+    const disabledFrameGate = await disabledFrameBody.evaluate(async () => {
+        const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
+        if (typeof runtime?.sendMessage !== 'function') return { runtimeAvailable: false };
+        const rejected = await runtime.sendMessage({
             type: 'TERRAIN_ACTIVATION_CONSUME',
             action: 'init',
             token: 'guessed-disabled-frame',
         });
-        return { enabled: stored?.bpbSettings?.enable3dMap === true, rejected };
+        return { runtimeAvailable: true, rejected };
     });
     const disabledForgery = await offPage.evaluate(() => ({
         consent: !!document.getElementById('bpb-terrain-consent'),
@@ -2440,7 +2441,7 @@ try {
     }));
     const disabledDirectMap = await offPage.locator('#bpb-forged-terrain-frame')
         .contentFrame().locator('#bpb-terrain-map').count().catch(() => -1);
-    check(!disabledFrameGate.enabled && disabledFrameGate.rejected?.ok === false
+    check((disabledFrameGate.runtimeAvailable === false || disabledFrameGate.rejected?.ok === false)
         && !disabledForgery.consent && disabledForgery.bridgeFrames === 0
         && disabledDirectMap === 0
         && terrainProviderRequests.length === disabledForgeryBaseline,
