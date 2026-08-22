@@ -136,18 +136,20 @@ try {
     let [worker] = context.serviceWorkers();
     const registryPage = await context.newPage();
     await registryPage.goto('chrome://extensions-internals/');
-    const extensionRecord = await registryPage.waitForFunction(expectedPath => {
+    const extensionRecord = await registryPage.waitForFunction(() => {
         try {
             const records = JSON.parse(document.body.innerText);
             return records.find(record => record.location === 'COMMAND_LINE'
-                && record.name === 'Better Peakbagger'
-                && record.path === expectedPath) || false;
+                && record.name === 'Better Peakbagger') || false;
         } catch {
             return false;
         }
-    }, dist, { timeout: 15000 }).then(handle => handle.jsonValue());
-    check(extensionRecord.registry_status === 'ENABLED' && extensionRecord.manifest_version === 3,
-        `Chrome did not register the unpacked MV3 extension as enabled: ${JSON.stringify(extensionRecord)}`);
+    }, null, { timeout: 15000 }).then(handle => handle.jsonValue());
+    check(path.resolve(extensionRecord.path) === dist
+        && (!extensionRecord.registry_status || extensionRecord.registry_status === 'ENABLED')
+        && extensionRecord.disable_reasons?.length === 0
+        && extensionRecord.manifest_version === 3,
+    `Chrome did not register the unpacked MV3 extension as enabled: ${JSON.stringify(extensionRecord)}`);
     const extensionId = extensionRecord.id;
     await registryPage.close();
     const optionsPage = await context.newPage();

@@ -185,7 +185,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.notEqual(workerProbeEnd, -1);
     const workerProbe = chromeVerifier.slice(0, workerProbeEnd);
     assert.match(workerProbe,
-        /chrome:\/\/extensions-internals\/[\s\S]*location === 'COMMAND_LINE'[\s\S]*registry_status === 'ENABLED'/,
+        /chrome:\/\/extensions-internals\/[\s\S]*location === 'COMMAND_LINE'[\s\S]*disable_reasons\?\.length === 0/,
         'a quiet MV3 worker must be addressed through Chrome\'s actual command-line extension registry');
     assert.ok(workerProbe.indexOf("chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS'")
         < workerProbe.indexOf("check(!!worker, 'the extension service worker never started after a coordinator message')"),
