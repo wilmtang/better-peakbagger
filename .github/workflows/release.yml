@@ -12,7 +12,10 @@ concurrency:
 jobs:
   verify:
     name: Verify release
-    runs-on: ubuntu-latest
+    # Current Chrome 151 omits command-line extensions on hosted Linux. Keep
+    # exact-package verification on the less load-sensitive standard Intel
+    # macOS runner; the declared browser floors still run separately on Linux.
+    runs-on: macos-15-intel
     timeout-minutes: 25
     permissions:
       contents: read

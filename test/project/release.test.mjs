@@ -450,6 +450,11 @@ test('release and browser development commands use the dist build', async () => 
         workflow,
         /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
     );
+    assert.match(
+        workflow,
+        /verify:\s*\n\s+name: Verify release[\s\S]{0,400}runs-on: macos-15-intel/,
+        'current-Chrome package verification must not run on hosted Linux',
+    );
     assert.match(workflow, /- name: Run scale tests\s+run: npm run test:scale/);
     assert.match(
         workflow,
@@ -480,6 +485,11 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm test[\s\S]*?run: npm run lint\n/);
     assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
     assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
+    assert.match(
+        workflow,
+        /chrome:\s*\n\s+name: Chrome extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
+        'current Chrome must use the standard Intel macOS runner',
+    );
     assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: 128/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
