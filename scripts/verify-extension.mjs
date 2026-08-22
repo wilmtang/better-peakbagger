@@ -138,10 +138,6 @@ try {
     if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 15000 }).catch(() => null);
     check(!!worker, 'the extension service worker never started');
     const extensionId = worker ? new URL(worker.url()).host : null;
-    const ascentUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`;
-    let sitePage = await context.newPage();
-    await sitePage.goto(ascentUrl, { waitUntil: 'load' });
-
     if (extensionId) {
         const optionsPage = await context.newPage();
         await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
@@ -1971,16 +1967,14 @@ try {
         await popupPage.close();
     }
 
-    const openAscent = async (existingPage, forceNavigation = false) => {
-        const page = existingPage || await context.newPage();
+    const openAscent = async () => {
+        const page = await context.newPage();
         const runtimeErrors = [];
         page.on('pageerror', error => runtimeErrors.push(String(error)));
         page.on('console', message => {
             if (message.type() === 'error') runtimeErrors.push(message.text());
         });
-        if (forceNavigation || page.url() !== ascentUrl) {
-            await page.goto(ascentUrl, { waitUntil: 'load' });
-        }
+        await page.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
         try {
             await page.waitForFunction(() => {
                 const panel = document.getElementById('bpb-gpx-analysis');
@@ -2026,7 +2020,7 @@ try {
     // Terminal GPX failures must not leave the semantics or focus order of a
     // chart that never materialized. Exercise the shipped MAIN-world bundle
     // over the same isolated HTTPS Peakbagger origin as the successful chart.
-    const verifyTerminalAnalyzerFailures = async existingPage => {
+    const verifyTerminalAnalyzerFailures = async () => {
         const unavailableCases = [
             ['retry', /temporarily unavailable/i, true],
             ['signed-out', /sign in/i, true],
@@ -2039,7 +2033,7 @@ try {
             ['no-valid-points', /No valid track points/i, false],
         ];
         const retryErrors = [];
-        const unavailablePage = existingPage || await context.newPage();
+        const unavailablePage = await context.newPage();
         unavailablePage.on('pageerror', error => retryErrors.push(String(error)));
         unavailablePage.on('console', message => {
             if (message.type() === 'error') retryErrors.push(message.text());
@@ -2177,8 +2171,7 @@ try {
         await unavailablePage.close();
     };
     // --- 3D off (the default): the toggle stays available but gates traffic --
-    sitePage = await openAscent(sitePage);
-    const offPage = sitePage;
+    const offPage = await openAscent();
     const off = await readToggle(offPage);
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
@@ -2485,6 +2478,7 @@ try {
         check(enabledByConsent, 'trusted confirmation did not persist enable3dMap');
         await consentCheckPage.close();
     }
+    await offPage.close();
     // --- 3D on: the toggle appears and enables once the route parses ---------
     if (extensionId) {
         const optionsPage = await context.newPage();
@@ -2495,8 +2489,7 @@ try {
         });
         await optionsPage.close();
 
-        sitePage = await openAscent(sitePage, true);
-        const onPage = sitePage;
+        const onPage = await openAscent();
         const on = await readToggle(onPage);
         check(on.visible === true, `with 3D enabled the toggle must be visible (display=${on.display})`);
         check(on.disabled === false,
@@ -2593,7 +2586,9 @@ try {
             enabledDirectMap,
             requests: terrainProviderRequests.slice(enabledForgeryBaseline),
         })}`);
-        const bigMapPage = sitePage;
+        await onPage.close();
+
+        const bigMapPage = await context.newPage();
         const bigMapErrors = [];
         bigMapPage.on('pageerror', error => bigMapErrors.push(String(error)));
         const bigMapCdp = await context.newCDPSession(bigMapPage);
@@ -2629,7 +2624,9 @@ try {
             `with 3D enabled the BigMap toggle must be visible (toggle=${JSON.stringify(bigMapToggle)}, page=${JSON.stringify(bigMapState)}, errors=${JSON.stringify(bigMapErrors)})`);
         check(bigMapToggle?.disabled === false,
             `the BigMap toggle should enable once its native route is ready (state=${JSON.stringify(bigMapToggle)})`);
-        const peakBigMapPage = sitePage;
+        await bigMapPage.close();
+
+        const peakBigMapPage = await context.newPage();
         const peakBigMapErrors = [];
         peakBigMapPage.on('pageerror', error => peakBigMapErrors.push(String(error)));
         await peakBigMapPage.goto(
@@ -2667,7 +2664,9 @@ try {
             .waitFor({ state: 'attached', timeout: 3000 }).then(() => true).catch(() => false);
         check(peakBigMapFrameCreated,
             'the Full Screen peak map did not create the extension-owned terrain frame');
-        const peakPage = sitePage;
+        await peakBigMapPage.close();
+
+        const peakPage = await context.newPage();
         const peakErrors = [];
         peakPage.on('pageerror', error => peakErrors.push(String(error)));
         await peakPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
@@ -2722,11 +2721,12 @@ try {
         const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })
             .then(() => true).catch(() => false);
         check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');
+        await peakPage.close();
     }
 
     // --- Ascent-list filter and in-place sort -------------------------------
     {
-        const filterPage = sitePage;
+        const filterPage = await context.newPage();
         await filterPage.goto(
             `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`,
             { waitUntil: 'load' }
@@ -3064,11 +3064,12 @@ try {
                 newWindowTopology,
             })}`);
         }
+        await filterPage.close();
     }
 
     // --- Owner-only full-profile backup surface ----------------------------
     {
-        const profilePage = sitePage;
+        const profilePage = await context.newPage();
         await profilePage.goto(
             `https://www.peakbagger.com:${port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
             { waitUntil: 'load' }
@@ -3088,11 +3089,12 @@ try {
             .catch(() => null);
         check(state?.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy),
             `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(state)}`);
+        await profilePage.close();
     }
 
     // --- Buddy List sorter-only surface ------------------------------------
     {
-        const buddyPage = sitePage;
+        const buddyPage = await context.newPage();
         await buddyPage.goto(
             `https://www.peakbagger.com:${port}/report/report.aspx?r=b&cid=900001`,
             { waitUntil: 'load' }
@@ -3117,11 +3119,12 @@ try {
                 && after.sort === 'ascending' && after.firstPeak !== before.firstPeak,
             `the Chrome Buddy List did not expose six sorter-only controls: ${JSON.stringify({ before, after })}`);
         }
+        await buddyPage.close();
     }
 
     // --- Peak List sorter-only surface -------------------------------------
     {
-        const listPage = sitePage;
+        const listPage = await context.newPage();
         await listPage.goto(
             `https://www.peakbagger.com:${port}/list.aspx?lid=95005&sort=ascent&cid=900001&u=ft`,
             { waitUntil: 'load' }
@@ -3162,6 +3165,7 @@ try {
                 && after.url === before.url,
             `the Chrome Peak List did not expose eight in-place sort controls: ${JSON.stringify({ before, after })}`);
         }
+        await listPage.close();
     }
 
     // --- Trip-report editor on the real ascent form --------------------------
@@ -3187,7 +3191,7 @@ try {
             await optionsPage.close();
         }
         const editorUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
-        const editorPage = sitePage;
+        const editorPage = await context.newPage();
         const editorErrors = [];
         editorPage.on('pageerror', error => editorErrors.push(String(error)));
         await editorPage.goto(editorUrl, { waitUntil: 'load' });
@@ -4231,6 +4235,7 @@ try {
             }
             check(editorErrors.length === 0, `the editor page threw: ${JSON.stringify(editorErrors)}`);
         }
+        await editorPage.close();
     }
 
     // --- Real draft-tab handoff --------------------------------------------
@@ -4239,7 +4244,7 @@ try {
     // assignment, and exactly-once Preview. The native toolbar activeTab grant
     // remains a manual release boundary.
     if (extensionId) {
-        const sourcePage = sitePage;
+        const sourcePage = await context.newPage();
         const sourceUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=handoff-source`;
         await sourcePage.goto(sourceUrl, { waitUntil: 'load' });
         const controlPage = await context.newPage();
@@ -4362,8 +4367,9 @@ try {
             }
         }
         await controlPage.close();
+        await sourcePage.close();
     }
-    await verifyTerminalAnalyzerFailures(sitePage);
+    await verifyTerminalAnalyzerFailures();
 } catch (error) {
     primaryError = error;
 }
