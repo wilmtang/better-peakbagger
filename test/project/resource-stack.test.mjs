@@ -185,8 +185,8 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.notEqual(workerProbeEnd, -1);
     const workerProbe = chromeVerifier.slice(0, workerProbeEnd);
     assert.match(workerProbe,
-        /PeakAscents\.aspx\?pid=1039[\s\S]*\.pbaf-settings-link[\s\S]*keyboard\.press\('Enter'\)[\s\S]*optionsPage\.url\(\)/,
-        'a quiet MV3 worker must be woken through a real injected Settings route before its ID is observed');
+        /chrome:\/\/extensions-internals\/[\s\S]*location === 'COMMAND_LINE'[\s\S]*registry_status === 'ENABLED'/,
+        'a quiet MV3 worker must be addressed through Chrome\'s actual command-line extension registry');
     assert.ok(workerProbe.indexOf("chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS'")
         < workerProbe.indexOf("check(!!worker, 'the extension service worker never started after a coordinator message')"),
     'the verifier must send a real coordinator message before requiring the lazy worker target');

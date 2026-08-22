@@ -130,24 +130,28 @@ try {
     });
 
     // --- The MV3 service worker actually boots -------------------------------
-    // MV3 workers are lazy. Use a real manifest-matched content script to send
-    // the trusted Settings message that wakes it, then take the extension
-    // identity from the tab it actually opens instead of relying on target timing.
+    // MV3 workers are lazy. Read Chrome's own command-line extension registry to
+    // address the real options page, then send a coordinator message that wakes
+    // the worker instead of inferring failure from an initially quiet target list.
     let [worker] = context.serviceWorkers();
-    const injectionPage = await context.newPage();
-    await injectionPage.goto(
-        `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`,
-        { waitUntil: 'load' },
-    );
-    const settingsControl = injectionPage.locator('.pbaf-settings-link');
-    await settingsControl.waitFor({ state: 'visible', timeout: 15000 });
-    const optionsPagePromise = context.waitForEvent('page', { timeout: 15000 });
-    await settingsControl.focus();
-    await injectionPage.keyboard.press('Enter');
-    const optionsPage = await optionsPagePromise;
-    await optionsPage.waitForURL(url => /\/options\/options\.html#beta$/.test(url.href));
-    const extensionId = new URL(optionsPage.url()).host;
-    await injectionPage.close();
+    const registryPage = await context.newPage();
+    await registryPage.goto('chrome://extensions-internals/');
+    const extensionRecord = await registryPage.waitForFunction(expectedPath => {
+        try {
+            const records = JSON.parse(document.body.innerText);
+            return records.find(record => record.location === 'COMMAND_LINE'
+                && record.name === 'Better Peakbagger'
+                && record.path === expectedPath) || false;
+        } catch {
+            return false;
+        }
+    }, dist, { timeout: 15000 }).then(handle => handle.jsonValue());
+    check(extensionRecord.registry_status === 'ENABLED' && extensionRecord.manifest_version === 3,
+        `Chrome did not register the unpacked MV3 extension as enabled: ${JSON.stringify(extensionRecord)}`);
+    const extensionId = extensionRecord.id;
+    await registryPage.close();
+    const optionsPage = await context.newPage();
+    await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
     if (extensionId && optionsPage) {
         // A live worker answers; a bailed-out one has no listener at all.
         const reply = await optionsPage.evaluate(async () =>
