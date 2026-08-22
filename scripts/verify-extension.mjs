@@ -2100,16 +2100,18 @@ try {
         else await page.close();
     }
 
-    const retryPage = await context.newPage();
     const retryErrors = [];
-    retryPage.on('pageerror', error => retryErrors.push(String(error)));
-    retryPage.on('console', message => {
-        if (message.type() === 'error') retryErrors.push(message.text());
-    });
-    await retryPage.goto(
-        `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-retry`,
-        { waitUntil: 'load' },
-    );
+    const retryUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-retry`;
+    const openRetryPage = async () => {
+        const page = await context.newPage();
+        page.on('pageerror', error => retryErrors.push(String(error)));
+        page.on('console', message => {
+            if (message.type() === 'error') retryErrors.push(message.text());
+        });
+        await page.goto(retryUrl, { waitUntil: 'load' });
+        return page;
+    };
+    let retryPage = await openRetryPage();
     let retryWaitError = null;
     const waitForRetryableFailure = async () => {
         try {
@@ -2155,7 +2157,12 @@ try {
             && firstState.runtimeErrors.length === 0;
         if (noInjection) {
             retryAttempts += 1;
-            await retryPage.reload({ waitUntil: 'load' });
+            // Some current-Chrome CI targets permanently miss declared content
+            // script injection: reloading that target repeats the empty state.
+            // Replace it once; all partial extension states still fail without
+            // retry and a second empty target remains terminal.
+            await retryPage.close();
+            retryPage = await openRetryPage();
             retryReady = await waitForRetryableFailure();
         }
     }

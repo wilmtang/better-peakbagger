@@ -186,7 +186,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(chromeVerifier,
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
-    const retryProbeStart = chromeVerifier.indexOf('const retryPage =');
+    const retryProbeStart = chromeVerifier.indexOf('const retryErrors =');
     const retryProbeEnd = chromeVerifier.indexOf("await retryPage.locator('.bpb-gpx-retry').click();");
     assert.notEqual(retryProbeStart, -1);
     assert.notEqual(retryProbeEnd, -1);
@@ -199,8 +199,8 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'the retry fixture must report whether its GPX request reached the server');
     assert.match(retryProbe, /const noInjection = firstState\.isolatedWorldReady === null[\s\S]*firstState\.requests === 0[\s\S]*firstState\.runtimeErrors\.length === 0/,
         'the retry fixture must distinguish a zero-injection browser navigation from a product failure');
-    assert.match(retryProbe, /await retryPage\.reload\(\{ waitUntil: 'load' \}\)/,
-        'the retry fixture may reload once only after proving the first navigation received no extension injection');
+    assert.match(retryProbe, /await retryPage\.close\(\);\s*retryPage = await openRetryPage\(\);/,
+        'the retry fixture may replace one empty target only after proving it received no extension injection');
     assert.match(retryProbe, /after \$\{retryAttempts\} navigation attempt/,
         'the retry fixture must report whether its bounded navigation retry was consumed');
     assert.match(
