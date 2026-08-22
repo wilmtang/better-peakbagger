@@ -21,7 +21,7 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -147,7 +147,9 @@ try {
                 return false;
             }
         }, null, { timeout: 15000 }).then(handle => handle.jsonValue());
-        check(path.resolve(extensionRecord.path) === dist
+        const registeredPath = await realpath(extensionRecord.path);
+        const expectedPath = await realpath(dist);
+        check(registeredPath === expectedPath
             && (!extensionRecord.registry_status || extensionRecord.registry_status === 'ENABLED')
             && extensionRecord.disable_reasons?.length === 0
             && extensionRecord.manifest_version === 3,

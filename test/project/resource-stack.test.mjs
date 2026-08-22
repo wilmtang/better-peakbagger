@@ -187,6 +187,9 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(workerProbe,
         /if \(!extensionId\) \{[\s\S]*chrome:\/\/extensions-internals\/[\s\S]*location === 'COMMAND_LINE'[\s\S]*disable_reasons\?\.length === 0/,
         'a quiet MV3 worker must be addressed through Chrome\'s actual command-line extension registry');
+    assert.match(workerProbe,
+        /registeredPath = await realpath\(extensionRecord\.path\)[\s\S]*expectedPath = await realpath\(dist\)[\s\S]*registeredPath === expectedPath/,
+        'the registry path must be canonicalized before comparing macOS /private/var and /var aliases');
     assert.ok(workerProbe.indexOf("chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS'")
         < workerProbe.indexOf("check(!!worker, 'the extension service worker never started after a coordinator message')"),
     'the verifier must send a real coordinator message before requiring the lazy worker target');
