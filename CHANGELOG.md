@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.6.0 — 2026-08-22
+
 - **Trust the release bytes and the browsers that run them.** Tags must come
   from protected `main`, every prior changelog section remains immutable, and
   reviewer notes, packaged acknowledgements, compatibility floors, and store
