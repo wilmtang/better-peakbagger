@@ -138,6 +138,7 @@ try {
     if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 15000 }).catch(() => null);
     check(!!worker, 'the extension service worker never started');
     const extensionId = worker ? new URL(worker.url()).host : null;
+    let sitePage = null;
 
     if (extensionId) {
         const optionsPage = await context.newPage();
@@ -1802,7 +1803,8 @@ try {
                 body: '<p><t i="7" n="Test Peak" a="1" o="2" e="3" r="4" l="Range"/></p>',
             });
         });
-        const captureTransportPage = await context.newPage();
+        sitePage = await context.newPage();
+        const captureTransportPage = sitePage;
         await captureTransportPage.goto(captureLoginUrl);
         const captureTransportState = await optionsPage.evaluate(async ({ loginUrl, peaksUrl }) => {
             const tab = (await chrome.tabs.query({})).find(candidate => candidate.url === loginUrl);
@@ -1943,7 +1945,6 @@ try {
         check(helperLeaseState.adoptedRetained === true
             && helperLeaseState.unadoptedRemoved === true,
         `the Chrome worker helper lease did not preserve adoption or reclaim scratch safely: ${JSON.stringify(helperLeaseState)}`);
-        await captureTransportPage.close();
         await context.unroute(captureLoginUrl);
         await context.unroute(capturePeaksUrl);
 
@@ -2021,7 +2022,7 @@ try {
     // Terminal GPX failures must not leave the semantics or focus order of a
     // chart that never materialized. Exercise the shipped MAIN-world bundle
     // over the same isolated HTTPS Peakbagger origin as the successful chart.
-    const verifyTerminalAnalyzerFailures = async () => {
+    const verifyTerminalAnalyzerFailures = async existingPage => {
         const unavailableCases = [
             ['retry', /temporarily unavailable/i, true],
             ['signed-out', /sign in/i, true],
@@ -2034,7 +2035,7 @@ try {
             ['no-valid-points', /No valid track points/i, false],
         ];
         const retryErrors = [];
-        const unavailablePage = await context.newPage();
+        const unavailablePage = existingPage || await context.newPage();
         unavailablePage.on('pageerror', error => retryErrors.push(String(error)));
         unavailablePage.on('console', message => {
             if (message.type() === 'error') retryErrors.push(message.text());
@@ -2172,7 +2173,7 @@ try {
         await unavailablePage.close();
     };
     // --- 3D off (the default): the toggle stays available but gates traffic --
-    let sitePage = await openAscent();
+    sitePage = await openAscent(sitePage);
     const offPage = sitePage;
     const off = await readToggle(offPage);
     check(off.isolatedWorldReady !== null,
@@ -4357,9 +4358,8 @@ try {
             }
         }
         await controlPage.close();
-        await sourcePage.close();
     }
-    await verifyTerminalAnalyzerFailures();
+    await verifyTerminalAnalyzerFailures(sitePage);
 } catch (error) {
     primaryError = error;
 }
