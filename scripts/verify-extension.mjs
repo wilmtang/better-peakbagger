@@ -1140,6 +1140,13 @@ try {
             && importRecovery?.href === signedInBuddyUrl,
         `the custom import failure was not persistent and actionable: ${JSON.stringify({ buddyRequests, importRecovery })}`);
 
+        // This models a real Settings click and keeps Chrome from throttling
+        // the initiating extension page's fallback deadline as a background
+        // tab while the helper itself opens inactive.
+        await optionsPage.bringToFront();
+        await optionsPage.waitForFunction(async () =>
+            (await chrome.tabs.getCurrent())?.active === true,
+        null, { timeout: 5000 });
         await optionsPage.locator('#favorites-merge-buddies').click();
         await waitForCondition(
             () => context.pages().some(page => page.url() === signedInBuddyUrl),
@@ -2015,6 +2022,7 @@ try {
     // chart that never materialized. Exercise the shipped MAIN-world bundle
     // over the same isolated HTTPS Peakbagger origin as the successful chart.
     const unavailableCases = [
+        ['retry', /temporarily unavailable/i, true],
         ['signed-out', /sign in/i, true],
         ['missing', /could not find/i, false],
         ['challenge', /human check/i, true],
@@ -2025,8 +2033,16 @@ try {
         ['no-valid-points', /No valid track points/i, false],
     ];
     let unavailableVisualPage = null;
+    let retryPage = null;
+    const retryErrors = [];
     for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
         const page = await context.newPage();
+        if (analyzerCase === 'retry') {
+            page.on('pageerror', error => retryErrors.push(String(error)));
+            page.on('console', message => {
+                if (message.type() === 'error') retryErrors.push(message.text());
+            });
+        }
         await page.goto(
             `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-${analyzerCase}`,
             { waitUntil: 'load' },
@@ -2096,83 +2112,11 @@ try {
             : /Full Screen Map/.test(nextTabStop.text),
         `the ${analyzerCase} Analyzer failure left the wrong next tab stop: ${JSON.stringify(nextTabStop)}`);
 
-        if (analyzerCase === 'challenge') unavailableVisualPage = page;
+        if (analyzerCase === 'retry') retryPage = page;
+        else if (analyzerCase === 'challenge') unavailableVisualPage = page;
         else await page.close();
     }
 
-    const retryErrors = [];
-    const retryUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-retry`;
-    const openRetryPage = async () => {
-        const page = await context.newPage();
-        page.on('pageerror', error => retryErrors.push(String(error)));
-        page.on('console', message => {
-            if (message.type() === 'error') retryErrors.push(message.text());
-        });
-        await page.goto(retryUrl, { waitUntil: 'load' });
-        return page;
-    };
-    let retryPage = await openRetryPage();
-    let retryWaitError = null;
-    const waitForRetryableFailure = async () => {
-        try {
-            await retryPage.waitForFunction(() =>
-                document.querySelector('.bpb-gpx-retry:not([hidden])')
-                && /temporarily unavailable/i.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''),
-            null, { timeout: 15_000 });
-            return true;
-        } catch (error) {
-            retryWaitError = error;
-            return false;
-        }
-    };
-    const readRetryState = async () => {
-        const domState = await retryPage.evaluate(() => {
-            const panel = document.getElementById('bpb-gpx-analysis');
-            const stats = panel?.querySelector('.bpb-gpx-stats');
-            const retry = panel?.querySelector('.bpb-gpx-retry');
-            return {
-                isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme'),
-                panelExists: !!panel,
-                stats: stats?.textContent || null,
-                statsState: stats?.dataset.state || null,
-                retryExists: !!retry,
-                retryHidden: retry?.hidden ?? null,
-                retryDisabled: retry?.disabled ?? null,
-            };
-        }).catch(readError => ({ unavailable: readError.message }));
-        return {
-            ...domState,
-            requests: fixture.requests.analyzerTracks.retry || 0,
-            runtimeErrors: [...retryErrors],
-        };
-    };
-
-    let retryAttempts = 1;
-    let retryReady = await waitForRetryableFailure();
-    if (!retryReady) {
-        const firstState = await readRetryState();
-        const noInjection = firstState.isolatedWorldReady === null
-            && firstState.panelExists === false
-            && firstState.requests === 0
-            && firstState.runtimeErrors.length === 0;
-        if (noInjection) {
-            retryAttempts += 1;
-            // Some current-Chrome CI targets permanently miss declared content
-            // script injection: reloading that target repeats the empty state.
-            // Replace it once; all partial extension states still fail without
-            // retry and a second empty target remains terminal.
-            await retryPage.close();
-            retryPage = await openRetryPage();
-            retryReady = await waitForRetryableFailure();
-        }
-    }
-    if (!retryReady) {
-        const current = await readRetryState();
-        throw new Error(
-            `Timed out waiting for the retryable Analyzer failure after ${retryAttempts} navigation attempt(s); current value: ${JSON.stringify(current)}`,
-            { cause: retryWaitError },
-        );
-    }
     await retryPage.locator('.bpb-gpx-retry').click();
     const recoveredAnalyzer = await retryPage.waitForFunction(() => {
         const canvas = document.querySelector('#bpb-gpx-analysis canvas');
@@ -2185,6 +2129,7 @@ try {
         `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
             recoveredAnalyzer,
             requests: fixture.requests.analyzerTracks.retry,
+            runtimeErrors: retryErrors,
         })}`);
     await retryPage.close();
 

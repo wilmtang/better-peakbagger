@@ -186,23 +186,24 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(chromeVerifier,
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
-    const retryProbeStart = chromeVerifier.indexOf('const retryErrors =');
+    const retryProbeStart = chromeVerifier.indexOf('const unavailableCases =');
     const retryProbeEnd = chromeVerifier.indexOf("await retryPage.locator('.bpb-gpx-retry').click();");
     assert.notEqual(retryProbeStart, -1);
     assert.notEqual(retryProbeEnd, -1);
     const retryProbe = chromeVerifier.slice(retryProbeStart, retryProbeEnd);
-    assert.match(retryProbe, /timeout: 15_000/,
-        'the retry fixture must allow for extension injection on a loaded CI runner');
-    assert.match(retryProbe, /current value:/,
-        'the retry fixture must report its live DOM state when readiness times out');
-    assert.match(retryProbe, /fixture\.requests\.analyzerTracks\.retry/,
-        'the retry fixture must report whether its GPX request reached the server');
-    assert.match(retryProbe, /const noInjection = firstState\.isolatedWorldReady === null[\s\S]*firstState\.requests === 0[\s\S]*firstState\.runtimeErrors\.length === 0/,
-        'the retry fixture must distinguish a zero-injection browser navigation from a product failure');
-    assert.match(retryProbe, /await retryPage\.close\(\);\s*retryPage = await openRetryPage\(\);/,
-        'the retry fixture may replace one empty target only after proving it received no extension injection');
-    assert.match(retryProbe, /after \$\{retryAttempts\} navigation attempt/,
-        'the retry fixture must report whether its bounded navigation retry was consumed');
+    assert.ok(retryProbe.indexOf("['retry', /temporarily unavailable/i, true]")
+        < retryProbe.indexOf("['signed-out', /sign in/i, true]"),
+    'the retry fixture must reuse the first already-injected Analyzer error page');
+    assert.match(retryProbe, /if \(analyzerCase === 'retry'\) retryPage = page;/,
+        'the retry fixture must preserve its proven error page for the recovery click');
+    assert.doesNotMatch(retryProbe, /openRetryPage|retryPage\.reload/,
+        'the retry fixture must not create an unnecessary late target or mask missing injection');
+    const buddyClick = chromeVerifier.indexOf("await optionsPage.locator('#favorites-merge-buddies').click();");
+    assert.notEqual(buddyClick, -1);
+    const buddyReadiness = chromeVerifier.slice(Math.max(0, buddyClick - 500), buddyClick);
+    assert.match(buddyReadiness, /await optionsPage\.bringToFront\(\)/);
+    assert.match(buddyReadiness, /chrome\.tabs\.getCurrent\(\)\)\?\.active === true/,
+        'the Buddy fallback must start from the active user-visible extension page');
     assert.match(
         chromeVerifier,
         /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,
