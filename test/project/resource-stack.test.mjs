@@ -237,6 +237,9 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(firefoxVerifier,
         /const profileBackupState = await driver\.wait\(async \(\) => \{[\s\S]*primary === 'Back up all ascents'/,
         'the Firefox profile-backup check must wait for asserted content, not merely its container');
+    assert.match(firefoxVerifier,
+        /const settingsControl = await driver\.findElement\(By\.css\('\.pbaf-settings-link'\)\);\s*\/\/[\s\S]{0,300}settingsControl\.sendKeys\(Key\.ENTER\)/,
+        'the Firefox verifier must not use an intercept-prone element click for initial Settings activation');
     for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mjs']) {
         const source = sources.find(entry => entry.verifierPath === verifierPath).source;
         assert.match(source, /manageChildProcess\(resources, chrome/,

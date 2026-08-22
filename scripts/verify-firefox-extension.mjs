@@ -1436,7 +1436,10 @@ async function main() {
     };`);
         const initialHandles = await driver.getAllWindowHandles();
         const settingsControl = await driver.findElement(By.css('.pbaf-settings-link'));
-        await settingsControl.click();
+        // Firefox 152 can report the button's own count child as intercepting an
+        // element click. Keyboard activation is the same trusted user route and
+        // also proves this custom control remains operable without a pointer.
+        await settingsControl.sendKeys(Key.ENTER);
         const openedHandles = await driver.wait(async () => {
             const handles = await driver.getAllWindowHandles();
             return handles.length === initialHandles.length + 1 ? handles : false;
