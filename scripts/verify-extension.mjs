@@ -18,6 +18,9 @@
 //     with no extension support at all. channel:'chromium' + headless:true runs
 //     full Chrome for Testing in new headless, which does load extensions. CI
 //     may provide an exact full Chrome for Testing binary through CHROME_BIN.
+//   - BPB_VERIFY_HEADLESS=false keeps the isolated profile but uses a caller-
+//     owned virtual display, for Linux browser regressions specific to new
+//     headless. It must never be used against the user's normal display.
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
@@ -52,6 +55,7 @@ const photoShowcaseSource = process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE
 const chromeBinary = process.env.CHROME_BIN
     ? path.resolve(process.env.CHROME_BIN)
     : null;
+const chromeHeadless = process.env.BPB_VERIFY_HEADLESS !== 'false';
 
 let chromium;
 try {
@@ -102,7 +106,7 @@ let primaryError = null;
 try {
     context = await chromium.launchPersistentContext(profile, {
         ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
-        headless: true,
+        headless: chromeHeadless,
         ignoreHTTPSErrors: true,
         viewport: verificationViewport,
         args: [
@@ -4381,7 +4385,7 @@ if (failures.length) {
     process.exit(1);
 }
 console.log(`Real-extension verification passed (hidden Chrome for Testing ${
-    context.browser()?.version() || 'unknown'}, new headless):`);
+    context.browser()?.version() || 'unknown'}, ${chromeHeadless ? 'new headless' : 'Xvfb'}):`);
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - manual settings export/import round-tripped schema settings and the saved ImgBB API key');
