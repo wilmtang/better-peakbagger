@@ -21,7 +21,6 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,15 +52,6 @@ const photoShowcaseSource = process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE
 const chromeBinary = process.env.CHROME_BIN
     ? path.resolve(process.env.CHROME_BIN)
     : null;
-// Chrome derives an unpacked extension's stable ID from its canonical path
-// when the manifest has no explicit key. This lets the verifier open a real
-// extension page even before a lazy MV3 worker publishes a target.
-const unpackedExtensionId = extensionPath => createHash('sha256')
-    .update(path.resolve(extensionPath))
-    .digest('hex')
-    .slice(0, 32)
-    .replace(/[0-9a-f]/g, nibble => String.fromCharCode(97 + Number.parseInt(nibble, 16)));
-
 let chromium;
 try {
     ({ chromium } = await import('playwright'));
@@ -140,21 +130,32 @@ try {
     });
 
     // --- The MV3 service worker actually boots -------------------------------
-    // MV3 workers are lazy. Derive the unpacked extension's stable identity,
-    // then use an extension page to send a real coordinator message and wake the
-    // worker instead of inferring failure from an initially quiet target list.
+    // MV3 workers are lazy. Use a real manifest-matched content script to send
+    // the trusted Settings message that wakes it, then take the extension
+    // identity from the tab it actually opens instead of relying on target timing.
     let [worker] = context.serviceWorkers();
-    const extensionId = worker ? new URL(worker.url()).host : unpackedExtensionId(dist);
-    if (extensionId) {
-        const optionsPage = await context.newPage();
-        await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const injectionPage = await context.newPage();
+    await injectionPage.goto(
+        `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`,
+        { waitUntil: 'load' },
+    );
+    const settingsControl = injectionPage.locator('.pbaf-settings-link');
+    await settingsControl.waitFor({ state: 'visible', timeout: 15000 });
+    const optionsPagePromise = context.waitForEvent('page', { timeout: 15000 });
+    await settingsControl.focus();
+    await injectionPage.keyboard.press('Enter');
+    const optionsPage = await optionsPagePromise;
+    await optionsPage.waitForURL(url => /\/options\/options\.html#beta$/.test(url.href));
+    const extensionId = new URL(optionsPage.url()).host;
+    await injectionPage.close();
+    if (extensionId && optionsPage) {
         // A live worker answers; a bailed-out one has no listener at all.
         const reply = await optionsPage.evaluate(async () =>
             chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: -1 })
                 .then(value => ({ ok: true, value: value ?? null, extensionId: chrome.runtime.id }))
                 .catch(error => ({ ok: false, error: String(error) })));
         check(reply.ok && reply.extensionId === extensionId,
-            `the worker never answered CAPTURE_STATUS from the derived unpacked extension: ${reply.error || JSON.stringify(reply)}`);
+            `the worker never answered CAPTURE_STATUS from its opened extension page: ${reply.error || JSON.stringify(reply)}`);
         worker = context.serviceWorkers()[0]
             || await context.waitForEvent('serviceworker', { timeout: 15000 }).catch(() => null);
         check(!!worker, 'the extension service worker never started after a coordinator message');
