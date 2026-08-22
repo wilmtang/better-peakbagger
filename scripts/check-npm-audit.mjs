@@ -8,18 +8,19 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// image-size has no patched release for either accepted advisory. The package
-// is reachable only through web-ext's development-time addons-linter, which
-// reads this repository's own packaged icons; it is never shipped. Keep the
-// exception exact and short-lived so a changed advisory, install path, tool
-// version, severity, or expiry fails closed instead of becoming a blanket
-// release bypass.
+// Re-reviewed 2026-08-22: image-size 2.0.2 remains the registry's latest
+// release and GitHub lists no patched release for either accepted advisory.
+// The package is reachable only through web-ext's development-time
+// addons-linter, which reads this repository's own packaged icons and theme
+// images; it is never shipped. Keep the exception exact and short-lived so a
+// changed advisory, install path, tool version, severity, or expiry fails
+// closed instead of becoming a blanket release bypass.
 export const AUDIT_ACCEPTANCE = Object.freeze({
     advisories: Object.freeze({
         'GHSA-w3rx-r6r6-pgpr': 1138808,
         'GHSA-5p2g-fcmc-qvqq': 1138809,
     }),
-    expires: '2026-08-21',
+    expires: '2026-09-21',
     vulnerablePackages: Object.freeze([
         'addons-linter',
         'image-size',

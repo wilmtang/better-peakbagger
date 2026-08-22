@@ -57,16 +57,16 @@ const acceptedLock = () => ({
 
 test('the npm audit gate accepts only the reviewed image-size lint path before expiry', () => {
     assert.deepEqual(
-        evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-07'),
+        evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-22'),
         {
             status: 'accepted',
-            message: 'Accepted two image-size advisories only in the dev-only web-ext lint path through 2026-08-21.',
+            message: 'Accepted two image-size advisories only in the dev-only web-ext lint path through 2026-09-21.',
         },
     );
 
     assert.throws(
-        () => evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-22'),
-        /expired on 2026-08-21/,
+        () => evaluateAudit(acceptedAudit(), acceptedLock(), '2026-09-22'),
+        /expired on 2026-09-21/,
     );
 });
 
