@@ -1628,14 +1628,19 @@ async function main() {
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
         );
-        await driver.wait(until.elementLocated(By.css(surfaceSelectors.profileBackup)), 10_000);
-        const profileBackupState = await driver.executeScript(`
+        const readProfileBackupState = () => driver.executeScript(`
       const panel = document.querySelector(${JSON.stringify(surfaceSelectors.profileBackup)});
       return {
         copy: panel?.textContent || "",
         primary: panel?.querySelector(".bpb-profile-primary")?.textContent || "",
       };
     `);
+        const profileBackupState = await driver.wait(async () => {
+            const state = await readProfileBackupState();
+            return state.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy)
+                ? state
+                : false;
+        }, 10_000).catch(readProfileBackupState);
         assertState(
             profileBackupState.primary === 'Back up all ascents'
         && /fixture\/backup/.test(profileBackupState.copy),

@@ -217,6 +217,12 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         chromeVerifier,
         /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,
     );
+    const firefoxVerifier = sources.find(
+        entry => entry.verifierPath === 'scripts/verify-firefox-extension.mjs'
+    ).source;
+    assert.match(firefoxVerifier,
+        /const profileBackupState = await driver\.wait\(async \(\) => \{[\s\S]*primary === 'Back up all ascents'/,
+        'the Firefox profile-backup check must wait for asserted content, not merely its container');
     for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mjs']) {
         const source = sources.find(entry => entry.verifierPath === verifierPath).source;
         assert.match(source, /manageChildProcess\(resources, chrome/,
