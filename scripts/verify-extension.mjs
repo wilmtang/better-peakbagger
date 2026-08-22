@@ -138,7 +138,9 @@ try {
     if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 15000 }).catch(() => null);
     check(!!worker, 'the extension service worker never started');
     const extensionId = worker ? new URL(worker.url()).host : null;
-    let sitePage = null;
+    const ascentUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`;
+    let sitePage = await context.newPage();
+    await sitePage.goto(ascentUrl, { waitUntil: 'load' });
 
     if (extensionId) {
         const optionsPage = await context.newPage();
@@ -1803,8 +1805,7 @@ try {
                 body: '<p><t i="7" n="Test Peak" a="1" o="2" e="3" r="4" l="Range"/></p>',
             });
         });
-        sitePage = await context.newPage();
-        const captureTransportPage = sitePage;
+        const captureTransportPage = await context.newPage();
         await captureTransportPage.goto(captureLoginUrl);
         const captureTransportState = await optionsPage.evaluate(async ({ loginUrl, peaksUrl }) => {
             const tab = (await chrome.tabs.query({})).find(candidate => candidate.url === loginUrl);
@@ -1945,6 +1946,7 @@ try {
         check(helperLeaseState.adoptedRetained === true
             && helperLeaseState.unadoptedRemoved === true,
         `the Chrome worker helper lease did not preserve adoption or reclaim scratch safely: ${JSON.stringify(helperLeaseState)}`);
+        await captureTransportPage.close();
         await context.unroute(captureLoginUrl);
         await context.unroute(capturePeaksUrl);
 
@@ -1969,14 +1971,16 @@ try {
         await popupPage.close();
     }
 
-    const openAscent = async existingPage => {
+    const openAscent = async (existingPage, forceNavigation = false) => {
         const page = existingPage || await context.newPage();
         const runtimeErrors = [];
         page.on('pageerror', error => runtimeErrors.push(String(error)));
         page.on('console', message => {
             if (message.type() === 'error') runtimeErrors.push(message.text());
         });
-        await page.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
+        if (forceNavigation || page.url() !== ascentUrl) {
+            await page.goto(ascentUrl, { waitUntil: 'load' });
+        }
         try {
             await page.waitForFunction(() => {
                 const panel = document.getElementById('bpb-gpx-analysis');
@@ -2491,7 +2495,7 @@ try {
         });
         await optionsPage.close();
 
-        sitePage = await openAscent(sitePage);
+        sitePage = await openAscent(sitePage, true);
         const onPage = sitePage;
         const on = await readToggle(onPage);
         check(on.visible === true, `with 3D enabled the toggle must be visible (display=${on.display})`);

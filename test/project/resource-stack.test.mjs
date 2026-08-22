@@ -205,8 +205,10 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.doesNotMatch(retryProbe, /openRetryPage|retryPage\.reload/,
         'the retry fixture must not create an unnecessary late target or mask missing injection');
     assert.match(chromeVerifier,
-        /let sitePage = null;[\s\S]*const captureTransportPage = sitePage;[\s\S]*sitePage = await openAscent\(sitePage\);[\s\S]*const sourcePage = sitePage;/,
+        /const ascentUrl = [^;]+aid=1[^;]+;[\s\S]*let sitePage = await context\.newPage\(\);[\s\S]*await sitePage\.goto\(ascentUrl[\s\S]*sitePage = await openAscent\(sitePage\);[\s\S]*const sourcePage = sitePage;/,
         'the current-Chrome verifier must reuse its proven site target across sequential surfaces');
+    assert.match(chromeVerifier, /sitePage = await openAscent\(sitePage, true\);/,
+        'the enabled-terrain phase must start from a clean navigation on the proven site target');
     assert.ok(chromeVerifier.indexOf('await verifyTerminalAnalyzerFailures(sitePage);')
         > chromeVerifier.indexOf('const sourcePage = sitePage;'),
     'the exhaustive terminal matrix must run after sequential user-flow surfaces');
