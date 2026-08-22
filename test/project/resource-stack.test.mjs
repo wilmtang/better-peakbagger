@@ -187,7 +187,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
     const retryProbeStart = chromeVerifier.indexOf('const unavailableCases =');
-    const retryProbeEnd = chromeVerifier.indexOf('if (unavailableVisualPage)');
+    const retryProbeEnd = chromeVerifier.indexOf('await unavailablePage.close();');
     assert.notEqual(retryProbeStart, -1);
     assert.notEqual(retryProbeEnd, -1);
     const retryProbe = chromeVerifier.slice(retryProbeStart, retryProbeEnd);
@@ -197,6 +197,11 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(retryProbe,
         /if \(analyzerCase === 'retry'\) \{[\s\S]*await page\.keyboard\.press\('Enter'\);/,
         'the retry fixture must activate its already-focused proven error control');
+    assert.match(retryProbe,
+        /const unavailablePage = await context\.newPage\(\);[\s\S]*const page = unavailablePage;/,
+        'terminal Analyzer cases must reuse one injected browser target');
+    assert.doesNotMatch(retryProbe, /for \([^\n]+unavailableCases\) \{\s*const page = await context\.newPage\(\)/,
+        'terminal Analyzer cases must not churn through disposable browser targets');
     assert.doesNotMatch(retryProbe, /openRetryPage|retryPage\.reload/,
         'the retry fixture must not create an unnecessary late target or mask missing injection');
     const buddyClick = chromeVerifier.indexOf("await optionsPage.locator('#favorites-merge-buddies').click();");

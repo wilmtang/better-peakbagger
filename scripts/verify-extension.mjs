@@ -2032,16 +2032,14 @@ try {
         ['no-points', /No track points/i, false],
         ['no-valid-points', /No valid track points/i, false],
     ];
-    let unavailableVisualPage = null;
     const retryErrors = [];
+    const unavailablePage = await context.newPage();
+    unavailablePage.on('pageerror', error => retryErrors.push(String(error)));
+    unavailablePage.on('console', message => {
+        if (message.type() === 'error') retryErrors.push(message.text());
+    });
     for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
-        const page = await context.newPage();
-        if (analyzerCase === 'retry') {
-            page.on('pageerror', error => retryErrors.push(String(error)));
-            page.on('console', message => {
-                if (message.type() === 'error') retryErrors.push(message.text());
-            });
-        }
+        const page = unavailablePage;
         await page.goto(
             `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-${analyzerCase}`,
             { waitUntil: 'load' },
@@ -2132,49 +2130,45 @@ try {
                     requests: fixture.requests.analyzerTracks.retry,
                     runtimeErrors: retryErrors,
                 })}`);
-            await page.close();
-        } else if (analyzerCase === 'challenge') unavailableVisualPage = page;
-        else await page.close();
+        } else if (analyzerCase === 'challenge') {
+            if (process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT) {
+                await page.locator('#bpb-gpx-analysis').screenshot({
+                    path: process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT,
+                });
+            }
+            if (process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT) {
+                const previousViewport = page.viewportSize();
+                await page.setViewportSize({
+                    width: 440,
+                    height: previousViewport?.height || verificationViewport.height,
+                });
+                await page.locator('#bpb-gpx-analysis').screenshot({
+                    path: process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT,
+                });
+                if (previousViewport) await page.setViewportSize(previousViewport);
+            }
+            if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
+                const themePage = await context.newPage();
+                await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
+                await themePage.evaluate(async () => {
+                    const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                    await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
+                });
+                await page.waitForFunction(() =>
+                    document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
+                null, { timeout: 5000 });
+                await page.locator('#bpb-gpx-analysis').screenshot({
+                    path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
+                });
+                await themePage.evaluate(async () => {
+                    const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                    await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
+                });
+                await themePage.close();
+            }
+        }
     }
-
-    if (unavailableVisualPage) {
-        if (process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT) {
-            await unavailableVisualPage.locator('#bpb-gpx-analysis').screenshot({
-                path: process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT,
-            });
-        }
-        if (process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT) {
-            const previousViewport = unavailableVisualPage.viewportSize();
-            await unavailableVisualPage.setViewportSize({
-                width: 440,
-                height: previousViewport?.height || verificationViewport.height,
-            });
-            await unavailableVisualPage.locator('#bpb-gpx-analysis').screenshot({
-                path: process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT,
-            });
-            if (previousViewport) await unavailableVisualPage.setViewportSize(previousViewport);
-        }
-        if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
-            const themePage = await context.newPage();
-            await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
-            await themePage.evaluate(async () => {
-                const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
-            });
-            await unavailableVisualPage.waitForFunction(() =>
-                document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
-            null, { timeout: 5000 });
-            await unavailableVisualPage.locator('#bpb-gpx-analysis').screenshot({
-                path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
-            });
-            await themePage.evaluate(async () => {
-                const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
-            });
-            await themePage.close();
-        }
-        await unavailableVisualPage.close();
-    }
+    await unavailablePage.close();
 
     // --- 3D off (the default): the toggle stays available but gates traffic --
     const offPage = await openAscent();
