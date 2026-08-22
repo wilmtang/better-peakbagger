@@ -2021,66 +2021,67 @@ try {
     // Terminal GPX failures must not leave the semantics or focus order of a
     // chart that never materialized. Exercise the shipped MAIN-world bundle
     // over the same isolated HTTPS Peakbagger origin as the successful chart.
-    const unavailableCases = [
-        ['retry', /temporarily unavailable/i, true],
-        ['signed-out', /sign in/i, true],
-        ['missing', /could not find/i, false],
-        ['challenge', /human check/i, true],
-        ['invalid-xml', /could not parse/i, false],
-        ['invalid-root', /document root is not GPX/i, false],
-        ['timeout', /too long/i, true],
-        ['no-points', /No track points/i, false],
-        ['no-valid-points', /No valid track points/i, false],
-    ];
-    const retryErrors = [];
-    const unavailablePage = await context.newPage();
-    unavailablePage.on('pageerror', error => retryErrors.push(String(error)));
-    unavailablePage.on('console', message => {
-        if (message.type() === 'error') retryErrors.push(message.text());
-    });
-    for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
-        const page = unavailablePage;
-        await page.goto(
-            `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-${analyzerCase}`,
-            { waitUntil: 'load' },
-        );
-        const unavailable = await page.waitForFunction(() => {
-            const panel = document.getElementById('bpb-gpx-analysis');
-            const stats = panel?.querySelector('.bpb-gpx-stats');
-            if (!panel || stats?.dataset.state !== 'error') return false;
-            const canvas = panel.querySelector('canvas');
-            const focusable = [...panel.querySelectorAll('button, select, input, [tabindex]')]
-                .filter(element => !element.disabled
+    const verifyTerminalAnalyzerFailures = async () => {
+        const unavailableCases = [
+            ['retry', /temporarily unavailable/i, true],
+            ['signed-out', /sign in/i, true],
+            ['missing', /could not find/i, false],
+            ['challenge', /human check/i, true],
+            ['invalid-xml', /could not parse/i, false],
+            ['invalid-root', /document root is not GPX/i, false],
+            ['timeout', /too long/i, true],
+            ['no-points', /No track points/i, false],
+            ['no-valid-points', /No valid track points/i, false],
+        ];
+        const retryErrors = [];
+        const unavailablePage = await context.newPage();
+        unavailablePage.on('pageerror', error => retryErrors.push(String(error)));
+        unavailablePage.on('console', message => {
+            if (message.type() === 'error') retryErrors.push(message.text());
+        });
+        for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
+            const page = unavailablePage;
+            await page.goto(
+                `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-${analyzerCase}`,
+                { waitUntil: 'load' },
+            );
+            const unavailable = await page.waitForFunction(() => {
+                const panel = document.getElementById('bpb-gpx-analysis');
+                const stats = panel?.querySelector('.bpb-gpx-stats');
+                if (!panel || stats?.dataset.state !== 'error') return false;
+                const canvas = panel.querySelector('canvas');
+                const focusable = [...panel.querySelectorAll('button, select, input, [tabindex]')]
+                    .filter(element => !element.disabled
                     && element.tabIndex >= 0
                     && !element.closest('[hidden]'));
-            const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
-            const mapLayers = iframe?.contentWindow?.mapsPlaceholder?.layers;
-            // The failure UI and MasterMap fixture initialize independently.
-            // Do not sample a null frame seam and report it as stale route
-            // state; wait until the product-owned layer collection exists.
-            if (!Array.isArray(mapLayers)) return false;
-            return {
-                message: stats.textContent || '',
-                live: stats.getAttribute('aria-live'),
-                canvasHidden: canvas?.parentElement?.hidden === true,
-                canvasTabIndex: canvas?.tabIndex,
-                canvasRole: canvas?.getAttribute('role'),
-                canvasShortcuts: canvas?.getAttribute('aria-keyshortcuts'),
-                canvasLabel: canvas?.getAttribute('aria-label'),
-                controlsHidden: panel.querySelector('.bpb-gpx-controls')?.hidden === true,
-                coordinatesHidden: panel.querySelector('.bpb-gpx-coordinate-controls')?.hidden === true,
-                legendHidden: panel.querySelector('.bpb-gpx-chart-legend')?.hidden === true,
-                retryHidden: panel.querySelector('.bpb-gpx-retry')?.hidden === true,
-                focusable: focusable.map(element => element.className || element.id || element.textContent),
-                terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled === true,
-                extensionRouteLayers: mapLayers.filter(
-                    layer => /^bpb-route-/.test(layer?.options?.className || '')
-                ).length,
-            };
-        }, null, { timeout: analyzerCase === 'timeout' ? 20_000 : 5000 })
-            .then(handle => handle.jsonValue())
-            .catch(() => null);
-        check(unavailable
+                const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+                const mapLayers = iframe?.contentWindow?.mapsPlaceholder?.layers;
+                // The failure UI and MasterMap fixture initialize independently.
+                // Do not sample a null frame seam and report it as stale route
+                // state; wait until the product-owned layer collection exists.
+                if (!Array.isArray(mapLayers)) return false;
+                return {
+                    message: stats.textContent || '',
+                    live: stats.getAttribute('aria-live'),
+                    canvasHidden: canvas?.parentElement?.hidden === true,
+                    canvasTabIndex: canvas?.tabIndex,
+                    canvasRole: canvas?.getAttribute('role'),
+                    canvasShortcuts: canvas?.getAttribute('aria-keyshortcuts'),
+                    canvasLabel: canvas?.getAttribute('aria-label'),
+                    controlsHidden: panel.querySelector('.bpb-gpx-controls')?.hidden === true,
+                    coordinatesHidden: panel.querySelector('.bpb-gpx-coordinate-controls')?.hidden === true,
+                    legendHidden: panel.querySelector('.bpb-gpx-chart-legend')?.hidden === true,
+                    retryHidden: panel.querySelector('.bpb-gpx-retry')?.hidden === true,
+                    focusable: focusable.map(element => element.className || element.id || element.textContent),
+                    terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled === true,
+                    extensionRouteLayers: mapLayers.filter(
+                        layer => /^bpb-route-/.test(layer?.options?.className || '')
+                    ).length,
+                };
+            }, null, { timeout: analyzerCase === 'timeout' ? 20_000 : 5000 })
+                .then(handle => handle.jsonValue())
+                .catch(() => null);
+            check(unavailable
             && expectedMessage.test(unavailable.message)
             && unavailable.live === 'polite'
             && unavailable.canvasHidden
@@ -2096,80 +2097,82 @@ try {
             && (!retryable || unavailable.focusable[0] === 'bpb-gpx-retry')
             && unavailable.terrainDisabled
             && unavailable.extensionRouteLayers === 0,
-        `the ${analyzerCase} Analyzer failure retained stale semantics or state: ${JSON.stringify(unavailable)}`);
+            `the ${analyzerCase} Analyzer failure retained stale semantics or state: ${JSON.stringify(unavailable)}`);
 
-        await page.locator('a', { hasText: 'Download this GPS track' }).focus();
-        await page.keyboard.press('Tab');
-        const nextTabStop = await page.evaluate(() => ({
-            className: document.activeElement?.className || '',
-            text: document.activeElement?.textContent || '',
-        }));
-        check(retryable
-            ? nextTabStop.className === 'bpb-gpx-retry'
-            : /Full Screen Map/.test(nextTabStop.text),
-        `the ${analyzerCase} Analyzer failure left the wrong next tab stop: ${JSON.stringify(nextTabStop)}`);
+            await page.locator('a', { hasText: 'Download this GPS track' }).focus();
+            await page.keyboard.press('Tab');
+            const nextTabStop = await page.evaluate(() => ({
+                className: document.activeElement?.className || '',
+                text: document.activeElement?.textContent || '',
+            }));
+            check(retryable
+                ? nextTabStop.className === 'bpb-gpx-retry'
+                : /Full Screen Map/.test(nextTabStop.text),
+            `the ${analyzerCase} Analyzer failure left the wrong next tab stop: ${JSON.stringify(nextTabStop)}`);
 
-        if (analyzerCase === 'retry') {
+            if (analyzerCase === 'retry') {
             // Recover while the already-proven target is still current. A
             // resource-constrained Chrome runner may discard an inactive
             // renderer while the remaining terminal cases are exercised.
             // The focus-order assertion above already proved that Retry is
             // the active control. Activate that exact user-visible target
             // without making Playwright resolve it through a second locator.
-            await page.keyboard.press('Enter');
-            const recoveredAnalyzer = await page.waitForFunction(() => {
-                const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-                return canvas?.getAttribute('role') === 'application'
+                await page.keyboard.press('Enter');
+                const recoveredAnalyzer = await page.waitForFunction(() => {
+                    const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+                    return canvas?.getAttribute('role') === 'application'
                     && canvas.tabIndex === 0
                     && canvas.parentElement?.hidden === false
                     && /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || '');
-            }, null, { timeout: 15_000 }).then(() => true).catch(() => false);
-            check(recoveredAnalyzer && fixture.requests.analyzerTracks.retry === 2,
-                `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
-                    recoveredAnalyzer,
-                    requests: fixture.requests.analyzerTracks.retry,
-                    runtimeErrors: retryErrors,
-                })}`);
-        } else if (analyzerCase === 'challenge') {
-            if (process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT) {
-                await page.locator('#bpb-gpx-analysis').screenshot({
-                    path: process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT,
-                });
-            }
-            if (process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT) {
-                const previousViewport = page.viewportSize();
-                await page.setViewportSize({
-                    width: 440,
-                    height: previousViewport?.height || verificationViewport.height,
-                });
-                await page.locator('#bpb-gpx-analysis').screenshot({
-                    path: process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT,
-                });
-                if (previousViewport) await page.setViewportSize(previousViewport);
-            }
-            if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
-                const themePage = await context.newPage();
-                await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
-                await themePage.evaluate(async () => {
-                    const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                    await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
-                });
-                await page.waitForFunction(() =>
-                    document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
-                null, { timeout: 5000 });
-                await page.locator('#bpb-gpx-analysis').screenshot({
-                    path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
-                });
-                await themePage.evaluate(async () => {
-                    const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                    await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
-                });
-                await themePage.close();
+                }, null, { timeout: 15_000 }).then(() => true).catch(() => false);
+                check(recoveredAnalyzer && fixture.requests.analyzerTracks.retry === 2,
+                    `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
+                        recoveredAnalyzer,
+                        requests: fixture.requests.analyzerTracks.retry,
+                        runtimeErrors: retryErrors,
+                    })}`);
+            } else if (analyzerCase === 'challenge') {
+                if (process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT) {
+                    await page.locator('#bpb-gpx-analysis').screenshot({
+                        path: process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT,
+                    });
+                }
+                if (process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT) {
+                    const previousViewport = page.viewportSize();
+                    await page.setViewportSize({
+                        width: 440,
+                        height: previousViewport?.height || verificationViewport.height,
+                    });
+                    await page.locator('#bpb-gpx-analysis').screenshot({
+                        path: process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT,
+                    });
+                    if (previousViewport) await page.setViewportSize(previousViewport);
+                }
+                if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
+                    const themePage = await context.newPage();
+                    await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
+                    await themePage.evaluate(async () => {
+                        const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                        await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
+                    });
+                    await page.waitForFunction(() =>
+                        document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
+                    null, { timeout: 5000 });
+                    await page.locator('#bpb-gpx-analysis').screenshot({
+                        path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
+                    });
+                    await themePage.evaluate(async () => {
+                        const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                        await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
+                    });
+                    await themePage.close();
+                }
             }
         }
-    }
+        await unavailablePage.close();
+    };
     // --- 3D off (the default): the toggle stays available but gates traffic --
-    let sitePage = await openAscent(unavailablePage);
+    let sitePage = await openAscent();
     const offPage = sitePage;
     const off = await readToggle(offPage);
     check(off.isolatedWorldReady !== null,
@@ -4356,6 +4359,7 @@ try {
         await controlPage.close();
         await sourcePage.close();
     }
+    await verifyTerminalAnalyzerFailures();
 } catch (error) {
     primaryError = error;
 }
