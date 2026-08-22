@@ -2769,15 +2769,46 @@ try {
             await hasBeta.focus();
             await filterPage.keyboard.press('Alt+ArrowLeft');
             const keyboardOrder = await filterPage.locator('.pbaf-chip-label').allTextContents();
+            await filterPage.waitForFunction(() => [...document.querySelectorAll('.pbaf-filter-item')]
+                .every(item => item.getAnimations().length === 0));
             const favorite = filterPage.locator('.pbaf-chip').filter({ hasText: 'Climbing buddies' });
             const [betaBox, favoriteBox] = await Promise.all([hasBeta.boundingBox(), favorite.boundingBox()]);
+            let liftedDragState = null;
             if (betaBox && favoriteBox) {
+                const dropPoint = {
+                    x: favoriteBox.x + favoriteBox.width / 4,
+                    y: favoriteBox.y + favoriteBox.height / 2,
+                };
                 await filterPage.mouse.move(betaBox.x + betaBox.width / 2, betaBox.y + betaBox.height / 2);
                 await filterPage.mouse.down();
                 await filterPage.mouse.move(betaBox.x + betaBox.width / 2 - 10, betaBox.y + betaBox.height / 2);
-                await filterPage.mouse.move(favoriteBox.x + favoriteBox.width / 2,
-                    favoriteBox.y + favoriteBox.height / 2, { steps: 4 });
+                await filterPage.mouse.move(dropPoint.x, dropPoint.y, { steps: 4 });
+                liftedDragState = await filterPage.evaluate(({ x, y }) => {
+                    const chip = [...document.querySelectorAll('.pbaf-chip')]
+                        .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'Has beta');
+                    const item = chip?.closest('.pbaf-filter-item');
+                    const rect = chip?.getBoundingClientRect();
+                    return {
+                        dragging: item?.hasAttribute('data-pbaf-dragging'),
+                        reordering: document.getElementById('pbaf-bar')?.hasAttribute('data-pbaf-reordering'),
+                        translate: chip ? getComputedStyle(chip).translate : null,
+                        chipTransform: chip ? getComputedStyle(chip).transform : null,
+                        chipShadow: chip ? getComputedStyle(chip).boxShadow : null,
+                        helperOpacity: item?.querySelector('.pbaf-beta-definition')
+                            ? getComputedStyle(item.querySelector('.pbaf-beta-definition')).opacity
+                            : null,
+                        movingNeighbors: [...document.querySelectorAll('.pbaf-filter-item')]
+                            .filter(candidate => candidate !== item && candidate.getAnimations().length > 0).length,
+                        pointerDelta: rect ? Math.hypot(rect.left + rect.width / 2 - x,
+                            rect.top + rect.height / 2 - y) : null,
+                    };
+                }, dropPoint);
+                if (process.env.BPB_VERIFY_ASCENT_FILTER_DRAG_SCREENSHOT) {
+                    await filterPage.screenshot({ path: process.env.BPB_VERIFY_ASCENT_FILTER_DRAG_SCREENSHOT });
+                }
                 await filterPage.mouse.up();
+                await filterPage.waitForFunction(() =>
+                    !document.querySelector('[data-pbaf-dragging], [data-pbaf-settling]'));
             }
             const dragState = await filterPage.evaluate(() => ({
                 labels: [...document.querySelectorAll('.pbaf-chip-label')].map(label => label.textContent),
@@ -2979,6 +3010,14 @@ try {
                 && JSON.stringify(dragState.labels) === JSON.stringify([
                     'Has beta', 'Climbing buddies', 'GPS track', 'Trip report', 'Link'
                 ])
+                && liftedDragState?.dragging === true
+                && liftedDragState.reordering === true
+                && liftedDragState.translate !== 'none'
+                && liftedDragState.chipTransform !== 'none'
+                && liftedDragState.chipShadow !== 'none'
+                && liftedDragState.helperOpacity === '0'
+                && liftedDragState.movingNeighbors > 0
+                && liftedDragState.pointerDelta <= 3
                 && dragState.betaPressed === 'false'
                 && /Has beta moved to position 1 of 5/.test(dragState.announcement || '')
                 && JSON.stringify(persistedOrder) === JSON.stringify(dragState.labels)
@@ -2990,6 +3029,7 @@ try {
             `the Chrome ascent filter did not preserve reorder, trusted Settings dispositions and exact-tab reuse, first-use rows, filtering, and keyboard sorting: ${JSON.stringify({
                 before,
                 keyboardOrder,
+                liftedDragState,
                 dragState,
                 persistedOrder,
                 after,

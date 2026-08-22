@@ -491,6 +491,7 @@ const STYLE = `
     --pbaf-sort-text: navy;
     --pbaf-sort-hover: navy;
     --pbaf-focus: #2f6b3f;
+    --pbaf-drag-shadow: 0 9px 24px rgba(22, 31, 24, .22), 0 2px 7px rgba(22, 31, 24, .16);
 }
 html[data-bpb-theme="dark"] {
     --pbaf-bar-bg: #23262a;
@@ -516,6 +517,7 @@ html[data-bpb-theme="dark"] {
     --pbaf-link: #8fdcae;
     --pbaf-sort-text: #7ab6ff;
     --pbaf-sort-hover: #9ecbff;
+    --pbaf-drag-shadow: 0 11px 28px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .34);
     /* The light ring (#2f6b3f) is 2.38:1 on the dark bar — below the 3:1 that
        WCAG 2.1 SC 1.4.11 requires of a focus indicator. This clears it on every
        surface a ring can land on: 6.21 on the bar, 5.50 on a chip, 6.52 on the
@@ -528,12 +530,16 @@ html[data-bpb-theme="dark"] {
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--pbaf-bar-text); }
 #pbaf-bar * { box-sizing: border-box; }
 .pbaf-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--pbaf-label); text-transform: uppercase; margin-right: 2px; }
-.pbaf-filter-item { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; }
-.pbaf-filter-item[data-pbaf-dragging] { opacity: .62; }
+.pbaf-filter-item { position: relative; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; }
+.pbaf-filter-item[data-pbaf-dragging] { z-index: 2; pointer-events: none; }
+.pbaf-filter-item[data-pbaf-settling] { z-index: 2; pointer-events: none; }
 .pbaf-chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px;
     border: 1px solid var(--pbaf-chip-border); border-radius: 999px; background: var(--pbaf-chip-bg); color: var(--pbaf-chip-text); font: inherit; cursor: grab; touch-action: pan-y;
-    transition: border-color .12s, background .12s, color .12s; user-select: none; }
+    transition: border-color .12s, background .12s, color .12s, box-shadow .16s, transform .16s cubic-bezier(.2,.8,.2,1); user-select: none; }
 #pbaf-bar[data-pbaf-reordering] .pbaf-chip { cursor: grabbing; }
+.pbaf-filter-item[data-pbaf-dragging] .pbaf-chip { box-shadow: var(--pbaf-drag-shadow); transform: scale(1.045);
+    translate: var(--pbaf-drag-x, 0) var(--pbaf-drag-y, 0); will-change: translate; }
+.pbaf-filter-item[data-pbaf-dragging] > :not(.pbaf-chip) { opacity: 0; }
 .pbaf-chip:hover { border-color: var(--pbaf-hover-border); color: var(--pbaf-hover-text); }
 .pbaf-chip:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-chip[aria-pressed="true"] { background: var(--pbaf-chip-on-bg); border-color: var(--pbaf-chip-on-border); color: var(--pbaf-chip-on-text); }
@@ -543,12 +549,12 @@ html[data-bpb-theme="dark"] {
 .pbaf-chip[aria-pressed="true"] .pbaf-count { color: var(--pbaf-count-on); }
 .pbaf-tick { display: none; font-weight: 700; }
 .pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
-.pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; }
+.pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; transition: opacity .12s; }
 .pbaf-settings-link { appearance: none; border: 0; background: none; padding: 0; color: var(--pbaf-link);
     font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .pbaf-settings-link:hover { color: var(--pbaf-hover-text); }
 .pbaf-settings-link:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
-.pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); }
+.pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); transition: opacity .12s; }
 .pbaf-words[hidden] { display: none; }
 .pbaf-words input { width: 4.6em; padding: 2px 5px; border: 1px solid var(--pbaf-chip-border); border-radius: 6px; font: inherit; color: var(--pbaf-input-text); background: var(--pbaf-chip-bg); }
 .pbaf-words input:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 1px; }
@@ -572,6 +578,9 @@ html[data-bpb-theme="dark"] {
 .pbaf-table-sort:hover { color: var(--pbaf-sort-hover); }
 .pbaf-table-sort:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-sort-arrow { font-size: 10px; opacity: .85; }
+@media (prefers-reduced-motion: reduce) {
+    .pbaf-chip, .pbaf-beta-definition, .pbaf-words { transition: none; }
+}
 `;
 
 const injectStyle = () => {
@@ -1101,10 +1110,44 @@ const init = async () => {
     makeFilterItem('link', makeChip('link', 'Link',
         'Only ascents with an external link (blog, Strava, forum, ...).'));
 
-    const applyFilterOrder = () => {
+    const reorderAnimations = new Map();
+    const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+    const applyFilterOrder = ({ animate = false, draggedItem = null } = {}) => {
+        const before = animate && !reducedMotion()
+            ? new Map(Object.values(filterItems)
+                .filter(item => item !== draggedItem)
+                .map(item => [item, item.getBoundingClientRect()]))
+            : null;
+        if (before) {
+            for (const item of before.keys()) {
+                reorderAnimations.get(item)?.cancel();
+                reorderAnimations.delete(item);
+            }
+        }
         for (const key of state[orderKey]) {
             const item = filterItems[key];
             if (item) bar.insertBefore(item, spacer);
+        }
+        if (!before) return;
+        for (const [item, first] of before) {
+            if (typeof item.animate !== 'function') continue;
+            const last = item.getBoundingClientRect();
+            const dx = first.left - last.left;
+            const dy = first.top - last.top;
+            if (Math.abs(dx) < .5 && Math.abs(dy) < .5) continue;
+            const animation = item.animate([
+                { transform: `translate3d(${dx}px, ${dy}px, 0)` },
+                { transform: 'translate3d(0, 0, 0)' },
+            ], {
+                duration: 280,
+                easing: 'cubic-bezier(.2, .8, .2, 1)',
+            });
+            reorderAnimations.set(item, animation);
+            const forget = () => {
+                if (reorderAnimations.get(item) === animation) reorderAnimations.delete(item);
+            };
+            animation.addEventListener?.('finish', forget, { once: true });
+            animation.addEventListener?.('cancel', forget, { once: true });
         }
     };
     const announceFilterPosition = key => {
@@ -1112,11 +1155,16 @@ const init = async () => {
         const label = chips[key]?.querySelector('.pbaf-chip-label')?.textContent || 'Filter';
         orderStatusEl.textContent = `${label} moved to position ${order.indexOf(key) + 1} of ${order.length}.`;
     };
-    const setFilterOrder = (order, { persist = true, announce = null } = {}) => {
+    const setFilterOrder = (order, {
+        persist = true,
+        announce = null,
+        animate = false,
+        draggedItem = null,
+    } = {}) => {
         if (order.length !== state[orderKey].length
                 || order.some((key, index) => state[orderKey][index] !== key)) {
             state[orderKey] = [...order];
-            applyFilterOrder();
+            applyFilterOrder({ animate, draggedItem });
             if (persist) saveState(state);
             if (announce) announceFilterPosition(announce);
             return true;
@@ -1150,24 +1198,58 @@ const init = async () => {
         }
         const next = [...order];
         [next[from], next[to]] = [next[to], next[from]];
-        setFilterOrder(next, { announce: key });
+        setFilterOrder(next, { announce: key, animate: true });
     };
 
     let pointerDrag = null;
+    const updateDraggedItemPosition = (drag, clientX, clientY) => {
+        drag.lastX = clientX;
+        drag.lastY = clientY;
+        drag.translateX = clientX - drag.startX - (drag.item.offsetLeft - drag.startOffsetLeft);
+        drag.translateY = clientY - drag.startY - (drag.item.offsetTop - drag.startOffsetTop);
+        drag.item.style.setProperty('--pbaf-drag-x', `${drag.translateX}px`);
+        drag.item.style.setProperty('--pbaf-drag-y', `${drag.translateY}px`);
+    };
+    const settleDraggedItem = drag => {
+        const item = drag.item;
+        const from = `${drag.translateX || 0}px ${drag.translateY || 0}px`;
+        item.removeAttribute('data-pbaf-dragging');
+        item.setAttribute('data-pbaf-settling', '');
+        item.style.removeProperty('--pbaf-drag-x');
+        item.style.removeProperty('--pbaf-drag-y');
+        const finish = () => item.removeAttribute('data-pbaf-settling');
+        if (reducedMotion() || typeof drag.chip.animate !== 'function'
+                || (Math.abs(drag.translateX || 0) < .5 && Math.abs(drag.translateY || 0) < .5)) {
+            finish();
+            return;
+        }
+        const animation = drag.chip.animate([
+            { translate: from },
+            { translate: '0px 0px' },
+        ], {
+            duration: 220,
+            easing: 'cubic-bezier(.2, .8, .2, 1)',
+        });
+        animation.addEventListener?.('finish', finish, { once: true });
+        animation.addEventListener?.('cancel', finish, { once: true });
+    };
     const finishPointerReorder = cancelled => {
         if (!pointerDrag) return;
         const drag = pointerDrag;
         pointerDrag = null;
         if (!drag.dragging) return;
-        drag.item.removeAttribute('data-pbaf-dragging');
+        try { drag.chip.releasePointerCapture?.(drag.pointerId); } catch { /* capture may already be released */ }
         bar.removeAttribute('data-pbaf-reordering');
         suppressChipClick = { key: drag.key, until: Date.now() + 500 };
         if (cancelled) {
             state[orderKey] = drag.startOrder;
-            applyFilterOrder();
+            applyFilterOrder({ animate: true, draggedItem: drag.item });
+            updateDraggedItemPosition(drag, drag.lastX, drag.lastY);
+            settleDraggedItem(drag);
             orderStatusEl.textContent = 'Filter reordering canceled.';
             return;
         }
+        settleDraggedItem(drag);
         saveState(state);
         announceFilterPosition(drag.key);
     };
@@ -1184,8 +1266,15 @@ const init = async () => {
             item,
             startX: event.clientX,
             startY: event.clientY,
+            lastX: event.clientX,
+            lastY: event.clientY,
+            startOffsetLeft: item.offsetLeft,
+            startOffsetTop: item.offsetTop,
+            translateX: 0,
+            translateY: 0,
             startOrder: [...state[orderKey]],
             dragging: false,
+            chip,
         };
     }, true);
     window.addEventListener('pointermove', event => {
@@ -1198,18 +1287,34 @@ const init = async () => {
             drag.dragging = true;
             drag.item.setAttribute('data-pbaf-dragging', '');
             bar.setAttribute('data-pbaf-reordering', '');
+            try { drag.chip.setPointerCapture?.(drag.pointerId); } catch { /* pointer may already be gone */ }
         }
         if (event.cancelable) event.preventDefault();
+        updateDraggedItemPosition(drag, event.clientX, event.clientY);
         const target = document.elementFromPoint(event.clientX, event.clientY)
             ?.closest?.('.pbaf-filter-item');
         const targetKey = target?.dataset.filterKey;
         if (!targetKey || targetKey === drag.key) return;
-        const rect = target.getBoundingClientRect();
+        const targetHasLayout = target.offsetWidth > 0 || target.offsetHeight > 0;
+        const barRect = bar.getBoundingClientRect();
+        const rect = targetHasLayout
+            ? {
+                left: barRect.left + bar.clientLeft + target.offsetLeft,
+                top: barRect.top + bar.clientTop + target.offsetTop,
+                width: target.offsetWidth,
+                height: target.offsetHeight,
+                bottom: barRect.top + bar.clientTop + target.offsetTop + target.offsetHeight,
+            }
+            : target.getBoundingClientRect();
         const sameRow = event.clientY >= rect.top && event.clientY <= rect.bottom;
         const after = sameRow
             ? event.clientX > rect.left + rect.width / 2
             : event.clientY > rect.top + rect.height / 2;
-        moveFilterBeside(drag.key, targetKey, after, { persist: false });
+        if (moveFilterBeside(drag.key, targetKey, after, {
+            persist: false,
+            animate: true,
+            draggedItem: drag.item,
+        })) updateDraggedItemPosition(drag, event.clientX, event.clientY);
     }, { capture: true, passive: false });
     window.addEventListener('pointerup', event => {
         if (pointerDrag && event.pointerId === pointerDrag.pointerId) finishPointerReorder(false);
@@ -1222,6 +1327,7 @@ const init = async () => {
         event.preventDefault();
         finishPointerReorder(true);
     }, true);
+    window.addEventListener('blur', () => finishPointerReorder(true));
 
     bar.append(
         ...state[orderKey].map(key => filterItems[key]).filter(Boolean),

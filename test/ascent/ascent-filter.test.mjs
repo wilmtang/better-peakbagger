@@ -246,12 +246,70 @@ test('Alt+Arrow reorders a focused filter without toggling it', async () => {
         'Has beta moved to position 4 of 5.');
 });
 
-test('pointer drag reorders a filter and suppresses the release click', async () => {
+test('pointer drag lifts and follows a filter while neighbors ease into place', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
     const hasBeta = chip(dom, 'Has beta');
+    const hasBetaItem = hasBeta.closest('.pbaf-filter-item');
     const favorite = chip(dom, 'Climbing buddies');
     const favoriteItem = favorite.closest('.pbaf-filter-item');
-    favoriteItem.getBoundingClientRect = () => ({
+    const filterItems = [...bar(dom).querySelectorAll(':scope > .pbaf-filter-item')];
+    const animations = [];
+    for (const item of filterItems) {
+        item.getBoundingClientRect = () => {
+            const index = [...bar(dom).querySelectorAll(':scope > .pbaf-filter-item')].indexOf(item);
+            const left = index * 120;
+            return { x: left, y: 0, top: 0, left, right: left + 100,
+                bottom: 40, width: 100, height: 40 };
+        };
+        if (item !== hasBetaItem) {
+            item.animate = (frames, options) => {
+                animations.push({ item, frames, options });
+                return { cancel() {}, addEventListener() {} };
+            };
+        }
+    }
+    dom.window.document.elementFromPoint = () => favorite;
+
+    hasBeta.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
+        bubbles: true, cancelable: true, button: 0, clientX: 300, clientY: 20,
+    }));
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', {
+        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
+    }));
+
+    assert.equal(hasBetaItem.hasAttribute('data-pbaf-dragging'), true);
+    assert.equal(bar(dom).hasAttribute('data-pbaf-reordering'), true);
+    assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-x'), '-290px');
+    assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-y'), '0px');
+    assert.ok(animations.some(animation => animation.item === favoriteItem
+        && animation.frames[0].transform === 'translate3d(-120px, 0px, 0)'
+        && animation.frames[1].transform === 'translate3d(0, 0, 0)'
+        && animation.options.duration === 280));
+
+    dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', {
+        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
+    }));
+    hasBeta.click();
+
+    assert.equal(hasBetaItem.hasAttribute('data-pbaf-dragging'), false);
+    assert.equal(bar(dom).hasAttribute('data-pbaf-reordering'), false);
+    assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-x'), '');
+    assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-y'), '');
+    assert.deepEqual(filterLabels(dom), ['Has beta', 'Climbing buddies', 'GPS track', 'Trip report', 'Link']);
+    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'));
+    assert.deepEqual(saved.peakOrder, ['beta', 'fav', 'gps', 'tr', 'link']);
+    assert.equal(saved.beta, false, 'finishing a drag must not activate the filter');
+    assert.equal(dom.window.document.querySelector('.pbaf-order-status').textContent,
+        'Has beta moved to position 1 of 5.');
+});
+
+test('Escape returns a lifted filter to its starting slot without toggling it', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const startingOrder = filterLabels(dom);
+    const hasBeta = chip(dom, 'Has beta');
+    const hasBetaItem = hasBeta.closest('.pbaf-filter-item');
+    const favorite = chip(dom, 'Climbing buddies');
+    favorite.closest('.pbaf-filter-item').getBoundingClientRect = () => ({
         x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 40, width: 100, height: 40,
     });
     dom.window.document.elementFromPoint = () => favorite;
@@ -262,17 +320,20 @@ test('pointer drag reorders a filter and suppresses the release click', async ()
     dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', {
         bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
     }));
-    dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', {
-        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
-    }));
+    assert.notDeepEqual(filterLabels(dom), startingOrder);
+
+    const escape = new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true,
+    });
+    dom.window.dispatchEvent(escape);
     hasBeta.click();
 
-    assert.deepEqual(filterLabels(dom), ['Has beta', 'Climbing buddies', 'GPS track', 'Trip report', 'Link']);
-    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'));
-    assert.deepEqual(saved.peakOrder, ['beta', 'fav', 'gps', 'tr', 'link']);
-    assert.equal(saved.beta, false, 'finishing a drag must not activate the filter');
+    assert.equal(escape.defaultPrevented, true);
+    assert.deepEqual(filterLabels(dom), startingOrder);
+    assert.equal(hasBetaItem.hasAttribute('data-pbaf-dragging'), false);
+    assert.equal(hasBeta.getAttribute('aria-pressed'), 'false');
     assert.equal(dom.window.document.querySelector('.pbaf-order-status').textContent,
-        'Has beta moved to position 1 of 5.');
+        'Filter reordering canceled.');
 });
 
 test('Fav climbers counts climber rows and AND-composes with Has beta', async () => {
