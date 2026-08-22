@@ -181,6 +181,15 @@ test('browser verifiers use the shared resource stack and condition-based analyz
 
     const chromeVerifier = sources.find(entry => entry.verifierPath === 'scripts/verify-extension.mjs').source;
     assert.doesNotMatch(chromeVerifier, /waitForTimeout\(2_?000\)/);
+    const workerProbeEnd = chromeVerifier.indexOf('// --- Extension-owned photo editor');
+    assert.notEqual(workerProbeEnd, -1);
+    const workerProbe = chromeVerifier.slice(0, workerProbeEnd);
+    assert.match(workerProbe,
+        /createHash\('sha256'\)[\s\S]*path\.resolve\(extensionPath\)[\s\S]*String\.fromCharCode/,
+        'a quiet MV3 worker must use Chrome\'s unpacked-ID derivation to address a real extension page');
+    assert.ok(workerProbe.indexOf("chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS'")
+        < workerProbe.indexOf("check(!!worker, 'the extension service worker never started after a coordinator message')"),
+    'the verifier must send a real coordinator message before requiring the lazy worker target');
     assert.match(chromeVerifier, /waitForFunction\([\s\S]*Interactive Stats:/);
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,
