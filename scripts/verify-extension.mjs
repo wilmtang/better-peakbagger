@@ -2115,7 +2115,10 @@ try {
             // Recover while the already-proven target is still current. A
             // resource-constrained Chrome runner may discard an inactive
             // renderer while the remaining terminal cases are exercised.
-            await page.locator('.bpb-gpx-retry').click();
+            // The focus-order assertion above already proved that Retry is
+            // the active control. Activate that exact user-visible target
+            // without making Playwright resolve it through a second locator.
+            await page.keyboard.press('Enter');
             const recoveredAnalyzer = await page.waitForFunction(() => {
                 const canvas = document.querySelector('#bpb-gpx-analysis canvas');
                 return canvas?.getAttribute('role') === 'application'

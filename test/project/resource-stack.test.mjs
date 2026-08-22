@@ -195,8 +195,8 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         < retryProbe.indexOf("['signed-out', /sign in/i, true]"),
     'the retry fixture must reuse the first already-injected Analyzer error page');
     assert.match(retryProbe,
-        /if \(analyzerCase === 'retry'\) \{[\s\S]*await page\.locator\('\.bpb-gpx-retry'\)\.click\(\);/,
-        'the retry fixture must recover immediately on its proven error page');
+        /if \(analyzerCase === 'retry'\) \{[\s\S]*await page\.keyboard\.press\('Enter'\);/,
+        'the retry fixture must activate its already-focused proven error control');
     assert.doesNotMatch(retryProbe, /openRetryPage|retryPage\.reload/,
         'the retry fixture must not create an unnecessary late target or mask missing injection');
     const buddyClick = chromeVerifier.indexOf("await optionsPage.locator('#favorites-merge-buddies').click();");
