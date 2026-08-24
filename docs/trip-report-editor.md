@@ -124,6 +124,25 @@ CSSOM as `rgb(…)`, so the Rich schema also carries its originally parsed color
 token in `data-bpb-report-color`. The DOM converter revalidates that token; the
 internal attribute never reaches `JournalText` or preview HTML.
 
+#### Return and line breaks in Rich mode
+
+Return follows the structure at the caret rather than always inserting the
+same character:
+
+| Caret context | Key | Result |
+| --- | --- | --- |
+| Paragraph or other prose block | Return | Starts a new block, normally a paragraph. Separate blocks are saved to `JournalText` with Peakbagger's two-newline paragraph separator. |
+| Paragraph or other prose block | Shift+Return | Inserts a hard line break inside the same block, saved as one newline. |
+| List item | Return | Starts the next list item; Return on an empty item exits the list. List items are intentionally single-spaced. |
+| Preformatted block | Return | Inserts a literal newline. At the end of the block, three consecutive Returns exit back to a paragraph. |
+
+The Rich surface also gives ordinary paragraphs a small bottom margin while
+removing that margin inside list items. As a result, Return can look like two
+lines in prose but one line in a list or preformatted block. This is structural
+formatting, not intermittent key handling. It also means that Rich mode needs
+only one Return for a new paragraph even though Peakbagger's native textarea
+requires two newline characters.
+
 ### Loading Markdown mode
 
 Normally the path is:
