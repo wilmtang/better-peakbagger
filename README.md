@@ -6,7 +6,7 @@ Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 have—into review-ready ascent drafts. It also adds free 3D terrain, richer GPX
 analysis, filters and favorite climbers for finding useful beta, rich-text and
 Markdown trip reports with reusable photo topos, optional GitHub backup,
-location-aware planning links, and a polished dark theme to
+offline Sun planning, location-aware planning links, and a polished dark theme to
 [Peakbagger](https://www.peakbagger.com/).
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kndjohodnpdoejmjkiiakejfehoodedn?style=for-the-badge&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
@@ -75,6 +75,19 @@ useful without invented measurements: partial data produces visible gaps,
 timed coordinate-only tracks show distance over time, and untimed
 coordinate-only tracks get a compact route scrubber. See the
 [missing-data result table](docs/gpx-data-quality.md#resulting-chart).
+
+### Plan around the Sun
+
+Peak Dynamic Maps and saved-ascent GPX analysis include a compact offline Sun
+calculator. It shows apparent direction and elevation plus level-horizon
+sunrise and sunset in mountain-local time. On a GPX, selecting a chart point
+uses that point's recorded time when available; the separate time slider
+previews the same location without moving the route. In 3D, the compass follows
+the rotated map while its absolute azimuth remains unchanged.
+
+This is an astronomical planning aid, not a terrain-shadow prediction. Nearby
+ridges, weather, smoke, and actual direct light are outside its model. See the
+[Sun position contract](docs/sun-position.md).
 
 ### Find useful ascent beta faster
 
@@ -152,6 +165,8 @@ small corridor boxes for summit discovery and, only after you choose **Open
 drafts**, a privacy-reduced track for GPS Preview. The optional 3D view requests
 map tiles only after you enable it; once enabled, hovering or focusing its
 toggle may prefetch a small bounded elevation tile set before the view opens.
+Sun calculations use only packaged code and remain in the Peakbagger tab; they
+add no storage, permission, or provider request.
 GitHub
 backup is off until you enable it, sends an ascent only to the repository you
 choose, and keeps its access token in local extension storage, never synced.

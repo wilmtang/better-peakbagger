@@ -37,7 +37,8 @@ details:
    fields.
 5. **The three page surfaces share one terrain lifecycle.**
    `src/terrain/terrain-coordinator.js` owns state transitions, timeouts,
-   camera handoff, compass updates, and failure recovery. The analyzer and Full
+   camera handoff, terrain-compass updates, optional accepted-view notification,
+   and failure recovery. The analyzer and Full
    Screen Map also share `src/gpx/map-frame-lifecycle.js` for native MasterMap
    identity: late insertion, reload, replacement, and removal must rebind every
    Leaflet consumer rather than expire on a polling budget. Surface modules
@@ -105,11 +106,11 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 
 | Module | World | Owns | Must not own |
 | --- | --- | --- | --- |
-| `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
+| `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
 | `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
-| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context | Storage, renderer internals, duplicate lifecycle logic |
-| `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, compass, recovery | Subject discovery, privileged APIs, provider requests |
+| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, summit Sun state | Storage, renderer internals, duplicate lifecycle logic |
+| `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
@@ -143,6 +144,12 @@ lifecycle concerns:
 
 - chart hover and keyboard selection post a bounded `highlight` coordinate while 3D is active;
 - the inline analyzer status area displays renderer errors and drape notices.
+
+Its selected-point Sun calculator is also surface-owned. The coordinator may
+deliver a bearing only after the ordinary active-state, current-frame, finite,
+and normalization gates accept a `view` message. That changes only the
+decorative solar compass: absolute Sun azimuth/elevation and route selection do
+not move. Stop, failure, frame replacement, and 2D reset deliver north-up.
 
 ### Full Screen Map
 
@@ -182,6 +189,10 @@ Screen `t=P` map id, valid focus coordinates, and a subject name. It passes a
 summit focus rather than an invented route. The subject peak is supplied
 separately because Peakbagger's nearby-peak feed may intentionally exclude the
 page's own summit.
+
+The same validated summit coordinate owns the Peak Sun calculator below the
+map. It consumes accepted 3D bearing through the optional coordinator callback;
+Full Screen BigMap passes no callback and has no calculator.
 
 ## Lifecycle state machine
 
@@ -298,6 +309,13 @@ Bearing and pitch are intentionally not carried back to 2D. A fresh or resumed
 3D entry takes the live 2D center/zoom but starts at pitch 60 and bearing 0.
 This makes 2D the canonical navigational handoff and avoids pretending Leaflet
 can represent a 3D camera.
+
+The authenticated `view` stream also exposes the normalized bearing to an
+optional surface callback. Peak and GPX use it to draw their solar compass at
+`absolute azimuth - map bearing`; BigMap does not. Pitch is deliberately not
+pseudo-projected into that flat planning compass. The absolute astronomy text
+never changes with camera orientation, and every inactive path resets bearing
+to zero. See [sun-position.md](sun-position.md).
 
 MapLibre's ground-following zoom is left at its default. It re-derives zoom from
 the terrain elevation under the screen center when a drag ends, which is a real
@@ -977,6 +995,8 @@ consuming extreme CPU.
 | Black/frozen canvas after working | `webglcontextlost` or source-less MapLibre error | Fatal renderer recovery |
 | 2D returns to an old location | Camera request id and one-second stop path | Coordinator/frame camera handoff |
 | Compass spins near north | Applied cumulative rotation sequence | Angle unwrap regression |
+| Sun direction text changes while rotating | Accepted bearing callback and solar render path | Map-relative bearing leaked into absolute astronomy |
+| Sun compass stays rotated after 2D | Coordinator stop/failure/reset callback | Surface failed to apply north-up reset |
 | First hover does not warm cache | Initial settings promise and worker reply | Bridge startup race or gate |
 | Peak dots disappear on pan | Request supersession, feed context, zoom cutoff | Peak relay; terrain should remain healthy |
 | GPU verification burns CPU | Reported WebGL renderer | Software fallback or wrong launch flags |
@@ -1002,3 +1022,6 @@ When changing 3D behavior:
    control-layout changes and state the renderer/browser/viewport used.
 9. Confirm no isolated test browser, temporary profile, or debugging server is
    left running.
+10. If accepted view bearing changes, rotate both Peak and GPX in the hidden GPU
+    harnesses; absolute Sun text must remain fixed and the solar compass must
+    reset in 2D. BigMap must remain unchanged.

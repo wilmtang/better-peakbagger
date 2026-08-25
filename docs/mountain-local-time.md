@@ -1,23 +1,30 @@
-# Chart times in the climb's local timezone
+# Mountain-local time and civil-time conversion
 
 ## Goal
 
-The GPX analyzer's clock times ("Start / Summit / Back to car"), its `Day N`
+The GPX Analyzer's clock times ("Start / Summit / Back to car"), its `Day N`
 boundaries, and camping-spot detection originally used the *viewer's*
 timezone. GPX timestamps are UTC, so anyone reading an ascent recorded in
 another timezone saw shifted times, and day boundaries could even move
 camping spots. All of these now use the **climb's local time**, and the stats
 bar discloses it: *"Times in the mountain's local time (PDT)"*.
 
+The same resolver and formatter now own the offline
+[Sun position calculator](sun-position.md). Peak pages use the validated summit
+coordinate; GPX analysis continues to use the trailhead. No surface derives a
+mountain clock from the viewer's machine timezone.
+
 ## Where the timezone comes from
 
 The track's **starting coordinate** is resolved to an IANA timezone by
 [`tz-lookup` 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25), a
 dependency-free ~73 KB raster that answers entirely offline. The locked npm
-package ships CommonJS, so esbuild bundles it directly into the two consumers,
-`dist/content/gpx-analyzer.js` and `dist/content/ascent-editor.js`; the
-coordinate data and lookup logic are unchanged. There is no page-owned global
-for Peakbagger or another extension to replace.
+package ships CommonJS, so esbuild bundles it directly into the consumers that
+need mountain time: `dist/content/gpx-analyzer.js`,
+`dist/content/ascent-editor.js`, and `dist/content/peak-map.js`. The shared
+`src/time/mountain-time.js` module is the only authored owner of resolution,
+formatting, local-day comparison, and editable civil-time conversion. There is
+no page-owned global for Peakbagger or another extension to replace.
 
 - **Why not an accurate polygon library?** `geo-tz` carries ~100 MB of
   boundary data and needs Node file access — unusable in a content script.
@@ -36,6 +43,24 @@ Given the zone, `Intl.DateTimeFormat` renders wall-clock times with the
 zone's real political offset and DST for the trip's date, while respecting
 the viewer's 12/24-hour locale preference. Day boundaries come from the
 zone's `YYYY-MM-DD` (`en-CA`) date of each timestamp.
+
+## Converting an editable mountain clock to an instant
+
+Peak Sun planning and untimed GPX previews start with a civil `YYYY-MM-DD` and
+minute of day rather than a recorded UTC timestamp. `mountain-time.js` searches
+for the UTC instant whose formatted date and clock match that civil value in
+the resolved zone:
+
+- an ordinary local minute resolves exactly;
+- a spring-forward gap snaps to the first valid minute after the gap, and the
+  visible control reflects the resolved minute; and
+- a repeated fall-back minute chooses the earlier occurrence.
+
+The same conversion handles half-hour and quarter-hour zones and dates on both
+sides of the international date line. If the zone is the labelled longitude
+fallback, conversion uses that fixed offset directly. No `new Date(year,
+month, day, ...)` local constructor is used, because that would silently apply
+the viewer's timezone.
 
 ## When a saved GPX has no usable time
 
@@ -106,6 +131,8 @@ UTC-minute bucket can never straddle the climb zone's local midnight.
 
 ## Testing
 
+`test/time/mountain-time.test.mjs` pins ordinary conversion, DST gaps and folds,
+unusual offsets, date-line dates, formatter failure, and longitude fallback.
 `test/gpx/gpx-analyzer.test.mjs` uses an overnight fixture that crosses the
 *mountain's* local midnight but **not** UTC midnight, so its `Day 2` and
 camping assertions hold regardless of the timezone of the machine running the

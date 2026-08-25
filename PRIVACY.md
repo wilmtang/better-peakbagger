@@ -20,6 +20,9 @@ Data leaves the browser only when a feature requires it:
 - **Media hosts** receive ordinary browser requests when remote report media is
   displayed.
 
+The Sun position calculator is not a data-transfer feature. Its coordinate,
+date, time, map bearing, and astronomical results remain in the Peakbagger tab.
+
 ## Browser permissions
 
 | Permission | Purpose and limits |
@@ -29,7 +32,7 @@ Data leaves the browser only when a feature requires it:
 | `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, and into a Peakbagger tab for the login and summit requests described below. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules the one-minute debounce and bounded retries for user-enabled automatic backups. |
-| Peakbagger host access | Supports GPX analysis, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
+| Peakbagger host access | Supports GPX analysis, offline Sun planning, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
 
@@ -125,6 +128,21 @@ date. That happens entirely locally.
   ascent and processes it locally.
 - Cross-page preferences use `storage.sync`; page-specific filter state and the
   early theme mirror use Peakbagger's `localStorage`.
+
+### Sun position calculator
+
+- Peak pages calculate from the already validated summit coordinate. GPX pages
+  calculate from the selected route point, its valid timestamp when present,
+  and otherwise only a complete saved ascent date plus an ephemeral preview
+  time.
+- Timezone lookup and astronomy run locally with packaged `tz-lookup` and
+  SunCalc code. The calculator makes no request, adds no permission or storage
+  key, and does not persist its coordinate, date, time, bearing, or result.
+- Opening or moving the calculator cannot start 3D or another provider request.
+  If 3D is already open, the calculator receives only the accepted map bearing
+  so its decorative compass follows the view.
+- Sunrise and sunset are astronomical level-horizon events. The result does not
+  model terrain obstruction, shadows, weather, smoke, or actual direct light.
 
 ### Favorites and Buddy List
 

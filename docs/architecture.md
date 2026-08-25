@@ -32,7 +32,7 @@ flowchart TB
 
     subgraph peakbagger["Peakbagger tab"]
         isolated["Isolated-world bundles<br/>extension APIs, settings, DOM,<br/>draft fill, filters, backup UI"]
-        main["MAIN-world coordinators<br/>GPX Analyzer, Peak map, BigMap<br/>page globals + same-origin frames"]
+        main["MAIN-world coordinators<br/>GPX Analyzer, Peak map, BigMap<br/>offline Sun + page map state"]
         master["Peakbagger MasterMap iframe<br/>native Leaflet map and peak feed"]
         terrainBridge["terrain-map.js<br/>isolated consent + frame bridge"]
         terrainFrame["Extension-owned terrain frame<br/>packaged MapLibre + cache"]
@@ -93,6 +93,7 @@ The diagram encodes six important boundaries:
 - [Trip-report editor](#deep-dive-trip-report-editor)
 - [Photo topo editor and local library](#deep-dive-photo-topo-editor-and-local-library)
 - [GPX Analyzer and native 2D map integration](#deep-dive-gpx-analyzer-and-native-2d-map-integration)
+- [Sun position calculator](sun-position.md)
 - [Opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
@@ -124,8 +125,10 @@ Three files divide assembly responsibility:
 Classic browser entry points become self-contained IIFE bundles. ES imports
 determine module evaluation order inside a bundle. Chart.js and marked remain
 copied browser globals ordered by the manifest. `tz-lookup` is bundled directly
-into its two content-script consumers so page code cannot clobber the offline
-resolver. The extension-owned terrain frame is a native module that directly
+into its content-script consumers so page code cannot clobber the offline
+resolver. SunCalc is bundled only into the MAIN-world GPX Analyzer and Peak-map
+consumers; their shared scoped stylesheet is listed only on those two manifest
+entries. The extension-owned terrain frame is a native module that directly
 imports MapLibre's copied main ESM artifact; its main module, module worker, and
 shared module remain separate, unmodified package artifacts.
 
@@ -143,6 +146,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
+| Mountain time and Sun planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
@@ -722,6 +726,14 @@ select a point, an explicit **Copy coordinates** action copies it, and
 double-click remains a shortcut. Selection and copy results use a live status
 region. If the Clipboard API fails, the analyzer exposes a selected read-only
 coordinate field for the platform's ordinary copy command.
+
+That same authoritative point selection updates the offline Sun calculator.
+A valid point timestamp owns its mountain-local date and time; an untimed point
+uses only a complete saved ascent date and a labelled preview time. Moving the
+Sun time slider has no reverse path into chart selection, Leaflet, or terrain.
+Peak pages use their separately validated summit subject and retain a date
+input. The complete claims, date-source rules, bearing coupling, and privacy
+contract are maintained in [sun-position.md](sun-position.md).
 
 ### The fragile Leaflet seam
 
