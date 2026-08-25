@@ -94,7 +94,7 @@ export function createSunState({ calculate = SunPosition.calculate } = {}) {
 
     const selectRoutePoint = (point, ascentDate, zone) => {
         const subject = validCoordinate(point) ? Object.freeze({ lat: point.lat, lon: point.lon }) : null;
-        const routeIdentity = point?.routeIdentity ?? point?.index ?? null;
+        const routeIdentity = point?.routeIdentity ?? point?.sourceIndex ?? point?.index ?? null;
         if (!subject || !zone) {
             return replace({
                 mode: 'gpx', subject: null, routeIdentity, zone: zone || null,

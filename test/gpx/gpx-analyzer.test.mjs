@@ -1022,9 +1022,11 @@ const loadElevationAnalyzer = async (gpxSource, {
     withMap = false,
     settings = {},
     fetchImpl = null,
+    ascentDate = '',
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
       ${withMap ? '<iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=47&cx=-121&z=14"></iframe>' : ''}
+      ${ascentDate ? `<table><tr><td>Date:</td><td>${ascentDate}</td></tr></table>` : ''}
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
@@ -1040,6 +1042,7 @@ const loadElevationAnalyzer = async (gpxSource, {
     const polylineCalls = [];
     const markerMoves = [];
     const markerStyles = [];
+    const postedMessages = [];
     let replaceMap = null;
     if (withMap) {
         const makeMap = () => ({
@@ -1127,6 +1130,7 @@ const loadElevationAnalyzer = async (gpxSource, {
         }
     };
     window.postMessage = message => {
+        postedMessages.push(structuredClone(message));
         if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
@@ -1149,6 +1153,7 @@ const loadElevationAnalyzer = async (gpxSource, {
         polylineCalls,
         markerMoves,
         markerStyles,
+        postedMessages,
         replaceMap,
     };
 };
@@ -1734,6 +1739,157 @@ test('GPX analyzer announces only trustworthy active values across a time gap', 
     dom.window.close();
 });
 
+test('GPX Sun follows timed route selections across mountain-local midnight without a date picker', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele><time>2026-07-10T06:30:00Z</time></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>200</ele><time>2026-07-10T18:00:00Z</time></trkpt>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-07-11T08:30:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, {
+        ascentDate: 'Jul 4, 2026',
+    });
+    const { window } = dom;
+    await waitFor(dom, () => chartConfig() !== null);
+    const calculator = window.document.querySelector('.bpb-sun-calculator');
+    const legend = window.document.getElementById('bpb-gpx-chart-legend');
+    const controls = window.document.querySelector('.bpb-gpx-coordinate-controls');
+    const button = calculator.querySelector('.bpb-sun-calculator__toggle');
+    const slider = calculator.querySelector('input[type="range"]');
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    assert.ok(calculator);
+    assert.equal(calculator.querySelector('input[type="date"]'), null);
+    assert.ok(controls.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(calculator.compareDocumentPosition(legend) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(button.disabled, true, 'no stale route subject exists before selection');
+
+    const distance = chartConfig().data.datasets[0].data;
+    setActiveElements([{ datasetIndex: 0, index: distance.findIndex(point => point._raw?.lat === 47.1) }]);
+    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.equal(button.disabled, false);
+    assert.match(calculator.textContent, /GPX point/);
+    assert.match(calculator.textContent, /Recorded at selected GPX point/);
+    assert.match(calculator.textContent, /2026-07-09/);
+    assert.equal(slider.value, String(23 * 60 + 30));
+
+    slider.value = String(10 * 60);
+    slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+    setActiveElements([{ datasetIndex: 0, index: distance.findIndex(point => point._raw?.lat === 47.3) }]);
+    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.match(calculator.textContent, /2026-07-11/,
+        'the displayed date follows the point across mountain-local midnight');
+    assert.equal(slider.value, String(1 * 60 + 30));
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide'));
+    assert.equal(window.document.querySelector('.bpb-sun-calculator'), null);
+    dom.window.close();
+});
+
+test('manual Sun time is one-way and cannot move chart, Leaflet, route identity, or terrain highlight', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>200</ele></trkpt>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const {
+        dom, chartConfig, updateModes, markerMoves, markerStyles, postedMessages,
+    } = await loadElevationAnalyzer(source, { withMap: true, ascentDate: 'Jul 4, 2026' });
+    const { window } = dom;
+    await waitFor(dom, () => chartConfig() !== null);
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    const calculator = window.document.querySelector('.bpb-sun-calculator');
+    const slider = calculator.querySelector('input[type="range"]');
+    assert.equal(slider.value, String(12 * 60), 'the first untimed point starts as an explicit noon preview');
+    assert.match(calculator.textContent, /Peakbagger ascent date/);
+    assert.match(calculator.textContent, /Preview time/);
+
+    const status = window.document.getElementById('bpb-gpx-coordinate-status').textContent;
+    const updates = updateModes.length;
+    const moves = markerMoves.length;
+    const styles = markerStyles.length;
+    const messages = postedMessages.length;
+    slider.value = String(16 * 60 + 10);
+    slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal(window.document.getElementById('bpb-gpx-coordinate-status').textContent, status);
+    assert.equal(updateModes.length, updates, 'manual solar time does not update Chart.js');
+    assert.equal(markerMoves.length, moves, 'manual solar time does not move the Leaflet marker');
+    assert.equal(markerStyles.length, styles, 'manual solar time does not restyle the Leaflet marker');
+    assert.equal(postedMessages.length, messages, 'manual solar time posts no terrain highlight or map message');
+    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: chartConfig().data.datasets[0].data[0] }), 5,
+        'the same selected route identity remains active');
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    assert.equal(slider.value, String(16 * 60 + 10),
+        'another untimed point retains the current preview clock');
+    dom.window.close();
+});
+
+test('GPX Sun admits valid timestamps point by point but rejects all-equal generated timing', async t => {
+    await t.test('partial timing', async () => {
+        const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+          <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
+          <trkpt lat="47.20000" lon="-121.20000"><ele>200</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+          <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-07-10T13:00:00Z</time></trkpt>
+        </trkseg></trk></gpx>`;
+        const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, {
+            ascentDate: 'Jul 4, 2026', settings: { chartDefaultSeries: 'distance' },
+        });
+        const { window } = dom;
+        await waitFor(dom, () => chartConfig() !== null);
+        const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+        const data = chartConfig().data.datasets[0].data;
+        const calculator = window.document.querySelector('.bpb-sun-calculator');
+        setActiveElements([{ datasetIndex: 0, index: data.findIndex(point => point._raw?.lat === 47.1) }]);
+        canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.match(calculator.textContent, /Peakbagger ascent date/);
+        setActiveElements([{ datasetIndex: 0, index: data.findIndex(point => point._raw?.lat === 47.3) }]);
+        canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        assert.match(calculator.textContent, /GPX point/);
+        assert.match(calculator.textContent, /Recorded at selected GPX point/);
+        dom.window.close();
+    });
+
+    await t.test('all-equal generated timing', async () => {
+        const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+          <trkpt lat="40.27" lon="-105.56"><ele>2800</ele><time>2025-07-07T01:55:00Z</time></trkpt>
+          <trkpt lat="40.26" lon="-105.57"><ele>3200</ele><time>2025-07-07T01:55:00Z</time></trkpt>
+          <trkpt lat="40.25" lon="-105.58"><ele>3000</ele><time>2025-07-07T01:55:00Z</time></trkpt>
+        </trkseg></trk></gpx>`;
+        const { dom, chartConfig } = await loadElevationAnalyzer(source, { ascentDate: 'Jul 4, 2025' });
+        const { window } = dom;
+        await waitFor(dom, () => chartConfig() !== null);
+        window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
+            new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+        );
+        const calculator = window.document.querySelector('.bpb-sun-calculator');
+        assert.match(calculator.textContent, /Peakbagger ascent date/);
+        assert.doesNotMatch(calculator.textContent, /Recorded at selected GPX point/);
+        assert.equal(calculator.querySelector('input[type="range"]').value, String(12 * 60));
+        dom.window.close();
+    });
+});
+
+test('GPX Sun stays unavailable for missing or year-only ascent dates and clears stale results on failure', async t => {
+    for (const ascentDate of ['', '2026']) {
+        await t.test(ascentDate ? 'year-only date' : 'missing date', async () => {
+            const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+              <trkpt lat="47.1" lon="-121.1"><ele>100</ele></trkpt>
+              <trkpt lat="47.2" lon="-121.2"><ele>110</ele></trkpt>
+            </trkseg></trk></gpx>`;
+            const { dom, chartConfig } = await loadElevationAnalyzer(source, { ascentDate });
+            const { window } = dom;
+            await waitFor(dom, () => chartConfig() !== null);
+            window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
+                new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+            );
+            const calculator = window.document.querySelector('.bpb-sun-calculator');
+            assert.equal(calculator.querySelector('button').disabled, true);
+            assert.match(calculator.textContent, /No track or ascent date is available/);
+            assert.doesNotMatch(calculator.textContent, /sunrise|sunset/i);
+            dom.window.close();
+        });
+    }
+});
+
 test('GPX analyzer selects coordinates by click and keyboard before copying them', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
@@ -1829,6 +1985,8 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
     await waitFor(dom, () => markerMoves.length >= 3);
     assert.deepEqual(markerMoves.at(-1), [47.3, -121.3],
         'replacing the native map replays the persistent selection');
+    assert.equal(window.document.querySelector('.bpb-sun-calculator button').disabled, true,
+        'an iframe identity replacement clears the calculator subject until a new route selection');
 
     dom.window.close();
 });

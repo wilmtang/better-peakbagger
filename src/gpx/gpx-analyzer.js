@@ -30,6 +30,9 @@ import { mapViewport as MapViewport } from './map-viewport.js';
 import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js';
 import { mapOverlay as MapOverlay } from './map-overlay.js';
 import { gpxPanelCss } from './gpx-panel-css.js';
+import { ascentPage as AscentPage } from '../ascent/ascent-page.js';
+import { sunState as SunState } from '../sun/sun-state.js';
+import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
 
 // Chart remains a separately-loaded vendor global (see manifest). The mountain
 // time module owns the bundled offline timezone resolver.
@@ -271,6 +274,26 @@ const run = async () => {
 
         canvasContainer.append(canvas);
         container.append(headerBox, terrainMessage, coordinateControls, chartLegend, canvasContainer);
+        const ascentDate = AscentPage.parseDate(document);
+        const sunState = SunState.create();
+        let sunCalculator = null;
+        const renderSun = state => sunCalculator?.render(state);
+        const resetSun = message => {
+            sunState.resetSubject();
+            sunCalculator?.setUnavailable(message || 'Sun position is unavailable.');
+        };
+        const selectedPointForSun = point => metrics.timeQuality?.reason === 'not-progressing'
+            ? { ...point, timeState: 'suspect' }
+            : point;
+        const selectSunPoint = point => renderSun(sunState.selectRoutePoint(
+            selectedPointForSun(point), ascentDate, mountainZone
+        ));
+        sunCalculator = SunCalculator.create({
+            mount: container,
+            mode: 'gpx',
+            onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
+        });
+        if (sunCalculator) chartLegend.before(sunCalculator.element);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
         if (fullScreenMapLink) fullScreenMapLink.before(container);
         else gpxLink.after(container);
@@ -285,6 +308,7 @@ const run = async () => {
             const theme = effectiveTheme(BPB.get().theme);
             container.dataset.theme = theme;
             terrainButton.dataset.theme = theme;
+            sunCalculator?.setTheme(theme);
         };
         applyPanelTheme();
 
@@ -407,6 +431,9 @@ const run = async () => {
                 setCoordinateStatus(unavailable
                     ? 'No chart point with coordinates is available.'
                     : COORDINATE_HINT);
+                resetSun(unavailable
+                    ? 'No selected track point is available.'
+                    : 'Sun position is unavailable.');
             }
             canvas.setAttribute('aria-label', hasSelection
                 ? `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
@@ -427,6 +454,7 @@ const run = async () => {
             );
             if (chartInstance) chartInstance.update('none');
             renderRouteHighlight(chartData[index], selectedCoordinateSeries);
+            selectSunPoint(chartData[index]);
             return true;
         };
         const selectCoordinateFromEvent = event => {
@@ -749,6 +777,7 @@ const run = async () => {
             peaksClientResolved = false;
             peaksClientGeneration++;
             if (reason === 'identity') {
+                resetSun('Select a track point to calculate the sun.');
                 viewport.attach(frame);
                 mapViewport = viewport.element;
                 attachMapControls();
@@ -774,6 +803,9 @@ const run = async () => {
         frameLifecycle.start();
         window.addEventListener('pagehide', () => {
             clearCoordinateFeedbackTimer();
+            sunState.resetSubject();
+            sunCalculator?.dispose();
+            sunCalculator = null;
             BPB.dispose();
             overlay.dispose();
             frameLifecycle.dispose();
@@ -848,6 +880,7 @@ const run = async () => {
             mapRouteSegments = [];
             removeRouteOverlay();
             terrainCoordinator.reset();
+            resetSun('Sun position is unavailable.');
 
             chartData = [];
             timeChartData = [];
@@ -888,6 +921,8 @@ const run = async () => {
 
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
+            const selectedBeforeRebuild = chartData[selectedCoordinateIndex];
+            if (selectedBeforeRebuild) resetSun('Select a track point to calculate the sun.');
             const p = panelPalette();
             applyPanelTheme();
             controlsContainer.hidden = false;
@@ -1361,6 +1396,9 @@ const run = async () => {
             }));
             syncChartLegend();
             syncCoordinateSelection();
+            if (isCoordinatePoint(chartData[selectedCoordinateIndex])) {
+                selectSunPoint(chartData[selectedCoordinateIndex]);
+            }
         };
 
         unitSelect.addEventListener('change', () => {
@@ -1414,6 +1452,7 @@ const run = async () => {
         let loadGeneration = 0;
         const loadGpx = async () => {
             const generation = ++loadGeneration;
+            resetSun('Select a track point after the GPX loads.');
             retryButton.hidden = true;
             retryButton.disabled = true;
             delete stats.dataset.state;

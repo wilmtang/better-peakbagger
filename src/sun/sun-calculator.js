@@ -160,6 +160,11 @@ export function createSunCalculator({
         summary.textContent = 'Unavailable';
         direction.textContent = text;
         events.textContent = '';
+        if (mode === 'peak') dateValue.value = '';
+        else dateValue.textContent = '';
+        dateMeta.textContent = '';
+        timeValue.textContent = '';
+        timeMeta.textContent = '';
         toggle.disabled = true;
         slider.disabled = true;
         if (mode === 'peak') dateValue.disabled = true;
