@@ -277,7 +277,7 @@ async function main() {
                     && rect.right <= parentRect.right + 1,
             };
         });
-        if (!analyzerSunInitial.insideParent || !/Azimuth \d+°/.test(analyzerSunInitial.direction)) {
+        if (!analyzerSunInitial.insideParent || !/Direction\s*\d+°/.test(analyzerSunInitial.direction)) {
             throw new Error(`Firefox Analyzer Sun calculator is clipped or incomplete: ${JSON.stringify(analyzerSunInitial)}`);
         }
         const peakMarker = frame.locator('.bpb-terrain-peak-marker').first();

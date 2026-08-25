@@ -89,6 +89,7 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     assert.equal(button.disabled, false);
     assert.match(button.textContent, /Sun position/);
     assert.match(button.textContent, /282° WNW · 17° above horizon/);
+    assert.ok(button.querySelector('.bpb-sun-calculator__icon'));
     button.click();
     assert.equal(button.getAttribute('aria-expanded'), 'true');
     assert.equal(panel.hidden, false);
@@ -103,6 +104,13 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     assert.deepEqual(minutes, [825]);
     assert.equal(slider.min, '0');
     assert.equal(slider.max, '1439');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__direction strong').textContent,
+        '282° WNW');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__elevation strong').textContent,
+        '17° above horizon');
+    assert.equal(calculator.element.querySelectorAll('.bpb-sun-calculator__event-time').length, 2);
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__event-marker').style.insetInlineStart,
+        /%$/);
     assert.match(calculator.element.textContent, /Astronomical position at this location/);
 }));
 
@@ -119,8 +127,9 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     assert.equal(calculator.element.querySelector('input[type="date"]'), null);
     assert.match(calculator.element.textContent, /Sun at selected point/);
     assert.match(calculator.element.textContent, /5° below horizon/);
-    assert.match(calculator.element.textContent, /GPX point · MDT/);
-    assert.match(calculator.element.textContent, /Recorded at selected GPX point/);
+    assert.match(calculator.element.textContent, /GPX point/);
+    assert.match(calculator.element.textContent,
+        /Recorded at selected GPX point · Mountain Daylight Time \(MDT\)/);
     assert.match(calculator.element.textContent, /Level-horizon sunrise/);
 
     calculator.render(ordinaryState({ daylightState: 'polar-night' }));
@@ -178,7 +187,8 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(css, /max-inline-size:\s*100%/);
     assert.match(css, /min-inline-size:\s*0/);
     assert.match(css, /overflow-wrap:\s*anywhere/);
-    assert.match(css, /@media \(max-width: 600px\)/);
+    assert.match(css, /@media \(max-width: 680px\)/);
+    assert.match(css, /@media \(max-width: 440px\)/);
     assert.match(css, /prefers-reduced-motion: reduce/);
     calculator.dispose();
     assert.equal(dom.window.document.querySelector('.bpb-sun-calculator'), null);

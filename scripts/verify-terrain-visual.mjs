@@ -431,7 +431,7 @@ const exerciseSolarBearing = async (cdp, label) => {
                 && rect.right <= parentRect.right + 1,
         };
     })()`, 8000);
-    if (!initial.insideParent || !/Azimuth \d+°/.test(initial.direction)) {
+    if (!initial.insideParent || !/Direction\s*\d+°/.test(initial.direction)) {
         throw new Error(`${label}: Sun calculator is clipped or missing absolute direction text: ${JSON.stringify(initial)}`);
     }
 
@@ -481,10 +481,11 @@ const assertSolarNorthUp = async (cdp, label, absoluteText) => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
         const northElement = calculator?.querySelector('[data-azimuth="0"]');
+        const northLabel = northElement?.firstElementChild;
         const north = northElement?.style.transform || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
         const compassRect = compass?.getBoundingClientRect();
-        const northRect = northElement?.getBoundingClientRect();
+        const northRect = northLabel?.getBoundingClientRect();
         const offset = compassRect && northRect ? {
             x: (northRect.left + northRect.width / 2) - (compassRect.left + compassRect.width / 2),
             y: (northRect.top + northRect.height / 2) - (compassRect.top + compassRect.height / 2),

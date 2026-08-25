@@ -13,8 +13,62 @@ const element = (tag, className, text = null) => {
     return node;
 };
 
+const svgElement = tag => document.createElementNS('http://www.w3.org/2000/svg', tag);
+
+const sunIcon = () => {
+    const icon = svgElement('svg');
+    icon.classList.add('bpb-sun-calculator__icon');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('aria-hidden', 'true');
+    const circle = svgElement('circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', '12');
+    circle.setAttribute('r', '4');
+    icon.append(circle);
+    for (const [x1, y1, x2, y2] of [
+        ['12', '1', '12', '4'], ['12', '20', '12', '23'],
+        ['1', '12', '4', '12'], ['20', '12', '23', '12'],
+        ['4.2', '4.2', '6.3', '6.3'], ['17.7', '17.7', '19.8', '19.8'],
+        ['17.7', '6.3', '19.8', '4.2'], ['4.2', '19.8', '6.3', '17.7'],
+    ]) {
+        const ray = svgElement('line');
+        ray.setAttribute('x1', x1);
+        ray.setAttribute('y1', y1);
+        ray.setAttribute('x2', x2);
+        ray.setAttribute('y2', y2);
+        icon.append(ray);
+    }
+    return icon;
+};
+
+const chevronIcon = () => {
+    const icon = svgElement('svg');
+    icon.classList.add('bpb-sun-calculator__chevron');
+    icon.setAttribute('viewBox', '0 0 16 16');
+    icon.setAttribute('aria-hidden', 'true');
+    const line = svgElement('polyline');
+    line.setAttribute('points', '3 6 8 11 13 6');
+    icon.append(line);
+    return icon;
+};
+
 const roundedDegrees = value => `${Math.round(value)}°`;
 const elevationText = value => `${roundedDegrees(Math.abs(value))} ${value >= 0 ? 'above' : 'below'} horizon`;
+
+const zoneDescription = (zone, referenceMs, fallback) => {
+    if (!zone?.timeZone) return fallback;
+    try {
+        const name = style => new Intl.DateTimeFormat([], {
+            timeZone: zone.timeZone,
+            timeZoneName: style,
+        }).formatToParts(referenceMs).find(part => part.type === 'timeZoneName')?.value;
+        const long = name('long');
+        const short = name('short');
+        return long && short && long !== short ? `${long} (${short})` : long || short || fallback;
+    } catch {
+        return fallback;
+    }
+};
 
 export function createSunCalculator({
     mount,
@@ -35,17 +89,18 @@ export function createSunCalculator({
     toggle.type = 'button';
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', id);
+    const icon = sunIcon();
     const title = element('span', 'bpb-sun-calculator__title',
         mode === 'peak' ? 'Sun position' : 'Sun at selected point');
     const summary = element('span', 'bpb-sun-calculator__summary', 'Unavailable');
-    const chevron = element('span', 'bpb-sun-calculator__chevron', '›');
-    chevron.setAttribute('aria-hidden', 'true');
-    toggle.append(title, summary, chevron);
+    const chevron = chevronIcon();
+    toggle.append(icon, title, summary, chevron);
 
     const panel = element('div', 'bpb-sun-calculator__panel');
     panel.id = id;
     panel.hidden = true;
 
+    const layout = element('div', 'bpb-sun-calculator__layout');
     const controls = element('div', 'bpb-sun-calculator__controls');
     const dateRow = element('div', 'bpb-sun-calculator__field');
     const dateLabel = element('label', 'bpb-sun-calculator__label', 'Date');
@@ -79,22 +134,43 @@ export function createSunCalculator({
     const compass = element('div', 'bpb-sun-calculator__compass');
     compass.setAttribute('aria-hidden', 'true');
     const compassRing = element('div', 'bpb-sun-calculator__compass-ring');
+    const center = element('span', 'bpb-sun-calculator__compass-center');
     const sun = element('span', 'bpb-sun-calculator__sun');
+    const sunDisc = element('span', 'bpb-sun-calculator__sun-disc');
+    sun.append(sunDisc);
     const cardinals = new Map();
     for (const [label, azimuth] of [['N', 0], ['E', 90], ['S', 180], ['W', 270]]) {
-        const cardinal = element('span', 'bpb-sun-calculator__cardinal', label);
+        const cardinal = element('span', 'bpb-sun-calculator__cardinal');
+        const cardinalLabel = element('span', 'bpb-sun-calculator__cardinal-label', label);
         cardinal.dataset.azimuth = String(azimuth);
+        cardinal.append(cardinalLabel);
         cardinals.set(azimuth, cardinal);
         compassRing.append(cardinal);
     }
-    compassRing.append(sun);
+    compassRing.append(sun, center);
     compass.append(compassRing);
 
     const facts = element('div', 'bpb-sun-calculator__facts');
     const direction = element('div', 'bpb-sun-calculator__direction');
+    const directionLabel = element('span', 'bpb-sun-calculator__fact-label', 'Direction');
+    const directionValue = element('strong', 'bpb-sun-calculator__fact-value');
+    direction.append(directionLabel, directionValue);
+    const elevationFact = element('div', 'bpb-sun-calculator__elevation');
+    const elevationLabel = element('span', 'bpb-sun-calculator__fact-label', 'Elevation');
+    const elevationValue = element('strong', 'bpb-sun-calculator__fact-value');
+    elevationFact.append(elevationLabel, elevationValue);
+    facts.append(direction, elevationFact);
     const events = element('div', 'bpb-sun-calculator__events');
-    facts.append(direction, events);
-    reading.append(compass, facts);
+    const eventsText = element('span', 'bpb-sun-calculator__events-text');
+    const eventsVisual = element('span', 'bpb-sun-calculator__event-line');
+    eventsVisual.setAttribute('aria-hidden', 'true');
+    const sunrise = element('span', 'bpb-sun-calculator__event-time');
+    const eventTrack = element('span', 'bpb-sun-calculator__event-track');
+    const eventMarker = element('span', 'bpb-sun-calculator__event-marker');
+    eventTrack.append(eventMarker);
+    const sunset = element('span', 'bpb-sun-calculator__event-time');
+    eventsVisual.append(sunrise, eventTrack, sunset);
+    events.append(eventsText, eventsVisual);
 
     const limitation = element('p', 'bpb-sun-calculator__limitation',
         'Astronomical position at this location. Nearby terrain may block the sun.');
@@ -102,7 +178,9 @@ export function createSunCalculator({
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('aria-atomic', 'true');
-    panel.append(controls, reading, limitation, status);
+    reading.append(compass, facts, events, limitation);
+    layout.append(controls, reading);
+    panel.append(layout, status);
     root.append(toggle, panel);
     mount.append(root);
 
@@ -112,6 +190,11 @@ export function createSunCalculator({
     let unboundedBearing = null;
     let statusTimer = null;
     let announcedText = '';
+
+    const setSliderMinute = minute => {
+        slider.value = String(minute);
+        slider.style.setProperty('--bpb-sun-progress', `${minute / 1439 * 100}%`);
+    };
 
     const applyCompass = () => {
         frameHandle = null;
@@ -127,12 +210,13 @@ export function createSunCalculator({
         }
         for (const [worldAzimuth, cardinal] of cardinals) {
             const angle = worldAzimuth - unboundedBearing;
-            cardinal.style.transform = `rotate(${angle}deg) translateY(-2.65rem) rotate(${-angle}deg)`;
+            cardinal.style.transform = `rotate(${angle}deg)`;
+            cardinal.firstElementChild.style.transform = `translateX(-50%) rotate(${-angle}deg)`;
         }
         sun.hidden = !Number.isFinite(next.sunAzimuth);
         if (!sun.hidden) {
             const angle = next.sunAzimuth - unboundedBearing;
-            sun.style.transform = `rotate(${angle}deg) translateY(-2.65rem)`;
+            sun.style.transform = `rotate(${angle}deg)`;
         }
     };
 
@@ -158,8 +242,12 @@ export function createSunCalculator({
     const showUnavailable = message => {
         const text = message || 'Sun position is unavailable.';
         summary.textContent = 'Unavailable';
-        direction.textContent = text;
-        events.textContent = '';
+        directionValue.textContent = text;
+        elevationValue.textContent = '';
+        elevationFact.hidden = true;
+        eventsText.textContent = '';
+        events.classList.remove('bpb-sun-calculator__events--text');
+        eventsVisual.hidden = true;
         if (mode === 'peak') dateValue.value = '';
         else dateValue.textContent = '';
         dateMeta.textContent = '';
@@ -167,6 +255,7 @@ export function createSunCalculator({
         timeMeta.textContent = '';
         toggle.disabled = true;
         slider.disabled = true;
+        slider.style.setProperty('--bpb-sun-progress', '0%');
         if (mode === 'peak') dateValue.disabled = true;
         scheduleCompass(null);
         announce(text);
@@ -187,34 +276,48 @@ export function createSunCalculator({
 
         toggle.disabled = false;
         slider.disabled = false;
-        slider.value = String(state.minute);
+        setSliderMinute(state.minute);
         if (mode === 'peak') {
             dateValue.disabled = false;
             dateValue.value = state.date;
         } else dateValue.textContent = state.date;
-        dateMeta.textContent = `${state.dateSource} · ${label}`;
-        timeValue.textContent = `${clock} (${label})`;
-        timeMeta.textContent = state.timeSource;
+        dateMeta.textContent = mode === 'peak' ? '' : state.dateSource;
+        timeValue.textContent = clock;
+        const zoneText = zoneDescription(state.zone, state.instant.ms, label);
+        timeMeta.textContent = mode === 'peak' ? zoneText : `${state.timeSource} · ${zoneText}`;
 
         const azimuth = roundedDegrees(state.result.azimuthDeg);
         const elevation = elevationText(state.result.elevationDeg);
         summary.textContent = `${azimuth} ${state.result.directionLabel} · ${elevation}`;
-        direction.textContent = `Azimuth ${azimuth} ${state.result.directionLabel} · ${elevation}`;
+        directionValue.textContent = `${azimuth} ${state.result.directionLabel}`;
+        elevationFact.hidden = false;
+        elevationValue.textContent = elevation;
+        events.classList.toggle('bpb-sun-calculator__events--text',
+            state.result.daylightState !== 'ordinary');
+        eventsVisual.hidden = true;
         if (state.result.daylightState === 'polar-day') {
-            events.textContent = `The sun does not set on this date (polar day, ${label}).`;
+            eventsText.textContent = `The sun does not set on this date (polar day, ${label}).`;
         } else if (state.result.daylightState === 'polar-night') {
-            events.textContent = `The sun does not rise on this date (polar night, ${label}).`;
+            eventsText.textContent = `The sun does not rise on this date (polar night, ${label}).`;
         } else {
-            const sunrise = MountainTime.formatClock(state.zone, state.result.sunriseMs);
-            const sunset = MountainTime.formatClock(state.zone, state.result.sunsetMs);
-            if (!sunrise || !sunset) {
+            const sunriseText = MountainTime.formatClock(state.zone, state.result.sunriseMs);
+            const sunsetText = MountainTime.formatClock(state.zone, state.result.sunsetMs);
+            if (!sunriseText || !sunsetText) {
                 showUnavailable('Sun position is unavailable.');
                 return;
             }
-            events.textContent = `Level-horizon sunrise ${sunrise} · sunset ${sunset} (${label})`;
+            eventsText.textContent = `Level-horizon sunrise ${sunriseText} · sunset ${sunsetText} (${label})`;
+            sunrise.textContent = sunriseText;
+            sunset.textContent = sunsetText;
+            const daylightMs = state.result.sunsetMs - state.result.sunriseMs;
+            const progress = daylightMs > 0
+                ? Math.max(0, Math.min(1, (state.instant.ms - state.result.sunriseMs) / daylightMs))
+                : 0;
+            eventMarker.style.insetInlineStart = `${progress * 100}%`;
+            eventsVisual.hidden = false;
         }
         scheduleCompass(state);
-        announce(`${summary.textContent}. ${events.textContent}`);
+        announce(`${summary.textContent}. ${eventsText.textContent}`);
     };
 
     const setExpanded = expanded => {
@@ -224,7 +327,10 @@ export function createSunCalculator({
     };
     const onToggle = () => setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
     const onDateInput = () => onDateChange(dateValue.value);
-    const onTimeInput = () => onMinuteChange(Number(slider.value));
+    const onTimeInput = () => {
+        setSliderMinute(Number(slider.value));
+        onMinuteChange(Number(slider.value));
+    };
     toggle.addEventListener('click', onToggle);
     if (mode === 'peak') dateValue.addEventListener('change', onDateInput);
     slider.addEventListener('input', onTimeInput);
@@ -235,7 +341,7 @@ export function createSunCalculator({
         render,
         setSubject: render,
         setPreviewMinute: minute => {
-            if (validMinute(minute)) slider.value = String(minute);
+            if (validMinute(minute)) setSliderMinute(minute);
         },
         setMapBearing: state => scheduleCompass(state),
         setTheme: theme => { root.dataset.theme = theme === 'dark' ? 'dark' : 'light'; },

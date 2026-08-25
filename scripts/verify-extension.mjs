@@ -2308,8 +2308,12 @@ try {
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
         const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
-        return toggle?.disabled === false && /°/.test(summary) && /Azimuth \d+°/.test(direction)
-            ? { summary, direction } : false;
+        const elevation = calculator?.querySelector('.bpb-sun-calculator__elevation')?.textContent || '';
+        const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
+        return toggle?.disabled === false && /°/.test(summary) && /Direction\s*\d+°/.test(direction)
+            && /Elevation\s*\d+°/.test(elevation) && eventLine?.hidden === false
+            && calculator.querySelector('.bpb-sun-calculator__icon')
+            ? { summary, direction, elevation } : false;
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(selectedSun,
         `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
@@ -2424,6 +2428,8 @@ try {
         `the analyzer dark-theme focus ring was not visible: ${JSON.stringify(darkCoordinateFocus)}`);
         if (process.env.BPB_VERIFY_ANALYZER_DARK_SCREENSHOT) {
             await settleAnalyzerChart();
+            const sunToggle = offPage.locator('.bpb-sun-calculator__toggle');
+            if (await sunToggle.getAttribute('aria-expanded') !== 'true') await sunToggle.click();
             await offPage.locator('#bpb-gpx-analysis').screenshot({
                 path: process.env.BPB_VERIFY_ANALYZER_DARK_SCREENSHOT
             });
@@ -2772,6 +2778,12 @@ try {
                 sunCollapsed: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
                 sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
                 sunBorderStyle: getComputedStyle(sun).borderStyle,
+                sunMockHierarchy: Boolean(
+                    sun.querySelector('.bpb-sun-calculator__icon')
+                    && /Direction\s*\d+°/.test(sun.querySelector('.bpb-sun-calculator__direction')?.textContent || '')
+                    && /Elevation\s*\d+°/.test(sun.querySelector('.bpb-sun-calculator__elevation')?.textContent || '')
+                    && sun.querySelector('.bpb-sun-calculator__event-line')?.hidden === false
+                ),
                 // The MAIN-world coordinator bundle self-contains basemap,
                 // peak-markers, and schema via ES imports, so its toggle existing
                 // (this state being truthy) proves those loaded. The isolated
@@ -2786,11 +2798,13 @@ try {
         check(peakState?.mountHeight === 425,
             `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
         check(peakState?.sunAfterMap && peakState?.sunDateInput && peakState?.sunCollapsed
-            && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid',
+            && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid'
+            && peakState?.sunMockHierarchy,
         `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
         check(peakState?.isolatedWorldReady,
             `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
+            await peakPage.locator('.bpb-sun-calculator__toggle').click();
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
         }
         await peakPage.evaluate(() => {

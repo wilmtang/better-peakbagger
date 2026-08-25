@@ -1273,7 +1273,7 @@ async function main() {
       const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
       return calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === false
-        && /°/.test(summary) && /Azimuth \\d+°/.test(direction)
+        && /°/.test(summary) && /Direction\\s*\\d+°/.test(direction)
         ? { summary, direction } : false;
     `, 'the Firefox GPX Sun selection');
         assertState(/°/.test(selectedSunState.summary),
