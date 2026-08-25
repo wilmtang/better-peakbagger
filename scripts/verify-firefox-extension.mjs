@@ -1233,6 +1233,7 @@ async function main() {
             noDateInput: !calculator?.querySelector('input[type="date"]'),
             collapsed: calculator?.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
             summary: calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
+            disabled: calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === true,
             placed: coordinates?.nextElementSibling === calculator && calculator?.nextElementSibling === legend,
             borderStyle: calculator ? getComputedStyle(calculator).borderStyle : null,
           };
@@ -1258,12 +1259,25 @@ async function main() {
           && state.chart?.pointCounts?.join("|") === "971|971"
           && state.chart?.breakCounts?.join("|") === "0|0"
           && state.sun.exists && state.sun.noDateInput && state.sun.collapsed
-          && /°/.test(state.sun.summary) && state.sun.placed && state.sun.borderStyle === "solid",
+          && state.sun.disabled && state.sun.summary === "Unavailable"
+          && state.sun.placed && state.sun.borderStyle === "solid",
       };
     `, 'the Firefox MAIN-world analyzer stats', 15_000, state => state?.ready);
         if (surfaceState.theme === null) {
             throw new Error('Firefox isolated-world theme bundle did not initialize');
         }
+        const analyzerCanvas = await driver.findElement(By.css('#bpb-gpx-analysis canvas'));
+        await analyzerCanvas.sendKeys(Key.ARROW_RIGHT);
+        const selectedSunState = await waitForScript(driver, `
+      const calculator = document.querySelector(".bpb-sun-calculator");
+      const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
+      const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
+      return calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === false
+        && /°/.test(summary) && /Azimuth \\d+°/.test(direction)
+        ? { summary, direction } : false;
+    `, 'the Firefox GPX Sun selection');
+        assertState(/°/.test(selectedSunState.summary),
+            'Firefox GPX Sun did not follow keyboard route selection', selectedSunState);
 
         const terrainToggle = await driver.findElement(By.css(surfaceSelectors.terrainToggle));
         await driver.executeScript((extensionRoot, selector) => {

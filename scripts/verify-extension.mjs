@@ -2008,7 +2008,7 @@ try {
                 return /^Interactive Stats:/.test(status)
                     && legendButtons === 2
                     && toggle?.disabled === false
-                    && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === false;
+                    && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true;
             }, null, { timeout: 15_000 });
         } catch (error) {
             const domState = await page.evaluate(() => ({
@@ -2234,6 +2234,7 @@ try {
             hasDateInput: Boolean(sun?.querySelector('input[type="date"]')),
             collapsed: sun?.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
             summary: sun?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+            disabled: sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true,
             afterCoordinates: coordinates?.nextElementSibling === sun,
             beforeLegend: sun?.nextElementSibling === legend,
             insidePanel: Boolean(rootRect) && rootRect.left >= panel.getBoundingClientRect().left
@@ -2242,7 +2243,8 @@ try {
         };
     });
     check(analyzerSunState.exists && !analyzerSunState.hasDateInput
-        && analyzerSunState.collapsed && /°/.test(analyzerSunState.summary)
+        && analyzerSunState.collapsed && analyzerSunState.disabled
+        && analyzerSunState.summary === 'Unavailable'
         && analyzerSunState.afterCoordinates && analyzerSunState.beforeLegend
         && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
     `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
@@ -2301,6 +2303,16 @@ try {
         && /Elevation by (Distance|Time): /.test(coordinateSelection?.status || '')
         && /Time: /.test(coordinateSelection?.status || ''),
     `the analyzer keyboard selection or visible focus ring failed: ${JSON.stringify(coordinateSelection)}`);
+    const selectedSun = await offPage.waitForFunction(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
+        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
+        return toggle?.disabled === false && /°/.test(summary) && /Azimuth \d+°/.test(direction)
+            ? { summary, direction } : false;
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(selectedSun,
+        `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
     await coordinateCanvas.press('ArrowRight');
     const routeScrubber = await offPage.waitForFunction(() => {
         const status = document.getElementById('bpb-gpx-coordinate-status')?.textContent || '';
