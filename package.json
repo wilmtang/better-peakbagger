@@ -85,5 +85,8 @@
   "webExt": {
     "sourceDir": "dist",
     "artifactsDir": "web-ext-artifacts"
+  },
+  "dependencies": {
+    "suncalc": "2.0.1"
   }
 }

@@ -44,6 +44,7 @@ updates:
           - "@codemirror/*"
           - "@lezer/*"
           - tz-lookup
+          - suncalc
       # Copied into dist/vendor as browser builds.
       copied-runtime:
         patterns:

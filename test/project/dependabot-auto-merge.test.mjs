@@ -160,4 +160,5 @@ test('runtime dependency groups match how the build graph ships each package', a
             `${packageName} is copied but also matches bundled-runtime`);
     }
     assert.ok(bundledPackages.includes('tz-lookup'));
+    assert.ok(bundledPackages.includes('suncalc'));
 });

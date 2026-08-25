@@ -373,6 +373,7 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
         ['Marked', 'marked'],
         ['MapLibre GL JS', 'maplibre'],
         ['tz-lookup', 'tzLookup'],
+        ['SunCalc', 'sunCalc'],
     ]) {
         assert.ok(metadata.version.approval_notes.includes(`${label} ${dependencyVersions[key]}`),
             `approval notes must name locked ${label} ${dependencyVersions[key]}`);
@@ -808,6 +809,7 @@ test('generated notices cover the real editor and copied runtime graph', async (
         'maplibre-gl',
         'marked',
         'tz-lookup',
+        'suncalc',
         'BetaCreator symbol geometry',
     ]) {
         assert.ok(components.includes(required), `missing notice for ${required}`);

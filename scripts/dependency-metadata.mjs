@@ -4,12 +4,20 @@ const REVIEWED_DEPENDENCIES = Object.freeze({
     marked: { packageName: 'marked', label: 'Marked', shipped: true },
     maplibre: { packageName: 'maplibre-gl', label: 'MapLibre GL JS', shipped: true },
     tzLookup: { packageName: 'tz-lookup', label: 'tz-lookup', shipped: true },
+    sunCalc: { packageName: 'suncalc', label: 'SunCalc', shipped: true },
     tiptap: { packageName: '@tiptap/core', label: 'TipTap core', shipped: true },
     prosemirrorView: {
         packageName: 'prosemirror-view',
         label: 'ProseMirror view',
         shipped: true,
     },
+});
+
+// SunCalc 2.0.1 ships its full BSD text but omits the package.json `license`
+// field. Keep the exception exact so a package update has to restore metadata
+// or receive an explicit review instead of silently inheriting this value.
+export const REVIEWED_PACKAGE_LICENSES = Object.freeze({
+    suncalc: Object.freeze({ version: '2.0.1', license: 'BSD-3-Clause' }),
 });
 
 function lockedVersion(packageLock, packageName) {
@@ -81,6 +89,7 @@ export function validateReviewedDependencyMetadata({
         ['marked', 'Marked'],
         ['maplibre', 'MapLibre GL JS'],
         ['tzLookup', 'tz-lookup'],
+        ['sunCalc', 'SunCalc'],
         ['tiptap', 'TipTap'],
     ]) {
         requireExactMention({

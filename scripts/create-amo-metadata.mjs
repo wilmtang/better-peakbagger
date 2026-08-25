@@ -24,6 +24,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
         'marked',
         'maplibre',
         'tzLookup',
+        'sunCalc',
         'tiptap',
         'prosemirrorView',
     ];
@@ -71,6 +72,8 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
                 `vendor/maplibre-gl.mjs is imported directly by the native terrain-frame module. It, vendor/maplibre-gl-worker.mjs, vendor/maplibre-gl-shared.mjs, and vendor/maplibre-gl.css are copied unmodified from the MapLibre GL JS ${versions.maplibre} npm distribution (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/${versions.maplibre} ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v${versions.maplibre}`,
                 '',
                 `The tz-lookup ${versions.tzLookup} CommonJS distribution (CC0-1.0) is bundled by esbuild into content/gpx-analyzer.js and content/ascent-editor.js, with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/${versions.tzLookup} ; readable source: https://github.com/darkskyapp/tz-lookup`,
+                '',
+                `The SunCalc ${versions.sunCalc} ESM distribution (BSD-3-Clause) is bundled by esbuild only into the Peak-page and GPX-analyzer consumers. It calculates Sun position and rise/set events entirely offline. Package: https://www.npmjs.com/package/suncalc/v/${versions.sunCalc} ; readable source: https://github.com/mourner/suncalc/tree/v${versions.sunCalc}`,
                 '',
                 `The report editor bundles TipTap core ${versions.tiptap} and ProseMirror view ${versions.prosemirrorView} with their shipped dependency graph into content/ascent-editor.js. Their exact package metadata and license texts are recorded in THIRD_PARTY_NOTICES.txt.`,
                 '',

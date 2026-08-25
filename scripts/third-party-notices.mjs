@@ -9,6 +9,7 @@ import {
     nodeModule,
     root,
 } from './build-config.mjs';
+import { REVIEWED_PACKAGE_LICENSES } from './dependency-metadata.mjs';
 
 const NOTICE_FILE = /^(?:licen[cs]e|copying|notice)(?:[._-].*)?$/i;
 
@@ -30,9 +31,18 @@ async function packageRootForFile(filePath) {
 async function packageNotice(packageRoot) {
     const packageJsonPath = path.join(packageRoot, 'package.json');
     const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
-    const license = typeof packageJson.license === 'string'
+    const key = path.relative(root, packageRoot).split(path.sep).join('/');
+    let license = typeof packageJson.license === 'string'
         ? packageJson.license.trim()
         : '';
+    let licenseSource = `${key}/package.json`;
+    if (!license) {
+        const reviewed = REVIEWED_PACKAGE_LICENSES[packageJson.name];
+        if (reviewed?.version === packageJson.version) {
+            license = reviewed.license;
+            licenseSource = 'exact reviewed override in scripts/dependency-metadata.mjs';
+        }
+    }
     const noticeNames = (await readdir(packageRoot))
         .filter((name) => NOTICE_FILE.test(name))
         .sort((left, right) => left.localeCompare(right));
@@ -40,13 +50,12 @@ async function packageNotice(packageRoot) {
         name,
         text: (await readFile(path.join(packageRoot, name), 'utf8')).trim(),
     })));
-    const key = path.relative(root, packageRoot).split(path.sep).join('/');
     return validatePackageNoticeMetadata({
         key,
         name: packageJson.name,
         version: packageJson.version,
         license,
-        licenseSource: `${key}/package.json`,
+        licenseSource,
         notices,
     });
 }

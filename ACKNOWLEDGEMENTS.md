@@ -91,6 +91,17 @@ offline so chart times can be shown in the climb's local time.
 - License: CC0-1.0 (public-domain dedication)
 - Packaged license text: `vendor/tz-lookup-LICENSE.txt` (copied from the npm package at build time)
 
+### SunCalc
+
+Better Peakbagger bundles the SunCalc 2.0.1 ESM distribution into the Peak-page
+and GPX-analyzer calculators. It computes apparent Sun position and rise/set
+events locally in the browser without a network service.
+
+- Project: [SunCalc](https://github.com/mourner/suncalc)
+- Source: [SunCalc 2.0.1](https://www.npmjs.com/package/suncalc/v/2.0.1)
+- License: BSD 3-Clause
+- Packaged license text: `THIRD_PARTY_NOTICES.txt`
+
 ### Mapterhorn
 
 The optional 3D view requests elevation tiles from
