@@ -128,6 +128,9 @@
         "vendor/chart.umd.min.js",
         "content/gpx-analyzer.js"
       ],
+      "css": [
+        "css/sun-calculator.css"
+      ],
       "run_at": "document_end",
       "all_frames": false,
       "world": "MAIN"
@@ -222,6 +225,9 @@
       ],
       "js": [
         "content/peak-map.js"
+      ],
+      "css": [
+        "css/sun-calculator.css"
       ],
       "run_at": "document_end",
       "all_frames": false,
