@@ -278,6 +278,9 @@ const run = async () => {
         const sunState = SunState.create();
         let sunCalculator = null;
         const renderSun = state => sunCalculator?.render(state);
+        const setSunBearing = bearing => sunCalculator?.setMapBearing(
+            sunState.setMapBearing(Number.isFinite(bearing) ? bearing : 0)
+        );
         const resetSun = message => {
             sunState.resetSubject();
             sunCalculator?.setUnavailable(message || 'Sun position is unavailable.');
@@ -678,6 +681,7 @@ const run = async () => {
             // for actionable errors and the drape-unsupported notice.
             clearFailure: () => showTerrainMessage(''),
             showFailure: reason => showTerrainMessage(TerrainFailure.message(reason), 'error'),
+            onView: setSunBearing,
             theme: () => effectiveTheme(BPB.get().theme),
             position: positionTerrainToggle
         });

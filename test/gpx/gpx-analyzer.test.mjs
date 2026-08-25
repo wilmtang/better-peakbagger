@@ -350,6 +350,8 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         data: { __bpbTerrain: true, dir: 'toPage', type: 'view', bearing: 30, pitch: 55 }
     }));
     assert.equal(terrainCompassDisc.style.transform, 'rotateX(55deg) rotateZ(-30deg)');
+    const solarNorth = window.document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
+    await waitFor(dom, () => /rotate\(-30deg\)/.test(solarNorth.style.transform));
     terrainCompass.click();
     assert.equal(terrainMessages.at(-1).type, 'resetNorth');
     // The floating toggle overlays the map, not the panel below it.
@@ -425,6 +427,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(terrainMessages.at(-1).type, 'destroy');
     assert.equal(terrainToggle.textContent, '3D');
     assert.equal(terrainCompass.hidden, true, 'the compass hides as soon as the analyzer returns to 2D');
+    await waitFor(dom, () => /rotate\(0deg\)/.test(solarNorth.style.transform));
 
     const initCountBeforeConsent = terrainMessages.filter(message => message.type === 'init').length;
     terrainToggle.click();

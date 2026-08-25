@@ -249,6 +249,9 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
     };
     const compass = window.document.getElementById('bpb-terrain-compass');
     const disc = compass.querySelector('.bpb-map-compass-disc');
+    const solar = window.document.querySelector('.bpb-sun-calculator');
+    const solarNorth = solar.querySelector('[data-azimuth="0"]');
+    const solarSummary = solar.querySelector('.bpb-sun-calculator__summary');
     assert.ok(compass, 'the compass button exists next to the toggle');
     assert.equal(compass.parentElement.id, 'bpb-map-viewport');
     assert.equal(compass.title, 'Reset to north');
@@ -269,6 +272,10 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
     // Bearing normalizes across full turns; pitch is passed through in range.
     dispatchPage({ type: 'view', bearing: 720 + 45, pitch: 40 });
     assert.equal(disc.style.transform, 'rotateX(40deg) rotateZ(-45deg)');
+    const absoluteSummary = solarSummary.textContent;
+    await waitFor(dom, () => /rotate\(-45deg\)/.test(solarNorth.style.transform));
+    assert.equal(solarSummary.textContent, absoluteSummary,
+        'absolute azimuth and elevation text do not change with map bearing');
     dispatchPage({ type: 'view', bearing: 350, pitch: 40 });
     const beforeNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
     dispatchPage({ type: 'view', bearing: 10, pitch: 40 });
@@ -285,6 +292,7 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
 
     toggle.click(); // request the return to 2D
     assert.equal(compass.hidden, true, 'hidden again once a stop is pending');
+    await waitFor(dom, () => /rotate\(0deg\)/.test(solarNorth.style.transform));
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });

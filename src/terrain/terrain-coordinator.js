@@ -25,6 +25,7 @@ const create = ({
     clearFailure,
     showFailure,
     setFailureTheme = () => {},
+    onView = () => {},
     theme,
     position,
     loadTimeoutMs = DEFAULT_LOAD_TIMEOUT_MS,
@@ -97,6 +98,7 @@ const create = ({
         navTop = null;
         viewCamera = null;
         stopPending = false;
+        onView(null);
         restoreNativeMap();
         post('destroy');
         update();
@@ -109,6 +111,7 @@ const create = ({
         if (!detail) return false;
 
         state = 'loading';
+        onView(null);
         clearFailure();
         viewCamera = TerrainCamera.fromLeaflet(nativeMap());
         update();
@@ -131,6 +134,7 @@ const create = ({
         navTop = null;
         viewCamera = null;
         stopPending = false;
+        onView(null);
         restoreNativeMap();
         post('destroy');
         clearFailure();
@@ -145,6 +149,7 @@ const create = ({
         if (stopPending) return;
         clearLoadTimer();
         stopPending = true;
+        onView(null);
         update();
         cameraRequestId++;
         post('cameraRequest', { requestId: cameraRequestId });
@@ -161,6 +166,7 @@ const create = ({
         navTop = null;
         viewCamera = null;
         stopPending = false;
+        onView(null);
         restoreNativeMap();
         post('destroy');
         clearFailure();
@@ -185,10 +191,11 @@ const create = ({
             return true;
         }
         if (data.type === 'view' && state === 'active') {
-            if (compass && Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
+            if (!stopPending && Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
                 const bearing = ((data.bearing % 360) + 360) % 360;
                 const pitch = Math.min(85, Math.max(0, data.pitch));
-                compass.update(bearing, pitch);
+                if (compass) compass.update(bearing, pitch);
+                onView(bearing);
             }
             return true;
         }

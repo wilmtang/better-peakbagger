@@ -97,6 +97,9 @@ import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
     const sunZone = MountainTime.resolve(lat, lon);
     let sunCalculator = null;
     const renderSun = state => sunCalculator?.render(state);
+    const setSunBearing = bearing => sunCalculator?.setMapBearing(
+        sunState.setMapBearing(Number.isFinite(bearing) ? bearing : 0)
+    );
     sunCalculator = SunCalculator.create({
         mount: mount.parentElement,
         mode: 'peak',
@@ -241,6 +244,7 @@ import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
         clearFailure: () => terrainFailureNotice.clear(),
         showFailure: reason => terrainFailureNotice.show(reason),
         setFailureTheme: value => terrainFailureNotice.setTheme(value),
+        onView: setSunBearing,
         theme: effectiveTheme,
         position: positionTerrainToggle
     });

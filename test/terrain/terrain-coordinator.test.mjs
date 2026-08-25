@@ -13,6 +13,7 @@ const setup = ({ enabled = true } = {}) => {
     const applied = [];
     const failures = [];
     const views = [];
+    const acceptedViews = [];
     let featureEnabled = enabled;
     let hidden = false;
     let restored = 0;
@@ -41,6 +42,7 @@ const setup = ({ enabled = true } = {}) => {
         requestConsent: () => { consentRequests++; },
         clearFailure: () => {},
         showFailure: reason => failures.push(reason),
+        onView: bearing => acceptedViews.push(bearing),
         theme: () => 'dark',
         position: value => views.push(['position', value]),
         loadTimeoutMs: 1000,
@@ -48,7 +50,7 @@ const setup = ({ enabled = true } = {}) => {
     });
     coordinator.update();
     return {
-        applied, compass, coordinator, dom, failures, get hidden() { return hidden; },
+        acceptedViews, applied, compass, coordinator, dom, failures, get hidden() { return hidden; },
         get consentRequests() { return consentRequests; }, map, posted,
         setEnabled: value => { featureEnabled = value; }, toggle, views,
         get restored() { return restored; }
@@ -80,7 +82,9 @@ test('the shared coordinator owns loading, active, and camera-preserving stop tr
 
     coordinator.handleMessage({ type: 'view', bearing: 359, pitch: 42 });
     assert.deepEqual(fixture.views.at(-1), [359, 42]);
+    assert.equal(fixture.acceptedViews.at(-1), 359);
     toggle.click();
+    assert.equal(fixture.acceptedViews.at(-1), null, 'a pending return to 2D resets optional consumers');
     assert.equal(toggle.disabled, true);
     assert.deepEqual(posted.at(-1), { type: 'cameraRequest', requestId: 1 });
     coordinator.handleMessage({
@@ -91,6 +95,32 @@ test('the shared coordinator owns loading, active, and camera-preserving stop tr
     assert.equal(fixture.hidden, false);
     assert.deepEqual(applied, [[[48.83, -121.57], 14, { animate: false }]]);
     assert.equal(posted.at(-1).type, 'destroy');
+    fixture.dom.window.close();
+});
+
+test('optional view consumers receive only normalized active finite bearings', () => {
+    const fixture = setup();
+    const { coordinator, acceptedViews } = fixture;
+    coordinator.handleMessage({ type: 'view', bearing: 30, pitch: 20 });
+    assert.deepEqual(acceptedViews, [], 'idle messages are stale and ignored');
+    fixture.toggle.click();
+    assert.deepEqual(acceptedViews, [null], 'loading remains north-up');
+    coordinator.handleMessage({ type: 'view', bearing: 30, pitch: 20 });
+    assert.deepEqual(acceptedViews, [null], 'loading messages are not authenticated as active');
+    coordinator.handleMessage({ type: 'loaded' });
+    coordinator.handleMessage({ type: 'view', bearing: 720 + 45, pitch: 40 });
+    assert.equal(acceptedViews.at(-1), 45);
+    coordinator.handleMessage({ type: 'view', bearing: Number.NaN, pitch: 40 });
+    coordinator.handleMessage({ type: 'view', bearing: 90, pitch: Infinity });
+    assert.equal(acceptedViews.at(-1), 45, 'invalid bearing or pitch cannot reach a consumer');
+    coordinator.stop();
+    const resets = acceptedViews.filter(value => value === null).length;
+    coordinator.handleMessage({ type: 'view', bearing: 90, pitch: 40 });
+    assert.equal(acceptedViews.filter(value => value === null).length, resets);
+    assert.notEqual(acceptedViews.at(-1), 90, 'stop-pending views are ignored');
+    coordinator.handleMessage({
+        type: 'camera', requestId: 1, camera: { center: [48.8, -121.6], zoom: 12 },
+    });
     fixture.dom.window.close();
 });
 
