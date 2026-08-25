@@ -2363,16 +2363,36 @@ try {
         await coordinateCanvas.focus();
         await coordinateCanvas.press('ArrowRight');
         await settleAnalyzerChart();
+        const sunToggle = offPage.locator('.bpb-sun-calculator__toggle');
+        if (await sunToggle.getAttribute('aria-expanded') !== 'true') await sunToggle.click();
         await offPage.locator('#bpb-gpx-analysis').screenshot({
             path: process.env.BPB_VERIFY_ANALYZER_SCREENSHOT
         });
     }
     if (process.env.BPB_VERIFY_ANALYZER_NARROW_SCREENSHOT) {
         const previousViewport = offPage.viewportSize();
-        await offPage.setViewportSize({ width: 440, height: previousViewport?.height || verificationViewport.height });
+        await offPage.setViewportSize({ width: 390, height: previousViewport?.height || verificationViewport.height });
         await coordinateCanvas.focus();
         await coordinateCanvas.press('ArrowRight');
         await settleAnalyzerChart();
+        const sunToggle = offPage.locator('.bpb-sun-calculator__toggle');
+        if (await sunToggle.getAttribute('aria-expanded') !== 'true') await sunToggle.click();
+        const narrowSunLayout = await offPage.evaluate(() => {
+            const panel = document.getElementById('bpb-gpx-analysis');
+            const calculator = panel?.querySelector('.bpb-sun-calculator');
+            const panelRect = panel?.getBoundingClientRect();
+            const calculatorRect = calculator?.getBoundingClientRect();
+            return {
+                viewportWidth: document.documentElement.clientWidth,
+                documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+                panelOverflow: panel ? panel.scrollWidth > panel.clientWidth : true,
+                calculatorInsidePanel: Boolean(panelRect && calculatorRect)
+                    && calculatorRect.left >= panelRect.left - 1 && calculatorRect.right <= panelRect.right + 1,
+            };
+        });
+        check(narrowSunLayout.viewportWidth === 390 && !narrowSunLayout.documentOverflow
+            && !narrowSunLayout.panelOverflow && narrowSunLayout.calculatorInsidePanel,
+        `the open GPX Sun calculator overflowed at a 390px page width: ${JSON.stringify(narrowSunLayout)}`);
         await offPage.locator('#bpb-gpx-analysis').screenshot({
             path: process.env.BPB_VERIFY_ANALYZER_NARROW_SCREENSHOT
         });

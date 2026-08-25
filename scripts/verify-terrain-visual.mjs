@@ -479,11 +479,20 @@ const exerciseSolarBearing = async (cdp, label) => {
 const assertSolarNorthUp = async (cdp, label, absoluteText) => {
     const reset = await waitForPageState(cdp, `(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
-        const north = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
+        const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
+        const northElement = calculator?.querySelector('[data-azimuth="0"]');
+        const north = northElement?.style.transform || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
+        const compassRect = compass?.getBoundingClientRect();
+        const northRect = northElement?.getBoundingClientRect();
+        const offset = compassRect && northRect ? {
+            x: (northRect.left + northRect.width / 2) - (compassRect.left + compassRect.width / 2),
+            y: (northRect.top + northRect.height / 2) - (compassRect.top + compassRect.height / 2),
+        } : null;
         return {
-            ready: north.startsWith('rotate(0deg)') && direction === ${JSON.stringify(absoluteText)},
-            north, direction,
+            ready: north.startsWith('rotate(0deg)') && direction === ${JSON.stringify(absoluteText)}
+                && offset && Math.abs(offset.x) < 2 && offset.y < -20,
+            north, direction, offset,
         };
     })()`, 8000);
     if (!reset.ready) throw new Error(`${label}: Sun compass did not reset north-up in 2D: ${JSON.stringify(reset)}`);
@@ -1395,6 +1404,23 @@ try {
             }
         };
     })()`);
+    await evaluate(cdp, 'document.querySelector("#bpb-gpx-analysis canvas")?.focus()');
+    for (const type of ['rawKeyDown', 'keyUp']) {
+        await cdp.call('Input.dispatchKeyEvent', {
+            type, key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39
+        });
+    }
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.querySelector('.bpb-sun-calculator__toggle');
+        if (toggle && !toggle.disabled && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const rect = calculator?.getBoundingClientRect();
+        const parentRect = calculator?.parentElement?.getBoundingClientRect();
+        return {
+            ready: toggle?.getAttribute('aria-expanded') === 'true'
+                && rect && parentRect && rect.left >= parentRect.left - 1 && rect.right <= parentRect.right + 1,
+        };
+    })()`);
     await delay(800);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     const narrowHintGap = await measureGestureHintGap(cdp);
@@ -1679,6 +1705,17 @@ try {
             return { ready: Boolean(toggle) && !toggle.disabled && toggle.dataset.theme === '${theme}' };
         })()`);
         await showTerrainFailure(cdp, `Peak page ${theme} failure`, theme);
+        await waitForPageState(cdp, `(() => {
+            const toggle = document.querySelector('.bpb-sun-calculator__toggle');
+            if (toggle && !toggle.disabled && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            const rect = calculator?.getBoundingClientRect();
+            const parentRect = calculator?.parentElement?.getBoundingClientRect();
+            return {
+                ready: toggle?.getAttribute('aria-expanded') === 'true'
+                    && rect && parentRect && rect.left >= parentRect.left - 1 && rect.right <= parentRect.right + 1,
+            };
+        })()`);
         await capture(cdp, path.join(outputDir, `peak-page-failure-${theme}.png`));
     }
 
