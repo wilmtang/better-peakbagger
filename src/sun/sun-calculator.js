@@ -174,13 +174,15 @@ export function createSunCalculator({
 
     const limitation = element('p', 'bpb-sun-calculator__limitation',
         'Astronomical position at this location. Nearby terrain may block the sun.');
+    const empty = element('p', 'bpb-sun-calculator__empty');
+    empty.hidden = true;
     const status = element('div', 'bpb-sun-calculator__status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('aria-atomic', 'true');
     reading.append(compass, facts, events, limitation);
     layout.append(controls, reading);
-    panel.append(layout, status);
+    panel.append(layout, empty, status);
     root.append(toggle, panel);
     mount.append(root);
 
@@ -239,10 +241,13 @@ export function createSunCalculator({
         }, statusDelayMs);
     };
 
-    const showUnavailable = message => {
+    const showUnavailable = (message, { expandable = false, summaryText = 'Unavailable' } = {}) => {
         const text = message || 'Sun position is unavailable.';
-        summary.textContent = 'Unavailable';
-        directionValue.textContent = text;
+        summary.textContent = summaryText;
+        layout.hidden = true;
+        empty.hidden = false;
+        empty.textContent = text;
+        directionValue.textContent = '';
         elevationValue.textContent = '';
         elevationFact.hidden = true;
         eventsText.textContent = '';
@@ -253,28 +258,38 @@ export function createSunCalculator({
         dateMeta.textContent = '';
         timeValue.textContent = '';
         timeMeta.textContent = '';
-        toggle.disabled = true;
+        toggle.disabled = !expandable;
+        if (!expandable) {
+            toggle.setAttribute('aria-expanded', 'false');
+            panel.hidden = true;
+        }
         slider.disabled = true;
         slider.style.setProperty('--bpb-sun-progress', '0%');
         if (mode === 'peak') dateValue.disabled = true;
         scheduleCompass(null);
         announce(text);
     };
+    const showSubjectUnavailable = message => showUnavailable(message, {
+        expandable: mode === 'gpx',
+    });
 
     const render = state => {
         if (disposed) return;
         if (!state?.result || !state.zone || !state.date || !Number.isInteger(state.minute)) {
-            showUnavailable(state?.unavailable);
+            showSubjectUnavailable(state?.unavailable);
             return;
         }
         const clock = MountainTime.formatClock(state.zone, state.instant?.ms);
         const label = MountainTime.zoneLabel(state.zone, state.instant?.ms);
         if (!clock || !label) {
-            showUnavailable('Sun position is unavailable.');
+            showSubjectUnavailable('Sun position is unavailable.');
             return;
         }
 
         toggle.disabled = false;
+        layout.hidden = false;
+        empty.hidden = true;
+        empty.textContent = '';
         slider.disabled = false;
         setSliderMinute(state.minute);
         if (mode === 'peak') {
@@ -303,7 +318,7 @@ export function createSunCalculator({
             const sunriseText = MountainTime.formatClock(state.zone, state.result.sunriseMs);
             const sunsetText = MountainTime.formatClock(state.zone, state.result.sunsetMs);
             if (!sunriseText || !sunsetText) {
-                showUnavailable('Sun position is unavailable.');
+                showSubjectUnavailable('Sun position is unavailable.');
                 return;
             }
             eventsText.textContent = `Level-horizon sunrise ${sunriseText} · sunset ${sunsetText} (${label})`;
@@ -346,6 +361,10 @@ export function createSunCalculator({
         setMapBearing: state => scheduleCompass(state),
         setTheme: theme => { root.dataset.theme = theme === 'dark' ? 'dark' : 'light'; },
         setUnavailable: showUnavailable,
+        setPrompt: message => showUnavailable(message, {
+            expandable: mode === 'gpx',
+            summaryText: mode === 'gpx' ? 'Select a chart point' : 'Unavailable',
+        }),
         setExpanded,
         dispose: () => {
             if (disposed) return;

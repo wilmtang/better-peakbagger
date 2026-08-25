@@ -136,19 +136,43 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     assert.match(calculator.element.textContent, /does not rise.*polar night/i);
 }));
 
-test('unavailable and formatter-failure states disable disclosure without retaining a stale reading', () => withDom(dom => {
+test('GPX prompts and unavailable selections stay inspectable without retaining a stale reading', () => withDom(dom => {
     const calculator = SunCalculator.create({
         mount: dom.window.document.getElementById('mount'), mode: 'gpx',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
-    calculator.render({ unavailable: 'No track or ascent date is available.' });
+    calculator.setPrompt('Select a chart point to calculate the sun.');
     const button = calculator.element.querySelector('button');
-    assert.equal(button.disabled, true);
+    const panel = calculator.element.querySelector('.bpb-sun-calculator__panel');
+    assert.equal(button.disabled, false);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__summary').textContent,
+        'Select a chart point');
+    button.click();
+    assert.equal(panel.hidden, false);
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__empty').textContent,
+        /Select a chart point/);
+
+    calculator.render({ unavailable: 'No track or ascent date is available.' });
+    assert.equal(button.disabled, false);
     assert.match(calculator.element.textContent, /No track or ascent date is available/);
 
     calculator.render({ ...ordinaryState(), zone: null });
-    assert.equal(button.disabled, true);
+    assert.equal(button.disabled, false);
     assert.doesNotMatch(calculator.element.textContent, /Level-horizon sunrise/);
+
+    calculator.render(ordinaryState());
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__layout').hidden, false);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
+}));
+
+test('non-actionable unavailable state stays collapsed and disabled', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    calculator.setUnavailable('Sun position is unavailable.');
+    assert.equal(calculator.element.querySelector('button').disabled, true);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__panel').hidden, true);
 }));
 
 test('bearing frames coalesce and cardinal text follows the shortest arc without status spam', () => withDom(dom => {

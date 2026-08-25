@@ -18,10 +18,11 @@ The disclosure is collapsed by default and never overlays a map.
   and subject name agree. The validated summit coordinate is its subject. An
   ambiguous or unsupported page gets no calculator.
 - In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the selected
-  coordinate controls and before the chart legend. It remains unavailable until
-  an existing chart, pointer, touch, or keyboard selection supplies a valid
-  route point. Loading, replacement, failure, or route invalidation clears the
-  old subject.
+  coordinate controls and before the chart legend. Before selection, its
+  disclosure remains openable and prompts for a chart point; pointer, touch, or
+  keyboard selection supplies the route point. Replacing the native map keeps a
+  still-valid chart selection, while loading, failure, or route invalidation
+  clears the old subject.
 - Full Screen maps, activity capture, editors, lists, the popup, and Settings do
   not get a calculator.
 
@@ -92,9 +93,10 @@ code download is used.
 Only the MAIN-world GPX Analyzer and Peak-map bundles contain the solar modules,
 and only those manifest entries load `css/sun-calculator.css`. The pure state
 owner, `src/sun/sun-state.js`, keeps route selection one-way and clears stale
-subjects. Invalid inputs, unavailable formatting, non-finite astronomy output,
-or a missing mount disable or omit the calculator without interrupting the
-native map, chart, or terrain lifecycle.
+subjects. Invalid inputs, unavailable formatting, or non-finite astronomy
+output clear the reading and expose a bounded reason; a missing or invalid
+surface disables or omits the calculator without interrupting the native map,
+chart, or terrain lifecycle.
 
 Unit tests cover astronomy reference values, direction/bearing math, polar and
 date-line events, DST gaps and folds, route provenance, asymmetric interaction,

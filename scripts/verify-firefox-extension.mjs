@@ -1259,7 +1259,7 @@ async function main() {
           && state.chart?.pointCounts?.join("|") === "971|971"
           && state.chart?.breakCounts?.join("|") === "0|0"
           && state.sun.exists && state.sun.noDateInput && state.sun.collapsed
-          && state.sun.disabled && state.sun.summary === "Unavailable"
+          && !state.sun.disabled && state.sun.summary === "Select a chart point"
           && state.sun.placed && state.sun.borderStyle === "solid",
       };
     `, 'the Firefox MAIN-world analyzer stats', 15_000, state => state?.ready);

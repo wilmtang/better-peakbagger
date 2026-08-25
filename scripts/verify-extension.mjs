@@ -2008,7 +2008,9 @@ try {
                 return /^Interactive Stats:/.test(status)
                     && legendButtons === 2
                     && toggle?.disabled === false
-                    && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true;
+                    && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === false
+                    && sun?.querySelector('.bpb-sun-calculator__summary')?.textContent
+                        === 'Select a chart point';
             }, null, { timeout: 15_000 });
         } catch (error) {
             const domState = await page.evaluate(() => ({
@@ -2243,11 +2245,19 @@ try {
         };
     });
     check(analyzerSunState.exists && !analyzerSunState.hasDateInput
-        && analyzerSunState.collapsed && analyzerSunState.disabled
-        && analyzerSunState.summary === 'Unavailable'
+        && analyzerSunState.collapsed && !analyzerSunState.disabled
+        && analyzerSunState.summary === 'Select a chart point'
         && analyzerSunState.afterCoordinates && analyzerSunState.beforeLegend
         && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
     `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
+    if (process.env.BPB_VERIFY_ANALYZER_SUN_PROMPT_SCREENSHOT) {
+        const promptToggle = offPage.locator('.bpb-sun-calculator__toggle');
+        await promptToggle.click();
+        await offPage.locator('.bpb-sun-calculator').screenshot({
+            path: process.env.BPB_VERIFY_ANALYZER_SUN_PROMPT_SCREENSHOT,
+        });
+        await promptToggle.click();
+    }
     const chartSeriesGroup = offPage.getByRole('group', { name: 'Chart series' });
     const distanceSeriesButton = chartSeriesGroup.getByRole('button', {
         name: 'Elevation by Distance',

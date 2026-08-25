@@ -106,6 +106,13 @@
     gap: clamp(1.25rem, 4vw, 2.35rem);
     min-inline-size: 0;
 }
+.bpb-sun-calculator__layout[hidden] { display: none; }
+.bpb-sun-calculator__empty {
+    margin: 0;
+    color: var(--bpb-sun-muted);
+    font-size: 0.95em;
+}
+.bpb-sun-calculator__empty[hidden] { display: none; }
 .bpb-sun-calculator__controls {
     display: grid;
     gap: 1rem;

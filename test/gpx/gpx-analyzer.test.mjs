@@ -1763,7 +1763,9 @@ test('GPX Sun follows timed route selections across mountain-local midnight with
     assert.equal(calculator.querySelector('input[type="date"]'), null);
     assert.ok(controls.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
     assert.ok(calculator.compareDocumentPosition(legend) & window.Node.DOCUMENT_POSITION_FOLLOWING);
-    assert.equal(button.disabled, true, 'no stale route subject exists before selection');
+    assert.equal(button.disabled, false, 'the disclosure explains how to choose its route subject');
+    assert.equal(calculator.querySelector('.bpb-sun-calculator__summary').textContent,
+        'Select a chart point');
 
     const distance = chartConfig().data.datasets[0].data;
     setActiveElements([{ datasetIndex: 0, index: distance.findIndex(point => point._raw?.lat === 47.1) }]);
@@ -1885,7 +1887,8 @@ test('GPX Sun stays unavailable for missing or year-only ascent dates and clears
                 new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
             );
             const calculator = window.document.querySelector('.bpb-sun-calculator');
-            assert.equal(calculator.querySelector('button').disabled, true);
+            assert.equal(calculator.querySelector('button').disabled, false,
+                'the selected point failure remains openable so its cause is visible');
             assert.match(calculator.textContent, /No track or ascent date is available/);
             assert.doesNotMatch(calculator.textContent, /sunrise|sunset/i);
             dom.window.close();
@@ -1964,7 +1967,7 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
     </trkseg></trk></gpx>`;
     const {
         dom, chartConfig, markerMoves, markerStyles, replaceMap
-    } = await loadElevationAnalyzer(source, { withMap: true });
+    } = await loadElevationAnalyzer(source, { withMap: true, ascentDate: 'Jul 4, 2026' });
     const { window } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
@@ -1972,6 +1975,8 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
     canvas.focus();
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    const sunSummary = window.document.querySelector('.bpb-sun-calculator__summary').textContent;
+    assert.match(sunSummary, /°/, 'the selected point has a calculated Sun reading before replacement');
 
     assert.deepEqual(markerMoves, [
         [47.1, -121.1],
@@ -1988,8 +1993,9 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
     await waitFor(dom, () => markerMoves.length >= 3);
     assert.deepEqual(markerMoves.at(-1), [47.3, -121.3],
         'replacing the native map replays the persistent selection');
-    assert.equal(window.document.querySelector('.bpb-sun-calculator button').disabled, true,
-        'an iframe identity replacement clears the calculator subject until a new route selection');
+    assert.equal(window.document.querySelector('.bpb-sun-calculator button').disabled, false);
+    assert.equal(window.document.querySelector('.bpb-sun-calculator__summary').textContent, sunSummary,
+        'an iframe identity replacement replays the persistent Sun selection');
 
     dom.window.close();
 });

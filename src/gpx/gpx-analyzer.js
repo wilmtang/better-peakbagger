@@ -44,6 +44,7 @@ const run = async () => {
     const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
+    const SUN_SELECTION_PROMPT = 'Select a chart point to calculate the sun.';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
     // Chart.js takes colors as JS options, not CSS, so these have to stay in
@@ -285,6 +286,10 @@ const run = async () => {
             sunState.resetSubject();
             sunCalculator?.setUnavailable(message || 'Sun position is unavailable.');
         };
+        const promptSunSelection = () => {
+            sunState.resetSubject();
+            sunCalculator?.setPrompt(SUN_SELECTION_PROMPT);
+        };
         const selectedPointForSun = point => metrics.timeQuality?.reason === 'not-progressing'
             ? { ...point, timeState: 'suspect' }
             : point;
@@ -434,9 +439,8 @@ const run = async () => {
                 setCoordinateStatus(unavailable
                     ? 'No chart point with coordinates is available.'
                     : COORDINATE_HINT);
-                resetSun(unavailable
-                    ? 'No selected track point is available.'
-                    : 'Sun position is unavailable.');
+                if (unavailable) resetSun('No selected track point is available.');
+                else promptSunSelection();
             }
             canvas.setAttribute('aria-label', hasSelection
                 ? `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
@@ -781,7 +785,9 @@ const run = async () => {
             peaksClientResolved = false;
             peaksClientGeneration++;
             if (reason === 'identity') {
-                resetSun('Select a track point to calculate the sun.');
+                const selectedPoint = chartData[selectedCoordinateIndex];
+                if (isCoordinatePoint(selectedPoint)) selectSunPoint(selectedPoint);
+                else promptSunSelection();
                 viewport.attach(frame);
                 mapViewport = viewport.element;
                 attachMapControls();
@@ -926,7 +932,7 @@ const run = async () => {
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
             const selectedBeforeRebuild = chartData[selectedCoordinateIndex];
-            if (selectedBeforeRebuild) resetSun('Select a track point to calculate the sun.');
+            if (selectedBeforeRebuild) promptSunSelection();
             const p = panelPalette();
             applyPanelTheme();
             controlsContainer.hidden = false;
@@ -1456,7 +1462,7 @@ const run = async () => {
         let loadGeneration = 0;
         const loadGpx = async () => {
             const generation = ++loadGeneration;
-            resetSun('Select a track point after the GPX loads.');
+            resetSun('Loading GPX data…');
             retryButton.hidden = true;
             retryButton.disabled = true;
             delete stats.dataset.state;
