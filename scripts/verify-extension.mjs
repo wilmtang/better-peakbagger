@@ -2004,9 +2004,11 @@ try {
                 const status = panel?.querySelector('.bpb-gpx-stats')?.textContent || '';
                 const legendButtons = panel?.querySelectorAll('#bpb-gpx-chart-legend button').length || 0;
                 const toggle = document.getElementById('bpb-terrain-toggle');
+                const sun = panel?.querySelector('.bpb-sun-calculator');
                 return /^Interactive Stats:/.test(status)
                     && legendButtons === 2
-                    && toggle?.disabled === false;
+                    && toggle?.disabled === false
+                    && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === false;
             }, null, { timeout: 15_000 });
         } catch (error) {
             const domState = await page.evaluate(() => ({
@@ -2221,6 +2223,29 @@ try {
         && capitolChartState.pointCounts?.join('|') === '971|971'
         && capitolChartState.breakCounts?.join('|') === '0|0',
     `the packaged analyzer reintroduced a Capitol chart break: ${JSON.stringify(capitolChartState)}`);
+    const analyzerSunState = await offPage.evaluate(() => {
+        const panel = document.getElementById('bpb-gpx-analysis');
+        const coordinates = panel?.querySelector('.bpb-gpx-coordinate-controls');
+        const sun = panel?.querySelector('.bpb-sun-calculator');
+        const legend = panel?.querySelector('#bpb-gpx-chart-legend');
+        const rootRect = sun?.getBoundingClientRect();
+        return {
+            exists: Boolean(sun),
+            hasDateInput: Boolean(sun?.querySelector('input[type="date"]')),
+            collapsed: sun?.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
+            summary: sun?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+            afterCoordinates: coordinates?.nextElementSibling === sun,
+            beforeLegend: sun?.nextElementSibling === legend,
+            insidePanel: Boolean(rootRect) && rootRect.left >= panel.getBoundingClientRect().left
+                && rootRect.right <= panel.getBoundingClientRect().right + 1,
+            borderStyle: sun ? getComputedStyle(sun).borderStyle : null,
+        };
+    });
+    check(analyzerSunState.exists && !analyzerSunState.hasDateInput
+        && analyzerSunState.collapsed && /°/.test(analyzerSunState.summary)
+        && analyzerSunState.afterCoordinates && analyzerSunState.beforeLegend
+        && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
+    `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
     const chartSeriesGroup = offPage.getByRole('group', { name: 'Chart series' });
     const distanceSeriesButton = chartSeriesGroup.getByRole('button', {
         name: 'Elevation by Distance',
@@ -2702,13 +2727,19 @@ try {
             const button = document.getElementById('bpb-terrain-toggle');
             const mount = document.getElementById('bpb-map-viewport');
             const iframe = document.getElementById('Gmap');
-            if (!button || !mount || !iframe) return false;
+            const sun = document.querySelector('.bpb-sun-calculator');
+            if (!button || !mount || !iframe || !sun) return false;
             const rect = button.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0 && !button.disabled ? {
                 text: button.textContent,
                 mountClass: mount.className,
                 mountHeight: mount.getBoundingClientRect().height,
                 iframePreserved: iframe.parentElement === mount,
+                sunAfterMap: mount.nextElementSibling === sun,
+                sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
+                sunCollapsed: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
+                sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+                sunBorderStyle: getComputedStyle(sun).borderStyle,
                 // The MAIN-world coordinator bundle self-contains basemap,
                 // peak-markers, and schema via ES imports, so its toggle existing
                 // (this state being truthy) proves those loaded. The isolated
@@ -2722,6 +2753,9 @@ try {
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
         check(peakState?.mountHeight === 425,
             `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
+        check(peakState?.sunAfterMap && peakState?.sunDateInput && peakState?.sunCollapsed
+            && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid',
+        `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
         check(peakState?.isolatedWorldReady,
             `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {

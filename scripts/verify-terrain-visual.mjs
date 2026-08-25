@@ -407,6 +407,88 @@ const openTerrainWithTrustedClick = async cdp => {
     return clickTerrainToggle(cdp);
 };
 
+const exerciseSolarBearing = async (cdp, label) => {
+    const initial = await waitForPageState(cdp, `(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
+        if (toggle?.getAttribute('aria-expanded') !== 'true') toggle?.click();
+        const north = calculator?.querySelector('[data-azimuth="0"]');
+        const sun = calculator?.querySelector('.bpb-sun-calculator__sun');
+        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        const rect = calculator?.getBoundingClientRect();
+        const parentRect = calculator?.parentElement?.getBoundingClientRect();
+        return {
+            ready: Boolean(calculator && panel && !panel.hidden && north?.style.transform
+                && sun?.style.transform && map?.loaded()),
+            summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+            direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+            north: north?.style.transform || '',
+            sun: sun?.style.transform || '',
+            bearing: map?.getBearing(),
+            insideParent: Boolean(rect && parentRect) && rect.left >= parentRect.left - 1
+                && rect.right <= parentRect.right + 1,
+        };
+    })()`, 8000);
+    if (!initial.insideParent || !/Azimuth \d+°/.test(initial.direction)) {
+        throw new Error(`${label}: Sun calculator is clipped or missing absolute direction text: ${JSON.stringify(initial)}`);
+    }
+
+    const target = await evaluate(cdp, `(() => {
+        const rect = document.getElementById('bpb-terrain-frame')?.getBoundingClientRect();
+        return rect && rect.width > 200 && rect.height > 200
+            ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+            : null;
+    })()`);
+    if (!target) throw new Error(`${label}: terrain frame has no bearing-drag target`);
+    await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: target.x, y: target.y, button: 'right', buttons: 2, clickCount: 1
+    });
+    for (let step = 1; step <= 6; step++) {
+        await cdp.call('Input.dispatchMouseEvent', {
+            type: 'mouseMoved', x: target.x + step * 25, y: target.y, buttons: 2
+        });
+        await delay(50);
+    }
+    await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: target.x + 150, y: target.y, button: 'right', buttons: 2, clickCount: 1
+    });
+
+    const rotated = await waitForPageState(cdp, `(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        const north = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
+        const sun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
+        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
+        const bearing = map?.getBearing();
+        return {
+            ready: Number.isFinite(bearing) && Math.abs(bearing - ${Number(initial.bearing)}) > 5
+                && north !== ${JSON.stringify(initial.north)} && sun !== ${JSON.stringify(initial.sun)},
+            bearing, north, sun, summary, direction,
+        };
+    })()`, 8000);
+    if (rotated.summary !== initial.summary || rotated.direction !== initial.direction) {
+        throw new Error(`${label}: rotating 3D changed absolute Sun text: ${JSON.stringify({ initial, rotated })}`);
+    }
+    return { initial, rotated };
+};
+
+const assertSolarNorthUp = async (cdp, label, absoluteText) => {
+    const reset = await waitForPageState(cdp, `(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const north = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
+        const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
+        return {
+            ready: north.startsWith('rotate(0deg)') && direction === ${JSON.stringify(absoluteText)},
+            north, direction,
+        };
+    })()`, 8000);
+    if (!reset.ready) throw new Error(`${label}: Sun compass did not reset north-up in 2D: ${JSON.stringify(reset)}`);
+};
+
 // The paint the group route is currently drawn with, as the frame's live
 // MapLibre reports it. A hovered track turns the flat/data-driven paint into a
 // 'case' expression that singles that track out.
@@ -992,6 +1074,21 @@ try {
     if (ready.compassGap < 0 || ready.compassGap > 16) {
         throw new Error(`Analyzer compass is not aligned above the 3D toggle (gap ${ready.compassGap}px)`);
     }
+    await evaluate(cdp, `(() => {
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        canvas?.focus();
+        return Boolean(canvas);
+    })()`);
+    for (const type of ['rawKeyDown', 'keyUp']) {
+        await cdp.call('Input.dispatchKeyEvent', {
+            type, key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39
+        });
+    }
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.querySelector('.bpb-sun-calculator__toggle');
+        return { ready: Boolean(toggle && !toggle.disabled) };
+    })()`);
+    const analyzerSolarBearing = await exerciseSolarBearing(cdp, 'Analyzer 3D');
     // Read the picker fresh rather than trusting the snapshot taken the instant
     // the frame surfaced: the drape is applied a beat later, so that snapshot
     // reported "Terrain only" on a loaded machine and failed a working build.
@@ -1263,6 +1360,7 @@ try {
     await waitForPageState(cdp, analyzerBackTo2d, 8000).catch(() => {
         throw new Error('Escape inside the ascent 3D frame did not return the analyzer to 2D');
     });
+    await assertSolarNorthUp(cdp, 'Analyzer 2D', analyzerSolarBearing.initial.direction);
 
     // …and from the page, where focus stays on the toggle the user just clicked
     // and the frame never sees the key.
@@ -1583,6 +1681,25 @@ try {
         await showTerrainFailure(cdp, `Peak page ${theme} failure`, theme);
         await capture(cdp, path.join(outputDir, `peak-page-failure-${theme}.png`));
     }
+
+    await navigate(cdp, `${peakPageUrl}?pid=2829&theme=light`, 820, 900);
+    await openTerrainWithTrustedClick(cdp);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        return { ready: toggle?.textContent === '2D' && frame?.style.opacity === '1' && map?.loaded() };
+    })()`, 45000);
+    const peakSolarBearing = await exerciseSolarBearing(cdp, 'Peak 3D');
+    await capture(cdp, path.join(outputDir, 'peak-page-sun-3d.png'));
+    await clickTerrainToggle(cdp);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        return { ready: toggle?.textContent === '3D' && (!frame || frame.style.opacity === '0') };
+    })()`, 8000);
+    await assertSolarNorthUp(cdp, 'Peak 2D', peakSolarBearing.initial.direction);
+    await capture(cdp, path.join(outputDir, 'peak-page-sun-2d.png'));
 
     const optionsUrl = `https://${FIXTURE_HOST}:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);

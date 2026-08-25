@@ -57,6 +57,7 @@ function createFixtureServer({ key, cert }) {
 
             const showcaseRoutes = {
                 '/climber/ascent.aspx': '/scripts/showcase/terrain.html',
+                '/peak.aspx': '/scripts/showcase/peak-map.html',
                 '/map/mastermap.aspx': '/scripts/showcase/terrain-native-map.html',
             };
             let pathname = showcaseRoutes[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
@@ -258,6 +259,27 @@ async function main() {
       || rendererState.canvas.width === 0 || rendererState.canvas.height === 0) {
             throw new Error(`Firefox terrain surface was incomplete: ${JSON.stringify(rendererState)}`);
         }
+        await page.locator('#bpb-gpx-analysis canvas').focus();
+        await page.keyboard.press('ArrowRight');
+        await page.waitForFunction(() =>
+            document.querySelector('.bpb-sun-calculator__toggle')?.disabled === false);
+        await page.locator('.bpb-sun-calculator__toggle').click();
+        const analyzerSunInitial = await page.evaluate(() => {
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            const rect = calculator?.getBoundingClientRect();
+            const parentRect = calculator?.parentElement?.getBoundingClientRect();
+            return {
+                summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+                direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                north: calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '',
+                sun: calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '',
+                insideParent: Boolean(rect && parentRect) && rect.left >= parentRect.left - 1
+                    && rect.right <= parentRect.right + 1,
+            };
+        });
+        if (!analyzerSunInitial.insideParent || !/Azimuth \d+°/.test(analyzerSunInitial.direction)) {
+            throw new Error(`Firefox Analyzer Sun calculator is clipped or incomplete: ${JSON.stringify(analyzerSunInitial)}`);
+        }
         const peakMarker = frame.locator('.bpb-terrain-peak-marker').first();
         await peakMarker.waitFor({ state: 'visible', timeout: 10_000 });
         await peakMarker.click();
@@ -287,6 +309,31 @@ async function main() {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
             return Math.abs((map?.getPitch() ?? previous) - previous) > 2;
         }, pitchBefore, { timeout: 8_000 });
+
+        const bearingBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
+        await page.mouse.move(center.x, center.y);
+        await page.mouse.down({ button: 'right' });
+        await page.mouse.move(center.x + 150, center.y, { steps: 8 });
+        await page.mouse.up({ button: 'right' });
+        const analyzerSunRotated = await page.waitForFunction(({ bearing, north, sun }) => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
+            const nextSun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
+            return Number.isFinite(map?.getBearing()) && Math.abs(map.getBearing() - bearing) > 5
+                && nextNorth !== north && nextSun !== sun ? {
+                    bearing: map.getBearing(),
+                    north: nextNorth,
+                    sun: nextSun,
+                    summary: calculator.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+                    direction: calculator.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                } : false;
+        }, { bearing: bearingBefore, north: analyzerSunInitial.north, sun: analyzerSunInitial.sun },
+        { timeout: 8_000 }).then(handle => handle.jsonValue());
+        if (analyzerSunRotated.summary !== analyzerSunInitial.summary
+            || analyzerSunRotated.direction !== analyzerSunInitial.direction) {
+            throw new Error(`Firefox Analyzer bearing changed absolute Sun text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
+        }
 
         // Firefox on macOS rewrites Ctrl+primary into a secondary-button gesture.
         // Exercise that production alternative separately from the normal right drag.
@@ -321,6 +368,65 @@ async function main() {
         if (!resized.route || requests.terrain === 0 || requests.basemap === 0 || requests.peaks === 0) {
             throw new Error(`Firefox terrain fixtures were incomplete: ${JSON.stringify({ resized, requests })}`);
         }
+        await page.locator('#bpb-terrain-toggle').click();
+        await page.waitForFunction(expected => {
+            const toggle = document.getElementById('bpb-terrain-toggle');
+            const north = document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
+            const direction = document.querySelector('.bpb-sun-calculator__direction');
+            return toggle?.textContent === '3D' && north?.style.transform.startsWith('rotate(0deg)')
+                && direction?.textContent === expected;
+        }, analyzerSunInitial.direction, { timeout: 8_000 });
+
+        await page.goto(`${fixtureOrigin}peak.aspx?pid=2829`, { waitUntil: 'load' });
+        await page.waitForFunction(() => {
+            const toggle = document.getElementById('bpb-terrain-toggle');
+            return Boolean(toggle && !toggle.disabled && document.querySelector('.bpb-sun-calculator'));
+        });
+        await page.locator('#bpb-terrain-toggle').click();
+        await page.waitForFunction(() => {
+            const frame = document.getElementById('bpb-terrain-frame');
+            return frame?.style.opacity === '1' && frame.contentWindow?.__bpbTerrainTestMap?.loaded();
+        }, null, { timeout: 45_000 });
+        await page.locator('.bpb-sun-calculator__toggle').click();
+        const peakSunInitial = await page.evaluate(() => {
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            return {
+                summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+                direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                north: calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '',
+                sun: calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '',
+            };
+        });
+        const peakCanvas = page.frameLocator('#bpb-terrain-frame').locator('canvas.maplibregl-canvas');
+        const peakBox = await peakCanvas.boundingBox();
+        if (!peakBox) throw new Error('Firefox Peak terrain canvas had no bearing-drag target');
+        const peakCenter = { x: peakBox.x + peakBox.width / 2, y: peakBox.y + peakBox.height / 2 };
+        await page.mouse.move(peakCenter.x, peakCenter.y);
+        await page.mouse.down({ button: 'right' });
+        await page.mouse.move(peakCenter.x + 150, peakCenter.y, { steps: 8 });
+        await page.mouse.up({ button: 'right' });
+        const peakSunRotated = await page.waitForFunction(({ north, sun }) => {
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
+            const nextSun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
+            return nextNorth !== north && nextSun !== sun ? {
+                summary: calculator.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+                direction: calculator.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+            } : false;
+        }, { north: peakSunInitial.north, sun: peakSunInitial.sun },
+        { timeout: 8_000 }).then(handle => handle.jsonValue());
+        if (peakSunRotated.summary !== peakSunInitial.summary
+            || peakSunRotated.direction !== peakSunInitial.direction) {
+            throw new Error(`Firefox Peak bearing changed absolute Sun text: ${JSON.stringify({ peakSunInitial, peakSunRotated })}`);
+        }
+        await page.locator('#bpb-terrain-toggle').click();
+        await page.waitForFunction(expected => {
+            const toggle = document.getElementById('bpb-terrain-toggle');
+            const north = document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
+            const direction = document.querySelector('.bpb-sun-calculator__direction');
+            return toggle?.textContent === '3D' && north?.style.transform.startsWith('rotate(0deg)')
+                && direction?.textContent === expected;
+        }, peakSunInitial.direction, { timeout: 8_000 });
         if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
 
         console.log('Firefox terrain verification passed:');
@@ -328,6 +434,7 @@ async function main() {
         console.log(`  - renderer: ${rendererState.renderer}`);
         console.log('  - synthetic activation and direct-frame authorization negatives passed');
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right drag, Ctrl-drag, and resize passed');
+        console.log('  - Analyzer and Peak Sun compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
     } catch (error) {
         primaryError = error;

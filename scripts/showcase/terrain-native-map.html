@@ -43,7 +43,19 @@
         attribution: 'Synthetic topographic fixture'
       }
     };
-    window.L = { Browser: { retina: false } };
+    window.L = {
+      Browser: { retina: false },
+      circleMarker(latLng, options) {
+        return {
+          _map: null,
+          latLng,
+          options,
+          addTo(map) { this._map = map; return this; },
+          setLatLng(next) { this.latLng = next; return this; },
+          setStyle(next) { Object.assign(this.options, next); return this; }
+        };
+      }
+    };
     window.mapsPlaceholder = {
       _layers: { basemap },
       hasLayer: layer => layer === basemap

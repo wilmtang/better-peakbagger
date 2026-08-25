@@ -1223,6 +1223,20 @@ async function main() {
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         analyzer: Boolean(document.getElementById("bpb-gpx-analysis")),
         stats: document.querySelector("#bpb-gpx-analysis div")?.textContent || "",
+        sun: (() => {
+          const panel = document.getElementById("bpb-gpx-analysis");
+          const coordinates = panel?.querySelector(".bpb-gpx-coordinate-controls");
+          const calculator = panel?.querySelector(".bpb-sun-calculator");
+          const legend = panel?.querySelector("#bpb-gpx-chart-legend");
+          return {
+            exists: Boolean(calculator),
+            noDateInput: !calculator?.querySelector('input[type="date"]'),
+            collapsed: calculator?.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
+            summary: calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
+            placed: coordinates?.nextElementSibling === calculator && calculator?.nextElementSibling === legend,
+            borderStyle: calculator ? getComputedStyle(calculator).borderStyle : null,
+          };
+        })(),
         chart: (() => {
           const canvas = document.querySelector("#bpb-gpx-analysis canvas");
           const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
@@ -1242,7 +1256,9 @@ async function main() {
           && /Adjusted GPX metrics \\(raw GPX \\+15824 ft gain\\)/.test(state.stats)
           && state.chart?.labels?.join("|") === "Elevation by Distance|Elevation by Time"
           && state.chart?.pointCounts?.join("|") === "971|971"
-          && state.chart?.breakCounts?.join("|") === "0|0",
+          && state.chart?.breakCounts?.join("|") === "0|0"
+          && state.sun.exists && state.sun.noDateInput && state.sun.collapsed
+          && /°/.test(state.sun.summary) && state.sun.placed && state.sun.borderStyle === "solid",
       };
     `, 'the Firefox MAIN-world analyzer stats', 15_000, state => state?.ready);
         if (surfaceState.theme === null) {
@@ -1360,15 +1376,23 @@ async function main() {
         const peakState = await waitForScript(driver, `
       const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
       const mount = document.getElementById("bpb-map-viewport");
-      return button && mount && !button.disabled ? {
+      const sun = document.querySelector(".bpb-sun-calculator");
+      return button && mount && sun && !button.disabled ? {
         links: document.querySelectorAll("#bpb-peak-links a").length,
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         framePreserved: document.getElementById("Gmap")?.parentElement === mount,
+        sunAfterMap: mount.nextElementSibling === sun,
+        sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
+        sunCollapsed: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
+        sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
+        sunBorderStyle: getComputedStyle(sun).borderStyle,
       } : false;
     `, 'the Firefox Peak surface');
         assertState(
-            peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved,
-            'Firefox Peak links, theme, or 3D mount did not initialize',
+            peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
+        && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunCollapsed
+        && /°/.test(peakState.sunSummary) && peakState.sunBorderStyle === 'solid',
+            'Firefox Peak links, theme, 3D mount, or Sun calculator did not initialize',
             peakState,
         );
 
