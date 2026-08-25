@@ -20,7 +20,7 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.js';
 import { peakMarkers } from '../maps/peak-markers.js';
-import tzlookup from 'tz-lookup';
+import { mountainTime as MountainTime } from '../time/mountain-time.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
@@ -31,8 +31,8 @@ import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js
 import { mapOverlay as MapOverlay } from './map-overlay.js';
 import { gpxPanelCss } from './gpx-panel-css.js';
 
-// Chart remains a separately-loaded vendor global (see manifest). tz-lookup is
-// bundled so Peakbagger page scripts cannot replace the offline resolver.
+// Chart remains a separately-loaded vendor global (see manifest). The mountain
+// time module owns the bundled offline timezone resolver.
 const run = async () => {
     const { METERS_PER_MILE, FEET_PER_METER } = Units;
     const MAP_VIEWPORT_MIN_WIDTH = Schema.BOUNDS.viewportWidth.min;
@@ -298,21 +298,8 @@ const run = async () => {
         // bar labels that estimate. GPX timestamps are UTC; the fallback
         // shifts the epoch and formats in UTC to get the same wall clock.
         // See docs/mountain-local-time.md.
-        let mountainTimeZone = null;
-        let mountainDayFormatter = null;
-        let mountainOffsetMs = 0;
-        const mountainZoneLabel = referenceMs => {
-            if (mountainTimeZone) {
-                try {
-                    const part = new Intl.DateTimeFormat([], { timeZone: mountainTimeZone, timeZoneName: 'short' })
-                        .formatToParts(referenceMs).find(candidate => candidate.type === 'timeZoneName');
-                    if (part && part.value) return part.value;
-                } catch (e) { /* Fall back to the zone id itself. */ }
-                return mountainTimeZone;
-            }
-            const hours = Math.round(mountainOffsetMs / 3600000);
-            return `UTC${hours < 0 ? '−' : '+'}${Math.abs(hours)}, estimated from longitude`;
-        };
+        let mountainZone = null;
+        const mountainZoneLabel = referenceMs => MountainTime.zoneLabel(mountainZone, referenceMs);
         const fmtTime = ms => ms > 0 ? `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m` : '0m';
         // The camping-spot scan asks for the day of every track point, and
         // Intl formatting per point is too slow for full-resolution tracks.
@@ -323,19 +310,14 @@ const run = async () => {
             const key = Math.floor(ms / 60000);
             let dayNumber = mountainDayCache.get(key);
             if (dayNumber === undefined) {
-                const [year, month, day] = mountainDayFormatter.format(ms).split('-').map(Number);
-                dayNumber = Date.UTC(year, month - 1, day) / 86400000;
+                dayNumber = MountainTime.localDayNumber(mountainZone, ms);
                 mountainDayCache.set(key, dayNumber);
             }
             return dayNumber;
         };
-        const getRelativeDay = (ms, startMs) => mountainDayFormatter
-            ? mountainDayNumber(ms) - mountainDayNumber(startMs) + 1
-            : Math.floor((ms + mountainOffsetMs) / 86400000) - Math.floor((startMs + mountainOffsetMs) / 86400000) + 1;
+        const getRelativeDay = (ms, startMs) => mountainDayNumber(ms) - mountainDayNumber(startMs) + 1;
         const formatTimeStr = (ms, startMs, isMultiDay) => {
-            const timeStr = mountainTimeZone
-                ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: mountainTimeZone })
-                : new Date(ms + mountainOffsetMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
+            const timeStr = MountainTime.formatClock(mountainZone, ms);
             if (isMultiDay) {
                 return `Day ${getRelativeDay(ms, startMs)} ${timeStr}`;
             }
@@ -880,9 +862,7 @@ const run = async () => {
             endMs = 0;
             summitMs = 0;
             campingSpots = [];
-            mountainTimeZone = null;
-            mountainDayFormatter = null;
-            mountainOffsetMs = 0;
+            mountainZone = null;
             mountainDayCache.clear();
 
             coordinateFallback.hidden = true;
@@ -1504,19 +1484,8 @@ const run = async () => {
                 // ownership to a later point in a partially timed route.
                 const startPoint = metrics.routePoints[0];
                 if (startPoint) {
-                    mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
-                    try {
-                        mountainTimeZone = tzlookup(startPoint.lat, startPoint.lon);
-                        mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
-                            timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
-                        });
-                    } catch (e) {
-                        // A zone id from the packaged raster may be unknown to this
-                        // browser's ICU after a tzdata rename. Keep the labelled
-                        // solar estimate instead of losing the analyzer.
-                        mountainTimeZone = null;
-                        mountainDayFormatter = null;
-                    }
+                    mountainZone = MountainTime.resolve(startPoint.lat, startPoint.lon);
+                    mountainDayCache.clear();
                 }
 
                 if (hasTime && metrics.timeQuality.status === 'complete') {
