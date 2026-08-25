@@ -13,6 +13,9 @@ import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
+import { mountainTime as MountainTime } from '../time/mountain-time.js';
+import { sunState as SunState } from '../sun/sun-state.js';
+import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
@@ -89,6 +92,23 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         : '425px';
     iframe.parentNode.insertBefore(mount, iframe);
     mount.append(iframe);
+
+    const sunState = SunState.create();
+    const sunZone = MountainTime.resolve(lat, lon);
+    let sunCalculator = null;
+    const renderSun = state => sunCalculator?.render(state);
+    sunCalculator = SunCalculator.create({
+        mount: mount.parentElement,
+        mode: 'peak',
+        onDateChange: date => renderSun(sunState.setPeakDate(date)),
+        onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
+    });
+    if (sunCalculator) {
+        // create() appends safely; move the root beside the validated map so it
+        // cannot cover native controls or attribution inside the viewport.
+        mount.after(sunCalculator.element);
+        renderSun(sunState.setPeakSubject({ lat, lon, zone: sunZone }));
+    }
 
     const terrainToggle = document.createElement('button');
     terrainToggle.id = 'bpb-terrain-toggle';
@@ -269,6 +289,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         terrainEnabled = settings.enable3dMap;
         terrainThemePref = settings.theme;
         terrainCacheLimitMb = settings.terrainCacheLimitMb;
+        sunCalculator?.setTheme(effectiveTheme());
         if (!terrainEnabled && !terrainCoordinator.isIdle()) terrainCoordinator.stop();
         if (terrainCoordinator.isActive()) postTerrain('update', { theme: effectiveTheme() });
         terrainCoordinator.update();
@@ -286,5 +307,11 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
     });
 
     terrainCoordinator.update();
+    sunCalculator?.setTheme(effectiveTheme());
+    window.addEventListener('pagehide', () => {
+        sunState.resetSubject();
+        sunCalculator?.dispose();
+        sunCalculator = null;
+    }, { once: true });
     window.postMessage({ __bpbPeakMap: true, dir: 'toCS', type: 'get' }, location.origin);
 })();

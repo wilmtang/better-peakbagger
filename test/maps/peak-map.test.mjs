@@ -29,13 +29,15 @@ const peakHtml = ({ mapPid = 2829, mapType = 'P', includeCoordinates = true,
 </body>`;
 
 const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
-    includeCoordinates = true, fullMapOrigin = 'https://www.peakbagger.com' } = {}) => {
+    includeCoordinates = true, fullMapOrigin = 'https://www.peakbagger.com',
+    nowMs = Date.parse('2026-08-25T18:45:00Z') } = {}) => {
     const dom = new JSDOM(peakHtml({ mapPid, mapType, includeCoordinates, fullMapOrigin }), {
         url: 'https://www.peakbagger.com/Peak.aspx?pid=2829',
         runScripts: 'outside-only',
         pretendToBeVisual: true
     });
     const { window } = dom;
+    window.Date.now = () => nowMs;
     const messages = [];
     window.chrome = makeChromeStub({ bpbSettings: {
         enable3dMap: enabled,
@@ -62,6 +64,7 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     const iframe = window.document.getElementById('Gmap');
     const mount = window.document.getElementById('bpb-map-viewport');
     const toggle = window.document.getElementById('bpb-terrain-toggle');
+    const sun = window.document.querySelector('.bpb-sun-calculator');
     const setViewCalls = [];
     iframe.contentWindow.mapsPlaceholder = {
         eachLayer() {},
@@ -79,8 +82,27 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(iframe.parentElement, mount, 'the native iframe stays intact inside the terrain mount');
     assert.equal(toggle.textContent, '3D');
     assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
+    assert.ok(sun, 'a calculator is created from the same validated summit subject');
+    assert.equal(mount.nextElementSibling, sun,
+        'the calculator sits immediately below the viewport instead of overlaying the map');
+    assert.equal(sun.querySelector('.bpb-sun-calculator__panel').hidden, true,
+        'the small Dynamic Map keeps its height until the user opens the disclosure');
+    assert.equal(sun.querySelector('input[type="date"]').value, '2026-08-25');
+    assert.equal(sun.querySelector('input[type="range"]').value, String(11 * 60 + 45),
+        'the initial clock is current time at the summit, not the viewer');
+    assert.match(sun.textContent, /PDT/);
+
+    const sunDate = sun.querySelector('input[type="date"]');
+    const sunTime = sun.querySelector('input[type="range"]');
+    sunTime.value = String(9 * 60 + 20);
+    sunTime.dispatchEvent(new window.Event('input', { bubbles: true }));
+    sunDate.value = '2026-11-01';
+    sunDate.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.equal(sunTime.value, String(9 * 60 + 20), 'changing date preserves the chosen clock time');
+    assert.equal(setViewCalls.length, 0, 'solar controls never move the native map');
 
     await waitFor(dom, () => toggle.dataset.theme === 'dark');
+    assert.equal(sun.dataset.theme, 'dark');
     const settingsReply = messages.find(message => message.__bpbPeakMap === true && message.dir === 'toPage');
     assert.deepEqual(Object.keys(settingsReply).sort(),
         ['__bpbPeakMap', 'dir', 'enable3dMap', 'terrainCacheLimitMb', 'theme'],
@@ -152,6 +174,9 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(toggle.textContent, '3D');
     assert.ok(messages.some(message => message.__bpbTerrain === true && message.type === 'destroy'));
     await new Promise(resolve => window.setTimeout(resolve, 0));
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide'));
+    assert.equal(window.document.querySelector('.bpb-sun-calculator'), null,
+        'page teardown disposes the calculator');
     dom.window.close();
 });
 
@@ -299,6 +324,8 @@ test('Peak-page 3D fails closed when the Dynamic Map does not identify the same 
     ]) {
         const { dom, window } = loadPeakMap(options);
         assert.equal(window.document.getElementById('bpb-terrain-toggle'), null);
+        assert.equal(window.document.querySelector('.bpb-sun-calculator'), null,
+            'an ambiguous map must not expose an unverified solar coordinate');
         assert.equal(window.document.getElementById('Gmap').parentElement.id, '',
             'an ambiguous map stays entirely native');
         await new Promise(resolve => window.setTimeout(resolve, 0));
