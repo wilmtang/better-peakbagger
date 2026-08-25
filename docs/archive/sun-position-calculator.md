@@ -1,6 +1,9 @@
 # Sun position calculator execution plan
 
-**Status:** approved for implementation; not started
+**Status:** completed and archived on 2026-08-25. The calculator shipped in
+focused local commits with pure, DOM, packaged-browser, hidden hardware-GPU,
+package-inventory, privacy, and documentation evidence. The closure ledger
+below preserves the intentional boundaries and external proof gaps.
 
 **Created:** 2026-08-25
 
@@ -339,105 +342,105 @@ Conventional Commit format.
 
 ### 1. Share mountain-time ownership without changing behavior
 
-- [ ] Add the planned **src/time/mountain-time.js** module with zone resolution,
+- [x] Add the planned **src/time/mountain-time.js** module with zone resolution,
   formatting, local-day, civil-to-instant, and longitude-fallback helpers.
-- [ ] Move the existing analyzer timezone/day formatting through that API while
+- [x] Move the existing analyzer timezone/day formatting through that API while
   preserving trailhead ownership, labels, chart ticks, multi-day numbering, and
   camping boundaries.
-- [ ] Add pure tests for ordinary DST, spring gaps, fall overlaps, half-hour and
+- [x] Add pure tests for ordinary DST, spring gaps, fall overlaps, half-hour and
   quarter-hour zones, international-date-line dates, unknown ICU zone behavior,
   and longitude fallback.
-- [ ] Re-run the existing mountain-time and GPX analyzer tests before proceeding.
+- [x] Re-run the existing mountain-time and GPX analyzer tests before proceeding.
 
 **Gate:** no existing chart/stat text or day-boundary fixture changes except
 intentional test refactoring around the shared module.
 
 ### 2. Add the offline solar domain
 
-- [ ] Add `suncalc` 2.0.1 to the production dependency graph and lock the exact
+- [x] Add `suncalc` 2.0.1 to the production dependency graph and lock the exact
   resolved package.
-- [ ] Add the planned **src/sun/sun-position.js** and **src/sun/sun-state.js**
+- [x] Add the planned **src/sun/sun-position.js** and **src/sun/sun-state.js**
   modules with the validation, date-source, asymmetric interaction, polar-state,
   and bearing rules above.
-- [ ] Test official reference vectors, all four cardinal quadrants, north wrap,
+- [x] Test official reference vectors, all four cardinal quadrants, north wrap,
   above/below horizon, invalid package output, polar day/night, date-line solar
   days, timed/untimed/partial route points, and the invariant that a preview-time
   action never changes route identity.
-- [ ] Update `ACKNOWLEDGEMENTS.md`, `scripts/dependency-metadata.mjs`,
+- [x] Update `ACKNOWLEDGEMENTS.md`, `scripts/dependency-metadata.mjs`,
   `scripts/create-amo-metadata.mjs`, and their tests so reviewer metadata and the
   generated `THIRD_PARTY_NOTICES.txt` name the exact bundled package and BSD
   license.
-- [ ] Inspect the esbuild metafile/package notice inventory to prove SunCalc is
+- [x] Inspect the esbuild metafile/package notice inventory to prove SunCalc is
   bundled locally into only the intended consumers.
 
 ### 3. Build the reusable, responsive calculator UI
 
-- [ ] Add the shared DOM component and scoped stylesheet.
-- [ ] Implement collapsed summary, Peak-only date input, time slider, read-only
+- [x] Add the shared DOM component and scoped stylesheet.
+- [x] Implement collapsed summary, Peak-only date input, time slider, read-only
   GPX date/source row, compass, direction/elevation text, rise/set line, polar
   states, error state, and terrain limitation copy.
-- [ ] Add `aria-expanded`, labelled inputs/outputs, keyboard operation, debounced
+- [x] Add `aria-expanded`, labelled inputs/outputs, keyboard operation, debounced
   status announcements, dark theme, reduced motion, and cleanup.
-- [ ] Add component tests at Peak and GPX widths, including long timezone labels,
+- [x] Add component tests at Peak and GPX widths, including long timezone labels,
   below-horizon copy, absent rise/set events, and no horizontal overflow.
 
 ### 4. Integrate Peak pages
 
-- [ ] Instantiate the component only after Peak-map identity and coordinate
+- [x] Instantiate the component only after Peak-map identity and coordinate
   validation succeeds.
-- [ ] Mount it below `#bpb-map-viewport`, initialize summit-local today/now, and
+- [x] Mount it below `#bpb-map-viewport`, initialize summit-local today/now, and
   forward theme changes.
-- [ ] Keep ordinary Peak pages working when no Dynamic Map or valid Full Screen
+- [x] Keep ordinary Peak pages working when no Dynamic Map or valid Full Screen
   Peak link is present; no calculator is safer than an unverified coordinate.
-- [ ] Extend Peak-map fixtures/tests for placement, default civil time, date/time
+- [x] Extend Peak-map fixtures/tests for placement, default civil time, date/time
   changes, invalid identity, theme, disposal, and 2D north-up behavior.
 
 ### 5. Integrate GPX route selection and date fallback
 
-- [ ] Add `AscentPage.parseDate(document)` to the analyzer bundle rather than
+- [x] Add `AscentPage.parseDate(document)` to the analyzer bundle rather than
   copying its DOM scan.
-- [ ] Mount the component inside `#bpb-gpx-analysis` in GPX mode with no date
+- [x] Mount the component inside `#bpb-gpx-analysis` in GPX mode with no date
   input.
-- [ ] Call the pure route-selection action from the single successful
+- [x] Call the pure route-selection action from the single successful
   `selectCoordinateIndex()` path so mouse, touch, and keyboard selection behave
   identically.
-- [ ] Preserve point `timeState` and use only a strictly valid selected-point
+- [x] Preserve point `timeState` and use only a strictly valid selected-point
   timestamp; otherwise apply the complete ascent-date/noon-or-current-preview
   behavior.
-- [ ] Keep manual time input one-way. Add regression spies proving it does not
+- [x] Keep manual time input one-way. Add regression spies proving it does not
   update `selectedCoordinateIndex`, call `renderRouteHighlight`, mutate the
   Leaflet marker, post a terrain `highlight`, or update Chart.js.
-- [ ] Reset solar state on GPX retry, unavailable data, chart rebuild, iframe
+- [x] Reset solar state on GPX retry, unavailable data, chart rebuild, iframe
   replacement, and `pagehide`.
-- [ ] Cover complete, partial, absent, invalid, non-progressing, all-equal, and
+- [x] Cover complete, partial, absent, invalid, non-progressing, all-equal, and
   multi-day timestamps plus missing/full/year-only ascent dates.
 
 ### 6. Couple the compass to accepted 3D bearing
 
-- [ ] Add the optional coordinator `onView`/reset callback without changing
+- [x] Add the optional coordinator `onView`/reset callback without changing
   existing terrain compass or BigMap behavior.
-- [ ] Forward live bearing to both solar components only while their terrain
+- [x] Forward live bearing to both solar components only while their terrain
   coordinator is active.
-- [ ] Render Sun and cardinal positions with `worldAzimuth - mapBearing`, using
+- [x] Render Sun and cardinal positions with `worldAzimuth - mapBearing`, using
   shortest-arc updates across `359° ↔ 0°`.
-- [ ] Reset to north-up on stop, Escape, load failure, coverage failure, iframe
+- [x] Reset to north-up on stop, Escape, load failure, coverage failure, iframe
   replacement, context loss, and ordinary 2D use.
-- [ ] Test invalid/stale view messages, generation replacement, frame-rate
+- [x] Test invalid/stale view messages, generation replacement, frame-rate
   coalescing, no `aria-live` bearing spam, reduced motion, and unchanged absolute
   azimuth text while the visual compass rotates.
 
 ### 7. Update build contracts and maintained documentation
 
-- [ ] Add the shared modules to the GPX analyzer and Peak-map source lists, copy
+- [x] Add the shared modules to the GPX analyzer and Peak-map source lists, copy
   the stylesheet, and update only those two manifest entries.
-- [ ] Extend manifest/build-composition tests so a missing solar module,
+- [x] Extend manifest/build-composition tests so a missing solar module,
   stylesheet, package notice, or wrong execution world fails closed.
-- [ ] Add the planned **docs/sun-position.md** guide as the maintained runtime
+- [x] Add the planned **docs/sun-position.md** guide as the maintained runtime
   and accuracy contract.
-- [ ] Update `docs/mountain-local-time.md`, `docs/3d-map.md`,
+- [x] Update `docs/mountain-local-time.md`, `docs/3d-map.md`,
   `docs/architecture.md`, `PRIVACY.md`, `README.md`, and `CHANGELOG.md` with the
   shipped behavior and explicit terrain/privacy limits.
-- [ ] After implementation and verification, move this plan to `docs/archive/`,
+- [x] After implementation and verification, move this plan to `docs/archive/`,
   clear the active-plan index, and record fixed/verified, intentionally not
   changed, and changed-but-not-fully-proven outcomes.
 
@@ -495,20 +498,96 @@ behaviors.
   does not predict terrain obstruction, cast shadows, weather, or actual direct
   sunlight.
 
-## Completion record to preserve when archiving
-
-The final archived plan must distinguish:
+## Completion record
 
 ### Fixed and verified
 
-- Requirements backed by pure, DOM, packaged-browser, and hidden GPU evidence.
+- `src/time/mountain-time.js` now owns offline zone resolution, labelled
+  longitude fallback, formatting/local-day comparison, and viewer-independent
+  civil-to-instant conversion. Pure tests cover ordinary DST, spring gaps,
+  earlier fall folds, half-hour and quarter-hour zones, international-date-line
+  dates, formatter failure, invalid input, and fallback.
+- The pinned production dependency is `suncalc` 2.0.1. The pure Sun and state
+  modules cover the official reference vector, all compass quadrants, north
+  wrap, apparent elevation, level-horizon rise/set, polar day/night, date-line
+  event ownership, invalid package output, timed/untimed/partial GPX points,
+  preview asymmetry, bearing math, and stale-subject reset.
+- The reusable DOM component is collapsed by default, uses a Peak-only native
+  date input, exposes direction/elevation as text, keeps the graphic
+  supplementary, has debounced status output, coalesces shortest-arc bearing
+  updates, respects reduced motion, switches theme, disposes its work, and
+  remains inside the panel at a 390 px page width.
+- Peak pages consume only the coordinate admitted by the existing Peak-map
+  identity gate and mount one calculator below the 425 px Dynamic Map. GPX
+  pages mount after coordinate controls, expose no date input, follow the one
+  authoritative route-selection path, reject all-equal timing as recorded
+  time, and keep manual Sun time one-way. Load/failure/rebuild/frame/pagehide
+  paths clear stale solar state.
+- `TerrainCoordinator` delivers normalized bearing only from accepted active
+  `view` messages and resets optional consumers on every inactive path. Peak
+  and GPX solar compasses follow that bearing; BigMap remains unchanged.
+- Manifest and build tests pin both MAIN-world consumers, their full authored
+  module lists, and the scoped stylesheet. Build metadata showed SunCalc only
+  in `content/gpx-analyzer.js` and `content/peak-map.js`. A missing package
+  notice, version, reviewed license, manifest CSS, or execution world fails the
+  project/release tests.
+- `npm test` rebuilt all 28 bundles and passed **1,606 tests**. `npm run lint`
+  passed source ESLint and built-extension lint with the same eight reviewed
+  repository-owned dependency/cross-browser warnings. `npm run audit:ci`
+  accepted only the two existing `image-size` advisories in the development-
+  only `web-ext` lint path through 2026-09-21.
+- `npm run package` plus the Firefox package derivation produced both 3.6.0
+  archives. Direct inventory confirmed `css/sun-calculator.css`, both consumer
+  bundles, `ACKNOWLEDGEMENTS.md`, and the generated SunCalc BSD notice in each;
+  the packaged manifest assigns the stylesheet only to the two MAIN-world
+  entries.
+- `npm run verify:browsers` passed in isolated hidden Chrome for Testing
+  151.0.7922.34 and Firefox 154 at 1000×760. It loaded the real manifest,
+  observed the GPX calculator unavailable before selection, drove the real
+  keyboard route-selection path, and verified the packaged Peak calculator,
+  placement, styles, and surface-specific date controls.
+- `npm run terrain:verify` passed hidden on Chrome 151 with the hardware ANGLE
+  Metal renderer on Apple M3 Pro. `npm run terrain:verify:firefox` passed hidden
+  on Firefox 153 with its reported Apple hardware renderer. Both rotated the
+  Peak and GPX 3D surfaces, kept absolute Sun text fixed, moved Sun/cardinals by
+  inverse bearing, and reset the completed visual transition north-up in 2D.
+- Light and dark Peak and GPX screenshots were inspected around the 425 px Peak
+  map, 798×448 and 448×448 Analyzer maps, and a 390 px page. The open calculator
+  showed no clipping, horizontal overflow, map-control/attribution coverage, or
+  unreadable wrapping.
+- `README.md`, `PRIVACY.md`, `CHANGELOG.md`, and the maintained architecture,
+  mountain-time, 3D, and new [Sun position guide](../sun-position.md) document
+  the shipped local-only behavior and its astronomical—not terrain-lighting—
+  claim. Relative-link, privacy, release, and changelog-history tests passed.
 
 ### Intentionally not changed
 
-- Terrain shadows/occlusion, hillshade lighting, BigMap, persistence, GPX date
-  override, map overlays, and reverse time-to-route coupling.
+- No terrain horizon, ridge occlusion, cast shadows, slope/aspect, actual direct
+  light, weather, smoke, or GPX-elevation observer correction was added.
+- MapLibre's fixed relief hillshade and the native/3D map layers were not changed;
+  no Sun ray, marker, or shadow overlay is drawn on either map.
+- Full Screen BigMap, activity capture, editors, lists, the popup, and Settings
+  remain outside this feature. There is no setting, persistence, new permission,
+  remote request, CDN code, telemetry, or developer service.
+- GPX keeps no date override or timezone override. The Sun time slider never
+  changes route/chart/map selection, and no route autoplay or reverse
+  time-to-route coupling was introduced.
+- Native Leaflet remains north-up. Pitch is not pseudo-projected onto the flat
+  solar compass, and the existing terrain compass continues to own pitch.
 
 ### Changed but not fully proven
 
-- Any live Peakbagger markup, device gesture, native browser UI, or field result
-  not established by the isolated verification matrix.
+- The isolated HTTPS fixtures and masked page fixtures do not prove that every
+  current live Peakbagger page still exposes the expected Dynamic Map, ascent
+  date, GPX link, or Leaflet globals. Live Peakbagger/provider behavior was not
+  exercised and no rate-limited live request was needed for this implementation.
+- Hidden protocol and screenshot checks do not prove native browser chrome,
+  focus/window placement, screen-reader speech, touch-device chart gestures,
+  physical high-DPI devices, or visible Firefox layout. No user browser window
+  was opened or interrupted.
+- Reference vectors and deterministic fixtures establish the implemented
+  astronomy contract, but no field observation established real terrain
+  visibility or direct sunlight—which the feature explicitly does not claim.
+- Local packaging proves the submitted bytes can be built and run. It does not
+  prove AMO/Chrome Web Store review, signing, submission, publication, legal
+  sufficiency, or public availability.
