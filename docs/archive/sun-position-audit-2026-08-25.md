@@ -1,9 +1,9 @@
 # Sun position code, performance, and UX audit — 2026-08-25
 
-Status: **active remediation plan.** This audit found one P1 finding, four P2
-findings, and one P3 finding in the shipped Sun position feature. It is a
-source-grounded plan, not an implementation: no runtime, build, manifest,
-dependency, or product-copy behavior changed as part of this audit.
+Status: **completed remediation ledger.** This audit found one P1 finding, four
+P2 findings, and one P3 finding in the shipped Sun position feature. F1–F6 were
+implemented and verified in focused commits, maintained documentation now
+describes the resulting runtime behavior, and this ledger is archived.
 
 Baseline: the audit started from a clean local `main` at `a9d838f4`, 15 commits
 ahead of `origin/main`. The current implementation plan is archived in
@@ -418,8 +418,44 @@ deterministic real-location vectors belong in fixtures and unit tests.
 
 ### Fixed and verified
 
-None. This pass produced an audit plan only; green baseline tests do not close
-F1–F6.
+- **F1 — local solar-cycle correctness (`8e9c423`):** a bounded nearby-anchor
+  search selects the cycle whose solar noon belongs to the requested local
+  date, preserves previous/next-date crossings, and no longer suppresses a
+  finite position when daily metadata is malformed. Aoraki, Denali,
+  Kiritimati, Chatham, Denver, and both polar states are pinned.
+- **F2 — event-owned timezone labels (`605ab84`):** sunrise and sunset format
+  their exact instants, including both 2026 Denver DST transitions, estimated
+  zones, and explicit adjacent-day wording.
+- **F3 — bounded/coalesced preview work (`2b2a018`, `64a4c33`):** formatter
+  instances are cached, civil gaps use a bounded transition search, daily
+  events are cached by subject/date/zone, and slider astronomy publishes at
+  most once per animation frame with the final value winning. Denver gaps and
+  folds, Apia's skipped date, disposal, date/subject invalidation, GPX one-way
+  behavior, and full-day structural counters are covered.
+- **F4 — recoverable result states (`58bc8b8`):** valid Peak subjects retain
+  date/time controls through astronomy or formatting failures, while invalid
+  subjects/zones remain terminal. Existing GPX prompts, missing-date states,
+  retry recovery, and iframe replacement behavior remain covered.
+- **F5 — truthful accessible interaction (`2769915`):** the range exposes the
+  authoritative zoned clock through `aria-valuetext`, stale live-region timers
+  are cancelled before duplicate checks, and the input/focus box is 44 CSS
+  pixels. Real keyboard focus and Arrow updates passed in packaged Chrome and
+  Firefox.
+- **F6 — honest visual state (`05ea1d0`, `24be065`):** below-horizon Sun state
+  is hollow/subdued, nighttime is not clamped onto sunrise/sunset, the chevron
+  follows expansion, reduced motion is preserved, and fixed-width Peak parents
+  can no longer clip the calculator on narrow viewports.
+- `npm test` rebuilt all 28 shipped bundles and passed **1,619/1,619** tests.
+  `npm run lint` passed with the eight repository-owned warnings reviewed by
+  policy. The full hidden packaged-browser gate passed in Chrome for Testing
+  151 and Firefox 154. Hardware-GPU terrain verification passed in Chrome on
+  the Apple M3 Pro Metal renderer and in Firefox on Apple hardware, including
+  accepted bearing and 2D reset behavior.
+- Light/dark and wide/narrow Peak/GPX screenshots were inspected in hidden
+  Firefox at 1000×760 and a 480px narrow window. Chrome screenshots covered
+  390px/wide Peak, 390px/wide/dark GPX, selection prompts, and terminal errors.
+  The inspection found and closed the fixed-width Peak clipping regression in
+  `24be065`.
 
 ### Intentionally not changed
 
@@ -431,11 +467,11 @@ F1–F6.
 
 ### Changed but not fully proven
 
-- Only this plan and `docs/plans/README.md` changed. No runtime finding is fixed.
-- No current-turn real-browser, GPU, live Peakbagger, screen-reader, touch, or
-  visible-window evidence was collected.
-
-At implementation closure, replace these entries with per-finding commits,
-checks actually run, intentionally accepted risks, and any remaining proof
-gaps. Do not summarize the audit as completely fixed while any finding or
-required evidence remains open.
+- Hidden DOM/keyboard checks and screenshots do not establish actual
+  screen-reader speech or physical touch ergonomics. Polar and recoverable
+  failure visuals are structurally covered but were not separately captured in
+  both browser/theme combinations.
+- No live Peakbagger page/provider read was needed; fixture pages use a real
+  Peakbagger HTTPS hostname but do not prove future live markup. Hidden runs do
+  not prove native browser chrome, visible-window focus placement, permission
+  prompts, or other GPU/driver combinations.

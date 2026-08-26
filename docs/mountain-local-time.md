@@ -47,9 +47,9 @@ zone's `YYYY-MM-DD` (`en-CA`) date of each timestamp.
 ## Converting an editable mountain clock to an instant
 
 Peak Sun planning and untimed GPX previews start with a civil `YYYY-MM-DD` and
-minute of day rather than a recorded UTC timestamp. `mountain-time.js` searches
-for the UTC instant whose formatted date and clock match that civil value in
-the resolved zone:
+minute of day rather than a recorded UTC timestamp. `mountain-time.js` resolves
+the UTC instant whose formatted date and clock match that civil value in the
+resolved zone:
 
 - an ordinary local minute resolves exactly;
 - a spring-forward gap snaps to the first valid minute after the gap, and the
@@ -61,6 +61,12 @@ sides of the international date line. If the zone is the labelled longitude
 fallback, conversion uses that fixed offset directly. No `new Date(year,
 month, day, ...)` local constructor is used, because that would silently apply
 the viewer's timezone.
+
+Formatter instances are cached in a bounded module-local LRU keyed by
+constructor, locale, zone, and options. A missing civil time uses a bounded
+offset-transition search to find the first valid minute instead of testing up
+to 1,440 separately formatted minutes. The cache is page-local only: it adds no
+extension storage and cannot make the answer depend on the viewer timezone.
 
 ## When a saved GPX has no usable time
 
@@ -132,7 +138,8 @@ UTC-minute bucket can never straddle the climb zone's local midnight.
 ## Testing
 
 `test/time/mountain-time.test.mjs` pins ordinary conversion, DST gaps and folds,
-unusual offsets, date-line dates, formatter failure, and longitude fallback.
+Apia's skipped civil date, unusual offsets, date-line dates, bounded formatter
+construction/work, formatter failure, and longitude fallback.
 `test/gpx/gpx-analyzer.test.mjs` uses an overnight fixture that crosses the
 *mountain's* local midnight but **not** UTC midnight, so its `Day 2` and
 camping assertions hold regardless of the timezone of the machine running the

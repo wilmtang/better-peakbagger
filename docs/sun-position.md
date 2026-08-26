@@ -51,10 +51,13 @@ the GPX surface continues to use the route's starting coordinate even if the
 track crosses a political timezone boundary.
 
 If lookup or formatting fails, both surfaces use the existing labelled,
-whole-hour longitude estimate. Every displayed date, clock, sunrise, and sunset
-uses the same real or estimated zone label. For editable civil times, a DST gap
-snaps forward to the first valid minute and a repeated hour chooses the earlier
-occurrence. The viewer's machine timezone never supplies calculation state.
+whole-hour longitude estimate. Each displayed clock owns the zone abbreviation
+active at its exact instant, so sunrise and sunset remain correctly labelled
+when a selected time falls on the other side of a DST transition. Adjacent-day
+events say `previous day` or `next day` instead of flattening the solar cycle
+onto one date. For editable civil times, a DST gap snaps forward to the first
+valid minute and a repeated hour chooses the earlier occurrence. The viewer's
+machine timezone never supplies calculation state.
 
 See [mountain-local-time.md](mountain-local-time.md) for the shared resolver,
 fallback, and GPX timing-quality contract.
@@ -65,8 +68,11 @@ fallback, and GPX timing-quality contract.
 `suncalc` 2.0.1 package. It validates coordinates, instants, and package output,
 then returns apparent azimuth clockwise from true north, apparent elevation,
 a 16-point compass label, and rise/set or polar-day/polar-night state. Rise/set
-uses observer height zero and rejects events that fall outside the requested
-local civil date, including near the international date line.
+uses observer height zero. A bounded nearby-anchor search selects the cycle
+whose solar noon belongs to the requested local civil date, including near the
+international date line. That cycle may legitimately rise on the previous date
+or set on the next date. Missing or malformed daily events leave the finite
+instantaneous position visible with a bounded rise/set-unavailable message.
 
 Absolute azimuth and elevation do not change when the map rotates. The graphic
 is map-relative: for Sun azimuth `A` and accepted map bearing `B`, the Sun is
@@ -82,6 +88,18 @@ absolute direction and elevation remain text, and the bearing stream is not
 announced to assistive technology. Reduced-motion preferences remove the CSS
 transition.
 
+Daily events are cached by validated subject, civil date, and zone. Slider
+input updates the thumb and requested wall clock immediately, then calculates
+and publishes only the final minute supplied in each animation frame. Changing
+the date or subject invalidates the daily-event cache; changing only map bearing
+never calls the astronomy package.
+
+The range exposes its resolved mountain clock and short zone label through
+`aria-valuetext`, not the internal 0–1439 minute index. Its input/focus box is
+44 CSS pixels high while the visual track remains compact. A below-horizon Sun
+uses a hollow, subdued marker, daylight progress appears only from exact
+sunrise through exact sunset, and the disclosure chevron follows expansion.
+
 ## Privacy, packaging, and failure boundaries
 
 Coordinates, dates, times, and results remain ephemeral in the Peakbagger tab.
@@ -93,16 +111,18 @@ code download is used.
 Only the MAIN-world GPX Analyzer and Peak-map bundles contain the solar modules,
 and only those manifest entries load `css/sun-calculator.css`. The pure state
 owner, `src/sun/sun-state.js`, keeps route selection one-way and clears stale
-subjects. Invalid inputs, unavailable formatting, or non-finite astronomy
-output clear the reading and expose a bounded reason; a missing or invalid
-surface disables or omits the calculator without interrupting the native map,
-chart, or terrain lifecycle.
+subjects. A valid subject with a date/time or formatting failure keeps its
+controls open and usable so another selection can recover. A missing subject or
+zone is terminal and may disable or omit the calculator. Neither path exposes
+caught exception text or interrupts the native map, chart, or terrain lifecycle.
 
-Unit tests cover astronomy reference values, direction/bearing math, polar and
-date-line events, DST gaps and folds, route provenance, asymmetric interaction,
-accessibility, responsive layout, theme, and cleanup. The hidden packaged-
-browser checks load the real manifest in Chrome and Firefox. The hardware-GPU
-terrain checks rotate both supported surfaces and prove that absolute text stays
-fixed and the visual compass resets in 2D. Those hidden checks do not establish
-live Peakbagger markup, touch-device gestures, native browser chrome, focus, or
-window placement.
+Unit tests cover astronomy reference values, local-solar-noon cycle selection,
+adjacent-day events, polar states, DST gaps and folds, bounded formatter work,
+route provenance, coalesced interaction, accessibility, responsive layout,
+theme, recovery, and cleanup. Hidden packaged-browser checks load the real
+manifest in Chrome and Firefox and exercise keyboard focus, slider semantics,
+Peak/GPX responsive geometry, and light/dark rendering in isolated profiles.
+Hardware-GPU checks rotate both supported surfaces and prove that absolute text
+stays fixed and the visual compass resets in 2D. Those hidden checks do not
+establish live Peakbagger markup, actual screen-reader speech, physical touch
+ergonomics, native browser chrome, or window placement.
