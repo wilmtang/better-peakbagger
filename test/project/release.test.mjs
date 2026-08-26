@@ -488,15 +488,17 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
     assert.match(
         workflow,
-        /chrome:\s*\n\s+name: Chrome extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
+        /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
         'current Chrome must use the standard Intel macOS runner',
     );
+    assert.match(workflow,
+        /chrome-required:\s*\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: 128/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
     assert.match(workflow, /CHROME_BIN: \$\{\{ steps\.chrome-floor\.outputs\.chrome-path \}\}/);
     assert.match(workflow, /FIREFOX_BIN: \$\{\{ steps\.firefox\.outputs\.firefox-path \}\}/);
-    assert.equal(workflow.match(/run: npm ci/g)?.length, 5);
+    assert.equal(workflow.match(/run: npm ci/g)?.length, 7);
     assert.match(workflow, /permissions:\s*\n\s+contents: read/);
     assert.match(workflow, /fetch-depth: 0[\s\S]*?run: npm run release:check-history/);
     await assert.rejects(
