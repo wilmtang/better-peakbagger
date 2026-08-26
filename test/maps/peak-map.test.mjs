@@ -85,8 +85,9 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.ok(sun, 'a calculator is created from the same validated summit subject');
     assert.equal(mount.nextElementSibling, sun,
         'the calculator sits immediately below the viewport instead of overlaying the map');
-    assert.equal(sun.querySelector('.bpb-sun-calculator__panel').hidden, true,
-        'the small Dynamic Map keeps its height until the user opens the disclosure');
+    assert.equal(sun.querySelector('.bpb-sun-calculator__panel').hidden, false,
+        'Peak-page Sun & Moon opens automatically below the fixed-height map');
+    assert.equal(sun.querySelector('.bpb-sun-calculator__toggle').getAttribute('aria-expanded'), 'true');
     assert.equal(sun.querySelector('input[type="date"]').value, '2026-08-25');
     assert.equal(sun.querySelector('input[type="range"]').value, String(11 * 60 + 45),
         'the initial clock is current time at the summit, not the viewer');
