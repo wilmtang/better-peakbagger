@@ -47,23 +47,23 @@ Better Peakbagger-only Anchor symbol is not derived from BetaCreator.
 
 ### MapLibre GL JS
 
-Better Peakbagger loads the MapLibre GL JS 6.2.0 ESM distribution directly from
+Better Peakbagger loads the MapLibre GL JS 6.3.0 ESM distribution directly from
 the extension-owned terrain frame. Its main module, module worker, shared module,
 and stylesheet are copied unmodified under `vendor/`.
 
 - Project: [MapLibre GL JS](https://maplibre.org/projects/gl-js/)
-- Source: [MapLibre GL JS v6.2.0](https://github.com/maplibre/maplibre-gl-js/tree/v6.2.0)
+- Source: [MapLibre GL JS v6.3.0](https://github.com/maplibre/maplibre-gl-js/tree/v6.3.0)
 - License: BSD 3-Clause
 - Packaged license text: `vendor/maplibre-LICENSE.txt` (copied from the npm package at build time)
 
 ### Marked
 
-Better Peakbagger distributes the unmodified Marked 18.0.9 UMD browser build
+Better Peakbagger distributes the unmodified Marked 18.0.10 UMD browser build
 as `vendor/marked.umd.js`. The trip-report converter consumes its Markdown
 token stream and does not use its HTML renderer.
 
 - Project: [Marked](https://marked.js.org/)
-- Source: [Marked v18.0.9](https://github.com/markedjs/marked/tree/v18.0.9)
+- Source: [Marked v18.0.10](https://github.com/markedjs/marked/tree/v18.0.10)
 - License: MIT
 - Packaged license text: `vendor/marked-LICENSE.txt` (copied from the npm package at build time)
 

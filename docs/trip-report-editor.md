@@ -168,13 +168,13 @@ render the report. The extension sends its string through two sibling outputs:
 
 ```text
 CodeMirror Markdown string
-  → Marked 18.0.9 lexer tokens
+  → Marked 18.0.10 lexer tokens
   → allowlisted report AST ──→ canonical bracket string ──→ JournalText
                            └─→ generated safe HTML ───────→ DOMParser
                                                           └─→ adopted preview nodes
 ```
 
-[Marked 18.0.9](https://github.com/markedjs/marked/tree/v18.0.9) is used only as
+[Marked 18.0.10](https://github.com/markedjs/marked/tree/v18.0.10) is used only as
 a GFM lexer. Its HTML renderer is never called. Raw HTML tokens become visible
 text, while allowlisted HTML embedded in Markdown goes through the same
 tag-to-detached-DOM parser used when loading
