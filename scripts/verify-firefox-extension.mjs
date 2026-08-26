@@ -1281,12 +1281,19 @@ async function main() {
         const analyzerSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
         if ((await analyzerSunToggle.getAttribute('aria-expanded')) !== 'true') await analyzerSunToggle.click();
         const analyzerSunSlider = await driver.findElement(By.css('.bpb-sun-calculator__time'));
-        await analyzerSunSlider.sendKeys(Key.ARROW_RIGHT);
+        const analyzerSunBefore = await driver.executeScript(
+            'const slider = arguments[0]; return { value: Number(slider.value), valueText: slider.getAttribute("aria-valuetext") || "" };',
+            analyzerSunSlider,
+        );
+        await driver.executeScript('arguments[0].focus();', analyzerSunToggle);
+        await driver.actions().sendKeys(Key.TAB, Key.ARROW_RIGHT).perform();
         const analyzerSunAccessibility = await waitForScript(driver, `
       const slider = document.querySelector('.bpb-sun-calculator__time');
       const style = slider ? getComputedStyle(slider) : null;
       const valueText = slider?.getAttribute('aria-valuetext') || '';
-      return slider && /\\d.*:\\d/.test(valueText) ? {
+      return slider && Number(slider.value) === ${JSON.stringify(analyzerSunBefore.value + 1)}
+        && valueText !== ${JSON.stringify(analyzerSunBefore.valueText)}
+        && /\\d.*:\\d.*(?:[A-Z]{2,5}|UTC)/.test(valueText) ? {
         height: slider.getBoundingClientRect().height,
         valueText,
         focusVisible: slider.matches(':focus-visible'),
