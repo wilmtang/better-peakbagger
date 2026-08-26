@@ -16,6 +16,10 @@ const workflow = await readFile(
     new URL('../../.github/workflows/dependabot-auto-merge.yml', import.meta.url),
     'utf8',
 );
+const testWorkflow = await readFile(
+    new URL('../../.github/workflows/test.yml', import.meta.url),
+    'utf8',
+);
 const dependabotConfig = await readFile(
     new URL('../../.github/dependabot.yml', import.meta.url),
     'utf8',
@@ -155,6 +159,20 @@ test('the declared and locked TipTap family moves as one version', () => {
     assert.ok(locked.length >= declared.length);
     assert.equal(new Set(locked).size, 1,
         'all direct and transitive TipTap packages must resolve to one lockstep version');
+});
+
+test('copied runtime updates add hardware GPU gates to stable required checks', () => {
+    assert.match(testWorkflow, /^  dependency-impact:\n[\s\S]*?^    outputs:\n      copied-runtime:/m);
+    assert.match(testWorkflow,
+        /node scripts\/copied-runtime-impact\.mjs "\$BASE_REVISION"/);
+    assert.match(testWorkflow,
+        /^  chrome-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15[\s\S]*?npm run terrain:verify/m);
+    assert.match(testWorkflow,
+        /^  chrome-required:\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$CHROME_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
+    assert.match(testWorkflow,
+        /^  firefox-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15[\s\S]*?npm run terrain:verify:firefox/m);
+    assert.match(testWorkflow,
+        /^  firefox-required:\n[\s\S]*?name: Firefox extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$FIREFOX_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
 });
 
 test('runtime dependency groups match how the build graph ships each package', async () => {

@@ -431,14 +431,20 @@ rehearsal in [releasing.md](releasing.md)—real Chrome and Firefox profiles, a
 live owned capture through the native toolbar action, native popup
 presentation, Firefox for Android.
 
-That rehearsal is now the gate. It matters because the four automated checks
-cannot see a rendered result, so a dependency that breaks layout rather than
-behavior passes all of them—see
-[What each check can and cannot see](#what-each-check-can-and-cannot-see). An
-`bundled-runtime` or `copied-runtime` bump that ruins the report editor will
-reach `main` green. It should not reach a store, and the rehearsal is the only
-reason it does not. Skipping the rehearsal removes the last human check in the
-chain.
+Copied-runtime changes now run both hardware-GPU terrain verifiers before the
+stable Chrome and Firefox required checks can pass. The comparison reads the
+resolved Chart.js, Marked, and MapLibre versions from the base and proposed
+lockfiles; additions and removals count as changes, and an unreadable base fails
+closed. The browser jobs refuse software WebGL and exercise the real copied
+MapLibre modules in hidden Chrome and Firefox.
+
+The release rehearsal remains a gate because those focused GPU checks do not
+visually inspect the report editor, charts, native browser UI, or live provider
+surfaces. A dependency that breaks layout outside the terrain fixture can still
+pass automation—see
+[What each check can and cannot see](#what-each-check-can-and-cannot-see). Such
+an update should not reach a store, and skipping the rehearsal removes the last
+human check in the chain.
 
 GitHub Actions bumps are the exception the rehearsal does not cover at all. They
 change what CI itself runs, including the release workflow holding the Chrome
@@ -463,7 +469,10 @@ upstream change and the workflows it reaches before merging one.
    queueing. GitHub Actions updates stop here for human review.
 5. Queueing sets a flag and nothing more. GitHub merges once the `main` ruleset
    is satisfied, which means the pull request is current with `main` and the
-   four jobs in `test.yml` have passed against that base. Dependabot cannot skip
+   four stable required checks in `test.yml` have passed against that base. The
+   Chrome check conditionally includes its copied-runtime GPU run; the stable
+   Firefox check aggregates both matrix versions and its conditional GPU run.
+   Dependabot cannot skip
    that: the ruleset's only bypass is the repository-admin role, which it does
    not hold.
 
@@ -478,7 +487,9 @@ ruleset—squash and rebase merges are disabled.
 For npm updates, three automated controls remain:
 
 - **The four required checks.** A bump that breaks the build, the tests, or
-  either browser smoke never merges.
+  either browser smoke never merges. A copied-runtime version change also has
+  to pass hidden hardware-GPU terrain checks in both browsers before the Chrome
+  and Firefox statuses succeed.
 - **Cooldown.** npm version updates wait 3, 7, or 21 days by semver level, which
   lets an ecosystem find a bad release first. Security updates ignore cooldown
   by design and arrive immediately.

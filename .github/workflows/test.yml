@@ -1,9 +1,7 @@
 name: Test
 
 # A pull request branch on this repository would otherwise match both triggers
-# and run every job twice, which for a Dependabot update means eight jobs and
-# four browser smokes where four and two would do. Pushes to main still run the
-# suite after a merge.
+# and run every job twice. Pushes to main still run the suite after a merge.
 on:
   push:
     branches:
@@ -20,6 +18,24 @@ permissions:
   contents: read
 
 jobs:
+  dependency-impact:
+    name: Detect dependency impact
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      copied-runtime: ${{ steps.impact.outputs.copied-runtime }}
+    steps:
+      - name: Check out source and comparison history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect copied runtime version changes
+        id: impact
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/copied-runtime-impact.mjs "$BASE_REVISION"
+
   node:
     name: Node tests and lint
     runs-on: ubuntu-latest
@@ -72,7 +88,7 @@ jobs:
         run: npm run test:scale
 
   chrome:
-    name: Chrome extension smoke
+    name: Chrome current extension smoke
     # Chrome 151 on hosted Linux omits command-line extensions in both new
     # headless and Xvfb. Use the standard 4-core Intel macOS runner because the
     # full verifier is load-sensitive on the smaller 3-core arm64 runner.
@@ -172,3 +188,109 @@ jobs:
         env:
           FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
         run: npm run verify:firefox
+
+  chrome-terrain:
+    name: Chrome copied-runtime GPU smoke
+    needs: dependency-impact
+    if: needs.dependency-impact.outputs.copied-runtime == 'true'
+    # Standard macOS 15 is an arm64 M1 runner. The verifier reports the WebGL
+    # renderer and fails closed if the hosted environment exposes software GL.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install Chrome for Testing
+        run: npx playwright install chromium
+
+      - name: Verify copied runtime on Chrome GPU
+        run: npm run terrain:verify
+
+  chrome-required:
+    name: Chrome extension smoke
+    needs:
+      - dependency-impact
+      - chrome
+      - chrome-terrain
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require Chrome smoke and conditional GPU success
+        env:
+          IMPACT_RESULT: ${{ needs.dependency-impact.result }}
+          COPIED_RUNTIME: ${{ needs.dependency-impact.outputs.copied-runtime }}
+          CHROME_RESULT: ${{ needs.chrome.result }}
+          GPU_RESULT: ${{ needs.chrome-terrain.result }}
+        run: |
+          test "$IMPACT_RESULT" = success
+          test "$CHROME_RESULT" = success
+          if test "$COPIED_RUNTIME" = true; then
+            test "$GPU_RESULT" = success
+          else
+            test "$GPU_RESULT" = skipped
+          fi
+
+  firefox-terrain:
+    name: Firefox copied-runtime GPU smoke
+    needs: dependency-impact
+    if: needs.dependency-impact.outputs.copied-runtime == 'true'
+    # Keep both GPU jobs on the same arm64 M1 runner class. The verifier reports
+    # the WebGL renderer and fails closed if Firefox falls back to software GL.
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install isolated Firefox
+        run: npx playwright install firefox
+
+      - name: Verify copied runtime on Firefox GPU
+        run: npm run terrain:verify:firefox
+
+  firefox-required:
+    # The main ruleset requires this stable name. Matrix job names include the
+    # browser version and therefore cannot satisfy that rule directly.
+    name: Firefox extension smoke
+    needs:
+      - dependency-impact
+      - firefox
+      - firefox-terrain
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require Firefox matrix and conditional GPU success
+        env:
+          IMPACT_RESULT: ${{ needs.dependency-impact.result }}
+          COPIED_RUNTIME: ${{ needs.dependency-impact.outputs.copied-runtime }}
+          FIREFOX_RESULT: ${{ needs.firefox.result }}
+          GPU_RESULT: ${{ needs.firefox-terrain.result }}
+        run: |
+          test "$IMPACT_RESULT" = success
+          test "$FIREFOX_RESULT" = success
+          if test "$COPIED_RUNTIME" = true; then
+            test "$GPU_RESULT" = success
+          else
+            test "$GPU_RESULT" = skipped
+          fi
