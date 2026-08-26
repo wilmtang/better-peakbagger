@@ -90,6 +90,8 @@ export function createSunCalculator({
     requestFrame = callback => requestAnimationFrame(callback),
     cancelFrame = handle => cancelAnimationFrame(handle),
     statusDelayMs = 160,
+    scheduleStatus = (callback, delay) => setTimeout(callback, delay),
+    cancelStatus = handle => clearTimeout(handle),
 } = {}) {
     if (!(mount instanceof Element) || (mode !== 'peak' && mode !== 'gpx')) return null;
 
@@ -245,9 +247,12 @@ export function createSunCalculator({
     };
 
     const announce = text => {
+        if (statusTimer !== null) {
+            cancelStatus(statusTimer);
+            statusTimer = null;
+        }
         if (text === announcedText) return;
-        if (statusTimer !== null) clearTimeout(statusTimer);
-        statusTimer = setTimeout(() => {
+        statusTimer = scheduleStatus(() => {
             statusTimer = null;
             if (disposed) return;
             announcedText = text;
@@ -278,6 +283,7 @@ export function createSunCalculator({
             panel.hidden = true;
         }
         slider.disabled = true;
+        slider.removeAttribute('aria-valuetext');
         slider.style.setProperty('--bpb-sun-progress', '0%');
         if (mode === 'peak') dateValue.disabled = true;
         scheduleCompass(null);
@@ -311,10 +317,20 @@ export function createSunCalculator({
         slider.disabled = !hasDate || !hasMinute;
         if (hasMinute) {
             setSliderMinute(state.minute);
-            timeValue.textContent = MountainTime.formatCivilClock(state.minute) || '';
+            const clock = Number.isFinite(state?.instant?.ms)
+                ? MountainTime.formatClock(state.zone, state.instant.ms)
+                : null;
+            const label = Number.isFinite(state?.instant?.ms)
+                ? MountainTime.zoneLabel(state.zone, state.instant.ms)
+                : null;
+            timeValue.textContent = clock || MountainTime.formatCivilClock(state.minute) || '';
+            const valueText = clock && label ? `${clock} ${label}` : timeValue.textContent;
+            if (valueText) slider.setAttribute('aria-valuetext', valueText);
+            else slider.removeAttribute('aria-valuetext');
         } else {
             slider.style.setProperty('--bpb-sun-progress', '0%');
             timeValue.textContent = '';
+            slider.removeAttribute('aria-valuetext');
         }
         timeMeta.textContent = state?.timeSource || '';
         scheduleCompass(null);
@@ -344,6 +360,7 @@ export function createSunCalculator({
         empty.textContent = '';
         slider.disabled = false;
         setSliderMinute(state.minute);
+        slider.setAttribute('aria-valuetext', `${clock} ${label}`);
         if (mode === 'peak') {
             dateValue.disabled = false;
             dateValue.value = state.date;
@@ -409,7 +426,9 @@ export function createSunCalculator({
     const onTimeInput = () => {
         const minute = Number(slider.value);
         setSliderMinute(minute);
-        timeValue.textContent = MountainTime.formatCivilClock(minute) || timeValue.textContent;
+        const previewClock = MountainTime.formatCivilClock(minute);
+        timeValue.textContent = previewClock || timeValue.textContent;
+        if (previewClock) slider.setAttribute('aria-valuetext', previewClock);
         pendingMinute = minute;
         if (previewFrameHandle !== null) return;
         // Keep this correct under synchronous frame stubs as well as browsers.
@@ -445,7 +464,7 @@ export function createSunCalculator({
             slider.removeEventListener('input', onTimeInput);
             if (frameHandle !== null) cancelFrame(frameHandle);
             if (previewFrameHandle !== null) cancelFrame(previewFrameHandle);
-            if (statusTimer !== null) clearTimeout(statusTimer);
+            if (statusTimer !== null) cancelStatus(statusTimer);
             root.remove();
         },
     });

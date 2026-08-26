@@ -2327,6 +2327,30 @@ try {
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(selectedSun,
         `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
+    const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');
+    if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
+    const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');
+    await analyzerSunSlider.focus();
+    const analyzerSunBefore = await analyzerSunSlider.evaluate(slider => ({
+        value: Number(slider.value),
+        valueText: slider.getAttribute('aria-valuetext') || '',
+        height: slider.getBoundingClientRect().height,
+        focusVisible: slider.matches(':focus-visible'),
+        outlineWidth: getComputedStyle(slider).outlineWidth,
+        outlineStyle: getComputedStyle(slider).outlineStyle,
+    }));
+    await offPage.keyboard.press('ArrowRight');
+    const analyzerSunAfter = await offPage.waitForFunction(previous => {
+        const slider = document.querySelector('.bpb-sun-calculator__time');
+        const valueText = slider?.getAttribute('aria-valuetext') || '';
+        return Number(slider?.value) === previous.value + 1 && valueText !== previous.valueText
+            ? { value: Number(slider.value), valueText }
+            : false;
+    }, analyzerSunBefore, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(analyzerSunBefore.height >= 44 && analyzerSunBefore.focusVisible
+        && analyzerSunBefore.outlineWidth === '3px' && analyzerSunBefore.outlineStyle === 'solid'
+        && /\d.*:\d/.test(analyzerSunBefore.valueText) && analyzerSunAfter,
+    `the packaged GPX Sun slider lacks clock semantics, keyboard updates, focus, or target geometry: ${JSON.stringify({ analyzerSunBefore, analyzerSunAfter })}`);
     await coordinateCanvas.press('ArrowRight');
     const routeScrubber = await offPage.waitForFunction(() => {
         const status = document.getElementById('bpb-gpx-coordinate-status')?.textContent || '';
@@ -2813,8 +2837,15 @@ try {
         `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
         check(peakState?.isolatedWorldReady,
             `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
+        const peakSunToggle = peakPage.locator('.bpb-sun-calculator__toggle');
+        if (await peakSunToggle.getAttribute('aria-expanded') !== 'true') await peakSunToggle.click();
+        const peakSunTarget = await peakPage.locator('.bpb-sun-calculator__time').evaluate(slider => ({
+            height: slider.getBoundingClientRect().height,
+            valueText: slider.getAttribute('aria-valuetext') || '',
+        }));
+        check(peakSunTarget.height >= 44 && /\d.*:\d/.test(peakSunTarget.valueText),
+            `the packaged Peak Sun slider lacks clock semantics or target geometry: ${JSON.stringify(peakSunTarget)}`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
-            await peakPage.locator('.bpb-sun-calculator__toggle').click();
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
         }
         await peakPage.evaluate(() => {

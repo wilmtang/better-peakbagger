@@ -152,8 +152,24 @@
     appearance: none;
     grid-column: 1 / -1;
     inline-size: 100%;
+    block-size: 2.75rem;
+    margin: -0.45rem 0 -0.65rem;
+    padding: 0;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 0.45rem;
+}
+.bpb-sun-calculator__time::-webkit-slider-runnable-track {
     block-size: 0.38rem;
-    margin: 0.2rem 0 0;
+    background: linear-gradient(90deg,
+        var(--bpb-sun-glow) 0 var(--bpb-sun-progress, 50%),
+        var(--bpb-sun-track) var(--bpb-sun-progress, 50%) 100%);
+    border: 1px solid color-mix(in srgb, var(--bpb-sun-border) 82%, transparent);
+    border-radius: 999px;
+}
+.bpb-sun-calculator__time::-moz-range-track {
+    block-size: 0.38rem;
     background: linear-gradient(90deg,
         var(--bpb-sun-glow) 0 var(--bpb-sun-progress, 50%),
         var(--bpb-sun-track) var(--bpb-sun-progress, 50%) 100%);
@@ -167,6 +183,7 @@
     background: var(--bpb-sun-glow);
     border: 0;
     border-radius: 50%;
+    margin-block-start: calc((0.38rem - 1.35rem) / 2);
 }
 .bpb-sun-calculator__time::-moz-range-thumb {
     inline-size: 1.35rem;
@@ -175,6 +192,7 @@
     border: 0;
     border-radius: 50%;
 }
+.bpb-sun-calculator__time:disabled { cursor: default; }
 .bpb-sun-calculator__meta {
     grid-column: 1 / -1;
     min-inline-size: 0;

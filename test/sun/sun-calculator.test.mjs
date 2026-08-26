@@ -118,6 +118,7 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     assert.deepEqual(minutes, [825]);
     assert.equal(slider.min, '0');
     assert.equal(slider.max, '1439');
+    assert.match(slider.getAttribute('aria-valuetext'), /1:45\s*PM/i);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__direction strong').textContent,
         '282° WNW');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__elevation strong').textContent,
@@ -126,6 +127,87 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__event-marker').style.insetInlineStart,
         /%$/);
     assert.match(calculator.element.textContent, /Astronomical position at this location/);
+}));
+
+test('slider value text follows authoritative ordinary, gap, fold, and estimated clocks', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const slider = calculator.element.querySelector('input[type="range"]');
+    const label = calculator.element.querySelector('label[for="' + slider.id + '"]');
+    assert.equal(label.textContent, 'Mountain time');
+    assert.deepEqual([slider.min, slider.max, slider.step], ['0', '1439', '1']);
+
+    const denver = MountainTime.resolve(39.7392, -104.9903);
+    for (const [date, requestedMinute, expectedMinute, expected] of [
+        ['2026-07-10', 13 * 60, 13 * 60, /1:00\s*PM MDT/i],
+        ['2026-03-08', 2 * 60 + 30, 3 * 60, /3:00\s*AM MDT/i],
+        ['2026-11-01', 1 * 60 + 30, 1 * 60 + 30, /1:30\s*AM MDT/i],
+    ]) {
+        const instant = MountainTime.civilToInstant(denver, date, requestedMinute);
+        const result = SunPosition.calculate({
+            lat: 39.7392, lon: -104.9903, ms: instant.ms, date: instant.date, zone: denver,
+        });
+        calculator.render({
+            ...ordinaryState({ zone: denver, date: instant.date, minute: instant.minute }),
+            instant, result,
+        });
+        assert.equal(slider.value, String(expectedMinute));
+        assert.match(slider.getAttribute('aria-valuetext'), expected);
+    }
+
+    const estimated = Object.freeze({ timeZone: null, offsetMs: -8 * 3_600_000, estimated: true });
+    calculator.render(ordinaryState({ zone: estimated, minute: 9 * 60 + 15 }));
+    assert.match(slider.getAttribute('aria-valuetext'), /9:15\s*AM UTC−8, estimated from longitude/i);
+}));
+
+test('live status cancels stale text before duplicate checks and disposal', () => withDom(dom => {
+    let nextTimer = 1;
+    const timers = new Map();
+    const cancelled = [];
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+        scheduleStatus: callback => {
+            const id = nextTimer++;
+            timers.set(id, callback);
+            return id;
+        },
+        cancelStatus: id => {
+            cancelled.push(id);
+            timers.delete(id);
+        },
+    });
+    const status = calculator.element.querySelector('[role="status"]');
+    const publishOnlyTimer = () => {
+        assert.equal(timers.size, 1);
+        const [id, callback] = timers.entries().next().value;
+        timers.delete(id);
+        callback();
+    };
+    const a = ordinaryState({ azimuthDeg: 100, directionLabel: 'E' });
+    const b = ordinaryState({ azimuthDeg: 200, directionLabel: 'SSW' });
+    const c = ordinaryState({ azimuthDeg: 300, directionLabel: 'WNW' });
+    calculator.render(a);
+    publishOnlyTimer();
+    assert.match(status.textContent, /100° E/);
+
+    calculator.render(b);
+    calculator.render(a);
+    assert.equal(timers.size, 0, 'returning to published A cancels pending B');
+    assert.match(status.textContent, /100° E/);
+
+    calculator.render(b);
+    calculator.render(c);
+    publishOnlyTimer();
+    assert.match(status.textContent, /300° WNW/);
+    assert.doesNotMatch(status.textContent, /200° SSW/);
+
+    calculator.render(b);
+    calculator.dispose();
+    assert.equal(timers.size, 0);
+    assert.ok(cancelled.length >= 3);
 }));
 
 test('rapid slider input publishes only the final minute and cancels pending work on disposal', () => withDom(dom => {
@@ -369,6 +451,9 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(css, /@media \(max-width: 680px\)/);
     assert.match(css, /@media \(max-width: 440px\)/);
     assert.match(css, /prefers-reduced-motion: reduce/);
+    assert.match(css, /bpb-sun-calculator__time\s*\{[^}]*block-size:\s*2\.75rem/s);
+    assert.match(css, /::-webkit-slider-runnable-track/);
+    assert.match(css, /::-moz-range-track/);
     calculator.dispose();
     assert.equal(dom.window.document.querySelector('.bpb-sun-calculator'), null);
 }, { width: 390 }));

@@ -1278,6 +1278,29 @@ async function main() {
     `, 'the Firefox GPX Sun selection');
         assertState(/°/.test(selectedSunState.summary),
             'Firefox GPX Sun did not follow keyboard route selection', selectedSunState);
+        const analyzerSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
+        if ((await analyzerSunToggle.getAttribute('aria-expanded')) !== 'true') await analyzerSunToggle.click();
+        const analyzerSunSlider = await driver.findElement(By.css('.bpb-sun-calculator__time'));
+        await analyzerSunSlider.sendKeys(Key.ARROW_RIGHT);
+        const analyzerSunAccessibility = await waitForScript(driver, `
+      const slider = document.querySelector('.bpb-sun-calculator__time');
+      const style = slider ? getComputedStyle(slider) : null;
+      const valueText = slider?.getAttribute('aria-valuetext') || '';
+      return slider && /\\d.*:\\d/.test(valueText) ? {
+        height: slider.getBoundingClientRect().height,
+        valueText,
+        focusVisible: slider.matches(':focus-visible'),
+        outlineWidth: style?.outlineWidth,
+        outlineStyle: style?.outlineStyle,
+      } : false;
+    `, 'the Firefox GPX Sun slider semantics');
+        assertState(
+            analyzerSunAccessibility.height >= 44 && analyzerSunAccessibility.focusVisible
+            && analyzerSunAccessibility.outlineWidth === '3px'
+            && analyzerSunAccessibility.outlineStyle === 'solid',
+            'Firefox GPX Sun slider lacks clock semantics, keyboard focus, or target geometry',
+            analyzerSunAccessibility,
+        );
 
         const terrainToggle = await driver.findElement(By.css(surfaceSelectors.terrainToggle));
         await driver.executeScript((extensionRoot, selector) => {
@@ -1408,6 +1431,20 @@ async function main() {
         && /°/.test(peakState.sunSummary) && peakState.sunBorderStyle === 'solid',
             'Firefox Peak links, theme, 3D mount, or Sun calculator did not initialize',
             peakState,
+        );
+        const peakSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
+        if ((await peakSunToggle.getAttribute('aria-expanded')) !== 'true') await peakSunToggle.click();
+        const peakSunTarget = await driver.executeScript(`
+      const slider = document.querySelector('.bpb-sun-calculator__time');
+      return slider ? {
+        height: slider.getBoundingClientRect().height,
+        valueText: slider.getAttribute('aria-valuetext') || '',
+      } : null;
+    `);
+        assertState(
+            peakSunTarget?.height >= 44 && /\d.*:\d/.test(peakSunTarget?.valueText || ''),
+            'Firefox Peak Sun slider lacks clock semantics or target geometry',
+            peakSunTarget,
         );
 
         await driver.get(`https://${fixtureHost}:${fixture.port}/map/BigMap.aspx?t=A&d=2296`);
