@@ -403,6 +403,15 @@ broad sense. Their names describe the packaging path: `bundled-runtime` modules
 are imported into Better Peakbagger bundles, while `copied-runtime` packages
 remain separately loaded browser builds under `dist/vendor/`.
 
+Exact dependency versions have one owner: `package-lock.json`. Build and
+release tooling derives `THIRD_PARTY_NOTICES.txt`, AMO approval notes, and
+web-ext warning-owner labels from that lockfile. Maintained acknowledgements and
+editor documentation intentionally name projects without copying their current
+versions; the metadata test rejects reintroducing those redundant pins. The
+web-ext gate still fails closed on warning code, output file, and occurrence
+count, so version automation does not turn an added or disappeared warning into
+an accepted one.
+
 Every package is declared under `devDependencies`, so that field says nothing
 about whether a package ships. The three named release-path groups do; updates
 in either catch-all require tracing the package through its parent dependency.

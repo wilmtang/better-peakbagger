@@ -839,6 +839,19 @@ test('generated notices cover the real editor and copied runtime graph', async (
         warningBaseline: WEB_EXT_WARNING_BASELINE,
         noticeInventory: notices,
     }), /AMO approval notes must name only Marked 18\.1\.0/);
+
+    const hardcodedAcknowledgements = acknowledgements.replace(
+        'locked, unmodified Marked',
+        'Marked 18.0.10',
+    );
+    assert.throws(() => validateReviewedDependencyMetadata({
+        packageLock,
+        approvalNotes,
+        acknowledgements: hardcodedAcknowledgements,
+        reportEditorDocs,
+        warningBaseline: WEB_EXT_WARNING_BASELINE,
+        noticeInventory: notices,
+    }), /must derive Marked versions from package-lock\.json instead of hardcoding 18\.0\.10/);
 });
 
 test('notice generation fails closed for missing package metadata or notice text', () => {

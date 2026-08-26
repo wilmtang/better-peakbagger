@@ -53,6 +53,19 @@ function requireExactMention({ text, label, version, surface }) {
     }
 }
 
+function requireVersionNeutralMention({ text, label, surface }) {
+    if (!new RegExp(escaped(label), 'i').test(text)) {
+        throw new Error(`${surface} must mention ${label}.`);
+    }
+    const found = new Set(exactMentionVersions(text, label));
+    if (found.size) {
+        throw new Error(
+            `${surface} must derive ${label} versions from package-lock.json instead of hardcoding `
+            + `${[...found].join(', ')}.`,
+        );
+    }
+}
+
 function noticeVersions(noticeInventory) {
     const versions = new Map();
     const records = noticeInventory.split(
@@ -84,34 +97,31 @@ export function validateReviewedDependencyMetadata({
         });
     }
 
-    for (const [key, label] of [
-        ['chart', 'Chart.js'],
-        ['marked', 'Marked'],
-        ['maplibre', 'MapLibre GL JS'],
-        ['tzLookup', 'tz-lookup'],
-        ['sunCalc', 'SunCalc'],
-        ['tiptap', 'TipTap'],
+    for (const label of [
+        'Chart.js',
+        'Marked',
+        'MapLibre GL JS',
+        'tz-lookup',
+        'SunCalc',
+        'TipTap',
     ]) {
-        requireExactMention({
+        requireVersionNeutralMention({
             text: acknowledgements,
             label,
-            version: versions[key],
             surface: 'ACKNOWLEDGEMENTS.md',
         });
     }
-    requireExactMention({
+    requireVersionNeutralMention({
         text: reportEditorDocs,
         label: 'Marked',
-        version: versions.marked,
         surface: 'docs/trip-report-editor.md',
     });
 
     for (const warning of warningBaseline.filter((entry) => entry.packageName)) {
-        const expected = lockedVersion(packageLock, warning.packageName);
-        if (warning.packageVersion !== expected) {
+        lockedVersion(packageLock, warning.packageName);
+        if ('packageVersion' in warning || /\b\d+\.\d+\.\d+\b/.test(warning.owner)) {
             throw new Error(
-                `web-ext warning owner ${warning.packageName} is reviewed at ${warning.packageVersion}; `
-                + `package-lock.json resolves ${expected}.`,
+                `web-ext warning owner ${warning.packageName} must derive its version from package-lock.json.`,
             );
         }
     }

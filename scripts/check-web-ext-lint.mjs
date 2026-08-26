@@ -20,6 +20,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // accept a moved warning without checking whether it is still the same one.
 // Counting occurrences per file keeps what the gate is actually for: no new
 // warning, no owned warning silently disappearing, and nothing unowned.
+// Package versions are intentionally absent here. The CLI resolves them from
+// package-lock.json for its report, so a dependency-only update cannot be
+// blocked by a second hand-maintained copy of metadata that npm already owns.
 export const WEB_EXT_WARNING_BASELINE = Object.freeze([
     {
         code: 'BACKGROUND_SERVICE_WORKER_IGNORED',
@@ -32,36 +35,32 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'vendor/maplibre-gl-worker.mjs',
         count: 2,
-        owner: 'MapLibre GL JS 6.3.0 module worker',
+        owner: 'MapLibre GL JS module worker',
         packageName: 'maplibre-gl',
-        packageVersion: '6.3.0',
         reason: 'reviewed upstream optional worker-plugin import paths; Better Peakbagger sets only its fixed local worker URL'
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'vendor/maplibre-gl.mjs',
         count: 3,
-        owner: 'MapLibre GL JS 6.3.0 main module',
+        owner: 'MapLibre GL JS main module',
         packageName: 'maplibre-gl',
-        packageVersion: '6.3.0',
         reason: 'reviewed upstream popup, attribution, and scale HTML paths; extension popups use DOM nodes and attribution is validated'
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'content/ascent-editor.js',
         count: 1,
-        owner: 'ProseMirror view 1.42.1',
+        owner: 'ProseMirror view',
         packageName: 'prosemirror-view',
-        packageVersion: '1.42.1',
         reason: 'dependency clipboard parser uses a detached document'
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'content/ascent-editor.js',
         count: 1,
-        owner: 'TipTap core 3.30.1',
+        owner: 'TipTap core',
         packageName: '@tiptap/core',
-        packageVersion: '3.30.1',
         reason: 'dependency writes its generated stylesheet into a style element'
     }
 ]);
@@ -125,20 +124,22 @@ export function evaluateWebExtLint(report, baseline = WEB_EXT_WARNING_BASELINE) 
         ({ code, file, count: count ?? 1, owner, reason }));
 }
 
-export function validateWarningDependencyVersions(packageLock, baseline = WEB_EXT_WARNING_BASELINE) {
-    for (const warning of baseline.filter((entry) => entry.packageName)) {
+export function resolveWarningDependencyVersions(packageLock, baseline = WEB_EXT_WARNING_BASELINE) {
+    return baseline.map((warning) => {
+        if (!warning.packageName) return warning;
         const resolved = packageLock.packages?.[`node_modules/${warning.packageName}`]?.version;
-        if (warning.packageVersion !== resolved) {
-            throw new Error(
-                `${warning.owner} warning acceptance is stale: package-lock.json resolves `
-                + `${warning.packageName}@${resolved || 'missing'}`,
-            );
+        if (typeof resolved !== 'string' || resolved.trim() === '') {
+            throw new Error(`package-lock.json has no resolved version for ${warning.packageName}`);
         }
-    }
+        return {
+            ...warning,
+            owner: `${warning.owner} (${warning.packageName} ${resolved})`,
+        };
+    });
 }
 
 function main() {
-    validateWarningDependencyVersions(JSON.parse(
+    const baseline = resolveWarningDependencyVersions(JSON.parse(
         readFileSync(path.join(root, 'package-lock.json'), 'utf8'),
     ));
     const executable = path.join(
@@ -159,7 +160,7 @@ function main() {
         throw new Error(`web-ext lint produced no JSON: ${result.stderr.trim() || `exit ${result.status}`}`);
     }
 
-    const accepted = evaluateWebExtLint(JSON.parse(result.stdout));
+    const accepted = evaluateWebExtLint(JSON.parse(result.stdout), baseline);
     const total = accepted.reduce((sum, warning) => sum + warning.count, 0);
     console.log(`web-ext lint passed with ${total} owned warnings:`);
     for (const warning of accepted) {

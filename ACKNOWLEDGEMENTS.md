@@ -13,11 +13,11 @@ context for the extension's principal dependencies and inspirations.
 
 ### Chart.js
 
-Better Peakbagger distributes the unmodified Chart.js 4.5.1 UMD build as
+Better Peakbagger distributes the locked Chart.js UMD build as
 `vendor/chart.umd.min.js`.
 
 - Project: [Chart.js](https://www.chartjs.org/)
-- Source: [Chart.js v4.5.1](https://github.com/chartjs/Chart.js/tree/v4.5.1)
+- Source: [Chart.js](https://github.com/chartjs/Chart.js)
 - License: MIT
 - Packaged license text: `vendor/chart-LICENSE.txt` (copied from the npm package at build time)
 
@@ -47,58 +47,58 @@ Better Peakbagger-only Anchor symbol is not derived from BetaCreator.
 
 ### MapLibre GL JS
 
-Better Peakbagger loads the MapLibre GL JS 6.3.0 ESM distribution directly from
+Better Peakbagger loads the locked MapLibre GL JS ESM distribution directly from
 the extension-owned terrain frame. Its main module, module worker, shared module,
 and stylesheet are copied unmodified under `vendor/`.
 
 - Project: [MapLibre GL JS](https://maplibre.org/projects/gl-js/)
-- Source: [MapLibre GL JS v6.3.0](https://github.com/maplibre/maplibre-gl-js/tree/v6.3.0)
+- Source: [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js)
 - License: BSD 3-Clause
 - Packaged license text: `vendor/maplibre-LICENSE.txt` (copied from the npm package at build time)
 
 ### Marked
 
-Better Peakbagger distributes the unmodified Marked 18.0.10 UMD browser build
+Better Peakbagger distributes the locked, unmodified Marked UMD browser build
 as `vendor/marked.umd.js`. The trip-report converter consumes its Markdown
 token stream and does not use its HTML renderer.
 
 - Project: [Marked](https://marked.js.org/)
-- Source: [Marked v18.0.10](https://github.com/markedjs/marked/tree/v18.0.10)
+- Source: [Marked](https://github.com/markedjs/marked)
 - License: MIT
 - Packaged license text: `vendor/marked-LICENSE.txt` (copied from the npm package at build time)
 
 ### TipTap
 
-Better Peakbagger bundles TipTap core 3.30.1 with its TipTap extension and
+Better Peakbagger bundles the locked TipTap core with its TipTap extension and
 ProseMirror dependencies into `content/ascent-editor.js` to provide the
 rich-text editor.
 
 - Project: [TipTap](https://tiptap.dev/)
-- Source: [TipTap core 3.30.1](https://github.com/ueberdosis/tiptap/tree/v3.30.1)
+- Source: [TipTap](https://github.com/ueberdosis/tiptap)
 - License: MIT
 - Packaged license text: `THIRD_PARTY_NOTICES.txt`
 
 ### tz-lookup
 
-Better Peakbagger uses esbuild to bundle the `tz-lookup` 6.1.25 CommonJS
+Better Peakbagger uses esbuild to bundle the locked `tz-lookup` CommonJS
 distribution directly into the GPX analyzer and ascent editor, without
 application changes to its coordinate-to-timezone data or lookup logic. It
 resolves the GPX track's starting coordinate to an IANA timezone entirely
 offline so chart times can be shown in the climb's local time.
 
 - Project: [tz-lookup](https://github.com/darkskyapp/tz-lookup)
-- Source: [tz-lookup 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25)
+- Source: [tz-lookup](https://www.npmjs.com/package/tz-lookup)
 - License: CC0-1.0 (public-domain dedication)
 - Packaged license text: `vendor/tz-lookup-LICENSE.txt` (copied from the npm package at build time)
 
 ### SunCalc
 
-Better Peakbagger bundles the SunCalc 2.0.1 ESM distribution into the Peak-page
+Better Peakbagger bundles the locked SunCalc ESM distribution into the Peak-page
 and GPX-analyzer calculators. It computes apparent Sun position and rise/set
 events locally in the browser without a network service.
 
 - Project: [SunCalc](https://github.com/mourner/suncalc)
-- Source: [SunCalc 2.0.1](https://www.npmjs.com/package/suncalc/v/2.0.1)
+- Source: [SunCalc](https://www.npmjs.com/package/suncalc)
 - License: BSD 3-Clause
 - Packaged license text: `THIRD_PARTY_NOTICES.txt`
 
