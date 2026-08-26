@@ -54,6 +54,33 @@ const chevronIcon = () => {
 
 const roundedDegrees = value => `${Math.round(value)}°`;
 const elevationText = value => `${roundedDegrees(Math.abs(value))} ${value >= 0 ? 'above' : 'below'} horizon`;
+const eventDaySuffix = relation => relation === 'previous-day' ? ' (previous day)'
+    : relation === 'next-day' ? ' (next day)' : '';
+
+function eventDisplay(zone, ms, dayRelation) {
+    const clock = MountainTime.formatClock(zone, ms);
+    const label = MountainTime.zoneLabel(zone, ms);
+    if (!clock || !label) return null;
+    return Object.freeze({ clock, label, daySuffix: eventDaySuffix(dayRelation) });
+}
+
+function eventSummary(zone, result) {
+    const sunrise = eventDisplay(zone, result.sunriseMs, result.sunriseDayRelation);
+    const sunset = eventDisplay(zone, result.sunsetMs, result.sunsetDayRelation);
+    if (!sunrise || !sunset) return null;
+    if (sunrise.label === sunset.label) {
+        return Object.freeze({
+            text: `Level-horizon sunrise ${sunrise.clock}${sunrise.daySuffix} · sunset ${sunset.clock}${sunset.daySuffix} (${sunrise.label})`,
+            sunriseText: `${sunrise.clock}${sunrise.daySuffix}`,
+            sunsetText: `${sunset.clock}${sunset.daySuffix}`,
+        });
+    }
+    return Object.freeze({
+        text: `Level-horizon sunrise ${sunrise.clock} ${sunrise.label}${sunrise.daySuffix} · sunset ${sunset.clock} ${sunset.label}${sunset.daySuffix}`,
+        sunriseText: `${sunrise.clock} ${sunrise.label}${sunrise.daySuffix}`,
+        sunsetText: `${sunset.clock} ${sunset.label}${sunset.daySuffix}`,
+    });
+}
 
 const zoneDescription = (zone, referenceMs, fallback) => {
     if (!zone?.timeZone) return fallback;
@@ -314,16 +341,21 @@ export function createSunCalculator({
             eventsText.textContent = `The sun does not set on this date (polar day, ${label}).`;
         } else if (state.result.daylightState === 'polar-night') {
             eventsText.textContent = `The sun does not rise on this date (polar night, ${label}).`;
+        } else if (state.result.daylightState === 'unavailable') {
+            events.classList.add('bpb-sun-calculator__events--text');
+            eventsText.textContent = 'Rise and set times unavailable for this date.';
         } else {
-            const sunriseText = MountainTime.formatClock(state.zone, state.result.sunriseMs);
-            const sunsetText = MountainTime.formatClock(state.zone, state.result.sunsetMs);
-            if (!sunriseText || !sunsetText) {
-                showSubjectUnavailable('Sun position is unavailable.');
+            const eventDetails = eventSummary(state.zone, state.result);
+            if (!eventDetails) {
+                events.classList.add('bpb-sun-calculator__events--text');
+                eventsText.textContent = 'Rise and set times unavailable for this date.';
+                scheduleCompass(state);
+                announce(`${summary.textContent}. ${eventsText.textContent}`);
                 return;
             }
-            eventsText.textContent = `Level-horizon sunrise ${sunriseText} · sunset ${sunsetText} (${label})`;
-            sunrise.textContent = sunriseText;
-            sunset.textContent = sunsetText;
+            eventsText.textContent = eventDetails.text;
+            sunrise.textContent = eventDetails.sunriseText;
+            sunset.textContent = eventDetails.sunsetText;
             const daylightMs = state.result.sunsetMs - state.result.sunriseMs;
             const progress = daylightMs > 0
                 ? Math.max(0, Math.min(1, (state.instant.ms - state.result.sunriseMs) / daylightMs))

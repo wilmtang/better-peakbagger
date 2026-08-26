@@ -8,6 +8,7 @@ import { JSDOM } from 'jsdom';
 
 import { sunCalculator as SunCalculator } from '../../src/sun/sun-calculator.js';
 import { mountainTime as MountainTime } from '../../src/time/mountain-time.js';
+import { sunPosition as SunPosition } from '../../src/sun/sun-position.js';
 
 const css = await readFile(new URL('../../src/sun/sun-calculator.css', import.meta.url), 'utf8');
 
@@ -58,7 +59,11 @@ const ordinaryState = ({
             isAboveHorizon: elevationDeg >= 0,
             screenAzimuthDeg: ((azimuthDeg - mapBearing) % 360 + 360) % 360,
             sunriseMs: MountainTime.civilToInstant(zone, date, 5 * 60 + 30).ms,
+            sunriseDate: date,
+            sunriseDayRelation: 'same-day',
             sunsetMs: MountainTime.civilToInstant(zone, date, 20 * 60 + 30).ms,
+            sunsetDate: date,
+            sunsetDayRelation: 'same-day',
             daylightState,
         },
         unavailable: null,
@@ -136,6 +141,65 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     assert.match(calculator.element.textContent, /does not rise.*polar night/i);
 }));
 
+test('event clocks own their DST labels and adjacent-day relation', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const denver = MountainTime.resolve(39.7392, -104.9903);
+    for (const [date, minute, selectedLabel, eventLabel] of [
+        ['2026-03-08', 90, 'MST', 'MDT'],
+        ['2026-03-08', 210, 'MDT', 'MDT'],
+        ['2026-11-01', 30, 'MDT', 'MST'],
+        ['2026-11-01', 150, 'MST', 'MST'],
+    ]) {
+        const instant = MountainTime.civilToInstant(denver, date, minute);
+        const result = SunPosition.calculate({
+            lat: 39.7392, lon: -104.9903, ms: instant.ms, date, zone: denver,
+        });
+        calculator.render({ ...ordinaryState({ zone: denver, date, minute }), instant, result });
+        assert.match(calculator.element.querySelectorAll('.bpb-sun-calculator__meta')[1].textContent,
+            new RegExp(selectedLabel));
+        const text = calculator.element.querySelector('.bpb-sun-calculator__events-text').textContent;
+        assert.match(text, new RegExp(`sunrise .*${eventLabel}`));
+        if (selectedLabel !== eventLabel) {
+            assert.doesNotMatch(text, new RegExp(`\\(${selectedLabel}\\)$`),
+                'a selected-time label from another offset must not own the events');
+        }
+    }
+
+    const denali = MountainTime.resolve(63.0695, -151.0074);
+    const date = '2026-06-21';
+    const instant = MountainTime.civilToInstant(denali, date, 12 * 60);
+    const result = SunPosition.calculate({
+        lat: 63.0695, lon: -151.0074, ms: instant.ms, date, zone: denali,
+    });
+    calculator.render({ ...ordinaryState({ zone: denali, date }), instant, result });
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__events-text').textContent,
+        /sunset .*\(next day\).*\(AKDT\)$/);
+}));
+
+test('finite position remains visible when rise and set metadata is unavailable', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const state = ordinaryState();
+    calculator.render({
+        ...state,
+        result: {
+            ...state.result,
+            solarNoonMs: null,
+            sunriseMs: null,
+            sunsetMs: null,
+            daylightState: 'unavailable',
+        },
+    });
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__summary').textContent, /282° WNW/);
+    assert.match(calculator.element.textContent, /Rise and set times unavailable for this date/);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__layout').hidden, false);
+}));
+
 test('GPX prompts and unavailable selections stay inspectable without retaining a stale reading', () => withDom(dom => {
     const calculator = SunCalculator.create({
         mount: dom.window.document.getElementById('mount'), mode: 'gpx',
@@ -208,6 +272,8 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     calculator.render(ordinaryState({ zone }));
     assert.equal(calculator.element.dataset.theme, 'dark');
     assert.match(calculator.element.textContent, /UTC−8, estimated from longitude/);
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__events-text').textContent,
+        /sunrise .* · sunset .* \(UTC−8, estimated from longitude\)$/);
     assert.match(css, /max-inline-size:\s*100%/);
     assert.match(css, /min-inline-size:\s*0/);
     assert.match(css, /overflow-wrap:\s*anywhere/);
