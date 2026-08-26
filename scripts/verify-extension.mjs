@@ -2866,7 +2866,7 @@ try {
             && /^(above|below)$/.test(peakSunTarget.horizon)
             && peakSunTarget.belowClass === /below horizon/.test(peakSunTarget.summary)
             && peakSunTarget.chevronTransform !== 'none',
-            `the packaged Peak Sun slider lacks clock semantics or target geometry: ${JSON.stringify(peakSunTarget)}`);
+        `the packaged Peak Sun slider lacks clock semantics or target geometry: ${JSON.stringify(peakSunTarget)}`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
         }

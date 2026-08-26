@@ -49,7 +49,7 @@ function fallbackLabel(offsetMs) {
     return `UTC${hours < 0 ? '−' : '+'}${Math.abs(hours)}, estimated from longitude`;
 }
 
-function formatter(DateTimeFormat, locales, options) {
+function cachedFormatter(DateTimeFormat, locales, options) {
     if (typeof DateTimeFormat !== 'function') throw new TypeError('invalid formatter constructor');
     let cache = formatterCaches.get(DateTimeFormat);
     if (!cache) {
@@ -83,7 +83,7 @@ export function resolveMountainTime(lat, lon, {
     try {
         const timeZone = lookup(lat, lon);
         if (typeof timeZone !== 'string' || !timeZone) throw new RangeError('invalid timezone');
-        const resolvedFormatter = formatter(DateTimeFormat, 'en-CA', {
+        const resolvedFormatter = cachedFormatter(DateTimeFormat, 'en-CA', {
             timeZone,
             year: 'numeric',
             month: '2-digit',
@@ -100,7 +100,7 @@ export function resolveMountainTime(lat, lon, {
 }
 
 function wallFormatter(zone, DateTimeFormat = Intl.DateTimeFormat) {
-    return formatter(DateTimeFormat, 'en-CA', {
+    return cachedFormatter(DateTimeFormat, 'en-CA', {
         timeZone: zone.timeZone || 'UTC',
         year: 'numeric',
         month: '2-digit',
@@ -146,7 +146,7 @@ export function zoneLabel(zone, referenceMs, {
     if (!zone || !finiteInstant(referenceMs)) return null;
     if (!zone.timeZone) return fallbackLabel(zone.offsetMs);
     try {
-        const part = formatter(DateTimeFormat, [], {
+        const part = cachedFormatter(DateTimeFormat, [], {
             timeZone: zone.timeZone,
             timeZoneName: 'short',
         }).formatToParts(referenceMs).find(candidate => candidate.type === 'timeZoneName');
@@ -162,7 +162,7 @@ export function zoneDescription(zone, referenceMs, {
     if (!zone || !finiteInstant(referenceMs)) return null;
     if (!zone.timeZone) return fallbackLabel(zone.offsetMs);
     try {
-        const name = style => formatter(DateTimeFormat, [], {
+        const name = style => cachedFormatter(DateTimeFormat, [], {
             timeZone: zone.timeZone,
             timeZoneName: style,
         }).formatToParts(referenceMs).find(part => part.type === 'timeZoneName')?.value;
@@ -187,7 +187,7 @@ export function formatClock(zone, ms, {
                 timeZone: 'UTC',
             });
         }
-        return formatter(DateTimeFormat, locales, {
+        return cachedFormatter(DateTimeFormat, locales, {
             hour: '2-digit', minute: '2-digit', timeZone: zone.timeZone,
         }).format(ms);
     } catch {
@@ -201,7 +201,7 @@ export function formatCivilClock(minute, {
 } = {}) {
     if (!Number.isInteger(minute) || minute < 0 || minute > 1439) return null;
     try {
-        return formatter(DateTimeFormat, locales, {
+        return cachedFormatter(DateTimeFormat, locales, {
             hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
         }).format(minute * MINUTE_MS);
     } catch {
@@ -222,7 +222,7 @@ export function relativeLocalDay(zone, ms, startMs, options) {
 }
 
 function offsetAt(timeZone, ms, DateTimeFormat) {
-    const fields = dateParts(formatter(DateTimeFormat, 'en-CA', {
+    const fields = dateParts(cachedFormatter(DateTimeFormat, 'en-CA', {
         timeZone,
         year: 'numeric',
         month: '2-digit',
