@@ -2330,7 +2330,8 @@ try {
     const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');
     if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
     const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');
-    await analyzerSunSlider.focus();
+    await analyzerSunToggle.focus();
+    await offPage.keyboard.press('Tab');
     const analyzerSunBefore = await analyzerSunSlider.evaluate(slider => ({
         value: Number(slider.value),
         valueText: slider.getAttribute('aria-valuetext') || '',
@@ -2352,6 +2353,7 @@ try {
         const slider = document.querySelector('.bpb-sun-calculator__time');
         const valueText = slider?.getAttribute('aria-valuetext') || '';
         return Number(slider?.value) === previous.value + 1 && valueText !== previous.valueText
+            && /\d.*:\d.*(?:[A-Z]{2,5}|UTC)/.test(valueText)
             ? { value: Number(slider.value), valueText }
             : false;
     }, analyzerSunBefore, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
