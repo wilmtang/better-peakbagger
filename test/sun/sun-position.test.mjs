@@ -22,6 +22,8 @@ test('SunCalc 2 reference position and rise/set vector stays north-based and deg
     assert.equal(result.isAboveHorizon, false);
     assert.ok(Math.abs(result.sunriseMs - Date.parse('2013-03-05T04:33:31.186Z')) < 1000);
     assert.ok(Math.abs(result.sunsetMs - Date.parse('2013-03-05T15:46:19.732Z')) < 1000);
+    assert.equal(result.sunriseDayRelation, 'same-day');
+    assert.equal(result.sunsetDayRelation, 'same-day');
 });
 
 test('16-point directions cover cardinal quadrants and screen bearing wraps across north', () => {
@@ -53,17 +55,31 @@ test('polar day and night report absent events without inventing rise or set tim
     assert.deepEqual([winter.daylightState, winter.sunriseMs, winter.sunsetMs], ['polar-night', null, null]);
 });
 
-test('date-line solar events are constrained to the requested local civil date', () => {
-    const zone = MountainTime.resolve(1.8721, -157.4278);
-    const instant = MountainTime.civilToInstant(zone, '2026-01-02', 12 * 60);
-    const result = SunPosition.calculate({
-        lat: 1.8721, lon: -157.4278, ms: instant.ms, date: '2026-01-02', zone,
-    });
-    assert.equal(MountainTime.localDate(zone, result.sunriseMs), '2026-01-02');
-    assert.equal(MountainTime.localDate(zone, result.sunsetMs), '2026-01-02');
+test('daily events follow the requested local solar noon across zones and adjacent-day crossings', () => {
+    const vectors = [
+        ['Aoraki', -43.595, 170.141, '2026-01-01', 6 * 60 + 1, 21 * 60 + 23, 'same-day'],
+        ['Denali', 63.0695, -151.0074, '2026-06-21', 3 * 60 + 55, 16, 'next-day'],
+        ['Kiritimati', 1.8721, -157.4278, '2026-01-02', 6 * 60 + 32, 18 * 60 + 34, 'same-day'],
+        ['Chatham', -43.95, -176.55, '2026-01-02', 5 * 60 + 52, 21 * 60 + 16, 'same-day'],
+        ['Denver', 39.7392, -104.9903, '2026-07-10', 5 * 60 + 41, 20 * 60 + 29, 'same-day'],
+    ];
+    for (const [name, lat, lon, date, sunriseMinute, sunsetMinute, sunsetRelation] of vectors) {
+        const zone = MountainTime.resolve(lat, lon);
+        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
+        const result = SunPosition.calculate({ lat, lon, ms: instant.ms, date, zone });
+        assert.equal(MountainTime.localDate(zone, result.solarNoonMs), date, `${name} solar noon`);
+        assert.equal(MountainTime.localMinute(zone, result.sunriseMs), sunriseMinute, `${name} sunrise`);
+        assert.equal(MountainTime.localMinute(zone, result.sunsetMs), sunsetMinute, `${name} sunset`);
+        assert.equal(result.sunriseDayRelation, 'same-day', `${name} sunrise relation`);
+        assert.equal(result.sunsetDayRelation, sunsetRelation, `${name} sunset relation`);
+        assert.equal(result.sunriseDate, date, `${name} sunrise date`);
+        assert.equal(result.sunsetDate, sunsetRelation === 'next-day'
+            ? new Date(Date.parse(`${date}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+            : date, `${name} sunset date`);
+    }
 });
 
-test('solar calculation rejects malformed coordinates, instants, package output, and adjacent-day events', () => {
+test('solar calculation rejects malformed primary inputs but preserves position without trustworthy events', () => {
     const zone = MountainTime.resolve(0, 0);
     assert.equal(SunPosition.calculate({ lat: 91, lon: 0, ms: 0, date: '1970-01-01', zone }), null);
     assert.equal(SunPosition.calculate({ lat: 0, lon: 0, ms: Number.NaN, date: '1970-01-01', zone }), null);
@@ -71,14 +87,37 @@ test('solar calculation rejects malformed coordinates, instants, package output,
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: { getPosition: () => ({ azimuth: Number.NaN, altitude: 1 }), getTimes: () => ({}) },
     }), null);
-    assert.equal(SunPosition.calculate({
+    const malformedEvents = SunPosition.calculate({
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: {
             getPosition: () => ({ azimuth: 90, altitude: -1 }),
-            getTimes: () => ({
-                sunrise: new Date('1970-01-02T06:00:00Z'),
-                sunset: new Date('1970-01-02T18:00:00Z'),
-            }),
+            getTimes: () => ({ solarNoon: new Date(Number.NaN) }),
         },
-    }), null);
+    });
+    assert.equal(malformedEvents.azimuthDeg, 90);
+    assert.equal(malformedEvents.daylightState, 'unavailable');
+    assert.equal(malformedEvents.sunriseMs, null);
+    assert.equal(malformedEvents.sunsetMs, null);
+});
+
+test('event search is bounded and rejects cycles whose solar noon belongs to another date', () => {
+    const zone = MountainTime.resolve(0, 0);
+    let calls = 0;
+    const result = SunPosition.calculate({
+        lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
+        sunCalc: {
+            getPosition: () => ({ azimuth: 90, altitude: -1 }),
+            getTimes: () => {
+                calls++;
+                return {
+                    solarNoon: new Date('1970-01-10T12:00:00Z'),
+                    sunrise: new Date('1970-01-10T06:00:00Z'),
+                    sunset: new Date('1970-01-10T18:00:00Z'),
+                };
+            },
+        },
+    });
+    assert.equal(calls, 5);
+    assert.equal(result.daylightState, 'unavailable');
+    assert.equal(result.azimuthDeg, 90);
 });
