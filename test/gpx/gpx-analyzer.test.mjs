@@ -1815,6 +1815,8 @@ test('manual Sun time is one-way and cannot move chart, Leaflet, route identity,
     const messages = postedMessages.length;
     slider.value = String(16 * 60 + 10);
     slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await waitFor(dom, () => slider.value === String(16 * 60 + 10)
+        && /4:10\s*PM PDT/i.test(slider.getAttribute('aria-valuetext') || ''));
     assert.equal(window.document.getElementById('bpb-gpx-coordinate-status').textContent, status);
     assert.equal(updateModes.length, updates, 'manual solar time does not update Chart.js');
     assert.equal(markerMoves.length, moves, 'manual solar time does not move the Leaflet marker');

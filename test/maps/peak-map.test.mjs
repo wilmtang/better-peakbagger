@@ -96,6 +96,8 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     const sunTime = sun.querySelector('input[type="range"]');
     sunTime.value = String(9 * 60 + 20);
     sunTime.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await waitFor(dom, () => sunTime.value === String(9 * 60 + 20)
+        && /9:20\s*AM PDT/i.test(sunTime.getAttribute('aria-valuetext') || ''));
     sunDate.value = '2026-11-01';
     sunDate.dispatchEvent(new window.Event('change', { bubbles: true }));
     assert.equal(sunTime.value, String(9 * 60 + 20), 'changing date preserves the chosen clock time');
