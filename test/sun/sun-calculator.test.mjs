@@ -70,6 +70,8 @@ const ordinaryState = ({
     };
 };
 
+const timeValueText = root => root.querySelector('.bpb-sun-calculator__clock').textContent;
+
 test('Peak calculator is collapsed, labelled, keyboard-native, and emits only time actions', () => withDom(dom => {
     const dates = [];
     const minutes = [];
@@ -106,6 +108,10 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     slider.value = '825';
     slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     assert.deepEqual(dates, ['2026-07-11']);
+    assert.deepEqual(minutes, [], 'slider astronomy waits for the next frame');
+    assert.match(timeValueText(calculator.element), /1:45\s*PM/i,
+        'the visible wall clock follows the thumb immediately');
+    frames.shift()();
     assert.deepEqual(minutes, [825]);
     assert.equal(slider.min, '0');
     assert.equal(slider.max, '1439');
@@ -117,6 +123,37 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__event-marker').style.insetInlineStart,
         /%$/);
     assert.match(calculator.element.textContent, /Astronomical position at this location/);
+}));
+
+test('rapid slider input publishes only the final minute and cancels pending work on disposal', () => withDom(dom => {
+    const frames = [];
+    const cancelled = [];
+    const minutes = [];
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        onMinuteChange: minute => minutes.push(minute),
+        requestFrame: callback => { frames.push(callback); return frames.length; },
+        cancelFrame: handle => cancelled.push(handle),
+    });
+    calculator.render(ordinaryState());
+    frames.shift()();
+    const slider = calculator.element.querySelector('input[type="range"]');
+    for (const minute of [1, 600, 825, 1439]) {
+        slider.value = String(minute);
+        slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    }
+    assert.equal(frames.length, 1, 'one calculation frame is pending');
+    assert.equal(slider.value, '1439');
+    assert.match(timeValueText(calculator.element), /11:59\s*PM/i);
+    frames.shift()();
+    assert.deepEqual(minutes, [1439], 'the final minute wins');
+
+    slider.value = '300';
+    slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    calculator.dispose();
+    assert.ok(cancelled.length >= 1);
+    frames.shift()();
+    assert.deepEqual(minutes, [1439], 'disposed calculators publish no pending minute');
 }));
 
 test('GPX calculator has no date picker and honestly renders sources, below-horizon, and polar states', () => withDom(dom => {

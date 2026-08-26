@@ -201,6 +201,8 @@ export function createSunCalculator({
     let disposed = false;
     let frameHandle = null;
     let pendingCompass = null;
+    let previewFrameHandle = null;
+    let pendingMinute = null;
     let unboundedBearing = null;
     let statusTimer = null;
     let announcedText = '';
@@ -359,9 +361,23 @@ export function createSunCalculator({
     };
     const onToggle = () => setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
     const onDateInput = () => onDateChange(dateValue.value);
+    const applyPreviewMinute = () => {
+        previewFrameHandle = null;
+        const minute = pendingMinute;
+        pendingMinute = null;
+        if (disposed || !validMinute(minute)) return;
+        onMinuteChange(minute);
+    };
     const onTimeInput = () => {
-        setSliderMinute(Number(slider.value));
-        onMinuteChange(Number(slider.value));
+        const minute = Number(slider.value);
+        setSliderMinute(minute);
+        timeValue.textContent = MountainTime.formatCivilClock(minute) || timeValue.textContent;
+        pendingMinute = minute;
+        if (previewFrameHandle !== null) return;
+        // Keep this correct under synchronous frame stubs as well as browsers.
+        previewFrameHandle = true;
+        const handle = requestFrame(applyPreviewMinute);
+        if (previewFrameHandle !== null) previewFrameHandle = handle;
     };
     toggle.addEventListener('click', onToggle);
     if (mode === 'peak') dateValue.addEventListener('change', onDateInput);
@@ -390,6 +406,7 @@ export function createSunCalculator({
             if (mode === 'peak') dateValue.removeEventListener('change', onDateInput);
             slider.removeEventListener('input', onTimeInput);
             if (frameHandle !== null) cancelFrame(frameHandle);
+            if (previewFrameHandle !== null) cancelFrame(previewFrameHandle);
             if (statusTimer !== null) clearTimeout(statusTimer);
             root.remove();
         },

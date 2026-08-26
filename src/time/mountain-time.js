@@ -195,6 +195,20 @@ export function formatClock(zone, ms, {
     }
 }
 
+export function formatCivilClock(minute, {
+    locales = [],
+    DateTimeFormat = Intl.DateTimeFormat,
+} = {}) {
+    if (!Number.isInteger(minute) || minute < 0 || minute > 1439) return null;
+    try {
+        return formatter(DateTimeFormat, locales, {
+            hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+        }).format(minute * MINUTE_MS);
+    } catch {
+        return null;
+    }
+}
+
 export function localDayNumber(zone, ms, options) {
     const date = localDate(zone, ms, options);
     const parsed = parseCivilDate(date);
@@ -317,6 +331,7 @@ export const mountainTime = Object.freeze({
     zoneLabel,
     zoneDescription,
     formatClock,
+    formatCivilClock,
     localDayNumber,
     relativeLocalDay,
     civilToInstant,

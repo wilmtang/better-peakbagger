@@ -17,7 +17,23 @@ function completeDate(value) {
         && candidate.getUTCDate() === day ? value : null;
 }
 
-export function createSunState({ calculate = SunPosition.calculate } = {}) {
+const unavailableEvents = Object.freeze({
+    solarNoonMs: null,
+    sunriseMs: null,
+    sunriseDate: null,
+    sunriseDayRelation: null,
+    sunsetMs: null,
+    sunsetDate: null,
+    sunsetDayRelation: null,
+    daylightState: 'unavailable',
+});
+
+export function createSunState({
+    calculate = null,
+    calculateInstant = SunPosition.calculateInstant,
+    calculateEvents = SunPosition.calculateEvents,
+} = {}) {
+    let eventCache = null;
     let state = Object.freeze({
         mode: null,
         subject: null,
@@ -34,6 +50,22 @@ export function createSunState({ calculate = SunPosition.calculate } = {}) {
     });
 
     const replace = patch => { state = Object.freeze({ ...state, ...patch }); return state; };
+    const eventsFor = input => {
+        const key = [
+            input.lat, input.lon, input.date,
+            input.zone.timeZone || '', input.zone.offsetMs, Boolean(input.zone.estimated),
+        ].join('|');
+        if (eventCache?.key === key) return eventCache.events;
+        const events = calculateEvents(input) || unavailableEvents;
+        eventCache = Object.freeze({ key, events });
+        return events;
+    };
+    const calculateResult = input => {
+        if (typeof calculate === 'function') return calculate(input);
+        const position = calculateInstant(input);
+        if (!position) return null;
+        return Object.freeze({ ...position, ...eventsFor(input) });
+    };
     const recompute = () => {
         if (!validCoordinate(state.subject) || !state.zone || !completeDate(state.date)
             || !validMinute(state.minute)) {
@@ -41,7 +73,7 @@ export function createSunState({ calculate = SunPosition.calculate } = {}) {
         }
         const instant = MountainTime.civilToInstant(state.zone, state.date, state.minute);
         if (!instant) return replace({ instant: null, result: null, unavailable: 'Sun position is unavailable.' });
-        const result = calculate({
+        const result = calculateResult({
             lat: state.subject.lat,
             lon: state.subject.lon,
             ms: instant.ms,
@@ -107,7 +139,7 @@ export function createSunState({ calculate = SunPosition.calculate } = {}) {
         if (recorded) {
             const date = MountainTime.localDate(zone, point.ms);
             const minute = MountainTime.localMinute(zone, point.ms);
-            const result = date && validMinute(minute) ? calculate({
+            const result = date && validMinute(minute) ? calculateResult({
                 lat: subject.lat,
                 lon: subject.lon,
                 ms: point.ms,
@@ -154,11 +186,14 @@ export function createSunState({ calculate = SunPosition.calculate } = {}) {
         return replace({ mapBearing, result });
     };
 
-    const resetSubject = () => replace({
-        mode: null, subject: null, routeIdentity: null, zone: null, date: null, minute: null,
-        dateSource: null, timeSource: null, mapBearing: 0, instant: null, result: null,
-        unavailable: null,
-    });
+    const resetSubject = () => {
+        eventCache = null;
+        return replace({
+            mode: null, subject: null, routeIdentity: null, zone: null, date: null, minute: null,
+            dateSource: null, timeSource: null, mapBearing: 0, instant: null, result: null,
+            unavailable: null,
+        });
+    };
 
     return Object.freeze({
         get: () => state,

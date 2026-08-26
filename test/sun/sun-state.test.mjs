@@ -96,3 +96,41 @@ test('bearing changes only map-relative output and reset clears stale subject st
         null, null, null, 0,
     ]);
 });
+
+test('minute changes reuse daily events while calculating each requested position', () => {
+    let positions = 0;
+    let events = 0;
+    const state = SunState.create({
+        calculateInstant: ({ mapBearing = 0 }) => {
+            positions++;
+            return resultFor({ mapBearing });
+        },
+        calculateEvents: () => {
+            events++;
+            return {
+                solarNoonMs: 1,
+                sunriseMs: 2,
+                sunriseDate: '2026-07-10',
+                sunriseDayRelation: 'same-day',
+                sunsetMs: 3,
+                sunsetDate: '2026-07-10',
+                sunsetDayRelation: 'same-day',
+                daylightState: 'ordinary',
+            };
+        },
+    });
+    const zone = MountainTime.resolve(39.7392, -104.9903);
+    state.setPeakSubject({
+        lat: 39.7392, lon: -104.9903, zone, nowMs: Date.parse('2026-07-10T18:30:00Z'),
+    });
+    for (let minute = 0; minute < 1440; minute++) state.setPreviewMinute(minute);
+    assert.equal(positions, 1441);
+    assert.equal(events, 1, 'one subject/date/zone owns one daily-event calculation');
+
+    state.setPeakDate('2026-07-11');
+    assert.equal(events, 2, 'date changes invalidate daily events');
+    state.selectRoutePoint({
+        lat: 39.75, lon: -104.99, timeState: 'missing', routeIdentity: 1,
+    }, '2026-07-11', zone);
+    assert.equal(events, 3, 'subject changes invalidate daily events');
+});
