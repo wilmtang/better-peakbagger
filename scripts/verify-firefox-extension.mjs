@@ -34,6 +34,7 @@ import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack, quitWebDriver } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
 
 async function startFirefoxDriver(options, profileRoot) {
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -75,6 +76,12 @@ function assertState(condition, message, state) {
     if (!condition) {
         throw new Error(state === undefined ? message : `${message}: ${JSON.stringify(state)}`);
     }
+}
+
+async function writeElementScreenshot(driver, selector, outputPath) {
+    if (!outputPath) return;
+    const screenshot = await driver.findElement(By.css(selector)).takeScreenshot(true);
+    await writeFile(outputPath, screenshot, 'base64');
 }
 
 async function waitForScript(
@@ -824,7 +831,7 @@ async function main() {
 
         await driver.get(optionsUrl);
 
-        await driver.executeAsyncScript(done => {
+        await driver.executeAsyncScript((theme, done) => {
             const api = globalThis.browser || globalThis.chrome;
             const entries = Array.from({ length: 1500 }, (_, index) => ({
                 cid: 100000 + index,
@@ -838,7 +845,7 @@ async function main() {
                 api.storage.sync.set({
                     bpbSettings: {
                         ...bpbSettings,
-                        theme: 'dark',
+                        theme,
                         enable3dMap: true,
                         addReportCredit: true,
                         enableGithubBackup: true,
@@ -853,7 +860,7 @@ async function main() {
                     bpbFavoriteClimbers: { schemaVersion: 1, entries },
                 }),
             ])).then(() => done(true), error => done(String(error)));
-        });
+        }, firefoxSunTheme);
         await driver.navigate().refresh();
         await waitForScript(
             driver,
@@ -1320,6 +1327,22 @@ async function main() {
             'Firefox GPX Sun slider lacks clock semantics, keyboard focus, or target geometry',
             analyzerSunAccessibility,
         );
+        await writeElementScreenshot(
+            driver,
+            '#bpb-gpx-analysis',
+            process.env.BPB_VERIFY_FIREFOX_ANALYZER_SCREENSHOT,
+        );
+        if (process.env.BPB_VERIFY_FIREFOX_ANALYZER_NARROW_SCREENSHOT) {
+            const previousRect = await driver.manage().window().getRect();
+            await driver.manage().window().setRect({ width: 480, height: 900 });
+            await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000);
+            await writeElementScreenshot(
+                driver,
+                '#bpb-gpx-analysis',
+                process.env.BPB_VERIFY_FIREFOX_ANALYZER_NARROW_SCREENSHOT,
+            );
+            await driver.manage().window().setRect(previousRect);
+        }
 
         const terrainToggle = await driver.findElement(By.css(surfaceSelectors.terrainToggle));
         await driver.executeScript((extensionRoot, selector) => {
@@ -1476,6 +1499,22 @@ async function main() {
             'Firefox Peak Sun slider lacks clock semantics or target geometry',
             peakSunTarget,
         );
+        await writeElementScreenshot(
+            driver,
+            '.bpb-sun-calculator',
+            process.env.BPB_VERIFY_FIREFOX_PEAK_SCREENSHOT,
+        );
+        if (process.env.BPB_VERIFY_FIREFOX_PEAK_NARROW_SCREENSHOT) {
+            const previousRect = await driver.manage().window().getRect();
+            await driver.manage().window().setRect({ width: 480, height: 900 });
+            await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000);
+            await writeElementScreenshot(
+                driver,
+                '.bpb-sun-calculator',
+                process.env.BPB_VERIFY_FIREFOX_PEAK_NARROW_SCREENSHOT,
+            );
+            await driver.manage().window().setRect(previousRect);
+        }
 
         await driver.get(`https://${fixtureHost}:${fixture.port}/map/BigMap.aspx?t=A&d=2296`);
         const bigMapState = await waitForScript(driver, `
