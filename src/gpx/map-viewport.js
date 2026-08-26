@@ -23,6 +23,7 @@ export const createMapViewport = ({
     persistDelayMs,
     onPersist,
     onInvalidated = () => {},
+    getResizeBoundary = element => element?.parentElement,
 } = {}) => {
     let current = {
         width: clamp(size.width, bounds.minWidth, bounds.maxWidth),
@@ -164,7 +165,9 @@ export const createMapViewport = ({
         let drag = null;
         handle.addEventListener('pointerdown', event => {
             if (event.button !== 0) return;
-            const parentRect = element.parentElement.getBoundingClientRect();
+            const boundary = getResizeBoundary(element);
+            if (!boundary) return;
+            const parentRect = boundary.getBoundingClientRect();
             const viewportRect = element.getBoundingClientRect();
             const parentWidth = parentRect.width;
             const viewportWidth = viewportRect.width;

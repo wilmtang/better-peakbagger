@@ -2233,6 +2233,7 @@ try {
         const coordinates = panel?.querySelector('.bpb-gpx-coordinate-controls');
         const sun = panel?.querySelector('.bpb-sun-calculator');
         const legend = panel?.querySelector('#bpb-gpx-chart-legend');
+        const canvasContainer = panel?.querySelector('canvas')?.parentElement;
         const rootRect = sun?.getBoundingClientRect();
         return {
             exists: Boolean(sun),
@@ -2240,8 +2241,8 @@ try {
             collapsed: sun?.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
             summary: sun?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
             disabled: sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true,
-            afterCoordinates: coordinates?.nextElementSibling === sun,
-            beforeLegend: sun?.nextElementSibling === legend,
+            coordinatesBeforeLegend: coordinates?.nextElementSibling === legend,
+            afterChart: canvasContainer?.nextElementSibling === sun,
             insidePanel: Boolean(rootRect) && rootRect.left >= panel.getBoundingClientRect().left
                 && rootRect.right <= panel.getBoundingClientRect().right + 1,
             borderStyle: sun ? getComputedStyle(sun).borderStyle : null,
@@ -2250,7 +2251,7 @@ try {
     check(analyzerSunState.exists && !analyzerSunState.hasDateInput
         && analyzerSunState.collapsed && !analyzerSunState.disabled
         && analyzerSunState.summary === 'Select a chart point'
-        && analyzerSunState.afterCoordinates && analyzerSunState.beforeLegend
+        && analyzerSunState.coordinatesBeforeLegend && analyzerSunState.afterChart
         && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
     `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
     const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');
@@ -2332,18 +2333,22 @@ try {
             canvasHeight: canvas?.getBoundingClientRect().height ?? null,
         };
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
-    const stableGeometryKeys = [
+    const stableChartGeometryKeys = [
+        'canvasTop', 'canvasHeight',
+    ];
+    const stableCalculatorGeometryKeys = [
         'calculatorHeight', 'toggleHeight', 'panelHeight', 'canvasTop', 'canvasHeight',
     ];
-    const geometryMatches = (left, right) => Boolean(left && right)
-        && stableGeometryKeys.every(key => Math.abs(left[key] - right[key]) <= 0.5);
+    const geometryMatches = (left, right, keys) => Boolean(left && right)
+        && keys.every(key => Math.abs(left[key] - right[key]) <= 0.5);
     check(summaryHeightVariants.belowHorizon === summaryHeightVariants.aboveHorizon
         && summaryHeightVariants.aboveHorizon === summaryHeightVariants.prompt
         && hoveredPromptSunGeometry?.layoutState === ''
         && restoredPromptSunGeometry?.layoutState === 'placeholder'
-        && geometryMatches(promptSunGeometry, hoveredPromptSunGeometry)
-        && geometryMatches(promptSunGeometry, restoredPromptSunGeometry),
-    `the open GPX Sun card or chart moved across prompt and hover states: ${JSON.stringify({
+        && promptSunGeometry.calculatorHeight < hoveredPromptSunGeometry?.calculatorHeight
+        && geometryMatches(promptSunGeometry, hoveredPromptSunGeometry, stableChartGeometryKeys)
+        && geometryMatches(promptSunGeometry, restoredPromptSunGeometry, stableCalculatorGeometryKeys),
+    `the compact GPX Sun prompt moved the chart or failed to expand for hover: ${JSON.stringify({
         summaryHeightVariants,
         promptSunGeometry,
         hoveredPromptSunGeometry,
@@ -2480,8 +2485,10 @@ try {
     check(restoredSun,
         `the packaged GPX Sun calculator did not restore its selected point after hover: ${JSON.stringify({ selectedSun, hoveredSun })}`);
     const restoredSelectedSunGeometry = restoredSun ? await readOpenSunGeometry() : null;
-    check(geometryMatches(selectedSunGeometry, hoveredSelectedSunGeometry)
-        && geometryMatches(selectedSunGeometry, restoredSelectedSunGeometry),
+    check(geometryMatches(selectedSunGeometry, hoveredSelectedSunGeometry,
+        stableCalculatorGeometryKeys)
+        && geometryMatches(selectedSunGeometry, restoredSelectedSunGeometry,
+            stableCalculatorGeometryKeys),
     `the open GPX Sun card or chart moved between selected and hovered points: ${JSON.stringify({
         selectedSunGeometry,
         hoveredSelectedSunGeometry,
@@ -2573,12 +2580,17 @@ try {
     const routeExplorerLayout = await offPage.evaluate(() => {
         const explorer = document.getElementById('bpb-route-explorer');
         const map = document.getElementById('bpb-map-viewport');
+        const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
         const analysis = document.getElementById('bpb-gpx-analysis');
         const canvas = analysis?.querySelector('canvas');
+        const units = analysis?.querySelector('#bpb-gpx-units');
+        const routeStyle = analysis?.querySelector('.bpb-gpx-route-style-controls');
         const explorerRect = explorer?.getBoundingClientRect();
         const mapRect = map?.getBoundingClientRect();
         const analysisRect = analysis?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
+        const unitsRect = units?.getBoundingClientRect();
+        const routeStyleRect = routeStyle?.getBoundingClientRect();
         const viewportHeight = document.documentElement.clientHeight;
         const viewportWidth = document.documentElement.clientWidth;
         const overflowDetails = [...document.querySelectorAll('body *')]
@@ -2607,8 +2619,11 @@ try {
                 height: viewportHeight,
             },
             display: explorer ? getComputedStyle(explorer).display : null,
-            mapPosition: map ? getComputedStyle(map).position : null,
+            layoutState: explorer?.dataset.layout || '',
+            mapPosition: mapColumn ? getComputedStyle(mapColumn).position : null,
             sideBySide: Boolean(mapRect && analysisRect) && mapRect.right <= analysisRect.left + 1,
+            controlsInline: Boolean(unitsRect && routeStyleRect)
+                && Math.abs(unitsRect.top - routeStyleRect.top) <= 1,
             explorerInsideViewport: Boolean(explorerRect)
                 && explorerRect.left >= -1
                 && explorerRect.right <= document.documentElement.clientWidth + 1,
@@ -2628,9 +2643,11 @@ try {
     });
     check(routeExplorerLayout.viewport.width === 900
         && routeExplorerLayout.viewport.height === 760
-        && routeExplorerLayout.display === 'grid'
+        && routeExplorerLayout.display === 'flex'
+        && routeExplorerLayout.layoutState === 'side'
         && routeExplorerLayout.mapPosition === 'sticky'
         && routeExplorerLayout.sideBySide
+        && routeExplorerLayout.controlsInline
         && routeExplorerLayout.explorerInsideViewport
         && routeExplorerLayout.analysisInsideViewport
         && routeExplorerLayout.mapVisible
@@ -2640,6 +2657,46 @@ try {
     if (process.env.BPB_VERIFY_ROUTE_EXPLORER_SCREENSHOT) {
         await offPage.screenshot({ path: process.env.BPB_VERIFY_ROUTE_EXPLORER_SCREENSHOT });
     }
+    const mapResizeHandle = offPage.locator('#bpb-map-resize-handle');
+    await mapResizeHandle.focus();
+    await offPage.keyboard.press('Shift+ArrowRight');
+    const stackedExplorerLayout = await offPage.waitForFunction(() => {
+        const explorer = document.getElementById('bpb-route-explorer');
+        const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
+        const map = document.getElementById('bpb-map-viewport');
+        const analysis = document.getElementById('bpb-gpx-analysis');
+        const mapRect = mapColumn?.getBoundingClientRect();
+        const analysisRect = analysis?.getBoundingClientRect();
+        if (explorer?.dataset.layout !== 'stacked' || !mapRect || !analysisRect) return false;
+        return {
+            mapWidth: map?.style.width || '',
+            mapPosition: getComputedStyle(mapColumn).position,
+            analysisBelowMap: analysisRect.top >= mapRect.bottom - 1,
+        };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(stackedExplorerLayout?.mapWidth === '500px'
+        && stackedExplorerLayout.mapPosition === 'static'
+        && stackedExplorerLayout.analysisBelowMap,
+    `growing the map did not wrap the Analyzer below it: ${JSON.stringify(stackedExplorerLayout)}`);
+    await offPage.keyboard.press('Shift+ArrowLeft');
+    const restoredExplorerLayout = await offPage.waitForFunction(() => {
+        const explorer = document.getElementById('bpb-route-explorer');
+        const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
+        const map = document.getElementById('bpb-map-viewport');
+        const analysis = document.getElementById('bpb-gpx-analysis');
+        const mapRect = mapColumn?.getBoundingClientRect();
+        const analysisRect = analysis?.getBoundingClientRect();
+        if (explorer?.dataset.layout !== 'side' || !mapRect || !analysisRect) return false;
+        return {
+            mapWidth: map?.style.width || '',
+            mapPosition: getComputedStyle(mapColumn).position,
+            sideBySide: mapRect.right <= analysisRect.left + 1,
+        };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(restoredExplorerLayout?.mapWidth === '450px'
+        && restoredExplorerLayout.mapPosition === 'sticky'
+        && restoredExplorerLayout.sideBySide,
+    `shrinking the map did not restore the side-by-side Analyzer: ${JSON.stringify(restoredExplorerLayout)}`);
     if (previousExplorerViewport) await offPage.setViewportSize(previousExplorerViewport);
     await offPage.locator('#bpb-gpx-copy-coordinates').click();
     const coordinateCopy = await offPage.waitForFunction(() => {

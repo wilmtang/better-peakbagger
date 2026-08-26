@@ -766,6 +766,10 @@ page mutation.
 The parent page owns an accessible resizable viewport. Pointer and keyboard
 resizing call Leaflet's `invalidateSize(false)` and persist only after the
 interaction settles so key repeat does not exhaust `storage.sync` write quotas.
+The map and Analyzer share a wrapping flex layout: when the chosen map width
+leaves enough room for a usable chart they sit side by side, and enlarging the
+map (or narrowing the page) naturally moves the Analyzer below it. In the split
+layout the map stays sticky while the Analyzer scrolls.
 The optional remembered layer replays only a known layer ID through
 Peakbagger's own selector; unknown or unavailable values leave the native
 default untouched.

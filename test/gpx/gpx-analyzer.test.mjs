@@ -200,6 +200,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const analysis = window.document.getElementById('bpb-gpx-analysis');
     const fullScreenMapLink = window.document.querySelector('a[href*="BigMap.aspx"]');
     const routeExplorer = window.document.getElementById('bpb-route-explorer');
+    const mapColumn = window.document.querySelector('.bpb-route-explorer__map-column');
     const mapDetails = window.document.querySelector('.bpb-route-explorer__map-details');
     assert.ok(analysis, 'the analysis panel should be added');
     assert.ok(iframe.compareDocumentPosition(analysis) & window.Node.DOCUMENT_POSITION_FOLLOWING,
@@ -207,7 +208,10 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(routeExplorer.getAttribute('role'), 'region');
     assert.equal(routeExplorer.getAttribute('aria-label'), 'Route explorer');
     assert.deepEqual(Array.from(routeExplorer.children, child => child.id || child.className), [
-        'bpb-map-viewport', 'bpb-gpx-analysis', 'bpb-route-explorer__map-details'
+        'bpb-route-explorer__map-column', 'bpb-gpx-analysis'
+    ]);
+    assert.deepEqual(Array.from(mapColumn.children, child => child.id || child.className), [
+        'bpb-map-viewport', 'bpb-route-explorer__map-details'
     ]);
     assert.equal(fullScreenMapLink.parentElement, mapDetails,
         'the native map details and Full Screen link stay associated with the map');
@@ -223,6 +227,12 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         ['metric', 'Metric']
     ]);
     assert.equal(unitSelect.value, 'imperial', 'an explicit preference overrides the metric page');
+    const compactControls = analysis.querySelector('.bpb-gpx-controls');
+    const routeStyleControls = analysis.querySelector('.bpb-gpx-route-style-controls');
+    assert.equal(compactControls.style.flexWrap, 'wrap');
+    assert.equal(compactControls.style.flexDirection, '');
+    assert.equal(routeStyleControls.style.marginTop, '',
+        'units and route colors share a row when their combined width fits');
     assert.match(analysis.textContent, /miles\b/);
 
     sendSettings({ units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
@@ -501,7 +511,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         'repeated keystrokes should persist once, after the last step');
     assert.equal(sentPatches.at(-1).mapViewportHeight, 620);
 
-    mapViewport.parentElement.getBoundingClientRect = () => ({ left: 0, right: 800, width: 800 });
+    routeExplorer.getBoundingClientRect = () => ({ left: 0, right: 800, width: 800 });
     mapViewport.getBoundingClientRect = () => ({ left: 80, right: 720, width: 640 });
     const dispatchPointer = (type, values) => {
         const event = new window.Event(type, { bubbles: true, cancelable: true });
@@ -1766,13 +1776,16 @@ test('GPX Sun previews chart hover and restores timed selections across mountain
     const calculator = window.document.querySelector('.bpb-sun-calculator');
     const legend = window.document.getElementById('bpb-gpx-chart-legend');
     const controls = window.document.querySelector('.bpb-gpx-coordinate-controls');
+    const canvasContainer = window.document.querySelector('#bpb-gpx-analysis canvas').parentElement;
     const button = calculator.querySelector('.bpb-sun-calculator__toggle');
     const slider = calculator.querySelector('input[type="range"]');
     const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
     assert.ok(calculator);
     assert.equal(calculator.querySelector('input[type="date"]'), null);
     assert.ok(controls.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
-    assert.ok(calculator.compareDocumentPosition(legend) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(legend.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.equal(canvasContainer.nextElementSibling, calculator,
+        'the Sun card follows the chart so expanding a hover preview cannot move its pointer target');
     assert.equal(button.disabled, false, 'the disclosure explains how to choose its route subject');
     assert.equal(calculator.querySelector('.bpb-sun-calculator__summary').textContent,
         'Select a chart point');
@@ -2113,12 +2126,12 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /--bpb-gpx-accent: #1769aa;/);
     assert.match(css, /#bpb-gpx-analysis\[data-theme="dark"\][\s\S]*--bpb-gpx-accent: #79b8ff;/);
     assert.match(css, /\.bpb-gpx-copy-coordinates:focus-visible,[\s\S]*\.bpb-gpx-chart-legend button:focus-visible,[\s\S]*canvas:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
-    assert.match(css, /#bpb-route-explorer\s*\{[\s\S]*grid-template-areas:[\s\S]*"map-details"[\s\S]*"analysis"/);
-    assert.match(css, /@media \(min-width: 780px\)[\s\S]*grid-template-columns:\s*minmax\(320px, 0\.95fr\) minmax\(430px, 1\.05fr\)/);
+    assert.match(css, /#bpb-route-explorer\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap/);
+    assert.match(css, /#bpb-route-explorer > #bpb-gpx-analysis\s*\{[\s\S]*flex:\s*1 1 400px/);
     assert.match(css, /container:\s*bpb-route-analysis \/ inline-size/);
     assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__layout\s*\{\s*grid-template-columns:\s*1fr/);
     assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__summary\s*\{[\s\S]*grid-row:\s*2/);
-    assert.match(css, /#bpb-route-explorer > #bpb-map-viewport\s*\{[\s\S]*position:\s*sticky !important;[\s\S]*max-block-size:\s*calc\(100vh - 16px\) !important;/);
+    assert.match(css, /#bpb-route-explorer\[data-layout="side"\] > \.bpb-route-explorer__map-column\s*\{[\s\S]*position:\s*sticky/);
 
     dom.window.close();
 });

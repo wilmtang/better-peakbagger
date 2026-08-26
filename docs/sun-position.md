@@ -19,10 +19,11 @@ The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
   Map only after the page id, Full Screen Peak-map id, bounded focus coordinate,
   and subject name agree. The validated summit coordinate is its subject. An
   ambiguous or unsupported page gets no calculator.
-- In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the selected
-  coordinate controls and before the chart legend. Before selection, its
-  disclosure remains openable and prompts for a chart point. Chart hover previews
-  the Sun and Moon at the hovered route point, then restores the deliberate
+- In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the chart so
+  opening or updating the calculator cannot move the chart point under the
+  pointer. Before selection, its compact disclosure remains openable and prompts
+  for a chart point without reserving the populated calculator's height. Chart
+  hover previews the Sun and Moon at the hovered route point, then restores the deliberate
   selection when the pointer leaves; click, touch, or keyboard selection fixes
   the route point. Replacing the native map keeps a still-valid chart selection,
   while loading, failure, or route invalidation clears the old subject.

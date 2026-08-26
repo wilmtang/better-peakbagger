@@ -551,7 +551,8 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
     assert.equal(calculator.element.dataset.layoutState, undefined);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
     assert.match(css, /bpb-sun-calculator__summary\s*\{[\s\S]*block-size:\s*2\.7em/);
-    assert.match(css, /data-layout-state="placeholder"[\s\S]*visibility:\s*hidden/);
+    assert.match(css, /data-layout-state="placeholder"[\s\S]*display:\s*none/);
+    assert.match(css, /data-layout-state="placeholder"\] \.bpb-sun-calculator__panel\s*\{[\s\S]*padding:\s*0\.7rem 1rem/);
 }));
 
 test('recoverable Peak failures retain controls and clear cleanly after a valid selection', () => withDom(dom => {

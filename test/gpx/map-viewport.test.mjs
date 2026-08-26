@@ -70,6 +70,44 @@ test('sizes are clamped to the schema bounds the caller supplies', () => {
     } finally { restore(); }
 });
 
+test('pointer resizing can use a wider layout boundary than the viewport column', () => {
+    const dom = new JSDOM('<!doctype html><body><main><section><iframe src="MasterMap.aspx"></iframe></section></main></body>', {
+        pretendToBeVisual: true
+    });
+    const previousDocument = globalThis.document;
+    const previousWindow = globalThis.window;
+    globalThis.document = dom.window.document;
+    globalThis.window = dom.window;
+    try {
+        const iframe = dom.window.document.querySelector('iframe');
+        const boundary = dom.window.document.querySelector('main');
+        const viewport = MapViewport.create({
+            iframe,
+            size: { width: 450, height: 400 },
+            bounds: BOUNDS,
+            railHeight: 18,
+            persistDelayMs: 400,
+            onPersist: () => {},
+            getResizeBoundary: () => boundary,
+        });
+        boundary.getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000 });
+        viewport.element.getBoundingClientRect = () => ({ left: 0, right: 450, width: 450 });
+        const handle = dom.window.document.getElementById('bpb-map-resize-handle');
+        handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
+            button: 0, clientX: 450, clientY: 400, bubbles: true
+        }));
+        handle.dispatchEvent(new dom.window.MouseEvent('pointermove', {
+            clientX: 650, clientY: 400, bubbles: true
+        }));
+        assert.equal(viewport.size.width, 650,
+            'the shrink-wrapped map column must not cap growth at its current width');
+    } finally {
+        globalThis.document = previousDocument;
+        globalThis.window = previousWindow;
+        dom.window.close();
+    }
+});
+
 test('a keyboard resize persists once after the last keystroke, not per repeat', async () => {
     // Persisting each key repeat would burn chrome.storage.sync's
     // write-per-minute quota and the final size could silently fail to stick.

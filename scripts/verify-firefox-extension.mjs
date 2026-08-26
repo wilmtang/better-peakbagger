@@ -1236,13 +1236,15 @@ async function main() {
           const coordinates = panel?.querySelector(".bpb-gpx-coordinate-controls");
           const calculator = panel?.querySelector(".bpb-sun-calculator");
           const legend = panel?.querySelector("#bpb-gpx-chart-legend");
+          const canvasContainer = panel?.querySelector("canvas")?.parentElement;
           return {
             exists: Boolean(calculator),
             noDateInput: !calculator?.querySelector('input[type="date"]'),
             collapsed: calculator?.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
             summary: calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
             disabled: calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === true,
-            placed: coordinates?.nextElementSibling === calculator && calculator?.nextElementSibling === legend,
+            placed: coordinates?.nextElementSibling === legend
+              && canvasContainer?.nextElementSibling === calculator,
             borderStyle: calculator ? getComputedStyle(calculator).borderStyle : null,
           };
         })(),
@@ -1328,6 +1330,7 @@ async function main() {
         const routeExplorerLayout = await waitForScript(driver, `
       const explorer = document.getElementById('bpb-route-explorer');
       const map = document.getElementById('bpb-map-viewport');
+      const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
       const analysis = document.getElementById('bpb-gpx-analysis');
       const canvas = analysis?.querySelector('canvas');
       const mapRect = map?.getBoundingClientRect();
@@ -1337,7 +1340,8 @@ async function main() {
       const state = {
         viewportWidth: document.documentElement.clientWidth,
         display: explorer ? getComputedStyle(explorer).display : null,
-        mapPosition: map ? getComputedStyle(map).position : null,
+        layoutState: explorer?.dataset.layout || '',
+        mapPosition: mapColumn ? getComputedStyle(mapColumn).position : null,
         sideBySide: Boolean(mapRect && analysisRect) && mapRect.right <= analysisRect.left + 1,
         mapVisible: Boolean(mapRect) && mapRect.top >= -1 && mapRect.bottom <= viewportHeight + 1,
         chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
@@ -1348,8 +1352,8 @@ async function main() {
       };
       return {
         ...state,
-        ready: state.viewportWidth >= 780
-          && state.display === 'grid'
+        ready: state.display === 'flex'
+          && state.layoutState === 'side'
           && state.mapPosition === 'sticky'
           && state.sideBySide
           && state.mapVisible
@@ -1359,8 +1363,8 @@ async function main() {
       };
     `, 'the Firefox route explorer layout', 5_000, state => state?.ready);
         assertState(
-            routeExplorerLayout.viewportWidth >= 780
-            && routeExplorerLayout.display === 'grid'
+            routeExplorerLayout.display === 'flex'
+            && routeExplorerLayout.layoutState === 'side'
             && routeExplorerLayout.mapPosition === 'sticky'
             && routeExplorerLayout.sideBySide
             && routeExplorerLayout.mapVisible

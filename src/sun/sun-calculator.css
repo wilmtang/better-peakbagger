@@ -125,14 +125,16 @@
 }
 .bpb-sun-calculator__layout[hidden] { display: none; }
 .bpb-sun-calculator[data-layout-state="placeholder"] .bpb-sun-calculator__layout {
-    visibility: hidden;
-    pointer-events: none;
+    display: none;
+}
+.bpb-sun-calculator[data-layout-state="placeholder"] .bpb-sun-calculator__panel {
+    padding: 0.7rem 1rem;
 }
 .bpb-sun-calculator[data-layout-state="placeholder"] .bpb-sun-calculator__empty {
     align-self: center;
-    justify-self: center;
-    padding: 1rem;
-    text-align: center;
+    justify-self: start;
+    padding: 0;
+    text-align: start;
 }
 .bpb-sun-calculator__empty {
     align-self: start;

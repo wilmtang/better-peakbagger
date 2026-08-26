@@ -98,6 +98,10 @@ const run = async () => {
         const frameLifecycle = MapFrameLifecycle.create({ selector: MAP_IFRAME_SELECTOR });
         const currentMapIframe = () => frameLifecycle.current();
         let terrainCoordinator = null;
+        let routeExplorer = null;
+        let mapColumn = null;
+        let mapViewport = null;
+        let syncRouteExplorerLayout = () => {};
 
         // Resize, persist, and Leaflet invalidation now live in
         // src/gpx/map-viewport.js. Bounds come from the settings schema rather
@@ -118,9 +122,16 @@ const run = async () => {
                 mapViewportWidth: size.width,
                 mapViewportHeight: size.height
             }),
-            onInvalidated: () => terrainCoordinator?.position(),
+            onInvalidated: () => {
+                syncRouteExplorerLayout();
+                terrainCoordinator?.position();
+            },
+            // The map gains a shrink-wrapped flex column after the analyzer
+            // mounts. Resize against the full route explorer so dragging can
+            // still grow the map until the layout naturally wraps.
+            getResizeBoundary: () => routeExplorer || mapViewport?.parentElement,
         });
-        let mapViewport = viewport.element;
+        mapViewport = viewport.element;
         const scheduleMapInvalidate = viewport.scheduleInvalidate;
         const applyMapViewportSize = viewport.applySize;
 
@@ -167,7 +178,10 @@ const run = async () => {
         const controlsContainer = document.createElement('div');
         controlsContainer.className = 'bpb-gpx-controls';
         controlsContainer.hidden = true;
-        Object.assign(controlsContainer.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' });
+        Object.assign(controlsContainer.style, {
+            display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end',
+            alignItems: 'center', gap: '6px 10px'
+        });
 
         const unitSelect = document.createElement('select');
         unitSelect.id = 'bpb-gpx-units';
@@ -200,7 +214,10 @@ const run = async () => {
         terrainButton.setAttribute('aria-pressed', 'false');
 
         const routeStyleControls = document.createElement('div');
-        Object.assign(routeStyleControls.style, { display: 'flex', gap: '8px', marginTop: '7px', fontSize: '0.8em' });
+        routeStyleControls.className = 'bpb-gpx-route-style-controls';
+        Object.assign(routeStyleControls.style, {
+            display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8em'
+        });
 
         const createColorControl = (id, text) => {
             const label = document.createElement('label');
@@ -345,7 +362,6 @@ const run = async () => {
             mode: 'gpx',
             onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
         });
-        if (sunCalculator) chartLegend.before(sunCalculator.element);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
         if (fullScreenMapLink) {
             fullScreenMapLink.before(container);
@@ -355,18 +371,26 @@ const run = async () => {
                     node = node.nextSibling) {
                     if (node !== container && node !== gpxLink) mapDetailsNodes.push(node);
                 }
-                const routeExplorer = document.createElement('div');
+                routeExplorer = document.createElement('div');
                 routeExplorer.id = 'bpb-route-explorer';
                 routeExplorer.setAttribute('role', 'region');
                 routeExplorer.setAttribute('aria-label', 'Route explorer');
+                mapColumn = document.createElement('div');
+                mapColumn.className = 'bpb-route-explorer__map-column';
                 const mapDetails = document.createElement('div');
                 mapDetails.className = 'bpb-route-explorer__map-details';
                 mapViewport.before(routeExplorer);
-                // Keep the analyzer before the Full Screen link in DOM/tab
-                // order. CSS places the secondary map details back under the
-                // map visually in both the split and stacked compositions.
-                routeExplorer.append(mapViewport, container, mapDetails);
+                routeExplorer.append(mapColumn, container);
+                mapColumn.append(mapViewport, mapDetails);
                 mapDetails.append(...mapDetailsNodes, fullScreenMapLink);
+                syncRouteExplorerLayout = () => {
+                    const mapRect = mapColumn?.getBoundingClientRect();
+                    const analysisRect = container.getBoundingClientRect();
+                    if (!mapRect || !analysisRect) return;
+                    const sideBySide = mapRect.right <= analysisRect.left + 1;
+                    routeExplorer.dataset.layout = sideBySide ? 'side' : 'stacked';
+                };
+                scheduleMapInvalidate();
             }
         } else gpxLink.after(container);
 

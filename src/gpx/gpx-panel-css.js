@@ -53,35 +53,47 @@ export const gpxPanelCss = `
     border-color: var(--bpb-gpx-panel-border);
 }
 #bpb-route-explorer {
-    display: grid;
-    grid-template-areas:
-        "map"
-        "map-details"
-        "analysis";
+    display: flex;
+    flex-wrap: wrap;
     align-items: start;
+    gap: 10px 12px;
     inline-size: 100%;
     max-inline-size: 1500px;
     min-inline-size: 0;
     margin: 15px auto 0;
 }
-#bpb-route-explorer > #bpb-map-viewport {
-    grid-area: map;
-    justify-self: center;
+#bpb-route-explorer > .bpb-route-explorer__map-column {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    align-items: center;
+    max-inline-size: 100%;
+    min-inline-size: 0;
 }
-#bpb-route-explorer > .bpb-route-explorer__map-details {
-    grid-area: map-details;
+#bpb-route-explorer[data-layout="side"] > .bpb-route-explorer__map-column {
+    position: sticky;
+    inset-block-start: 8px;
+}
+#bpb-route-explorer[data-layout="stacked"] > .bpb-route-explorer__map-column {
+    margin-inline: auto;
+}
+#bpb-route-explorer[data-layout="side"] > .bpb-route-explorer__map-column > #bpb-map-viewport {
+    max-block-size: calc(100vh - 16px) !important;
+}
+#bpb-route-explorer .bpb-route-explorer__map-details {
+    inline-size: 100%;
     min-inline-size: 0;
     margin-block-start: 0.4rem;
     text-align: center;
 }
 #bpb-route-explorer > #bpb-gpx-analysis {
-    grid-area: analysis;
+    flex: 1 1 400px;
     box-sizing: border-box;
     container: bpb-route-analysis / inline-size;
-    inline-size: 100%;
-    min-inline-size: 0;
+    inline-size: auto;
+    min-inline-size: min(400px, 100%);
     max-inline-size: none !important;
-    margin-block-start: 10px !important;
+    margin-block-start: 0 !important;
 }
 @container bpb-route-analysis (max-width: 680px) {
     #bpb-route-explorer .bpb-sun-calculator__toggle {
@@ -230,27 +242,9 @@ export const gpxPanelCss = `
     font-size: 0.8em;
 }
 
-@media (min-width: 780px) {
-    #bpb-route-explorer {
-        grid-template-columns: minmax(320px, 0.95fr) minmax(430px, 1.05fr);
-        grid-template-areas:
-            "map analysis"
-            "map-details analysis";
-        column-gap: 12px;
-    }
-    #bpb-route-explorer > #bpb-map-viewport {
-        position: sticky !important;
-        inset-block-start: 8px;
-        max-block-size: calc(100vh - 16px) !important;
-    }
-    #bpb-route-explorer > #bpb-gpx-analysis {
-        margin-block-start: 0 !important;
-    }
-}
-
 @media (max-width: 600px) {
     #bpb-gpx-analysis .bpb-gpx-controls {
-        align-items: flex-start !important;
+        justify-content: flex-start !important;
     }
     #bpb-gpx-analysis .bpb-gpx-chart-legend {
         justify-content: flex-start;
