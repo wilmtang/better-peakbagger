@@ -92,11 +92,11 @@ Peakbagger maps are north-up. While 3D is active,
 finite, normalized view bearing. Stop, failure, replacement, or return to 2D
 resets the solar compass to bearing zero. Pitch is intentionally ignored.
 
-Bearing-only animation is coalesced to animation frames and uses the shortest
-arc across north. It updates only the decorative, `aria-hidden` compass; the
-absolute direction and elevation remain text, and the bearing stream is not
-announced to assistive technology. Reduced-motion preferences remove the CSS
-transition.
+Compass animation is coalesced to animation frames. Both Sun movement and map
+bearing changes use the shortest arc across north. Bearing-only updates affect
+only the decorative, `aria-hidden` compass; the absolute direction and elevation
+remain text, and the bearing stream is not announced to assistive technology.
+Reduced-motion preferences remove the CSS transition.
 
 Daily events are cached by validated subject, civil date, and zone. Slider
 input updates the thumb and requested wall clock immediately, then calculates

@@ -497,6 +497,25 @@ test('bearing frames coalesce and cardinal text follows the shortest arc without
     assert.equal(calculator.element.querySelector('[role="status"]').textContent, statusText);
 }));
 
+test('sun indicator follows the shortest arc when its azimuth crosses north', () => withDom(dom => {
+    const frames = [];
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { frames.push(callback); return frames.length; },
+        cancelFrame: () => {},
+    });
+    const sun = calculator.element.querySelector('.bpb-sun-calculator__sun');
+
+    calculator.render(ordinaryState({ azimuthDeg: 359, directionLabel: 'N' }));
+    frames.shift()();
+    assert.equal(sun.style.transform, 'rotate(359deg)');
+
+    calculator.render(ordinaryState({ azimuthDeg: 1, directionLabel: 'N' }));
+    frames.shift()();
+    assert.equal(sun.style.transform, 'rotate(361deg)',
+        '359 to 1 advances through north by two degrees instead of reversing by 358');
+}));
+
 test('theme, long timezone fallback, cleanup, and responsive CSS preserve the narrow layout contract', () => withDom(dom => {
     const zone = Object.freeze({ timeZone: null, offsetMs: -8 * 3_600_000, estimated: true });
     const calculator = SunCalculator.create({

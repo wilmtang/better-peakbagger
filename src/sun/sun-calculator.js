@@ -231,6 +231,7 @@ export function createSunCalculator({
     let previewFrameHandle = null;
     let pendingMinute = null;
     let unboundedBearing = null;
+    let unboundedSunAzimuth = null;
     let statusTimer = null;
     let announcedText = '';
 
@@ -258,7 +259,14 @@ export function createSunCalculator({
         }
         sun.hidden = !Number.isFinite(next.sunAzimuth);
         if (!sun.hidden) {
-            const angle = next.sunAzimuth - unboundedBearing;
+            const normalizedAzimuth = SunPosition.normalizeDegrees(next.sunAzimuth);
+            if (unboundedSunAzimuth === null) unboundedSunAzimuth = normalizedAzimuth;
+            else {
+                const current = SunPosition.normalizeDegrees(unboundedSunAzimuth);
+                const delta = ((normalizedAzimuth - current + 540) % 360) - 180;
+                unboundedSunAzimuth += delta;
+            }
+            const angle = unboundedSunAzimuth - unboundedBearing;
             sun.style.transform = `rotate(${angle}deg)`;
         }
     };
