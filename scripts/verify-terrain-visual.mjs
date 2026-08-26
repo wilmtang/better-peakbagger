@@ -439,7 +439,8 @@ const exerciseSolarBearing = async (cdp, label) => {
         };
     })()`, 8000);
     if (!initial.insideParent || !/Sun direction\s*\d+°/i.test(initial.direction)
-        || !/Moon direction\s*\d+°/i.test(initial.moon)) {
+        || !/Moon phase/i.test(initial.moon)
+        || !/\d+°\s+[NSEW]{1,3}/.test(initial.moon)) {
         throw new Error(`${label}: Sun and Moon calculator is clipped or missing absolute direction text: ${JSON.stringify(initial)}`);
     }
 

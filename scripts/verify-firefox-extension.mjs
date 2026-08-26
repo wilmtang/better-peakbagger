@@ -1310,7 +1310,8 @@ async function main() {
         && /°/.test(summary) && /Sun direction\\s*\\d+°/i.test(direction)
         && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute("d") || "")
         && daylightRange.querySelectorAll(".bpb-sun-calculator__daylight-endpoint").length === 2
-        && /Moon direction\\s*\\d+°/i.test(moon) && /(?:above|below) horizon/.test(moon)
+        && /Moon phase/i.test(moon) && /\\d+°\\s+[NSEW]{1,3}/.test(moon)
+        && /(?:above|below) horizon/.test(moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
         && /\\d+% illuminated/.test(moon)
         && /^[0-7]$/.test(calculator?.dataset.moonPhase || "")
@@ -1575,7 +1576,8 @@ async function main() {
             peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
         && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
-        && /Moon direction\s*\d+°/i.test(peakState.moon)
+        && /Moon phase/i.test(peakState.moon)
+        && /\d+°\s+[NSEW]{1,3}/.test(peakState.moon)
         && /(?:above|below) horizon/.test(peakState.moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
             .test(peakState.moon)

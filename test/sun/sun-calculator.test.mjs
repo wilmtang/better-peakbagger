@@ -158,11 +158,21 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
         '315° NW');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-elevation').textContent,
         '24° above horizon');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon .bpb-sun-calculator__fact-label').textContent,
+        'Moon phase');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-name').textContent,
         'Waning Crescent');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-illumination').textContent,
-        ' · 19% illuminated');
+        '19% illuminated');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-icon').textContent, '🌘');
+    assert.ok(calculator.element.querySelector('.bpb-sun-calculator__moon-value')
+        .contains(calculator.element.querySelector('.bpb-sun-calculator__moon-name')),
+    'Moon phase remains the primary value');
+    assert.ok(calculator.element.querySelector('.bpb-sun-calculator__moon-position')
+        .classList.contains('bpb-sun-calculator__fact-detail'),
+    'Moon direction and elevation use the supporting-detail size');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-position')
+        .getAttribute('aria-label'), '315° NW, 24° above horizon');
     const moonMarker = calculator.element.querySelector('.bpb-sun-calculator__moon-marker');
     assert.equal(moonMarker.hidden, false);
     assert.ok(Math.abs(rotationAngle(moonMarker) - 315.2) < 0.001);

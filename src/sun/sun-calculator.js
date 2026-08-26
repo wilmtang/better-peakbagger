@@ -257,20 +257,23 @@ export function createSunCalculator({
     const elevationValue = element('strong', 'bpb-sun-calculator__fact-value');
     elevationFact.append(elevationLabel, elevationValue);
     const moonFact = element('div', 'bpb-sun-calculator__moon');
-    const moonLabel = element('span', 'bpb-sun-calculator__fact-label', 'Moon direction');
+    const moonLabel = element('span', 'bpb-sun-calculator__fact-label', 'Moon phase');
     const moonValue = element('strong', 'bpb-sun-calculator__fact-value bpb-sun-calculator__moon-value');
-    const moonDirection = element('span', 'bpb-sun-calculator__moon-direction');
-    moonValue.append(moonDirection);
-    const moonElevation = element('span',
-        'bpb-sun-calculator__fact-detail bpb-sun-calculator__moon-elevation');
-    const moonPhase = element('span',
-        'bpb-sun-calculator__fact-detail bpb-sun-calculator__moon-phase');
     const moonIcon = element('span', 'bpb-sun-calculator__moon-icon');
     moonIcon.setAttribute('aria-hidden', 'true');
     const moonName = element('span', 'bpb-sun-calculator__moon-name');
-    const moonIllumination = element('span', 'bpb-sun-calculator__moon-illumination');
-    moonPhase.append(moonIcon, moonName, moonIllumination);
-    moonFact.append(moonLabel, moonValue, moonElevation, moonPhase);
+    moonValue.append(moonIcon, moonName);
+    const moonIllumination = element('span',
+        'bpb-sun-calculator__fact-detail bpb-sun-calculator__moon-illumination');
+    const moonPositionDetail = element('span',
+        'bpb-sun-calculator__fact-detail bpb-sun-calculator__moon-position');
+    const moonDirection = element('span', 'bpb-sun-calculator__moon-direction');
+    const moonPositionSeparator = element('span', 'bpb-sun-calculator__moon-position-separator', ' · ');
+    moonPositionSeparator.setAttribute('aria-hidden', 'true');
+    moonPositionSeparator.hidden = true;
+    const moonElevation = element('span', 'bpb-sun-calculator__moon-elevation');
+    moonPositionDetail.append(moonDirection, moonPositionSeparator, moonElevation);
+    moonFact.append(moonLabel, moonValue, moonIllumination, moonPositionDetail);
     facts.append(direction, elevationFact, moonFact);
     const events = element('div', 'bpb-sun-calculator__events');
     const eventsText = element('span', 'bpb-sun-calculator__events-text');
@@ -399,6 +402,8 @@ export function createSunCalculator({
     const clearMoon = () => {
         moonDirection.textContent = '';
         moonElevation.textContent = '';
+        moonPositionDetail.removeAttribute('aria-label');
+        moonPositionSeparator.hidden = true;
         moonIcon.textContent = '';
         moonName.textContent = '';
         moonIllumination.textContent = '';
@@ -560,12 +565,16 @@ export function createSunCalculator({
         const moonPhaseDisplayValue = moonPhaseDisplay(state.result);
         moonDirection.textContent = moonPosition?.direction || 'Position unavailable';
         moonElevation.textContent = moonPosition?.elevation || '';
+        moonPositionDetail.setAttribute('aria-label', moonPosition
+            ? `${moonPosition.direction}, ${moonPosition.elevation}`
+            : 'Moon position unavailable');
+        moonPositionSeparator.hidden = !moonPosition;
         moonMarker.classList.toggle('bpb-sun-calculator__moon-marker--below-horizon',
             Boolean(moonPosition) && !moonPosition.isAboveHorizon);
         if (moonPhaseDisplayValue) {
             moonIcon.textContent = moonPhaseDisplayValue.icon;
             moonName.textContent = moonPhaseDisplayValue.label;
-            moonIllumination.textContent = ` · ${moonPhaseDisplayValue.illumination}`;
+            moonIllumination.textContent = moonPhaseDisplayValue.illumination;
             root.dataset.moonPhase = String(state.result.moonPhaseIndex);
         } else {
             moonIcon.textContent = '';

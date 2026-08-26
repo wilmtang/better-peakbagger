@@ -285,7 +285,8 @@ async function main() {
         });
         if (!analyzerSunInitial.insideParent
             || !/Sun direction\s*\d+°/i.test(analyzerSunInitial.direction)
-            || !/Moon direction\s*\d+°/i.test(analyzerSunInitial.moon)
+            || !/Moon phase/i.test(analyzerSunInitial.moon)
+            || !/\d+°\s+[NSEW]{1,3}/.test(analyzerSunInitial.moon)
             || !/^rotate\(/.test(analyzerSunInitial.moonMarker)) {
             throw new Error(`Firefox Analyzer Sun and Moon calculator is clipped or incomplete: ${JSON.stringify(analyzerSunInitial)}`);
         }

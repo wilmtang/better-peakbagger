@@ -436,17 +436,12 @@
     font-weight: 400;
     line-height: 1;
 }
-.bpb-sun-calculator__moon-phase {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.2rem 0.35rem;
-}
 .bpb-sun-calculator__fact-detail {
     min-inline-size: 0;
     color: var(--bpb-sun-muted);
     font-size: 0.9em;
 }
+.bpb-sun-calculator__moon-position { overflow-wrap: anywhere; }
 .bpb-sun-calculator__events {
     grid-column: 1 / -1;
     min-inline-size: 0;

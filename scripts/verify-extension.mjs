@@ -2429,7 +2429,8 @@ try {
             && /Sun elevation\s*\d+°/i.test(elevation) && eventLine?.hidden === false
             && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute('d') || '')
             && daylightRange.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length === 2
-            && /Moon direction\s*\d+°/i.test(moon) && /(?:above|below) horizon/.test(moon)
+            && /Moon phase/i.test(moon) && /\d+°\s+[NSEW]{1,3}/.test(moon)
+            && /(?:above|below) horizon/.test(moon)
             && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
             && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
             && moonMarker?.hidden === false && /^rotate\(/.test(moonMarker.style.transform)
@@ -3085,7 +3086,8 @@ try {
                     sun.querySelector('.bpb-sun-calculator__icon')
                     && /Sun direction\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__direction')?.textContent || '')
                     && /Sun elevation\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__elevation')?.textContent || '')
-                    && /Moon direction\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /Moon phase/i.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /\d+°\s+[NSEW]{1,3}/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
                     && /(?:above|below) horizon/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
                     && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
                         .test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
