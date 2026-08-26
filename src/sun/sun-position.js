@@ -45,14 +45,27 @@ function dateRelation(value, zone, date) {
 
 const unavailableEvents = () => Object.freeze({
     solarNoonMs: null,
+    solarNoonAzimuthDeg: null,
     sunriseMs: null,
+    sunriseAzimuthDeg: null,
     sunriseDate: null,
     sunriseDayRelation: null,
     sunsetMs: null,
+    sunsetAzimuthDeg: null,
     sunsetDate: null,
     sunsetDayRelation: null,
     daylightState: 'unavailable',
 });
+
+function eventAzimuth(sunCalc, ms, lat, lon) {
+    if (!Number.isFinite(ms) || typeof sunCalc?.getPosition !== 'function') return null;
+    try {
+        const azimuth = sunCalc.getPosition(new Date(ms), lat, lon)?.azimuth;
+        return Number.isFinite(azimuth) ? normalizeDegrees(azimuth) : null;
+    } catch {
+        return null;
+    }
+}
 
 export function calculateSunEvents({ lat, lon, date, zone, sunCalc = SunCalc }) {
     if (!validCoordinate(lat, lon) || !zone || typeof date !== 'string') return null;
@@ -73,10 +86,13 @@ export function calculateSunEvents({ lat, lon, date, zone, sunCalc = SunCalc }) 
             if (sunrise && sunset) {
                 return Object.freeze({
                     solarNoonMs,
+                    solarNoonAzimuthDeg: eventAzimuth(sunCalc, solarNoonMs, lat, lon),
                     sunriseMs: sunrise.ms,
+                    sunriseAzimuthDeg: eventAzimuth(sunCalc, sunrise.ms, lat, lon),
                     sunriseDate: sunrise.date,
                     sunriseDayRelation: sunrise.dayRelation,
                     sunsetMs: sunset.ms,
+                    sunsetAzimuthDeg: eventAzimuth(sunCalc, sunset.ms, lat, lon),
                     sunsetDate: sunset.date,
                     sunsetDayRelation: sunset.dayRelation,
                     daylightState: 'ordinary',

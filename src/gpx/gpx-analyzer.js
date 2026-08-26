@@ -278,21 +278,65 @@ const run = async () => {
         const ascentDate = AscentPage.parseDate(document);
         const sunState = SunState.create();
         let sunCalculator = null;
+        let hoverSunState = null;
+        let hoverSunPoint = null;
+        let pendingHoverSunPoint = null;
+        let hoverSunFrameHandle = null;
+        const clearHoverSunPreview = () => {
+            if (hoverSunFrameHandle !== null) window.cancelAnimationFrame(hoverSunFrameHandle);
+            hoverSunFrameHandle = null;
+            pendingHoverSunPoint = null;
+            hoverSunPoint = null;
+            hoverSunState = null;
+        };
         const renderSun = state => sunCalculator?.render(state);
-        const setSunBearing = bearing => sunCalculator?.setMapBearing(
-            sunState.setMapBearing(Number.isFinite(bearing) ? bearing : 0)
-        );
+        const setSunBearing = bearing => {
+            const nextBearing = Number.isFinite(bearing) ? bearing : 0;
+            const selectedState = sunState.setMapBearing(nextBearing);
+            const visibleState = hoverSunState
+                ? hoverSunState.setMapBearing(nextBearing)
+                : selectedState;
+            sunCalculator?.setMapBearing(visibleState);
+        };
         const resetSun = message => {
+            clearHoverSunPreview();
             sunState.resetSubject();
             sunCalculator?.setUnavailable(message || 'Sun position is unavailable.');
         };
         const promptSunSelection = () => {
+            clearHoverSunPreview();
             sunState.resetSubject();
             sunCalculator?.setPrompt(SUN_SELECTION_PROMPT);
         };
         const selectedPointForSun = point => metrics.timeQuality?.reason === 'not-progressing'
             ? { ...point, timeState: 'suspect' }
             : point;
+        const applyHoverSunPreview = () => {
+            hoverSunFrameHandle = null;
+            const point = pendingHoverSunPoint;
+            pendingHoverSunPoint = null;
+            if (!point) return;
+
+            const preview = SunState.create();
+            preview.setMapBearing(sunState.get().mapBearing);
+            let previewState = preview.selectRoutePoint(
+                selectedPointForSun(point), ascentDate, mountainZone
+            );
+            const selectedMinute = sunState.get().minute;
+            if (point.timeState !== 'valid' && Number.isInteger(selectedMinute)) {
+                previewState = preview.setPreviewMinute(selectedMinute);
+            }
+            hoverSunPoint = point;
+            hoverSunState = preview;
+            renderSun(previewState);
+        };
+        const previewSunPoint = point => {
+            if (point === hoverSunPoint && hoverSunState) return;
+            pendingHoverSunPoint = point;
+            if (hoverSunFrameHandle === null) {
+                hoverSunFrameHandle = window.requestAnimationFrame(applyHoverSunPreview);
+            }
+        };
         const selectSunPoint = point => renderSun(sunState.selectRoutePoint(
             selectedPointForSun(point), ascentDate, mountainZone
         ));
@@ -466,8 +510,14 @@ const run = async () => {
                 ? `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
                 : `Interactive ${chartDescription()}. Use Left and Right Arrow keys to select a point.`);
         };
+        const restoreSelectedSun = () => {
+            clearHoverSunPreview();
+            if (isCoordinatePoint(chartData[selectedCoordinateIndex])) renderSun(sunState.get());
+            else promptSunSelection();
+        };
         const selectCoordinateIndex = (index, series = 'distance') => {
             if (!isCoordinatePoint(chartData[index])) return false;
+            clearHoverSunPreview();
             clearCoordinateFeedbackTimer();
             selectedCoordinateIndex = index;
             selectedCoordinateSeries = series === 'time' && hasTimeSeries ? 'time' : 'distance';
@@ -833,6 +883,7 @@ const run = async () => {
         frameLifecycle.start();
         window.addEventListener('pagehide', () => {
             clearCoordinateFeedbackTimer();
+            clearHoverSunPreview();
             sunState.resetSubject();
             sunCalculator?.dispose();
             sunCalculator = null;
@@ -898,7 +949,10 @@ const run = async () => {
             chartData[selectedCoordinateIndex],
             selectedCoordinateSeries
         );
-        canvas.addEventListener('mouseleave', restoreSelectedRouteHighlight);
+        canvas.addEventListener('mouseleave', () => {
+            restoreSelectedRouteHighlight();
+            restoreSelectedSun();
+        });
 
         const renderUnavailable = (message, { retryable = false } = {}) => {
             clearCoordinateFeedbackTimer();
@@ -952,6 +1006,7 @@ const run = async () => {
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
             const selectedBeforeRebuild = chartData[selectedCoordinateIndex];
+            clearHoverSunPreview();
             if (selectedBeforeRebuild) promptSunSelection();
             const p = panelPalette();
             applyPanelTheme();
@@ -1371,8 +1426,13 @@ const run = async () => {
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
 
-                        if (hoveredPoint) renderRouteHighlight(hoveredPoint, hoverSeries);
-                        else restoreSelectedRouteHighlight();
+                        if (hoveredPoint) {
+                            renderRouteHighlight(hoveredPoint, hoverSeries);
+                            previewSunPoint(hoveredPoint);
+                        } else {
+                            restoreSelectedRouteHighlight();
+                            restoreSelectedSun();
+                        }
                     },
                     plugins: {
                         legend: {

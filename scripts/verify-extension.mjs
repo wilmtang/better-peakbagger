@@ -2324,17 +2324,58 @@ try {
         const elevation = calculator?.querySelector('.bpb-sun-calculator__elevation')?.textContent || '';
         const moon = calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '';
         const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
+        const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
+        const daylightPath = daylightRange?.querySelector('.bpb-sun-calculator__daylight-path');
+        const slider = calculator?.querySelector('.bpb-sun-calculator__time');
         return toggle?.disabled === false && /°/.test(summary) && /Direction\s*\d+°/.test(direction)
             && /Elevation\s*\d+°/.test(elevation) && eventLine?.hidden === false
+            && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute('d') || '')
+            && daylightRange.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length === 2
             && /Moon phase/.test(moon)
             && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
             && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
             && calculator.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
             && calculator.querySelector('.bpb-sun-calculator__icon')
-            ? { summary, direction, elevation, moon } : false;
+            ? {
+                summary, direction, elevation, moon,
+                valueText: slider?.getAttribute('aria-valuetext') || '',
+            } : false;
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(selectedSun,
         `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
+    await coordinateCanvas.scrollIntoViewIfNeeded();
+    const hoverTarget = await coordinateCanvas.evaluate(canvas => {
+        const chart = globalThis.Chart?.getChart?.(canvas);
+        const meta = chart?.getSortedVisibleDatasetMetas?.()[0];
+        const index = meta?.data?.length ? Math.floor(meta.data.length * 0.8) : -1;
+        const point = index >= 0 ? meta.data[index]?.getCenterPoint?.() : null;
+        const rect = canvas.getBoundingClientRect();
+        return Number.isFinite(point?.x) && Number.isFinite(point?.y)
+            ? { x: rect.left + point.x, y: rect.top + point.y }
+            : null;
+    });
+    check(hoverTarget, 'the packaged Analyzer chart exposed no real hover target');
+    if (hoverTarget) await offPage.mouse.move(hoverTarget.x, hoverTarget.y);
+    const hoveredSun = hoverTarget ? await offPage.waitForFunction(previous => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        const valueText = calculator?.querySelector('.bpb-sun-calculator__time')
+            ?.getAttribute('aria-valuetext') || '';
+        return summary !== previous.summary && valueText !== previous.valueText
+            ? { summary, valueText } : false;
+    }, selectedSun, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    check(hoveredSun,
+        `the packaged GPX Sun calculator did not preview a hovered chart point: ${JSON.stringify({ selectedSun, hoveredSun })}`);
+    if (hoverTarget) await offPage.mouse.move(1, 1);
+    const restoredSun = hoverTarget ? await offPage.waitForFunction(previous => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        const valueText = calculator?.querySelector('.bpb-sun-calculator__time')
+            ?.getAttribute('aria-valuetext') || '';
+        return summary === previous.summary && valueText === previous.valueText;
+    }, selectedSun, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    check(restoredSun,
+        `the packaged GPX Sun calculator did not restore its selected point after hover: ${JSON.stringify({ selectedSun, hoveredSun })}`);
     const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');
     if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
     const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');

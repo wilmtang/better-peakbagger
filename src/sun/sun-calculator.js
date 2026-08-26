@@ -55,8 +55,37 @@ const chevronIcon = () => {
 const roundedDegrees = value => `${Math.round(value)}°`;
 const elevationText = value => `${roundedDegrees(Math.abs(value))} ${value >= 0 ? 'above' : 'below'} horizon`;
 const MOON_PHASE_ICONS = Object.freeze(['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']);
+const DAYLIGHT_ARC_RADIUS = 37;
 const eventDaySuffix = relation => relation === 'previous-day' ? ' (previous day)'
     : relation === 'next-day' ? ' (next day)' : '';
+
+const compassPoint = azimuth => {
+    const radians = (SunPosition.normalizeDegrees(azimuth) - 90) * Math.PI / 180;
+    return Object.freeze({
+        x: 50 + DAYLIGHT_ARC_RADIUS * Math.cos(radians),
+        y: 50 + DAYLIGHT_ARC_RADIUS * Math.sin(radians),
+    });
+};
+
+function daylightArc(result) {
+    const sunrise = result?.sunriseAzimuthDeg;
+    const noon = result?.solarNoonAzimuthDeg;
+    const sunset = result?.sunsetAzimuthDeg;
+    if (![sunrise, noon, sunset].every(Number.isFinite)) return null;
+
+    const clockwiseSpan = SunPosition.normalizeDegrees(sunset - sunrise);
+    if (clockwiseSpan < 0.01 || clockwiseSpan > 359.99) return null;
+    const clockwiseToNoon = SunPosition.normalizeDegrees(noon - sunrise);
+    const clockwise = clockwiseToNoon <= clockwiseSpan;
+    const span = clockwise ? clockwiseSpan : 360 - clockwiseSpan;
+    const start = compassPoint(sunrise);
+    const end = compassPoint(sunset);
+    return Object.freeze({
+        d: `M ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${DAYLIGHT_ARC_RADIUS} ${DAYLIGHT_ARC_RADIUS} 0 ${span > 180 ? 1 : 0} ${clockwise ? 1 : 0} ${end.x.toFixed(3)} ${end.y.toFixed(3)}`,
+        start,
+        end,
+    });
+}
 
 function moonDisplay(result) {
     const phaseIndex = result?.moonPhaseIndex;
@@ -164,6 +193,22 @@ export function createSunCalculator({
     const compass = element('div', 'bpb-sun-calculator__compass');
     compass.setAttribute('aria-hidden', 'true');
     const compassRing = element('div', 'bpb-sun-calculator__compass-ring');
+    const daylightRange = svgElement('svg');
+    daylightRange.classList.add('bpb-sun-calculator__daylight-range');
+    daylightRange.setAttribute('viewBox', '0 0 100 100');
+    daylightRange.setAttribute('preserveAspectRatio', 'none');
+    const daylightPath = svgElement('path');
+    daylightPath.classList.add('bpb-sun-calculator__daylight-path');
+    const sunriseMarker = svgElement('circle');
+    sunriseMarker.classList.add('bpb-sun-calculator__daylight-endpoint',
+        'bpb-sun-calculator__daylight-endpoint--sunrise');
+    sunriseMarker.setAttribute('r', '2.5');
+    const sunsetMarker = svgElement('circle');
+    sunsetMarker.classList.add('bpb-sun-calculator__daylight-endpoint',
+        'bpb-sun-calculator__daylight-endpoint--sunset');
+    sunsetMarker.setAttribute('r', '2.5');
+    daylightRange.append(daylightPath, sunriseMarker, sunsetMarker);
+    compassRing.append(daylightRange);
     const center = element('span', 'bpb-sun-calculator__compass-center');
     const sun = element('span', 'bpb-sun-calculator__sun');
     const sunDisc = element('span', 'bpb-sun-calculator__sun-disc');
@@ -258,6 +303,16 @@ export function createSunCalculator({
             cardinal.style.transform = `rotate(${angle}deg)`;
             cardinal.firstElementChild.style.transform = `translateX(-50%) rotate(${-angle}deg)`;
         }
+        const arc = daylightArc(next);
+        daylightRange.hidden = !arc;
+        if (arc) {
+            daylightPath.setAttribute('d', arc.d);
+            sunriseMarker.setAttribute('cx', arc.start.x.toFixed(3));
+            sunriseMarker.setAttribute('cy', arc.start.y.toFixed(3));
+            sunsetMarker.setAttribute('cx', arc.end.x.toFixed(3));
+            sunsetMarker.setAttribute('cy', arc.end.y.toFixed(3));
+            daylightRange.style.transform = `rotate(${-unboundedBearing}deg)`;
+        }
         sun.hidden = !Number.isFinite(next.sunAzimuth);
         if (!sun.hidden) {
             const normalizedAzimuth = SunPosition.normalizeDegrees(next.sunAzimuth);
@@ -276,6 +331,9 @@ export function createSunCalculator({
         pendingCompass = {
             bearing: Number.isFinite(state?.mapBearing) ? state.mapBearing : 0,
             sunAzimuth: state?.result?.azimuthDeg,
+            sunriseAzimuthDeg: state?.result?.sunriseAzimuthDeg,
+            solarNoonAzimuthDeg: state?.result?.solarNoonAzimuthDeg,
+            sunsetAzimuthDeg: state?.result?.sunsetAzimuthDeg,
         };
         if (frameHandle === null) frameHandle = requestFrame(applyCompass);
     };

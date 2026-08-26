@@ -63,10 +63,13 @@ const ordinaryState = ({
             elevationDeg,
             isAboveHorizon: elevationDeg >= 0,
             screenAzimuthDeg: ((azimuthDeg - mapBearing) % 360 + 360) % 360,
+            solarNoonAzimuthDeg: 180,
             sunriseMs: MountainTime.civilToInstant(zone, date, 5 * 60 + 30).ms,
+            sunriseAzimuthDeg: 60,
             sunriseDate: date,
             sunriseDayRelation: 'same-day',
             sunsetMs: MountainTime.civilToInstant(zone, date, 20 * 60 + 30).ms,
+            sunsetAzimuthDeg: 300,
             sunsetDate: date,
             sunsetDayRelation: 'same-day',
             daylightState,
@@ -311,6 +314,60 @@ test('daylight progress is visible only from exact sunrise through exact sunset'
     calculator.render(ordinaryState({ daylightState: 'polar-day' }));
     assert.equal(calculator.element.dataset.daylight, 'polar-day');
     assert.equal(marker.hidden, true);
+}));
+
+test('compass draws the daylight direction range through solar noon and rotates it with the map', () => withDom(dom => {
+    const frames = [];
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { frames.push(callback); return frames.length; },
+        cancelFrame: () => {},
+    });
+    const range = calculator.element.querySelector('.bpb-sun-calculator__daylight-range');
+    const path = calculator.element.querySelector('.bpb-sun-calculator__daylight-path');
+
+    calculator.render(ordinaryState());
+    frames.shift()();
+    assert.equal(range.hidden, false);
+    assert.match(path.getAttribute('d'), / A 37 37 0 1 1 /,
+        'Denver daylight follows the long clockwise arc through the southern sky');
+    assert.equal(range.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length, 2);
+
+    calculator.render(ordinaryState({
+        mapBearing: 25,
+        azimuthDeg: 10,
+        directionLabel: 'N',
+    }));
+    frames.shift()();
+    assert.equal(range.style.transform, 'rotate(-25deg)');
+
+    const equatorial = ordinaryState();
+    calculator.render({
+        ...equatorial,
+        result: {
+            ...equatorial.result,
+            sunriseAzimuthDeg: 66,
+            solarNoonAzimuthDeg: 0,
+            sunsetAzimuthDeg: 294,
+        },
+    });
+    frames.shift()();
+    assert.match(path.getAttribute('d'), / A 37 37 0 0 0 /,
+        'a northern midday Sun chooses the counterclockwise arc across north');
+
+    const unavailable = ordinaryState();
+    calculator.render({
+        ...unavailable,
+        result: {
+            ...unavailable.result,
+            sunriseAzimuthDeg: null,
+            solarNoonAzimuthDeg: null,
+            sunsetAzimuthDeg: null,
+            daylightState: 'unavailable',
+        },
+    });
+    frames.shift()();
+    assert.equal(range.hidden, true);
 }));
 
 test('event clocks own their DST labels and adjacent-day relation', () => withDom(dom => {

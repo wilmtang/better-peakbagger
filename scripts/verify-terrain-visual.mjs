@@ -414,6 +414,7 @@ const exerciseSolarBearing = async (cdp, label) => {
         if (toggle?.getAttribute('aria-expanded') !== 'true') toggle?.click();
         const north = calculator?.querySelector('[data-azimuth="0"]');
         const sun = calculator?.querySelector('.bpb-sun-calculator__sun');
+        const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
         const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
         const frame = document.getElementById('bpb-terrain-frame');
         const map = frame?.contentWindow?.__bpbTerrainTestMap;
@@ -421,11 +422,14 @@ const exerciseSolarBearing = async (cdp, label) => {
         const parentRect = calculator?.parentElement?.getBoundingClientRect();
         return {
             ready: Boolean(calculator && panel && !panel.hidden && north?.style.transform
-                && sun?.style.transform && map?.loaded()),
+                && sun?.style.transform && daylightRange?.style.transform
+                && /^M /.test(daylightRange?.querySelector('path')?.getAttribute('d') || '')
+                && map?.loaded()),
             summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
             direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
             north: north?.style.transform || '',
             sun: sun?.style.transform || '',
+            daylightRange: daylightRange?.style.transform || '',
             bearing: map?.getBearing(),
             insideParent: Boolean(rect && parentRect) && rect.left >= parentRect.left - 1
                 && rect.right <= parentRect.right + 1,
@@ -461,13 +465,16 @@ const exerciseSolarBearing = async (cdp, label) => {
         const map = frame?.contentWindow?.__bpbTerrainTestMap;
         const north = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
         const sun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
+        const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range')
+            ?.style.transform || '';
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
         const bearing = map?.getBearing();
         return {
             ready: Number.isFinite(bearing) && Math.abs(bearing - ${Number(initial.bearing)}) > 5
-                && north !== ${JSON.stringify(initial.north)} && sun !== ${JSON.stringify(initial.sun)},
-            bearing, north, sun, summary, direction,
+                && north !== ${JSON.stringify(initial.north)} && sun !== ${JSON.stringify(initial.sun)}
+                && daylightRange !== ${JSON.stringify(initial.daylightRange)},
+            bearing, north, sun, daylightRange, summary, direction,
         };
     })()`, 8000);
     if (rotated.summary !== initial.summary || rotated.direction !== initial.direction) {
@@ -481,6 +488,7 @@ const assertSolarNorthUp = async (cdp, label, absoluteText) => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
         const northElement = calculator?.querySelector('[data-azimuth="0"]');
+        const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
         const northLabel = northElement?.firstElementChild;
         const north = northElement?.style.transform || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
@@ -492,8 +500,9 @@ const assertSolarNorthUp = async (cdp, label, absoluteText) => {
         } : null;
         return {
             ready: north.startsWith('rotate(0deg)') && direction === ${JSON.stringify(absoluteText)}
+                && daylightRange?.style.transform.startsWith('rotate(0deg)')
                 && offset && Math.abs(offset.x) < 2 && offset.y < -20,
-            north, direction, offset,
+            north, daylightRange: daylightRange?.style.transform || '', direction, offset,
         };
     })()`, 8000);
     if (!reset.ready) throw new Error(`${label}: Sun compass did not reset north-up in 2D: ${JSON.stringify(reset)}`);

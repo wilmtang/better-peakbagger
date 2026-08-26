@@ -21,10 +21,11 @@ The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
   ambiguous or unsupported page gets no calculator.
 - In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the selected
   coordinate controls and before the chart legend. Before selection, its
-  disclosure remains openable and prompts for a chart point; pointer, touch, or
-  keyboard selection supplies the route point. Replacing the native map keeps a
-  still-valid chart selection, while loading, failure, or route invalidation
-  clears the old subject.
+  disclosure remains openable and prompts for a chart point. Chart hover previews
+  the Sun at the hovered route point, then restores the deliberate selection when
+  the pointer leaves; click, touch, or keyboard selection fixes the route point.
+  Replacing the native map keeps a still-valid chart selection, while loading,
+  failure, or route invalidation clears the old subject.
 - Full Screen maps, activity capture, editors, lists, the popup, and Settings do
   not get a calculator.
 
@@ -92,6 +93,13 @@ Peakbagger maps are north-up. While 3D is active,
 finite, normalized view bearing. Stop, failure, replacement, or return to 2D
 resets the solar compass to bearing zero. Pitch is intentionally ignored.
 
+On ordinary days, a restrained arc inside the compass runs from the
+level-horizon sunrise azimuth to the sunset azimuth through the solar-noon side
+of the sky. A hollow endpoint marks sunrise and a filled endpoint marks sunset;
+the exact event clocks remain in the line below. The arc is omitted when daily
+event directions are unavailable and rotates with the same accepted map bearing
+as the Sun and cardinal labels.
+
 Compass animation is coalesced to animation frames. Both Sun movement and map
 bearing changes use the shortest arc across north. Bearing-only updates affect
 only the decorative, `aria-hidden` compass; the absolute direction and elevation
@@ -130,8 +138,9 @@ terrain lifecycle.
 
 Unit tests cover Sun and Moon reference values, eight-phase classification,
 local-solar-noon cycle selection, adjacent-day events, polar states, DST gaps
-and folds, bounded formatter work, route provenance, coalesced interaction,
-accessibility, responsive layout, theme, recovery, and cleanup. Hidden
+and folds, daylight-direction arcs, bounded formatter work, route provenance,
+coalesced hover/slider interaction, accessibility, responsive layout, theme,
+recovery, and cleanup. Hidden
 packaged-browser checks load the real manifest in Chrome and Firefox and
 exercise keyboard focus, slider semantics, Moon presentation, Peak/GPX
 responsive geometry, and light/dark rendering in isolated profiles.

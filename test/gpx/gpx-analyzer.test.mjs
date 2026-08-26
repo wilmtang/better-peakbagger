@@ -1752,7 +1752,7 @@ test('GPX analyzer announces only trustworthy active values across a time gap', 
     dom.window.close();
 });
 
-test('GPX Sun follows timed route selections across mountain-local midnight without a date picker', async () => {
+test('GPX Sun previews chart hover and restores timed selections across mountain-local midnight', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele><time>2026-07-10T06:30:00Z</time></trkpt>
       <trkpt lat="47.20000" lon="-121.20000"><ele>200</ele><time>2026-07-10T18:00:00Z</time></trkpt>
@@ -1778,7 +1778,19 @@ test('GPX Sun follows timed route selections across mountain-local midnight with
         'Select a chart point');
 
     const distance = chartConfig().data.datasets[0].data;
-    setActiveElements([{ datasetIndex: 0, index: distance.findIndex(point => point._raw?.lat === 47.1) }]);
+    const firstIndex = distance.findIndex(point => point._raw?.lat === 47.1);
+    const lastIndex = distance.findIndex(point => point._raw?.lat === 47.3);
+
+    chartConfig().options.onHover(null, [{ datasetIndex: 0, index: firstIndex }]);
+    await waitFor(dom, () => slider.value === String(23 * 60 + 30)
+        && /2026-07-09/.test(calculator.textContent));
+    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: distance[firstIndex] }), 0,
+        'hover previews the Sun without replacing deliberate chart selection');
+    canvas.dispatchEvent(new window.Event('mouseleave'));
+    await waitFor(dom, () => calculator.querySelector('.bpb-sun-calculator__summary').textContent
+        === 'Select a chart point');
+
+    setActiveElements([{ datasetIndex: 0, index: firstIndex }]);
     canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     assert.equal(button.disabled, false);
     assert.match(calculator.textContent, /GPX point/);
@@ -1786,10 +1798,19 @@ test('GPX Sun follows timed route selections across mountain-local midnight with
     assert.match(calculator.textContent, /2026-07-09/);
     assert.equal(slider.value, String(23 * 60 + 30));
 
+    chartConfig().options.onHover(null, [{ datasetIndex: 0, index: lastIndex }]);
+    await waitFor(dom, () => slider.value === String(1 * 60 + 30)
+        && /2026-07-11/.test(calculator.textContent));
+    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: distance[firstIndex] }), 5,
+        'hover leaves the selected chart point intact');
+    canvas.dispatchEvent(new window.Event('mouseleave'));
+    await waitFor(dom, () => slider.value === String(23 * 60 + 30)
+        && /2026-07-09/.test(calculator.textContent));
+
     slider.value = String(10 * 60);
     slider.dispatchEvent(new window.Event('input', { bubbles: true }));
 
-    setActiveElements([{ datasetIndex: 0, index: distance.findIndex(point => point._raw?.lat === 47.3) }]);
+    setActiveElements([{ datasetIndex: 0, index: lastIndex }]);
     canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     assert.match(calculator.textContent, /2026-07-11/,
         'the displayed date follows the point across mountain-local midnight');

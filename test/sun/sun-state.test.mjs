@@ -133,10 +133,13 @@ test('minute changes reuse daily events while calculating each requested positio
             events++;
             return {
                 solarNoonMs: 1,
+                solarNoonAzimuthDeg: 180,
                 sunriseMs: 2,
+                sunriseAzimuthDeg: 60,
                 sunriseDate: '2026-07-10',
                 sunriseDayRelation: 'same-day',
                 sunsetMs: 3,
+                sunsetAzimuthDeg: 300,
                 sunsetDate: '2026-07-10',
                 sunsetDayRelation: 'same-day',
                 daylightState: 'ordinary',

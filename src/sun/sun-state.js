@@ -19,10 +19,13 @@ function completeDate(value) {
 
 const unavailableEvents = Object.freeze({
     solarNoonMs: null,
+    solarNoonAzimuthDeg: null,
     sunriseMs: null,
+    sunriseAzimuthDeg: null,
     sunriseDate: null,
     sunriseDayRelation: null,
     sunsetMs: null,
+    sunsetAzimuthDeg: null,
     sunsetDate: null,
     sunsetDayRelation: null,
     daylightState: 'unavailable',

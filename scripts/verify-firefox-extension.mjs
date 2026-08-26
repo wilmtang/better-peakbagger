@@ -1281,8 +1281,12 @@ async function main() {
       const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
       const moon = calculator?.querySelector(".bpb-sun-calculator__moon")?.textContent || "";
+      const daylightRange = calculator?.querySelector(".bpb-sun-calculator__daylight-range");
+      const daylightPath = daylightRange?.querySelector(".bpb-sun-calculator__daylight-path");
       return calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === false
         && /°/.test(summary) && /Direction\\s*\\d+°/.test(direction)
+        && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute("d") || "")
+        && daylightRange.querySelectorAll(".bpb-sun-calculator__daylight-endpoint").length === 2
         && /Moon phase/.test(moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
         && /\\d+% illuminated/.test(moon)

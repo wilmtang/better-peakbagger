@@ -8,8 +8,10 @@
   sunset, plus Moon phase and illuminated percentage, from packaged astronomy
   data. GPX timestamps remain authoritative, untimed tracks use an honest
   ascent-date preview, and the compass follows a rotated 3D view without
-  changing absolute azimuth. The calculator does not predict terrain shadows,
-  weather, or actual direct light.
+  changing absolute azimuth. The compass now traces the sunrise-to-sunset
+  direction range, and hovering the GPX chart previews the Sun at that route
+  point without replacing the clicked or keyboard-selected point. The
+  calculator does not predict terrain shadows, weather, or actual direct light.
 
 ## 3.6.0 — 2026-08-22
 

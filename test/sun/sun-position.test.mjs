@@ -22,6 +22,9 @@ test('SunCalc 2 reference Sun and Moon vector stays north-based and degree-value
     assert.equal(result.isAboveHorizon, false);
     assert.ok(Math.abs(result.sunriseMs - Date.parse('2013-03-05T04:33:31.186Z')) < 1000);
     assert.ok(Math.abs(result.sunsetMs - Date.parse('2013-03-05T15:46:19.732Z')) < 1000);
+    assert.ok(Number.isFinite(result.sunriseAzimuthDeg));
+    assert.ok(Number.isFinite(result.solarNoonAzimuthDeg));
+    assert.ok(Number.isFinite(result.sunsetAzimuthDeg));
     assert.equal(result.sunriseDayRelation, 'same-day');
     assert.equal(result.sunsetDayRelation, 'same-day');
     assert.ok(Math.abs(result.moonIlluminationFraction - 0.4911928) < 0.000001);
@@ -113,7 +116,9 @@ test('solar calculation rejects malformed primary inputs but preserves position 
     assert.equal(malformedEvents.azimuthDeg, 90);
     assert.equal(malformedEvents.daylightState, 'unavailable');
     assert.equal(malformedEvents.sunriseMs, null);
+    assert.equal(malformedEvents.sunriseAzimuthDeg, null);
     assert.equal(malformedEvents.sunsetMs, null);
+    assert.equal(malformedEvents.sunsetAzimuthDeg, null);
     assert.equal(malformedEvents.moonPhaseLabel, null);
 
     const malformedMoon = SunPosition.calculate({
