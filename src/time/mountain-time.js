@@ -6,6 +6,8 @@ import tzlookup from 'tz-lookup';
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const FORMATTER_CACHE_LIMIT = 64;
+const formatterCaches = new WeakMap();
 
 const finiteInstant = value => Number.isFinite(value) && Math.abs(value) <= 8.64e15;
 const validCoordinate = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon)
@@ -47,6 +49,26 @@ function fallbackLabel(offsetMs) {
     return `UTC${hours < 0 ? '−' : '+'}${Math.abs(hours)}, estimated from longitude`;
 }
 
+function formatter(DateTimeFormat, locales, options) {
+    if (typeof DateTimeFormat !== 'function') throw new TypeError('invalid formatter constructor');
+    let cache = formatterCaches.get(DateTimeFormat);
+    if (!cache) {
+        cache = new Map();
+        formatterCaches.set(DateTimeFormat, cache);
+    }
+    const key = JSON.stringify([locales, options]);
+    if (cache.has(key)) {
+        const cached = cache.get(key);
+        cache.delete(key);
+        cache.set(key, cached);
+        return cached;
+    }
+    const created = new DateTimeFormat(locales, options);
+    cache.set(key, created);
+    if (cache.size > FORMATTER_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    return created;
+}
+
 export function longitudeOffsetMs(lon) {
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) return null;
     return Math.round(lon / 15) * 3_600_000;
@@ -61,7 +83,7 @@ export function resolveMountainTime(lat, lon, {
     try {
         const timeZone = lookup(lat, lon);
         if (typeof timeZone !== 'string' || !timeZone) throw new RangeError('invalid timezone');
-        const formatter = new DateTimeFormat('en-CA', {
+        const resolvedFormatter = formatter(DateTimeFormat, 'en-CA', {
             timeZone,
             year: 'numeric',
             month: '2-digit',
@@ -70,7 +92,7 @@ export function resolveMountainTime(lat, lon, {
             minute: '2-digit',
             hourCycle: 'h23',
         });
-        if (!dateParts(formatter, 0)) throw new RangeError('unusable timezone formatter');
+        if (!dateParts(resolvedFormatter, 0)) throw new RangeError('unusable timezone formatter');
         return Object.freeze({ timeZone, offsetMs, estimated: false });
     } catch {
         return Object.freeze({ timeZone: null, offsetMs, estimated: true });
@@ -78,7 +100,7 @@ export function resolveMountainTime(lat, lon, {
 }
 
 function wallFormatter(zone, DateTimeFormat = Intl.DateTimeFormat) {
-    return new DateTimeFormat('en-CA', {
+    return formatter(DateTimeFormat, 'en-CA', {
         timeZone: zone.timeZone || 'UTC',
         year: 'numeric',
         month: '2-digit',
@@ -124,11 +146,29 @@ export function zoneLabel(zone, referenceMs, {
     if (!zone || !finiteInstant(referenceMs)) return null;
     if (!zone.timeZone) return fallbackLabel(zone.offsetMs);
     try {
-        const part = new DateTimeFormat([], {
+        const part = formatter(DateTimeFormat, [], {
             timeZone: zone.timeZone,
             timeZoneName: 'short',
         }).formatToParts(referenceMs).find(candidate => candidate.type === 'timeZoneName');
         return part?.value || zone.timeZone;
+    } catch {
+        return zone.timeZone;
+    }
+}
+
+export function zoneDescription(zone, referenceMs, {
+    DateTimeFormat = Intl.DateTimeFormat,
+} = {}) {
+    if (!zone || !finiteInstant(referenceMs)) return null;
+    if (!zone.timeZone) return fallbackLabel(zone.offsetMs);
+    try {
+        const name = style => formatter(DateTimeFormat, [], {
+            timeZone: zone.timeZone,
+            timeZoneName: style,
+        }).formatToParts(referenceMs).find(part => part.type === 'timeZoneName')?.value;
+        const long = name('long');
+        const short = name('short');
+        return long && short && long !== short ? `${long} (${short})` : long || short || zone.timeZone;
     } catch {
         return zone.timeZone;
     }
@@ -147,7 +187,7 @@ export function formatClock(zone, ms, {
                 timeZone: 'UTC',
             });
         }
-        return new DateTimeFormat(locales, {
+        return formatter(DateTimeFormat, locales, {
             hour: '2-digit', minute: '2-digit', timeZone: zone.timeZone,
         }).format(ms);
     } catch {
@@ -168,7 +208,7 @@ export function relativeLocalDay(zone, ms, startMs, options) {
 }
 
 function offsetAt(timeZone, ms, DateTimeFormat) {
-    const fields = dateParts(new DateTimeFormat('en-CA', {
+    const fields = dateParts(formatter(DateTimeFormat, 'en-CA', {
         timeZone,
         year: 'numeric',
         month: '2-digit',
@@ -180,6 +220,45 @@ function offsetAt(timeZone, ms, DateTimeFormat) {
     if (!fields) return null;
     return Date.UTC(fields.year, fields.month - 1, fields.day, fields.hour, fields.minute)
         - Math.floor(ms / MINUTE_MS) * MINUTE_MS;
+}
+
+function wallMsFromFields(fields) {
+    return Date.UTC(fields.year, fields.month - 1, fields.day, fields.hour, fields.minute);
+}
+
+function firstValidAfterGap(zone, wallMs, DateTimeFormat) {
+    if (!zone.timeZone) return null;
+    const start = wallMs - 48 * 3_600_000;
+    const end = wallMs + 48 * 3_600_000;
+    const step = 3_600_000;
+    let previousMs = start;
+    let previousOffset = offsetAt(zone.timeZone, previousMs, DateTimeFormat);
+    let best = null;
+    for (let sampleMs = start + step; sampleMs <= end; sampleMs += step) {
+        const sampleOffset = offsetAt(zone.timeZone, sampleMs, DateTimeFormat);
+        if (Number.isFinite(previousOffset) && Number.isFinite(sampleOffset)
+            && previousOffset !== sampleOffset) {
+            let low = previousMs;
+            let high = sampleMs;
+            const lowOffset = previousOffset;
+            while (high - low > MINUTE_MS) {
+                const middle = Math.floor((low + high) / (2 * MINUTE_MS)) * MINUTE_MS;
+                if (offsetAt(zone.timeZone, middle, DateTimeFormat) === lowOffset) low = middle;
+                else high = middle;
+            }
+            const fields = localFields(zone, high, { DateTimeFormat });
+            const candidateWallMs = fields ? wallMsFromFields(fields) : Number.NaN;
+            const adjustment = (candidateWallMs - wallMs) / MINUTE_MS;
+            if (Number.isInteger(adjustment) && adjustment >= 0 && adjustment <= 1440
+                && (!best || adjustment < best.adjustment
+                    || (adjustment === best.adjustment && high < best.ms))) {
+                best = { ms: high, adjustment };
+            }
+        }
+        previousMs = sampleMs;
+        previousOffset = sampleOffset;
+    }
+    return best;
 }
 
 function matchingInstants(zone, date, minute, DateTimeFormat) {
@@ -211,23 +290,22 @@ export function civilToInstant(zone, date, minute, {
     if (!zone) return null;
     const parsed = parseCivilDate(date);
     if (!parsed || !Number.isInteger(minute) || minute < 0 || minute > 1439) return null;
-    const limit = snapForward ? 1440 : 0;
-    for (let adjustment = 0; adjustment <= limit; adjustment++) {
-        const civilMs = parsed.ms + (minute + adjustment) * MINUTE_MS;
-        const adjustedDate = new Date(civilMs).toISOString().slice(0, 10);
-        const adjustedMinute = (minute + adjustment) % 1440;
-        const matches = matchingInstants(zone, adjustedDate, adjustedMinute, DateTimeFormat);
-        if (matches.length) {
-            return Object.freeze({
-                ms: matches[0],
-                date: adjustedDate,
-                minute: adjustedMinute,
-                adjusted: adjustment > 0,
-                ambiguous: matches.length > 1,
-            });
-        }
-    }
-    return null;
+    const matches = matchingInstants(zone, date, minute, DateTimeFormat);
+    if (matches.length) return Object.freeze({
+        ms: matches[0], date, minute, adjusted: false, ambiguous: matches.length > 1,
+    });
+    if (!snapForward) return null;
+    const gap = firstValidAfterGap(zone, parsed.ms + minute * MINUTE_MS, DateTimeFormat);
+    if (!gap) return null;
+    const fields = localFields(zone, gap.ms, { DateTimeFormat });
+    if (!fields) return null;
+    return Object.freeze({
+        ms: gap.ms,
+        date: isoDate(fields),
+        minute: fields.hour * 60 + fields.minute,
+        adjusted: true,
+        ambiguous: false,
+    });
 }
 
 export const mountainTime = Object.freeze({
@@ -237,6 +315,7 @@ export const mountainTime = Object.freeze({
     localDate,
     localMinute,
     zoneLabel,
+    zoneDescription,
     formatClock,
     localDayNumber,
     relativeLocalDay,

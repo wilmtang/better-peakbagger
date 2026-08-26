@@ -28,6 +28,64 @@ test('civil conversion observes DST gaps and chooses the earlier repeated hour',
     const overlap = MountainTime.civilToInstant(denver, '2026-11-01', 1 * 60 + 30);
     assert.equal(overlap.ambiguous, true);
     assert.equal(overlap.ms, Date.parse('2026-11-01T07:30:00Z'));
+    assert.equal(MountainTime.civilToInstant(denver, '2026-03-08', 2 * 60 + 30, {
+        snapForward: false,
+    }), null);
+});
+
+test('skipped dates snap to the first valid civil minute with bounded formatter work', () => {
+    let constructions = 0;
+    let partsCalls = 0;
+    class CountingDateTimeFormat extends Intl.DateTimeFormat {
+        constructor(locales, options) {
+            super(locales, options);
+            constructions++;
+        }
+
+        formatToParts(value) {
+            partsCalls++;
+            return super.formatToParts(value);
+        }
+    }
+    const apia = Object.freeze({ timeZone: 'Pacific/Apia', offsetMs: -11 * 3_600_000, estimated: false });
+    const skipped = MountainTime.civilToInstant(apia, '2011-12-30', 12 * 60, {
+        DateTimeFormat: CountingDateTimeFormat,
+    });
+    assert.deepEqual({ date: skipped.date, minute: skipped.minute, adjusted: skipped.adjusted }, {
+        date: '2011-12-31', minute: 0, adjusted: true,
+    });
+    assert.equal(skipped.ms, Date.parse('2011-12-30T10:00:00Z'));
+    assert.ok(constructions <= 2, `expected cached formatters, constructed ${constructions}`);
+    assert.ok(partsCalls < 160, `expected bounded transition search, formatted ${partsCalls} times`);
+});
+
+test('formatter instances are reused by zone and options', () => {
+    let constructions = 0;
+    class CountingDateTimeFormat extends Intl.DateTimeFormat {
+        constructor(locales, options) {
+            super(locales, options);
+            constructions++;
+        }
+    }
+    const denver = MountainTime.resolve(39.7392, -104.9903, {
+        DateTimeFormat: CountingDateTimeFormat,
+    });
+    const ms = Date.parse('2026-07-10T18:30:00Z');
+    for (let index = 0; index < 25; index++) {
+        assert.equal(MountainTime.localMinute(denver, ms + index * 60_000, {
+            DateTimeFormat: CountingDateTimeFormat,
+        }), 12 * 60 + 30 + index);
+        assert.ok(MountainTime.formatClock(denver, ms, {
+            DateTimeFormat: CountingDateTimeFormat,
+        }));
+        assert.ok(MountainTime.zoneLabel(denver, ms, {
+            DateTimeFormat: CountingDateTimeFormat,
+        }));
+        assert.ok(MountainTime.zoneDescription(denver, ms, {
+            DateTimeFormat: CountingDateTimeFormat,
+        }));
+    }
+    assert.ok(constructions <= 6, `expected formatter reuse, constructed ${constructions}`);
 });
 
 test('civil dates and local-day comparisons survive the international date line', () => {

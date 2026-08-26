@@ -82,21 +82,6 @@ function eventSummary(zone, result) {
     });
 }
 
-const zoneDescription = (zone, referenceMs, fallback) => {
-    if (!zone?.timeZone) return fallback;
-    try {
-        const name = style => new Intl.DateTimeFormat([], {
-            timeZone: zone.timeZone,
-            timeZoneName: style,
-        }).formatToParts(referenceMs).find(part => part.type === 'timeZoneName')?.value;
-        const long = name('long');
-        const short = name('short');
-        return long && short && long !== short ? `${long} (${short})` : long || short || fallback;
-    } catch {
-        return fallback;
-    }
-};
-
 export function createSunCalculator({
     mount,
     mode,
@@ -325,7 +310,7 @@ export function createSunCalculator({
         } else dateValue.textContent = state.date;
         dateMeta.textContent = mode === 'peak' ? '' : state.dateSource;
         timeValue.textContent = clock;
-        const zoneText = zoneDescription(state.zone, state.instant.ms, label);
+        const zoneText = MountainTime.zoneDescription(state.zone, state.instant.ms) || label;
         timeMeta.textContent = mode === 'peak' ? zoneText : `${state.timeSource} · ${zoneText}`;
 
         const azimuth = roundedDegrees(state.result.azimuthDeg);
