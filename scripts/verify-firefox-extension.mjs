@@ -864,7 +864,8 @@ async function main() {
         await driver.navigate().refresh();
         await waitForScript(
             driver,
-            "return document.getElementById('theme')?.value === 'dark' && document.documentElement.dataset.bpbTheme === 'dark';",
+            `return document.getElementById('theme')?.value === ${JSON.stringify(firefoxSunTheme)}
+              && document.documentElement.dataset.bpbTheme === ${JSON.stringify(firefoxSunTheme)};`,
             'the persisted Firefox option',
         );
         // The custom-list workspace is its own page; drive it there for the list
