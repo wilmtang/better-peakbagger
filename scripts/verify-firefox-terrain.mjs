@@ -263,7 +263,10 @@ async function main() {
         await page.keyboard.press('ArrowRight');
         await page.waitForFunction(() =>
             document.querySelector('.bpb-sun-calculator__toggle')?.disabled === false);
-        await page.locator('.bpb-sun-calculator__toggle').click();
+        const analyzerSunToggle = page.locator('.bpb-sun-calculator__toggle');
+        if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') {
+            await analyzerSunToggle.click();
+        }
         const analyzerSunInitial = await page.evaluate(() => {
             const calculator = document.querySelector('.bpb-sun-calculator');
             const rect = calculator?.getBoundingClientRect();
@@ -299,7 +302,46 @@ async function main() {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
             return map?.getZoom() > previous;
         }, rendererState.zoom, { timeout: 8_000 });
+        await page.waitForFunction(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return Boolean(map) && !map.isMoving();
+        }, null, { timeout: 8_000 });
 
+        const bearingBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
+        // Run bearing before pitch. Firefox intermittently loses a synthetic
+        // horizontal secondary drag at the iframe boundary immediately after a
+        // vertical one; separating the gestures by a settled camera makes each
+        // postcondition own exactly one input.
+        await page.mouse.move(center.x, center.y);
+        await page.mouse.down({ button: 'right' });
+        await page.mouse.move(center.x + 150, center.y, { steps: 8 });
+        await page.mouse.up({ button: 'right' });
+        await page.waitForFunction(previous => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            const delta = Math.abs((((map?.getBearing() ?? previous) - previous + 540) % 360) - 180);
+            return delta > 5;
+        }, bearingBefore, { timeout: 8_000 });
+        const analyzerSunRotated = await page.waitForFunction(({ north, sun }) => {
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
+            const nextSun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
+            return nextNorth !== north && nextSun !== sun ? {
+                north: nextNorth,
+                sun: nextSun,
+                summary: calculator.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+                direction: calculator.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+            } : false;
+        }, { north: analyzerSunInitial.north, sun: analyzerSunInitial.sun },
+        { timeout: 8_000 }).then(handle => handle.jsonValue());
+        if (analyzerSunRotated.summary !== analyzerSunInitial.summary
+            || analyzerSunRotated.direction !== analyzerSunInitial.direction) {
+            throw new Error(`Firefox Analyzer bearing changed absolute Sun text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
+        }
+
+        await page.waitForFunction(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return Boolean(map) && !map.isMoving();
+        }, null, { timeout: 8_000 });
         const pitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
         await page.mouse.move(center.x, center.y);
         await page.mouse.down({ button: 'right' });
@@ -309,31 +351,6 @@ async function main() {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
             return Math.abs((map?.getPitch() ?? previous) - previous) > 2;
         }, pitchBefore, { timeout: 8_000 });
-
-        const bearingBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
-        await page.mouse.move(center.x, center.y);
-        await page.mouse.down({ button: 'right' });
-        await page.mouse.move(center.x + 150, center.y, { steps: 8 });
-        await page.mouse.up({ button: 'right' });
-        const analyzerSunRotated = await page.waitForFunction(({ bearing, north, sun }) => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            const calculator = document.querySelector('.bpb-sun-calculator');
-            const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
-            const nextSun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
-            return Number.isFinite(map?.getBearing()) && Math.abs(map.getBearing() - bearing) > 5
-                && nextNorth !== north && nextSun !== sun ? {
-                    bearing: map.getBearing(),
-                    north: nextNorth,
-                    sun: nextSun,
-                    summary: calculator.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
-                    direction: calculator.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
-                } : false;
-        }, { bearing: bearingBefore, north: analyzerSunInitial.north, sun: analyzerSunInitial.sun },
-        { timeout: 8_000 }).then(handle => handle.jsonValue());
-        if (analyzerSunRotated.summary !== analyzerSunInitial.summary
-            || analyzerSunRotated.direction !== analyzerSunInitial.direction) {
-            throw new Error(`Firefox Analyzer bearing changed absolute Sun text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
-        }
 
         // Firefox on macOS rewrites Ctrl+primary into a secondary-button gesture.
         // Exercise that production alternative separately from the normal right drag.
@@ -368,14 +385,31 @@ async function main() {
         if (!resized.route || requests.terrain === 0 || requests.basemap === 0 || requests.peaks === 0) {
             throw new Error(`Firefox terrain fixtures were incomplete: ${JSON.stringify({ resized, requests })}`);
         }
+        await page.waitForFunction(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return Boolean(map) && !map.isMoving();
+        }, null, { timeout: 8_000 });
         await page.locator('#bpb-terrain-toggle').click();
+        await page.waitForFunction(() =>
+            document.getElementById('bpb-terrain-toggle')?.textContent === '3D',
+        null, { timeout: 8_000 });
         await page.waitForFunction(expected => {
-            const toggle = document.getElementById('bpb-terrain-toggle');
             const north = document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
             const direction = document.querySelector('.bpb-sun-calculator__direction');
-            return toggle?.textContent === '3D' && north?.style.transform.startsWith('rotate(0deg)')
+            const northAngle = Number(/^rotate\((-?[\d.]+)deg\)/.exec(north?.style.transform || '')?.[1]);
+            const normalizedNorth = Math.abs(((((northAngle + 180) % 360) + 360) % 360) - 180);
+            return Number.isFinite(northAngle) && normalizedNorth < 0.01
                 && direction?.textContent === expected;
-        }, analyzerSunInitial.direction, { timeout: 8_000 });
+        }, analyzerSunInitial.direction, { timeout: 8_000 }).catch(async (error) => {
+            const state = await page.evaluate(() => ({
+                expanded: document.querySelector('.bpb-sun-calculator__toggle')?.getAttribute('aria-expanded'),
+                north: document.querySelector('.bpb-sun-calculator [data-azimuth="0"]')?.style.transform || '',
+                direction: document.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+            }));
+            throw new Error(`Firefox Analyzer Sun compass did not reset in 2D: ${JSON.stringify(state)}`, {
+                cause: error,
+            });
+        });
 
         await page.goto(`${fixtureOrigin}peak.aspx?pid=2829`, { waitUntil: 'load' });
         await page.waitForFunction(() => {
@@ -387,7 +421,10 @@ async function main() {
             const frame = document.getElementById('bpb-terrain-frame');
             return frame?.style.opacity === '1' && frame.contentWindow?.__bpbTerrainTestMap?.loaded();
         }, null, { timeout: 45_000 });
-        await page.locator('.bpb-sun-calculator__toggle').click();
+        const peakSunToggle = page.locator('.bpb-sun-calculator__toggle');
+        if (await peakSunToggle.getAttribute('aria-expanded') !== 'true') {
+            await peakSunToggle.click();
+        }
         const peakSunInitial = await page.evaluate(() => {
             const calculator = document.querySelector('.bpb-sun-calculator');
             return {
@@ -398,6 +435,11 @@ async function main() {
             };
         });
         const peakCanvas = page.frameLocator('#bpb-terrain-frame').locator('canvas.maplibregl-canvas');
+        await page.waitForFunction(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return Boolean(map) && !map.isMoving();
+        }, null, { timeout: 8_000 });
+        const peakBearingBefore = await peakCanvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
         const peakBox = await peakCanvas.boundingBox();
         if (!peakBox) throw new Error('Firefox Peak terrain canvas had no bearing-drag target');
         const peakCenter = { x: peakBox.x + peakBox.width / 2, y: peakBox.y + peakBox.height / 2 };
@@ -405,6 +447,11 @@ async function main() {
         await page.mouse.down({ button: 'right' });
         await page.mouse.move(peakCenter.x + 150, peakCenter.y, { steps: 8 });
         await page.mouse.up({ button: 'right' });
+        await page.waitForFunction(previous => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            const delta = Math.abs((((map?.getBearing() ?? previous) - previous + 540) % 360) - 180);
+            return delta > 5;
+        }, peakBearingBefore, { timeout: 8_000 });
         const peakSunRotated = await page.waitForFunction(({ north, sun }) => {
             const calculator = document.querySelector('.bpb-sun-calculator');
             const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
@@ -419,21 +466,38 @@ async function main() {
             || peakSunRotated.direction !== peakSunInitial.direction) {
             throw new Error(`Firefox Peak bearing changed absolute Sun text: ${JSON.stringify({ peakSunInitial, peakSunRotated })}`);
         }
+        await page.waitForFunction(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return Boolean(map) && !map.isMoving();
+        }, null, { timeout: 8_000 });
         await page.locator('#bpb-terrain-toggle').click();
+        await page.waitForFunction(() =>
+            document.getElementById('bpb-terrain-toggle')?.textContent === '3D',
+        null, { timeout: 8_000 });
         await page.waitForFunction(expected => {
-            const toggle = document.getElementById('bpb-terrain-toggle');
             const north = document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
             const direction = document.querySelector('.bpb-sun-calculator__direction');
-            return toggle?.textContent === '3D' && north?.style.transform.startsWith('rotate(0deg)')
+            const northAngle = Number(/^rotate\((-?[\d.]+)deg\)/.exec(north?.style.transform || '')?.[1]);
+            const normalizedNorth = Math.abs(((((northAngle + 180) % 360) + 360) % 360) - 180);
+            return Number.isFinite(northAngle) && normalizedNorth < 0.01
                 && direction?.textContent === expected;
-        }, peakSunInitial.direction, { timeout: 8_000 });
+        }, peakSunInitial.direction, { timeout: 8_000 }).catch(async (error) => {
+            const state = await page.evaluate(() => ({
+                expanded: document.querySelector('.bpb-sun-calculator__toggle')?.getAttribute('aria-expanded'),
+                north: document.querySelector('.bpb-sun-calculator [data-azimuth="0"]')?.style.transform || '',
+                direction: document.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+            }));
+            throw new Error(`Firefox Peak Sun compass did not reset in 2D: ${JSON.stringify(state)}`, {
+                cause: error,
+            });
+        });
         if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
 
         console.log('Firefox terrain verification passed:');
         console.log(`  - Firefox ${browser.version()}, hidden/headless ${viewport.width}x${viewport.height}`);
         console.log(`  - renderer: ${rendererState.renderer}`);
         console.log('  - synthetic activation and direct-frame authorization negatives passed');
-        console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right drag, Ctrl-drag, and resize passed');
+        console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right-drag tilt, bearing sync, Ctrl-drag, and resize passed');
         console.log('  - Analyzer and Peak Sun compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
     } catch (error) {

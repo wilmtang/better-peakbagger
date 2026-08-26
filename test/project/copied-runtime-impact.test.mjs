@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
@@ -35,4 +36,24 @@ test('adding or removing a copied runtime is treated as a runtime change', () =>
     assert.equal(copiedRuntimeChanged(lock(), removed), true);
     assert.equal(copiedRuntimeVersions(removed).marked, null);
     assert.throws(() => copiedRuntimeVersions({}), /no packages inventory/);
+});
+
+test('Firefox GPU bearing checks settle before the separate pitch gesture', async () => {
+    const verifier = await readFile(
+        new URL('../../scripts/verify-firefox-terrain.mjs', import.meta.url),
+        'utf8',
+    );
+    const analyzerBearing = verifier.indexOf('const bearingBefore =');
+    const analyzerPitch = verifier.indexOf('const pitchBefore =');
+    assert.ok(analyzerBearing >= 0 && analyzerBearing < analyzerPitch,
+        'the horizontal drag must not follow the vertical drag at the iframe boundary');
+    assert.equal(verifier.match(/mouse\.down\(\{ button: 'right' \}\)/g)?.length, 3,
+        'Analyzer bearing, Analyzer pitch, and Peak bearing each own one right drag');
+    assert.doesNotMatch(verifier, /\.setBearing\(/,
+        'the GPU verifier must exercise camera interaction instead of mutating MapLibre directly');
+    assert.match(verifier,
+        /if \(await peakSunToggle\.getAttribute\('aria-expanded'\) !== 'true'\)/,
+        'the verifier must establish the Peak disclosure state instead of blindly toggling it');
+    assert.equal(verifier.match(/const normalizedNorth =/g)?.length, 2,
+        'both 2D reset checks must accept CSS angles equivalent to zero modulo 360');
 });
