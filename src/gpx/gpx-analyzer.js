@@ -303,8 +303,28 @@ const run = async () => {
         });
         if (sunCalculator) chartLegend.before(sunCalculator.element);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
-        if (fullScreenMapLink) fullScreenMapLink.before(container);
-        else gpxLink.after(container);
+        if (fullScreenMapLink) {
+            fullScreenMapLink.before(container);
+            if (mapViewport?.parentNode === fullScreenMapLink.parentNode) {
+                const mapDetailsNodes = [];
+                for (let node = mapViewport.nextSibling; node && node !== fullScreenMapLink;
+                    node = node.nextSibling) {
+                    if (node !== container && node !== gpxLink) mapDetailsNodes.push(node);
+                }
+                const routeExplorer = document.createElement('div');
+                routeExplorer.id = 'bpb-route-explorer';
+                routeExplorer.setAttribute('role', 'region');
+                routeExplorer.setAttribute('aria-label', 'Route explorer');
+                const mapDetails = document.createElement('div');
+                mapDetails.className = 'bpb-route-explorer__map-details';
+                mapViewport.before(routeExplorer);
+                // Keep the analyzer before the Full Screen link in DOM/tab
+                // order. CSS places the secondary map details back under the
+                // map visually in both the split and stacked compositions.
+                routeExplorer.append(mapViewport, container, mapDetails);
+                mapDetails.append(...mapDetailsNodes, fullScreenMapLink);
+            }
+        } else gpxLink.after(container);
 
         // One theming system for the whole surface: the panel and the floating
         // 3D toggle now take the same data-theme attribute, and the panel's

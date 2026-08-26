@@ -52,6 +52,43 @@ export const gpxPanelCss = `
     background: var(--bpb-gpx-panel-bg);
     border-color: var(--bpb-gpx-panel-border);
 }
+#bpb-route-explorer {
+    display: grid;
+    grid-template-areas:
+        "map"
+        "map-details"
+        "analysis";
+    align-items: start;
+    inline-size: 100%;
+    max-inline-size: 1500px;
+    min-inline-size: 0;
+    margin: 15px auto 0;
+}
+#bpb-route-explorer > #bpb-map-viewport {
+    grid-area: map;
+    justify-self: center;
+}
+#bpb-route-explorer > .bpb-route-explorer__map-details {
+    grid-area: map-details;
+    min-inline-size: 0;
+    margin-block-start: 0.4rem;
+    text-align: center;
+}
+#bpb-route-explorer > #bpb-gpx-analysis {
+    grid-area: analysis;
+    box-sizing: border-box;
+    container: bpb-route-analysis / inline-size;
+    inline-size: 100%;
+    min-inline-size: 0;
+    max-inline-size: none !important;
+    margin-block-start: 10px !important;
+}
+@container bpb-route-analysis (max-width: 680px) {
+    #bpb-route-explorer .bpb-sun-calculator__layout { grid-template-columns: 1fr; }
+    #bpb-route-explorer .bpb-sun-calculator__reading {
+        grid-template-columns: minmax(8rem, 0.85fr) minmax(8.5rem, 1.15fr);
+    }
+}
 #bpb-gpx-analysis .bpb-gpx-stats { color: var(--bpb-gpx-text); }
 #bpb-gpx-analysis .bpb-gpx-stats[data-state="error"] { color: var(--bpb-gpx-error); }
 #bpb-gpx-analysis .bpb-gpx-substats { color: var(--bpb-gpx-sub); }
@@ -179,6 +216,24 @@ export const gpxPanelCss = `
     padding: 4px 6px;
     font: inherit;
     font-size: 0.8em;
+}
+
+@media (min-width: 780px) {
+    #bpb-route-explorer {
+        grid-template-columns: minmax(320px, 0.95fr) minmax(430px, 1.05fr);
+        grid-template-areas:
+            "map analysis"
+            "map-details analysis";
+        column-gap: 12px;
+    }
+    #bpb-route-explorer > #bpb-map-viewport {
+        position: sticky !important;
+        inset-block-start: 8px;
+        max-block-size: calc(100vh - 16px) !important;
+    }
+    #bpb-route-explorer > #bpb-gpx-analysis {
+        margin-block-start: 0 !important;
+    }
 }
 
 @media (max-width: 600px) {

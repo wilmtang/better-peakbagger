@@ -1292,6 +1292,55 @@ async function main() {
     `, 'the Firefox GPX Sun selection');
         assertState(/°/.test(selectedSunState.summary),
             'Firefox GPX Sun did not follow keyboard route selection', selectedSunState);
+        await driver.executeScript(
+            'arguments[0].scrollIntoView({ block: "center", inline: "nearest" });',
+            analyzerCanvas,
+        );
+        const routeExplorerLayout = await waitForScript(driver, `
+      const explorer = document.getElementById('bpb-route-explorer');
+      const map = document.getElementById('bpb-map-viewport');
+      const analysis = document.getElementById('bpb-gpx-analysis');
+      const canvas = analysis?.querySelector('canvas');
+      const mapRect = map?.getBoundingClientRect();
+      const analysisRect = analysis?.getBoundingClientRect();
+      const canvasRect = canvas?.getBoundingClientRect();
+      const viewportHeight = document.documentElement.clientHeight;
+      const state = {
+        viewportWidth: document.documentElement.clientWidth,
+        display: explorer ? getComputedStyle(explorer).display : null,
+        mapPosition: map ? getComputedStyle(map).position : null,
+        sideBySide: Boolean(mapRect && analysisRect) && mapRect.right <= analysisRect.left + 1,
+        mapVisible: Boolean(mapRect) && mapRect.top >= -1 && mapRect.bottom <= viewportHeight + 1,
+        chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
+        fullScreenWithMap: Boolean(document.querySelector(
+          '.bpb-route-explorer__map-details a[href*="BigMap.aspx"]'
+        )),
+        documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      };
+      return {
+        ...state,
+        ready: state.viewportWidth >= 780
+          && state.display === 'grid'
+          && state.mapPosition === 'sticky'
+          && state.sideBySide
+          && state.mapVisible
+          && state.chartVisible
+          && state.fullScreenWithMap
+          && !state.documentOverflow,
+      };
+    `, 'the Firefox route explorer layout', 5_000, state => state?.ready);
+        assertState(
+            routeExplorerLayout.viewportWidth >= 780
+            && routeExplorerLayout.display === 'grid'
+            && routeExplorerLayout.mapPosition === 'sticky'
+            && routeExplorerLayout.sideBySide
+            && routeExplorerLayout.mapVisible
+            && routeExplorerLayout.chartVisible
+            && routeExplorerLayout.fullScreenWithMap
+            && !routeExplorerLayout.documentOverflow,
+            'Firefox route explorer did not keep the map and active chart together',
+            routeExplorerLayout,
+        );
         const analyzerSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
         if ((await analyzerSunToggle.getAttribute('aria-expanded')) !== 'true') await analyzerSunToggle.click();
         const analyzerSunSlider = await driver.findElement(By.css('.bpb-sun-calculator__time'));
@@ -1323,6 +1372,18 @@ async function main() {
           ?.querySelector('.bpb-sun-calculator__chevron')).transform,
       } : false;
     `, 'the Firefox GPX Sun slider semantics');
+        const analyzerSunLayout = await driver.executeScript(`
+      const panel = document.getElementById('bpb-gpx-analysis');
+      const calculator = panel?.querySelector('.bpb-sun-calculator');
+      return {
+        panelOverflow: Boolean(panel) && panel.scrollWidth > panel.clientWidth,
+        calculatorOverflow: Boolean(calculator) && calculator.scrollWidth > calculator.clientWidth,
+        documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        calculatorColumns: calculator
+          ? getComputedStyle(calculator.querySelector('.bpb-sun-calculator__layout')).gridTemplateColumns
+          : '',
+      };
+    `);
         assertState(
             analyzerSunAccessibility.height >= 44 && analyzerSunAccessibility.focusVisible
             && analyzerSunAccessibility.outlineWidth === '3px'
@@ -1330,9 +1391,13 @@ async function main() {
             && /^(above|below)$/.test(analyzerSunAccessibility.horizon)
             && analyzerSunAccessibility.belowClass
                 === /below horizon/.test(analyzerSunAccessibility.summary)
-            && analyzerSunAccessibility.chevronTransform !== 'none',
+            && analyzerSunAccessibility.chevronTransform !== 'none'
+            && !analyzerSunLayout.panelOverflow
+            && !analyzerSunLayout.calculatorOverflow
+            && !analyzerSunLayout.documentOverflow
+            && analyzerSunLayout.calculatorColumns.split(' ').length === 1,
             'Firefox GPX Sun slider lacks clock semantics, keyboard focus, or target geometry',
-            analyzerSunAccessibility,
+            { accessibility: analyzerSunAccessibility, layout: analyzerSunLayout },
         );
         await writeElementScreenshot(
             driver,

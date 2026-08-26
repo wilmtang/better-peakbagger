@@ -2129,24 +2129,27 @@ try {
             && unavailable.extensionRouteLayers === 0,
             `the ${analyzerCase} Analyzer failure retained stale semantics or state: ${JSON.stringify(unavailable)}`);
 
-            await page.locator('a', { hasText: 'Download this GPS track' }).focus();
-            await page.keyboard.press('Tab');
-            const nextTabStop = await page.evaluate(() => ({
-                className: document.activeElement?.className || '',
-                text: document.activeElement?.textContent || '',
+            const failureExplorer = await page.evaluate(() => ({
+                fullScreenWithMap: Boolean(document.querySelector(
+                    '.bpb-route-explorer__map-details a[href*="BigMap.aspx"]'
+                )),
+                downloadInsideExplorer: Boolean(document.querySelector(
+                    '#bpb-route-explorer a[href*="track.gpx"]'
+                )),
+                retryTabIndex: document.querySelector('.bpb-gpx-retry')?.tabIndex,
             }));
-            check(retryable
-                ? nextTabStop.className === 'bpb-gpx-retry'
-                : /Full Screen Map/.test(nextTabStop.text),
-            `the ${analyzerCase} Analyzer failure left the wrong next tab stop: ${JSON.stringify(nextTabStop)}`);
+            check(failureExplorer.fullScreenWithMap && !failureExplorer.downloadInsideExplorer
+                && (!retryable || failureExplorer.retryTabIndex === 0),
+            `the ${analyzerCase} Analyzer failure broke the route explorer's actions: ${JSON.stringify(failureExplorer)}`);
 
             if (analyzerCase === 'retry') {
             // Recover while the already-proven target is still current. A
             // resource-constrained Chrome runner may discard an inactive
             // renderer while the remaining terminal cases are exercised.
-            // The focus-order assertion above already proved that Retry is
-            // the active control. Activate that exact user-visible target
-            // without making Playwright resolve it through a second locator.
+            // The panel-focus assertion above already proved that Retry is its
+            // only active control. Focus that exact user-visible target before
+            // activating it so host-page link order stays irrelevant.
+                await page.locator('.bpb-gpx-retry').focus();
                 await page.keyboard.press('Enter');
                 const recoveredAnalyzer = await page.waitForFunction(() => {
                     const canvas = document.querySelector('#bpb-gpx-analysis canvas');
@@ -2369,6 +2372,23 @@ try {
         && analyzerSunBefore.belowClass === /below horizon/.test(analyzerSunBefore.summary)
         && analyzerSunBefore.chevronTransform !== 'none',
     `the packaged GPX Sun slider lacks clock semantics, keyboard updates, focus, or target geometry: ${JSON.stringify({ analyzerSunBefore, analyzerSunAfter })}`);
+    const openAnalyzerSunLayout = await offPage.evaluate(() => {
+        const panel = document.getElementById('bpb-gpx-analysis');
+        const calculator = panel?.querySelector('.bpb-sun-calculator');
+        return {
+            panelOverflow: Boolean(panel) && panel.scrollWidth > panel.clientWidth,
+            calculatorOverflow: Boolean(calculator) && calculator.scrollWidth > calculator.clientWidth,
+            documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            calculatorColumns: calculator
+                ? getComputedStyle(calculator.querySelector('.bpb-sun-calculator__layout')).gridTemplateColumns
+                : null,
+        };
+    });
+    check(!openAnalyzerSunLayout.panelOverflow && !openAnalyzerSunLayout.calculatorOverflow
+        && !openAnalyzerSunLayout.documentOverflow
+        && openAnalyzerSunLayout.calculatorColumns?.split(' ').length === 1,
+    `the open GPX Sun calculator did not adapt to its split-view column: ${JSON.stringify(openAnalyzerSunLayout)}`);
+    if (await analyzerSunToggle.getAttribute('aria-expanded') === 'true') await analyzerSunToggle.click();
     await coordinateCanvas.press('ArrowRight');
     const routeScrubber = await offPage.waitForFunction(() => {
         const status = document.getElementById('bpb-gpx-coordinate-status')?.textContent || '';
@@ -2389,6 +2409,58 @@ try {
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(!!routeScrubber,
         `the analyzer keyboard selection did not move the route scrubber: ${JSON.stringify(routeScrubber)}`);
+    const previousExplorerViewport = offPage.viewportSize();
+    await offPage.setViewportSize({ width: 900, height: 760 });
+    await coordinateCanvas.scrollIntoViewIfNeeded();
+    const routeExplorerLayout = await offPage.evaluate(() => {
+        const explorer = document.getElementById('bpb-route-explorer');
+        const map = document.getElementById('bpb-map-viewport');
+        const analysis = document.getElementById('bpb-gpx-analysis');
+        const canvas = analysis?.querySelector('canvas');
+        const explorerRect = explorer?.getBoundingClientRect();
+        const mapRect = map?.getBoundingClientRect();
+        const analysisRect = analysis?.getBoundingClientRect();
+        const canvasRect = canvas?.getBoundingClientRect();
+        const viewportHeight = document.documentElement.clientHeight;
+        return {
+            viewport: {
+                width: document.documentElement.clientWidth,
+                height: viewportHeight,
+            },
+            display: explorer ? getComputedStyle(explorer).display : null,
+            mapPosition: map ? getComputedStyle(map).position : null,
+            sideBySide: Boolean(mapRect && analysisRect) && mapRect.right <= analysisRect.left + 1,
+            explorerInsideViewport: Boolean(explorerRect)
+                && explorerRect.left >= -1
+                && explorerRect.right <= document.documentElement.clientWidth + 1,
+            analysisInsideViewport: Boolean(analysisRect)
+                && analysisRect.left >= -1
+                && analysisRect.right <= document.documentElement.clientWidth + 1,
+            explorerOverflow: Boolean(explorer) && explorer.scrollWidth > explorer.clientWidth,
+            mapVisible: Boolean(mapRect) && mapRect.top >= -1 && mapRect.bottom <= viewportHeight + 1,
+            chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
+            fullScreenWithMap: Boolean(document.querySelector(
+                '.bpb-route-explorer__map-details a[href*="BigMap.aspx"]'
+            )),
+            documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            documentOverflowPx: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    });
+    check(routeExplorerLayout.viewport.width === 900
+        && routeExplorerLayout.viewport.height === 760
+        && routeExplorerLayout.display === 'grid'
+        && routeExplorerLayout.mapPosition === 'sticky'
+        && routeExplorerLayout.sideBySide
+        && routeExplorerLayout.explorerInsideViewport
+        && routeExplorerLayout.analysisInsideViewport
+        && routeExplorerLayout.mapVisible
+        && routeExplorerLayout.chartVisible
+        && routeExplorerLayout.fullScreenWithMap,
+    `the route explorer did not keep the map and active chart together at the MacBook-like viewport: ${JSON.stringify(routeExplorerLayout)}`);
+    if (process.env.BPB_VERIFY_ROUTE_EXPLORER_SCREENSHOT) {
+        await offPage.screenshot({ path: process.env.BPB_VERIFY_ROUTE_EXPLORER_SCREENSHOT });
+    }
+    if (previousExplorerViewport) await offPage.setViewportSize(previousExplorerViewport);
     await offPage.locator('#bpb-gpx-copy-coordinates').click();
     const coordinateCopy = await offPage.waitForFunction(() => {
         const status = document.getElementById('bpb-gpx-coordinate-status');

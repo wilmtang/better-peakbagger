@@ -199,11 +199,21 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     const analysis = window.document.getElementById('bpb-gpx-analysis');
     const fullScreenMapLink = window.document.querySelector('a[href*="BigMap.aspx"]');
+    const routeExplorer = window.document.getElementById('bpb-route-explorer');
+    const mapDetails = window.document.querySelector('.bpb-route-explorer__map-details');
     assert.ok(analysis, 'the analysis panel should be added');
     assert.ok(iframe.compareDocumentPosition(analysis) & window.Node.DOCUMENT_POSITION_FOLLOWING,
         'the analysis should render below the map');
-    assert.ok(analysis.compareDocumentPosition(fullScreenMapLink) & window.Node.DOCUMENT_POSITION_FOLLOWING,
-        'the analysis should render above the Full Screen Map section');
+    assert.equal(routeExplorer.getAttribute('role'), 'region');
+    assert.equal(routeExplorer.getAttribute('aria-label'), 'Route explorer');
+    assert.deepEqual(Array.from(routeExplorer.children, child => child.id || child.className), [
+        'bpb-map-viewport', 'bpb-gpx-analysis', 'bpb-route-explorer__map-details'
+    ]);
+    assert.equal(fullScreenMapLink.parentElement, mapDetails,
+        'the native map details and Full Screen link stay associated with the map');
+    assert.match(mapDetails.textContent, /GPS Waypoints.*Full Screen Map/s);
+    assert.equal(window.document.querySelector('a[href$="demo.gpx"]').closest('#bpb-route-explorer'), null,
+        'the GPX download stays in the page flow rather than being mistaken for map metadata');
 
     const unitSelect = window.document.getElementById('bpb-gpx-units');
     assert.equal(unitSelect.getAttribute('aria-label'), 'Units');
@@ -2082,6 +2092,11 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /--bpb-gpx-accent: #1769aa;/);
     assert.match(css, /#bpb-gpx-analysis\[data-theme="dark"\][\s\S]*--bpb-gpx-accent: #79b8ff;/);
     assert.match(css, /\.bpb-gpx-copy-coordinates:focus-visible,[\s\S]*\.bpb-gpx-chart-legend button:focus-visible,[\s\S]*canvas:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
+    assert.match(css, /#bpb-route-explorer\s*\{[\s\S]*grid-template-areas:[\s\S]*"map-details"[\s\S]*"analysis"/);
+    assert.match(css, /@media \(min-width: 780px\)[\s\S]*grid-template-columns:\s*minmax\(320px, 0\.95fr\) minmax\(430px, 1\.05fr\)/);
+    assert.match(css, /container:\s*bpb-route-analysis \/ inline-size/);
+    assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__layout\s*\{\s*grid-template-columns:\s*1fr/);
+    assert.match(css, /#bpb-route-explorer > #bpb-map-viewport\s*\{[\s\S]*position:\s*sticky !important;[\s\S]*max-block-size:\s*calc\(100vh - 16px\) !important;/);
 
     dom.window.close();
 });
