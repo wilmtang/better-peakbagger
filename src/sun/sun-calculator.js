@@ -287,21 +287,59 @@ export function createSunCalculator({
         expandable: mode === 'gpx',
     });
 
+    const showRecoverable = (state, message = 'Sun position is unavailable for this date and time.') => {
+        summary.textContent = 'Unavailable for this date and time';
+        toggle.disabled = false;
+        layout.hidden = false;
+        controls.hidden = false;
+        reading.hidden = true;
+        empty.hidden = false;
+        empty.textContent = message;
+        directionValue.textContent = '';
+        elevationValue.textContent = '';
+        elevationFact.hidden = true;
+        eventsText.textContent = '';
+        eventsVisual.hidden = true;
+        events.classList.remove('bpb-sun-calculator__events--text');
+        const hasDate = typeof state?.date === 'string';
+        const hasMinute = validMinute(state?.minute);
+        if (mode === 'peak') {
+            dateValue.disabled = !hasDate;
+            dateValue.value = hasDate ? state.date : '';
+        } else dateValue.textContent = hasDate ? state.date : '';
+        dateMeta.textContent = mode === 'peak' ? '' : state?.dateSource || '';
+        slider.disabled = !hasDate || !hasMinute;
+        if (hasMinute) {
+            setSliderMinute(state.minute);
+            timeValue.textContent = MountainTime.formatCivilClock(state.minute) || '';
+        } else {
+            slider.style.setProperty('--bpb-sun-progress', '0%');
+            timeValue.textContent = '';
+        }
+        timeMeta.textContent = state?.timeSource || '';
+        scheduleCompass(null);
+        announce(message);
+    };
+
     const render = state => {
         if (disposed) return;
         if (!state?.result || !state.zone || !state.date || !Number.isInteger(state.minute)) {
-            showSubjectUnavailable(state?.unavailable);
+            if (state?.availability === 'recoverable' && state?.subject && state?.zone) {
+                showRecoverable(state, state.unavailable);
+            } else showSubjectUnavailable(state?.unavailable);
             return;
         }
         const clock = MountainTime.formatClock(state.zone, state.instant?.ms);
         const label = MountainTime.zoneLabel(state.zone, state.instant?.ms);
         if (!clock || !label) {
-            showSubjectUnavailable('Sun position is unavailable.');
+            showRecoverable(state, 'Sun position is unavailable for this date and time.');
             return;
         }
 
         toggle.disabled = false;
         layout.hidden = false;
+        controls.hidden = false;
+        reading.hidden = false;
         empty.hidden = true;
         empty.textContent = '';
         slider.disabled = false;

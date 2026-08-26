@@ -47,6 +47,7 @@ export function createSunState({
         instant: null,
         result: null,
         unavailable: null,
+        availability: 'terminal',
     });
 
     const replace = patch => { state = Object.freeze({ ...state, ...patch }); return state; };
@@ -69,10 +70,23 @@ export function createSunState({
     const recompute = () => {
         if (!validCoordinate(state.subject) || !state.zone || !completeDate(state.date)
             || !validMinute(state.minute)) {
-            return replace({ instant: null, result: null });
+            const recoverable = validCoordinate(state.subject) && Boolean(state.zone);
+            return replace({
+                instant: null,
+                result: null,
+                unavailable: recoverable
+                    ? 'Sun position is unavailable for this date and time.'
+                    : 'Sun position is unavailable.',
+                availability: recoverable ? 'recoverable' : 'terminal',
+            });
         }
         const instant = MountainTime.civilToInstant(state.zone, state.date, state.minute);
-        if (!instant) return replace({ instant: null, result: null, unavailable: 'Sun position is unavailable.' });
+        if (!instant) return replace({
+            instant: null,
+            result: null,
+            unavailable: 'Sun position is unavailable for this date and time.',
+            availability: 'recoverable',
+        });
         const result = calculateResult({
             lat: state.subject.lat,
             lon: state.subject.lon,
@@ -81,13 +95,19 @@ export function createSunState({
             zone: state.zone,
             mapBearing: state.mapBearing,
         });
-        if (!result) return replace({ instant, result: null, unavailable: 'Sun position is unavailable.' });
+        if (!result) return replace({
+            instant,
+            result: null,
+            unavailable: 'Sun position is unavailable for this date and time.',
+            availability: 'recoverable',
+        });
         return replace({
             date: instant.date,
             minute: instant.minute,
             instant,
             result,
             unavailable: null,
+            availability: 'ready',
         });
     };
 
@@ -108,6 +128,9 @@ export function createSunState({
             unavailable: validCoordinate(subject) && date && validMinute(minute)
                 ? null
                 : 'Sun position is unavailable.',
+            availability: validCoordinate(subject) && zone && date && validMinute(minute)
+                ? 'ready'
+                : 'terminal',
         });
         return recompute();
     };
@@ -132,6 +155,7 @@ export function createSunState({
                 mode: 'gpx', subject: null, routeIdentity, zone: zone || null,
                 date: null, minute: null, dateSource: null, timeSource: null,
                 instant: null, result: null, unavailable: 'No selected track point is available.',
+                availability: 'terminal',
             });
         }
 
@@ -150,11 +174,12 @@ export function createSunState({
             replace({
                 mode: 'gpx', subject, routeIdentity, zone, date, minute,
                 dateSource: 'GPX point', timeSource: 'Recorded at selected GPX point',
-                instant: result ? Object.freeze({
+                instant: Object.freeze({
                     ms: point.ms, date, minute, adjusted: false, ambiguous: false,
-                }) : null,
+                }),
                 result,
-                unavailable: result ? null : 'Sun position is unavailable.',
+                unavailable: result ? null : 'Sun position is unavailable for this date and time.',
+                availability: result ? 'ready' : 'recoverable',
             });
             return state;
         }
@@ -166,12 +191,14 @@ export function createSunState({
                 minute: state.mode === 'gpx' && validMinute(state.minute) ? state.minute : 12 * 60,
                 dateSource: null, timeSource: null, instant: null, result: null,
                 unavailable: 'No track or ascent date is available.',
+                availability: 'prompt',
             });
         }
         replace({
             mode: 'gpx', subject, routeIdentity, zone, date,
             minute: validMinute(state.minute) ? state.minute : 12 * 60,
             dateSource: 'Peakbagger ascent date', timeSource: 'Preview time', unavailable: null,
+            availability: 'ready',
         });
         return recompute();
     };
@@ -191,7 +218,7 @@ export function createSunState({
         return replace({
             mode: null, subject: null, routeIdentity: null, zone: null, date: null, minute: null,
             dateSource: null, timeSource: null, mapBearing: 0, instant: null, result: null,
-            unavailable: null,
+            unavailable: null, availability: 'terminal',
         });
     };
 

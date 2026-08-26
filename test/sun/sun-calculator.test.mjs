@@ -48,6 +48,8 @@ const ordinaryState = ({
 } = {}) => {
     const instant = MountainTime.civilToInstant(zone, date, minute);
     return {
+        mode: 'peak',
+        subject: { lat: 39.7392, lon: -104.9903 },
         zone, date, minute, instant,
         dateSource: 'GPX point',
         timeSource: 'Recorded at selected GPX point',
@@ -67,6 +69,7 @@ const ordinaryState = ({
             daylightState,
         },
         unavailable: null,
+        availability: 'ready',
     };
 };
 
@@ -266,12 +269,61 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
 }));
 
-test('non-actionable unavailable state stays collapsed and disabled', () => withDom(dom => {
+test('recoverable Peak failures retain controls and clear cleanly after a valid selection', () => withDom(dom => {
+    const dates = [];
+    const minutes = [];
+    const frames = [];
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        onDateChange: date => dates.push(date),
+        onMinuteChange: minute => minutes.push(minute),
+        requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
+    });
+    calculator.render(ordinaryState());
+    frames.shift()();
+    calculator.setExpanded(true);
+    const failed = {
+        ...ordinaryState(), result: null, availability: 'recoverable',
+        unavailable: 'Sun position is unavailable for this date and time.',
+    };
+    calculator.render(failed);
+    const button = calculator.element.querySelector('button');
+    const date = calculator.element.querySelector('input[type="date"]');
+    const slider = calculator.element.querySelector('input[type="range"]');
+    assert.equal(button.disabled, false);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    assert.equal(date.disabled, false);
+    assert.equal(slider.disabled, false);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__reading').hidden, true);
+    assert.match(calculator.element.textContent, /unavailable for this date and time/i);
+
+    date.value = '2026-07-11';
+    date.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    slider.value = '825';
+    slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    while (frames.length) frames.shift()();
+    assert.deepEqual(dates, ['2026-07-11']);
+    assert.deepEqual(minutes, [825]);
+
+    calculator.render(ordinaryState({ date: '2026-07-11', minute: 825 }));
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__reading').hidden, false);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
+    assert.match(calculator.element.textContent, /282° WNW/);
+}));
+
+test('timezone formatting failure is recoverable but an invalid subject remains terminal', () => withDom(dom => {
     const calculator = SunCalculator.create({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
-    calculator.setUnavailable('Sun position is unavailable.');
+    const brokenZone = Object.freeze({ timeZone: 'Etc/Unknown', offsetMs: 0, estimated: false });
+    calculator.render({ ...ordinaryState(), zone: brokenZone, availability: 'ready' });
+    assert.equal(calculator.element.querySelector('button').disabled, false);
+    assert.equal(calculator.element.querySelector('input[type="date"]').disabled, false);
+    assert.equal(calculator.element.querySelector('input[type="range"]').disabled, false);
+    assert.match(calculator.element.textContent, /unavailable for this date and time/i);
+
+    calculator.render({ availability: 'terminal', unavailable: 'Sun position is unavailable.' });
     assert.equal(calculator.element.querySelector('button').disabled, true);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__panel').hidden, true);
 }));

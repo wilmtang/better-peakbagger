@@ -27,6 +27,7 @@ test('Peak state defaults in mountain time and date/time changes do not change i
     assert.deepEqual(state.get().subject, { lat: 39.7392, lon: -104.9903 });
     assert.equal(state.get().date, '2026-07-10');
     assert.equal(state.get().minute, 30);
+    assert.equal(state.get().availability, 'ready');
 
     const subject = state.get().subject;
     state.setPeakDate('2026-07-11');
@@ -63,7 +64,24 @@ test('timed, untimed, and partial route points follow strict point provenance', 
     }, '2026', zone);
     assert.equal(state.get().unavailable, 'No track or ascent date is available.');
     assert.equal(state.get().result, null);
+    assert.equal(state.get().availability, 'prompt');
     assert.equal(calls.at(-1).lat, 48.71, 'an unavailable point must not run a stale calculation');
+});
+
+test('valid Peak failures are recoverable while invalid subjects remain terminal', () => {
+    const zone = MountainTime.resolve(39.7392, -104.9903);
+    const failing = SunState.create({ calculate: () => null });
+    failing.setPeakSubject({
+        lat: 39.7392, lon: -104.9903, zone, nowMs: Date.parse('2026-07-10T18:30:00Z'),
+    });
+    assert.equal(failing.get().availability, 'recoverable');
+    assert.equal(failing.get().instant.ms, Date.parse('2026-07-10T18:30:00Z'));
+    assert.match(failing.get().unavailable, /date and time/);
+
+    const invalid = SunState.create({ calculate: resultFor });
+    invalid.setPeakSubject({ lat: Number.NaN, lon: -104.9903, zone });
+    assert.equal(invalid.get().availability, 'terminal');
+    assert.equal(invalid.get().subject, null);
 });
 
 test('the first untimed selection starts at noon and manual preview never changes route identity', () => {
