@@ -82,7 +82,7 @@ const ordinaryState = ({
 
 const timeValueText = root => root.querySelector('.bpb-sun-calculator__clock').textContent;
 
-test('Peak calculator is collapsed, labelled, keyboard-native, and emits only time actions', () => withDom(dom => {
+test('Peak calculator opens once by default, stays user-collapsible, and emits only time actions', () => withDom(dom => {
     const dates = [];
     const minutes = [];
     const frames = [];
@@ -107,6 +107,15 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     assert.match(button.textContent, /Sun & Moon/);
     assert.match(button.textContent, /282° WNW · 17° above horizon/);
     assert.ok(button.querySelector('.bpb-sun-calculator__icon'));
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    assert.equal(panel.hidden, false);
+    button.click();
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
+    assert.equal(panel.hidden, true);
+    calculator.render(ordinaryState({ minute: 13 * 60 + 1 }));
+    frames.shift()();
+    assert.equal(button.getAttribute('aria-expanded'), 'false',
+        'a later render must not override the user collapsing the calculator');
     button.click();
     assert.equal(button.getAttribute('aria-expanded'), 'true');
     assert.equal(panel.hidden, false);

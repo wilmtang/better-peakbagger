@@ -234,6 +234,7 @@ export function createSunCalculator({
     let unboundedSunAzimuth = null;
     let statusTimer = null;
     let announcedText = '';
+    let appliedInitialExpansion = false;
 
     const setSliderMinute = minute => {
         slider.value = String(minute);
@@ -299,6 +300,16 @@ export function createSunCalculator({
         moonIllumination.textContent = '';
         delete root.dataset.moonPhase;
     };
+    const setExpanded = expanded => {
+        if (toggle.disabled) return;
+        toggle.setAttribute('aria-expanded', String(expanded));
+        panel.hidden = !expanded;
+    };
+    const applyInitialExpansion = () => {
+        if (appliedInitialExpansion) return;
+        appliedInitialExpansion = true;
+        if (mode === 'peak') setExpanded(true);
+    };
 
     const showUnavailable = (message, { expandable = false, summaryText = 'Unavailable' } = {}) => {
         const text = message || 'Sun position is unavailable.';
@@ -341,6 +352,7 @@ export function createSunCalculator({
     const showRecoverable = (state, message = 'Sun position is unavailable for this date and time.') => {
         summary.textContent = 'Unavailable for this date and time';
         toggle.disabled = false;
+        applyInitialExpansion();
         layout.hidden = false;
         controls.hidden = false;
         reading.hidden = true;
@@ -399,6 +411,7 @@ export function createSunCalculator({
         }
 
         toggle.disabled = false;
+        applyInitialExpansion();
         layout.hidden = false;
         controls.hidden = false;
         reading.hidden = false;
@@ -474,12 +487,6 @@ export function createSunCalculator({
         }
         scheduleCompass(state);
         announce(`${summary.textContent}. ${moonAnnouncement}. ${eventsText.textContent}`);
-    };
-
-    const setExpanded = expanded => {
-        if (toggle.disabled) return;
-        toggle.setAttribute('aria-expanded', String(expanded));
-        panel.hidden = !expanded;
     };
     const onToggle = () => setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
     const onDateInput = () => onDateChange(dateValue.value);
