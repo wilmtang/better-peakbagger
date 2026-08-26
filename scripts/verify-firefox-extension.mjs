@@ -1303,16 +1303,18 @@ async function main() {
       const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
       const moon = calculator?.querySelector(".bpb-sun-calculator__moon")?.textContent || "";
+      const moonMarker = calculator?.querySelector(".bpb-sun-calculator__moon-marker");
       const daylightRange = calculator?.querySelector(".bpb-sun-calculator__daylight-range");
       const daylightPath = daylightRange?.querySelector(".bpb-sun-calculator__daylight-path");
       return calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === false
-        && /°/.test(summary) && /Direction\\s*\\d+°/.test(direction)
+        && /°/.test(summary) && /Sun direction\\s*\\d+°/i.test(direction)
         && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute("d") || "")
         && daylightRange.querySelectorAll(".bpb-sun-calculator__daylight-endpoint").length === 2
-        && /Moon phase/.test(moon)
+        && /Moon direction\\s*\\d+°/i.test(moon) && /(?:above|below) horizon/.test(moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
         && /\\d+% illuminated/.test(moon)
         && /^[0-7]$/.test(calculator?.dataset.moonPhase || "")
+        && moonMarker?.hidden === false && /^rotate\\(/.test(moonMarker.style.transform)
         && calculator?.querySelector(".bpb-sun-calculator__moon-icon")?.textContent
         ? { summary, direction, moon } : false;
     `, 'the Firefox GPX Sun selection');
@@ -1565,6 +1567,7 @@ async function main() {
         moon: sun.querySelector(".bpb-sun-calculator__moon")?.textContent || "",
         moonPhase: sun.dataset.moonPhase || "",
         moonIcon: sun.querySelector(".bpb-sun-calculator__moon-icon")?.textContent || "",
+        moonMarker: sun.querySelector(".bpb-sun-calculator__moon-marker")?.style.transform || "",
         sunBorderStyle: getComputedStyle(sun).borderStyle,
       } : false;
     `, 'the Firefox Peak surface');
@@ -1572,11 +1575,13 @@ async function main() {
             peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
         && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
-        && /Moon phase/.test(peakState.moon)
+        && /Moon direction\s*\d+°/i.test(peakState.moon)
+        && /(?:above|below) horizon/.test(peakState.moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
             .test(peakState.moon)
         && /\d+% illuminated/.test(peakState.moon)
         && /^[0-7]$/.test(peakState.moonPhase) && peakState.moonIcon
+        && /^rotate\(/.test(peakState.moonMarker)
         && peakState.sunBorderStyle === 'solid',
             'Firefox Peak links, theme, 3D mount, or Sun calculator did not initialize',
             peakState,

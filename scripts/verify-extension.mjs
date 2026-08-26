@@ -2423,14 +2423,16 @@ try {
         const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
         const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
         const daylightPath = daylightRange?.querySelector('.bpb-sun-calculator__daylight-path');
+        const moonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker');
         const slider = calculator?.querySelector('.bpb-sun-calculator__time');
-        return toggle?.disabled === false && /°/.test(summary) && /Direction\s*\d+°/.test(direction)
-            && /Elevation\s*\d+°/.test(elevation) && eventLine?.hidden === false
+        return toggle?.disabled === false && /°/.test(summary) && /Sun direction\s*\d+°/i.test(direction)
+            && /Sun elevation\s*\d+°/i.test(elevation) && eventLine?.hidden === false
             && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute('d') || '')
             && daylightRange.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length === 2
-            && /Moon phase/.test(moon)
+            && /Moon direction\s*\d+°/i.test(moon) && /(?:above|below) horizon/.test(moon)
             && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
             && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
+            && moonMarker?.hidden === false && /^rotate\(/.test(moonMarker.style.transform)
             && calculator.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
             && calculator.querySelector('.bpb-sun-calculator__icon')
             ? {
@@ -2559,6 +2561,14 @@ try {
     const previousExplorerViewport = offPage.viewportSize();
     await offPage.setViewportSize({ width: 900, height: 760 });
     await coordinateCanvas.scrollIntoViewIfNeeded();
+    await offPage.waitForFunction(() => {
+        const explorer = document.getElementById('bpb-route-explorer');
+        const explorerRect = explorer?.getBoundingClientRect();
+        const viewportWidth = document.documentElement.clientWidth;
+        return Boolean(explorerRect)
+            && explorerRect.left >= -1
+            && explorerRect.right <= viewportWidth + 1;
+    }, null, { timeout: 5000 }).catch(() => null);
     const routeExplorerLayout = await offPage.evaluate(() => {
         const explorer = document.getElementById('bpb-route-explorer');
         const map = document.getElementById('bpb-map-viewport');
@@ -2569,9 +2579,30 @@ try {
         const analysisRect = analysis?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
         const viewportHeight = document.documentElement.clientHeight;
+        const viewportWidth = document.documentElement.clientWidth;
+        const overflowDetails = [...document.querySelectorAll('body *')]
+            .map(element => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    element: element.id
+                        ? `#${element.id}`
+                        : `${element.tagName.toLowerCase()}${element.classList.length
+                            ? `.${[...element.classList].join('.')}`
+                            : ''}`,
+                    left: Math.round(rect.left * 10) / 10,
+                    right: Math.round(rect.right * 10) / 10,
+                    width: Math.round(rect.width * 10) / 10,
+                    scrollWidth: element.scrollWidth,
+                    clientWidth: element.clientWidth,
+                };
+            })
+            .filter(item => item.right > viewportWidth + 1 || item.scrollWidth > item.clientWidth + 1)
+            .sort((a, b) => Math.max(b.right - viewportWidth, b.scrollWidth - b.clientWidth)
+                - Math.max(a.right - viewportWidth, a.scrollWidth - a.clientWidth))
+            .slice(0, 12);
         return {
             viewport: {
-                width: document.documentElement.clientWidth,
+                width: viewportWidth,
                 height: viewportHeight,
             },
             display: explorer ? getComputedStyle(explorer).display : null,
@@ -2591,6 +2622,7 @@ try {
             )),
             documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             documentOverflowPx: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            overflowDetails,
         };
     });
     check(routeExplorerLayout.viewport.width === 900
@@ -3051,14 +3083,17 @@ try {
                 sunBorderStyle: getComputedStyle(sun).borderStyle,
                 sunMockHierarchy: Boolean(
                     sun.querySelector('.bpb-sun-calculator__icon')
-                    && /Direction\s*\d+°/.test(sun.querySelector('.bpb-sun-calculator__direction')?.textContent || '')
-                    && /Elevation\s*\d+°/.test(sun.querySelector('.bpb-sun-calculator__elevation')?.textContent || '')
-                    && /Moon phase/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /Sun direction\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__direction')?.textContent || '')
+                    && /Sun elevation\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__elevation')?.textContent || '')
+                    && /Moon direction\s*\d+°/i.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /(?:above|below) horizon/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
                     && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
                         .test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
                     && /\d+% illuminated/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
                     && /^[0-7]$/.test(sun.dataset.moonPhase || '')
                     && sun.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
+                    && sun.querySelector('.bpb-sun-calculator__moon-marker')?.hidden === false
+                    && /^rotate\(/.test(sun.querySelector('.bpb-sun-calculator__moon-marker')?.style.transform || '')
                     && sun.querySelector('.bpb-sun-calculator__event-line')?.hidden === false
                 ),
                 // The MAIN-world coordinator bundle self-contains basemap,

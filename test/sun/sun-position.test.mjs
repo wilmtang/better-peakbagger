@@ -31,6 +31,10 @@ test('SunCalc 2 reference Sun and Moon vector stays north-based and degree-value
     assert.ok(Math.abs(result.moonPhase - 0.7528036) < 0.000001);
     assert.equal(result.moonPhaseIndex, 6);
     assert.equal(result.moonPhaseLabel, 'Last Quarter');
+    assert.ok(Math.abs(result.moonAzimuthDeg - 124.6408) < 0.001);
+    assert.ok(Math.abs(result.moonElevationDeg - 0.4567) < 0.001);
+    assert.equal(result.moonDirectionLabel, 'SE');
+    assert.equal(result.moonIsAboveHorizon, true);
 });
 
 test('16-point directions cover cardinal quadrants and screen bearing wraps across north', () => {
@@ -45,6 +49,7 @@ test('16-point directions cover cardinal quadrants and screen bearing wraps acro
         date: '2026-06-21', zone, mapBearing: 359,
     });
     assert.ok(Math.abs(result.screenAzimuthDeg - 2.06095) < 0.001);
+    assert.ok(Math.abs(result.moonScreenAzimuthDeg - 90.95069) < 0.001);
     assert.equal(result.isAboveHorizon, true);
 });
 
@@ -119,6 +124,7 @@ test('solar calculation rejects malformed primary inputs but preserves position 
     assert.equal(malformedEvents.sunriseAzimuthDeg, null);
     assert.equal(malformedEvents.sunsetMs, null);
     assert.equal(malformedEvents.sunsetAzimuthDeg, null);
+    assert.equal(malformedEvents.moonAzimuthDeg, null);
     assert.equal(malformedEvents.moonPhaseLabel, null);
 
     const malformedMoon = SunPosition.calculate({
@@ -130,12 +136,34 @@ test('solar calculation rejects malformed primary inputs but preserves position 
                 sunrise: new Date('1970-01-01T06:00:00Z'),
                 sunset: new Date('1970-01-01T18:00:00Z'),
             }),
+            getMoonPosition: () => ({ azimuth: 225, altitude: -5 }),
             getMoonIllumination: () => ({ fraction: Number.NaN, phase: 0.5 }),
         },
     });
     assert.equal(malformedMoon.azimuthDeg, 90);
+    assert.equal(malformedMoon.moonAzimuthDeg, 225);
+    assert.equal(malformedMoon.moonElevationDeg, -5);
+    assert.equal(malformedMoon.moonIsAboveHorizon, false);
     assert.equal(malformedMoon.moonPhaseLabel, null,
-        'malformed lunar metadata must not erase a finite Sun position');
+        'malformed illumination must not erase a finite Moon position');
+
+    const malformedMoonPosition = SunPosition.calculate({
+        lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
+        sunCalc: {
+            getPosition: () => ({ azimuth: 90, altitude: -1 }),
+            getTimes: () => ({
+                solarNoon: new Date('1970-01-01T12:00:00Z'),
+                sunrise: new Date('1970-01-01T06:00:00Z'),
+                sunset: new Date('1970-01-01T18:00:00Z'),
+            }),
+            getMoonPosition: () => ({ azimuth: Number.NaN, altitude: 12 }),
+            getMoonIllumination: () => ({ fraction: 1, phase: 0.5 }),
+        },
+    });
+    assert.equal(malformedMoonPosition.azimuthDeg, 90);
+    assert.equal(malformedMoonPosition.moonAzimuthDeg, null);
+    assert.equal(malformedMoonPosition.moonPhaseLabel, 'Full Moon',
+        'malformed Moon position must not erase finite illumination metadata');
 });
 
 test('event search is bounded and rejects cycles whose solar noon belongs to another date', () => {

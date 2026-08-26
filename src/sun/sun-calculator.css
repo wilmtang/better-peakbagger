@@ -9,6 +9,7 @@
     --bpb-sun-track: #d8dde3;
     --bpb-sun-dawn: #8ca0b4;
     --bpb-sun-glow: #f4a62a;
+    --bpb-moon: #52758d;
     box-sizing: border-box;
     max-inline-size: min(100%, calc(100vw - 1rem));
     min-inline-size: 0;
@@ -33,6 +34,7 @@
     --bpb-sun-track: #5a5f65;
     --bpb-sun-dawn: #8da3b5;
     --bpb-sun-glow: #ffb23f;
+    --bpb-moon: #b8d0e1;
 }
 
 .bpb-sun-calculator *,
@@ -287,7 +289,8 @@
     stroke: var(--bpb-sun-panel);
 }
 .bpb-sun-calculator__cardinal,
-.bpb-sun-calculator__sun {
+.bpb-sun-calculator__sun,
+.bpb-sun-calculator__moon-marker {
     position: absolute;
     inset: 0;
     transform-origin: center;
@@ -304,6 +307,7 @@
     transform-origin: center;
     transition: transform 120ms ease-out;
 }
+.bpb-sun-calculator__moon-marker[hidden] { display: none; }
 .bpb-sun-calculator__sun::before {
     position: absolute;
     inset-block-start: 10%;
@@ -334,6 +338,50 @@
     box-shadow: none;
     opacity: 0.78;
 }
+.bpb-sun-calculator__moon-marker::before {
+    position: absolute;
+    inset-block-start: 16%;
+    inset-inline-start: calc(50% - 1px);
+    inline-size: 2px;
+    block-size: 34%;
+    background: var(--bpb-moon);
+    content: "";
+}
+.bpb-sun-calculator__moon-marker-disc {
+    position: absolute;
+    inset-block-start: calc(16% - 0.55rem);
+    inset-inline-start: calc(50% - 0.55rem);
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+    overflow: hidden;
+    background: var(--bpb-moon);
+    border-radius: 50%;
+    box-shadow: 0 0 0 0.3rem color-mix(in srgb, var(--bpb-moon) 16%, transparent);
+    transition: transform 120ms ease-out;
+}
+.bpb-sun-calculator__moon-marker-disc::after {
+    position: absolute;
+    inset-block-start: -0.08rem;
+    inset-inline-start: 0.36rem;
+    inline-size: 1.02rem;
+    block-size: 1.02rem;
+    background: var(--bpb-sun-panel);
+    border-radius: 50%;
+    content: "";
+}
+.bpb-sun-calculator__moon-marker--below-horizon::before {
+    background: var(--bpb-sun-muted);
+    opacity: 0.38;
+}
+.bpb-sun-calculator__moon-marker--below-horizon .bpb-sun-calculator__moon-marker-disc {
+    background: var(--bpb-sun-panel);
+    border: 2px solid var(--bpb-sun-muted);
+    box-shadow: none;
+    opacity: 0.78;
+}
+.bpb-sun-calculator__moon-marker--below-horizon .bpb-sun-calculator__moon-marker-disc::after {
+    display: none;
+}
 .bpb-sun-calculator__compass-center {
     position: absolute;
     inset-block-start: calc(50% - 0.3rem);
@@ -360,7 +408,7 @@
 .bpb-sun-calculator--gpx .bpb-sun-calculator__elevation {
     min-block-size: 3.3rem;
 }
-.bpb-sun-calculator--gpx .bpb-sun-calculator__moon { min-block-size: 4.8rem; }
+.bpb-sun-calculator--gpx .bpb-sun-calculator__moon { min-block-size: 6.4rem; }
 .bpb-sun-calculator--gpx[data-layout-state="placeholder"]
     .bpb-sun-calculator__elevation[hidden] {
     display: grid;
@@ -387,6 +435,12 @@
     font-size: 1.2em;
     font-weight: 400;
     line-height: 1;
+}
+.bpb-sun-calculator__moon-phase {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.2rem 0.35rem;
 }
 .bpb-sun-calculator__fact-detail {
     min-inline-size: 0;
@@ -496,5 +550,7 @@
     .bpb-sun-calculator__cardinal-label,
     .bpb-sun-calculator__daylight-range,
     .bpb-sun-calculator__sun,
+    .bpb-sun-calculator__moon-marker,
+    .bpb-sun-calculator__moon-marker-disc,
     .bpb-sun-calculator__chevron { transition: none; }
 }

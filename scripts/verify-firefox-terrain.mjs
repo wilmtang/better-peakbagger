@@ -274,14 +274,20 @@ async function main() {
             return {
                 summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
                 direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                moon: calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
                 north: calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '',
                 sun: calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '',
+                moonMarker: calculator?.querySelector('.bpb-sun-calculator__moon-marker')
+                    ?.style.transform || '',
                 insideParent: Boolean(rect && parentRect) && rect.left >= parentRect.left - 1
                     && rect.right <= parentRect.right + 1,
             };
         });
-        if (!analyzerSunInitial.insideParent || !/Direction\s*\d+°/.test(analyzerSunInitial.direction)) {
-            throw new Error(`Firefox Analyzer Sun calculator is clipped or incomplete: ${JSON.stringify(analyzerSunInitial)}`);
+        if (!analyzerSunInitial.insideParent
+            || !/Sun direction\s*\d+°/i.test(analyzerSunInitial.direction)
+            || !/Moon direction\s*\d+°/i.test(analyzerSunInitial.moon)
+            || !/^rotate\(/.test(analyzerSunInitial.moonMarker)) {
+            throw new Error(`Firefox Analyzer Sun and Moon calculator is clipped or incomplete: ${JSON.stringify(analyzerSunInitial)}`);
         }
         const peakMarker = frame.locator('.bpb-terrain-peak-marker').first();
         await peakMarker.waitFor({ state: 'visible', timeout: 10_000 });
@@ -321,21 +327,30 @@ async function main() {
             const delta = Math.abs((((map?.getBearing() ?? previous) - previous + 540) % 360) - 180);
             return delta > 5;
         }, bearingBefore, { timeout: 8_000 });
-        const analyzerSunRotated = await page.waitForFunction(({ north, sun }) => {
+        const analyzerSunRotated = await page.waitForFunction(({ north, sun, moonMarker }) => {
             const calculator = document.querySelector('.bpb-sun-calculator');
             const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
             const nextSun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
-            return nextNorth !== north && nextSun !== sun ? {
+            const nextMoonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker')
+                ?.style.transform || '';
+            return nextNorth !== north && nextSun !== sun && nextMoonMarker !== moonMarker ? {
                 north: nextNorth,
                 sun: nextSun,
+                moonMarker: nextMoonMarker,
                 summary: calculator.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
                 direction: calculator.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                moon: calculator.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
             } : false;
-        }, { north: analyzerSunInitial.north, sun: analyzerSunInitial.sun },
+        }, {
+            north: analyzerSunInitial.north,
+            sun: analyzerSunInitial.sun,
+            moonMarker: analyzerSunInitial.moonMarker,
+        },
         { timeout: 8_000 }).then(handle => handle.jsonValue());
         if (analyzerSunRotated.summary !== analyzerSunInitial.summary
-            || analyzerSunRotated.direction !== analyzerSunInitial.direction) {
-            throw new Error(`Firefox Analyzer bearing changed absolute Sun text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
+            || analyzerSunRotated.direction !== analyzerSunInitial.direction
+            || analyzerSunRotated.moon !== analyzerSunInitial.moon) {
+            throw new Error(`Firefox Analyzer bearing changed absolute Sun or Moon text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
         }
 
         await page.waitForFunction(() => {
@@ -396,17 +411,31 @@ async function main() {
         await page.waitForFunction(expected => {
             const north = document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
             const direction = document.querySelector('.bpb-sun-calculator__direction');
+            const moon = document.querySelector('.bpb-sun-calculator__moon');
+            const moonMarker = document.querySelector('.bpb-sun-calculator__moon-marker');
             const northAngle = Number(/^rotate\((-?[\d.]+)deg\)/.exec(north?.style.transform || '')?.[1]);
+            const moonAngle = Number(/^rotate\((-?[\d.]+)deg\)/
+                .exec(moonMarker?.style.transform || '')?.[1]);
+            const initialMoonAngle = Number(/^rotate\((-?[\d.]+)deg\)/
+                .exec(expected.moonMarker)?.[1]);
             const normalizedNorth = Math.abs(((((northAngle + 180) % 360) + 360) % 360) - 180);
+            const normalizedMoonDelta = Math.abs(
+                (((((moonAngle - initialMoonAngle) + 180) % 360) + 360) % 360) - 180,
+            );
             return Number.isFinite(northAngle) && normalizedNorth < 0.01
-                && direction?.textContent === expected;
-        }, analyzerSunInitial.direction, { timeout: 8_000 }).catch(async (error) => {
+                && normalizedMoonDelta < 0.01
+                && direction?.textContent === expected.direction
+                && moon?.textContent === expected.moon;
+        }, analyzerSunInitial, { timeout: 8_000 }).catch(async (error) => {
             const state = await page.evaluate(() => ({
                 expanded: document.querySelector('.bpb-sun-calculator__toggle')?.getAttribute('aria-expanded'),
                 north: document.querySelector('.bpb-sun-calculator [data-azimuth="0"]')?.style.transform || '',
                 direction: document.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                moon: document.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
+                moonMarker: document.querySelector('.bpb-sun-calculator__moon-marker')
+                    ?.style.transform || '',
             }));
-            throw new Error(`Firefox Analyzer Sun compass did not reset in 2D: ${JSON.stringify(state)}`, {
+            throw new Error(`Firefox Analyzer Sun and Moon compass did not reset in 2D: ${JSON.stringify(state)}`, {
                 cause: error,
             });
         });
@@ -430,8 +459,11 @@ async function main() {
             return {
                 summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
                 direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                moon: calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
                 north: calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '',
                 sun: calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '',
+                moonMarker: calculator?.querySelector('.bpb-sun-calculator__moon-marker')
+                    ?.style.transform || '',
             };
         });
         const peakCanvas = page.frameLocator('#bpb-terrain-frame').locator('canvas.maplibregl-canvas');
@@ -452,19 +484,27 @@ async function main() {
             const delta = Math.abs((((map?.getBearing() ?? previous) - previous + 540) % 360) - 180);
             return delta > 5;
         }, peakBearingBefore, { timeout: 8_000 });
-        const peakSunRotated = await page.waitForFunction(({ north, sun }) => {
+        const peakSunRotated = await page.waitForFunction(({ north, sun, moonMarker }) => {
             const calculator = document.querySelector('.bpb-sun-calculator');
             const nextNorth = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
             const nextSun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
-            return nextNorth !== north && nextSun !== sun ? {
+            const nextMoonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker')
+                ?.style.transform || '';
+            return nextNorth !== north && nextSun !== sun && nextMoonMarker !== moonMarker ? {
                 summary: calculator.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
                 direction: calculator.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                moon: calculator.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
             } : false;
-        }, { north: peakSunInitial.north, sun: peakSunInitial.sun },
+        }, {
+            north: peakSunInitial.north,
+            sun: peakSunInitial.sun,
+            moonMarker: peakSunInitial.moonMarker,
+        },
         { timeout: 8_000 }).then(handle => handle.jsonValue());
         if (peakSunRotated.summary !== peakSunInitial.summary
-            || peakSunRotated.direction !== peakSunInitial.direction) {
-            throw new Error(`Firefox Peak bearing changed absolute Sun text: ${JSON.stringify({ peakSunInitial, peakSunRotated })}`);
+            || peakSunRotated.direction !== peakSunInitial.direction
+            || peakSunRotated.moon !== peakSunInitial.moon) {
+            throw new Error(`Firefox Peak bearing changed absolute Sun or Moon text: ${JSON.stringify({ peakSunInitial, peakSunRotated })}`);
         }
         await page.waitForFunction(() => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
@@ -477,17 +517,31 @@ async function main() {
         await page.waitForFunction(expected => {
             const north = document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
             const direction = document.querySelector('.bpb-sun-calculator__direction');
+            const moon = document.querySelector('.bpb-sun-calculator__moon');
+            const moonMarker = document.querySelector('.bpb-sun-calculator__moon-marker');
             const northAngle = Number(/^rotate\((-?[\d.]+)deg\)/.exec(north?.style.transform || '')?.[1]);
+            const moonAngle = Number(/^rotate\((-?[\d.]+)deg\)/
+                .exec(moonMarker?.style.transform || '')?.[1]);
+            const initialMoonAngle = Number(/^rotate\((-?[\d.]+)deg\)/
+                .exec(expected.moonMarker)?.[1]);
             const normalizedNorth = Math.abs(((((northAngle + 180) % 360) + 360) % 360) - 180);
+            const normalizedMoonDelta = Math.abs(
+                (((((moonAngle - initialMoonAngle) + 180) % 360) + 360) % 360) - 180,
+            );
             return Number.isFinite(northAngle) && normalizedNorth < 0.01
-                && direction?.textContent === expected;
-        }, peakSunInitial.direction, { timeout: 8_000 }).catch(async (error) => {
+                && normalizedMoonDelta < 0.01
+                && direction?.textContent === expected.direction
+                && moon?.textContent === expected.moon;
+        }, peakSunInitial, { timeout: 8_000 }).catch(async (error) => {
             const state = await page.evaluate(() => ({
                 expanded: document.querySelector('.bpb-sun-calculator__toggle')?.getAttribute('aria-expanded'),
                 north: document.querySelector('.bpb-sun-calculator [data-azimuth="0"]')?.style.transform || '',
                 direction: document.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+                moon: document.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
+                moonMarker: document.querySelector('.bpb-sun-calculator__moon-marker')
+                    ?.style.transform || '',
             }));
-            throw new Error(`Firefox Peak Sun compass did not reset in 2D: ${JSON.stringify(state)}`, {
+            throw new Error(`Firefox Peak Sun and Moon compass did not reset in 2D: ${JSON.stringify(state)}`, {
                 cause: error,
             });
         });
@@ -498,7 +552,7 @@ async function main() {
         console.log(`  - renderer: ${rendererState.renderer}`);
         console.log('  - synthetic activation and direct-frame authorization negatives passed');
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right-drag tilt, bearing sync, Ctrl-drag, and resize passed');
-        console.log('  - Analyzer and Peak Sun compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
+        console.log('  - Analyzer and Peak Sun and Moon compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
     } catch (error) {
         primaryError = error;

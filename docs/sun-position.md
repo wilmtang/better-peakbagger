@@ -1,14 +1,14 @@
-# Sun position and Moon phase calculator
+# Sun and Moon position calculator
 
 Better Peakbagger adds an offline astronomical Sun and Moon calculator to
 validated Peak Dynamic Maps and saved-ascent GPX analysis. It reports apparent
-Sun azimuth and elevation, level-horizon sunrise and sunset, Moon phase and
-illuminated percentage, and a solar compass that stays aligned with the visible
+Sun and Moon azimuth and elevation, level-horizon sunrise and sunset, Moon phase
+and illuminated percentage, and a compass that stays aligned with the visible
 2D or 3D map.
 
-It does **not** predict whether nearby terrain blocks the Sun, cast shadows,
-clouds, smoke, or actual direct light on a slope. It does not calculate Moon
-position, moonrise, or moonset. GPX elevation is deliberately not used as an
+It does **not** predict whether nearby terrain blocks either object, cast
+shadows, clouds, smoke, or actual direct light on a slope. It does not calculate
+moonrise or moonset. GPX elevation is deliberately not used as an
 observer-height or terrain-horizon correction.
 
 ## Supported surfaces and subjects
@@ -22,10 +22,10 @@ The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
 - In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the selected
   coordinate controls and before the chart legend. Before selection, its
   disclosure remains openable and prompts for a chart point. Chart hover previews
-  the Sun at the hovered route point, then restores the deliberate selection when
-  the pointer leaves; click, touch, or keyboard selection fixes the route point.
-  Replacing the native map keeps a still-valid chart selection, while loading,
-  failure, or route invalidation clears the old subject.
+  the Sun and Moon at the hovered route point, then restores the deliberate
+  selection when the pointer leaves; click, touch, or keyboard selection fixes
+  the route point. Replacing the native map keeps a still-valid chart selection,
+  while loading, failure, or route invalidation clears the old subject.
 - Full Screen maps, activity capture, editors, lists, the popup, and Settings do
   not get a calculator.
 
@@ -69,8 +69,8 @@ fallback, and GPX timing-quality contract.
 
 `src/sun/sun-position.js` is a narrow pure wrapper around the locally bundled
 `suncalc` 2.0.1 package. It validates coordinates, instants, and package output,
-then returns apparent Sun azimuth clockwise from true north, apparent
-elevation, a 16-point compass label, rise/set or polar-day/polar-night state,
+then returns apparent Sun and Moon azimuth clockwise from true north, apparent
+elevation, 16-point compass labels, Sun rise/set or polar-day/polar-night state,
 and Moon illumination for the same instant. The Moon phase name snaps
 SunCalc's continuous phase value to the nearest eighth: New Moon, Waxing
 Crescent, First Quarter, Waxing Gibbous, Full Moon, Waning Gibbous, Last
@@ -81,30 +81,32 @@ Rise/set uses observer height zero. A bounded nearby-anchor search selects the
 cycle whose solar noon belongs to the requested local civil date, including
 near the international date line. That cycle may legitimately rise on the
 previous date or set on the next date. Missing or malformed daily events leave
-the finite instantaneous Sun position visible with a bounded
-rise/set-unavailable message. Missing or malformed lunar metadata likewise
-leaves the Sun reading visible and labels Moon phase unavailable.
+the finite instantaneous Sun and Moon positions visible with a bounded
+rise/set-unavailable message. Moon position and illumination are independent:
+missing or malformed data for either leaves the Sun and the other lunar reading
+visible while labelling only the failed value unavailable.
 
 Absolute azimuth and elevation do not change when the map rotates. The graphic
-is map-relative: for Sun azimuth `A` and accepted map bearing `B`, the Sun is
-drawn at `A - B`; cardinal labels use the same inverse bearing. Native
-Peakbagger maps are north-up. While 3D is active,
+is map-relative: for either object's azimuth `A` and accepted map bearing `B`,
+its marker is drawn at `A - B`; cardinal labels use the same inverse bearing.
+Native Peakbagger maps are north-up. While 3D is active,
 `src/terrain/terrain-coordinator.js` forwards only its already authenticated,
 finite, normalized view bearing. Stop, failure, replacement, or return to 2D
-resets the solar compass to bearing zero. Pitch is intentionally ignored.
+resets the compass to bearing zero. Pitch is intentionally ignored.
 
 On ordinary days, a restrained arc inside the compass runs from the
 level-horizon sunrise azimuth to the sunset azimuth through the solar-noon side
 of the sky. A hollow endpoint marks sunrise and a filled endpoint marks sunset;
 the exact event clocks remain in the line below. The arc is omitted when daily
 event directions are unavailable and rotates with the same accepted map bearing
-as the Sun and cardinal labels.
+as the Sun, Moon, and cardinal labels. A cool crescent and radial line identify
+the Moon; a hollow marker means it is below the astronomical horizon.
 
-Compass animation is coalesced to animation frames. Both Sun movement and map
-bearing changes use the shortest arc across north. Bearing-only updates affect
-only the decorative, `aria-hidden` compass; the absolute direction and elevation
-remain text, and the bearing stream is not announced to assistive technology.
-Reduced-motion preferences remove the CSS transition.
+Compass animation is coalesced to animation frames. Sun movement, Moon movement,
+and map-bearing changes use the shortest arc across north. Bearing-only updates
+affect only the decorative, `aria-hidden` compass; the absolute direction and
+elevation remain text, and the bearing stream is not announced to assistive
+technology. Reduced-motion preferences remove the CSS transition.
 
 Daily events are cached by validated subject, civil date, and zone. Slider
 input updates the thumb and requested wall clock immediately, then calculates
@@ -115,9 +117,9 @@ never calls the astronomy package.
 The range exposes its resolved mountain clock and short zone label through
 `aria-valuetext`, not the internal 0–1439 minute index. Its input/focus box is
 44 CSS pixels high while the visual track remains compact. A below-horizon Sun
-uses a hollow, subdued marker, daylight progress appears only from exact
-sunrise through exact sunset, the Moon row pairs a phase glyph with its text
-name and illuminated percentage, and the disclosure chevron follows expansion.
+or Moon uses a hollow, subdued marker, daylight progress appears only from exact
+sunrise through exact sunset, the Moon row reports direction, elevation, phase,
+and illuminated percentage, and the disclosure chevron follows expansion.
 
 ## Privacy, packaging, and failure boundaries
 
@@ -136,14 +138,14 @@ subject or zone is terminal and may disable or omit the calculator. Neither
 path exposes caught exception text or interrupts the native map, chart, or
 terrain lifecycle.
 
-Unit tests cover Sun and Moon reference values, eight-phase classification,
+Unit tests cover Sun and Moon reference positions, eight-phase classification,
 local-solar-noon cycle selection, adjacent-day events, polar states, DST gaps
 and folds, daylight-direction arcs, bounded formatter work, route provenance,
 coalesced hover/slider interaction, accessibility, responsive layout, theme,
 recovery, and cleanup. Hidden
 packaged-browser checks load the real manifest in Chrome and Firefox and
-exercise keyboard focus, slider semantics, Moon presentation, Peak/GPX
-responsive geometry, and light/dark rendering in isolated profiles.
+exercise keyboard focus, slider semantics, Moon position and phase presentation,
+Peak/GPX responsive geometry, and light/dark rendering in isolated profiles.
 Hardware-GPU checks rotate both supported surfaces and prove that absolute text
 stays fixed and the visual compass resets in 2D. Those hidden checks do not
 establish live Peakbagger markup, actual screen-reader speech, physical touch

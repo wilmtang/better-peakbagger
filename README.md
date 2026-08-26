@@ -79,7 +79,7 @@ coordinate-only tracks get a compact route scrubber. See the
 ### Plan around the Sun and Moon
 
 Peak Dynamic Maps and saved-ascent GPX analysis include a compact offline Sun
-and Moon calculator. It shows apparent Sun direction and elevation,
+and Moon calculator. It shows apparent Sun and Moon direction and elevation,
 level-horizon sunrise and sunset, Moon phase, and illuminated percentage in
 mountain-local time. On a GPX, selecting a chart point uses that point's
 recorded time when available; the separate time slider previews the same

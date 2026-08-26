@@ -93,7 +93,7 @@ The diagram encodes six important boundaries:
 - [Trip-report editor](#deep-dive-trip-report-editor)
 - [Photo topo editor and local library](#deep-dive-photo-topo-editor-and-local-library)
 - [GPX Analyzer and native 2D map integration](#deep-dive-gpx-analyzer-and-native-2d-map-integration)
-- [Sun position and Moon phase calculator](sun-position.md)
+- [Sun and Moon position calculator](sun-position.md)
 - [Opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
@@ -127,8 +127,8 @@ determine module evaluation order inside a bundle. Chart.js and marked remain
 copied browser globals ordered by the manifest. `tz-lookup` is bundled directly
 into its content-script consumers so page code cannot clobber the offline
 resolver. SunCalc is bundled only into the MAIN-world GPX Analyzer and Peak-map
-consumers for Sun position, rise/set, and Moon phase; their shared scoped
-stylesheet is listed only on those two manifest entries. The extension-owned
+consumers for Sun and Moon position, Sun rise/set, and Moon phase; their shared
+scoped stylesheet is listed only on those two manifest entries. The extension-owned
 terrain frame is a native module that directly
 imports MapLibre's copied main ESM artifact; its main module, module worker, and
 shared module remain separate, unmodified package artifacts.

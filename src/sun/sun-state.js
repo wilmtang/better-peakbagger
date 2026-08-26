@@ -212,6 +212,9 @@ export function createSunState({
         const result = state.result ? Object.freeze({
             ...state.result,
             screenAzimuthDeg: SunPosition.normalizeDegrees(state.result.azimuthDeg - mapBearing),
+            moonScreenAzimuthDeg: Number.isFinite(state.result.moonAzimuthDeg)
+                ? SunPosition.normalizeDegrees(state.result.moonAzimuthDeg - mapBearing)
+                : null,
         }) : null;
         return replace({ mapBearing, result });
     };

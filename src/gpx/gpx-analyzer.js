@@ -44,7 +44,7 @@ const run = async () => {
     const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
-    const SUN_SELECTION_PROMPT = 'Select a chart point to calculate the sun.';
+    const SUN_SELECTION_PROMPT = 'Select a chart point to calculate the Sun and Moon.';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
     // Chart.js takes colors as JS options, not CSS, so these have to stay in

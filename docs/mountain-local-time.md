@@ -10,7 +10,7 @@ camping spots. All of these now use the **climb's local time**, and the stats
 bar discloses it: *"Times in the mountain's local time (PDT)"*.
 
 The same resolver and formatter now own the offline
-[Sun position and Moon phase calculator](sun-position.md). Peak pages use the
+[Sun and Moon position calculator](sun-position.md). Peak pages use the
 validated summit coordinate; GPX analysis continues to use the trailhead. No
 surface derives a mountain clock from the viewer's machine timezone.
 

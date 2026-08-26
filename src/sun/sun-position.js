@@ -131,14 +131,33 @@ export function calculateSunInstant({
     const elevationDeg = position?.altitude;
     if (!Number.isFinite(azimuthDeg) || !Number.isFinite(elevationDeg)) return null;
 
-    let moon = null;
+    let moonPosition = null;
+    try {
+        const positionResult = sunCalc.getMoonPosition(new Date(ms), lat, lon);
+        const moonAzimuthDeg = positionResult?.azimuth;
+        const moonElevationDeg = positionResult?.altitude;
+        if (Number.isFinite(moonAzimuthDeg) && Number.isFinite(moonElevationDeg)) {
+            const normalizedMoonAzimuth = normalizeDegrees(moonAzimuthDeg);
+            moonPosition = Object.freeze({
+                moonAzimuthDeg: normalizedMoonAzimuth,
+                moonDirectionLabel: directionLabel(normalizedMoonAzimuth),
+                moonElevationDeg,
+                moonIsAboveHorizon: moonElevationDeg >= 0,
+                moonScreenAzimuthDeg: normalizeDegrees(normalizedMoonAzimuth - mapBearing),
+            });
+        }
+    } catch {
+        // Lunar position failure must not erase valid Sun or Moon-phase metadata.
+    }
+
+    let moonIllumination = null;
     try {
         const illumination = sunCalc.getMoonIllumination(new Date(ms));
         const fraction = illumination?.fraction;
         const phase = illumination?.phase;
         const phaseLabel = moonPhaseLabel(phase);
         if (Number.isFinite(fraction) && fraction >= 0 && fraction <= 1 && phaseLabel) {
-            moon = Object.freeze({
+            moonIllumination = Object.freeze({
                 moonIlluminationFraction: fraction,
                 moonPhase: phase,
                 moonPhaseIndex: Math.round(phase * MOON_PHASES.length) % MOON_PHASES.length,
@@ -156,10 +175,15 @@ export function calculateSunInstant({
         elevationDeg,
         isAboveHorizon: elevationDeg >= 0,
         screenAzimuthDeg: normalizeDegrees(normalizedAzimuth - mapBearing),
-        moonIlluminationFraction: moon?.moonIlluminationFraction ?? null,
-        moonPhase: moon?.moonPhase ?? null,
-        moonPhaseIndex: moon?.moonPhaseIndex ?? null,
-        moonPhaseLabel: moon?.moonPhaseLabel ?? null,
+        moonAzimuthDeg: moonPosition?.moonAzimuthDeg ?? null,
+        moonDirectionLabel: moonPosition?.moonDirectionLabel ?? null,
+        moonElevationDeg: moonPosition?.moonElevationDeg ?? null,
+        moonIsAboveHorizon: moonPosition?.moonIsAboveHorizon ?? null,
+        moonScreenAzimuthDeg: moonPosition?.moonScreenAzimuthDeg ?? null,
+        moonIlluminationFraction: moonIllumination?.moonIlluminationFraction ?? null,
+        moonPhase: moonIllumination?.moonPhase ?? null,
+        moonPhaseIndex: moonIllumination?.moonPhaseIndex ?? null,
+        moonPhaseLabel: moonIllumination?.moonPhaseLabel ?? null,
     });
 }
 

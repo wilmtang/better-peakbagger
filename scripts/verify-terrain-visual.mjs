@@ -414,6 +414,7 @@ const exerciseSolarBearing = async (cdp, label) => {
         if (toggle?.getAttribute('aria-expanded') !== 'true') toggle?.click();
         const north = calculator?.querySelector('[data-azimuth="0"]');
         const sun = calculator?.querySelector('.bpb-sun-calculator__sun');
+        const moonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker');
         const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
         const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
         const frame = document.getElementById('bpb-terrain-frame');
@@ -422,21 +423,24 @@ const exerciseSolarBearing = async (cdp, label) => {
         const parentRect = calculator?.parentElement?.getBoundingClientRect();
         return {
             ready: Boolean(calculator && panel && !panel.hidden && north?.style.transform
-                && sun?.style.transform && daylightRange?.style.transform
+                && sun?.style.transform && moonMarker?.style.transform && daylightRange?.style.transform
                 && /^M /.test(daylightRange?.querySelector('path')?.getAttribute('d') || '')
                 && map?.loaded()),
             summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
             direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
+            moon: calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
             north: north?.style.transform || '',
             sun: sun?.style.transform || '',
+            moonMarker: moonMarker?.style.transform || '',
             daylightRange: daylightRange?.style.transform || '',
             bearing: map?.getBearing(),
             insideParent: Boolean(rect && parentRect) && rect.left >= parentRect.left - 1
                 && rect.right <= parentRect.right + 1,
         };
     })()`, 8000);
-    if (!initial.insideParent || !/Direction\s*\d+°/.test(initial.direction)) {
-        throw new Error(`${label}: Sun calculator is clipped or missing absolute direction text: ${JSON.stringify(initial)}`);
+    if (!initial.insideParent || !/Sun direction\s*\d+°/i.test(initial.direction)
+        || !/Moon direction\s*\d+°/i.test(initial.moon)) {
+        throw new Error(`${label}: Sun and Moon calculator is clipped or missing absolute direction text: ${JSON.stringify(initial)}`);
     }
 
     const target = await evaluate(cdp, `(() => {
@@ -465,25 +469,30 @@ const exerciseSolarBearing = async (cdp, label) => {
         const map = frame?.contentWindow?.__bpbTerrainTestMap;
         const north = calculator?.querySelector('[data-azimuth="0"]')?.style.transform || '';
         const sun = calculator?.querySelector('.bpb-sun-calculator__sun')?.style.transform || '';
+        const moonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker')
+            ?.style.transform || '';
         const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range')
             ?.style.transform || '';
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
+        const moon = calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '';
         const bearing = map?.getBearing();
         return {
             ready: Number.isFinite(bearing) && Math.abs(bearing - ${Number(initial.bearing)}) > 5
                 && north !== ${JSON.stringify(initial.north)} && sun !== ${JSON.stringify(initial.sun)}
+                && moonMarker !== ${JSON.stringify(initial.moonMarker)}
                 && daylightRange !== ${JSON.stringify(initial.daylightRange)},
-            bearing, north, sun, daylightRange, summary, direction,
+            bearing, north, sun, moonMarker, daylightRange, summary, direction, moon,
         };
     })()`, 8000);
-    if (rotated.summary !== initial.summary || rotated.direction !== initial.direction) {
-        throw new Error(`${label}: rotating 3D changed absolute Sun text: ${JSON.stringify({ initial, rotated })}`);
+    if (rotated.summary !== initial.summary || rotated.direction !== initial.direction
+        || rotated.moon !== initial.moon) {
+        throw new Error(`${label}: rotating 3D changed absolute Sun or Moon text: ${JSON.stringify({ initial, rotated })}`);
     }
     return { initial, rotated };
 };
 
-const assertSolarNorthUp = async (cdp, label, absoluteText) => {
+const assertSolarNorthUp = async (cdp, label, absolute) => {
     const reset = await waitForPageState(cdp, `(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
@@ -492,6 +501,13 @@ const assertSolarNorthUp = async (cdp, label, absoluteText) => {
         const northLabel = northElement?.firstElementChild;
         const north = northElement?.style.transform || '';
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
+        const moon = calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '';
+        const moonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker')
+            ?.style.transform || '';
+        const moonMarkerAngle = Number(/^rotate\\((-?[\\d.]+)deg\\)/.exec(moonMarker)?.[1]);
+        const expectedMoonAngle = Number(/^rotate\\((-?[\\d.]+)deg\\)/
+            .exec(${JSON.stringify(absolute.moonMarker)})?.[1]);
+        const moonDelta = Math.abs((((moonMarkerAngle - expectedMoonAngle + 540) % 360) + 360) % 360 - 180);
         const compassRect = compass?.getBoundingClientRect();
         const northRect = northLabel?.getBoundingClientRect();
         const offset = compassRect && northRect ? {
@@ -499,13 +515,49 @@ const assertSolarNorthUp = async (cdp, label, absoluteText) => {
             y: (northRect.top + northRect.height / 2) - (compassRect.top + compassRect.height / 2),
         } : null;
         return {
-            ready: north.startsWith('rotate(0deg)') && direction === ${JSON.stringify(absoluteText)}
+            ready: north.startsWith('rotate(0deg)') && direction === ${JSON.stringify(absolute.direction)}
+                && moon === ${JSON.stringify(absolute.moon)} && moonDelta < 0.01
                 && daylightRange?.style.transform.startsWith('rotate(0deg)')
                 && offset && Math.abs(offset.x) < 2 && offset.y < -20,
-            north, daylightRange: daylightRange?.style.transform || '', direction, offset,
+            north, moonMarker, moonDelta, daylightRange: daylightRange?.style.transform || '',
+            direction, moon, offset,
         };
     })()`, 8000);
-    if (!reset.ready) throw new Error(`${label}: Sun compass did not reset north-up in 2D: ${JSON.stringify(reset)}`);
+    if (!reset.ready) throw new Error(`${label}: Sun and Moon compass did not reset north-up in 2D: ${JSON.stringify(reset)}`);
+};
+
+const selectVisibleMoon = async (cdp, label) => {
+    const state = await evaluate(cdp, `(async () => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const slider = calculator?.querySelector('.bpb-sun-calculator__time');
+        const marker = calculator?.querySelector('.bpb-sun-calculator__moon-marker');
+        const moon = calculator?.querySelector('.bpb-sun-calculator__moon');
+        if (!slider || !marker || !moon) return null;
+        const painted = () => new Promise(resolve => requestAnimationFrame(() =>
+            requestAnimationFrame(resolve)));
+        for (let minute = 0; minute < 1440; minute += 60) {
+            slider.value = String(minute);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+            await painted();
+            if (!marker.hidden
+                && !marker.classList.contains('bpb-sun-calculator__moon-marker--below-horizon')
+                && /above horizon/.test(moon.textContent || '')) {
+                await Promise.all(marker.getAnimations({ subtree: true })
+                    .map(animation => animation.finished.catch(() => {})));
+                await painted();
+                return {
+                    minute,
+                    moon: moon.textContent || '',
+                    marker: marker.style.transform || '',
+                };
+            }
+        }
+        return null;
+    })()`);
+    if (!state || !/^rotate\(/.test(state.marker)) {
+        throw new Error(`${label}: no above-horizon Moon position was rendered: ${JSON.stringify(state)}`);
+    }
+    return state;
 };
 
 // The paint the group route is currently drawn with, as the frame's live
@@ -1379,7 +1431,7 @@ try {
     await waitForPageState(cdp, analyzerBackTo2d, 8000).catch(() => {
         throw new Error('Escape inside the ascent 3D frame did not return the analyzer to 2D');
     });
-    await assertSolarNorthUp(cdp, 'Analyzer 2D', analyzerSolarBearing.initial.direction);
+    await assertSolarNorthUp(cdp, 'Analyzer 2D', analyzerSolarBearing.initial);
 
     // …and from the page, where focus stays on the toggle the user just clicked
     // and the frame never sees the key.
@@ -1745,7 +1797,8 @@ try {
         const frame = document.getElementById('bpb-terrain-frame');
         return { ready: toggle?.textContent === '3D' && (!frame || frame.style.opacity === '0') };
     })()`, 8000);
-    await assertSolarNorthUp(cdp, 'Peak 2D', peakSolarBearing.initial.direction);
+    await assertSolarNorthUp(cdp, 'Peak 2D', peakSolarBearing.initial);
+    await selectVisibleMoon(cdp, 'Peak 2D');
     await capture(cdp, path.join(outputDir, 'peak-page-sun-2d.png'));
 
     const optionsUrl = `https://${FIXTURE_HOST}:${serverPort}/options/options.html?visual=1`;

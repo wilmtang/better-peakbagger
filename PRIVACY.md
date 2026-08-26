@@ -136,10 +136,10 @@ date. That happens entirely locally.
   and otherwise only a complete saved ascent date plus an ephemeral preview
   time.
 - Timezone lookup and astronomy run locally with packaged `tz-lookup` and
-  SunCalc code. The displayed Moon phase and illuminated percentage use the
-  same selected instant as the Sun position. The calculator makes no request,
-  adds no permission or storage key, and does not persist its coordinate, date,
-  time, bearing, or result.
+  SunCalc code. The displayed Moon position, phase, and illuminated percentage
+  use the same selected instant as the Sun position. The calculator makes no
+  request, adds no permission or storage key, and does not persist its
+  coordinate, date, time, bearing, or result.
 - Opening or moving the calculator cannot start 3D or another provider request.
   If 3D is already open, the calculator receives only the accepted map bearing
   so its decorative compass follows the view.

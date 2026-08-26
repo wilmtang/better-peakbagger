@@ -13,6 +13,11 @@ const resultFor = ({ mapBearing = 0 } = {}) => Object.freeze({
     elevationDeg: 20,
     isAboveHorizon: true,
     screenAzimuthDeg: ((1 - mapBearing) % 360 + 360) % 360,
+    moonAzimuthDeg: 271,
+    moonDirectionLabel: 'W',
+    moonElevationDeg: 12,
+    moonIsAboveHorizon: true,
+    moonScreenAzimuthDeg: ((271 - mapBearing) % 360 + 360) % 360,
     sunriseMs: 1,
     sunsetMs: 2,
     daylightState: 'ordinary',
@@ -109,12 +114,15 @@ test('bearing changes only map-relative output and reset clears stale subject st
     const zone = MountainTime.resolve(0, 0);
     state.setPeakSubject({ lat: 0, lon: 0, zone, nowMs: Date.parse('2026-01-01T12:00:00Z') });
     const absolute = state.get().result.azimuthDeg;
+    const moonAbsolute = state.get().result.moonAzimuthDeg;
     const moonPhase = state.get().result.moonPhaseLabel;
     state.setMapBearing(359);
     assert.equal(calculations, 1, 'bearing animation must not call the astronomy package');
     assert.equal(state.get().result.azimuthDeg, absolute);
+    assert.equal(state.get().result.moonAzimuthDeg, moonAbsolute);
     assert.equal(state.get().result.moonPhaseLabel, moonPhase);
     assert.equal(state.get().result.screenAzimuthDeg, 2);
+    assert.equal(state.get().result.moonScreenAzimuthDeg, 272);
     state.resetSubject();
     assert.deepEqual([state.get().subject, state.get().date, state.get().result, state.get().mapBearing], [
         null, null, null, 0,

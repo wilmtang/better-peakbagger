@@ -87,7 +87,23 @@ function daylightArc(result) {
     });
 }
 
-function moonDisplay(result) {
+function moonPositionDisplay(result) {
+    const azimuth = result?.moonAzimuthDeg;
+    const elevation = result?.moonElevationDeg;
+    const direction = result?.moonDirectionLabel;
+    if (!Number.isFinite(azimuth) || !Number.isFinite(elevation)
+        || typeof direction !== 'string') return null;
+    const directionText = `${roundedDegrees(azimuth)} ${direction}`;
+    const elevationDescription = elevationText(elevation);
+    return Object.freeze({
+        direction: directionText,
+        elevation: elevationDescription,
+        isAboveHorizon: elevation >= 0,
+        announcement: `Moon ${directionText}, ${elevationDescription}`,
+    });
+}
+
+function moonPhaseDisplay(result) {
     const phaseIndex = result?.moonPhaseIndex;
     const fraction = result?.moonIlluminationFraction;
     if (!Number.isInteger(phaseIndex) || phaseIndex < 0 || phaseIndex >= MOON_PHASE_ICONS.length
@@ -212,6 +228,10 @@ export function createSunCalculator({
     daylightRange.append(daylightPath, sunriseMarker, sunsetMarker);
     compassRing.append(daylightRange);
     const center = element('span', 'bpb-sun-calculator__compass-center');
+    const moonMarker = element('span', 'bpb-sun-calculator__moon-marker');
+    const moonMarkerDisc = element('span', 'bpb-sun-calculator__moon-marker-disc');
+    moonMarker.hidden = true;
+    moonMarker.append(moonMarkerDisc);
     const sun = element('span', 'bpb-sun-calculator__sun');
     const sunDisc = element('span', 'bpb-sun-calculator__sun-disc');
     sun.append(sunDisc);
@@ -224,27 +244,33 @@ export function createSunCalculator({
         cardinals.set(azimuth, cardinal);
         compassRing.append(cardinal);
     }
-    compassRing.append(sun, center);
+    compassRing.append(moonMarker, sun, center);
     compass.append(compassRing);
 
     const facts = element('div', 'bpb-sun-calculator__facts');
     const direction = element('div', 'bpb-sun-calculator__direction');
-    const directionLabel = element('span', 'bpb-sun-calculator__fact-label', 'Direction');
+    const directionLabel = element('span', 'bpb-sun-calculator__fact-label', 'Sun direction');
     const directionValue = element('strong', 'bpb-sun-calculator__fact-value');
     direction.append(directionLabel, directionValue);
     const elevationFact = element('div', 'bpb-sun-calculator__elevation');
-    const elevationLabel = element('span', 'bpb-sun-calculator__fact-label', 'Elevation');
+    const elevationLabel = element('span', 'bpb-sun-calculator__fact-label', 'Sun elevation');
     const elevationValue = element('strong', 'bpb-sun-calculator__fact-value');
     elevationFact.append(elevationLabel, elevationValue);
     const moonFact = element('div', 'bpb-sun-calculator__moon');
-    const moonLabel = element('span', 'bpb-sun-calculator__fact-label', 'Moon phase');
+    const moonLabel = element('span', 'bpb-sun-calculator__fact-label', 'Moon direction');
     const moonValue = element('strong', 'bpb-sun-calculator__fact-value bpb-sun-calculator__moon-value');
+    const moonDirection = element('span', 'bpb-sun-calculator__moon-direction');
+    moonValue.append(moonDirection);
+    const moonElevation = element('span',
+        'bpb-sun-calculator__fact-detail bpb-sun-calculator__moon-elevation');
+    const moonPhase = element('span',
+        'bpb-sun-calculator__fact-detail bpb-sun-calculator__moon-phase');
     const moonIcon = element('span', 'bpb-sun-calculator__moon-icon');
     moonIcon.setAttribute('aria-hidden', 'true');
     const moonName = element('span', 'bpb-sun-calculator__moon-name');
-    moonValue.append(moonIcon, moonName);
-    const moonIllumination = element('span', 'bpb-sun-calculator__fact-detail');
-    moonFact.append(moonLabel, moonValue, moonIllumination);
+    const moonIllumination = element('span', 'bpb-sun-calculator__moon-illumination');
+    moonPhase.append(moonIcon, moonName, moonIllumination);
+    moonFact.append(moonLabel, moonValue, moonElevation, moonPhase);
     facts.append(direction, elevationFact, moonFact);
     const events = element('div', 'bpb-sun-calculator__events');
     const eventsText = element('span', 'bpb-sun-calculator__events-text');
@@ -259,7 +285,7 @@ export function createSunCalculator({
     events.append(eventsText, eventsVisual);
 
     const limitation = element('p', 'bpb-sun-calculator__limitation',
-        'Astronomical sun position and moon phase. Nearby terrain may block either object from view.');
+        'Astronomical Sun and Moon positions. Nearby terrain may block either object from view.');
     const empty = element('p', 'bpb-sun-calculator__empty');
     empty.hidden = true;
     const status = element('div', 'bpb-sun-calculator__status');
@@ -279,6 +305,7 @@ export function createSunCalculator({
     let pendingMinute = null;
     let unboundedBearing = null;
     let unboundedSunAzimuth = null;
+    let unboundedMoonAzimuth = null;
     let statusTimer = null;
     let announcedText = '';
     let appliedInitialExpansion = false;
@@ -327,12 +354,27 @@ export function createSunCalculator({
             const angle = unboundedSunAzimuth - unboundedBearing;
             sun.style.transform = `rotate(${angle}deg)`;
         }
+        moonMarker.hidden = !Number.isFinite(next.moonAzimuth);
+        if (moonMarker.hidden) unboundedMoonAzimuth = null;
+        else {
+            const normalizedAzimuth = SunPosition.normalizeDegrees(next.moonAzimuth);
+            if (unboundedMoonAzimuth === null) unboundedMoonAzimuth = normalizedAzimuth;
+            else {
+                const current = SunPosition.normalizeDegrees(unboundedMoonAzimuth);
+                const delta = ((normalizedAzimuth - current + 540) % 360) - 180;
+                unboundedMoonAzimuth += delta;
+            }
+            const angle = unboundedMoonAzimuth - unboundedBearing;
+            moonMarker.style.transform = `rotate(${angle}deg)`;
+            moonMarkerDisc.style.transform = `rotate(${-angle}deg)`;
+        }
     };
 
     const scheduleCompass = state => {
         pendingCompass = {
             bearing: Number.isFinite(state?.mapBearing) ? state.mapBearing : 0,
             sunAzimuth: state?.result?.azimuthDeg,
+            moonAzimuth: state?.result?.moonAzimuthDeg,
             sunriseAzimuthDeg: state?.result?.sunriseAzimuthDeg,
             solarNoonAzimuthDeg: state?.result?.solarNoonAzimuthDeg,
             sunsetAzimuthDeg: state?.result?.sunsetAzimuthDeg,
@@ -355,6 +397,8 @@ export function createSunCalculator({
     };
 
     const clearMoon = () => {
+        moonDirection.textContent = '';
+        moonElevation.textContent = '';
         moonIcon.textContent = '';
         moonName.textContent = '';
         moonIllumination.textContent = '';
@@ -411,6 +455,7 @@ export function createSunCalculator({
         delete root.dataset.horizon;
         delete root.dataset.daylight;
         sun.classList.remove('bpb-sun-calculator__sun--below-horizon');
+        moonMarker.classList.remove('bpb-sun-calculator__moon-marker--below-horizon');
         eventMarker.hidden = true;
         slider.style.setProperty('--bpb-sun-progress', '0%');
         if (mode === 'peak') dateValue.disabled = true;
@@ -511,19 +556,25 @@ export function createSunCalculator({
         directionValue.textContent = `${azimuth} ${state.result.directionLabel}`;
         elevationFact.hidden = false;
         elevationValue.textContent = elevation;
-        const moon = moonDisplay(state.result);
-        if (moon) {
-            moonIcon.textContent = moon.icon;
-            moonName.textContent = moon.label;
-            moonIllumination.textContent = moon.illumination;
+        const moonPosition = moonPositionDisplay(state.result);
+        const moonPhaseDisplayValue = moonPhaseDisplay(state.result);
+        moonDirection.textContent = moonPosition?.direction || 'Position unavailable';
+        moonElevation.textContent = moonPosition?.elevation || '';
+        moonMarker.classList.toggle('bpb-sun-calculator__moon-marker--below-horizon',
+            Boolean(moonPosition) && !moonPosition.isAboveHorizon);
+        if (moonPhaseDisplayValue) {
+            moonIcon.textContent = moonPhaseDisplayValue.icon;
+            moonName.textContent = moonPhaseDisplayValue.label;
+            moonIllumination.textContent = ` · ${moonPhaseDisplayValue.illumination}`;
             root.dataset.moonPhase = String(state.result.moonPhaseIndex);
         } else {
             moonIcon.textContent = '';
-            moonName.textContent = 'Unavailable';
+            moonName.textContent = 'Phase unavailable';
             moonIllumination.textContent = '';
             delete root.dataset.moonPhase;
         }
-        const moonAnnouncement = moon?.announcement || 'Moon phase unavailable';
+        const moonPositionAnnouncement = moonPosition?.announcement || 'Moon position unavailable';
+        const moonPhaseAnnouncement = moonPhaseDisplayValue?.announcement || 'Moon phase unavailable';
         events.classList.toggle('bpb-sun-calculator__events--text',
             state.result.daylightState !== 'ordinary');
         eventsVisual.hidden = true;
@@ -541,7 +592,7 @@ export function createSunCalculator({
                 events.classList.add('bpb-sun-calculator__events--text');
                 eventsText.textContent = 'Rise and set times unavailable for this date.';
                 scheduleCompass(state);
-                announce(`${summary.textContent}. ${moonAnnouncement}. ${eventsText.textContent}`);
+                announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${eventsText.textContent}`);
                 return;
             }
             eventsText.textContent = eventDetails.text;
@@ -558,7 +609,7 @@ export function createSunCalculator({
             eventsVisual.hidden = false;
         }
         scheduleCompass(state);
-        announce(`${summary.textContent}. ${moonAnnouncement}. ${eventsText.textContent}`);
+        announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${eventsText.textContent}`);
     };
     const onToggle = () => setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
     const onDateInput = () => onDateChange(dateValue.value);
