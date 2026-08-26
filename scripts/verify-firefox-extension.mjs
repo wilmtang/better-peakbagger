@@ -1509,6 +1509,21 @@ async function main() {
             const previousRect = await driver.manage().window().getRect();
             await driver.manage().window().setRect({ width: 480, height: 900 });
             await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000);
+            const narrowPeakSun = await driver.executeScript(`
+      const calculator = document.querySelector('.bpb-sun-calculator');
+      const rect = calculator?.getBoundingClientRect();
+      return {
+        viewportWidth: document.documentElement.clientWidth,
+        insideViewport: Boolean(rect) && rect.left >= -1
+          && rect.right <= document.documentElement.clientWidth + 1,
+        calculatorOverflow: calculator ? calculator.scrollWidth > calculator.clientWidth : true,
+      };
+    `);
+            assertState(
+                narrowPeakSun?.insideViewport && !narrowPeakSun?.calculatorOverflow,
+                'Firefox Peak Sun calculator overflowed its narrow viewport',
+                narrowPeakSun,
+            );
             await writeElementScreenshot(
                 driver,
                 '.bpb-sun-calculator',

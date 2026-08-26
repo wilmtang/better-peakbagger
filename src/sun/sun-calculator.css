@@ -10,7 +10,7 @@
     --bpb-sun-dawn: #8ca0b4;
     --bpb-sun-glow: #f4a62a;
     box-sizing: border-box;
-    max-inline-size: 100%;
+    max-inline-size: min(100%, calc(100vw - 1rem));
     min-inline-size: 0;
     margin: 0.65rem 0 0.9rem;
     overflow: hidden;

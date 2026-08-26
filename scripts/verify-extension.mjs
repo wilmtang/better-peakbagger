@@ -2872,6 +2872,27 @@ try {
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
         }
+        if (process.env.BPB_VERIFY_PEAK_NARROW_SCREENSHOT) {
+            const previousViewport = peakPage.viewportSize();
+            await peakPage.setViewportSize({ width: 390, height: previousViewport?.height || 760 });
+            const narrowPeakSun = await peakPage.evaluate(() => {
+                const calculator = document.querySelector('.bpb-sun-calculator');
+                const rect = calculator?.getBoundingClientRect();
+                return {
+                    viewportWidth: document.documentElement.clientWidth,
+                    insideViewport: Boolean(rect) && rect.left >= -1
+                        && rect.right <= document.documentElement.clientWidth + 1,
+                    calculatorOverflow: calculator ? calculator.scrollWidth > calculator.clientWidth : true,
+                };
+            });
+            check(narrowPeakSun.viewportWidth === 390 && narrowPeakSun.insideViewport
+                && !narrowPeakSun.calculatorOverflow,
+            `the open Peak Sun calculator overflowed at a 390px page width: ${JSON.stringify(narrowPeakSun)}`);
+            await peakPage.locator('.bpb-sun-calculator').screenshot({
+                path: process.env.BPB_VERIFY_PEAK_NARROW_SCREENSHOT,
+            });
+            if (previousViewport) await peakPage.setViewportSize(previousViewport);
+        }
         await peakPage.evaluate(() => {
             window.__bpbPeakTerrainInit = null;
             window.addEventListener('message', event => {

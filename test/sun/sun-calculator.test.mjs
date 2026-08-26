@@ -473,7 +473,7 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(calculator.element.textContent, /UTC−8, estimated from longitude/);
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__events-text').textContent,
         /sunrise .* · sunset .* \(UTC−8, estimated from longitude\)$/);
-    assert.match(css, /max-inline-size:\s*100%/);
+    assert.match(css, /max-inline-size:\s*min\(100%,\s*calc\(100vw - 1rem\)\)/);
     assert.match(css, /min-inline-size:\s*0/);
     assert.match(css, /overflow-wrap:\s*anywhere/);
     assert.match(css, /@media \(max-width: 680px\)/);
