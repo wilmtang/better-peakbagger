@@ -1469,7 +1469,7 @@ async function main() {
         framePreserved: document.getElementById("Gmap")?.parentElement === mount,
         sunAfterMap: mount.nextElementSibling === sun,
         sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
-        sunCollapsed: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
+        sunExpanded: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === false,
         sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
         moon: sun.querySelector(".bpb-sun-calculator__moon")?.textContent || "",
         moonPhase: sun.dataset.moonPhase || "",
@@ -1479,7 +1479,7 @@ async function main() {
     `, 'the Firefox Peak surface');
         assertState(
             peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
-        && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunCollapsed
+        && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
         && /Moon phase/.test(peakState.moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/

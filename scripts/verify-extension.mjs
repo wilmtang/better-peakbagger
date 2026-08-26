@@ -2827,7 +2827,7 @@ try {
                 iframePreserved: iframe.parentElement === mount,
                 sunAfterMap: mount.nextElementSibling === sun,
                 sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
-                sunCollapsed: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
+                sunExpanded: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === false,
                 sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
                 sunBorderStyle: getComputedStyle(sun).borderStyle,
                 sunMockHierarchy: Boolean(
@@ -2855,7 +2855,7 @@ try {
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
         check(peakState?.mountHeight === 425,
             `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
-        check(peakState?.sunAfterMap && peakState?.sunDateInput && peakState?.sunCollapsed
+        check(peakState?.sunAfterMap && peakState?.sunDateInput && peakState?.sunExpanded
             && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid'
             && peakState?.sunMockHierarchy,
         `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
