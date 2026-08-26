@@ -103,6 +103,7 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     button.click();
     assert.equal(button.getAttribute('aria-expanded'), 'true');
     assert.equal(panel.hidden, false);
+    assert.match(css, /aria-expanded="true"[^}]*chevron[^}]*rotate\(180deg\)/s);
 
     const date = calculator.element.querySelector('input[type="date"]');
     const slider = calculator.element.querySelector('input[type="range"]');
@@ -258,9 +259,36 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     assert.match(calculator.element.textContent,
         /Recorded at selected GPX point · Mountain Daylight Time \(MDT\)/);
     assert.match(calculator.element.textContent, /Level-horizon sunrise/);
+    assert.equal(calculator.element.dataset.horizon, 'below');
+    assert.equal(calculator.element.dataset.daylight, 'ordinary');
+    assert.ok(calculator.element.querySelector('.bpb-sun-calculator__sun--below-horizon'));
 
     calculator.render(ordinaryState({ daylightState: 'polar-night' }));
     assert.match(calculator.element.textContent, /does not rise.*polar night/i);
+    assert.equal(calculator.element.dataset.daylight, 'polar-night');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__event-marker').hidden, true);
+}));
+
+test('daylight progress is visible only from exact sunrise through exact sunset', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const marker = calculator.element.querySelector('.bpb-sun-calculator__event-marker');
+    for (const [minute, hidden, progress] of [
+        [5 * 60 + 29, true, null],
+        [5 * 60 + 30, false, '0%'],
+        [13 * 60, false, '50%'],
+        [20 * 60 + 30, false, '100%'],
+        [20 * 60 + 31, true, null],
+    ]) {
+        calculator.render(ordinaryState({ minute }));
+        assert.equal(marker.hidden, hidden, `marker visibility at minute ${minute}`);
+        if (progress !== null) assert.equal(marker.style.insetInlineStart, progress);
+    }
+    calculator.render(ordinaryState({ daylightState: 'polar-day' }));
+    assert.equal(calculator.element.dataset.daylight, 'polar-day');
+    assert.equal(marker.hidden, true);
 }));
 
 test('event clocks own their DST labels and adjacent-day relation', () => withDom(dom => {
@@ -451,6 +479,9 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(css, /@media \(max-width: 680px\)/);
     assert.match(css, /@media \(max-width: 440px\)/);
     assert.match(css, /prefers-reduced-motion: reduce/);
+    assert.match(css, /sun--below-horizon/);
+    assert.match(css, /event-marker\[hidden\]/);
+    assert.match(css, /prefers-reduced-motion: reduce[^}]*[\s\S]*chevron\s*\{\s*transition:\s*none/s);
     assert.match(css, /bpb-sun-calculator__time\s*\{[^}]*block-size:\s*2\.75rem/s);
     assert.match(css, /::-webkit-slider-runnable-track/);
     assert.match(css, /::-moz-range-track/);

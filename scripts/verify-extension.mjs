@@ -2338,6 +2338,14 @@ try {
         focusVisible: slider.matches(':focus-visible'),
         outlineWidth: getComputedStyle(slider).outlineWidth,
         outlineStyle: getComputedStyle(slider).outlineStyle,
+        horizon: slider.closest('.bpb-sun-calculator')?.dataset.horizon || '',
+        belowClass: slider.closest('.bpb-sun-calculator')
+            ?.querySelector('.bpb-sun-calculator__sun')
+            ?.classList.contains('bpb-sun-calculator__sun--below-horizon') === true,
+        summary: slider.closest('.bpb-sun-calculator')
+            ?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+        chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
+            ?.querySelector('.bpb-sun-calculator__chevron')).transform,
     }));
     await offPage.keyboard.press('ArrowRight');
     const analyzerSunAfter = await offPage.waitForFunction(previous => {
@@ -2349,7 +2357,10 @@ try {
     }, analyzerSunBefore, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(analyzerSunBefore.height >= 44 && analyzerSunBefore.focusVisible
         && analyzerSunBefore.outlineWidth === '3px' && analyzerSunBefore.outlineStyle === 'solid'
-        && /\d.*:\d/.test(analyzerSunBefore.valueText) && analyzerSunAfter,
+        && /\d.*:\d/.test(analyzerSunBefore.valueText) && analyzerSunAfter
+        && /^(above|below)$/.test(analyzerSunBefore.horizon)
+        && analyzerSunBefore.belowClass === /below horizon/.test(analyzerSunBefore.summary)
+        && analyzerSunBefore.chevronTransform !== 'none',
     `the packaged GPX Sun slider lacks clock semantics, keyboard updates, focus, or target geometry: ${JSON.stringify({ analyzerSunBefore, analyzerSunAfter })}`);
     await coordinateCanvas.press('ArrowRight');
     const routeScrubber = await offPage.waitForFunction(() => {
@@ -2842,8 +2853,19 @@ try {
         const peakSunTarget = await peakPage.locator('.bpb-sun-calculator__time').evaluate(slider => ({
             height: slider.getBoundingClientRect().height,
             valueText: slider.getAttribute('aria-valuetext') || '',
+            horizon: slider.closest('.bpb-sun-calculator')?.dataset.horizon || '',
+            belowClass: slider.closest('.bpb-sun-calculator')
+                ?.querySelector('.bpb-sun-calculator__sun')
+                ?.classList.contains('bpb-sun-calculator__sun--below-horizon') === true,
+            summary: slider.closest('.bpb-sun-calculator')
+                ?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+            chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
+                ?.querySelector('.bpb-sun-calculator__chevron')).transform,
         }));
-        check(peakSunTarget.height >= 44 && /\d.*:\d/.test(peakSunTarget.valueText),
+        check(peakSunTarget.height >= 44 && /\d.*:\d/.test(peakSunTarget.valueText)
+            && /^(above|below)$/.test(peakSunTarget.horizon)
+            && peakSunTarget.belowClass === /below horizon/.test(peakSunTarget.summary)
+            && peakSunTarget.chevronTransform !== 'none',
             `the packaged Peak Sun slider lacks clock semantics or target geometry: ${JSON.stringify(peakSunTarget)}`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });

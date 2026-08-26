@@ -1292,12 +1292,24 @@ async function main() {
         focusVisible: slider.matches(':focus-visible'),
         outlineWidth: style?.outlineWidth,
         outlineStyle: style?.outlineStyle,
+        horizon: slider.closest('.bpb-sun-calculator')?.dataset.horizon || '',
+        belowClass: slider.closest('.bpb-sun-calculator')
+          ?.querySelector('.bpb-sun-calculator__sun')
+          ?.classList.contains('bpb-sun-calculator__sun--below-horizon') === true,
+        summary: slider.closest('.bpb-sun-calculator')
+          ?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+        chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
+          ?.querySelector('.bpb-sun-calculator__chevron')).transform,
       } : false;
     `, 'the Firefox GPX Sun slider semantics');
         assertState(
             analyzerSunAccessibility.height >= 44 && analyzerSunAccessibility.focusVisible
             && analyzerSunAccessibility.outlineWidth === '3px'
-            && analyzerSunAccessibility.outlineStyle === 'solid',
+            && analyzerSunAccessibility.outlineStyle === 'solid'
+            && /^(above|below)$/.test(analyzerSunAccessibility.horizon)
+            && analyzerSunAccessibility.belowClass
+                === /below horizon/.test(analyzerSunAccessibility.summary)
+            && analyzerSunAccessibility.chevronTransform !== 'none',
             'Firefox GPX Sun slider lacks clock semantics, keyboard focus, or target geometry',
             analyzerSunAccessibility,
         );
@@ -1439,10 +1451,21 @@ async function main() {
       return slider ? {
         height: slider.getBoundingClientRect().height,
         valueText: slider.getAttribute('aria-valuetext') || '',
+        horizon: slider.closest('.bpb-sun-calculator')?.dataset.horizon || '',
+        belowClass: slider.closest('.bpb-sun-calculator')
+          ?.querySelector('.bpb-sun-calculator__sun')
+          ?.classList.contains('bpb-sun-calculator__sun--below-horizon') === true,
+        summary: slider.closest('.bpb-sun-calculator')
+          ?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+        chevronTransform: getComputedStyle(slider.closest('.bpb-sun-calculator')
+          ?.querySelector('.bpb-sun-calculator__chevron')).transform,
       } : null;
     `);
         assertState(
-            peakSunTarget?.height >= 44 && /\d.*:\d/.test(peakSunTarget?.valueText || ''),
+            peakSunTarget?.height >= 44 && /\d.*:\d/.test(peakSunTarget?.valueText || '')
+            && /^(above|below)$/.test(peakSunTarget?.horizon || '')
+            && peakSunTarget?.belowClass === /below horizon/.test(peakSunTarget?.summary || '')
+            && peakSunTarget?.chevronTransform !== 'none',
             'Firefox Peak Sun slider lacks clock semantics or target geometry',
             peakSunTarget,
         );

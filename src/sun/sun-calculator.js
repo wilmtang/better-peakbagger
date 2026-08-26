@@ -284,6 +284,10 @@ export function createSunCalculator({
         }
         slider.disabled = true;
         slider.removeAttribute('aria-valuetext');
+        delete root.dataset.horizon;
+        delete root.dataset.daylight;
+        sun.classList.remove('bpb-sun-calculator__sun--below-horizon');
+        eventMarker.hidden = true;
         slider.style.setProperty('--bpb-sun-progress', '0%');
         if (mode === 'peak') dateValue.disabled = true;
         scheduleCompass(null);
@@ -372,6 +376,10 @@ export function createSunCalculator({
 
         const azimuth = roundedDegrees(state.result.azimuthDeg);
         const elevation = elevationText(state.result.elevationDeg);
+        root.dataset.horizon = state.result.isAboveHorizon ? 'above' : 'below';
+        root.dataset.daylight = state.result.daylightState;
+        sun.classList.toggle('bpb-sun-calculator__sun--below-horizon',
+            !state.result.isAboveHorizon);
         summary.textContent = `${azimuth} ${state.result.directionLabel} · ${elevation}`;
         directionValue.textContent = `${azimuth} ${state.result.directionLabel}`;
         elevationFact.hidden = false;
@@ -379,6 +387,7 @@ export function createSunCalculator({
         events.classList.toggle('bpb-sun-calculator__events--text',
             state.result.daylightState !== 'ordinary');
         eventsVisual.hidden = true;
+        eventMarker.hidden = true;
         if (state.result.daylightState === 'polar-day') {
             eventsText.textContent = `The sun does not set on this date (polar day, ${label}).`;
         } else if (state.result.daylightState === 'polar-night') {
@@ -399,10 +408,13 @@ export function createSunCalculator({
             sunrise.textContent = eventDetails.sunriseText;
             sunset.textContent = eventDetails.sunsetText;
             const daylightMs = state.result.sunsetMs - state.result.sunriseMs;
-            const progress = daylightMs > 0
-                ? Math.max(0, Math.min(1, (state.instant.ms - state.result.sunriseMs) / daylightMs))
+            const inDaylight = daylightMs > 0 && state.instant.ms >= state.result.sunriseMs
+                && state.instant.ms <= state.result.sunsetMs;
+            const progress = inDaylight
+                ? (state.instant.ms - state.result.sunriseMs) / daylightMs
                 : 0;
             eventMarker.style.insetInlineStart = `${progress * 100}%`;
+            eventMarker.hidden = !inDaylight;
             eventsVisual.hidden = false;
         }
         scheduleCompass(state);
