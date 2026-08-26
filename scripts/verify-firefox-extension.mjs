@@ -1280,9 +1280,15 @@ async function main() {
       const calculator = document.querySelector(".bpb-sun-calculator");
       const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
+      const moon = calculator?.querySelector(".bpb-sun-calculator__moon")?.textContent || "";
       return calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === false
         && /°/.test(summary) && /Direction\\s*\\d+°/.test(direction)
-        ? { summary, direction } : false;
+        && /Moon phase/.test(moon)
+        && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
+        && /\\d+% illuminated/.test(moon)
+        && /^[0-7]$/.test(calculator?.dataset.moonPhase || "")
+        && calculator?.querySelector(".bpb-sun-calculator__moon-icon")?.textContent
+        ? { summary, direction, moon } : false;
     `, 'the Firefox GPX Sun selection');
         assertState(/°/.test(selectedSunState.summary),
             'Firefox GPX Sun did not follow keyboard route selection', selectedSunState);
@@ -1465,13 +1471,22 @@ async function main() {
         sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
         sunCollapsed: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
         sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
+        moon: sun.querySelector(".bpb-sun-calculator__moon")?.textContent || "",
+        moonPhase: sun.dataset.moonPhase || "",
+        moonIcon: sun.querySelector(".bpb-sun-calculator__moon-icon")?.textContent || "",
         sunBorderStyle: getComputedStyle(sun).borderStyle,
       } : false;
     `, 'the Firefox Peak surface');
         assertState(
             peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
         && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunCollapsed
-        && /°/.test(peakState.sunSummary) && peakState.sunBorderStyle === 'solid',
+        && /°/.test(peakState.sunSummary)
+        && /Moon phase/.test(peakState.moon)
+        && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
+            .test(peakState.moon)
+        && /\d+% illuminated/.test(peakState.moon)
+        && /^[0-7]$/.test(peakState.moonPhase) && peakState.moonIcon
+        && peakState.sunBorderStyle === 'solid',
             'Firefox Peak links, theme, 3D mount, or Sun calculator did not initialize',
             peakState,
         );

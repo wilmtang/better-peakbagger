@@ -2319,11 +2319,16 @@ try {
         const direction = calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '';
         const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
         const elevation = calculator?.querySelector('.bpb-sun-calculator__elevation')?.textContent || '';
+        const moon = calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '';
         const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
         return toggle?.disabled === false && /°/.test(summary) && /Direction\s*\d+°/.test(direction)
             && /Elevation\s*\d+°/.test(elevation) && eventLine?.hidden === false
+            && /Moon phase/.test(moon)
+            && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
+            && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
+            && calculator.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
             && calculator.querySelector('.bpb-sun-calculator__icon')
-            ? { summary, direction, elevation } : false;
+            ? { summary, direction, elevation, moon } : false;
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(selectedSun,
         `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
@@ -2829,6 +2834,12 @@ try {
                     sun.querySelector('.bpb-sun-calculator__icon')
                     && /Direction\s*\d+°/.test(sun.querySelector('.bpb-sun-calculator__direction')?.textContent || '')
                     && /Elevation\s*\d+°/.test(sun.querySelector('.bpb-sun-calculator__elevation')?.textContent || '')
+                    && /Moon phase/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
+                        .test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /\d+% illuminated/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /^[0-7]$/.test(sun.dataset.moonPhase || '')
+                    && sun.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
                     && sun.querySelector('.bpb-sun-calculator__event-line')?.hidden === false
                 ),
                 // The MAIN-world coordinator bundle self-contains basemap,

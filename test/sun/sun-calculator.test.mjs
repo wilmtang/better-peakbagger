@@ -45,6 +45,9 @@ const ordinaryState = ({
     date = '2026-07-10',
     minute = 13 * 60,
     daylightState = 'ordinary',
+    moonIlluminationFraction = 0.186,
+    moonPhaseIndex = 7,
+    moonPhaseLabel = 'Waning Crescent',
 } = {}) => {
     const instant = MountainTime.civilToInstant(zone, date, minute);
     return {
@@ -67,6 +70,10 @@ const ordinaryState = ({
             sunsetDate: date,
             sunsetDayRelation: 'same-day',
             daylightState,
+            moonIlluminationFraction,
+            moonPhase: 0.858,
+            moonPhaseIndex,
+            moonPhaseLabel,
         },
         unavailable: null,
         availability: 'ready',
@@ -97,7 +104,7 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
     calculator.render(state);
     frames.shift()();
     assert.equal(button.disabled, false);
-    assert.match(button.textContent, /Sun position/);
+    assert.match(button.textContent, /Sun & Moon/);
     assert.match(button.textContent, /282° WNW · 17° above horizon/);
     assert.ok(button.querySelector('.bpb-sun-calculator__icon'));
     button.click();
@@ -124,10 +131,16 @@ test('Peak calculator is collapsed, labelled, keyboard-native, and emits only ti
         '282° WNW');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__elevation strong').textContent,
         '17° above horizon');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-name').textContent,
+        'Waning Crescent');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__fact-detail').textContent,
+        '19% illuminated');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-icon').textContent, '🌘');
+    assert.equal(calculator.element.dataset.moonPhase, '7');
     assert.equal(calculator.element.querySelectorAll('.bpb-sun-calculator__event-time').length, 2);
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__event-marker').style.insetInlineStart,
         /%$/);
-    assert.match(calculator.element.textContent, /Astronomical position at this location/);
+    assert.match(calculator.element.textContent, /Astronomical sun position and moon phase/);
 }));
 
 test('slider value text follows authoritative ordinary, gap, fold, and estimated clocks', () => withDom(dom => {
@@ -253,7 +266,7 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     calculator.render(ordinaryState({ elevationDeg: -4.6 }));
     frames.shift()();
     assert.equal(calculator.element.querySelector('input[type="date"]'), null);
-    assert.match(calculator.element.textContent, /Sun at selected point/);
+    assert.match(calculator.element.textContent, /Sun & Moon at selected point/);
     assert.match(calculator.element.textContent, /5° below horizon/);
     assert.match(calculator.element.textContent, /GPX point/);
     assert.match(calculator.element.textContent,
@@ -348,6 +361,29 @@ test('finite position remains visible when rise and set metadata is unavailable'
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__summary').textContent, /282° WNW/);
     assert.match(calculator.element.textContent, /Rise and set times unavailable for this date/);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__layout').hidden, false);
+}));
+
+test('finite Sun position remains visible when Moon phase metadata is unavailable', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const state = ordinaryState();
+    calculator.render({
+        ...state,
+        result: {
+            ...state.result,
+            moonIlluminationFraction: null,
+            moonPhase: null,
+            moonPhaseIndex: null,
+            moonPhaseLabel: null,
+        },
+    });
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__summary').textContent, /282° WNW/);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-name').textContent,
+        'Unavailable');
+    assert.equal(calculator.element.dataset.moonPhase, undefined);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__reading').hidden, false);
 }));
 
 test('GPX prompts and unavailable selections stay inspectable without retaining a stale reading', () => withDom(dom => {

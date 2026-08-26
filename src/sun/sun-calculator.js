@@ -54,8 +54,24 @@ const chevronIcon = () => {
 
 const roundedDegrees = value => `${Math.round(value)}°`;
 const elevationText = value => `${roundedDegrees(Math.abs(value))} ${value >= 0 ? 'above' : 'below'} horizon`;
+const MOON_PHASE_ICONS = Object.freeze(['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']);
 const eventDaySuffix = relation => relation === 'previous-day' ? ' (previous day)'
     : relation === 'next-day' ? ' (next day)' : '';
+
+function moonDisplay(result) {
+    const phaseIndex = result?.moonPhaseIndex;
+    const fraction = result?.moonIlluminationFraction;
+    if (!Number.isInteger(phaseIndex) || phaseIndex < 0 || phaseIndex >= MOON_PHASE_ICONS.length
+        || typeof result?.moonPhaseLabel !== 'string'
+        || !Number.isFinite(fraction) || fraction < 0 || fraction > 1) return null;
+    const illumination = `${Math.round(fraction * 100)}% illuminated`;
+    return Object.freeze({
+        icon: MOON_PHASE_ICONS[phaseIndex],
+        label: result.moonPhaseLabel,
+        illumination,
+        announcement: `${result.moonPhaseLabel}, ${illumination}`,
+    });
+}
 
 function eventDisplay(zone, ms, dayRelation) {
     const clock = MountainTime.formatClock(zone, ms);
@@ -105,7 +121,7 @@ export function createSunCalculator({
     toggle.setAttribute('aria-controls', id);
     const icon = sunIcon();
     const title = element('span', 'bpb-sun-calculator__title',
-        mode === 'peak' ? 'Sun position' : 'Sun at selected point');
+        mode === 'peak' ? 'Sun & Moon' : 'Sun & Moon at selected point');
     const summary = element('span', 'bpb-sun-calculator__summary', 'Unavailable');
     const chevron = chevronIcon();
     toggle.append(icon, title, summary, chevron);
@@ -173,7 +189,16 @@ export function createSunCalculator({
     const elevationLabel = element('span', 'bpb-sun-calculator__fact-label', 'Elevation');
     const elevationValue = element('strong', 'bpb-sun-calculator__fact-value');
     elevationFact.append(elevationLabel, elevationValue);
-    facts.append(direction, elevationFact);
+    const moonFact = element('div', 'bpb-sun-calculator__moon');
+    const moonLabel = element('span', 'bpb-sun-calculator__fact-label', 'Moon phase');
+    const moonValue = element('strong', 'bpb-sun-calculator__fact-value bpb-sun-calculator__moon-value');
+    const moonIcon = element('span', 'bpb-sun-calculator__moon-icon');
+    moonIcon.setAttribute('aria-hidden', 'true');
+    const moonName = element('span', 'bpb-sun-calculator__moon-name');
+    moonValue.append(moonIcon, moonName);
+    const moonIllumination = element('span', 'bpb-sun-calculator__fact-detail');
+    moonFact.append(moonLabel, moonValue, moonIllumination);
+    facts.append(direction, elevationFact, moonFact);
     const events = element('div', 'bpb-sun-calculator__events');
     const eventsText = element('span', 'bpb-sun-calculator__events-text');
     const eventsVisual = element('span', 'bpb-sun-calculator__event-line');
@@ -187,7 +212,7 @@ export function createSunCalculator({
     events.append(eventsText, eventsVisual);
 
     const limitation = element('p', 'bpb-sun-calculator__limitation',
-        'Astronomical position at this location. Nearby terrain may block the sun.');
+        'Astronomical sun position and moon phase. Nearby terrain may block either object from view.');
     const empty = element('p', 'bpb-sun-calculator__empty');
     empty.hidden = true;
     const status = element('div', 'bpb-sun-calculator__status');
@@ -260,6 +285,13 @@ export function createSunCalculator({
         }, statusDelayMs);
     };
 
+    const clearMoon = () => {
+        moonIcon.textContent = '';
+        moonName.textContent = '';
+        moonIllumination.textContent = '';
+        delete root.dataset.moonPhase;
+    };
+
     const showUnavailable = (message, { expandable = false, summaryText = 'Unavailable' } = {}) => {
         const text = message || 'Sun position is unavailable.';
         summary.textContent = summaryText;
@@ -269,6 +301,7 @@ export function createSunCalculator({
         directionValue.textContent = '';
         elevationValue.textContent = '';
         elevationFact.hidden = true;
+        clearMoon();
         eventsText.textContent = '';
         events.classList.remove('bpb-sun-calculator__events--text');
         eventsVisual.hidden = true;
@@ -308,6 +341,7 @@ export function createSunCalculator({
         directionValue.textContent = '';
         elevationValue.textContent = '';
         elevationFact.hidden = true;
+        clearMoon();
         eventsText.textContent = '';
         eventsVisual.hidden = true;
         events.classList.remove('bpb-sun-calculator__events--text');
@@ -384,6 +418,19 @@ export function createSunCalculator({
         directionValue.textContent = `${azimuth} ${state.result.directionLabel}`;
         elevationFact.hidden = false;
         elevationValue.textContent = elevation;
+        const moon = moonDisplay(state.result);
+        if (moon) {
+            moonIcon.textContent = moon.icon;
+            moonName.textContent = moon.label;
+            moonIllumination.textContent = moon.illumination;
+            root.dataset.moonPhase = String(state.result.moonPhaseIndex);
+        } else {
+            moonIcon.textContent = '';
+            moonName.textContent = 'Unavailable';
+            moonIllumination.textContent = '';
+            delete root.dataset.moonPhase;
+        }
+        const moonAnnouncement = moon?.announcement || 'Moon phase unavailable';
         events.classList.toggle('bpb-sun-calculator__events--text',
             state.result.daylightState !== 'ordinary');
         eventsVisual.hidden = true;
@@ -401,7 +448,7 @@ export function createSunCalculator({
                 events.classList.add('bpb-sun-calculator__events--text');
                 eventsText.textContent = 'Rise and set times unavailable for this date.';
                 scheduleCompass(state);
-                announce(`${summary.textContent}. ${eventsText.textContent}`);
+                announce(`${summary.textContent}. ${moonAnnouncement}. ${eventsText.textContent}`);
                 return;
             }
             eventsText.textContent = eventDetails.text;
@@ -418,7 +465,7 @@ export function createSunCalculator({
             eventsVisual.hidden = false;
         }
         scheduleCompass(state);
-        announce(`${summary.textContent}. ${eventsText.textContent}`);
+        announce(`${summary.textContent}. ${moonAnnouncement}. ${eventsText.textContent}`);
     };
 
     const setExpanded = expanded => {

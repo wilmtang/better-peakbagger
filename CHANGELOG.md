@@ -2,13 +2,14 @@
 
 ## Unreleased
 
-- **Plan Peak and GPX outings around the Sun without sending a coordinate
+- **Plan Peak and GPX outings around the Sun and Moon without sending a coordinate
   anywhere.** Validated Peak maps and selected saved-GPX points now show
   mountain-local apparent direction/elevation and level-horizon sunrise and
-  sunset from packaged astronomy data. GPX timestamps remain authoritative,
-  untimed tracks use an honest ascent-date preview, and the compass follows a
-  rotated 3D view without changing absolute azimuth. The calculator does not
-  predict terrain shadows, weather, or actual direct light.
+  sunset, plus Moon phase and illuminated percentage, from packaged astronomy
+  data. GPX timestamps remain authoritative, untimed tracks use an honest
+  ascent-date preview, and the compass follows a rotated 3D view without
+  changing absolute azimuth. The calculator does not predict terrain shadows,
+  weather, or actual direct light.
 
 ## 3.6.0 — 2026-08-22
 

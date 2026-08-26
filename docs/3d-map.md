@@ -106,10 +106,10 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 
 | Module | World | Owns | Must not own |
 | --- | --- | --- | --- |
-| `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
+| `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
 | `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
-| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, summit Sun state | Storage, renderer internals, duplicate lifecycle logic |
+| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, summit Sun/Moon state | Storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
@@ -145,7 +145,7 @@ lifecycle concerns:
 - chart hover and keyboard selection post a bounded `highlight` coordinate while 3D is active;
 - the inline analyzer status area displays renderer errors and drape notices.
 
-Its selected-point Sun calculator is also surface-owned. The coordinator may
+Its selected-point Sun and Moon calculator is also surface-owned. The coordinator may
 deliver a bearing only after the ordinary active-state, current-frame, finite,
 and normalization gates accept a `view` message. That changes only the
 decorative solar compass: absolute Sun azimuth/elevation and route selection do
@@ -190,7 +190,7 @@ summit focus rather than an invented route. The subject peak is supplied
 separately because Peakbagger's nearby-peak feed may intentionally exclude the
 page's own summit.
 
-The same validated summit coordinate owns the Peak Sun calculator below the
+The same validated summit coordinate owns the Peak Sun and Moon calculator below the
 map. It consumes accepted 3D bearing through the optional coordinator callback;
 Full Screen BigMap passes no callback and has no calculator.
 

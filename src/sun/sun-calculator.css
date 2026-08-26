@@ -290,7 +290,8 @@
     min-inline-size: 0;
 }
 .bpb-sun-calculator__direction,
-.bpb-sun-calculator__elevation {
+.bpb-sun-calculator__elevation,
+.bpb-sun-calculator__moon {
     display: grid;
     gap: 0.35rem;
     min-inline-size: 0;
@@ -304,6 +305,24 @@
     font-size: clamp(1.2em, 2.4vw, 1.55em);
     line-height: 1.15;
     overflow-wrap: anywhere;
+}
+.bpb-sun-calculator__moon-value {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: clamp(1.05em, 2vw, 1.3em);
+}
+.bpb-sun-calculator__moon-icon {
+    flex: 0 0 auto;
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+    font-size: 1.2em;
+    font-weight: 400;
+    line-height: 1;
+}
+.bpb-sun-calculator__fact-detail {
+    min-inline-size: 0;
+    color: var(--bpb-sun-muted);
+    font-size: 0.9em;
 }
 .bpb-sun-calculator__events {
     grid-column: 1 / -1;
@@ -396,6 +415,7 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         inline-size: 100%;
     }
+    .bpb-sun-calculator__moon { grid-column: 1 / -1; }
     .bpb-sun-calculator__compass { inline-size: min(10rem, 70%); }
 }
 

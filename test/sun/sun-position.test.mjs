@@ -7,7 +7,7 @@ import test from 'node:test';
 import { mountainTime as MountainTime } from '../../src/time/mountain-time.js';
 import { sunPosition as SunPosition } from '../../src/sun/sun-position.js';
 
-test('SunCalc 2 reference position and rise/set vector stays north-based and degree-valued', () => {
+test('SunCalc 2 reference Sun and Moon vector stays north-based and degree-valued', () => {
     const zone = MountainTime.resolve(50.5, 30.5);
     const result = SunPosition.calculate({
         lat: 50.5,
@@ -24,6 +24,10 @@ test('SunCalc 2 reference position and rise/set vector stays north-based and deg
     assert.ok(Math.abs(result.sunsetMs - Date.parse('2013-03-05T15:46:19.732Z')) < 1000);
     assert.equal(result.sunriseDayRelation, 'same-day');
     assert.equal(result.sunsetDayRelation, 'same-day');
+    assert.ok(Math.abs(result.moonIlluminationFraction - 0.4911928) < 0.000001);
+    assert.ok(Math.abs(result.moonPhase - 0.7528036) < 0.000001);
+    assert.equal(result.moonPhaseIndex, 6);
+    assert.equal(result.moonPhaseLabel, 'Last Quarter');
 });
 
 test('16-point directions cover cardinal quadrants and screen bearing wraps across north', () => {
@@ -39,6 +43,18 @@ test('16-point directions cover cardinal quadrants and screen bearing wraps acro
     });
     assert.ok(Math.abs(result.screenAzimuthDeg - 2.06095) < 0.001);
     assert.equal(result.isAboveHorizon, true);
+});
+
+test('Moon phases use the nearest eighth and reject values outside the package contract', () => {
+    assert.deepEqual([
+        0, 0.124, 0.25, 0.374, 0.5, 0.624, 0.75, 0.874, 1,
+    ].map(SunPosition.moonPhaseLabel), [
+        'New Moon', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous',
+        'Full Moon', 'Waning Gibbous', 'Last Quarter', 'Waning Crescent', 'New Moon',
+    ]);
+    assert.deepEqual([
+        Number.NaN, -0.01, 1.01,
+    ].map(SunPosition.moonPhaseLabel), [null, null, null]);
 });
 
 test('polar day and night report absent events without inventing rise or set times', () => {
@@ -98,6 +114,23 @@ test('solar calculation rejects malformed primary inputs but preserves position 
     assert.equal(malformedEvents.daylightState, 'unavailable');
     assert.equal(malformedEvents.sunriseMs, null);
     assert.equal(malformedEvents.sunsetMs, null);
+    assert.equal(malformedEvents.moonPhaseLabel, null);
+
+    const malformedMoon = SunPosition.calculate({
+        lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
+        sunCalc: {
+            getPosition: () => ({ azimuth: 90, altitude: -1 }),
+            getTimes: () => ({
+                solarNoon: new Date('1970-01-01T12:00:00Z'),
+                sunrise: new Date('1970-01-01T06:00:00Z'),
+                sunset: new Date('1970-01-01T18:00:00Z'),
+            }),
+            getMoonIllumination: () => ({ fraction: Number.NaN, phase: 0.5 }),
+        },
+    });
+    assert.equal(malformedMoon.azimuthDeg, 90);
+    assert.equal(malformedMoon.moonPhaseLabel, null,
+        'malformed lunar metadata must not erase a finite Sun position');
 });
 
 test('event search is bounded and rejects cycles whose solar noon belongs to another date', () => {

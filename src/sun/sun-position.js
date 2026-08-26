@@ -9,12 +9,21 @@ const DIRECTIONS = Object.freeze([
     'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
     'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
 ]);
+const MOON_PHASES = Object.freeze([
+    'New Moon', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous',
+    'Full Moon', 'Waning Gibbous', 'Last Quarter', 'Waning Crescent',
+]);
 
 export const normalizeDegrees = value => ((value % 360) + 360) % 360;
 
 export function directionLabel(azimuthDeg) {
     if (!Number.isFinite(azimuthDeg)) return null;
     return DIRECTIONS[Math.round(normalizeDegrees(azimuthDeg) / 22.5) % DIRECTIONS.length];
+}
+
+export function moonPhaseLabel(phase) {
+    if (!Number.isFinite(phase) || phase < 0 || phase > 1) return null;
+    return MOON_PHASES[Math.round(phase * MOON_PHASES.length) % MOON_PHASES.length];
 }
 
 const validCoordinate = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lon)
@@ -96,22 +105,46 @@ export function calculateSunInstant({
     sunCalc = SunCalc,
 }) {
     if (!validCoordinate(lat, lon) || !Number.isFinite(ms) || !Number.isFinite(mapBearing)) return null;
+    let position;
     try {
-        const position = sunCalc.getPosition(new Date(ms), lat, lon);
-        const azimuthDeg = position?.azimuth;
-        const elevationDeg = position?.altitude;
-        if (!Number.isFinite(azimuthDeg) || !Number.isFinite(elevationDeg)) return null;
-        const normalizedAzimuth = normalizeDegrees(azimuthDeg);
-        return Object.freeze({
-            azimuthDeg: normalizedAzimuth,
-            directionLabel: directionLabel(normalizedAzimuth),
-            elevationDeg,
-            isAboveHorizon: elevationDeg >= 0,
-            screenAzimuthDeg: normalizeDegrees(normalizedAzimuth - mapBearing),
-        });
+        position = sunCalc.getPosition(new Date(ms), lat, lon);
     } catch {
         return null;
     }
+    const azimuthDeg = position?.azimuth;
+    const elevationDeg = position?.altitude;
+    if (!Number.isFinite(azimuthDeg) || !Number.isFinite(elevationDeg)) return null;
+
+    let moon = null;
+    try {
+        const illumination = sunCalc.getMoonIllumination(new Date(ms));
+        const fraction = illumination?.fraction;
+        const phase = illumination?.phase;
+        const phaseLabel = moonPhaseLabel(phase);
+        if (Number.isFinite(fraction) && fraction >= 0 && fraction <= 1 && phaseLabel) {
+            moon = Object.freeze({
+                moonIlluminationFraction: fraction,
+                moonPhase: phase,
+                moonPhaseIndex: Math.round(phase * MOON_PHASES.length) % MOON_PHASES.length,
+                moonPhaseLabel: phaseLabel,
+            });
+        }
+    } catch {
+        // Lunar metadata failure must not erase an otherwise valid Sun position.
+    }
+
+    const normalizedAzimuth = normalizeDegrees(azimuthDeg);
+    return Object.freeze({
+        azimuthDeg: normalizedAzimuth,
+        directionLabel: directionLabel(normalizedAzimuth),
+        elevationDeg,
+        isAboveHorizon: elevationDeg >= 0,
+        screenAzimuthDeg: normalizeDegrees(normalizedAzimuth - mapBearing),
+        moonIlluminationFraction: moon?.moonIlluminationFraction ?? null,
+        moonPhase: moon?.moonPhase ?? null,
+        moonPhaseIndex: moon?.moonPhaseIndex ?? null,
+        moonPhaseLabel: moon?.moonPhaseLabel ?? null,
+    });
 }
 
 export function calculateSunPosition({ lat, lon, ms, date, zone, mapBearing = 0, sunCalc = SunCalc }) {
@@ -133,4 +166,5 @@ export const sunPosition = Object.freeze({
     calculateEvents: calculateSunEvents,
     normalizeDegrees,
     directionLabel,
+    moonPhaseLabel,
 });

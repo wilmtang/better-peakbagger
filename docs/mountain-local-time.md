@@ -10,9 +10,9 @@ camping spots. All of these now use the **climb's local time**, and the stats
 bar discloses it: *"Times in the mountain's local time (PDT)"*.
 
 The same resolver and formatter now own the offline
-[Sun position calculator](sun-position.md). Peak pages use the validated summit
-coordinate; GPX analysis continues to use the trailhead. No surface derives a
-mountain clock from the viewer's machine timezone.
+[Sun position and Moon phase calculator](sun-position.md). Peak pages use the
+validated summit coordinate; GPX analysis continues to use the trailhead. No
+surface derives a mountain clock from the viewer's machine timezone.
 
 ## Where the timezone comes from
 
@@ -46,10 +46,10 @@ zone's `YYYY-MM-DD` (`en-CA`) date of each timestamp.
 
 ## Converting an editable mountain clock to an instant
 
-Peak Sun planning and untimed GPX previews start with a civil `YYYY-MM-DD` and
-minute of day rather than a recorded UTC timestamp. `mountain-time.js` resolves
-the UTC instant whose formatted date and clock match that civil value in the
-resolved zone:
+Peak Sun/Moon planning and untimed GPX previews start with a civil `YYYY-MM-DD`
+and minute of day rather than a recorded UTC timestamp. `mountain-time.js`
+resolves the UTC instant whose formatted date and clock match that civil value
+in the resolved zone:
 
 - an ordinary local minute resolves exactly;
 - a spring-forward gap snaps to the first valid minute after the gap, and the
