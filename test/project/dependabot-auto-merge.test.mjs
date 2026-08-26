@@ -24,6 +24,14 @@ const developmentGuide = await readFile(
     new URL('../../docs/development.md', import.meta.url),
     'utf8',
 );
+const packageJson = JSON.parse(await readFile(
+    new URL('../../package.json', import.meta.url),
+    'utf8',
+));
+const packageLock = JSON.parse(await readFile(
+    new URL('../../package-lock.json', import.meta.url),
+    'utf8',
+));
 
 const stepIndex = name => workflow.indexOf(`- name: ${name}`);
 
@@ -108,6 +116,8 @@ test('only npm updates auto-merge and queueing is bound to the verified head', (
 });
 
 test('npm groups preserve release paths and catch otherwise separate updates', () => {
+    assert.match(dependabotConfig, /^    versioning-strategy: increase$/m,
+        'already-satisfied family members must still receive raised manifest ranges');
     assert.match(dependabotConfig, /^      bundled-runtime:\s*$/m);
     assert.match(dependabotConfig, /^      copied-runtime:\s*$/m);
     assert.match(dependabotConfig, /^      tooling:\s*$/m);
@@ -128,6 +138,23 @@ test('npm groups preserve release paths and catch otherwise separate updates', (
     assert.match(developmentGuide, /first matching group[\s\S]*otherwise unmatched direct and transitive/);
     assert.match(developmentGuide, /security updates[\s\S]*does not combine with ordinary version updates/);
     assert.doesNotMatch(developmentGuide, /\| `(?:editor|vendored)` \|/);
+    assert.match(developmentGuide,
+        /versioning-strategy: increase[\s\S]*already-satisfied TipTap siblings/);
+});
+
+test('the declared and locked TipTap family moves as one version', () => {
+    const declared = Object.entries(packageJson.devDependencies)
+        .filter(([name]) => name.startsWith('@tiptap/'));
+    assert.ok(declared.length > 1, 'the project must exercise a real TipTap family');
+    assert.equal(new Set(declared.map(([_name, range]) => range)).size, 1,
+        'all direct TipTap requirements must have the same range');
+
+    const locked = Object.entries(packageLock.packages)
+        .filter(([packagePath]) => packagePath.startsWith('node_modules/@tiptap/'))
+        .map(([_packagePath, metadata]) => metadata.version);
+    assert.ok(locked.length >= declared.length);
+    assert.equal(new Set(locked).size, 1,
+        'all direct and transitive TipTap packages must resolve to one lockstep version');
 });
 
 test('runtime dependency groups match how the build graph ships each package', async () => {

@@ -28,6 +28,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Raise every matching manifest minimum, even when its current caret range
+    # already admits the new release. This is load-bearing for lockstep families
+    # such as TipTap: grouping alone does not make an already-satisfied sibling
+    # appear in the pull request.
+    versioning-strategy: increase
     # One per group.
     open-pull-requests-limit: 3
     # Version updates wait out their initial release churn. Security updates

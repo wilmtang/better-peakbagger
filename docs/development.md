@@ -379,6 +379,11 @@ Grouping is a correctness constraint, not tidiness. `@tiptap/*`,
 `@codemirror/*`, and `@lezer/*` are released in lockstep and carry peer
 relationships, so each family moves as a single pull request. A lone bump of one
 member against an unchanged sibling is exactly the breakage grouping prevents.
+The npm updater also uses `versioning-strategy: increase`: Dependabot raises the
+minimum in every matching manifest range even when an older caret already
+admits the release. That makes already-satisfied TipTap siblings visible to the
+group instead of producing a partial family update that `npm ci` rejects on its
+exact peer requirements.
 
 Within npm, group membership no longer decides whether an update waits, since
 none of those groups do. It decides how much of `dist/` one merge can move,
