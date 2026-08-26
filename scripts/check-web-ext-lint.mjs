@@ -59,9 +59,9 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'content/ascent-editor.js',
         count: 1,
-        owner: 'TipTap core 3.29.2',
+        owner: 'TipTap core 3.30.1',
         packageName: '@tiptap/core',
-        packageVersion: '3.29.2',
+        packageVersion: '3.30.1',
         reason: 'dependency writes its generated stylesheet into a style element'
     }
 ]);

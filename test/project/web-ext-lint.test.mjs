@@ -47,7 +47,7 @@ test('the web-ext lint gate accepts exactly the owned warnings per file', async 
     driftedLock.packages['node_modules/@tiptap/core'].version = '3.30.0';
     assert.throws(
         () => validateWarningDependencyVersions(driftedLock),
-        /TipTap core 3\.29\.2 warning acceptance is stale/,
+        /TipTap core 3\.30\.1 warning acceptance is stale/,
     );
     assert.equal(packageJson.scripts.lint,
         'eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs');

@@ -387,7 +387,7 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
         'reviewer notes must derive every authored runtime root from the build graph');
     assert.match(metadata.version.approval_notes, /CodeMirror\/Lezer/);
     assert.match(metadata.version.approval_notes, /TipTap\/ProseMirror/);
-    assert.match(metadata.version.approval_notes, /TipTap core 3\.29\.2/);
+    assert.match(metadata.version.approval_notes, /TipTap core 3\.30\.1/);
     assert.match(metadata.version.approval_notes, /ProseMirror view 1\.42\.1/);
     assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
     assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);

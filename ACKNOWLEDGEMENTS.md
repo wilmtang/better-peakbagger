@@ -69,12 +69,12 @@ token stream and does not use its HTML renderer.
 
 ### TipTap
 
-Better Peakbagger bundles TipTap core 3.29.2 with its TipTap extension and
+Better Peakbagger bundles TipTap core 3.30.1 with its TipTap extension and
 ProseMirror dependencies into `content/ascent-editor.js` to provide the
 rich-text editor.
 
 - Project: [TipTap](https://tiptap.dev/)
-- Source: [TipTap core 3.29.2](https://github.com/ueberdosis/tiptap/tree/v3.29.2)
+- Source: [TipTap core 3.30.1](https://github.com/ueberdosis/tiptap/tree/v3.30.1)
 - License: MIT
 - Packaged license text: `THIRD_PARTY_NOTICES.txt`
 
