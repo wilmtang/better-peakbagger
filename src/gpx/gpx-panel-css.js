@@ -84,6 +84,18 @@ export const gpxPanelCss = `
     margin-block-start: 10px !important;
 }
 @container bpb-route-analysis (max-width: 680px) {
+    #bpb-route-explorer .bpb-sun-calculator__toggle {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+    #bpb-route-explorer .bpb-sun-calculator__summary {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        text-align: start;
+    }
+    #bpb-route-explorer .bpb-sun-calculator__chevron {
+        grid-column: 3;
+        grid-row: 1;
+    }
     #bpb-route-explorer .bpb-sun-calculator__layout { grid-template-columns: 1fr; }
     #bpb-route-explorer .bpb-sun-calculator__reading {
         grid-template-columns: minmax(8rem, 0.85fr) minmax(8.5rem, 1.15fr);

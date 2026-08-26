@@ -467,6 +467,12 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
     assert.equal(panel.hidden, false);
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__empty').textContent,
         /Select a chart point/);
+    const placeholder = calculator.element.querySelector('.bpb-sun-calculator__layout');
+    assert.equal(placeholder.hidden, false,
+        'the prompt keeps the populated layout in flow so chart hover cannot move itself');
+    assert.equal(placeholder.inert, true);
+    assert.equal(placeholder.getAttribute('aria-hidden'), 'true');
+    assert.equal(calculator.element.dataset.layoutState, 'placeholder');
 
     calculator.render({ unavailable: 'No track or ascent date is available.' });
     assert.equal(button.disabled, false);
@@ -477,8 +483,13 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
     assert.doesNotMatch(calculator.element.textContent, /Level-horizon sunrise/);
 
     calculator.render(ordinaryState());
-    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__layout').hidden, false);
+    assert.equal(placeholder.hidden, false);
+    assert.equal(placeholder.inert, false);
+    assert.equal(placeholder.hasAttribute('aria-hidden'), false);
+    assert.equal(calculator.element.dataset.layoutState, undefined);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
+    assert.match(css, /bpb-sun-calculator__summary\s*\{[\s\S]*block-size:\s*2\.7em/);
+    assert.match(css, /data-layout-state="placeholder"[\s\S]*visibility:\s*hidden/);
 }));
 
 test('recoverable Peak failures retain controls and clear cleanly after a valid selection', () => withDom(dom => {

@@ -2117,6 +2117,7 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /@media \(min-width: 780px\)[\s\S]*grid-template-columns:\s*minmax\(320px, 0\.95fr\) minmax\(430px, 1\.05fr\)/);
     assert.match(css, /container:\s*bpb-route-analysis \/ inline-size/);
     assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__layout\s*\{\s*grid-template-columns:\s*1fr/);
+    assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__summary\s*\{[\s\S]*grid-row:\s*2/);
     assert.match(css, /#bpb-route-explorer > #bpb-map-viewport\s*\{[\s\S]*position:\s*sticky !important;[\s\S]*max-block-size:\s*calc\(100vh - 16px\) !important;/);
 
     dom.window.close();

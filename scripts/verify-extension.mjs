@@ -2253,6 +2253,103 @@ try {
         && analyzerSunState.afterCoordinates && analyzerSunState.beforeLegend
         && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
     `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
+    const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');
+    await analyzerSunToggle.click();
+    await coordinateCanvas.scrollIntoViewIfNeeded();
+    await offPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() =>
+        requestAnimationFrame(resolve))));
+    const readOpenSunGeometry = () => offPage.evaluate(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
+        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        return {
+            summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+            layoutState: calculator?.dataset.layoutState || '',
+            calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
+            toggleHeight: toggle?.getBoundingClientRect().height ?? null,
+            panelHeight: panel?.getBoundingClientRect().height ?? null,
+            canvasTop: canvas?.getBoundingClientRect().top ?? null,
+            canvasHeight: canvas?.getBoundingClientRect().height ?? null,
+        };
+    });
+    const promptSunGeometry = await readOpenSunGeometry();
+    const summaryHeightVariants = await analyzerSunToggle.evaluate(toggle => {
+        const summary = toggle.querySelector('.bpb-sun-calculator__summary');
+        const original = summary.textContent;
+        summary.textContent = '80° E · 1° below horizon';
+        const belowHorizon = toggle.getBoundingClientRect().height;
+        summary.textContent = '114° ESE · 36° above horizon';
+        const aboveHorizon = toggle.getBoundingClientRect().height;
+        summary.textContent = original;
+        const prompt = toggle.getBoundingClientRect().height;
+        return { belowHorizon, aboveHorizon, prompt };
+    });
+    const promptHoverTarget = await coordinateCanvas.evaluate(canvas => {
+        const chart = globalThis.Chart?.getChart?.(canvas);
+        const meta = chart?.getSortedVisibleDatasetMetas?.()[0];
+        const index = meta?.data?.length ? Math.floor(meta.data.length * 0.8) : -1;
+        const point = index >= 0 ? meta.data[index]?.getCenterPoint?.() : null;
+        const rect = canvas.getBoundingClientRect();
+        return Number.isFinite(point?.x) && Number.isFinite(point?.y)
+            ? { x: rect.left + point.x, y: rect.top + point.y }
+            : null;
+    });
+    check(promptHoverTarget, 'the packaged Analyzer chart exposed no pre-selection hover target');
+    if (promptHoverTarget) await offPage.mouse.move(promptHoverTarget.x, promptHoverTarget.y);
+    const hoveredPromptSunGeometry = promptHoverTarget ? await offPage.waitForFunction(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        if (summary === 'Select a chart point') return false;
+        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
+        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        return {
+            summary,
+            layoutState: calculator?.dataset.layoutState || '',
+            calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
+            toggleHeight: toggle?.getBoundingClientRect().height ?? null,
+            panelHeight: panel?.getBoundingClientRect().height ?? null,
+            canvasTop: canvas?.getBoundingClientRect().top ?? null,
+            canvasHeight: canvas?.getBoundingClientRect().height ?? null,
+        };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    if (promptHoverTarget) await offPage.mouse.move(1, 1);
+    const restoredPromptSunGeometry = promptHoverTarget ? await offPage.waitForFunction(() => {
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
+        if (summary !== 'Select a chart point') return false;
+        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
+        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        return {
+            summary,
+            layoutState: calculator?.dataset.layoutState || '',
+            calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
+            toggleHeight: toggle?.getBoundingClientRect().height ?? null,
+            panelHeight: panel?.getBoundingClientRect().height ?? null,
+            canvasTop: canvas?.getBoundingClientRect().top ?? null,
+            canvasHeight: canvas?.getBoundingClientRect().height ?? null,
+        };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    const stableGeometryKeys = [
+        'calculatorHeight', 'toggleHeight', 'panelHeight', 'canvasTop', 'canvasHeight',
+    ];
+    const geometryMatches = (left, right) => Boolean(left && right)
+        && stableGeometryKeys.every(key => Math.abs(left[key] - right[key]) <= 0.5);
+    check(summaryHeightVariants.belowHorizon === summaryHeightVariants.aboveHorizon
+        && summaryHeightVariants.aboveHorizon === summaryHeightVariants.prompt
+        && hoveredPromptSunGeometry?.layoutState === ''
+        && restoredPromptSunGeometry?.layoutState === 'placeholder'
+        && geometryMatches(promptSunGeometry, hoveredPromptSunGeometry)
+        && geometryMatches(promptSunGeometry, restoredPromptSunGeometry),
+    `the open GPX Sun card or chart moved across prompt and hover states: ${JSON.stringify({
+        summaryHeightVariants,
+        promptSunGeometry,
+        hoveredPromptSunGeometry,
+        restoredPromptSunGeometry,
+    })}`);
+    await analyzerSunToggle.click();
     if (process.env.BPB_VERIFY_ANALYZER_SUN_PROMPT_SCREENSHOT) {
         const promptToggle = offPage.locator('.bpb-sun-calculator__toggle');
         await promptToggle.click();
@@ -2343,7 +2440,9 @@ try {
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(selectedSun,
         `the packaged GPX Sun calculator did not follow keyboard route selection: ${JSON.stringify(selectedSun)}`);
+    if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
     await coordinateCanvas.scrollIntoViewIfNeeded();
+    const selectedSunGeometry = await readOpenSunGeometry();
     const hoverTarget = await coordinateCanvas.evaluate(canvas => {
         const chart = globalThis.Chart?.getChart?.(canvas);
         const meta = chart?.getSortedVisibleDatasetMetas?.()[0];
@@ -2366,6 +2465,7 @@ try {
     }, selectedSun, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
     check(hoveredSun,
         `the packaged GPX Sun calculator did not preview a hovered chart point: ${JSON.stringify({ selectedSun, hoveredSun })}`);
+    const hoveredSelectedSunGeometry = hoveredSun ? await readOpenSunGeometry() : null;
     if (hoverTarget) await offPage.mouse.move(1, 1);
     const restoredSun = hoverTarget ? await offPage.waitForFunction(previous => {
         const calculator = document.querySelector('.bpb-sun-calculator');
@@ -2376,8 +2476,14 @@ try {
     }, selectedSun, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
     check(restoredSun,
         `the packaged GPX Sun calculator did not restore its selected point after hover: ${JSON.stringify({ selectedSun, hoveredSun })}`);
-    const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');
-    if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
+    const restoredSelectedSunGeometry = restoredSun ? await readOpenSunGeometry() : null;
+    check(geometryMatches(selectedSunGeometry, hoveredSelectedSunGeometry)
+        && geometryMatches(selectedSunGeometry, restoredSelectedSunGeometry),
+    `the open GPX Sun card or chart moved between selected and hovered points: ${JSON.stringify({
+        selectedSunGeometry,
+        hoveredSelectedSunGeometry,
+        restoredSelectedSunGeometry,
+    })}`);
     const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');
     await analyzerSunToggle.focus();
     await offPage.keyboard.press('Tab');

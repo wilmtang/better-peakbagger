@@ -172,6 +172,7 @@ export function createSunCalculator({
         dateLabel.htmlFor = dateValue.id;
     }
     const dateMeta = element('span', 'bpb-sun-calculator__meta');
+    dateMeta.classList.add('bpb-sun-calculator__meta--date');
     dateRow.append(dateLabel, dateValue, dateMeta);
 
     const timeRow = element('div', 'bpb-sun-calculator__field');
@@ -186,6 +187,7 @@ export function createSunCalculator({
     timeLabel.htmlFor = slider.id;
     timeValue.htmlFor = slider.id;
     const timeMeta = element('span', 'bpb-sun-calculator__meta');
+    timeMeta.classList.add('bpb-sun-calculator__meta--time');
     timeRow.append(timeLabel, timeValue, slider, timeMeta);
     controls.append(dateRow, timeRow);
 
@@ -369,10 +371,22 @@ export function createSunCalculator({
         if (mode === 'peak') setExpanded(true);
     };
 
+    const setLayoutPresentation = ({ hidden = false, placeholder = false } = {}) => {
+        layout.hidden = hidden;
+        layout.inert = placeholder;
+        if (placeholder) layout.setAttribute('aria-hidden', 'true');
+        else layout.removeAttribute('aria-hidden');
+        if (placeholder) root.dataset.layoutState = 'placeholder';
+        else delete root.dataset.layoutState;
+    };
+
     const showUnavailable = (message, { expandable = false, summaryText = 'Unavailable' } = {}) => {
         const text = message || 'Sun position is unavailable.';
+        const reserveLayout = mode === 'gpx' && expandable;
         summary.textContent = summaryText;
-        layout.hidden = true;
+        setLayoutPresentation({ hidden: !reserveLayout, placeholder: reserveLayout });
+        controls.hidden = false;
+        reading.hidden = false;
         empty.hidden = false;
         empty.textContent = text;
         directionValue.textContent = '';
@@ -411,7 +425,7 @@ export function createSunCalculator({
         summary.textContent = 'Unavailable for this date and time';
         toggle.disabled = false;
         applyInitialExpansion();
-        layout.hidden = false;
+        setLayoutPresentation();
         controls.hidden = false;
         reading.hidden = true;
         empty.hidden = false;
@@ -470,7 +484,7 @@ export function createSunCalculator({
 
         toggle.disabled = false;
         applyInitialExpansion();
-        layout.hidden = false;
+        setLayoutPresentation();
         controls.hidden = false;
         reading.hidden = false;
         empty.hidden = true;

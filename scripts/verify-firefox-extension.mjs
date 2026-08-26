@@ -1274,6 +1274,28 @@ async function main() {
         if (surfaceState.theme === null) {
             throw new Error('Firefox isolated-world theme bundle did not initialize');
         }
+        const firefoxSunHeaderHeights = await driver.executeScript(`
+      const calculator = document.querySelector('.bpb-sun-calculator');
+      const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
+      const summary = calculator?.querySelector('.bpb-sun-calculator__summary');
+      if (!calculator || !toggle || !summary) return null;
+      toggle.click();
+      const original = summary.textContent;
+      summary.textContent = '80° E · 1° below horizon';
+      const belowHorizon = toggle.getBoundingClientRect().height;
+      summary.textContent = '114° ESE · 36° above horizon';
+      const aboveHorizon = toggle.getBoundingClientRect().height;
+      summary.textContent = original;
+      const prompt = toggle.getBoundingClientRect().height;
+      const layoutState = calculator.dataset.layoutState || '';
+      toggle.click();
+      return { belowHorizon, aboveHorizon, prompt, layoutState };
+    `);
+        assertState(firefoxSunHeaderHeights?.belowHorizon === firefoxSunHeaderHeights?.aboveHorizon
+            && firefoxSunHeaderHeights?.aboveHorizon === firefoxSunHeaderHeights?.prompt
+            && firefoxSunHeaderHeights?.layoutState === 'placeholder',
+        'Firefox changed the GPX Sun header height across prompt and horizon summaries',
+        firefoxSunHeaderHeights);
         const analyzerCanvas = await driver.findElement(By.css('#bpb-gpx-analysis canvas'));
         await analyzerCanvas.sendKeys(Key.ARROW_RIGHT);
         const selectedSunState = await waitForScript(driver, `
