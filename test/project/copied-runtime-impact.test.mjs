@@ -57,3 +57,22 @@ test('Firefox GPU bearing checks settle before the separate pitch gesture', asyn
     assert.equal(verifier.match(/const normalizedNorth =/g)?.length, 2,
         'both 2D reset checks must accept CSS angles equivalent to zero modulo 360');
 });
+
+test('Chrome tilted-peak verification targets the live canvas and proves the pitch', async () => {
+    const verifier = await readFile(
+        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        'utf8',
+    );
+    const tiltedPeakStart = verifier.indexOf('const peakFeedBeforeTilt =');
+    const tiltedPeakEnd = verifier.indexOf("'terrain-peaks-tilted-popup.png'");
+    assert.ok(tiltedPeakStart >= 0 && tiltedPeakStart < tiltedPeakEnd);
+    const tiltedPeakCheck = verifier.slice(tiltedPeakStart, tiltedPeakEnd);
+    assert.match(tiltedPeakCheck, /canvas\.getBoundingClientRect\(\)/,
+        'the drag point must follow the resized terrain canvas');
+    assert.match(tiltedPeakCheck, /targetY: Math\.max\(8,/,
+        'the release must stay in the visible page so the map cannot remain in a drag');
+    assert.match(tiltedPeakCheck, /pitch >= 79 && !map\.isMoving\(\)/,
+        'a network request alone must not stand in for an actual settled pitch gesture');
+    assert.doesNotMatch(tiltedPeakCheck, /const tilt = \{ x: \d+, y: \d+ \}/,
+        'the test must not use a page coordinate that can fall below a resized map');
+});

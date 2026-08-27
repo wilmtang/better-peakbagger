@@ -740,9 +740,12 @@ const assertPlainScrollZooms = async (cdp, label) => {
         const frame = document.getElementById('bpb-terrain-frame');
         const scale = frame && frame.contentDocument
             && frame.contentDocument.querySelector('.maplibregl-ctrl-scale');
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
         return {
-            ready: Boolean(scale) && scale.textContent !== ${JSON.stringify(target.scale)},
-            scale: scale && scale.textContent
+            ready: Boolean(scale) && scale.textContent !== ${JSON.stringify(target.scale)}
+                && map?.loaded() && !map.isMoving(),
+            scale: scale && scale.textContent,
+            moving: map?.isMoving()
         };
     })()`, 8000).catch(() => {
         throw new Error(`${label}: plain scroll did not zoom the 3D map (scale stuck at "${target.scale}")`);
@@ -1240,8 +1243,6 @@ try {
     }
     await capture(cdp, path.join(outputDir, 'terrain-peaks-popup.png'));
 
-    await assertPlainScrollZooms(cdp, 'Ascent 3D');
-
     // Regression: the dots must stay hoverable and clickable with the camera
     // tilted toward horizontal. MapLibre's layer-scoped events resolve the
     // cursor through the terrain surface behind the ring — at high pitch that
@@ -1249,19 +1250,57 @@ try {
     // the frame now hit-tests the billboarded rings in screen space. Right-
     // drag far past the 80° pitch clamp, then hover and click the ring.
     const peakFeedBeforeTilt = peakFeedRequests.length;
-    const tilt = { x: 640, y: 600 };
+    const tilt = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const canvas = frame?.contentDocument?.querySelector('.maplibregl-canvas');
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        if (!frame || !canvas || !map) return null;
+        const frameRect = frame.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const distance = Math.min(300, Math.max(120, canvasRect.height * 0.68));
+        return {
+            x: Math.round(frameRect.left + canvasRect.left + canvasRect.width / 2),
+            y: Math.round(frameRect.top + canvasRect.top + canvasRect.height * 0.82),
+            targetY: Math.max(8,
+                Math.round(frameRect.top + canvasRect.top + canvasRect.height * 0.82 - distance)),
+            pitch: map.getPitch(),
+            width: canvasRect.width,
+            height: canvasRect.height,
+        };
+    })()`);
+    if (!tilt || !Number.isFinite(tilt.pitch) || tilt.width < 1 || tilt.height < 1) {
+        throw new Error(`Ascent 3D tilted peaks: no live canvas drag target (${JSON.stringify(tilt)})`);
+    }
     await cdp.call('Input.dispatchMouseEvent', {
         type: 'mousePressed', x: tilt.x, y: tilt.y, button: 'right', buttons: 2, clickCount: 1
     });
     for (let step = 1; step <= 5; step++) {
         await cdp.call('Input.dispatchMouseEvent', {
-            type: 'mouseMoved', x: tilt.x, y: tilt.y - step * 60, buttons: 2
+            type: 'mouseMoved', x: tilt.x,
+            y: tilt.y + (tilt.targetY - tilt.y) * step / 5, buttons: 2
         });
         await delay(60);
     }
     await cdp.call('Input.dispatchMouseEvent', {
-        type: 'mouseReleased', x: tilt.x, y: tilt.y - 300, button: 'right', buttons: 2, clickCount: 1
+        type: 'mouseReleased', x: tilt.x, y: tilt.targetY, button: 'right', buttons: 2, clickCount: 1
     });
+    const pitched = await waitForPageState(cdp, `(() => {
+        const map = document.getElementById('bpb-terrain-frame')
+            ?.contentWindow?.__bpbTerrainTestMap;
+        const pitch = map?.getPitch();
+        return {
+            ready: Number.isFinite(pitch) && pitch >= 79 && !map.isMoving(),
+            pitch,
+            moving: map?.isMoving(),
+        };
+    })()`, 8000).catch(error => {
+        throw new Error(`Ascent 3D tilted peaks: canvas drag did not reach the high-pitch view (${JSON.stringify(tilt)})`, {
+            cause: error,
+        });
+    });
+    if (!pitched.ready) {
+        throw new Error(`Ascent 3D tilted peaks: pitch did not settle (${JSON.stringify({ tilt, pitched })})`);
+    }
     // A pitch change alone re-keys the clamped view bounds, so the settle must
     // produce a fresh feed request — its absence means the gesture never
     // registered and the tilted checks below would silently re-test pitch 60.
@@ -1296,6 +1335,11 @@ try {
         throw new Error(`Tilted peak popup is wrong: ${JSON.stringify(tiltedPopup)}`);
     }
     await capture(cdp, path.join(outputDir, 'terrain-peaks-tilted-popup.png'));
+
+    // Scroll zoom is a separate interaction contract. Exercise it only after
+    // the high-pitch marker check so its intentionally changed scale cannot
+    // move the synthetic ring before the screen-space hit-test assertion.
+    await assertPlainScrollZooms(cdp, 'Ascent 3D');
 
     // Zoom far out: the dots and any open popup must clear, exactly like the
     // native map when it covers too big an area.
