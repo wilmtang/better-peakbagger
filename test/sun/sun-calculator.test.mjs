@@ -174,7 +174,9 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-position')
         .getAttribute('aria-label'), '315° NW, 24° above horizon');
     const moonMarker = calculator.element.querySelector('.bpb-sun-calculator__moon-marker');
+    const moonOrbit = calculator.element.querySelector('.bpb-sun-calculator__moon-orbit');
     assert.equal(moonMarker.hidden, false);
+    assert.equal(moonOrbit.hidden, false);
     assert.ok(Math.abs(rotationAngle(moonMarker) - 315.2) < 0.001);
     assert.equal(calculator.element.dataset.moonPhase, '7');
     assert.equal(calculator.element.querySelectorAll('.bpb-sun-calculator__event-time').length, 2);
@@ -511,6 +513,7 @@ test('finite Moon phase remains visible when Moon position metadata is unavailab
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-name').textContent,
         'Waning Crescent');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-marker').hidden, true);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-orbit').hidden, true);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__reading').hidden, false);
 }));
 
@@ -684,6 +687,10 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(css, /prefers-reduced-motion: reduce/);
     assert.match(css, /sun--below-horizon/);
     assert.match(css, /moon-marker--below-horizon/);
+    assert.match(css, /bpb-sun-calculator__moon-orbit\s*\{[^}]*inset:\s*22%/s);
+    assert.match(css, /bpb-sun-calculator__moon-marker::before\s*\{[^}]*inset-block-start:\s*22%[^}]*block-size:\s*28%/s);
+    assert.match(css, /bpb-sun-calculator__compass\s*\{[^}]*inline-size:\s*min\(13rem,\s*100%\)/s,
+        'separating the Moon orbit must not enlarge the compass');
     assert.match(css, /event-marker\[hidden\]/);
     assert.match(css, /prefers-reduced-motion: reduce[^}]*[\s\S]*moon-marker[^}]*[\s\S]*chevron\s*\{\s*transition:\s*none/s);
     assert.match(css, /bpb-sun-calculator__time\s*\{[^}]*block-size:\s*2\.75rem/s);

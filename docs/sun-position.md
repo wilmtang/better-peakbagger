@@ -100,8 +100,10 @@ level-horizon sunrise azimuth to the sunset azimuth through the solar-noon side
 of the sky. A hollow endpoint marks sunrise and a filled endpoint marks sunset;
 the exact event clocks remain in the line below. The arc is omitted when daily
 event directions are unavailable and rotates with the same accepted map bearing
-as the Sun, Moon, and cardinal labels. A cool crescent and radial line identify
-the Moon; a hollow marker means it is below the astronomical horizon.
+as the Sun, Moon, and cardinal labels. A subtle full inner orbit keeps the cool
+Moon crescent and radial line distinct from that solar arc without increasing
+the compass diameter; a hollow Moon marker means it is below the astronomical
+horizon. The orbit is a direction guide, not a moonrise or moonset prediction.
 
 Compass animation is coalesced to animation frames. Sun movement, Moon movement,
 and map-bearing changes use the shortest arc across north. Bearing-only updates

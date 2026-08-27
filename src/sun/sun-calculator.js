@@ -226,7 +226,9 @@ export function createSunCalculator({
         'bpb-sun-calculator__daylight-endpoint--sunset');
     sunsetMarker.setAttribute('r', '2.5');
     daylightRange.append(daylightPath, sunriseMarker, sunsetMarker);
-    compassRing.append(daylightRange);
+    const moonOrbit = element('span', 'bpb-sun-calculator__moon-orbit');
+    moonOrbit.hidden = true;
+    compassRing.append(daylightRange, moonOrbit);
     const center = element('span', 'bpb-sun-calculator__compass-center');
     const moonMarker = element('span', 'bpb-sun-calculator__moon-marker');
     const moonMarkerDisc = element('span', 'bpb-sun-calculator__moon-marker-disc');
@@ -358,6 +360,7 @@ export function createSunCalculator({
             sun.style.transform = `rotate(${angle}deg)`;
         }
         moonMarker.hidden = !Number.isFinite(next.moonAzimuth);
+        moonOrbit.hidden = moonMarker.hidden;
         if (moonMarker.hidden) unboundedMoonAzimuth = null;
         else {
             const normalizedAzimuth = SunPosition.normalizeDegrees(next.moonAzimuth);

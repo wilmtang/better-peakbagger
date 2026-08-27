@@ -290,6 +290,14 @@
     fill: var(--bpb-sun-glow);
     stroke: var(--bpb-sun-panel);
 }
+.bpb-sun-calculator__moon-orbit {
+    position: absolute;
+    inset: 22%;
+    pointer-events: none;
+    border: 1px solid color-mix(in srgb, var(--bpb-moon) 52%, transparent);
+    border-radius: 50%;
+}
+.bpb-sun-calculator__moon-orbit[hidden] { display: none; }
 .bpb-sun-calculator__cardinal,
 .bpb-sun-calculator__sun,
 .bpb-sun-calculator__moon-marker {
@@ -342,16 +350,16 @@
 }
 .bpb-sun-calculator__moon-marker::before {
     position: absolute;
-    inset-block-start: 16%;
+    inset-block-start: 22%;
     inset-inline-start: calc(50% - 1px);
     inline-size: 2px;
-    block-size: 34%;
+    block-size: 28%;
     background: var(--bpb-moon);
     content: "";
 }
 .bpb-sun-calculator__moon-marker-disc {
     position: absolute;
-    inset-block-start: calc(16% - 0.55rem);
+    inset-block-start: calc(22% - 0.55rem);
     inset-inline-start: calc(50% - 0.55rem);
     inline-size: 1.1rem;
     block-size: 1.1rem;

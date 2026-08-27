@@ -2428,8 +2428,23 @@ try {
         const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
         const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
         const daylightPath = daylightRange?.querySelector('.bpb-sun-calculator__daylight-path');
+        const moonOrbit = calculator?.querySelector('.bpb-sun-calculator__moon-orbit');
         const moonMarker = calculator?.querySelector('.bpb-sun-calculator__moon-marker');
+        const compass = calculator?.querySelector('.bpb-sun-calculator__compass-ring');
+        const moonDisc = moonMarker?.querySelector('.bpb-sun-calculator__moon-marker-disc');
         const slider = calculator?.querySelector('.bpb-sun-calculator__time');
+        const compassRect = compass?.getBoundingClientRect();
+        const orbitRect = moonOrbit?.getBoundingClientRect();
+        const moonRect = moonDisc?.getBoundingClientRect();
+        const orbitRadius = orbitRect?.width / 2;
+        const moonRadius = compassRect && moonRect ? Math.hypot(
+            moonRect.left + moonRect.width / 2 - (compassRect.left + compassRect.width / 2),
+            moonRect.top + moonRect.height / 2 - (compassRect.top + compassRect.height / 2),
+        ) : null;
+        const separateMoonOrbit = Number.isFinite(orbitRadius) && Number.isFinite(moonRadius)
+            && Math.abs(orbitRadius - moonRadius) <= 2
+            && compassRect.width * 0.37 - orbitRadius >= compassRect.width * 0.08
+            && compassRect.width <= 208.5;
         return toggle?.disabled === false && /°/.test(summary) && /Sun direction\s*\d+°/i.test(direction)
             && /Sun elevation\s*\d+°/i.test(elevation) && eventLine?.hidden === false
             && daylightRange?.hidden === false && /^M /.test(daylightPath?.getAttribute('d') || '')
@@ -2439,11 +2454,13 @@ try {
             && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
             && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
             && moonMarker?.hidden === false && /^rotate\(/.test(moonMarker.style.transform)
+            && moonOrbit?.hidden === false && separateMoonOrbit
             && calculator.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
             && calculator.querySelector('.bpb-sun-calculator__icon')
             ? {
                 summary, direction, elevation, moon,
                 valueText: slider?.getAttribute('aria-valuetext') || '',
+                orbitGeometry: { compass: compassRect.width, orbitRadius, moonRadius },
             } : false;
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(selectedSun,
@@ -3153,6 +3170,7 @@ try {
                     && sun.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
                     && sun.querySelector('.bpb-sun-calculator__moon-marker')?.hidden === false
                     && /^rotate\(/.test(sun.querySelector('.bpb-sun-calculator__moon-marker')?.style.transform || '')
+                    && sun.querySelector('.bpb-sun-calculator__moon-orbit')?.hidden === false
                     && sun.querySelector('.bpb-sun-calculator__event-line')?.hidden === false
                 ),
                 // The MAIN-world coordinator bundle self-contains basemap,
