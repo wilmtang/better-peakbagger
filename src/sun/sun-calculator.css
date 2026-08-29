@@ -47,9 +47,10 @@
     align-items: center;
     gap: 0.7rem;
     inline-size: 100%;
+    block-size: 4.4rem;
     min-inline-size: 0;
-    min-block-size: 4rem;
     padding: 0.85rem 1rem;
+    overflow: hidden;
     color: inherit;
     background: transparent;
     border: 0;
@@ -78,7 +79,7 @@
 .bpb-sun-calculator__summary {
     display: -webkit-box;
     min-inline-size: 0;
-    block-size: 2.7em;
+    block-size: 2.7rem;
     overflow-wrap: anywhere;
     overflow: hidden;
     color: var(--bpb-sun-muted);
@@ -107,7 +108,9 @@
 
 .bpb-sun-calculator__panel {
     display: grid;
+    block-size: calc(25.65rem + 1px);
     padding: 1.25rem 1.15rem 1.35rem;
+    overflow: hidden;
     background: var(--bpb-sun-panel);
     border-block-start: 1px solid var(--bpb-sun-border);
 }
@@ -121,32 +124,38 @@
     grid-template-columns: minmax(15rem, 0.82fr) minmax(20rem, 1.18fr);
     align-items: start;
     gap: clamp(1.25rem, 4vw, 2.35rem);
+    block-size: 23.05rem;
     min-inline-size: 0;
+    overflow: hidden;
 }
 .bpb-sun-calculator__layout[hidden] { display: none; }
 .bpb-sun-calculator[data-layout-state="placeholder"] .bpb-sun-calculator__layout {
-    display: none;
-}
-.bpb-sun-calculator[data-layout-state="placeholder"] .bpb-sun-calculator__panel {
-    padding: 0.7rem 1rem;
+    visibility: hidden;
+    pointer-events: none;
 }
 .bpb-sun-calculator[data-layout-state="placeholder"] .bpb-sun-calculator__empty {
     align-self: center;
-    justify-self: start;
-    padding: 0;
-    text-align: start;
+    justify-self: center;
+    text-align: center;
 }
 .bpb-sun-calculator__empty {
-    align-self: start;
+    align-self: center;
+    block-size: 2.7rem;
     margin: 0;
+    overflow: hidden;
     color: var(--bpb-sun-muted);
     font-size: 0.95em;
+    line-height: 1.35;
+    text-align: center;
 }
 .bpb-sun-calculator__empty[hidden] { display: none; }
 .bpb-sun-calculator__controls {
     display: grid;
+    grid-template-rows: 5.25rem 6.8rem;
     gap: 1rem;
+    block-size: 13.05rem;
     min-inline-size: 0;
+    overflow: hidden;
 }
 .bpb-sun-calculator__field {
     display: grid;
@@ -154,15 +163,23 @@
     align-items: center;
     gap: 0.5rem 0.75rem;
     min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
 }
 .bpb-sun-calculator__label { font-size: 1.05em; font-weight: 650; }
 .bpb-sun-calculator__date,
 .bpb-sun-calculator__date-value,
-.bpb-sun-calculator__clock { min-inline-size: 0; color: inherit; font: inherit; }
+.bpb-sun-calculator__clock {
+    min-inline-size: 0;
+    overflow: hidden;
+    color: inherit;
+    font: inherit;
+    white-space: nowrap;
+}
 .bpb-sun-calculator__date,
 .bpb-sun-calculator__date-value { grid-column: 1 / -1; }
 .bpb-sun-calculator--gpx .bpb-sun-calculator__date-value {
-    min-block-size: 1.35em;
+    block-size: 1.35rem;
 }
 .bpb-sun-calculator__date {
     inline-size: 100%;
@@ -229,22 +246,26 @@
 .bpb-sun-calculator__meta {
     grid-column: 1 / -1;
     min-inline-size: 0;
+    overflow: hidden;
     color: var(--bpb-sun-muted);
     font-size: 0.9em;
-    overflow-wrap: anywhere;
+    line-height: 1.35;
 }
 .bpb-sun-calculator__meta:empty { display: none; }
 .bpb-sun-calculator--gpx .bpb-sun-calculator__meta {
     display: block;
 }
-.bpb-sun-calculator--gpx .bpb-sun-calculator__meta--date { min-block-size: 1.35em; }
-.bpb-sun-calculator--gpx .bpb-sun-calculator__meta--time { min-block-size: 2.7em; }
+.bpb-sun-calculator--gpx .bpb-sun-calculator__meta--date { block-size: 1.35rem; }
+.bpb-sun-calculator--gpx .bpb-sun-calculator__meta--time { block-size: 2.7rem; }
 .bpb-sun-calculator__reading {
     display: grid;
     grid-template-columns: minmax(8rem, 1.05fr) minmax(8.5rem, 0.95fr);
+    grid-template-rows: 15.5rem 2.7rem 3.35rem;
     align-items: center;
     gap: 0.75rem 1rem;
+    block-size: 23.05rem;
     min-inline-size: 0;
+    overflow: hidden;
 }
 .bpb-sun-calculator__compass {
     display: grid;
@@ -414,8 +435,12 @@
 }
 .bpb-sun-calculator__facts {
     display: grid;
+    grid-template-rows: 3.4rem 3.4rem 6.4rem;
     gap: 1.15rem;
+    block-size: 15.5rem;
     min-inline-size: 0;
+    overflow: hidden;
+    container-type: inline-size;
 }
 .bpb-sun-calculator__direction,
 .bpb-sun-calculator__elevation,
@@ -423,31 +448,43 @@
     display: grid;
     gap: 0.35rem;
     min-inline-size: 0;
+    min-block-size: 0;
+    overflow: hidden;
+    container-type: inline-size;
 }
+.bpb-sun-calculator__moon { gap: 0.3rem; }
 .bpb-sun-calculator--gpx .bpb-sun-calculator__direction,
 .bpb-sun-calculator--gpx .bpb-sun-calculator__elevation {
-    min-block-size: 3.3rem;
+    block-size: 3.4rem;
 }
-.bpb-sun-calculator--gpx .bpb-sun-calculator__moon { min-block-size: 6.4rem; }
+.bpb-sun-calculator--gpx .bpb-sun-calculator__moon { block-size: 6.4rem; }
 .bpb-sun-calculator--gpx[data-layout-state="placeholder"]
     .bpb-sun-calculator__elevation[hidden] {
     display: grid;
 }
 .bpb-sun-calculator__fact-label {
+    block-size: 1.3rem;
+    overflow: hidden;
     color: var(--bpb-sun-muted);
     font-size: 0.95em;
+    line-height: 1.3rem;
+    white-space: nowrap;
 }
 .bpb-sun-calculator__fact-value {
+    display: block;
+    block-size: 1.7rem;
+    overflow: hidden;
     color: var(--bpb-sun-text);
-    font-size: clamp(1.2em, 2.4vw, 1.55em);
+    font-size: clamp(0.95em, 8cqi, 1.55em);
     line-height: 1.15;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
 }
 .bpb-sun-calculator__moon-value {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    font-size: clamp(1.05em, 2vw, 1.3em);
+    block-size: 1.7rem;
+    font-size: clamp(0.9em, 6.5cqi, 1.3em);
 }
 .bpb-sun-calculator__moon-icon {
     flex: 0 0 auto;
@@ -457,19 +494,24 @@
     line-height: 1;
 }
 .bpb-sun-calculator__fact-detail {
+    display: block;
+    block-size: 1.25rem;
     min-inline-size: 0;
+    overflow: hidden;
     color: var(--bpb-sun-muted);
     font-size: 0.9em;
+    line-height: 1.25rem;
+    white-space: nowrap;
 }
-.bpb-sun-calculator__moon-position { overflow-wrap: anywhere; }
 .bpb-sun-calculator__events {
     grid-column: 1 / -1;
+    block-size: 2.7rem;
     min-inline-size: 0;
+    overflow: hidden;
     color: var(--bpb-sun-muted);
-    overflow-wrap: anywhere;
 }
 .bpb-sun-calculator--gpx .bpb-sun-calculator__events {
-    min-block-size: 2.7em;
+    block-size: 2.7rem;
 }
 .bpb-sun-calculator__events-text {
     position: absolute;
@@ -483,9 +525,9 @@
 .bpb-sun-calculator__events--text .bpb-sun-calculator__events-text {
     position: static;
     inline-size: auto;
-    block-size: auto;
+    block-size: 2.7rem;
     margin: 0;
-    overflow: visible;
+    overflow: hidden;
     clip-path: none;
     white-space: normal;
 }
@@ -494,6 +536,8 @@
     grid-template-columns: auto minmax(3rem, 1fr) auto;
     align-items: center;
     gap: 0.65rem;
+    block-size: 2.7rem;
+    overflow: hidden;
 }
 .bpb-sun-calculator__event-line[hidden] { display: none; }
 .bpb-sun-calculator__event-time { white-space: nowrap; }
@@ -516,9 +560,13 @@
 .bpb-sun-calculator__event-marker[hidden] { display: none; }
 .bpb-sun-calculator__limitation {
     grid-column: 1 / -1;
-    margin: 0.65rem 0 0;
+    block-size: 3.35rem;
+    margin: 0;
+    padding-block-start: 0.65rem;
+    overflow: hidden;
     color: var(--bpb-sun-muted);
     font-size: 0.9em;
+    line-height: 1.35;
 }
 .bpb-sun-calculator__status {
     position: absolute;
@@ -531,7 +579,13 @@
 }
 
 @media (max-width: 680px) {
-    .bpb-sun-calculator__layout { grid-template-columns: 1fr; }
+    .bpb-sun-calculator__panel { block-size: calc(39.95rem + 1px); }
+    .bpb-sun-calculator__layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: 13.05rem 23.05rem;
+        row-gap: 1.25rem;
+        block-size: 37.35rem;
+    }
     .bpb-sun-calculator__reading {
         grid-template-columns: minmax(8rem, 0.85fr) minmax(8.5rem, 1.15fr);
     }
@@ -541,7 +595,9 @@
     .bpb-sun-calculator { font-size: 14px; }
     .bpb-sun-calculator__toggle {
         grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-rows: 1.6rem 2.7rem;
         gap: 0.55rem;
+        block-size: 6.35rem;
         padding: 0.75rem 0.8rem;
     }
     .bpb-sun-calculator__summary {
@@ -550,10 +606,23 @@
         text-align: start;
     }
     .bpb-sun-calculator__chevron { grid-column: 3; grid-row: 1; }
-    .bpb-sun-calculator__panel { padding: 1rem 0.8rem 1.1rem; }
-    .bpb-sun-calculator__reading { grid-template-columns: 1fr; }
+    .bpb-sun-calculator__panel {
+        block-size: calc(45.65rem + 1px);
+        padding: 1rem 0.8rem 1.1rem;
+    }
+    .bpb-sun-calculator__layout {
+        grid-template-rows: 13.05rem 29.25rem;
+        block-size: 43.55rem;
+    }
+    .bpb-sun-calculator__reading {
+        grid-template-columns: 1fr;
+        grid-template-rows: 10rem 10.95rem 2.7rem 3.35rem;
+        block-size: 29.25rem;
+    }
     .bpb-sun-calculator__facts {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: 3.4rem 6.4rem;
+        block-size: 10.95rem;
         inline-size: 100%;
     }
     .bpb-sun-calculator__moon { grid-column: 1 / -1; }

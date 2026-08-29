@@ -2330,14 +2330,66 @@ try {
         const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
         const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
         const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        const height = selector => calculator?.querySelector(selector)?.getBoundingClientRect().height ?? null;
+        const overflowingText = [
+            '.bpb-sun-calculator__summary',
+            '.bpb-sun-calculator__date-value',
+            '.bpb-sun-calculator__clock',
+            '.bpb-sun-calculator__meta--date',
+            '.bpb-sun-calculator__meta--time',
+            '.bpb-sun-calculator__direction .bpb-sun-calculator__fact-value',
+            '.bpb-sun-calculator__elevation .bpb-sun-calculator__fact-value',
+            '.bpb-sun-calculator__moon-value',
+            '.bpb-sun-calculator__moon-illumination',
+            '.bpb-sun-calculator__moon-position',
+            '.bpb-sun-calculator__events',
+            '.bpb-sun-calculator__limitation',
+        ].filter(selector => {
+            const element = calculator?.querySelector(selector);
+            return element && element.getClientRects().length > 0
+                && (element.scrollWidth > element.clientWidth + 1
+                    || element.scrollHeight > element.clientHeight + 1);
+        });
+        const overflowingContainers = [
+            '.bpb-sun-calculator__panel',
+            '.bpb-sun-calculator__layout',
+            '.bpb-sun-calculator__controls',
+            '.bpb-sun-calculator__field:first-child',
+            '.bpb-sun-calculator__field:last-child',
+            '.bpb-sun-calculator__reading',
+            '.bpb-sun-calculator__facts',
+            '.bpb-sun-calculator__direction',
+            '.bpb-sun-calculator__elevation',
+            '.bpb-sun-calculator__moon',
+            '.bpb-sun-calculator__events',
+        ].filter(selector => {
+            const element = calculator?.querySelector(selector);
+            return element && element.getClientRects().length > 0
+                && (element.scrollWidth > element.clientWidth + 1
+                    || element.scrollHeight > element.clientHeight + 1);
+        });
         return {
             summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
             layoutState: calculator?.dataset.layoutState || '',
             calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
             toggleHeight: toggle?.getBoundingClientRect().height ?? null,
             panelHeight: panel?.getBoundingClientRect().height ?? null,
+            layoutHeight: height('.bpb-sun-calculator__layout'),
+            controlsHeight: height('.bpb-sun-calculator__controls'),
+            dateFieldHeight: height('.bpb-sun-calculator__field:first-child'),
+            timeFieldHeight: height('.bpb-sun-calculator__field:last-child'),
+            readingHeight: height('.bpb-sun-calculator__reading'),
+            compassHeight: height('.bpb-sun-calculator__compass'),
+            factsHeight: height('.bpb-sun-calculator__facts'),
+            directionHeight: height('.bpb-sun-calculator__direction'),
+            elevationHeight: height('.bpb-sun-calculator__elevation'),
+            moonHeight: height('.bpb-sun-calculator__moon'),
+            eventsHeight: height('.bpb-sun-calculator__events'),
+            limitationHeight: height('.bpb-sun-calculator__limitation'),
             canvasTop: canvas?.getBoundingClientRect().top ?? null,
             canvasHeight: canvas?.getBoundingClientRect().height ?? null,
+            overflowingText,
+            overflowingContainers,
         };
     });
     const promptSunGeometry = await readOpenSunGeometry();
@@ -2364,46 +2416,26 @@ try {
     });
     check(promptHoverTarget, 'the packaged Analyzer chart exposed no pre-selection hover target');
     if (promptHoverTarget) await offPage.mouse.move(promptHoverTarget.x, promptHoverTarget.y);
-    const hoveredPromptSunGeometry = promptHoverTarget ? await offPage.waitForFunction(() => {
+    const hoveredPromptSunState = promptHoverTarget ? await offPage.waitForFunction(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
         if (summary === 'Select a chart point') return false;
-        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
-        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-        return {
-            summary,
-            layoutState: calculator?.dataset.layoutState || '',
-            calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
-            toggleHeight: toggle?.getBoundingClientRect().height ?? null,
-            panelHeight: panel?.getBoundingClientRect().height ?? null,
-            canvasTop: canvas?.getBoundingClientRect().top ?? null,
-            canvasHeight: canvas?.getBoundingClientRect().height ?? null,
-        };
+        return { summary, layoutState: calculator?.dataset.layoutState || '' };
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
+    const hoveredPromptSunGeometry = hoveredPromptSunState ? await readOpenSunGeometry() : null;
     if (promptHoverTarget) await offPage.mouse.move(1, 1);
-    const restoredPromptSunGeometry = promptHoverTarget ? await offPage.waitForFunction(() => {
+    const restoredPromptSunState = promptHoverTarget ? await offPage.waitForFunction(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
         if (summary !== 'Select a chart point') return false;
-        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
-        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-        return {
-            summary,
-            layoutState: calculator?.dataset.layoutState || '',
-            calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
-            toggleHeight: toggle?.getBoundingClientRect().height ?? null,
-            panelHeight: panel?.getBoundingClientRect().height ?? null,
-            canvasTop: canvas?.getBoundingClientRect().top ?? null,
-            canvasHeight: canvas?.getBoundingClientRect().height ?? null,
-        };
+        return { summary, layoutState: calculator?.dataset.layoutState || '' };
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
-    const stableChartGeometryKeys = [
-        'canvasTop', 'canvasHeight',
-    ];
+    const restoredPromptSunGeometry = restoredPromptSunState ? await readOpenSunGeometry() : null;
     const stableCalculatorGeometryKeys = [
-        'calculatorHeight', 'toggleHeight', 'panelHeight', 'canvasTop', 'canvasHeight',
+        'calculatorHeight', 'toggleHeight', 'panelHeight', 'layoutHeight', 'controlsHeight',
+        'dateFieldHeight', 'timeFieldHeight', 'readingHeight', 'compassHeight', 'factsHeight',
+        'directionHeight', 'elevationHeight', 'moonHeight', 'eventsHeight', 'limitationHeight',
+        'canvasTop', 'canvasHeight',
     ];
     const geometryMatches = (left, right, keys) => Boolean(left && right)
         && keys.every(key => Math.abs(left[key] - right[key]) <= 0.5);
@@ -2411,10 +2443,10 @@ try {
         && summaryHeightVariants.aboveHorizon === summaryHeightVariants.prompt
         && hoveredPromptSunGeometry?.layoutState === ''
         && restoredPromptSunGeometry?.layoutState === 'placeholder'
-        && promptSunGeometry.calculatorHeight < hoveredPromptSunGeometry?.calculatorHeight
-        && geometryMatches(promptSunGeometry, hoveredPromptSunGeometry, stableChartGeometryKeys)
+        && geometryMatches(promptSunGeometry, hoveredPromptSunGeometry,
+            stableCalculatorGeometryKeys)
         && geometryMatches(promptSunGeometry, restoredPromptSunGeometry, stableCalculatorGeometryKeys),
-    `the compact GPX Sun prompt moved the chart or failed to expand for hover: ${JSON.stringify({
+    `the fixed GPX Sun panel moved between prompt and hover states: ${JSON.stringify({
         summaryHeightVariants,
         promptSunGeometry,
         hoveredPromptSunGeometry,
@@ -2537,6 +2569,43 @@ try {
     if (await analyzerSunToggle.getAttribute('aria-expanded') !== 'true') await analyzerSunToggle.click();
     await coordinateCanvas.scrollIntoViewIfNeeded();
     const selectedSunGeometry = await readOpenSunGeometry();
+    const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');
+    const originalSunMinute = Number(await analyzerSunSlider.inputValue());
+    const originalSunClock = await offPage.locator('.bpb-sun-calculator__clock').textContent();
+    const readGeometryAtMinute = async (minute, expectedClock) => {
+        await analyzerSunSlider.evaluate((slider, nextMinute) => {
+            slider.value = String(nextMinute);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+        }, minute);
+        const updated = await offPage.waitForFunction(({ nextMinute, clock }) => {
+            const calculator = document.querySelector('.bpb-sun-calculator');
+            const slider = calculator?.querySelector('.bpb-sun-calculator__time');
+            const displayedClock = calculator?.querySelector('.bpb-sun-calculator__clock')?.textContent || '';
+            return Number(slider?.value) === nextMinute && displayedClock === clock;
+        }, { nextMinute: minute, clock: expectedClock }, { timeout: 5000 })
+            .then(handle => handle.jsonValue()).catch(() => false);
+        if (!updated) return null;
+        await offPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() =>
+            requestAnimationFrame(resolve))));
+        return readOpenSunGeometry();
+    };
+    const morningSunGeometry = await readGeometryAtMinute(634, '10:34 AM');
+    const afternoonSunGeometry = await readGeometryAtMinute(843, '02:03 PM');
+    const restoredMinuteGeometry = await readGeometryAtMinute(originalSunMinute, originalSunClock);
+    check(geometryMatches(morningSunGeometry, afternoonSunGeometry,
+        stableCalculatorGeometryKeys)
+        && geometryMatches(selectedSunGeometry, restoredMinuteGeometry,
+            stableCalculatorGeometryKeys)
+        && morningSunGeometry?.overflowingText.length === 0
+        && afternoonSunGeometry?.overflowingText.length === 0
+        && morningSunGeometry?.overflowingContainers.length === 0
+        && afternoonSunGeometry?.overflowingContainers.length === 0,
+    `the fixed GPX Sun panel changed height or overflowed between 10:34 AM and 02:03 PM: ${JSON.stringify({
+        morningSunGeometry,
+        afternoonSunGeometry,
+        selectedSunGeometry,
+        restoredMinuteGeometry,
+    })}`);
     const hoverTarget = await coordinateCanvas.evaluate(canvas => {
         const chart = globalThis.Chart?.getChart?.(canvas);
         const meta = chart?.getSortedVisibleDatasetMetas?.()[0];
@@ -2580,7 +2649,6 @@ try {
         hoveredSelectedSunGeometry,
         restoredSelectedSunGeometry,
     })}`);
-    const analyzerSunSlider = offPage.locator('.bpb-sun-calculator__time');
     await analyzerSunToggle.focus();
     await offPage.keyboard.press('Tab');
     const analyzerSunBefore = await analyzerSunSlider.evaluate(slider => ({

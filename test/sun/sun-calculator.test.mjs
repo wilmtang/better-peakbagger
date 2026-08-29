@@ -579,9 +579,17 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
     assert.equal(placeholder.hasAttribute('aria-hidden'), false);
     assert.equal(calculator.element.dataset.layoutState, undefined);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
-    assert.match(css, /bpb-sun-calculator__summary\s*\{[\s\S]*block-size:\s*2\.7em/);
-    assert.match(css, /data-layout-state="placeholder"[\s\S]*display:\s*none/);
-    assert.match(css, /data-layout-state="placeholder"\] \.bpb-sun-calculator__panel\s*\{[\s\S]*padding:\s*0\.7rem 1rem/);
+    assert.match(css, /bpb-sun-calculator__toggle\s*\{[\s\S]*block-size:\s*4\.4rem/);
+    assert.match(css, /bpb-sun-calculator__summary\s*\{[\s\S]*block-size:\s*2\.7rem/);
+    assert.match(css, /bpb-sun-calculator__panel\s*\{[\s\S]*block-size:\s*calc\(25\.65rem \+ 1px\)/);
+    assert.match(css, /bpb-sun-calculator__layout\s*\{[\s\S]*block-size:\s*23\.05rem/);
+    assert.match(css, /bpb-sun-calculator__controls\s*\{[\s\S]*block-size:\s*13\.05rem/);
+    assert.match(css, /bpb-sun-calculator__reading\s*\{[\s\S]*block-size:\s*23\.05rem/);
+    assert.match(css, /bpb-sun-calculator__facts\s*\{[\s\S]*block-size:\s*15\.5rem/);
+    assert.match(css, /data-layout-state="placeholder"[\s\S]*visibility:\s*hidden/);
+    assert.doesNotMatch(css,
+        /data-layout-state="placeholder"\] \.bpb-sun-calculator__panel\s*\{/,
+        'the prompt must reserve the same fixed panel as populated Sun and Moon states');
 }));
 
 test('recoverable Peak failures retain controls and clear cleanly after a valid selection', () => withDom(dom => {

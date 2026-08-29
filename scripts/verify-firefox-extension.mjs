@@ -1344,6 +1344,111 @@ async function main() {
     `, 'the Firefox GPX Sun selection');
         assertState(/°/.test(selectedSunState.summary),
             'Firefox GPX Sun did not follow keyboard route selection', selectedSunState);
+        const analyzerSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
+        if ((await analyzerSunToggle.getAttribute('aria-expanded')) !== 'true') await analyzerSunToggle.click();
+        const analyzerSunSlider = await driver.findElement(By.css('.bpb-sun-calculator__time'));
+        const readFirefoxSunGeometry = () => driver.executeScript(`
+      const calculator = document.querySelector('.bpb-sun-calculator');
+      const height = selector => calculator?.querySelector(selector)?.getBoundingClientRect().height ?? null;
+      const overflowingText = [
+        '.bpb-sun-calculator__summary',
+        '.bpb-sun-calculator__date-value',
+        '.bpb-sun-calculator__clock',
+        '.bpb-sun-calculator__meta--date',
+        '.bpb-sun-calculator__meta--time',
+        '.bpb-sun-calculator__direction .bpb-sun-calculator__fact-value',
+        '.bpb-sun-calculator__elevation .bpb-sun-calculator__fact-value',
+        '.bpb-sun-calculator__moon-value',
+        '.bpb-sun-calculator__moon-illumination',
+        '.bpb-sun-calculator__moon-position',
+        '.bpb-sun-calculator__events',
+        '.bpb-sun-calculator__limitation'
+      ].filter(selector => {
+        const element = calculator?.querySelector(selector);
+        return element && element.getClientRects().length > 0
+          && (element.scrollWidth > element.clientWidth + 1
+            || element.scrollHeight > element.clientHeight + 1);
+      });
+      const overflowingContainers = [
+        '.bpb-sun-calculator__panel',
+        '.bpb-sun-calculator__layout',
+        '.bpb-sun-calculator__controls',
+        '.bpb-sun-calculator__field:first-child',
+        '.bpb-sun-calculator__field:last-child',
+        '.bpb-sun-calculator__reading',
+        '.bpb-sun-calculator__facts',
+        '.bpb-sun-calculator__direction',
+        '.bpb-sun-calculator__elevation',
+        '.bpb-sun-calculator__moon',
+        '.bpb-sun-calculator__events'
+      ].filter(selector => {
+        const element = calculator?.querySelector(selector);
+        return element && element.getClientRects().length > 0
+          && (element.scrollWidth > element.clientWidth + 1
+            || element.scrollHeight > element.clientHeight + 1);
+      });
+      return {
+        calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
+        toggleHeight: height('.bpb-sun-calculator__toggle'),
+        panelHeight: height('.bpb-sun-calculator__panel'),
+        layoutHeight: height('.bpb-sun-calculator__layout'),
+        controlsHeight: height('.bpb-sun-calculator__controls'),
+        dateFieldHeight: height('.bpb-sun-calculator__field:first-child'),
+        timeFieldHeight: height('.bpb-sun-calculator__field:last-child'),
+        readingHeight: height('.bpb-sun-calculator__reading'),
+        compassHeight: height('.bpb-sun-calculator__compass'),
+        factsHeight: height('.bpb-sun-calculator__facts'),
+        directionHeight: height('.bpb-sun-calculator__direction'),
+        elevationHeight: height('.bpb-sun-calculator__elevation'),
+        moonHeight: height('.bpb-sun-calculator__moon'),
+        eventsHeight: height('.bpb-sun-calculator__events'),
+        limitationHeight: height('.bpb-sun-calculator__limitation'),
+        overflowingText,
+        overflowingContainers
+      };
+    `);
+        const originalSunMinute = await driver.executeScript(
+            'return { minute: Number(arguments[0].value), clock: document.querySelector(".bpb-sun-calculator__clock")?.textContent || "" };',
+            analyzerSunSlider,
+        );
+        const readFirefoxGeometryAtMinute = async (minute, expectedClock) => {
+            await driver.executeScript(`
+        const slider = arguments[0];
+        slider.value = String(arguments[1]);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+      `, analyzerSunSlider, minute);
+            await waitForScript(driver, `
+        const calculator = document.querySelector('.bpb-sun-calculator');
+        return Number(calculator?.querySelector('.bpb-sun-calculator__time')?.value) === ${minute}
+          && calculator?.querySelector('.bpb-sun-calculator__clock')?.textContent === ${JSON.stringify(expectedClock)};
+      `, `the Firefox Sun clock at ${expectedClock}`);
+            await driver.executeAsyncScript(`
+        const done = arguments[arguments.length - 1];
+        requestAnimationFrame(() => requestAnimationFrame(done));
+      `);
+            return readFirefoxSunGeometry();
+        };
+        const morningSunGeometry = await readFirefoxGeometryAtMinute(634, '10:34 AM');
+        const afternoonSunGeometry = await readFirefoxGeometryAtMinute(843, '02:03 PM');
+        const restoredSunGeometry = await readFirefoxGeometryAtMinute(
+            originalSunMinute.minute,
+            originalSunMinute.clock,
+        );
+        const stableSunGeometryKeys = [
+            'calculatorHeight', 'toggleHeight', 'panelHeight', 'layoutHeight', 'controlsHeight',
+            'dateFieldHeight', 'timeFieldHeight', 'readingHeight', 'compassHeight', 'factsHeight',
+            'directionHeight', 'elevationHeight', 'moonHeight', 'eventsHeight', 'limitationHeight',
+        ];
+        const firefoxSunGeometryMatches = (left, right) => stableSunGeometryKeys.every(key =>
+            Math.abs(left[key] - right[key]) <= 0.5);
+        assertState(firefoxSunGeometryMatches(morningSunGeometry, afternoonSunGeometry)
+            && firefoxSunGeometryMatches(morningSunGeometry, restoredSunGeometry)
+            && morningSunGeometry.overflowingText.length === 0
+            && afternoonSunGeometry.overflowingText.length === 0
+            && morningSunGeometry.overflowingContainers.length === 0
+            && afternoonSunGeometry.overflowingContainers.length === 0,
+        'Firefox changed a Sun and Moon subview height or overflowed between 10:34 AM and 02:03 PM',
+        { morningSunGeometry, afternoonSunGeometry, restoredSunGeometry });
         await driver.executeScript(
             'arguments[0].scrollIntoView({ block: "center", inline: "nearest" });',
             analyzerCanvas,
@@ -1395,9 +1500,6 @@ async function main() {
             'Firefox route explorer did not keep the map and active chart together',
             routeExplorerLayout,
         );
-        const analyzerSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
-        if ((await analyzerSunToggle.getAttribute('aria-expanded')) !== 'true') await analyzerSunToggle.click();
-        const analyzerSunSlider = await driver.findElement(By.css('.bpb-sun-calculator__time'));
         const analyzerSunBefore = await driver.executeScript(
             'const slider = arguments[0]; return { value: Number(slider.value), valueText: slider.getAttribute("aria-valuetext") || "" };',
             analyzerSunSlider,
@@ -1599,7 +1701,8 @@ async function main() {
             ?.getAttribute("d") || ""),
         sunBorderStyle: getComputedStyle(sun).borderStyle,
       } : false;
-    `, 'the Firefox Peak surface');
+    `, 'the Firefox Peak surface', 10_000, state =>
+            /^rotate\(/.test(state?.moonMarker || '') && state?.moonBand === true);
         assertState(
             peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
         && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunExpanded

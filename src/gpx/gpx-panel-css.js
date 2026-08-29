@@ -98,6 +98,8 @@ export const gpxPanelCss = `
 @container bpb-route-analysis (max-width: 680px) {
     #bpb-route-explorer .bpb-sun-calculator__toggle {
         grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-rows: 1.6rem 2.7rem;
+        block-size: 6.35rem;
     }
     #bpb-route-explorer .bpb-sun-calculator__summary {
         grid-column: 1 / -1;
@@ -108,10 +110,41 @@ export const gpxPanelCss = `
         grid-column: 3;
         grid-row: 1;
     }
-    #bpb-route-explorer .bpb-sun-calculator__layout { grid-template-columns: 1fr; }
+    #bpb-route-explorer .bpb-sun-calculator__panel {
+        block-size: calc(39.95rem + 1px);
+    }
+    #bpb-route-explorer .bpb-sun-calculator__layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: 13.05rem 23.05rem;
+        row-gap: 1.25rem;
+        block-size: 37.35rem;
+    }
     #bpb-route-explorer .bpb-sun-calculator__reading {
         grid-template-columns: minmax(8rem, 0.85fr) minmax(8.5rem, 1.15fr);
     }
+}
+@container bpb-route-analysis (max-width: 440px) {
+    #bpb-route-explorer .bpb-sun-calculator__panel {
+        block-size: calc(45.65rem + 1px);
+        padding: 1rem 0.8rem 1.1rem;
+    }
+    #bpb-route-explorer .bpb-sun-calculator__layout {
+        grid-template-rows: 13.05rem 29.25rem;
+        block-size: 43.55rem;
+    }
+    #bpb-route-explorer .bpb-sun-calculator__reading {
+        grid-template-columns: 1fr;
+        grid-template-rows: 10rem 10.95rem 2.7rem 3.35rem;
+        block-size: 29.25rem;
+    }
+    #bpb-route-explorer .bpb-sun-calculator__facts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: 3.4rem 6.4rem;
+        block-size: 10.95rem;
+        inline-size: 100%;
+    }
+    #bpb-route-explorer .bpb-sun-calculator__moon { grid-column: 1 / -1; }
+    #bpb-route-explorer .bpb-sun-calculator__compass { inline-size: min(10rem, 70%); }
 }
 #bpb-gpx-analysis .bpb-gpx-stats { color: var(--bpb-gpx-text); }
 #bpb-gpx-analysis .bpb-gpx-stats[data-state="error"] { color: var(--bpb-gpx-error); }
