@@ -127,8 +127,22 @@ export function createSyntheticCaptureJob(sourceTabId) {
     };
 }
 
-const ascentHtml = `<!doctype html><html><head><title>Ascent</title></head><body>
-<table><tr><td>Elevation:</td><td>10,781 ft</td></tr></table>
+const ascentHtml = `<!doctype html><html><head><title>Ascent</title><style>
+body { margin: 18px; font: 13px/1.4 Verdana, Arial, sans-serif; }
+table.gray { border-collapse: collapse; background: #e6e6e3; color: #20201e; }
+table.gray th, table.gray td { border: 1px solid #b5b7b2; padding: 6px 8px; text-align: left; }
+</style></head><body>
+<table class="gray" id="ascent-report" width="49%" align="left">
+  <tr><td>Elevation:</td><td>10,781 ft</td></tr>
+  <tr><th colspan="2">Ascent Trip Report</th></tr>
+  <tr><td colspan="2">A long climb report with enough prose to make the adjustable column width visible.</td></tr>
+</table>
+<table class="gray" id="ascent-summary" width="50%" align="right">
+  <tr><th colspan="2">Summary Total Data</th></tr>
+  <tr><td>Total Elevation Gain:</td><td>5,735 ft</td></tr>
+  <tr><td>Round-Trip Distance:</td><td>17.53 miles</td></tr>
+</table>
+<br clear="left"><br clear="right">
 <iframe src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="450" height="450"></iframe>
 <a href="/track.gpx">Download this GPS track</a>
 <a href="/map/BigMap.aspx?t=A">Full Screen Map</a>

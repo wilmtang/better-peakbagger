@@ -2007,6 +2007,7 @@ try {
                 const sun = panel?.querySelector('.bpb-sun-calculator');
                 return /^Interactive Stats:/.test(status)
                     && legendButtons === 2
+                    && document.getElementById('bpb-ascent-table-resize-handle')
                     && toggle?.disabled === false
                     && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === false
                     && sun?.querySelector('.bpb-sun-calculator__summary')?.textContent
@@ -2210,6 +2211,71 @@ try {
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
+    const ascentSplitBefore = await offPage.evaluate(() => {
+        const wrapper = document.getElementById('bpb-ascent-table-split');
+        const report = document.getElementById('ascent-report');
+        const handle = document.getElementById('bpb-ascent-table-resize-handle');
+        const summary = document.getElementById('ascent-summary');
+        const rect = element => {
+            if (!element) return null;
+            const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+            return { left, right, top, bottom, width, height };
+        };
+        return {
+            display: wrapper ? getComputedStyle(wrapper).display : null,
+            children: wrapper ? [...wrapper.children].map(element => element.id) : [],
+            report: rect(report),
+            handle: rect(handle),
+            summary: rect(summary),
+            role: handle?.getAttribute('role'),
+            orientation: handle?.getAttribute('aria-orientation'),
+            value: Number(handle?.getAttribute('aria-valuenow')),
+        };
+    });
+    const splitHandleBox = await offPage.locator('#bpb-ascent-table-resize-handle').boundingBox();
+    if (splitHandleBox) {
+        await offPage.mouse.move(
+            splitHandleBox.x + splitHandleBox.width / 2,
+            splitHandleBox.y + Math.min(30, splitHandleBox.height / 2),
+        );
+        await offPage.mouse.down();
+        await offPage.mouse.move(
+            splitHandleBox.x + splitHandleBox.width / 2 + 90,
+            splitHandleBox.y + Math.min(30, splitHandleBox.height / 2),
+        );
+        await offPage.mouse.up();
+    }
+    const ascentSplitAfter = await offPage.evaluate(storageKey => {
+        const report = document.getElementById('ascent-report');
+        const handle = document.getElementById('bpb-ascent-table-resize-handle');
+        const summary = document.getElementById('ascent-summary');
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(storageKey)); } catch { /* checked below */ }
+        return {
+            reportWidth: report?.getBoundingClientRect().width || 0,
+            summaryWidth: summary?.getBoundingClientRect().width || 0,
+            value: Number(handle?.getAttribute('aria-valuenow')),
+            saved: saved?.leftPercent,
+        };
+    }, 'pbAscentTableSplit.v1');
+    check(ascentSplitBefore.display === 'grid'
+        && ascentSplitBefore.children.join('|')
+            === 'ascent-report|bpb-ascent-table-resize-handle|ascent-summary'
+        && ascentSplitBefore.role === 'separator'
+        && ascentSplitBefore.orientation === 'vertical'
+        && ascentSplitBefore.report?.right <= ascentSplitBefore.handle?.right
+        && ascentSplitBefore.handle?.right <= ascentSplitBefore.summary?.left + 1
+        && ascentSplitAfter.reportWidth > ascentSplitBefore.report?.width + 70
+        && ascentSplitAfter.summaryWidth < ascentSplitBefore.summary?.width - 70
+        && ascentSplitAfter.value > ascentSplitBefore.value
+        && Math.abs(ascentSplitAfter.saved - ascentSplitAfter.value) <= 1,
+    `the packaged ascent table split did not mount, drag, or persist correctly: before=${
+        JSON.stringify(ascentSplitBefore)} after=${JSON.stringify(ascentSplitAfter)}`);
+    if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+        await offPage.locator('#bpb-ascent-table-split').screenshot({
+            path: process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT,
+        });
+    }
     check(/Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/.test(off.stats)
         && /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/.test(off.stats),
     `the packaged analyzer did not produce the Capitol regression metrics: ${off.stats.slice(0, 160)}`);
@@ -4942,6 +5008,7 @@ console.log('  - Buddy mirror stays busy and focused during replacement, then re
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
+console.log('  - the saved ascent report/summary split mounts, drags, and persists its bounded ratio');
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
 console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');
 console.log('    scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');

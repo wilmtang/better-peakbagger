@@ -109,6 +109,22 @@
         "https://peakbagger.com/climber/Ascent.aspx*"
       ],
       "css": [
+        "css/ascent-layout.css"
+      ],
+      "js": [
+        "content/ascent-layout.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "css": [
         "css/ascent-backup.css"
       ],
       "js": [

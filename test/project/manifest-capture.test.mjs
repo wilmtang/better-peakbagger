@@ -358,6 +358,21 @@ test('individual and profile backups bundle the same Peakbagger source reader', 
     assert.ok(bundleSources('content/profile-backup.js').includes('ascent/ascent-backup-source.js'));
 });
 
+test('saved ascent table resizing has an independent isolated-world surface', () => {
+    const layout = contentEntry('content/ascent-layout.js');
+    assert.ok(layout);
+    assert.equal(layout.world, undefined);
+    assert.equal(layout.run_at, 'document_end');
+    assert.deepEqual(layout.js, ['content/ascent-layout.js']);
+    assert.deepEqual(layout.css, ['css/ascent-layout.css']);
+    assert.ok(layout.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
+    assert.deepEqual(bundleSources('content/ascent-layout.js'), [
+        'ui/dom.js',
+        'ascent/ascent-table-split.js',
+        'ascent/ascent-layout.js',
+    ]);
+});
+
 // The MV3 service worker resolves its dependencies through the bundle, not
 // importScripts. Boot the bundled worker and require that it comes up with its
 // coordinator wired and its message listener registered.

@@ -50,6 +50,7 @@ export const ENTRIES = [
 
     { out: 'content/ascent-editor.js', sources: ['ui/units.js', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'reports/report-editor.js'] },
     { out: 'content/ascent-backup.js', sources: ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'reports/report-markup.js', 'ascent/ascent-snapshot.js', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ascent/ascent-backup.js'] },
+    { out: 'content/ascent-layout.js', sources: ['ui/dom.js', 'ascent/ascent-table-split.js', 'ascent/ascent-layout.js'] },
     { out: 'content/theme-early.js', sources: ['theme/theme-resolve.js', 'theme/theme-bootstrap.js', 'theme/theme-early.js'] },
     { out: 'content/theme.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/theme-bootstrap.js', 'theme/dynamic-inline-colors.js', 'theme/site-dark-css.js', 'theme/theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'settings/bridge.js'] },
@@ -121,6 +122,7 @@ export const COPY_FILES = [
     ['src/reports/report-editor.css', 'css/report-editor.css'],
     ['src/ascent/ascent-upload.css', 'css/ascent-upload.css'],
     ['src/ascent/ascent-backup.css', 'css/ascent-backup.css'],
+    ['src/ascent/ascent-layout.css', 'css/ascent-layout.css'],
     ['src/profile/profile-backup.css', 'css/profile-backup.css'],
     ['src/terrain/terrain-map.css', 'css/terrain-map.css'],
     ['src/maps/peak-links.css', 'css/peak-links.css'],
