@@ -29,6 +29,17 @@ const unavailableEvents = Object.freeze({
     sunsetDate: null,
     sunsetDayRelation: null,
     daylightState: 'unavailable',
+    moonriseMs: null,
+    moonriseAzimuthDeg: null,
+    moonriseDate: null,
+    moonriseDayRelation: null,
+    moonVisibleMidpointMs: null,
+    moonVisibleMidpointAzimuthDeg: null,
+    moonsetMs: null,
+    moonsetAzimuthDeg: null,
+    moonsetDate: null,
+    moonsetDayRelation: null,
+    moonVisibilityState: 'unavailable',
 });
 
 export function createSunState({

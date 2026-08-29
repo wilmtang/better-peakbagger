@@ -260,7 +260,8 @@
     border: 1px solid var(--bpb-sun-border);
     border-radius: 50%;
 }
-.bpb-sun-calculator__daylight-range {
+.bpb-sun-calculator__daylight-range,
+.bpb-sun-calculator__moon-visibility-range {
     position: absolute;
     inset: 0;
     inline-size: 100%;
@@ -271,7 +272,8 @@
     transform-origin: center;
     transition: transform 120ms ease-out;
 }
-.bpb-sun-calculator__daylight-range[hidden] { display: none; }
+.bpb-sun-calculator__daylight-range[hidden],
+.bpb-sun-calculator__moon-visibility-range[hidden] { display: none; }
 .bpb-sun-calculator__daylight-path {
     fill: none;
     stroke: color-mix(in srgb, var(--bpb-sun-glow) 78%, var(--bpb-sun-dawn));
@@ -290,14 +292,22 @@
     fill: var(--bpb-sun-glow);
     stroke: var(--bpb-sun-panel);
 }
-.bpb-sun-calculator__moon-orbit {
-    position: absolute;
-    inset: 22%;
-    pointer-events: none;
-    border: 1px solid color-mix(in srgb, var(--bpb-moon) 52%, transparent);
-    border-radius: 50%;
+.bpb-sun-calculator__moon-visibility-path {
+    fill: none;
+    stroke: color-mix(in srgb, var(--bpb-moon) 42%, var(--bpb-sun-muted));
+    stroke-linecap: round;
+    stroke-width: 2.35;
+    opacity: 0.78;
 }
-.bpb-sun-calculator__moon-orbit[hidden] { display: none; }
+.bpb-sun-calculator__moon-visibility-endpoint { stroke-width: 1.2; }
+.bpb-sun-calculator__moon-visibility-endpoint--rise {
+    fill: var(--bpb-sun-panel);
+    stroke: color-mix(in srgb, var(--bpb-moon) 42%, var(--bpb-sun-muted));
+}
+.bpb-sun-calculator__moon-visibility-endpoint--set {
+    fill: color-mix(in srgb, var(--bpb-moon) 42%, var(--bpb-sun-muted));
+    stroke: var(--bpb-sun-panel);
+}
 .bpb-sun-calculator__cardinal,
 .bpb-sun-calculator__sun,
 .bpb-sun-calculator__moon-marker {
@@ -554,6 +564,7 @@
     .bpb-sun-calculator__cardinal,
     .bpb-sun-calculator__cardinal-label,
     .bpb-sun-calculator__daylight-range,
+    .bpb-sun-calculator__moon-visibility-range,
     .bpb-sun-calculator__sun,
     .bpb-sun-calculator__moon-marker,
     .bpb-sun-calculator__moon-marker-disc,

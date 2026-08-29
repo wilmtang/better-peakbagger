@@ -56,36 +56,47 @@ const roundedDegrees = value => `${Math.round(value)}°`;
 const elevationText = value => `${roundedDegrees(Math.abs(value))} ${value >= 0 ? 'above' : 'below'} horizon`;
 const MOON_PHASE_ICONS = Object.freeze(['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘']);
 const DAYLIGHT_ARC_RADIUS = 37;
+const MOON_VISIBILITY_ARC_RADIUS = 28;
 const eventDaySuffix = relation => relation === 'previous-day' ? ' (previous day)'
     : relation === 'next-day' ? ' (next day)' : '';
 
-const compassPoint = azimuth => {
+const compassPoint = (azimuth, radius) => {
     const radians = (SunPosition.normalizeDegrees(azimuth) - 90) * Math.PI / 180;
     return Object.freeze({
-        x: 50 + DAYLIGHT_ARC_RADIUS * Math.cos(radians),
-        y: 50 + DAYLIGHT_ARC_RADIUS * Math.sin(radians),
+        x: 50 + radius * Math.cos(radians),
+        y: 50 + radius * Math.sin(radians),
     });
 };
 
-function daylightArc(result) {
-    const sunrise = result?.sunriseAzimuthDeg;
-    const noon = result?.solarNoonAzimuthDeg;
-    const sunset = result?.sunsetAzimuthDeg;
-    if (![sunrise, noon, sunset].every(Number.isFinite)) return null;
-
-    const clockwiseSpan = SunPosition.normalizeDegrees(sunset - sunrise);
+function compassArc(startAzimuth, middleAzimuth, endAzimuth, radius) {
+    if (![startAzimuth, middleAzimuth, endAzimuth, radius].every(Number.isFinite)) return null;
+    const clockwiseSpan = SunPosition.normalizeDegrees(endAzimuth - startAzimuth);
     if (clockwiseSpan < 0.01 || clockwiseSpan > 359.99) return null;
-    const clockwiseToNoon = SunPosition.normalizeDegrees(noon - sunrise);
-    const clockwise = clockwiseToNoon <= clockwiseSpan;
+    const clockwiseToMiddle = SunPosition.normalizeDegrees(middleAzimuth - startAzimuth);
+    const clockwise = clockwiseToMiddle <= clockwiseSpan;
     const span = clockwise ? clockwiseSpan : 360 - clockwiseSpan;
-    const start = compassPoint(sunrise);
-    const end = compassPoint(sunset);
+    const start = compassPoint(startAzimuth, radius);
+    const end = compassPoint(endAzimuth, radius);
     return Object.freeze({
-        d: `M ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${DAYLIGHT_ARC_RADIUS} ${DAYLIGHT_ARC_RADIUS} 0 ${span > 180 ? 1 : 0} ${clockwise ? 1 : 0} ${end.x.toFixed(3)} ${end.y.toFixed(3)}`,
+        d: `M ${start.x.toFixed(3)} ${start.y.toFixed(3)} A ${radius} ${radius} 0 ${span > 180 ? 1 : 0} ${clockwise ? 1 : 0} ${end.x.toFixed(3)} ${end.y.toFixed(3)}`,
         start,
         end,
     });
 }
+
+const daylightArc = result => compassArc(
+    result?.sunriseAzimuthDeg,
+    result?.solarNoonAzimuthDeg,
+    result?.sunsetAzimuthDeg,
+    DAYLIGHT_ARC_RADIUS,
+);
+
+const moonVisibilityArc = result => compassArc(
+    result?.moonriseAzimuthDeg,
+    result?.moonVisibleMidpointAzimuthDeg,
+    result?.moonsetAzimuthDeg,
+    MOON_VISIBILITY_ARC_RADIUS,
+);
 
 function moonPositionDisplay(result) {
     const azimuth = result?.moonAzimuthDeg;
@@ -226,9 +237,23 @@ export function createSunCalculator({
         'bpb-sun-calculator__daylight-endpoint--sunset');
     sunsetMarker.setAttribute('r', '2.5');
     daylightRange.append(daylightPath, sunriseMarker, sunsetMarker);
-    const moonOrbit = element('span', 'bpb-sun-calculator__moon-orbit');
-    moonOrbit.hidden = true;
-    compassRing.append(daylightRange, moonOrbit);
+    const moonVisibilityRange = svgElement('svg');
+    moonVisibilityRange.classList.add('bpb-sun-calculator__moon-visibility-range');
+    moonVisibilityRange.setAttribute('viewBox', '0 0 100 100');
+    moonVisibilityRange.setAttribute('preserveAspectRatio', 'none');
+    moonVisibilityRange.hidden = true;
+    const moonVisibilityPath = svgElement('path');
+    moonVisibilityPath.classList.add('bpb-sun-calculator__moon-visibility-path');
+    const moonriseMarker = svgElement('circle');
+    moonriseMarker.classList.add('bpb-sun-calculator__moon-visibility-endpoint',
+        'bpb-sun-calculator__moon-visibility-endpoint--rise');
+    moonriseMarker.setAttribute('r', '2');
+    const moonsetMarker = svgElement('circle');
+    moonsetMarker.classList.add('bpb-sun-calculator__moon-visibility-endpoint',
+        'bpb-sun-calculator__moon-visibility-endpoint--set');
+    moonsetMarker.setAttribute('r', '2');
+    moonVisibilityRange.append(moonVisibilityPath, moonriseMarker, moonsetMarker);
+    compassRing.append(daylightRange, moonVisibilityRange);
     const center = element('span', 'bpb-sun-calculator__compass-center');
     const moonMarker = element('span', 'bpb-sun-calculator__moon-marker');
     const moonMarkerDisc = element('span', 'bpb-sun-calculator__moon-marker-disc');
@@ -347,6 +372,16 @@ export function createSunCalculator({
             sunsetMarker.setAttribute('cy', arc.end.y.toFixed(3));
             daylightRange.style.transform = `rotate(${-unboundedBearing}deg)`;
         }
+        const moonArc = moonVisibilityArc(next);
+        moonVisibilityRange.hidden = !moonArc;
+        if (moonArc) {
+            moonVisibilityPath.setAttribute('d', moonArc.d);
+            moonriseMarker.setAttribute('cx', moonArc.start.x.toFixed(3));
+            moonriseMarker.setAttribute('cy', moonArc.start.y.toFixed(3));
+            moonsetMarker.setAttribute('cx', moonArc.end.x.toFixed(3));
+            moonsetMarker.setAttribute('cy', moonArc.end.y.toFixed(3));
+            moonVisibilityRange.style.transform = `rotate(${-unboundedBearing}deg)`;
+        }
         sun.hidden = !Number.isFinite(next.sunAzimuth);
         if (!sun.hidden) {
             const normalizedAzimuth = SunPosition.normalizeDegrees(next.sunAzimuth);
@@ -360,7 +395,6 @@ export function createSunCalculator({
             sun.style.transform = `rotate(${angle}deg)`;
         }
         moonMarker.hidden = !Number.isFinite(next.moonAzimuth);
-        moonOrbit.hidden = moonMarker.hidden;
         if (moonMarker.hidden) unboundedMoonAzimuth = null;
         else {
             const normalizedAzimuth = SunPosition.normalizeDegrees(next.moonAzimuth);
@@ -384,6 +418,9 @@ export function createSunCalculator({
             sunriseAzimuthDeg: state?.result?.sunriseAzimuthDeg,
             solarNoonAzimuthDeg: state?.result?.solarNoonAzimuthDeg,
             sunsetAzimuthDeg: state?.result?.sunsetAzimuthDeg,
+            moonriseAzimuthDeg: state?.result?.moonriseAzimuthDeg,
+            moonVisibleMidpointAzimuthDeg: state?.result?.moonVisibleMidpointAzimuthDeg,
+            moonsetAzimuthDeg: state?.result?.moonsetAzimuthDeg,
         };
         if (frameHandle === null) frameHandle = requestFrame(applyCompass);
     };

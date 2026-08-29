@@ -9,8 +9,8 @@
   packaged astronomy data. GPX timestamps remain authoritative, untimed tracks
   use an honest ascent-date preview, and the compass follows a rotated 3D view without
   changing absolute azimuth. The compass now traces the sunrise-to-sunset
-  direction range, keeps the Moon on a separate inner orbit without growing the
-  compass, and hovering the GPX chart previews the Sun and Moon at that route
+  direction range, adds a gray inner moonrise-to-moonset visibility band without
+  growing the compass, and hovering the GPX chart previews the Sun and Moon at that route
   point without replacing the clicked or keyboard-selected point. The
   calculator does not predict terrain shadows, weather, or actual direct light.
 

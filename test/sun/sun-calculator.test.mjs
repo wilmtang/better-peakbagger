@@ -81,6 +81,17 @@ const ordinaryState = ({
             sunsetDate: date,
             sunsetDayRelation: 'same-day',
             daylightState,
+            moonriseMs: MountainTime.civilToInstant(zone, date, 1 * 60 + 30).ms,
+            moonriseAzimuthDeg: 60,
+            moonriseDate: date,
+            moonriseDayRelation: 'same-day',
+            moonVisibleMidpointMs: MountainTime.civilToInstant(zone, date, 9 * 60 + 15).ms,
+            moonVisibleMidpointAzimuthDeg: 180,
+            moonsetMs: MountainTime.civilToInstant(zone, date, 17 * 60).ms,
+            moonsetAzimuthDeg: 300,
+            moonsetDate: date,
+            moonsetDayRelation: 'same-day',
+            moonVisibilityState: 'ordinary',
             moonIlluminationFraction,
             moonPhase: 0.858,
             moonPhaseIndex,
@@ -174,9 +185,9 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-position')
         .getAttribute('aria-label'), '315° NW, 24° above horizon');
     const moonMarker = calculator.element.querySelector('.bpb-sun-calculator__moon-marker');
-    const moonOrbit = calculator.element.querySelector('.bpb-sun-calculator__moon-orbit');
+    const moonRange = calculator.element.querySelector('.bpb-sun-calculator__moon-visibility-range');
     assert.equal(moonMarker.hidden, false);
-    assert.equal(moonOrbit.hidden, false);
+    assert.equal(moonRange.hidden, false);
     assert.ok(Math.abs(rotationAngle(moonMarker) - 315.2) < 0.001);
     assert.equal(calculator.element.dataset.moonPhase, '7');
     assert.equal(calculator.element.querySelectorAll('.bpb-sun-calculator__event-time').length, 2);
@@ -347,7 +358,7 @@ test('daylight progress is visible only from exact sunrise through exact sunset'
     assert.equal(marker.hidden, true);
 }));
 
-test('compass draws the daylight direction range through solar noon and rotates it with the map', () => withDom(dom => {
+test('compass draws separate Sun and Moon visibility bands and rotates both with the map', () => withDom(dom => {
     const frames = [];
     const calculator = SunCalculator.create({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
@@ -356,6 +367,8 @@ test('compass draws the daylight direction range through solar noon and rotates 
     });
     const range = calculator.element.querySelector('.bpb-sun-calculator__daylight-range');
     const path = calculator.element.querySelector('.bpb-sun-calculator__daylight-path');
+    const moonRange = calculator.element.querySelector('.bpb-sun-calculator__moon-visibility-range');
+    const moonPath = calculator.element.querySelector('.bpb-sun-calculator__moon-visibility-path');
     const moonMarker = calculator.element.querySelector('.bpb-sun-calculator__moon-marker');
 
     calculator.render(ordinaryState());
@@ -364,6 +377,10 @@ test('compass draws the daylight direction range through solar noon and rotates 
     assert.match(path.getAttribute('d'), / A 37 37 0 1 1 /,
         'Denver daylight follows the long clockwise arc through the southern sky');
     assert.equal(range.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length, 2);
+    assert.equal(moonRange.hidden, false);
+    assert.match(moonPath.getAttribute('d'), / A 28 28 0 1 1 /,
+        'the Moon visibility band follows its rise-to-set direction through the visible midpoint');
+    assert.equal(moonRange.querySelectorAll('.bpb-sun-calculator__moon-visibility-endpoint').length, 2);
     assert.ok(Math.abs(rotationAngle(moonMarker) - 315.2) < 0.001);
 
     calculator.render(ordinaryState({
@@ -373,6 +390,7 @@ test('compass draws the daylight direction range through solar noon and rotates 
     }));
     frames.shift()();
     assert.equal(range.style.transform, 'rotate(-25deg)');
+    assert.equal(moonRange.style.transform, 'rotate(-25deg)');
     assert.ok(Math.abs(rotationAngle(moonMarker) - 290.2) < 0.001);
 
     const equatorial = ordinaryState();
@@ -398,10 +416,15 @@ test('compass draws the daylight direction range through solar noon and rotates 
             solarNoonAzimuthDeg: null,
             sunsetAzimuthDeg: null,
             daylightState: 'unavailable',
+            moonriseAzimuthDeg: null,
+            moonVisibleMidpointAzimuthDeg: null,
+            moonsetAzimuthDeg: null,
+            moonVisibilityState: 'unavailable',
         },
     });
     frames.shift()();
     assert.equal(range.hidden, true);
+    assert.equal(moonRange.hidden, true);
 }));
 
 test('event clocks own their DST labels and adjacent-day relation', () => withDom(dom => {
@@ -492,9 +515,10 @@ test('finite Sun and Moon positions remain visible when Moon phase metadata is u
 }));
 
 test('finite Moon phase remains visible when Moon position metadata is unavailable', () => withDom(dom => {
+    const frames = [];
     const calculator = SunCalculator.create({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
-        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+        requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
     });
     const state = ordinaryState();
     calculator.render({
@@ -508,12 +532,14 @@ test('finite Moon phase remains visible when Moon position metadata is unavailab
             moonScreenAzimuthDeg: null,
         },
     });
+    frames.shift()();
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-direction').textContent,
         'Position unavailable');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-name').textContent,
         'Waning Crescent');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-marker').hidden, true);
-    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-orbit').hidden, true);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-visibility-range').hidden,
+        false, 'daily Moon visibility remains available without an instantaneous marker');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__reading').hidden, false);
 }));
 
@@ -687,10 +713,12 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(css, /prefers-reduced-motion: reduce/);
     assert.match(css, /sun--below-horizon/);
     assert.match(css, /moon-marker--below-horizon/);
-    assert.match(css, /bpb-sun-calculator__moon-orbit\s*\{[^}]*inset:\s*22%/s);
+    assert.doesNotMatch(css, /bpb-sun-calculator__moon-orbit/,
+        'the Moon visibility indicator must not regress to a decorative full circle');
+    assert.match(css, /bpb-sun-calculator__moon-visibility-path\s*\{[^}]*stroke:[^;}]*bpb-moon[^}]*stroke-width:\s*2\.35/s);
     assert.match(css, /bpb-sun-calculator__moon-marker::before\s*\{[^}]*inset-block-start:\s*22%[^}]*block-size:\s*28%/s);
     assert.match(css, /bpb-sun-calculator__compass\s*\{[^}]*inline-size:\s*min\(13rem,\s*100%\)/s,
-        'separating the Moon orbit must not enlarge the compass');
+        'adding the Moon visibility band must not enlarge the compass');
     assert.match(css, /event-marker\[hidden\]/);
     assert.match(css, /prefers-reduced-motion: reduce[^}]*[\s\S]*moon-marker[^}]*[\s\S]*chevron\s*\{\s*transition:\s*none/s);
     assert.match(css, /bpb-sun-calculator__time\s*\{[^}]*block-size:\s*2\.75rem/s);

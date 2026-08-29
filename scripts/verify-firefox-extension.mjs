@@ -1306,22 +1306,25 @@ async function main() {
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
       const moon = calculator?.querySelector(".bpb-sun-calculator__moon")?.textContent || "";
       const moonMarker = calculator?.querySelector(".bpb-sun-calculator__moon-marker");
-      const moonOrbit = calculator?.querySelector(".bpb-sun-calculator__moon-orbit");
+      const moonRange = calculator?.querySelector(".bpb-sun-calculator__moon-visibility-range");
+      const moonPath = moonRange?.querySelector(".bpb-sun-calculator__moon-visibility-path");
       const compass = calculator?.querySelector(".bpb-sun-calculator__compass-ring");
       const moonDisc = moonMarker?.querySelector(".bpb-sun-calculator__moon-marker-disc");
       const daylightRange = calculator?.querySelector(".bpb-sun-calculator__daylight-range");
       const daylightPath = daylightRange?.querySelector(".bpb-sun-calculator__daylight-path");
       const compassRect = compass?.getBoundingClientRect();
-      const orbitRect = moonOrbit?.getBoundingClientRect();
       const moonRect = moonDisc?.getBoundingClientRect();
-      const orbitRadius = orbitRect?.width / 2;
       const moonRadius = compassRect && moonRect ? Math.hypot(
         moonRect.left + moonRect.width / 2 - (compassRect.left + compassRect.width / 2),
         moonRect.top + moonRect.height / 2 - (compassRect.top + compassRect.height / 2)
       ) : null;
-      const separateMoonOrbit = Number.isFinite(orbitRadius) && Number.isFinite(moonRadius)
-        && Math.abs(orbitRadius - moonRadius) <= 2
-        && compassRect.width * 0.37 - orbitRadius >= compassRect.width * 0.08
+      const moonPathStyle = moonPath ? getComputedStyle(moonPath) : null;
+      const separateMoonBand = Number.isFinite(moonRadius)
+        && Math.abs(compassRect.width * 0.28 - moonRadius) <= 3
+        && / A 28 28 /.test(moonPath?.getAttribute("d") || "")
+        && moonRange.querySelectorAll(".bpb-sun-calculator__moon-visibility-endpoint").length === 2
+        && parseFloat(moonPathStyle?.strokeWidth || "0") >= 2
+        && moonPathStyle?.stroke !== "none"
         && compassRect.width <= 208.5;
       return calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === false
         && /°/.test(summary) && /Sun direction\\s*\\d+°/i.test(direction)
@@ -1333,10 +1336,10 @@ async function main() {
         && /\\d+% illuminated/.test(moon)
         && /^[0-7]$/.test(calculator?.dataset.moonPhase || "")
         && moonMarker?.hidden === false && /^rotate\\(/.test(moonMarker.style.transform)
-        && moonOrbit?.hidden === false && separateMoonOrbit
+        && moonRange?.hidden === false && separateMoonBand
         && calculator?.querySelector(".bpb-sun-calculator__moon-icon")?.textContent
-        ? { summary, direction, moon, orbitGeometry: {
-          compass: compassRect.width, orbitRadius, moonRadius
+        ? { summary, direction, moon, moonBandGeometry: {
+          compass: compassRect.width, moonRadius, path: moonPath.getAttribute("d")
         } } : false;
     `, 'the Firefox GPX Sun selection');
         assertState(/°/.test(selectedSunState.summary),
@@ -1591,7 +1594,9 @@ async function main() {
         moonPhase: sun.dataset.moonPhase || "",
         moonIcon: sun.querySelector(".bpb-sun-calculator__moon-icon")?.textContent || "",
         moonMarker: sun.querySelector(".bpb-sun-calculator__moon-marker")?.style.transform || "",
-        moonOrbit: sun.querySelector(".bpb-sun-calculator__moon-orbit")?.hidden === false,
+        moonBand: sun.querySelector(".bpb-sun-calculator__moon-visibility-range")?.hidden === false
+          && / A 28 28 /.test(sun.querySelector(".bpb-sun-calculator__moon-visibility-path")
+            ?.getAttribute("d") || ""),
         sunBorderStyle: getComputedStyle(sun).borderStyle,
       } : false;
     `, 'the Firefox Peak surface');
@@ -1606,7 +1611,7 @@ async function main() {
             .test(peakState.moon)
         && /\d+% illuminated/.test(peakState.moon)
         && /^[0-7]$/.test(peakState.moonPhase) && peakState.moonIcon
-        && /^rotate\(/.test(peakState.moonMarker) && peakState.moonOrbit
+        && /^rotate\(/.test(peakState.moonMarker) && peakState.moonBand
         && peakState.sunBorderStyle === 'solid',
             'Firefox Peak links, theme, 3D mount, or Sun calculator did not initialize',
             peakState,

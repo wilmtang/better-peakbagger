@@ -7,9 +7,9 @@ and illuminated percentage, and a compass that stays aligned with the visible
 2D or 3D map.
 
 It does **not** predict whether nearby terrain blocks either object, cast
-shadows, clouds, smoke, or actual direct light on a slope. It does not calculate
-moonrise or moonset. GPX elevation is deliberately not used as an
-observer-height or terrain-horizon correction.
+shadows, clouds, smoke, or actual direct light on a slope. Its Moon visibility
+band uses astronomical, level-horizon moonrise and moonset. GPX elevation is
+deliberately not used as an observer-height or terrain-horizon correction.
 
 ## Supported surfaces and subjects
 
@@ -100,10 +100,12 @@ level-horizon sunrise azimuth to the sunset azimuth through the solar-noon side
 of the sky. A hollow endpoint marks sunrise and a filled endpoint marks sunset;
 the exact event clocks remain in the line below. The arc is omitted when daily
 event directions are unavailable and rotates with the same accepted map bearing
-as the Sun, Moon, and cardinal labels. A subtle full inner orbit keeps the cool
-Moon crescent and radial line distinct from that solar arc without increasing
-the compass diameter; a hollow Moon marker means it is below the astronomical
-horizon. The orbit is a direction guide, not a moonrise or moonset prediction.
+as the Sun, Moon, and cardinal labels. A gray band on the smaller Moon radius
+runs from level-horizon moonrise to moonset without increasing the compass
+diameter. The band uses the above-horizon interval whose midpoint belongs to the
+requested mountain-local date, so a Moon that sets after local midnight remains
+part of the correct cycle. A hollow Moon marker means it is below the
+astronomical horizon.
 
 Compass animation is coalesced to animation frames. Sun movement, Moon movement,
 and map-bearing changes use the shortest arc across north. Bearing-only updates
