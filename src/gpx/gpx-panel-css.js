@@ -214,6 +214,7 @@ export const gpxPanelCss = `
     opacity: 0.55;
 }
 #bpb-gpx-analysis .bpb-gpx-copy-coordinates:focus-visible,
+#bpb-gpx-analysis #bpb-gpx-units:focus-visible,
 #bpb-gpx-analysis .bpb-gpx-chart-legend button:focus-visible,
 #bpb-gpx-analysis canvas:focus-visible,
 #bpb-gpx-analysis .bpb-gpx-coordinate-fallback:focus-visible {

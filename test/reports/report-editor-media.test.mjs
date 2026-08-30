@@ -91,6 +91,91 @@ test('the image popover validates the source and inserts alt text', async () => 
         '[img src="https://example.com/topo.jpg" alt="Topo"]');
 });
 
+test('popover URL errors are specific, announced, repeatable, and cleared on recovery', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const input = (field, value) => {
+        field.value = value;
+        field.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    };
+    const assertError = (field, pattern) => {
+        const id = field.getAttribute('aria-errormessage');
+        const error = id && doc.getElementById(id);
+        assert.equal(field.getAttribute('aria-invalid'), 'true');
+        assert.equal(doc.activeElement, field);
+        assert.equal(error?.getAttribute('role'), 'alert');
+        assert.equal(error?.hidden, false);
+        assert.match(error?.textContent || '', pattern);
+        return error;
+    };
+    const assertClear = field => {
+        assert.equal(field.hasAttribute('aria-invalid'), false);
+        assert.equal(field.hasAttribute('aria-errormessage'), false);
+        assert.equal(field.classList.contains('bpb-re-invalid'), false);
+    };
+
+    ui.querySelector('[aria-label="Link (Ctrl/Cmd+K)"]').click();
+    const link = ui.querySelector('[aria-label="Link URL"]');
+    const linkApply = ui.querySelector('.bpb-re-linkbox .bpb-re-linkapply');
+    linkApply.click();
+    const repeatedError = assertError(link, /^Enter a link\.$/);
+    linkApply.click();
+    assert.equal(assertError(link, /^Enter a link\.$/), repeatedError,
+        'repeated invalid actions reuse and re-expose the associated alert');
+    input(link, 'javascript:alert(1)');
+    assertClear(link);
+    link.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    assertError(link, /link type isn’t allowed/);
+    input(link, 'not a url');
+    link.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    assertError(link, /complete web address/);
+    input(link, 'example.com/route');
+    link.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('https://example.com/route'));
+    assertClear(link);
+
+    ui.querySelector('[aria-label="Insert image"]').click();
+    const image = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
+    const imageApply = ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply');
+    imageApply.click();
+    assertError(image, /^Enter an image URL\.$/);
+    input(image, 'http://example.com/photo.jpg');
+    imageApply.click();
+    assertError(image, /Use an HTTPS image URL/);
+    input(image, 'https://images.example.com/signed/resource?token=abc');
+    imageApply.click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('signed/resource'));
+    assertClear(image);
+
+    ui.querySelector('[aria-label="Insert video"]').click();
+    const video = ui.querySelector('[aria-label="Video file or YouTube URL"]');
+    const videoApply = ui.querySelector('.bpb-re-videobox .bpb-re-linkapply');
+    videoApply.click();
+    assertError(video, /^Enter a video URL\.$/);
+    input(video, 'http://media.example.com/clip.mp4');
+    videoApply.click();
+    assertError(video, /Use an HTTPS video file/);
+    input(video, 'https://vimeo.com/123456');
+    video.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    assertError(video, /video page or embed isn’t supported/);
+    input(video, 'https://youtu.be/not-video');
+    videoApply.click();
+    assertError(video, /video page or embed isn’t supported/);
+    input(video, 'https://media.example.com/signed/stream?token=abc');
+    videoApply.click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('signed/stream'));
+    assertClear(video);
+
+    ui.querySelector('[aria-label="Insert video"]').click();
+    assertClear(video);
+    assert.equal(doc.getElementById('bpb-re-video-error').hidden, true,
+        'reopening a popover must not retain a stale failure');
+    video.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(ui.querySelector('.bpb-re-videobox').hidden, true);
+    assertClear(video);
+});
+
 // The popover layer floats over the ascent form, so an open popover sits on
 // top of Peakbagger's own controls — the date calendar most visibly. Every way
 // out must work without hunting for the toolbar button that opened it.

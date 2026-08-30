@@ -2667,6 +2667,20 @@ try {
         });
         await promptToggle.click();
     }
+    const unitSelect = offPage.locator('#bpb-gpx-units');
+    await unitSelect.focus();
+    const unitFocusState = await unitSelect.evaluate(control => {
+        const style = getComputedStyle(control);
+        return {
+            focused: document.activeElement === control,
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            outlineOffset: style.outlineOffset,
+        };
+    });
+    check(unitFocusState.focused && unitFocusState.outlineStyle === 'solid'
+        && unitFocusState.outlineWidth === '3px' && unitFocusState.outlineOffset === '2px',
+    `the packaged unit selector lacks a non-color focus indicator: ${JSON.stringify(unitFocusState)}`);
     const chartSeriesGroup = offPage.getByRole('group', { name: 'Chart series' });
     const distanceSeriesButton = chartSeriesGroup.getByRole('button', {
         name: 'Elevation by Distance',
@@ -4581,6 +4595,53 @@ try {
                     });
                 }
             }
+            await editorPage.setViewportSize({ width: 520, height: 760 });
+            await editorPage.evaluate(() => { document.body.style.fontSize = '200%'; });
+            await editorPage.locator('.bpb-re-imagebox .bpb-re-linkapply').click();
+            const imageErrorState = await editorPage.locator('[aria-label="Image URL (HTTPS)"]')
+                .evaluate(input => {
+                    const error = document.getElementById(input.getAttribute('aria-errormessage'));
+                    const box = input.closest('.bpb-re-imagebox');
+                    const boxRect = box?.getBoundingClientRect();
+                    const errorRect = error?.getBoundingClientRect();
+                    const style = getComputedStyle(input);
+                    return {
+                        theme: document.documentElement.getAttribute('data-bpb-theme'),
+                        invalid: input.getAttribute('aria-invalid'),
+                        focused: document.activeElement === input,
+                        errorRole: error?.getAttribute('role'),
+                        errorText: error?.textContent || '',
+                        errorWrapsInside: Boolean(boxRect && errorRect)
+                            && errorRect.left >= boxRect.left - 1
+                            && errorRect.right <= boxRect.right + 1
+                            && errorRect.bottom <= boxRect.bottom + 1,
+                        panelOverflow: box.scrollWidth > box.clientWidth,
+                        outlineStyle: style.outlineStyle,
+                        outlineWidth: style.outlineWidth,
+                        outlineOffset: style.outlineOffset,
+                    };
+                });
+            check(imageErrorState.theme === editorTheme
+                && imageErrorState.invalid === 'true' && imageErrorState.focused
+                && imageErrorState.errorRole === 'alert'
+                && imageErrorState.errorText === 'Enter an image URL.'
+                && imageErrorState.errorWrapsInside && !imageErrorState.panelOverflow
+                && imageErrorState.outlineStyle === 'solid'
+                && imageErrorState.outlineWidth === '2px'
+                && imageErrorState.outlineOffset === '2px',
+            `the dark 200%-text image error was inaccessible or clipped: ${JSON.stringify(imageErrorState)}`);
+            await editorPage.locator('[aria-label="Image URL (HTTPS)"]').fill('https://example.com/signed?token=1');
+            const correctedImageState = await editorPage.locator('[aria-label="Image URL (HTTPS)"]')
+                .evaluate(input => ({
+                    invalid: input.hasAttribute('aria-invalid'),
+                    errorRelation: input.hasAttribute('aria-errormessage'),
+                    errorHidden: document.getElementById('bpb-re-image-error')?.hidden,
+                }));
+            check(!correctedImageState.invalid && !correctedImageState.errorRelation
+                && correctedImageState.errorHidden,
+            `the corrected image field retained stale error semantics: ${JSON.stringify(correctedImageState)}`);
+            await editorPage.evaluate(() => { document.body.style.fontSize = ''; });
+            await editorPage.setViewportSize(verificationViewport);
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Insert image', exact: true
             }).click();

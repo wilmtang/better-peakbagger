@@ -1281,6 +1281,20 @@ async function main() {
         if (surfaceState.theme === null) {
             throw new Error('Firefox isolated-world theme bundle did not initialize');
         }
+        const unitFocusState = await driver.executeScript(`
+      const control = document.getElementById('bpb-gpx-units');
+      control?.focus();
+      const style = control && getComputedStyle(control);
+      return {
+        focused: document.activeElement === control,
+        outlineStyle: style?.outlineStyle,
+        outlineWidth: style?.outlineWidth,
+        outlineOffset: style?.outlineOffset,
+      };
+    `);
+        assertState(unitFocusState.focused && unitFocusState.outlineStyle === 'solid'
+            && unitFocusState.outlineWidth === '3px' && unitFocusState.outlineOffset === '2px',
+        'Firefox unit selector lacks a non-color focus indicator', unitFocusState);
         const analyzerHandle = await driver.getWindowHandle();
         await driver.switchTo().newWindow('tab');
         await driver.manage().window().setRect({ width: 520, height: 760 });
@@ -2545,6 +2559,58 @@ async function main() {
             'Firefox report credit or native form ownership was wrong',
             creditState,
         );
+        await driver.manage().window().setRect({ width: 520, height: 760 });
+        const editorErrorState = await driver.executeScript(`
+      document.body.style.fontSize = '200%';
+      const mode = [...document.querySelectorAll('.bpb-re-mode')]
+        .find(button => button.textContent === 'Rich text');
+      mode?.click();
+      document.querySelector('[aria-label="Insert image"]')?.click();
+      document.querySelector('.bpb-re-imagebox .bpb-re-linkapply')?.click();
+      const input = document.querySelector('[aria-label="Image URL (HTTPS)"]');
+      const error = document.getElementById(input?.getAttribute('aria-errormessage'));
+      const boxRect = input?.closest('.bpb-re-imagebox')?.getBoundingClientRect();
+      const errorRect = error?.getBoundingClientRect();
+      const style = input && getComputedStyle(input);
+      return {
+        invalid: input?.getAttribute('aria-invalid'),
+        focused: document.activeElement === input,
+        errorRole: error?.getAttribute('role'),
+        errorText: error?.textContent || '',
+        errorWrapsInside: Boolean(boxRect && errorRect)
+          && errorRect.left >= boxRect.left - 1
+          && errorRect.right <= boxRect.right + 1
+          && errorRect.bottom <= boxRect.bottom + 1,
+        panelOverflow: input.closest('.bpb-re-imagebox').scrollWidth
+          > input.closest('.bpb-re-imagebox').clientWidth,
+        outlineStyle: style?.outlineStyle,
+        outlineWidth: style?.outlineWidth,
+        outlineOffset: style?.outlineOffset,
+      };
+    `);
+        assertState(editorErrorState.invalid === 'true' && editorErrorState.focused
+            && editorErrorState.errorRole === 'alert'
+            && editorErrorState.errorText === 'Enter an image URL.'
+            && editorErrorState.errorWrapsInside && !editorErrorState.panelOverflow
+            && editorErrorState.outlineStyle === 'solid'
+            && editorErrorState.outlineWidth === '2px'
+            && editorErrorState.outlineOffset === '2px',
+        'Firefox 200%-text image error was inaccessible or clipped', editorErrorState);
+        const correctedEditorErrorState = await driver.executeScript(`
+      const input = document.querySelector('[aria-label="Image URL (HTTPS)"]');
+      input.value = 'https://example.com/signed?token=1';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      document.body.style.fontSize = '';
+      return {
+        invalid: input.hasAttribute('aria-invalid'),
+        errorRelation: input.hasAttribute('aria-errormessage'),
+        errorHidden: document.getElementById('bpb-re-image-error')?.hidden,
+      };
+    `);
+        assertState(!correctedEditorErrorState.invalid
+            && !correctedEditorErrorState.errorRelation && correctedEditorErrorState.errorHidden,
+        'Firefox corrected image field retained stale error semantics', correctedEditorErrorState);
+        await driver.manage().window().setRect(verificationViewport);
         const mediaResizeState = await driver.executeAsyncScript(done => {
             const mode = label => [...document.querySelectorAll('.bpb-re-mode')]
                 .find(button => button.textContent === label);

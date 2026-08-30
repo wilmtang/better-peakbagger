@@ -2231,6 +2231,7 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /--bpb-gpx-accent: #1769aa;/);
     assert.match(css, /#bpb-gpx-analysis\[data-theme="dark"\][\s\S]*--bpb-gpx-accent: #79b8ff;/);
     assert.match(css, /\.bpb-gpx-copy-coordinates:focus-visible,[\s\S]*\.bpb-gpx-chart-legend button:focus-visible,[\s\S]*canvas:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
+    assert.match(css, /#bpb-gpx-units:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
     assert.match(css, /#bpb-route-explorer\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap/);
     assert.match(css, /#bpb-route-explorer > #bpb-gpx-analysis\s*\{[\s\S]*flex:\s*1 1 400px/);
     assert.match(css, /container:\s*bpb-route-analysis \/ inline-size/);

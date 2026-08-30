@@ -332,7 +332,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     linkInput.setAttribute('aria-label', 'Link URL');
     const linkApply = button('bpb-re-linkapply', 'Add link');
     const linkRemove = button('bpb-re-linkremove', 'Remove link');
-    linkBox.append(linkInput, linkApply, linkRemove);
+    const linkError = el('div', 'bpb-re-field-error');
+    linkError.id = 'bpb-re-link-error';
+    linkError.setAttribute('role', 'alert');
+    linkError.hidden = true;
+    linkBox.append(linkInput, linkApply, linkRemove, linkError);
 
     const imageBox = el('div', 'bpb-re-box bpb-re-imagebox');
     imageBox.hidden = true;
@@ -345,6 +349,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     imageAltInput.placeholder = 'Description (alt text)';
     imageAltInput.setAttribute('aria-label', 'Image description');
     const imageApply = button('bpb-re-linkapply', 'Add image');
+    const imageError = el('div', 'bpb-re-field-error');
+    imageError.id = 'bpb-re-image-error';
+    imageError.setAttribute('role', 'alert');
+    imageError.hidden = true;
     // One way in, not two. "Upload and edit…" beside "Choose from library…" read
     // as two different features when they are one page with two tabs, and
     // neither name said that the library is this browser's own record.
@@ -389,6 +397,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         imageSrcInput,
         imageAltInput,
         imageApply,
+        imageError,
         imageHostingHint
     );
 
@@ -399,9 +408,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     videoSrcInput.placeholder = 'https://example.com/clip.mp4 or https://youtu.be/...';
     videoSrcInput.setAttribute('aria-label', 'Video file or YouTube URL');
     const videoApply = button('bpb-re-linkapply', 'Add video');
+    const videoError = el('div', 'bpb-re-field-error');
+    videoError.id = 'bpb-re-video-error';
+    videoError.setAttribute('role', 'alert');
+    videoError.hidden = true;
     const videoHint = el('div', 'bpb-re-video-hint',
         'Use a direct HTTPS video file URL or a YouTube watch/share URL. Other embeds are not supported.');
-    videoBox.append(videoSrcInput, videoApply, videoHint);
+    videoBox.append(videoSrcInput, videoApply, videoError, videoHint);
 
     // Less-frequent inline formats live one click away instead of widening the
     // main bar: code, highlight, sub/sup, small, inline quote, and text color.
@@ -530,9 +543,60 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     toolbar.append(conversionBar, draftBar, bar, contextual);
     ui.append(toolbar, richWrap, mdSplit, saveRecovery, foot);
 
+    const fieldErrors = new Map([
+        [linkInput, linkError],
+        [imageSrcInput, imageError],
+        [videoSrcInput, videoError],
+    ]);
+    const clearFieldError = input => {
+        const error = fieldErrors.get(input);
+        if (!error) return;
+        input.classList.remove('bpb-re-invalid');
+        input.removeAttribute('aria-invalid');
+        input.removeAttribute('aria-errormessage');
+        error.hidden = true;
+        error.textContent = '';
+    };
+    const showFieldError = (input, message) => {
+        const error = fieldErrors.get(input);
+        if (!error) return;
+        // Re-hide and replace the live node so repeating the same invalid
+        // action is announced again rather than becoming silent.
+        error.hidden = true;
+        error.textContent = '';
+        input.classList.add('bpb-re-invalid');
+        input.setAttribute('aria-invalid', 'true');
+        input.setAttribute('aria-errormessage', error.id);
+        error.textContent = message;
+        error.hidden = false;
+        input.focus();
+    };
+    const hasDisallowedScheme = (value, allowed) => {
+        if (/^\/\//.test(value)) return true;
+        const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value)?.[1]?.toLowerCase();
+        return Boolean(scheme && !allowed.includes(scheme));
+    };
+    const unsupportedVideoEmbed = value => {
+        try {
+            const url = new URL(value);
+            const host = url.hostname.toLowerCase().replace(/^www\./, '');
+            return host === 'vimeo.com' || host.endsWith('.vimeo.com')
+                || host === 'dailymotion.com' || host.endsWith('.dailymotion.com')
+                || host === 'twitch.tv' || host.endsWith('.twitch.tv')
+                || /(?:^|\/)embed(?:\/|$)/i.test(url.pathname)
+                || host === 'youtube.com' || host.endsWith('.youtube.com') || host === 'youtu.be';
+        } catch (error) { return false; }
+    };
+    fieldErrors.forEach((error, input) => {
+        input.addEventListener('input', () => clearFieldError(input));
+    });
+
     const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
     const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
-    const closeBoxes = () => { for (const box of boxes) box.hidden = true; };
+    const closeBoxes = () => {
+        for (const box of boxes) box.hidden = true;
+        fieldErrors.forEach((error, input) => clearFieldError(input));
+    };
     const openManualBox = () => manualBoxes.find(box => !box.hidden) || null;
 
     // The contextual layer floats over whatever sits above the report field —
@@ -1013,13 +1077,18 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const applyLink = () => {
-        const href = Markup.resolveLinkTarget(linkInput.value);
+        const value = linkInput.value.trim();
+        const href = Markup.resolveLinkTarget(value);
         if (!href) {
-            linkInput.classList.add('bpb-re-invalid');
-            linkInput.focus();
+            const message = !value
+                ? 'Enter a link.'
+                : hasDisallowedScheme(value, ['http', 'https', 'mailto'])
+                    ? 'That link type isn’t allowed. Use HTTP, HTTPS, email, a Peakbagger path, or a page anchor.'
+                    : 'Enter a complete web address, email link, Peakbagger path, or page anchor.';
+            showFieldError(linkInput, message);
             return;
         }
-        linkInput.classList.remove('bpb-re-invalid');
+        clearFieldError(linkInput);
         // With nothing selected and no link under the caret, insert the URL as
         // its own linked text rather than silently doing nothing.
         if (richEditor.state.selection.empty && !richEditor.isActive('link')) {
@@ -1043,7 +1112,6 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         closeBoxes();
         imageSrcInput.value = '';
         imageAltInput.value = '';
-        imageSrcInput.classList.remove('bpb-re-invalid');
         imageLaunchStatus.textContent = '';
         imageBox.hidden = false;
         imageEdit.focus();
@@ -1082,13 +1150,18 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const applyImage = () => {
-        const src = Markup.sanitizeImageSrc(imageSrcInput.value.trim());
+        const value = imageSrcInput.value.trim();
+        const src = Markup.sanitizeImageSrc(value);
         if (!src) {
-            imageSrcInput.classList.add('bpb-re-invalid');
-            imageSrcInput.focus();
+            const message = !value
+                ? 'Enter an image URL.'
+                : hasDisallowedScheme(value, ['https'])
+                    ? 'Use an HTTPS image URL or a Peakbagger-relative path.'
+                    : 'Enter a complete HTTPS image URL or Peakbagger-relative path.';
+            showFieldError(imageSrcInput, message);
             return;
         }
-        imageSrcInput.classList.remove('bpb-re-invalid');
+        clearFieldError(imageSrcInput);
         richCommands.insertImage(richEditor, { src, alt: imageAltInput.value.trim() });
         closeBoxes();
         refreshToolbar();
@@ -1097,7 +1170,6 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const openVideoBox = () => {
         closeBoxes();
         videoSrcInput.value = '';
-        videoSrcInput.classList.remove('bpb-re-invalid');
         videoBox.hidden = false;
         videoSrcInput.focus();
     };
@@ -1105,13 +1177,20 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const applyVideo = () => {
         const source = videoSrcInput.value.trim();
         const youtubeSrc = Markup.sanitizeYouTubeEmbedSrc(source);
-        const src = youtubeSrc || Markup.sanitizeVideoSrc(source);
+        const videoSrc = Markup.sanitizeVideoSrc(source);
+        const src = youtubeSrc || (unsupportedVideoEmbed(source) ? null : videoSrc);
         if (!src) {
-            videoSrcInput.classList.add('bpb-re-invalid');
-            videoSrcInput.focus();
+            const message = !source
+                ? 'Enter a video URL.'
+                : hasDisallowedScheme(source, ['https'])
+                    ? 'Use an HTTPS video file or YouTube URL.'
+                    : unsupportedVideoEmbed(source)
+                        ? 'That video page or embed isn’t supported. Use a direct video file or YouTube watch/share URL.'
+                        : 'Enter a complete HTTPS video file or YouTube watch/share URL.';
+            showFieldError(videoSrcInput, message);
             return;
         }
-        videoSrcInput.classList.remove('bpb-re-invalid');
+        clearFieldError(videoSrcInput);
         if (youtubeSrc) richCommands.insertYouTube(richEditor, youtubeSrc);
         else richCommands.insertVideo(richEditor, src);
         closeBoxes();

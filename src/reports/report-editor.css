@@ -257,7 +257,16 @@
 
 .bpb-re-box input.bpb-re-invalid {
     border-color: #b42318;
-    outline: 1px solid #b42318;
+    outline: 2px solid #b42318;
+    outline-offset: 2px;
+}
+
+.bpb-re-field-error {
+    flex: 0 0 100%;
+    color: #b42318;
+    font-size: x-small;
+    font-weight: 600;
+    line-height: 1.4;
 }
 
 .bpb-re-image-hosting {
@@ -1023,6 +1032,10 @@ html[data-bpb-theme="dark"] .bpb-re-image-hosting {
 
 html[data-bpb-theme="dark"] .bpb-re-image-divider {
     color: #a9a39a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-field-error {
+    color: #f2a099;
 }
 
 html[data-bpb-theme="dark"] .bpb-re-image-divider::after {

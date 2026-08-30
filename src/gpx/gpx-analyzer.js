@@ -187,7 +187,7 @@ const run = async () => {
         const unitSelect = document.createElement('select');
         unitSelect.id = 'bpb-gpx-units';
         unitSelect.setAttribute('aria-label', 'Units');
-        Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', borderWidth: '1px', borderStyle: 'solid', cursor: 'pointer', outline: 'none' });
+        Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', borderWidth: '1px', borderStyle: 'solid', cursor: 'pointer' });
         const unitOption = (value, label) => {
             const option = document.createElement('option');
             option.value = value;
