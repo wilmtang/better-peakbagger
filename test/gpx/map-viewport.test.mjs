@@ -10,6 +10,20 @@ import { JSDOM } from 'jsdom';
 import { mapViewport as MapViewport } from '../../src/gpx/map-viewport.js';
 
 const BOUNDS = { minWidth: 320, maxWidth: 1400, minHeight: 200, maxHeight: 900 };
+const RESIZE_RAIL_HEIGHT = 44;
+
+const pointerEvent = (dom, type, {
+    pointerId = 1,
+    pointerType = 'mouse',
+    ...init
+} = {}) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+    Object.defineProperties(event, {
+        pointerId: { value: pointerId },
+        pointerType: { value: pointerType },
+    });
+    return event;
+};
 
 const setup = ({ size = { width: 600, height: 400 }, persistDelayMs = 400 } = {}) => {
     const dom = new JSDOM('<!doctype html><body><p><iframe src="MasterMap.aspx"></iframe></p></body>', {
@@ -30,7 +44,7 @@ const setup = ({ size = { width: 600, height: 400 }, persistDelayMs = 400 } = {}
         iframe,
         size,
         bounds: BOUNDS,
-        railHeight: 18,
+        railHeight: RESIZE_RAIL_HEIGHT,
         persistDelayMs,
         onPersist: value => persists.push(value),
         onInvalidated: () => invalidated.push(true),
@@ -55,8 +69,13 @@ test('the viewport wraps the map frame and exposes a resize handle', () => {
         assert.ok(handle, 'a resize affordance exists');
         assert.match(handle.getAttribute('aria-label'), /Use arrow keys for small steps/,
             'the handle is reachable and described for keyboard users');
+        assert.equal(handle.style.width, '44px');
+        assert.equal(handle.style.height, '44px');
+        assert.equal(handle.style.touchAction, 'none');
+        assert.equal(iframe.style.height, 'calc(100% - 44px)',
+            'the hit target owns a dedicated rail instead of covering map controls');
         assert.equal(viewport.element.style.width, '600px');
-        assert.equal(viewport.element.style.height, '418px', 'height includes the resize rail');
+        assert.equal(viewport.element.style.height, '444px', 'height includes the resize rail');
     } finally { restore(); }
 });
 
@@ -85,7 +104,7 @@ test('pointer resizing can use a wider layout boundary than the viewport column'
             iframe,
             size: { width: 450, height: 400 },
             bounds: BOUNDS,
-            railHeight: 18,
+            railHeight: RESIZE_RAIL_HEIGHT,
             persistDelayMs: 400,
             onPersist: () => {},
             getResizeBoundary: () => boundary,
@@ -93,11 +112,11 @@ test('pointer resizing can use a wider layout boundary than the viewport column'
         boundary.getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000 });
         viewport.element.getBoundingClientRect = () => ({ left: 0, right: 450, width: 450 });
         const handle = dom.window.document.getElementById('bpb-map-resize-handle');
-        handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
-            button: 0, clientX: 450, clientY: 400, bubbles: true
+        handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            button: 0, clientX: 450, clientY: 400
         }));
-        handle.dispatchEvent(new dom.window.MouseEvent('pointermove', {
-            clientX: 650, clientY: 400, bubbles: true
+        handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            clientX: 650, clientY: 400
         }));
         assert.equal(viewport.size.width, 650,
             'the shrink-wrapped map column must not cap growth at its current width');
@@ -106,6 +125,32 @@ test('pointer resizing can use a wider layout boundary than the viewport column'
         globalThis.window = previousWindow;
         dom.window.close();
     }
+});
+
+test('touch cancellation and capture loss commit the visible map size once', () => {
+    const { dom, viewport, persists, restore } = setup();
+    try {
+        const handle = dom.window.document.getElementById('bpb-map-resize-handle');
+        const boundary = viewport.element.parentElement;
+        boundary.getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000 });
+        viewport.element.getBoundingClientRect = () => ({ left: 0, right: 600, width: 600 });
+        const touch = { pointerId: 9, pointerType: 'touch' };
+        handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            ...touch, button: 0, clientX: 600, clientY: 400,
+        }));
+        const move = pointerEvent(dom, 'pointermove', {
+            ...touch, buttons: 1, clientX: 700, clientY: 450,
+        });
+        handle.dispatchEvent(move);
+        assert.equal(move.defaultPrevented, true, 'touch movement cannot scroll the page');
+        handle.dispatchEvent(pointerEvent(dom, 'pointercancel', touch));
+        handle.dispatchEvent(pointerEvent(dom, 'lostpointercapture', touch));
+        handle.dispatchEvent(pointerEvent(dom, 'pointerup', touch));
+
+        assert.deepEqual(viewport.size, { width: 700, height: 450 });
+        assert.deepEqual(persists, [{ width: 700, height: 450 }],
+            'duplicate terminal events cannot persist the gesture twice');
+    } finally { restore(); }
 });
 
 test('a keyboard resize persists once after the last keystroke, not per repeat', async () => {
@@ -201,7 +246,7 @@ test('with no map frame on the page the viewport is inert but still callable', (
             iframe: null,
             size: { width: 600, height: 400 },
             bounds: BOUNDS,
-            railHeight: 18,
+            railHeight: RESIZE_RAIL_HEIGHT,
             persistDelayMs: 400,
             onPersist: () => { throw new Error('nothing to persist'); },
         });
@@ -242,7 +287,7 @@ test('dispose releases the resize observer, window listener, and pending work', 
         iframe,
         size: { width: 600, height: 400 },
         bounds: BOUNDS,
-        railHeight: 18,
+        railHeight: RESIZE_RAIL_HEIGHT,
         persistDelayMs: 20,
         onPersist: () => {},
         onInvalidated: () => invalidated.push(true),

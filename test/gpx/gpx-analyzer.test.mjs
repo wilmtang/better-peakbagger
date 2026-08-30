@@ -280,7 +280,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');
     assert.equal(mapViewport.style.width, '450px');
     assert.equal(mapViewport.style.maxWidth, '100%');
-    assert.equal(mapViewport.style.height, '468px');
+    assert.equal(mapViewport.style.height, '494px');
     assert.equal(iframe.style.width, '100%');
     assert.equal(iframe.style.maxWidth, '100%');
     await waitFor(dom, () => map.invalidateCalls > 0);
@@ -502,7 +502,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         ['#2457a7', 7]
     ]);
     assert.equal(mapViewport.style.width, '700px');
-    assert.equal(mapViewport.style.height, '618px');
+    assert.equal(mapViewport.style.height, '644px');
     assert.ok(nativeLayerChanges >= 2, 'the saved layer should be applied through the native change handler');
 
     layerSelect.value = 'L_OS';
@@ -511,9 +511,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(polylineCalls.length, 4, 'changing the native basemap should not rebuild the route overlay');
 
     mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    assert.equal(mapViewport.style.height, '628px');
+    assert.equal(mapViewport.style.height, '654px');
     mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    assert.equal(mapViewport.style.height, '638px');
+    assert.equal(mapViewport.style.height, '664px');
     assert.equal(sentPatches.some(patch => 'mapViewportHeight' in patch), false,
         'keyboard resize must not persist on every keystroke');
     await waitFor(dom, () => sentPatches.some(patch => 'mapViewportHeight' in patch));
@@ -532,7 +532,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     dispatchPointer('pointermove', { pointerId: 1, clientX: 800, clientY: 50 });
     dispatchPointer('pointerup', { pointerId: 1 });
     assert.equal(mapViewport.style.width, '800px');
-    assert.equal(mapViewport.style.height, '688px');
+    assert.equal(mapViewport.style.height, '714px');
     assert.equal(sentPatches.at(-1).mapViewportWidth, 800);
     assert.equal(sentPatches.at(-1).mapViewportHeight, 670);
 

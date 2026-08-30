@@ -14,7 +14,7 @@
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
-import { Editor, Extension, Mark, Node, ResizableNodeView, getStyleProperty, mergeAttributes } from '@tiptap/core';
+import { Editor, Extension, Mark, Node, getStyleProperty, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
@@ -72,6 +72,132 @@ const InlineQuote = Mark.create({
 const MIN_RESIZED_IMAGE_WIDTH = 64;
 const MIN_RESIZED_IMAGE_HEIGHT = 40;
 
+// TipTap's ResizableNodeView starts touch gestures but, as of 3.30.5, only a
+// mouseup completes them. Own this small pointer transaction so mouse, pen,
+// and touch all commit the visible size exactly once when the pointer ends or
+// capture is lost. The document is not mutated during a drag; onCommit remains
+// the single ProseMirror transaction, preserving one-step Undo and autosave.
+const createPointerResizableNodeView = ({
+    element,
+    onCommit,
+    onUpdate,
+    createHandle,
+    min,
+    max,
+    className,
+}) => {
+    const container = document.createElement('div');
+    container.dataset.resizeContainer = '';
+    container.dataset.resizeState = 'false';
+    container.className = className.container;
+    container.style.display = 'inline-flex';
+
+    const wrapper = document.createElement('div');
+    wrapper.dataset.resizeWrapper = '';
+    wrapper.className = className.wrapper;
+    wrapper.style.position = 'relative';
+    wrapper.style.display = 'block';
+    wrapper.append(element);
+    container.append(wrapper);
+
+    const handle = createHandle();
+    wrapper.append(handle);
+    let drag = null;
+
+    const pointerIdOf = event => Number.isInteger(event.pointerId) ? event.pointerId : 1;
+    const releasePointer = pointerId => {
+        try {
+            if (!handle.releasePointerCapture) return;
+            if (!handle.hasPointerCapture || handle.hasPointerCapture(pointerId)) {
+                handle.releasePointerCapture(pointerId);
+            }
+        } catch { /* Capture may already be gone when lostpointercapture fires. */ }
+    };
+    const clearDragListeners = () => {
+        const doc = handle.ownerDocument;
+        doc.removeEventListener('pointermove', movePointer);
+        doc.removeEventListener('pointerup', finishPointer);
+        doc.removeEventListener('pointercancel', finishPointer);
+    };
+    const finishPointer = event => {
+        if (!drag || pointerIdOf(event) !== drag.pointerId) return;
+        const { pointerId, changed } = drag;
+        const width = Number.parseFloat(element.style.width) || element.offsetWidth;
+        const height = Number.parseFloat(element.style.height) || element.offsetHeight;
+        drag = null;
+        clearDragListeners();
+        container.dataset.resizeState = 'false';
+        container.classList.remove(className.resizing);
+        releasePointer(pointerId);
+        if (changed && width > 0 && height > 0) onCommit(width, height);
+    };
+    function movePointer(event) {
+        if (!drag || pointerIdOf(event) !== drag.pointerId) return;
+        let width = drag.startWidth + event.clientX - drag.startX;
+        let height = width / drag.aspectRatio;
+        if (width < min.width) {
+            width = min.width;
+            height = width / drag.aspectRatio;
+        }
+        if (height < min.height) {
+            height = min.height;
+            width = height * drag.aspectRatio;
+        }
+        if (width > max.width) {
+            width = max.width;
+            height = width / drag.aspectRatio;
+        }
+        if (height > max.height) {
+            height = max.height;
+            width = height * drag.aspectRatio;
+        }
+        element.style.width = `${width}px`;
+        element.style.height = `${height}px`;
+        drag.changed = width !== drag.startWidth || height !== drag.startHeight;
+        event.preventDefault();
+    }
+
+    handle.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || drag) return;
+        const startWidth = element.offsetWidth;
+        const startHeight = element.offsetHeight;
+        if (!(startWidth > 0) || !(startHeight > 0)) return;
+        drag = {
+            pointerId: pointerIdOf(event),
+            startX: event.clientX,
+            startWidth,
+            startHeight,
+            aspectRatio: startWidth / startHeight,
+            changed: false,
+        };
+        container.dataset.resizeState = 'true';
+        container.classList.add(className.resizing);
+        const doc = handle.ownerDocument;
+        doc.addEventListener('pointermove', movePointer);
+        doc.addEventListener('pointerup', finishPointer);
+        doc.addEventListener('pointercancel', finishPointer);
+        try { handle.setPointerCapture?.(drag.pointerId); }
+        catch { /* Document listeners still keep the gesture bounded. */ }
+        event.preventDefault();
+        event.stopPropagation();
+    });
+    handle.addEventListener('lostpointercapture', finishPointer);
+
+    return {
+        dom: container,
+        update: (...args) => onUpdate(...args),
+        selectNode: () => container.classList.add('ProseMirror-selectednode'),
+        deselectNode: () => container.classList.remove('ProseMirror-selectednode'),
+        stopEvent: event => event.target === handle || handle.contains(event.target),
+        ignoreMutation: () => true,
+        destroy: () => {
+            drag = null;
+            clearDragListeners();
+            container.remove();
+        },
+    };
+};
+
 // Keep existing width/height attributes, then render the image through
 // TipTap's resizable node view. Resizes stay aspect-locked and within the same
 // bound the converter accepts, so a drag cannot produce a dimension that is
@@ -109,6 +235,7 @@ const ReportImage = Image.extend({
                     image.setAttribute(name, value);
                 }
             }
+            applyImageAttributes(node);
 
             const commitSize = (width, height) => {
                 const pos = getPos();
@@ -143,15 +270,8 @@ const ReportImage = Image.extend({
                 commitSize(nextWidth, nextHeight);
             };
 
-            const nodeView = new ResizableNodeView({
+            const nodeView = createPointerResizableNodeView({
                 element: image,
-                editor,
-                node,
-                getPos,
-                onResize: (width, height) => {
-                    image.style.width = `${width}px`;
-                    image.style.height = `${height}px`;
-                },
                 onCommit: commitSize,
                 onUpdate: updatedNode => {
                     if (updatedNode.type !== currentNode.type) return false;
@@ -159,28 +279,23 @@ const ReportImage = Image.extend({
                     applyImageAttributes(updatedNode);
                     return true;
                 },
-                options: {
-                    directions: ['bottom-right'],
-                    min: { width: MIN_RESIZED_IMAGE_WIDTH, height: MIN_RESIZED_IMAGE_HEIGHT },
-                    max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
-                    preserveAspectRatio: true,
-                    className: {
-                        container: 'bpb-re-image-resize',
-                        wrapper: 'bpb-re-image-resize-frame',
-                        handle: 'bpb-re-image-resize-handle',
-                        resizing: 'bpb-re-image-resizing'
-                    },
-                    createCustomHandle: () => {
-                        const handle = document.createElement('button');
-                        handle.type = 'button';
-                        handle.className = 'bpb-re-image-resize-handle';
-                        handle.dataset.resizeHandle = 'bottom-right';
-                        handle.title = 'Drag to resize image; use left and right arrows for precise sizing';
-                        handle.setAttribute('aria-label', 'Resize image');
-                        handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
-                        handle.addEventListener('keydown', resizeByKeyboard);
-                        return handle;
-                    }
+                min: { width: MIN_RESIZED_IMAGE_WIDTH, height: MIN_RESIZED_IMAGE_HEIGHT },
+                max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
+                className: {
+                    container: 'bpb-re-image-resize',
+                    wrapper: 'bpb-re-image-resize-frame',
+                    resizing: 'bpb-re-image-resizing'
+                },
+                createHandle: () => {
+                    const handle = document.createElement('button');
+                    handle.type = 'button';
+                    handle.className = 'bpb-re-image-resize-handle';
+                    handle.dataset.resizeHandle = 'bottom-right';
+                    handle.title = 'Drag to resize image; use left and right arrows for precise sizing';
+                    handle.setAttribute('aria-label', 'Resize image');
+                    handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+                    handle.addEventListener('keydown', resizeByKeyboard);
+                    return handle;
                 }
             });
 
@@ -278,6 +393,7 @@ const ReportVideo = Node.create({
                     media.setAttribute(name, value);
                 }
             }
+            applyMediaAttributes(node);
 
             const commitSize = (width, height) => {
                 const pos = getPos();
@@ -317,15 +433,8 @@ const ReportVideo = Node.create({
                 commitSize(nextWidth, nextHeight);
             };
 
-            return new ResizableNodeView({
+            return createPointerResizableNodeView({
                 element: media,
-                editor,
-                node,
-                getPos,
-                onResize: (width, height) => {
-                    media.style.width = `${width}px`;
-                    media.style.height = `${height}px`;
-                },
                 onCommit: commitSize,
                 onUpdate: updatedNode => {
                     if (updatedNode.type !== currentNode.type
@@ -334,28 +443,23 @@ const ReportVideo = Node.create({
                     applyMediaAttributes(updatedNode);
                     return true;
                 },
-                options: {
-                    directions: ['bottom-right'],
-                    min: { width: MIN_RESIZED_IMAGE_WIDTH, height: MIN_RESIZED_IMAGE_HEIGHT },
-                    max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
-                    preserveAspectRatio: true,
-                    className: {
-                        container: youtube ? 'bpb-re-youtube-resize' : 'bpb-re-video-resize',
-                        wrapper: youtube ? 'bpb-re-youtube-resize-frame' : 'bpb-re-video-resize-frame',
-                        handle: youtube ? 'bpb-re-youtube-resize-handle' : 'bpb-re-video-resize-handle',
-                        resizing: youtube ? 'bpb-re-youtube-resizing' : 'bpb-re-video-resizing'
-                    },
-                    createCustomHandle: () => {
-                        const handle = document.createElement('button');
-                        handle.type = 'button';
-                        handle.className = youtube ? 'bpb-re-youtube-resize-handle' : 'bpb-re-video-resize-handle';
-                        handle.dataset.resizeHandle = 'bottom-right';
-                        handle.title = `Drag to resize ${youtube ? 'YouTube video' : 'video'}; use left and right arrows for precise sizing`;
-                        handle.setAttribute('aria-label', youtube ? 'Resize YouTube video' : 'Resize video');
-                        handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
-                        handle.addEventListener('keydown', resizeByKeyboard);
-                        return handle;
-                    }
+                min: { width: MIN_RESIZED_IMAGE_WIDTH, height: MIN_RESIZED_IMAGE_HEIGHT },
+                max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
+                className: {
+                    container: youtube ? 'bpb-re-youtube-resize' : 'bpb-re-video-resize',
+                    wrapper: youtube ? 'bpb-re-youtube-resize-frame' : 'bpb-re-video-resize-frame',
+                    resizing: youtube ? 'bpb-re-youtube-resizing' : 'bpb-re-video-resizing'
+                },
+                createHandle: () => {
+                    const handle = document.createElement('button');
+                    handle.type = 'button';
+                    handle.className = youtube ? 'bpb-re-youtube-resize-handle' : 'bpb-re-video-resize-handle';
+                    handle.dataset.resizeHandle = 'bottom-right';
+                    handle.title = `Drag to resize ${youtube ? 'YouTube video' : 'video'}; use left and right arrows for precise sizing`;
+                    handle.setAttribute('aria-label', youtube ? 'Resize YouTube video' : 'Resize video');
+                    handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+                    handle.addEventListener('keydown', resizeByKeyboard);
+                    return handle;
                 }
             });
         };

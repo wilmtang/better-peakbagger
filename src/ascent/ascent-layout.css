@@ -6,7 +6,7 @@
     display: grid;
     grid-template-columns:
         minmax(0, var(--bpb-ascent-report-share, 50fr))
-        13px
+        44px
         minmax(0, var(--bpb-ascent-summary-share, 50fr));
     align-items: start;
     clear: both;
@@ -26,7 +26,7 @@
     align-self: stretch;
     position: relative;
     appearance: none;
-    width: 13px;
+    width: 44px;
     min-height: 44px;
     margin: 0;
     padding: 0;
@@ -43,7 +43,7 @@
     position: absolute;
     top: 6px;
     bottom: 6px;
-    left: 5px;
+    left: 20px;
     width: 3px;
     border-radius: 999px;
     background: currentColor;

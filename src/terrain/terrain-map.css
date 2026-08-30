@@ -3,7 +3,7 @@
 
 #bpb-terrain-frame {
     position: absolute;
-    inset: 0 0 18px;
+    inset: 0 0 44px;
     z-index: 2;
     overflow: hidden;
     border: 1px solid #b8b3aa;
@@ -11,7 +11,7 @@
     background: #d9ded2;
     box-sizing: border-box;
     width: 100%;
-    height: calc(100% - 18px);
+    height: calc(100% - 44px);
     opacity: 0;
     pointer-events: none;
 }
@@ -72,7 +72,7 @@
     border-radius: 0;
 }
 
-/* Full Screen has no 18px resize rail under the frame, so the zoom stack sits
+/* Full Screen has no resize rail under the frame, so the zoom stack sits
    lower — nudge the toggle down to keep it just above it. */
 .bpb-terrain-mount-fullscreen .bpb-map-3d-toggle {
     bottom: 94px;

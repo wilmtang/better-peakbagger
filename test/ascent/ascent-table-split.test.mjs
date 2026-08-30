@@ -16,7 +16,20 @@ const legacyHtml = ({ between = '' } = {}) => `<!doctype html><html><body><form>
   </table>
 </form></body></html>`;
 
-const setup = ({ html = legacyHtml(), saved = null } = {}) => {
+const pointerEvent = (dom, type, {
+    pointerId = 1,
+    pointerType = 'mouse',
+    ...init
+} = {}) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+    Object.defineProperties(event, {
+        pointerId: { value: pointerId },
+        pointerType: { value: pointerType },
+    });
+    return event;
+};
+
+const setup = ({ html = legacyHtml(), saved = null, storage = null } = {}) => {
     const dom = new JSDOM(html, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         pretendToBeVisual: true,
@@ -26,7 +39,7 @@ const setup = ({ html = legacyHtml(), saved = null } = {}) => {
     globalThis.document = dom.window.document;
     const split = Split.mount({
         doc: dom.window.document,
-        storage: dom.window.localStorage,
+        storage: storage || dom.window.localStorage,
     });
     const restore = () => {
         globalThis.document = previousDocument;
@@ -76,21 +89,48 @@ test('pointer dragging resizes both columns and persists once released', () => {
     const { dom, split, restore } = setup();
     try {
         split.wrapper.getBoundingClientRect = () => ({ width: 1013, left: 0, right: 1013 });
-        split.handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
-            bubbles: true, cancelable: true, button: 0, clientX: 500,
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            button: 0, clientX: 500,
         }));
-        split.handle.dispatchEvent(new dom.window.MouseEvent('pointermove', {
-            bubbles: true, cancelable: true, clientX: 600,
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            clientX: 600,
         }));
         assert.ok(split.leftPercent > 59 && split.leftPercent < 60,
             '100 px of a 1000 px split adds ten percentage points');
         assert.equal(dom.window.localStorage.getItem(Split.storageKey), null,
             'an in-progress gesture is not persisted');
-        split.handle.dispatchEvent(new dom.window.MouseEvent('pointerup', {
-            bubbles: true, clientX: 600,
-        }));
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerup', { clientX: 600 }));
         const saved = JSON.parse(dom.window.localStorage.getItem(Split.storageKey));
         assert.equal(saved.leftPercent, split.leftPercent);
+        assert.equal(dom.window.document.documentElement.classList
+            .contains('bpb-ascent-table-split-resizing'), false);
+    } finally { restore(); }
+});
+
+test('touch cancellation and capture loss persist the visible split once', () => {
+    const writes = [];
+    const storage = {
+        getItem: () => null,
+        setItem: (key, value) => writes.push([key, value]),
+    };
+    const { dom, split, restore } = setup({ storage });
+    try {
+        split.wrapper.getBoundingClientRect = () => ({ width: 1044, left: 0, right: 1044 });
+        const touch = { pointerId: 11, pointerType: 'touch' };
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            ...touch, button: 0, clientX: 500,
+        }));
+        const move = pointerEvent(dom, 'pointermove', {
+            ...touch, clientX: 600,
+        });
+        split.handle.dispatchEvent(move);
+        assert.equal(move.defaultPrevented, true, 'touch movement cannot scroll the page');
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointercancel', touch));
+        split.handle.dispatchEvent(pointerEvent(dom, 'lostpointercapture', touch));
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerup', touch));
+
+        assert.equal(writes.length, 1, 'duplicate terminal events cannot persist twice');
+        assert.equal(JSON.parse(writes[0][1]).leftPercent, split.leftPercent);
         assert.equal(dom.window.document.documentElement.classList
             .contains('bpb-ascent-table-split-resizing'), false);
     } finally { restore(); }
@@ -101,11 +141,11 @@ test('Escape cancels an active pointer resize without saving it', () => {
     try {
         const initial = split.leftPercent;
         split.wrapper.getBoundingClientRect = () => ({ width: 1013, left: 0, right: 1013 });
-        split.handle.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
-            bubbles: true, cancelable: true, button: 0, clientX: 500,
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            button: 0, clientX: 500,
         }));
-        split.handle.dispatchEvent(new dom.window.MouseEvent('pointermove', {
-            bubbles: true, cancelable: true, clientX: 650,
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            clientX: 650,
         }));
         assert.notEqual(split.leftPercent, initial);
         dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', {

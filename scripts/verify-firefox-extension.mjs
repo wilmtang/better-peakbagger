@@ -1639,6 +1639,42 @@ async function main() {
             'Firefox route explorer did not keep the map and active chart together',
             routeExplorerLayout,
         );
+        const firefoxResizeTargets = await driver.executeScript(`
+      const rect = element => {
+        if (!element) return null;
+        const value = element.getBoundingClientRect();
+        return { left: value.left, right: value.right, top: value.top, bottom: value.bottom,
+          width: value.width, height: value.height };
+      };
+      const map = document.getElementById('bpb-map-viewport');
+      const mapFrame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
+      const mapHandle = document.getElementById('bpb-map-resize-handle');
+      const report = document.getElementById('ascent-report');
+      const splitHandle = document.getElementById('bpb-ascent-table-resize-handle');
+      const summary = document.getElementById('ascent-summary');
+      return {
+        mapFrame: rect(mapFrame),
+        mapHandle: rect(mapHandle),
+        mapTouchAction: mapHandle ? getComputedStyle(mapHandle).touchAction : null,
+        report: rect(report),
+        splitHandle: rect(splitHandle),
+        splitTouchAction: splitHandle ? getComputedStyle(splitHandle).touchAction : null,
+        summary: rect(summary),
+      };
+    `);
+        assertState(
+            firefoxResizeTargets.mapHandle?.width >= 43.5
+        && firefoxResizeTargets.mapHandle?.height >= 43.5
+        && firefoxResizeTargets.mapHandle.top >= firefoxResizeTargets.mapFrame?.bottom - 1
+        && firefoxResizeTargets.mapTouchAction === 'none'
+        && firefoxResizeTargets.splitHandle?.width >= 43.5
+        && firefoxResizeTargets.splitHandle?.height >= 43.5
+        && firefoxResizeTargets.report?.right <= firefoxResizeTargets.splitHandle.left + 1
+        && firefoxResizeTargets.splitHandle.right <= firefoxResizeTargets.summary?.left + 1
+        && firefoxResizeTargets.splitTouchAction === 'none',
+            'Firefox resize targets were undersized or overlapped native controls',
+            firefoxResizeTargets,
+        );
         const analyzerSunBefore = await driver.executeScript(
             'const slider = arguments[0]; return { value: Number(slider.value), valueText: slider.getAttribute("aria-valuetext") || "" };',
             analyzerSunSlider,
@@ -2291,9 +2327,94 @@ async function main() {
             'Firefox report credit or native form ownership was wrong',
             creditState,
         );
+        const mediaResizeState = await driver.executeAsyncScript(done => {
+            const mode = label => [...document.querySelectorAll('.bpb-re-mode')]
+                .find(button => button.textContent === label);
+            mode('Plain')?.click();
+            const textarea = document.getElementById('JournalText');
+            const source = '[video src="https://media.example.com/verify.mp4" width="320" height="180"][/video]';
+            textarea.value = source;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            mode('Rich text')?.click();
+            const deadline = Date.now() + 5000;
+            const start = () => {
+                const media = document.querySelector('.bpb-re-video-resize video');
+                const handle = document.querySelector('[aria-label="Resize video"]');
+                if ((!media || !handle) && Date.now() < deadline) {
+                    setTimeout(start, 25);
+                    return;
+                }
+                if (!media || !handle) {
+                    done({ error: 'media node view did not mount' });
+                    return;
+                }
+                const rect = media.getBoundingClientRect();
+                const pointer = (type, x, y) => new globalThis.PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId: 17,
+                    pointerType: 'touch',
+                    button: type === 'pointerdown' ? 0 : -1,
+                    buttons: type === 'pointermove' ? 1 : 0,
+                    clientX: x,
+                    clientY: y,
+                });
+                handle.dispatchEvent(pointer('pointerdown', rect.right, rect.bottom));
+                const move = pointer('pointermove', rect.right - 80, rect.bottom - 45);
+                document.dispatchEvent(move);
+                document.dispatchEvent(pointer('pointercancel', rect.right - 80, rect.bottom - 45));
+                handle.dispatchEvent(pointer('lostpointercapture', rect.right - 80, rect.bottom - 45));
+                document.dispatchEvent(pointer('pointerup', rect.right - 80, rect.bottom - 45));
+                const finish = () => {
+                    const serialized = textarea.value;
+                    if (!/width="240" height="135"/.test(serialized) && Date.now() < deadline) {
+                        setTimeout(finish, 25);
+                        return;
+                    }
+                    const mediaRect = media.getBoundingClientRect();
+                    const handleRect = handle.getBoundingClientRect();
+                    const result = {
+                        serialized,
+                        resizeState: handle.closest('[data-resize-container]')?.dataset.resizeState,
+                        handleWidth: handleRect.width,
+                        handleHeight: handleRect.height,
+                        belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
+                        touchAction: globalThis.getComputedStyle(handle).touchAction,
+                        movePrevented: move.defaultPrevented,
+                    };
+                    done(result);
+                };
+                finish();
+            };
+            start();
+        });
+        assertState(
+            /width="240" height="135"/.test(mediaResizeState.serialized || '')
+        && mediaResizeState.resizeState === 'false'
+        && mediaResizeState.handleWidth >= 43.5
+        && mediaResizeState.handleHeight >= 43.5
+        && mediaResizeState.belowNativeControls
+        && mediaResizeState.touchAction === 'none'
+        && mediaResizeState.movePrevented,
+            'Firefox touch media resizing did not commit, clear, or separate its target',
+            mediaResizeState,
+        );
         const editorSurface = await driver.findElement(By.css('.bpb-re-surface'));
         await editorSurface.click();
         const modifier = process.platform === 'darwin' ? Key.COMMAND : Key.CONTROL;
+        await driver.actions({ async: true })
+            .keyDown(modifier).sendKeys('z').keyUp(modifier).perform();
+        const mediaUndoState = await waitForScript(driver, `
+      const value = document.getElementById('JournalText')?.value || '';
+      return /width="320" height="180"/.test(value) ? { value } : false;
+    `, 'Firefox one-step media resize Undo');
+        assertState(
+            /width="320" height="180"/.test(mediaUndoState.value || ''),
+            'Firefox media resize did not Undo in one native shortcut',
+            mediaUndoState,
+        );
+        await driver.actions({ async: true })
+            .keyDown(modifier).sendKeys('a').keyUp(modifier).sendKeys(Key.BACK_SPACE).perform();
         await editorSurface.sendKeys('Cross-browser ');
         await driver.actions({ async: true })
             .keyDown(modifier).sendKeys('b').keyUp(modifier)
@@ -2475,6 +2596,7 @@ async function main() {
         console.log('  - forged page/frame messages, synthetic clicks, and direct embedding started no terrain work');
         console.log('  - trusted keyboard/pointer Settings actions preserved modifiers and reused one exact tab');
         console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and trusted 3D frame creation passed');
+        console.log('  - touch media resize committed, cleared, and undid through a 44px target outside native controls');
         console.log('  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved');
         console.log('  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested');
     } catch (error) {

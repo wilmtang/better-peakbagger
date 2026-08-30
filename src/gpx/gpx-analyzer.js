@@ -43,7 +43,7 @@ const run = async () => {
     const MAP_VIEWPORT_MAX_WIDTH = Schema.BOUNDS.viewportWidth.max;
     const MAP_VIEWPORT_MIN_HEIGHT = Schema.BOUNDS.viewportHeight.min;
     const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
-    const MAP_RESIZE_RAIL_HEIGHT = 18;
+    const MAP_RESIZE_RAIL_HEIGHT = 44;
     const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
     const SUN_SELECTION_PROMPT = 'Select a chart point to calculate the Sun and Moon.';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;

@@ -2391,7 +2391,9 @@ try {
             === 'ascent-report|bpb-ascent-table-resize-handle|ascent-summary'
         && ascentSplitBefore.role === 'separator'
         && ascentSplitBefore.orientation === 'vertical'
-        && ascentSplitBefore.report?.right <= ascentSplitBefore.handle?.right
+        && ascentSplitBefore.handle?.width >= 43.5
+        && ascentSplitBefore.handle?.height >= 43.5
+        && ascentSplitBefore.report?.right <= ascentSplitBefore.handle?.left + 1
         && ascentSplitBefore.handle?.right <= ascentSplitBefore.summary?.left + 1
         && ascentSplitAfter.reportWidth > ascentSplitBefore.report?.width + 70
         && ascentSplitAfter.summaryWidth < ascentSplitBefore.summary?.width - 70
@@ -2866,6 +2868,8 @@ try {
     const routeExplorerLayout = await offPage.evaluate(() => {
         const explorer = document.getElementById('bpb-route-explorer');
         const map = document.getElementById('bpb-map-viewport');
+        const mapFrame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
+        const resizeHandle = document.getElementById('bpb-map-resize-handle');
         const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
         const analysis = document.getElementById('bpb-gpx-analysis');
         const canvas = analysis?.querySelector('canvas');
@@ -2873,6 +2877,8 @@ try {
         const routeStyle = analysis?.querySelector('.bpb-gpx-route-style-controls');
         const explorerRect = explorer?.getBoundingClientRect();
         const mapRect = map?.getBoundingClientRect();
+        const mapFrameRect = mapFrame?.getBoundingClientRect();
+        const resizeHandleRect = resizeHandle?.getBoundingClientRect();
         const analysisRect = analysis?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
         const unitsRect = units?.getBoundingClientRect();
@@ -2918,6 +2924,12 @@ try {
                 && analysisRect.right <= document.documentElement.clientWidth + 1,
             explorerOverflow: Boolean(explorer) && explorer.scrollWidth > explorer.clientWidth,
             mapVisible: Boolean(mapRect) && mapRect.top >= -1 && mapRect.bottom <= viewportHeight + 1,
+            mapResizeTarget: resizeHandleRect && mapFrameRect ? {
+                width: resizeHandleRect.width,
+                height: resizeHandleRect.height,
+                belowMapControls: resizeHandleRect.top >= mapFrameRect.bottom - 1,
+                touchAction: getComputedStyle(resizeHandle).touchAction,
+            } : null,
             chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
             fullScreenWithMap: Boolean(document.querySelector(
                 '.bpb-route-explorer__map-details a[href*="BigMap.aspx"]'
@@ -2937,6 +2949,10 @@ try {
         && routeExplorerLayout.explorerInsideViewport
         && routeExplorerLayout.analysisInsideViewport
         && routeExplorerLayout.mapVisible
+        && routeExplorerLayout.mapResizeTarget?.width >= 43.5
+        && routeExplorerLayout.mapResizeTarget?.height >= 43.5
+        && routeExplorerLayout.mapResizeTarget?.belowMapControls
+        && routeExplorerLayout.mapResizeTarget?.touchAction === 'none'
         && routeExplorerLayout.chartVisible
         && routeExplorerLayout.fullScreenWithMap,
     `the route explorer did not keep the map and active chart together at the MacBook-like viewport: ${JSON.stringify(routeExplorerLayout)}`);
@@ -4499,6 +4515,21 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich image did not reveal its resize handle');
+                const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
+                    const media = document.querySelector('.bpb-re-image-resize img');
+                    const handle = document.querySelector('[aria-label="Resize image"]');
+                    const mediaRect = media?.getBoundingClientRect();
+                    const handleRect = handle?.getBoundingClientRect();
+                    return mediaRect && handleRect ? {
+                        width: handleRect.width,
+                        height: handleRect.height,
+                        belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
+                        touchAction: getComputedStyle(handle).touchAction,
+                    } : null;
+                }) : null;
+                check(resizeGeometry?.width >= 43.5 && resizeGeometry?.height >= 43.5
+                    && resizeGeometry.belowNativeControls && resizeGeometry.touchAction === 'none',
+                `the Rich image resize target was undersized or covered the image: ${JSON.stringify(resizeGeometry)}`);
 
                 if (handleReady && process.env.BPB_VERIFY_EDITOR_RESIZE_SCREENSHOT) {
                     await editorPage.locator('#bpb-report-editor').screenshot({
@@ -4569,6 +4600,21 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich video did not reveal its resize handle');
+                const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
+                    const media = document.querySelector('.bpb-re-video-resize video');
+                    const handle = document.querySelector('[aria-label="Resize video"]');
+                    const mediaRect = media?.getBoundingClientRect();
+                    const handleRect = handle?.getBoundingClientRect();
+                    return mediaRect && handleRect ? {
+                        width: handleRect.width,
+                        height: handleRect.height,
+                        belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
+                        touchAction: getComputedStyle(handle).touchAction,
+                    } : null;
+                }) : null;
+                check(resizeGeometry?.width >= 43.5 && resizeGeometry?.height >= 43.5
+                    && resizeGeometry.belowNativeControls && resizeGeometry.touchAction === 'none',
+                `the Rich video resize target was undersized or covered native controls: ${JSON.stringify(resizeGeometry)}`);
                 if (handleReady && process.env.BPB_VERIFY_EDITOR_VIDEO_SCREENSHOT) {
                     await editorPage.locator('#bpb-report-editor').screenshot({
                         path: process.env.BPB_VERIFY_EDITOR_VIDEO_SCREENSHOT
@@ -4660,6 +4706,21 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'the Rich YouTube iframe did not expose its resize handle');
+                const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
+                    const media = document.querySelector('.bpb-re-youtube-resize iframe');
+                    const handle = document.querySelector('[aria-label="Resize YouTube video"]');
+                    const mediaRect = media?.getBoundingClientRect();
+                    const handleRect = handle?.getBoundingClientRect();
+                    return mediaRect && handleRect ? {
+                        width: handleRect.width,
+                        height: handleRect.height,
+                        belowNativeControls: handleRect.top >= mediaRect.bottom - 1,
+                        touchAction: getComputedStyle(handle).touchAction,
+                    } : null;
+                }) : null;
+                check(resizeGeometry?.width >= 43.5 && resizeGeometry?.height >= 43.5
+                    && resizeGeometry.belowNativeControls && resizeGeometry.touchAction === 'none',
+                `the Rich YouTube resize target was undersized or covered player controls: ${JSON.stringify(resizeGeometry)}`);
                 if (handleReady && process.env.BPB_VERIFY_EDITOR_YOUTUBE_SCREENSHOT) {
                     await editorPage.locator('#bpb-report-editor').screenshot({
                         path: process.env.BPB_VERIFY_EDITOR_YOUTUBE_SCREENSHOT
@@ -5249,7 +5310,7 @@ console.log('    submits Preview exactly once, and never submits Save');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
 console.log('    with live toolbar states; selected Rich images/videos and YouTube players resize proportionally by');
-console.log('    pointer or keyboard; markdown mode shows a CodeMirror source beside a');
+console.log('    pointer or keyboard through 44px targets outside native media controls; markdown mode shows a CodeMirror source beside a');
 console.log('    live preview that renders headings, quotes, tables, strike, code, rules,');
 console.log('    and Obsidian-style pipe-sized images, direct videos, and YouTube embeds;');
 console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');

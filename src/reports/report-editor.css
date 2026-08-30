@@ -585,6 +585,7 @@
 .bpb-re-surface .bpb-re-video-resize-frame,
 .bpb-re-surface .bpb-re-youtube-resize-frame {
     max-width: 100%;
+    padding-bottom: 44px;
 }
 
 .bpb-re-surface .bpb-re-image-resize img,
@@ -600,19 +601,34 @@
     right: 0;
     bottom: 0;
     box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: nwse-resize;
+    opacity: 0;
+    pointer-events: none;
+    touch-action: none;
+    transition: opacity 100ms ease;
+}
+
+.bpb-re-surface .bpb-re-image-resize-handle::before,
+.bpb-re-surface .bpb-re-video-resize-handle::before,
+.bpb-re-surface .bpb-re-youtube-resize-handle::before {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    box-sizing: border-box;
     width: 14px;
     height: 14px;
-    min-width: 14px;
-    padding: 0;
     border: 2px solid #fff;
     border-radius: 50%;
     background: #3b76c4;
     box-shadow: 0 0 0 1px rgba(23, 50, 86, 0.55);
-    cursor: nwse-resize;
-    opacity: 0;
-    pointer-events: none;
     transform: translate(45%, 45%);
-    transition: opacity 100ms ease;
 }
 
 /* An iframe receives pointer input inside its embedded document, so it cannot

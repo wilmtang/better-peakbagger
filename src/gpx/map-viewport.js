@@ -155,22 +155,32 @@ export const createMapViewport = ({
             id: 'bpb-map-resize-handle',
             type: 'button',
             title: 'Drag to resize map',
-            text: '◢',
             style: {
                 position: 'absolute',
                 right: '0',
                 bottom: '0',
-                width: '24px',
+                width: '44px',
                 height: `${railHeight}px`,
                 padding: '0',
                 border: '0',
                 background: 'transparent',
                 color: 'currentColor',
-                lineHeight: `${railHeight}px`,
                 cursor: 'nwse-resize',
-                opacity: '0.72'
+                opacity: '0.72',
+                touchAction: 'none'
             }
-        });
+        }, Dom.element('span', {
+            text: '◢',
+            'aria-hidden': 'true',
+            style: {
+                position: 'absolute',
+                right: '3px',
+                bottom: '3px',
+                fontSize: '14px',
+                lineHeight: '14px',
+                pointerEvents: 'none'
+            }
+        }));
         element.append(handle);
 
         handle.addEventListener('pointerdown', event => {
@@ -207,17 +217,21 @@ export const createMapViewport = ({
                 width: widthPx,
                 height: drag.startHeight + event.clientY - drag.startY
             });
+            event.preventDefault();
         });
         const finishDrag = event => {
             if (!drag || event.pointerId !== drag.pointerId) return;
-            if (handle.releasePointerCapture && handle.hasPointerCapture && handle.hasPointerCapture(event.pointerId)) {
-                handle.releasePointerCapture(event.pointerId);
-            }
+            const pointerId = drag.pointerId;
             drag = null;
+            try {
+                if (handle.releasePointerCapture && (!handle.hasPointerCapture
+                        || handle.hasPointerCapture(pointerId))) handle.releasePointerCapture(pointerId);
+            } catch { /* Capture may already be gone when lostpointercapture fires. */ }
             persist();
         };
         handle.addEventListener('pointerup', finishDrag);
         handle.addEventListener('pointercancel', finishDrag);
+        handle.addEventListener('lostpointercapture', finishDrag);
         handle.addEventListener('keydown', event => {
             const largeStep = event.shiftKey;
             const next = { ...current };

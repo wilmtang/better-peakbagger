@@ -4,8 +4,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
-import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL } from '../helpers/report-editor-helpers.mjs';
+import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
+
+const pointerEvent = (dom, type, {
+    pointerId = 1,
+    pointerType = 'mouse',
+    ...init
+} = {}) => {
+    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+    Object.defineProperties(event, {
+        pointerId: { value: pointerId },
+        pointerType: { value: pointerType },
+    });
+    return event;
+};
 
 const returnContext = (url = EDITOR_URL) => {
     const parsed = new URL(url);
@@ -449,20 +462,21 @@ test('a Rich video resize stays proportional and persists its dimensions', async
         offsetHeight: { configurable: true, get: () => Number.parseFloat(video.style.height) || 450 }
     });
 
-    handle.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-        bubbles: true, clientX: 800, clientY: 450, button: 0
+    handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+        clientX: 800, clientY: 450, button: 0
     }));
-    doc.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-        bubbles: true, clientX: 600, clientY: 338, buttons: 1
+    doc.dispatchEvent(pointerEvent(dom, 'pointermove', {
+        clientX: 600, clientY: 338, buttons: 1
     }));
-    doc.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-        bubbles: true, clientX: 600, clientY: 338, button: 0
+    doc.dispatchEvent(pointerEvent(dom, 'pointerup', {
+        clientX: 600, clientY: 338, button: 0
     }));
 
     const resized = videoMarkup('https://media.example.com/summit.mp4', ' width="600" height="338"');
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(video.style.width, '600px');
     assert.equal(video.style.height, '338px');
+    assert.equal(handle.closest('[data-resize-container]').dataset.resizeState, 'false');
 
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
@@ -496,14 +510,14 @@ test('a Rich YouTube iframe resize stays proportional and persists its dimension
         offsetHeight: { configurable: true, get: () => Number.parseFloat(iframe.style.height) || 450 }
     });
 
-    handle.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-        bubbles: true, clientX: 800, clientY: 450, button: 0
+    handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+        clientX: 800, clientY: 450, button: 0
     }));
-    doc.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-        bubbles: true, clientX: 600, clientY: 338, buttons: 1
+    doc.dispatchEvent(pointerEvent(dom, 'pointermove', {
+        clientX: 600, clientY: 338, buttons: 1
     }));
-    doc.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-        bubbles: true, clientX: 600, clientY: 338, button: 0
+    doc.dispatchEvent(pointerEvent(dom, 'pointerup', {
+        clientX: 600, clientY: 338, button: 0
     }));
 
     const resized = youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ',
@@ -511,6 +525,7 @@ test('a Rich YouTube iframe resize stays proportional and persists its dimension
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(iframe.style.width, '600px');
     assert.equal(iframe.style.height, '338px');
+    assert.equal(handle.closest('[data-resize-container]').dataset.resizeState, 'false');
 
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
@@ -538,20 +553,21 @@ test('a Rich image resize stays proportional and persists its dimensions', async
         offsetHeight: { configurable: true, get: () => Number.parseFloat(image.style.height) || 600 }
     });
 
-    handle.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-        bubbles: true, clientX: 800, clientY: 600, button: 0
+    handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+        clientX: 800, clientY: 600, button: 0
     }));
-    doc.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-        bubbles: true, clientX: 600, clientY: 450, buttons: 1
+    doc.dispatchEvent(pointerEvent(dom, 'pointermove', {
+        clientX: 600, clientY: 450, buttons: 1
     }));
-    doc.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-        bubbles: true, clientX: 600, clientY: 450, button: 0
+    doc.dispatchEvent(pointerEvent(dom, 'pointerup', {
+        clientX: 600, clientY: 450, button: 0
     }));
 
     const resized = '[img src="https://example.com/topo.jpg" alt="Topo" width="600" height="450"]';
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(image.style.width, '600px');
     assert.equal(image.style.height, '450px');
+    assert.equal(handle.closest('[data-resize-container]').dataset.resizeState, 'false');
 
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
@@ -566,6 +582,89 @@ test('a Rich image resize stays proportional and persists its dimensions', async
     assert.equal(image.style.width, '800px', 'the node view should repaint dimensions after undo');
     assert.equal(image.style.height, '600px');
 });
+
+for (const mediaCase of [
+    {
+        name: 'image',
+        source: '[img src="https://example.com/topo.jpg" alt="Topo" width="800" height="600"]',
+        selector: '.bpb-re-image-resize img',
+        label: 'Resize image',
+        startHeight: 600,
+        endHeight: 450,
+        resized: '[img src="https://example.com/topo.jpg" alt="Topo" width="600" height="450"]',
+        completion: 'pointercancel',
+    },
+    {
+        name: 'video',
+        source: videoMarkup('https://media.example.com/summit.mp4', ' width="800" height="450"'),
+        selector: '.bpb-re-video-resize video',
+        label: 'Resize video',
+        startHeight: 450,
+        endHeight: 338,
+        resized: videoMarkup('https://media.example.com/summit.mp4', ' width="600" height="338"'),
+        completion: 'lostpointercapture',
+    },
+    {
+        name: 'YouTube iframe',
+        source: youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ', ' width="800" height="450"'),
+        selector: '.bpb-re-youtube-resize iframe',
+        label: 'Resize YouTube video',
+        startHeight: 450,
+        endHeight: 338,
+        resized: youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ', ' width="600" height="338"'),
+        completion: 'pointercancel',
+    },
+]) {
+    test(`a touch ${mediaCase.name} resize commits once on ${mediaCase.completion} and autosaves`, async () => {
+        const dom = await loadEditor({
+            report: mediaCase.source,
+            accelerateAutosave: true,
+        });
+        const ui = await editorReady(dom);
+        const doc = dom.window.document;
+        const media = ui.querySelector(mediaCase.selector);
+        const handle = ui.querySelector(`[aria-label="${mediaCase.label}"]`);
+        const container = handle.closest('[data-resize-container]');
+        Object.defineProperties(media, {
+            offsetWidth: { configurable: true, get: () => Number.parseFloat(media.style.width) || 800 },
+            offsetHeight: { configurable: true, get: () => Number.parseFloat(media.style.height) || mediaCase.startHeight },
+        });
+
+        let documentTransactions = 0;
+        editors(dom).rich.on('transaction', ({ transaction }) => {
+            if (transaction.docChanged) documentTransactions++;
+        });
+        const touch = { pointerId: 7, pointerType: 'touch' };
+        handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            ...touch, clientX: 800, clientY: mediaCase.startHeight, button: 0,
+        }));
+        assert.equal(container.dataset.resizeState, 'true');
+        doc.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            ...touch, clientX: 600, clientY: mediaCase.endHeight, buttons: 1,
+        }));
+        const completionTarget = mediaCase.completion === 'lostpointercapture' ? handle : doc;
+        completionTarget.dispatchEvent(pointerEvent(dom, mediaCase.completion, {
+            ...touch, clientX: 600, clientY: mediaCase.endHeight,
+        }));
+        // Browsers may report capture loss after pointer completion. A second
+        // terminal event must not create another document transaction.
+        handle.dispatchEvent(pointerEvent(dom, 'lostpointercapture', touch));
+        doc.dispatchEvent(pointerEvent(dom, 'pointerup', touch));
+
+        await waitFor(dom, () => doc.getElementById('JournalText').value === mediaCase.resized);
+        assert.equal(documentTransactions, 1, 'one gesture produces one history transaction');
+        assert.equal(container.dataset.resizeState, 'false');
+        assert.equal(container.classList.contains('bpb-re-image-resizing')
+            || container.classList.contains('bpb-re-video-resizing')
+            || container.classList.contains('bpb-re-youtube-resizing'), false);
+        await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === mediaCase.resized);
+
+        editors(dom).rich.chain().focus().undo().run();
+        doc.getElementById('GPXPreview').click();
+        assert.equal(doc.getElementById('JournalText').value, mediaCase.source,
+            'one Undo restores the pre-gesture document');
+    });
+}
 
 test('keyboard image resizing stops at the serialized dimension ceiling', async () => {
     const source = '[img src="https://example.com/panorama.jpg" alt="Panorama" width="1590" height="954"]';
