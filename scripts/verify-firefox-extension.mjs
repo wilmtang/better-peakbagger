@@ -1305,6 +1305,7 @@ async function main() {
       const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
       const moon = calculator?.querySelector(".bpb-sun-calculator__moon")?.textContent || "";
+      const moonEvents = calculator?.querySelector(".bpb-sun-calculator__moon-events-text")?.textContent || "";
       const moonMarker = calculator?.querySelector(".bpb-sun-calculator__moon-marker");
       const moonRange = calculator?.querySelector(".bpb-sun-calculator__moon-visibility-range");
       const moonPath = moonRange?.querySelector(".bpb-sun-calculator__moon-visibility-path");
@@ -1334,11 +1335,13 @@ async function main() {
         && /(?:above|below) horizon/.test(moon)
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
         && /\\d+% illuminated/.test(moon)
+        && /Moon.*(?:gray band|level horizon)/i.test(moonEvents)
+        && /(?:rise|all day)/i.test(moonEvents)
         && /^[0-7]$/.test(calculator?.dataset.moonPhase || "")
         && moonMarker?.hidden === false && /^rotate\\(/.test(moonMarker.style.transform)
         && moonRange?.hidden === false && separateMoonBand
         && calculator?.querySelector(".bpb-sun-calculator__moon-icon")?.textContent
-        ? { summary, direction, moon, moonBandGeometry: {
+        ? { summary, direction, moon, moonEvents, moonBandGeometry: {
           compass: compassRect.width, moonRadius, path: moonPath.getAttribute("d")
         } } : false;
     `, 'the Firefox GPX Sun selection');
@@ -1361,6 +1364,7 @@ async function main() {
         '.bpb-sun-calculator__moon-value',
         '.bpb-sun-calculator__moon-illumination',
         '.bpb-sun-calculator__moon-position',
+        '.bpb-sun-calculator__moon-events-text',
         '.bpb-sun-calculator__events',
         '.bpb-sun-calculator__limitation'
       ].filter(selector => {
@@ -1693,6 +1697,7 @@ async function main() {
         sunExpanded: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === false,
         sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
         moon: sun.querySelector(".bpb-sun-calculator__moon")?.textContent || "",
+        moonEvents: sun.querySelector(".bpb-sun-calculator__moon-events-text")?.textContent || "",
         moonPhase: sun.dataset.moonPhase || "",
         moonIcon: sun.querySelector(".bpb-sun-calculator__moon-icon")?.textContent || "",
         moonMarker: sun.querySelector(".bpb-sun-calculator__moon-marker")?.style.transform || "",
@@ -1713,6 +1718,7 @@ async function main() {
         && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
             .test(peakState.moon)
         && /\d+% illuminated/.test(peakState.moon)
+        && /Moon.*(?:gray band|level horizon)/i.test(peakState.moonEvents)
         && /^[0-7]$/.test(peakState.moonPhase) && peakState.moonIcon
         && /^rotate\(/.test(peakState.moonMarker) && peakState.moonBand
         && peakState.sunBorderStyle === 'solid',

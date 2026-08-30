@@ -109,7 +109,7 @@ test('daily events follow the requested local solar noon across zones and adjace
     }
 });
 
-test('Moon visibility pairs adjacent UTC-day crossings by mountain-local midpoint', () => {
+test('Moon visibility returns every rise-to-set interval that overlaps the mountain-local day', () => {
     const vectors = [
         ['Kyiv', 50.5, 30.5, '2013-03-05', 113, 637, 'same-day'],
         ['Denver', 39.7392, -104.9903, '2026-07-10', 93, 1023, 'same-day'],
@@ -120,14 +120,76 @@ test('Moon visibility pairs adjacent UTC-day crossings by mountain-local midpoin
         const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
         const result = SunPosition.calculate({ lat, lon, ms: instant.ms, date, zone });
         assert.equal(result.moonVisibilityState, 'ordinary', `${name} visibility state`);
-        assert.equal(MountainTime.localDate(zone, result.moonVisibleMidpointMs), date,
-            `${name} midpoint date`);
+        assert.ok(result.moonVisibilityIntervals.length >= 1, `${name} overlapping intervals`);
         assert.equal(MountainTime.localMinute(zone, result.moonriseMs), riseMinute,
             `${name} moonrise`);
         assert.equal(MountainTime.localMinute(zone, result.moonsetMs), setMinute,
             `${name} moonset`);
         assert.equal(result.moonriseDayRelation, 'same-day', `${name} moonrise relation`);
         assert.equal(result.moonsetDayRelation, setRelation, `${name} moonset relation`);
+    }
+});
+
+test('a two-interval Denver date selects the active or upcoming Moon band without a midday gap', () => {
+    const lat = 39.7392;
+    const lon = -104.9903;
+    const date = '2026-08-26';
+    const zone = MountainTime.resolve(lat, lon);
+    const calculateAt = minute => {
+        const instant = MountainTime.civilToInstant(zone, date, minute);
+        return SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+    };
+    const early = calculateAt(2 * 60);
+    const gap = calculateAt(12 * 60);
+    const late = calculateAt(21 * 60);
+
+    for (const result of [early, gap, late]) {
+        assert.equal(result.moonVisibilityState, 'ordinary');
+        assert.equal(result.moonVisibilityIntervals.length, 2);
+    }
+    assert.deepEqual([
+        early.moonVisibilityIntervalIndex, early.moonVisibilitySelection,
+        early.moonriseDayRelation, early.moonsetDayRelation,
+    ], [0, 'active', 'previous-day', 'same-day']);
+    assert.deepEqual([
+        gap.moonVisibilityIntervalIndex, gap.moonVisibilitySelection,
+        gap.moonriseDayRelation, gap.moonsetDayRelation,
+    ], [1, 'upcoming', 'same-day', 'next-day']);
+    assert.deepEqual([
+        late.moonVisibilityIntervalIndex, late.moonVisibilitySelection,
+        late.moonriseDayRelation, late.moonsetDayRelation,
+    ], [1, 'active', 'same-day', 'next-day']);
+    assert.equal(MountainTime.localMinute(zone, early.moonsetMs), 4 * 60 + 40);
+    assert.equal(MountainTime.localMinute(zone, gap.moonriseMs), 19 * 60 + 5);
+});
+
+test('Moon visibility distinguishes polar always-up and always-down dates', () => {
+    const lat = 78.2232;
+    const lon = 15.6469;
+    const zone = MountainTime.resolve(lat, lon);
+    const stateFor = date => {
+        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
+        return SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+    };
+    assert.deepEqual([
+        stateFor('2026-01-01').moonVisibilityState,
+        stateFor('2026-01-15').moonVisibilityState,
+    ], ['always-up', 'always-down']);
+});
+
+test('Moon interval overlap survives the international date line', () => {
+    for (const [name, lat, lon] of [
+        ['Kiritimati', 1.8721, -157.4278],
+        ['Chatham', -43.95, -176.55],
+    ]) {
+        const date = '2026-01-02';
+        const zone = MountainTime.resolve(lat, lon);
+        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
+        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+        assert.equal(result.moonVisibilityState, 'ordinary', name);
+        assert.equal(result.moonVisibilityIntervals.length, 2, name);
+        assert.equal(result.moonriseDate, date, name);
+        assert.equal(result.moonsetDayRelation, 'next-day', name);
     }
 });
 

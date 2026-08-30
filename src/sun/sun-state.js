@@ -39,6 +39,9 @@ const unavailableEvents = Object.freeze({
     moonsetAzimuthDeg: null,
     moonsetDate: null,
     moonsetDayRelation: null,
+    moonVisibilityIntervals: Object.freeze([]),
+    moonVisibilityIntervalIndex: null,
+    moonVisibilitySelection: 'unavailable',
     moonVisibilityState: 'unavailable',
 });
 
@@ -79,7 +82,12 @@ export function createSunState({
         if (typeof calculate === 'function') return calculate(input);
         const position = calculateInstant(input);
         if (!position) return null;
-        return Object.freeze({ ...position, ...eventsFor(input) });
+        const events = eventsFor(input);
+        return Object.freeze({
+            ...position,
+            ...events,
+            ...SunPosition.selectMoonVisibility(events, input.ms),
+        });
     };
     const recompute = () => {
         if (!validCoordinate(state.subject) || !state.zone || !completeDate(state.date)

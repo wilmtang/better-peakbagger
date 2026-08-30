@@ -2342,6 +2342,7 @@ try {
             '.bpb-sun-calculator__moon-value',
             '.bpb-sun-calculator__moon-illumination',
             '.bpb-sun-calculator__moon-position',
+            '.bpb-sun-calculator__moon-events-text',
             '.bpb-sun-calculator__events',
             '.bpb-sun-calculator__limitation',
         ].filter(selector => {
@@ -2523,6 +2524,7 @@ try {
         const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
         const elevation = calculator?.querySelector('.bpb-sun-calculator__elevation')?.textContent || '';
         const moon = calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '';
+        const moonEvents = calculator?.querySelector('.bpb-sun-calculator__moon-events-text')?.textContent || '';
         const eventLine = calculator?.querySelector('.bpb-sun-calculator__event-line');
         const daylightRange = calculator?.querySelector('.bpb-sun-calculator__daylight-range');
         const daylightPath = daylightRange?.querySelector('.bpb-sun-calculator__daylight-path');
@@ -2554,12 +2556,14 @@ try {
             && /(?:above|below) horizon/.test(moon)
             && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/.test(moon)
             && /\d+% illuminated/.test(moon) && /^[0-7]$/.test(calculator.dataset.moonPhase || '')
+            && /Moon.*(?:gray band|level horizon)/i.test(moonEvents)
+            && /(?:rise|all day)/i.test(moonEvents)
             && moonMarker?.hidden === false && /^rotate\(/.test(moonMarker.style.transform)
             && moonRange?.hidden === false && separateMoonBand
             && calculator.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
             && calculator.querySelector('.bpb-sun-calculator__icon')
             ? {
-                summary, direction, elevation, moon,
+                summary, direction, elevation, moon, moonEvents,
                 valueText: slider?.getAttribute('aria-valuetext') || '',
                 moonBandGeometry: { compass: compassRect.width, moonRadius, path: moonPath.getAttribute('d') },
             } : false;
@@ -3303,6 +3307,8 @@ try {
                     && /(?:New Moon|Waxing|First Quarter|Full Moon|Waning|Last Quarter)/
                         .test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
                     && /\d+% illuminated/.test(sun.querySelector('.bpb-sun-calculator__moon')?.textContent || '')
+                    && /Moon.*(?:gray band|level horizon)/i.test(
+                        sun.querySelector('.bpb-sun-calculator__moon-events-text')?.textContent || '')
                     && /^[0-7]$/.test(sun.dataset.moonPhase || '')
                     && sun.querySelector('.bpb-sun-calculator__moon-icon')?.textContent
                     && sun.querySelector('.bpb-sun-calculator__moon-marker')?.hidden === false

@@ -91,6 +91,20 @@ const ordinaryState = ({
             moonsetAzimuthDeg: 300,
             moonsetDate: date,
             moonsetDayRelation: 'same-day',
+            moonVisibilityIntervals: Object.freeze([Object.freeze({
+                riseMs: MountainTime.civilToInstant(zone, date, 1 * 60 + 30).ms,
+                riseAzimuthDeg: 60,
+                riseDate: date,
+                riseDayRelation: 'same-day',
+                midpointMs: MountainTime.civilToInstant(zone, date, 9 * 60 + 15).ms,
+                midpointAzimuthDeg: 180,
+                setMs: MountainTime.civilToInstant(zone, date, 17 * 60).ms,
+                setAzimuthDeg: 300,
+                setDate: date,
+                setDayRelation: 'same-day',
+            })]),
+            moonVisibilityIntervalIndex: 0,
+            moonVisibilitySelection: 'active',
             moonVisibilityState: 'ordinary',
             moonIlluminationFraction,
             moonPhase: 0.858,
@@ -175,6 +189,8 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
         'Waning Crescent');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-illumination').textContent,
         '19% illuminated');
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__moon-events-text').textContent,
+        /Moon up now \(gray band\): rise .* · set .* \(MDT\)/);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-icon').textContent, '🌘');
     assert.ok(calculator.element.querySelector('.bpb-sun-calculator__moon-value')
         .contains(calculator.element.querySelector('.bpb-sun-calculator__moon-name')),
@@ -427,6 +443,74 @@ test('compass draws separate Sun and Moon visibility bands and rotates both with
     assert.equal(moonRange.hidden, true);
 }));
 
+test('two-overlap Moon dates select a truthful active or upcoming band and announce its times', () => withDom(dom => {
+    const frames = [];
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak', statusDelayMs: 0,
+        requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
+        scheduleStatus: callback => { callback(); return 1; }, cancelStatus: () => {},
+    });
+    const lat = 39.7392;
+    const lon = -104.9903;
+    const zone = MountainTime.resolve(lat, lon);
+    const date = '2026-08-26';
+    const renderAt = minute => {
+        const instant = MountainTime.civilToInstant(zone, date, minute);
+        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+        calculator.render({ ...ordinaryState({ zone, date, minute }), instant, result });
+        frames.shift()();
+        return result;
+    };
+    const moonText = () => calculator.element
+        .querySelector('.bpb-sun-calculator__moon-events-text').textContent;
+    const moonPath = () => calculator.element
+        .querySelector('.bpb-sun-calculator__moon-visibility-path').getAttribute('d');
+
+    renderAt(2 * 60);
+    const earlyPath = moonPath();
+    assert.equal(calculator.element.dataset.moonVisibilitySelection, 'active');
+    assert.match(moonText(), /Moon up now .*rise .*previous day.*set 04:40 AM.*MDT/i);
+
+    const gap = renderAt(12 * 60);
+    const upcomingPath = moonPath();
+    assert.equal(gap.moonVisibilityIntervals.length, 2);
+    assert.equal(calculator.element.dataset.moonVisibilitySelection, 'upcoming');
+    assert.match(moonText(), /Next Moon-up gray band: rise 07:05 PM.*set 05:45 AM.*next day.*MDT/i);
+    assert.notEqual(upcomingPath, earlyPath, 'the compass switches to the upcoming evening interval');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-marker')
+        .classList.contains('bpb-sun-calculator__moon-marker--below-horizon'), true,
+    'the below-horizon instant remains hollow while the band shows the next interval');
+    assert.match(calculator.element.querySelector('[role="status"]').textContent,
+        /Next Moon-up gray band/);
+
+    renderAt(21 * 60);
+    assert.equal(calculator.element.dataset.moonVisibilitySelection, 'active');
+    assert.match(moonText(), /Moon up now .*rise 07:05 PM.*set 05:45 AM.*next day.*MDT/i);
+}));
+
+test('polar Moon states explain all-day visibility without inventing a band', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'peak',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const lat = 78.2232;
+    const lon = 15.6469;
+    const zone = MountainTime.resolve(lat, lon);
+    for (const [date, state, text] of [
+        ['2026-01-01', 'always-up', /Moon stays above the level horizon all day/],
+        ['2026-01-15', 'always-down', /Moon stays below the level horizon all day/],
+    ]) {
+        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
+        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+        calculator.render({ ...ordinaryState({ zone, date }), instant, result });
+        assert.equal(calculator.element.dataset.moonVisibility, state);
+        assert.match(calculator.element.querySelector('.bpb-sun-calculator__moon-events-text').textContent,
+            text);
+        assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-visibility-range').hidden,
+            true);
+    }
+}));
+
 test('event clocks own their DST labels and adjacent-day relation', () => withDom(dom => {
     const calculator = SunCalculator.create({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
@@ -581,10 +665,10 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__empty').hidden, true);
     assert.match(css, /bpb-sun-calculator__toggle\s*\{[\s\S]*block-size:\s*4\.4rem/);
     assert.match(css, /bpb-sun-calculator__summary\s*\{[\s\S]*block-size:\s*2\.7rem/);
-    assert.match(css, /bpb-sun-calculator__panel\s*\{[\s\S]*block-size:\s*calc\(25\.65rem \+ 1px\)/);
-    assert.match(css, /bpb-sun-calculator__layout\s*\{[\s\S]*block-size:\s*23\.05rem/);
+    assert.match(css, /bpb-sun-calculator__panel\s*\{[\s\S]*block-size:\s*calc\(27\.85rem \+ 1px\)/);
+    assert.match(css, /bpb-sun-calculator__layout\s*\{[\s\S]*block-size:\s*25\.25rem/);
     assert.match(css, /bpb-sun-calculator__controls\s*\{[\s\S]*block-size:\s*13\.05rem/);
-    assert.match(css, /bpb-sun-calculator__reading\s*\{[\s\S]*block-size:\s*23\.05rem/);
+    assert.match(css, /bpb-sun-calculator__reading\s*\{[\s\S]*block-size:\s*25\.25rem/);
     assert.match(css, /bpb-sun-calculator__facts\s*\{[\s\S]*block-size:\s*15\.5rem/);
     assert.match(css, /data-layout-state="placeholder"[\s\S]*visibility:\s*hidden/);
     assert.doesNotMatch(css,
@@ -713,6 +797,8 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
     assert.match(calculator.element.textContent, /UTC−8, estimated from longitude/);
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__events-text').textContent,
         /sunrise .* · sunset .* \(UTC−8, estimated from longitude\)$/);
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__moon-events-text').textContent,
+        /UTC−8, estimated from longitude/);
     assert.match(css, /max-inline-size:\s*min\(100%,\s*calc\(100vw - 1rem\)\)/);
     assert.match(css, /min-inline-size:\s*0/);
     assert.match(css, /overflow-wrap:\s*anywhere/);

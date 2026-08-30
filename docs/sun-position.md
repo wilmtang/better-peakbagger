@@ -102,10 +102,14 @@ the exact event clocks remain in the line below. The arc is omitted when daily
 event directions are unavailable and rotates with the same accepted map bearing
 as the Sun, Moon, and cardinal labels. A gray band on the smaller Moon radius
 runs from level-horizon moonrise to moonset without increasing the compass
-diameter. The band uses the above-horizon interval whose midpoint belongs to the
-requested mountain-local date, so a Moon that sets after local midnight remains
-part of the correct cycle. A hollow Moon marker means it is below the
-astronomical horizon.
+diameter. Daily Moon events retain every above-horizon interval that overlaps
+the requested mountain-local date, including a rise on the previous date or a
+set on the next date. The selected instant owns the band when the Moon is up;
+while it is down, the band deterministically shows the next interval that day,
+or the earlier interval after the final moonset. A concise, zone-aware line
+labels that active, next, or earlier gray band and gives its rise and set times.
+Polar always-up and always-down dates are stated without inventing an arc. A
+hollow Moon marker continues to mean the Moon is below the astronomical horizon.
 
 Compass animation is coalesced to animation frames. Sun movement, Moon movement,
 and map-bearing changes use the shortest arc across north. Bearing-only updates

@@ -31,6 +31,7 @@ const validCoordinate = (lat, lon) => Number.isFinite(lat) && Number.isFinite(lo
 const DAY_MS = 86_400_000;
 const SEARCH_DAY_OFFSETS = Object.freeze([0, -1, 1, -2, 2]);
 const MOON_SEARCH_DAY_OFFSETS = Object.freeze([-2, -1, 0, 1, 2]);
+const EMPTY_MOON_INTERVALS = Object.freeze([]);
 
 function dateRelation(value, zone, date) {
     const ms = value instanceof Date ? value.getTime() : Number.NaN;
@@ -69,6 +70,9 @@ const unavailableMoonEvents = () => ({
     moonsetAzimuthDeg: null,
     moonsetDate: null,
     moonsetDayRelation: null,
+    moonVisibilityIntervals: EMPTY_MOON_INTERVALS,
+    moonVisibilityIntervalIndex: null,
+    moonVisibilitySelection: 'unavailable',
     moonVisibilityState: 'unavailable',
 });
 
@@ -97,17 +101,77 @@ function moonEventAzimuth(sunCalc, ms, lat, lon) {
     }
 }
 
+function shiftedCivilDate(date, days) {
+    const ms = Date.parse(`${date}T00:00:00Z`);
+    if (!Number.isFinite(ms)) return null;
+    return new Date(ms + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+const selectedMoonInterval = (events, interval, index, selection) => ({
+    moonriseMs: interval.riseMs,
+    moonriseAzimuthDeg: interval.riseAzimuthDeg,
+    moonriseDate: interval.riseDate,
+    moonriseDayRelation: interval.riseDayRelation,
+    moonVisibleMidpointMs: interval.midpointMs,
+    moonVisibleMidpointAzimuthDeg: interval.midpointAzimuthDeg,
+    moonsetMs: interval.setMs,
+    moonsetAzimuthDeg: interval.setAzimuthDeg,
+    moonsetDate: interval.setDate,
+    moonsetDayRelation: interval.setDayRelation,
+    moonVisibilityIntervals: events.moonVisibilityIntervals,
+    moonVisibilityIntervalIndex: index,
+    moonVisibilitySelection: selection,
+    moonVisibilityState: events.moonVisibilityState,
+});
+
+export function selectMoonVisibility(events, ms) {
+    const state = events?.moonVisibilityState;
+    const intervals = Array.isArray(events?.moonVisibilityIntervals)
+        ? events.moonVisibilityIntervals
+        : EMPTY_MOON_INTERVALS;
+    if (state !== 'ordinary' || !intervals.length || !Number.isFinite(ms)) {
+        return {
+            ...unavailableMoonEvents(),
+            moonVisibilityIntervals: intervals,
+            moonVisibilitySelection: state === 'always-up' ? 'active'
+                : state === 'always-down' ? 'inactive' : 'unavailable',
+            moonVisibilityState: state || 'unavailable',
+        };
+    }
+    let index = intervals.findIndex(interval => ms >= interval.riseMs && ms <= interval.setMs);
+    let selection = 'active';
+    if (index < 0) {
+        index = intervals.findIndex(interval => interval.riseMs > ms);
+        if (index >= 0) selection = 'upcoming';
+        else {
+            index = intervals.length - 1;
+            selection = 'previous';
+        }
+    }
+    return selectedMoonInterval(events, intervals[index], index, selection);
+}
+
 function calculateMoonEvents({ lat, lon, date, zone, noonMs, sunCalc }) {
     if (typeof sunCalc?.getMoonTimes !== 'function'
         || typeof sunCalc?.getMoonPosition !== 'function') return unavailableMoonEvents();
+    const dayStart = MountainTime.civilToInstant(zone, date, 0);
+    const nextDate = shiftedCivilDate(date, 1);
+    const dayEnd = nextDate ? MountainTime.civilToInstant(zone, nextDate, 0) : null;
+    if (!dayStart || !dayEnd || dayEnd.ms <= dayStart.ms) return unavailableMoonEvents();
     const crossings = [];
     const seen = new Set();
+    let selectedDayAlwaysUp = false;
+    let selectedDayAlwaysDown = false;
     try {
         // SunCalc scans UTC calendar days. Query adjacent UTC days and pair the
         // crossings ourselves so mountain-local midnight cannot choose the wrong cycle.
         for (const dayOffset of MOON_SEARCH_DAY_OFFSETS) {
             const times = sunCalc.getMoonTimes(new Date(noonMs + dayOffset * DAY_MS), lat, lon);
             if (!times || typeof times !== 'object') continue;
+            if (dayOffset === 0) {
+                selectedDayAlwaysUp = times.alwaysUp === true;
+                selectedDayAlwaysDown = times.alwaysDown === true;
+            }
             for (const [type, value] of [['rise', times.rise], ['set', times.set]]) {
                 const ms = value instanceof Date ? value.getTime() : Number.NaN;
                 const key = `${type}:${ms}`;
@@ -130,13 +194,14 @@ function calculateMoonEvents({ lat, lon, date, zone, noonMs, sunCalc }) {
         }
         if (!Number.isFinite(riseMs) || crossing.ms <= riseMs) continue;
         const midpointMs = riseMs + (crossing.ms - riseMs) / 2;
-        if (MountainTime.localDate(zone, midpointMs) === date) {
+        if (riseMs < dayEnd.ms && crossing.ms > dayStart.ms) {
             candidates.push(Object.freeze({ riseMs, midpointMs, setMs: crossing.ms }));
         }
         riseMs = null;
     }
 
-    candidates.sort((a, b) => Math.abs(a.midpointMs - noonMs) - Math.abs(b.midpointMs - noonMs));
+    candidates.sort((a, b) => a.riseMs - b.riseMs);
+    const intervals = [];
     for (const candidate of candidates) {
         const rise = dateRelation(new Date(candidate.riseMs), zone, date);
         const set = dateRelation(new Date(candidate.setMs), zone, date);
@@ -145,22 +210,31 @@ function calculateMoonEvents({ lat, lon, date, zone, noonMs, sunCalc }) {
             sunCalc, candidate.midpointMs, lat, lon,
         );
         const moonsetAzimuthDeg = moonEventAzimuth(sunCalc, candidate.setMs, lat, lon);
-        if (!rise || !set || ![moonriseAzimuthDeg, moonVisibleMidpointAzimuthDeg, moonsetAzimuthDeg]
-            .every(Number.isFinite)) continue;
-        return {
-            moonriseMs: rise.ms,
-            moonriseAzimuthDeg,
-            moonriseDate: rise.date,
-            moonriseDayRelation: rise.dayRelation,
-            moonVisibleMidpointMs: candidate.midpointMs,
-            moonVisibleMidpointAzimuthDeg,
-            moonsetMs: set.ms,
-            moonsetAzimuthDeg,
-            moonsetDate: set.date,
-            moonsetDayRelation: set.dayRelation,
-            moonVisibilityState: 'ordinary',
-        };
+        if (!rise || !set) continue;
+        intervals.push(Object.freeze({
+            riseMs: rise.ms,
+            riseAzimuthDeg: moonriseAzimuthDeg,
+            riseDate: rise.date,
+            riseDayRelation: rise.dayRelation,
+            midpointMs: candidate.midpointMs,
+            midpointAzimuthDeg: moonVisibleMidpointAzimuthDeg,
+            setMs: set.ms,
+            setAzimuthDeg: moonsetAzimuthDeg,
+            setDate: set.date,
+            setDayRelation: set.dayRelation,
+        }));
     }
+    if (intervals.length) return {
+        ...unavailableMoonEvents(),
+        moonVisibilityIntervals: Object.freeze(intervals),
+        moonVisibilitySelection: 'unselected',
+        moonVisibilityState: 'ordinary',
+    };
+    if (selectedDayAlwaysUp !== selectedDayAlwaysDown) return {
+        ...unavailableMoonEvents(),
+        moonVisibilitySelection: selectedDayAlwaysUp ? 'active' : 'inactive',
+        moonVisibilityState: selectedDayAlwaysUp ? 'always-up' : 'always-down',
+    };
     return unavailableMoonEvents();
 }
 
@@ -296,7 +370,7 @@ export function calculateSunPosition({ lat, lon, ms, date, zone, mapBearing = 0,
     const position = calculateSunInstant({ lat, lon, ms, mapBearing, sunCalc });
     if (!position) return null;
     const events = calculateSunEvents({ lat, lon, date, zone, sunCalc }) || unavailableEvents();
-    return Object.freeze({ ...position, ...events });
+    return Object.freeze({ ...position, ...events, ...selectMoonVisibility(events, ms) });
 }
 
 export const sunPosition = Object.freeze({
@@ -306,4 +380,5 @@ export const sunPosition = Object.freeze({
     normalizeDegrees,
     directionLabel,
     moonPhaseLabel,
+    selectMoonVisibility,
 });

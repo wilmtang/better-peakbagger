@@ -154,6 +154,28 @@ function eventSummary(zone, result) {
     });
 }
 
+function moonEventSummary(zone, result, selectedLabel) {
+    if (result?.moonVisibilityState === 'always-up') {
+        return `Moon stays above the level horizon all day (${selectedLabel}); no rise/set band.`;
+    }
+    if (result?.moonVisibilityState === 'always-down') {
+        return `Moon stays below the level horizon all day (${selectedLabel}); no rise/set band.`;
+    }
+    if (result?.moonVisibilityState !== 'ordinary') {
+        return 'Moon rise and set times unavailable for this date.';
+    }
+    const rise = eventDisplay(zone, result.moonriseMs, result.moonriseDayRelation);
+    const set = eventDisplay(zone, result.moonsetMs, result.moonsetDayRelation);
+    if (!rise || !set) return 'Moon rise and set times unavailable for this date.';
+    const context = result.moonVisibilitySelection === 'active' ? 'Moon up now (gray band)'
+        : result.moonVisibilitySelection === 'upcoming' ? 'Next Moon-up gray band'
+            : 'Earlier Moon-up gray band';
+    if (rise.label === set.label) {
+        return `${context}: rise ${rise.clock}${rise.daySuffix} · set ${set.clock}${set.daySuffix} (${rise.label}).`;
+    }
+    return `${context}: rise ${rise.clock} ${rise.label}${rise.daySuffix} · set ${set.clock} ${set.label}${set.daySuffix}.`;
+}
+
 export function createSunCalculator({
     mount,
     mode,
@@ -312,7 +334,8 @@ export function createSunCalculator({
     eventTrack.append(eventMarker);
     const sunset = element('span', 'bpb-sun-calculator__event-time');
     eventsVisual.append(sunrise, eventTrack, sunset);
-    events.append(eventsText, eventsVisual);
+    const moonEventsText = element('span', 'bpb-sun-calculator__moon-events-text');
+    events.append(eventsText, eventsVisual, moonEventsText);
 
     const limitation = element('p', 'bpb-sun-calculator__limitation',
         'Astronomical Sun and Moon positions. Nearby terrain may block either object from view.');
@@ -422,7 +445,10 @@ export function createSunCalculator({
             moonVisibleMidpointAzimuthDeg: state?.result?.moonVisibleMidpointAzimuthDeg,
             moonsetAzimuthDeg: state?.result?.moonsetAzimuthDeg,
         };
-        if (frameHandle === null) frameHandle = requestFrame(applyCompass);
+        if (frameHandle !== null) return;
+        frameHandle = true;
+        const handle = requestFrame(applyCompass);
+        if (frameHandle !== null) frameHandle = handle;
     };
 
     const announce = text => {
@@ -448,6 +474,8 @@ export function createSunCalculator({
         moonName.textContent = '';
         moonIllumination.textContent = '';
         delete root.dataset.moonPhase;
+        delete root.dataset.moonVisibility;
+        delete root.dataset.moonVisibilitySelection;
     };
     const setExpanded = expanded => {
         if (toggle.disabled) return;
@@ -483,6 +511,7 @@ export function createSunCalculator({
         elevationFact.hidden = true;
         clearMoon();
         eventsText.textContent = '';
+        moonEventsText.textContent = '';
         events.classList.remove('bpb-sun-calculator__events--text');
         eventsVisual.hidden = true;
         if (mode === 'peak') dateValue.value = '';
@@ -525,6 +554,7 @@ export function createSunCalculator({
         elevationFact.hidden = true;
         clearMoon();
         eventsText.textContent = '';
+        moonEventsText.textContent = '';
         eventsVisual.hidden = true;
         events.classList.remove('bpb-sun-calculator__events--text');
         const hasDate = typeof state?.date === 'string';
@@ -624,6 +654,10 @@ export function createSunCalculator({
         }
         const moonPositionAnnouncement = moonPosition?.announcement || 'Moon position unavailable';
         const moonPhaseAnnouncement = moonPhaseDisplayValue?.announcement || 'Moon phase unavailable';
+        const moonEventsAnnouncement = moonEventSummary(state.zone, state.result, label);
+        moonEventsText.textContent = moonEventsAnnouncement;
+        root.dataset.moonVisibility = state.result.moonVisibilityState || 'unavailable';
+        root.dataset.moonVisibilitySelection = state.result.moonVisibilitySelection || 'unavailable';
         events.classList.toggle('bpb-sun-calculator__events--text',
             state.result.daylightState !== 'ordinary');
         eventsVisual.hidden = true;
@@ -641,7 +675,7 @@ export function createSunCalculator({
                 events.classList.add('bpb-sun-calculator__events--text');
                 eventsText.textContent = 'Rise and set times unavailable for this date.';
                 scheduleCompass(state);
-                announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${eventsText.textContent}`);
+                announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${moonEventsAnnouncement} ${eventsText.textContent}`);
                 return;
             }
             eventsText.textContent = eventDetails.text;
@@ -658,7 +692,7 @@ export function createSunCalculator({
             eventsVisual.hidden = false;
         }
         scheduleCompass(state);
-        announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${eventsText.textContent}`);
+        announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${moonEventsAnnouncement} ${eventsText.textContent}`);
     };
     const onToggle = () => setExpanded(toggle.getAttribute('aria-expanded') !== 'true');
     const onDateInput = () => onDateChange(dateValue.value);

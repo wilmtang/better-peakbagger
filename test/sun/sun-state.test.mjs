@@ -169,3 +169,63 @@ test('minute changes reuse daily events while calculating each requested positio
     }, '2026-07-11', zone);
     assert.equal(events, 3, 'subject changes invalidate daily events');
 });
+
+test('minute changes reselect a cached Moon interval without recalculating daily events', () => {
+    let events = 0;
+    const zone = MountainTime.resolve(39.7392, -104.9903);
+    const date = '2026-08-26';
+    const first = {
+        riseMs: MountainTime.civilToInstant(zone, '2026-08-25', 18 * 60 + 38).ms,
+        riseAzimuthDeg: 90,
+        riseDate: '2026-08-25',
+        riseDayRelation: 'previous-day',
+        midpointMs: MountainTime.civilToInstant(zone, date, 23).ms,
+        midpointAzimuthDeg: 180,
+        setMs: MountainTime.civilToInstant(zone, date, 4 * 60 + 40).ms,
+        setAzimuthDeg: 270,
+        setDate: date,
+        setDayRelation: 'same-day',
+    };
+    const second = {
+        riseMs: MountainTime.civilToInstant(zone, date, 19 * 60 + 5).ms,
+        riseAzimuthDeg: 90,
+        riseDate: date,
+        riseDayRelation: 'same-day',
+        midpointMs: MountainTime.civilToInstant(zone, '2026-08-27', 24).ms,
+        midpointAzimuthDeg: 180,
+        setMs: MountainTime.civilToInstant(zone, '2026-08-27', 5 * 60 + 45).ms,
+        setAzimuthDeg: 270,
+        setDate: '2026-08-27',
+        setDayRelation: 'next-day',
+    };
+    const state = SunState.create({
+        calculateInstant: resultFor,
+        calculateEvents: () => {
+            events++;
+            return {
+                daylightState: 'unavailable',
+                moonVisibilityIntervals: Object.freeze([first, second]),
+                moonVisibilityState: 'ordinary',
+            };
+        },
+    });
+    state.setPeakSubject({
+        lat: 39.7392, lon: -104.9903, zone,
+        nowMs: MountainTime.civilToInstant(zone, date, 2 * 60).ms,
+    });
+    assert.deepEqual([
+        state.get().result.moonVisibilityIntervalIndex,
+        state.get().result.moonVisibilitySelection,
+    ], [0, 'active']);
+    state.setPreviewMinute(12 * 60);
+    assert.deepEqual([
+        state.get().result.moonVisibilityIntervalIndex,
+        state.get().result.moonVisibilitySelection,
+    ], [1, 'upcoming']);
+    state.setPreviewMinute(21 * 60);
+    assert.deepEqual([
+        state.get().result.moonVisibilityIntervalIndex,
+        state.get().result.moonVisibilitySelection,
+    ], [1, 'active']);
+    assert.equal(events, 1);
+});

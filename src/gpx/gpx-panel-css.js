@@ -111,13 +111,13 @@ export const gpxPanelCss = `
         grid-row: 1;
     }
     #bpb-route-explorer .bpb-sun-calculator__panel {
-        block-size: calc(39.95rem + 1px);
+        block-size: calc(42.15rem + 1px);
     }
     #bpb-route-explorer .bpb-sun-calculator__layout {
         grid-template-columns: 1fr;
-        grid-template-rows: 13.05rem 23.05rem;
+        grid-template-rows: 13.05rem 25.25rem;
         row-gap: 1.25rem;
-        block-size: 37.35rem;
+        block-size: 39.55rem;
     }
     #bpb-route-explorer .bpb-sun-calculator__reading {
         grid-template-columns: minmax(8rem, 0.85fr) minmax(8.5rem, 1.15fr);
@@ -125,17 +125,17 @@ export const gpxPanelCss = `
 }
 @container bpb-route-analysis (max-width: 440px) {
     #bpb-route-explorer .bpb-sun-calculator__panel {
-        block-size: calc(45.65rem + 1px);
+        block-size: calc(47.85rem + 1px);
         padding: 1rem 0.8rem 1.1rem;
     }
     #bpb-route-explorer .bpb-sun-calculator__layout {
-        grid-template-rows: 13.05rem 29.25rem;
-        block-size: 43.55rem;
+        grid-template-rows: 13.05rem 31.45rem;
+        block-size: 45.75rem;
     }
     #bpb-route-explorer .bpb-sun-calculator__reading {
         grid-template-columns: 1fr;
-        grid-template-rows: 10rem 10.95rem 2.7rem 3.35rem;
-        block-size: 29.25rem;
+        grid-template-rows: 10rem 10.95rem 4.9rem 3.35rem;
+        block-size: 31.45rem;
     }
     #bpb-route-explorer .bpb-sun-calculator__facts {
         grid-template-columns: repeat(2, minmax(0, 1fr));
