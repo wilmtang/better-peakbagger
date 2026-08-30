@@ -45,17 +45,19 @@ const settleQuietly = () =>
     new Promise(resolve => setTimeout(resolve, Queue.DEFAULT_COALESCE_WINDOW_MS + 100));
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
-    local: sharedLocal = null, failLocalGetAfterClear = false, localSetHook = null, syncReadFailures = [],
+    local: sharedLocal = null, failLocalGetAfterClear = false, localGetHook = null,
+    localSetHook = null, syncReadFailures = [],
     fastAscentOperationTimeout = false,
     peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
     const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
-    const area = (values, { failGetAfterClear = false, setHook = null } = {}) => {
+    const area = (values, { failGetAfterClear = false, getHook = null, setHook = null } = {}) => {
         let cleared = false;
         return {
             get: async keys => {
                 if (failGetAfterClear && cleared) throw new Error('local read failed after clear');
+                if (getHook) await getHook(keys, values);
                 const requested = Array.isArray(keys) ? keys : [keys];
                 return Object.fromEntries(requested.map(key => [key, structuredClone(values[key])]));
             },
@@ -86,7 +88,11 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         storage: {
             session: area(session),
             sync: syncArea,
-            local: area(local, { failGetAfterClear: failLocalGetAfterClear, setHook: localSetHook }),
+            local: area(local, {
+                failGetAfterClear: failLocalGetAfterClear,
+                getHook: localGetHook,
+                setHook: localSetHook,
+            }),
             onChanged: storageChanged,
         },
         runtime: {
@@ -1408,6 +1414,76 @@ test('an individual ascent backup has an overall deadline and retains its snapsh
     assert.equal(result.error.code, 'timeout');
     assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)],
         'an outcome-unknown timeout must retain the save-time snapshot for reconciliation');
+});
+
+test('a queued ascent write is superseded by repository replacement before it starts', async () => {
+    const backend = gitDataBackend();
+    const held = deferred();
+    let heldRequest = null;
+    let authReads = 0;
+    const github = (method, path, body) => {
+        const normalized = path.replace('/repos/me/replacement', '/repos/me/backup');
+        if (!heldRequest) {
+            heldRequest = { method, normalized, body };
+            return held.promise;
+        }
+        return backend.handler(method, normalized, body);
+    };
+    const worker = createWorker({
+        settings: { enableGithubBackup: true },
+        auth: AUTH,
+        github,
+        localGetHook: keys => {
+            const requested = Array.isArray(keys) ? keys : [keys];
+            if (requested.includes('bpbGithubAuth')) authReads += 1;
+        },
+    });
+
+    const blocker = worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    await waitFor(() => heldRequest != null);
+    const readsBeforeQueuedAction = authReads;
+    const queued = worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        pageComplete: true,
+        page: {
+            ascent: { id: 7654321, date: '2026-07-12' },
+            peak: { id: 2296, name: 'Mount Rainier' },
+            report: { markdown: 'Queued report.' },
+        },
+    }, PEAK_SENDER);
+    await waitFor(() => authReads > readsBeforeQueuedAction);
+
+    worker.local.bpbGithubAuth = {
+        ...AUTH,
+        repo: {
+            owner: 'me',
+            name: 'replacement',
+            branch: 'main',
+            fullName: 'me/replacement',
+        },
+    };
+    worker.local.bpbGithubAuthEpoch = 1;
+    held.resolve(backend.handler(heldRequest.method, heldRequest.normalized, heldRequest.body));
+    assert.equal((await blocker).ok, true);
+
+    const stale = await queued;
+    assert.equal(stale.ok, false);
+    assert.equal(stale.error.code, 'superseded');
+    assert.equal(worker.githubCalls.some(call => call.url.includes('/repos/me/replacement')), false,
+        'the delayed action must not switch repositories behind the user');
+
+    const retried = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        pageComplete: true,
+        page: {
+            ascent: { id: 7654321, date: '2026-07-12' },
+            peak: { id: 2296, name: 'Mount Rainier' },
+            report: { markdown: 'Explicit retry.' },
+        },
+    }, PEAK_SENDER);
+    assert.equal(retried.ok, true);
+    assert.equal(worker.githubCalls.some(call => call.url.includes('/repos/me/replacement')), true,
+        'a later explicit action uses only the replacement repository');
 });
 
 test('an edited ascent matches its save snapshot by aid after peak and date changes', async () => {

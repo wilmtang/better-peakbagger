@@ -648,10 +648,13 @@ export function createGithubRoutes({
             return { ok: true, confirmed: false, reason: 'still-present' };
         }
 
-        const access = await connectedGithubClient({ requireEnabled: true });
-        if (access.error) return { ok: false, error: access.error };
+        const expectedAccess = await connectedGithubClient({ requireEnabled: true });
+        if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
         try {
-            const result = await writeQueue.run(() => access.client.deleteAscentBackup(ascentId));
+            const result = await writeQueue.run(async () => {
+                const access = await queuedGithubAccess(expectedAccess, { requireEnabled: true });
+                return access.client.deleteAscentBackup(ascentId);
+            });
             await clearAscentSnapshots(ascentId);
             await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
                 const current = intents[String(ascentId)];
@@ -667,7 +670,7 @@ export function createGithubRoutes({
         } catch (error) {
             return {
                 ok: false,
-                error: GithubErrors.publicError(error, 'The deleted ascent could not be removed from GitHub.'),
+                error: writeError(error, 'The deleted ascent could not be removed from GitHub.'),
             };
         }
     };
@@ -679,10 +682,15 @@ export function createGithubRoutes({
         if (requireEnabled && !(await Settings.get()).enableGithubBackup) {
             return { error: { code: 'disabled' } };
         }
-        const auth = await GithubAuth.authStore.read();
-        if (!auth || !auth.token) return { error: { code: 'not-connected' } };
-        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
+        const snapshot = await GithubAuth.authStore.readSnapshot();
+        const auth = snapshot.auth;
+        const authorizationEpoch = snapshot.epoch;
+        if (!auth || !auth.token) return { authorizationEpoch, error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) {
+            return { authorizationEpoch, error: { code: 'no-repo' } };
+        }
         return {
+            authorizationEpoch,
             repo: {
                 owner: auth.repo.owner,
                 name: auth.repo.name,
@@ -747,6 +755,20 @@ export function createGithubRoutes({
     const writeError = (error, fallback) => error instanceof GithubAccessError
         ? error.access
         : GithubErrors.publicError(error, fallback);
+
+    const queuedGithubAccess = async (expected, options = {}) => {
+        const current = await connectedGithubClient(options);
+        if (Number.isSafeInteger(expected?.authorizationEpoch)
+            && Number.isSafeInteger(current?.authorizationEpoch)
+            && current.authorizationEpoch !== expected.authorizationEpoch) {
+            throw new GithubAccessError({
+                code: 'superseded',
+                message: 'The GitHub connection changed before this action started. Review it and try again.',
+            });
+        }
+        if (current.error) throw new GithubAccessError(current.error);
+        return current;
+    };
 
     const writeQueue = GithubWriteQueue.createGithubWriteQueue({
         commitFiles: async (files, message) => {
@@ -874,8 +896,8 @@ export function createGithubRoutes({
         }
         try {
             return await runAscentGithubOperation(async signal => {
-                const access = await connectedGithubClient({ requireEnabled: true, signal });
-                if (access.error) return { ok: false, error: access.error };
+                const expectedAccess = await connectedGithubClient({ requireEnabled: true, signal });
+                if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
 
                 const found = await findSnapshotForPage(message.page, sender);
                 // Automatic backup fires on every saved-ascent page load, so it must push
@@ -903,6 +925,10 @@ export function createGithubRoutes({
                 };
 
                 const result = await writeQueue.run(async () => {
+                    const access = await queuedGithubAccess(expectedAccess, {
+                        requireEnabled: true,
+                        signal,
+                    });
                     if (await deletionBlocksBackup([ascentId])) {
                         const error = new Error('This ascent has a pending or completed deletion.');
                         error.code = 'ascent-delete-pending';
@@ -916,7 +942,7 @@ export function createGithubRoutes({
                 return { ok: true, result };
             });
         } catch (error) {
-            return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
+            return { ok: false, error: writeError(error, 'The backup failed.') };
         }
     };
 
@@ -974,8 +1000,8 @@ export function createGithubRoutes({
             }
             seen.add(ascentId);
         }
-        const access = await connectedGithubClient({ requireEnabled: true });
-        if (access.error) return { ok: false, error: access.error };
+        const expectedAccess = await connectedGithubClient({ requireEnabled: true });
+        if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
         const deletedAscentId = await deletionBlocksBackup([...seen]);
         if (deletedAscentId) {
             return {
@@ -997,6 +1023,7 @@ export function createGithubRoutes({
         }
         try {
             const result = await writeQueue.run(async () => {
+                const access = await queuedGithubAccess(expectedAccess, { requireEnabled: true });
                 const blocked = await deletionBlocksBackup([...seen]);
                 if (blocked) {
                     const error = new Error(`Ascent ${blocked} has a pending or completed deletion.`);
@@ -1010,7 +1037,7 @@ export function createGithubRoutes({
             });
             return { ok: true, result };
         } catch (error) {
-            return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
+            return { ok: false, error: writeError(error, 'The backup failed.') };
         }
     };
 
