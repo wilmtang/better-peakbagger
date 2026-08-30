@@ -134,6 +134,11 @@ export const createPageSettingsClient = ({
             return settings;
         },
         get: () => settings || safeFallback,
+        refresh: () => {
+            if (disposed) return false;
+            ownerWindow.postMessage({ __bpb: true, dir: 'toCS', kind: 'get' }, ownerLocation.origin);
+            return true;
+        },
         set: patch => {
             if (disposed) return null;
             const requestId = nextRequestId++;

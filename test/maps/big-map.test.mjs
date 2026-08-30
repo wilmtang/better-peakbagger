@@ -187,6 +187,41 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     dom.window.close();
 });
 
+test('Full Screen map suspends polling without releasing the bound map from BFCache', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 8 });
+    const { dom, window, messages, leaflet } = fixture;
+    const route = new leaflet.Polyline(
+        [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
+        { color: '#555555', weight: 3 },
+    );
+    window.mapsPlaceholder = new leaflet.MapStub([route]);
+    fixture.evaluate();
+    await waitFor(dom, () => route.options.weight === 8);
+    const layerAddListeners = window.mapsPlaceholder.events.layeradd.length;
+    const settingsGets = () => messages.filter(message =>
+        message.__bpbBigMap === true && message.dir === 'toCS' && message.type === 'get').length;
+    const settingsReplies = () => messages.filter(message =>
+        message.__bpbBigMap === true && message.dir === 'toPage').length;
+    const initialGets = settingsGets();
+    const initialReplies = settingsReplies();
+
+    for (let index = 1; index <= 2; index++) {
+        window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(route.options.weight, 8, 'suspension preserves the enhanced native route');
+        window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(dom, () => settingsGets() === initialGets + index
+            && settingsReplies() === initialReplies + index);
+    }
+
+    assert.equal(window.mapsPlaceholder.events.layeradd.length, layerAddListeners,
+        'history restoration does not bind a second Leaflet listener');
+    assert.equal(window.document.querySelectorAll('#bpb-terrain-toggle').length, 1);
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: false }));
+    assert.equal(route.options.weight, 3, 'ordinary teardown restores the native route style');
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Full Screen single-ascent maps recolor the native track and add a casing', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6, settings: {
         mapRouteColor: '#112233', mapRouteCasingColor: '#eeddcc', mapRouteCasingWidth: 10

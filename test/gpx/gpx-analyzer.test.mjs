@@ -1881,6 +1881,33 @@ test('manual Sun time is one-way and cannot move chart, Leaflet, route identity,
     dom.window.close();
 });
 
+test('persisted history traversal preserves and refreshes the analyzer surface', async () => {
+    const { dom, chartConfig, postedMessages } = await loadElevationAnalyzer(gpx, { withMap: true });
+    const { window } = dom;
+    await waitFor(dom, () => chartConfig() !== null);
+    const panel = window.document.getElementById('bpb-gpx-analysis');
+    const calculator = panel.querySelector('.bpb-sun-calculator');
+    const initialGets = postedMessages.filter(message =>
+        message?.dir === 'toCS' && message.kind === 'get').length;
+
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+    assert.equal(panel.isConnected, true);
+    assert.equal(calculator.isConnected, true);
+    window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => postedMessages.filter(message =>
+        message?.dir === 'toCS' && message.kind === 'get').length === initialGets + 1);
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+    window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => postedMessages.filter(message =>
+        message?.dir === 'toCS' && message.kind === 'get').length === initialGets + 2);
+
+    assert.equal(window.document.querySelectorAll('#bpb-gpx-analysis').length, 1);
+    assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: false }));
+    assert.equal(calculator.isConnected, false, 'ordinary teardown still disposes the calculator');
+    dom.window.close();
+});
+
 test('GPX Sun admits valid timestamps point by point but rejects all-equal generated timing', async t => {
     await t.test('partial timing', async () => {
         const source = `<?xml version="1.0"?><gpx><trk><trkseg>

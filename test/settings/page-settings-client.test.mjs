@@ -123,6 +123,20 @@ test('pre-init reads and optimistic writes use the cleaned fallback', () => {
     dom.window.close();
 });
 
+test('refresh requests an authoritative snapshot until the client is disposed', async () => {
+    const fixture = await setup();
+    const before = fixture.posted.length;
+    assert.equal(fixture.client.refresh(), true);
+    assert.deepEqual(fixture.posted.at(-1), {
+        __bpb: true, dir: 'toCS', kind: 'get',
+    });
+    assert.equal(fixture.posted.length, before + 1);
+    fixture.client.dispose();
+    assert.equal(fixture.client.refresh(), false);
+    assert.equal(fixture.posted.length, before + 1);
+    fixture.dom.window.close();
+});
+
 test('a missing settings acknowledgement rolls back, while its late snapshot remains usable', async () => {
     const fixture = await setup();
     const requestId = fixture.client.set({ units: 'imperial' });

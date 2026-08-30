@@ -98,11 +98,16 @@ const readDownloadText = async download => {
 
 let context;
 let primaryError = null;
+let chromeBfcacheResult = null;
 try {
     context = await chromium.launchPersistentContext(profile, {
         ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
         headless: true,
         ignoreHTTPSErrors: true,
+        // Playwright disables BFCache by default for test determinism. This
+        // verifier explicitly exercises persisted pagehide/pageshow, so remove
+        // only that default launch argument and diagnose any real exclusion.
+        ignoreDefaultArgs: ['--disable-back-forward-cache'],
         viewport: verificationViewport,
         args: [
             `--disable-extensions-except=${dist}`,
@@ -2211,6 +2216,10 @@ try {
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
+    const bfcacheDiagnostics = [];
+    const bfcacheSession = await context.newCDPSession(offPage);
+    await bfcacheSession.send('Page.enable');
+    bfcacheSession.on('Page.backForwardCacheNotUsed', event => bfcacheDiagnostics.push(event));
     await offPage.evaluate(() => {
         window.__bpbSettingsPushes = [];
         window.addEventListener('message', event => {
@@ -2246,6 +2255,82 @@ try {
         && crossTabBridgeState.throughRequestId === 0
         && !crossTabBridgeState.metadataInSettings,
     `the cross-tab settings push was unordered or leaked protocol metadata: ${JSON.stringify(crossTabBridgeState)}`);
+    await settingsProbePage.evaluate(async original => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: original } });
+    }, crossTabSettings.original);
+    await offPage.waitForFunction(expected =>
+        document.getElementById('bpb-map-route-color')?.value === expected,
+    crossTabSettings.original, { timeout: 5000 });
+
+    await offPage.evaluate(() => {
+        const panel = document.getElementById('bpb-gpx-analysis');
+        panel.dataset.bfcacheProbe = 'preserve-this-document';
+        window.__bpbBfcacheProbe = {
+            hidePersisted: null,
+            showPersisted: null,
+            settingsGets: 0,
+        };
+        window.addEventListener('pagehide', event => {
+            window.__bpbBfcacheProbe.hidePersisted = event.persisted;
+        });
+        window.addEventListener('pageshow', event => {
+            if (window.__bpbBfcacheProbe.hidePersisted !== null) {
+                window.__bpbBfcacheProbe.showPersisted = event.persisted;
+            }
+        });
+        window.addEventListener('message', event => {
+            if (event.source === window && event.data?.__bpb === true
+                && event.data?.dir === 'toCS' && event.data?.kind === 'get') {
+                window.__bpbBfcacheProbe.settingsGets++;
+            }
+        });
+    });
+    await offPage.goto(
+        `https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`,
+        { waitUntil: 'load' },
+    );
+    await settingsProbePage.evaluate(async changed => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: changed } });
+    }, crossTabSettings.changed);
+    // A BFCache restoration does not fire DOMContentLoaded again. Waiting for
+    // that event would time out precisely when the persisted path works.
+    await offPage.goBack({ waitUntil: 'commit' });
+    const bfcacheState = await offPage.waitForFunction(expected => {
+        const panel = document.getElementById('bpb-gpx-analysis');
+        const probe = window.__bpbBfcacheProbe;
+        const control = document.getElementById('bpb-map-route-color');
+        return panel && control?.value === expected ? {
+            token: panel.dataset.bfcacheProbe || null,
+            hidePersisted: probe?.hidePersisted ?? null,
+            showPersisted: probe?.showPersisted ?? null,
+            settingsGets: probe?.settingsGets ?? null,
+            panels: document.querySelectorAll('#bpb-gpx-analysis').length,
+            calculators: document.querySelectorAll('.bpb-sun-calculator').length,
+            viewports: document.querySelectorAll('#bpb-map-viewport').length,
+            toggles: document.querySelectorAll('#bpb-terrain-toggle').length,
+        } : false;
+    }, crossTabSettings.changed, { timeout: 15_000 }).then(handle => handle.jsonValue());
+    const restoredFromBfcache = bfcacheState.token === 'preserve-this-document'
+        && bfcacheState.hidePersisted === true
+        && bfcacheState.showPersisted === true
+        && bfcacheState.settingsGets === 1
+        && bfcacheState.panels === 1
+        && bfcacheState.calculators === 1
+        && bfcacheState.viewports === 1
+        && bfcacheState.toggles === 1;
+    chromeBfcacheResult = restoredFromBfcache ? { restored: true } : {
+        restored: false,
+        state: bfcacheState,
+        explanations: bfcacheDiagnostics.flatMap(event => event.notRestoredExplanations || []),
+    };
+    check(restoredFromBfcache || (bfcacheState.token === null
+        && bfcacheState.panels === 1
+        && bfcacheState.calculators === 1
+        && bfcacheState.viewports === 1
+        && bfcacheState.toggles === 1),
+    `Chrome neither restored nor cleanly remounted the analyzer after history traversal: ${JSON.stringify(chromeBfcacheResult)}`);
     await settingsProbePage.evaluate(async original => {
         const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
         await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: original } });
@@ -5130,6 +5215,11 @@ console.log('  - Buddy mirror stays busy and focused during replacement, then re
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and ordered cross-tab bridge pushes update analyzer controls');
+if (chromeBfcacheResult?.restored) {
+    console.log('  - Chrome BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
+} else {
+    console.log(`  - Chrome remounted after history traversal; BFCache resume remains unproven because Chrome excluded the fixture: ${JSON.stringify(chromeBfcacheResult?.explanations || [])}`);
+}
 console.log('  - the saved ascent report/summary split mounts, drags, and persists its bounded ratio');
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
 console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');

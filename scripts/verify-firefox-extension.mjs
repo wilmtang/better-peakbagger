@@ -1334,6 +1334,83 @@ async function main() {
       return document.getElementById('bpb-map-route-color')?.value
         === ${JSON.stringify(crossTabSettings.original)};
     `, 'the restored Firefox analyzer route color');
+        await driver.executeScript(`
+      const panel = document.getElementById('bpb-gpx-analysis');
+      panel.dataset.bfcacheProbe = 'preserve-this-document';
+      window.__bpbBfcacheProbe = {
+        hidePersisted: null,
+        showPersisted: null,
+        settingsGets: 0,
+      };
+      window.addEventListener('pagehide', event => {
+        window.__bpbBfcacheProbe.hidePersisted = event.persisted;
+      });
+      window.addEventListener('pageshow', event => {
+        if (window.__bpbBfcacheProbe.hidePersisted !== null) {
+          window.__bpbBfcacheProbe.showPersisted = event.persisted;
+        }
+      });
+      window.addEventListener('message', event => {
+        if (event.source === window && event.data?.__bpb === true
+            && event.data?.dir === 'toCS' && event.data?.kind === 'get') {
+          window.__bpbBfcacheProbe.settingsGets++;
+        }
+      });
+    `);
+        await driver.get(`https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`);
+        const awayHandle = await driver.getWindowHandle();
+        await driver.switchTo().newWindow('tab');
+        await driver.get(optionsUrl);
+        await driver.executeAsyncScript((changed, done) => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+                api.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, mapRouteColor: changed },
+                })).then(() => done(true), error => done(String(error)));
+        }, crossTabSettings.changed);
+        await driver.close();
+        await driver.switchTo().window(awayHandle);
+        await driver.navigate().back();
+        const firefoxBfcacheState = await waitForScript(driver, `
+      const expected = ${JSON.stringify(crossTabSettings.changed)};
+      const panel = document.getElementById('bpb-gpx-analysis');
+      const probe = window.__bpbBfcacheProbe;
+      const control = document.getElementById('bpb-map-route-color');
+      return panel && control?.value === expected ? {
+        token: panel.dataset.bfcacheProbe || null,
+        hidePersisted: probe?.hidePersisted ?? null,
+        showPersisted: probe?.showPersisted ?? null,
+        settingsGets: probe?.settingsGets ?? null,
+        panels: document.querySelectorAll('#bpb-gpx-analysis').length,
+        calculators: document.querySelectorAll('.bpb-sun-calculator').length,
+        viewports: document.querySelectorAll('#bpb-map-viewport').length,
+        toggles: document.querySelectorAll('#bpb-terrain-toggle').length,
+      } : false;
+    `, 'the exact Firefox BFCache analyzer restoration', 15_000);
+        assertState(firefoxBfcacheState.token === 'preserve-this-document'
+            && firefoxBfcacheState.hidePersisted === true
+            && firefoxBfcacheState.showPersisted === true
+            && firefoxBfcacheState.settingsGets === 1
+            && firefoxBfcacheState.panels === 1
+            && firefoxBfcacheState.calculators === 1
+            && firefoxBfcacheState.viewports === 1
+            && firefoxBfcacheState.toggles === 1,
+        'Firefox did not restore the exact BFCache analyzer surface once', firefoxBfcacheState);
+        await driver.switchTo().newWindow('tab');
+        await driver.get(optionsUrl);
+        await driver.executeAsyncScript((original, done) => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+                api.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, mapRouteColor: original },
+                })).then(() => done(true), error => done(String(error)));
+        }, crossTabSettings.original);
+        await driver.close();
+        await driver.switchTo().window(awayHandle);
+        await waitForScript(driver, `
+      return document.getElementById('bpb-map-route-color')?.value
+        === ${JSON.stringify(crossTabSettings.original)};
+    `, 'the post-BFCache Firefox route color restoration');
         const firefoxSunHeaderHeights = await driver.executeScript(`
       const calculator = document.querySelector('.bpb-sun-calculator');
       const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
@@ -2390,6 +2467,7 @@ async function main() {
         console.log('  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch');
         console.log('  - four native Buddy actions refreshed/synced custom favorites under both removal policies');
         console.log('  - ordered cross-tab settings pushes updated and restored the analyzer controls');
+        console.log('  - Firefox BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
         console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
         console.log('  - the full Capitol GPX rendered 971 points per chart series with the corrected metrics and zero breaks');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');

@@ -24,6 +24,8 @@ export const createMapViewport = ({
     onPersist,
     onInvalidated = () => {},
     getResizeBoundary = element => element?.parentElement,
+    ownerWindow = globalThis.window,
+    ResizeObserver: Observer = globalThis.ResizeObserver,
 } = {}) => {
     let current = {
         width: clamp(size.width, bounds.minWidth, bounds.maxWidth),
@@ -34,7 +36,11 @@ export const createMapViewport = ({
     let iframe = null;
     const originalFrameStyles = new WeakMap();
     let invalidateFrame = null;
+    let cancelInvalidate = null;
     let persistTimer = null;
+    let resizeObserver = null;
+    let drag = null;
+    let disposed = false;
 
     const renderedWidth = () => {
         if (!element) return current.width;
@@ -48,9 +54,10 @@ export const createMapViewport = ({
     };
 
     const scheduleInvalidate = () => {
-        if (!iframe || invalidateFrame !== null) return;
+        if (disposed || !iframe || invalidateFrame !== null) return;
         const invalidate = () => {
             invalidateFrame = null;
+            cancelInvalidate = null;
             try {
                 const map = iframe.contentWindow && iframe.contentWindow.mapsPlaceholder;
                 if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
@@ -59,9 +66,13 @@ export const createMapViewport = ({
             // and the viewport size can change as the map settles or resizes.
             onInvalidated();
         };
-        invalidateFrame = typeof requestAnimationFrame === 'function'
-            ? requestAnimationFrame(invalidate)
-            : setTimeout(invalidate, 0);
+        if (typeof requestAnimationFrame === 'function') {
+            invalidateFrame = requestAnimationFrame(invalidate);
+            cancelInvalidate = () => cancelAnimationFrame(invalidateFrame);
+        } else {
+            invalidateFrame = setTimeout(invalidate, 0);
+            cancelInvalidate = () => clearTimeout(invalidateFrame);
+        }
     };
 
     const applySize = next => {
@@ -97,7 +108,7 @@ export const createMapViewport = ({
     };
 
     const attach = nextIframe => {
-        if (!nextIframe || !nextIframe.parentElement) return element;
+        if (disposed || !nextIframe || !nextIframe.parentElement) return element;
         const previousIframe = iframe;
         if (previousIframe && previousIframe !== nextIframe && previousIframe.parentElement === element) {
             previousIframe.style.cssText = originalFrameStyles.get(previousIframe) || '';
@@ -162,7 +173,6 @@ export const createMapViewport = ({
         });
         element.append(handle);
 
-        let drag = null;
         handle.addEventListener('pointerdown', event => {
             if (event.button !== 0) return;
             const boundary = getResizeBoundary(element);
@@ -222,12 +232,33 @@ export const createMapViewport = ({
         });
 
         applySize(current);
-        window.addEventListener('resize', scheduleInvalidate);
-        if (typeof ResizeObserver === 'function') new ResizeObserver(() => {
-            syncHandleLabel();
-            scheduleInvalidate();
-        }).observe(element);
+        ownerWindow?.addEventListener('resize', scheduleInvalidate);
+        if (typeof Observer === 'function') {
+            resizeObserver = new Observer(() => {
+                syncHandleLabel();
+                scheduleInvalidate();
+            });
+            resizeObserver.observe(element);
+        }
         return element;
+    };
+
+    const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        drag = null;
+        if (persistTimer !== null) {
+            clearTimeout(persistTimer);
+            persistTimer = null;
+        }
+        if (invalidateFrame !== null) {
+            cancelInvalidate?.();
+            invalidateFrame = null;
+            cancelInvalidate = null;
+        }
+        ownerWindow?.removeEventListener('resize', scheduleInvalidate);
+        resizeObserver?.disconnect();
+        resizeObserver = null;
     };
 
     attach(initialIframe);
@@ -238,6 +269,7 @@ export const createMapViewport = ({
         attach,
         applySize,
         scheduleInvalidate,
+        dispose,
     };
 };
 

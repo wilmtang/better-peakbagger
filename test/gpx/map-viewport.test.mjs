@@ -215,3 +215,51 @@ test('with no map frame on the page the viewport is inert but still callable', (
         dom.window.close();
     }
 });
+
+test('dispose releases the resize observer, window listener, and pending work', async () => {
+    const dom = new JSDOM('<!doctype html><body><p><iframe src="MasterMap.aspx"></iframe></p></body>', {
+        pretendToBeVisual: true,
+    });
+    const iframe = dom.window.document.querySelector('iframe');
+    const previousDocument = globalThis.document;
+    const previousWindow = globalThis.window;
+    globalThis.document = dom.window.document;
+    globalThis.window = dom.window;
+    const map = { invalidateCalls: 0, invalidateSize() { this.invalidateCalls++; } };
+    Object.defineProperty(iframe, 'contentWindow', {
+        configurable: true, value: { mapsPlaceholder: map },
+    });
+    let observed = null;
+    let disconnected = 0;
+    let observerCallback = null;
+    class Observer {
+        constructor(callback) { observerCallback = callback; }
+        observe(element) { observed = element; }
+        disconnect() { disconnected++; }
+    }
+    const invalidated = [];
+    const viewport = MapViewport.create({
+        iframe,
+        size: { width: 600, height: 400 },
+        bounds: BOUNDS,
+        railHeight: 18,
+        persistDelayMs: 20,
+        onPersist: () => {},
+        onInvalidated: () => invalidated.push(true),
+        ownerWindow: dom.window,
+        ResizeObserver: Observer,
+    });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    invalidated.length = 0;
+    viewport.dispose();
+    viewport.dispose();
+    dom.window.dispatchEvent(new dom.window.Event('resize'));
+    if (observed) observerCallback?.();
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    assert.equal(disconnected, 1);
+    assert.deepEqual(invalidated, [], 'disposed viewport schedules no more Leaflet work');
+    globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
+    dom.window.close();
+});

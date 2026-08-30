@@ -24,6 +24,7 @@ import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 import tzlookup from 'tz-lookup';
 
 (() => {
@@ -683,10 +684,28 @@ import tzlookup from 'tz-lookup';
         window.addEventListener('dragend', resetDropCue);
         window.addEventListener('drop', resetDropCue);
         document.getElementById('GPXRemove')?.addEventListener('click', () => restoreNative());
-        window.addEventListener('pagehide', () => {
-            resetDropCue();
-            restoreNative();
-        }, { once: true });
+        PageLifecycle.create({
+            onSuspend: () => {
+                requestToken++;
+                selectedFile = null;
+                resetDropCue();
+                if (button) setBusy('Restoring…');
+                const generation = ++selectionGeneration;
+                void ext.runtime.sendMessage({
+                    type: 'GPX_PROCESS_INVALIDATE',
+                    ...selectionMessage(generation, newSelectionNonce()),
+                }).catch(() => {});
+            },
+            onResume: () => {
+                const file = nativeGpxFile();
+                if (file) void handleFileChange(file);
+                else restoreNative();
+            },
+            onDispose: () => {
+                resetDropCue();
+                restoreNative();
+            },
+        });
     };
 
     autofillDate();

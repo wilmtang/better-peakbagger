@@ -15,6 +15,7 @@ import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js'
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 
 // Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
 // dependencies are ES imports and the module publishes no globals.
@@ -802,10 +803,25 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
     frameLifecycle.subscribe(resetFrameState);
     frameLifecycle.start();
     startBinding();
-    window.addEventListener('pagehide', () => {
-        stopBinding();
-        if (terrainCoordinator?.isOpen()) terrainCoordinator.reset();
-        releaseActiveMap();
-        frameLifecycle.dispose();
-    }, { once: true });
+    PageLifecycle.create({
+        onSuspend: () => {
+            stopBinding();
+            if (terrainCoordinator?.isOpen() && !terrainCoordinator.isActive()) {
+                terrainCoordinator.reset();
+            }
+        },
+        onResume: () => {
+            frameLifecycle.refresh();
+            startBinding();
+            terrainCoordinator?.update();
+            terrainCoordinator?.position();
+            window.postMessage({ __bpbBigMap: true, dir: 'toCS', type: 'get' }, location.origin);
+        },
+        onDispose: () => {
+            stopBinding();
+            if (terrainCoordinator?.isOpen()) terrainCoordinator.reset();
+            releaseActiveMap();
+            frameLifecycle.dispose();
+        },
+    });
 })();

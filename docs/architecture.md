@@ -150,6 +150,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
+| Peakbagger document lifecycle | `src/ui/page-lifecycle.js` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
@@ -259,6 +260,15 @@ idle/loading/active lifecycle, timeout recovery, camera handoff, toggle and
 compass state. Subject validation and init-payload construction stay in the
 owning surface so sharing lifecycle mechanics does not weaken page-specific
 eligibility checks.
+
+The analyzer, Full Screen map, Peak map, and ascent-upload processor also
+compose `src/ui/page-lifecycle.js`. A persisted `pagehide` is suspension for the
+browser back/forward cache: durable UI and subscriptions stay mounted while
+transient deadlines and pending capture work pause. Persisted `pageshow`
+revalidates current iframe/document identity and refreshes settings. Only a
+non-persisted page exit performs terminal disposal. `src/gpx/map-viewport.js`
+owns and releases its window resize listener, observer, timer, and scheduled
+invalidation as part of that terminal path.
 
 `src/capture/provider-page.js` is also MAIN-world code, but it is injected only after a
 toolbar click into the active Garmin or Strava page. Its page realm owns the

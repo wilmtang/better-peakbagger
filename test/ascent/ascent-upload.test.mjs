@@ -456,6 +456,27 @@ test('clearing, replacing, removing, or navigating invalidates a delayed A resul
     }
 });
 
+test('persisted history traversal keeps and revalidates the chosen GPX enhancement', async () => {
+    const dom = await loadEditor();
+    await chooseGpx(dom, { name: 'cached.gpx' });
+    const originalButton = processButton(dom);
+    assert.ok(originalButton);
+
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+    assert.equal(originalButton.isConnected, true);
+    assert.equal(originalButton.querySelector('.bpb-process-label').textContent, 'Restoring…');
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => processButton(dom)?.querySelector('.bpb-process-label').textContent === 'Process');
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => processButton(dom)?.querySelector('.bpb-process-label').textContent === 'Process');
+
+    assert.equal(dom.window.document.querySelectorAll('.bpb-process-button').length, 1);
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: false }));
+    assert.equal(processButton(dom), null);
+    dom.window.close();
+});
+
 test('file selection sends only an opaque nonce and fails closed with a dead worker', async () => {
     const dom = await loadEditor();
     let reads = 0;

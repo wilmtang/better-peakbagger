@@ -26,6 +26,7 @@ import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js'
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { units as Units } from '../ui/units.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 import { mapViewport as MapViewport } from './map-viewport.js';
 import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js';
 import { mapOverlay as MapOverlay } from './map-overlay.js';
@@ -905,16 +906,40 @@ const run = async () => {
         };
         frameLifecycle.subscribe(resetFrameConsumers);
         frameLifecycle.start();
-        window.addEventListener('pagehide', () => {
-            clearCoordinateFeedbackTimer();
-            clearHoverSunPreview();
-            sunState.resetSubject();
-            sunCalculator?.dispose();
-            sunCalculator = null;
-            BPB.dispose();
-            overlay.dispose();
-            frameLifecycle.dispose();
-        }, { once: true });
+        PageLifecycle.create({
+            onSuspend: () => {
+                clearCoordinateFeedbackTimer();
+                clearHoverSunPreview();
+                // A loading frame owns a deadline that cannot advance while
+                // the document is frozen. Discard that transient attempt; an
+                // already-active 3D surface remains intact in the cached DOM.
+                if (terrainCoordinator.isOpen() && !terrainCoordinator.isActive()) {
+                    terrainCoordinator.reset();
+                }
+            },
+            onResume: () => {
+                BPB.refresh();
+                const frame = frameLifecycle.refresh();
+                if (frame) viewport.attach(frame);
+                scheduleMapLayerSync();
+                scheduleRouteOverlay();
+                scheduleMapInvalidate();
+                terrainCoordinator.update();
+                terrainCoordinator.position();
+            },
+            onDispose: () => {
+                clearCoordinateFeedbackTimer();
+                clearHoverSunPreview();
+                if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
+                sunState.resetSubject();
+                sunCalculator?.dispose();
+                sunCalculator = null;
+                BPB.dispose();
+                overlay.dispose();
+                frameLifecycle.dispose();
+                viewport.dispose();
+            },
+        });
 
         // Chart.js runs `onHover` only while the pointer is inside the plot
         // rectangle. On exit, restore the point the user deliberately selected

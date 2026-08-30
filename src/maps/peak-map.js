@@ -16,13 +16,14 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
 import { mountainTime as MountainTime } from '../time/mountain-time.js';
 import { sunState as SunState } from '../sun/sun-state.js';
 import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
 (() => {
     'use strict';
 
-    const iframe = document.querySelector('iframe#Gmap');
+    let iframe = document.querySelector('iframe#Gmap');
     if (!iframe || !iframe.parentNode) return;
 
     const fullMapLink = Array.from(document.querySelectorAll('a[href]')).find(link => {
@@ -303,19 +304,46 @@ import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
         }
     });
 
-    window.addEventListener('resize', () => terrainCoordinator.position());
-    iframe.addEventListener('load', () => {
+    const handleIframeLoad = () => {
         peaksClient = null;
         peaksClientResolved = false;
         terrainCoordinator.position();
-    });
+    };
+    window.addEventListener('resize', () => terrainCoordinator.position());
+    iframe.addEventListener('load', handleIframeLoad);
 
     terrainCoordinator.update();
     sunCalculator?.setTheme(effectiveTheme());
-    window.addEventListener('pagehide', () => {
-        sunState.resetSubject();
-        sunCalculator?.dispose();
-        sunCalculator = null;
-    }, { once: true });
+    PageLifecycle.create({
+        onSuspend: () => {
+            if (terrainCoordinator.isOpen() && !terrainCoordinator.isActive()) {
+                terrainCoordinator.reset();
+            }
+        },
+        onResume: () => {
+            const nextIframe = document.querySelector('iframe#Gmap');
+            if (nextIframe && nextIframe !== iframe) {
+                if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
+                iframe.removeEventListener('load', handleIframeLoad);
+                iframe.style.visibility = 'visible';
+                iframe.removeAttribute('aria-hidden');
+                iframe = nextIframe;
+                if (iframe.parentElement !== mount) mount.append(iframe);
+                iframe.addEventListener('load', handleIframeLoad);
+            }
+            handleIframeLoad();
+            renderSun(sunState.get());
+            terrainCoordinator.update();
+            terrainCoordinator.position();
+            window.postMessage({ __bpbPeakMap: true, dir: 'toCS', type: 'get' }, location.origin);
+        },
+        onDispose: () => {
+            if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
+            iframe.removeEventListener('load', handleIframeLoad);
+            sunState.resetSubject();
+            sunCalculator?.dispose();
+            sunCalculator = null;
+        },
+    });
     window.postMessage({ __bpbPeakMap: true, dir: 'toCS', type: 'get' }, location.origin);
 })();

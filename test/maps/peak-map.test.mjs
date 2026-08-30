@@ -183,6 +183,41 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     dom.window.close();
 });
 
+test('Peak map survives repeated persisted traversal and adopts a replaced native frame', async () => {
+    const { dom, window, messages } = loadPeakMap();
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.dataset.theme === 'dark');
+    const mount = window.document.getElementById('bpb-map-viewport');
+    const calculator = window.document.querySelector('.bpb-sun-calculator');
+    const original = window.document.getElementById('Gmap');
+    const settingsGets = () => messages.filter(message =>
+        message.__bpbPeakMap === true && message.dir === 'toCS' && message.type === 'get').length;
+    const settingsReplies = () => messages.filter(message =>
+        message.__bpbPeakMap === true && message.dir === 'toPage').length;
+    const initialGets = settingsGets();
+    const initialReplies = settingsReplies();
+
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+    const replacement = window.document.createElement('iframe');
+    replacement.id = 'Gmap';
+    replacement.src = original.src;
+    original.replaceWith(replacement);
+    window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => replacement.parentElement === mount
+        && settingsGets() === initialGets + 1 && settingsReplies() === initialReplies + 1);
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+    window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => settingsGets() === initialGets + 2
+        && settingsReplies() === initialReplies + 2);
+
+    assert.equal(calculator.isConnected, true);
+    assert.equal(window.document.querySelectorAll('#bpb-terrain-toggle').length, 1);
+    assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: false }));
+    assert.equal(calculator.isConnected, false);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Peak-page 3D loading can be canceled and renderer failures are announced', async () => {
     const { dom, window, messages } = loadPeakMap();
     const toggle = window.document.getElementById('bpb-terrain-toggle');
