@@ -58,7 +58,7 @@ export const ascentDeletion = {
         if (preparing) return;
         preparing = true;
 
-        void Settings.get().then(async current => {
+        void Settings.requireCurrent().then(async current => {
             if (!current.enableGithubBackup || !current.removeGithubBackupOnDelete) {
                 submitNative(submitter);
                 return;

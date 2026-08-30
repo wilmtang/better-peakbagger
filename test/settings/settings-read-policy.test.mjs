@@ -17,10 +17,9 @@ const FAIL_SOFT = Object.freeze({
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
-    'src/ascent/ascent-delete.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off GitHub deletion mirror' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'display', reason: 'render filter preferences' }],
     'src/background/github-routes.js': [
-        { count: 13, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
+        { count: 9, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
         { count: 1, kind: 'display', reason: 'render the default-off photo-recovery status' },
     ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
@@ -34,9 +33,12 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'src/ascent/ascent-delete.js': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
     'src/ascent/ascent-upload.js': [{ count: 1, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
     'src/background/background.js': [{ count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' }],
-    'src/background/github-routes.js': [{ count: 1, kind: 'preservation', reason: 'do not replace a remote backup with defaults' }],
+    'src/background/github-routes.js': [
+        { count: 3, kind: 'preservation', reason: 'keep GitHub writes and coordinated deletion fail closed on unreadable settings' },
+    ],
     'src/background/settings-file-routes.js': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },
     ],

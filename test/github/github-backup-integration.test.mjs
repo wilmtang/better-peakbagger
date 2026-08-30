@@ -1313,6 +1313,93 @@ test('deletion intent is strict, same-tab scoped, and cancelled when the ascent 
     assert.equal(worker.githubCalls.length, 0);
 });
 
+test('every deletion phase preserves intent when authoritative settings are unreadable', async () => {
+    const aid = 7654321;
+    const tabId = 73;
+    const editSender = {
+        tab: { id: tabId },
+        url: `https://www.peakbagger.com/climber/ascentedit.aspx?aid=${aid}`,
+    };
+    const listSender = {
+        tab: { id: tabId },
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999',
+    };
+    const pendingSession = () => ({
+        bpbGithubAscentDeleteIntents: {
+            [aid]: {
+                aid,
+                sourceTabId: tabId,
+                state: 'pending',
+                createdAt: Date.now(),
+                expiresAt: Date.now() + 30 * 60 * 1000,
+            },
+        },
+    });
+    const settings = { enableGithubBackup: true, removeGithubBackupOnDelete: true };
+    const noGithub = () => { throw new Error('GitHub must not be contacted'); };
+
+    const intentWorker = createWorker({
+        settings,
+        auth: AUTH,
+        github: noGithub,
+        syncReadFailures: [new Error('intent settings read failed')],
+    });
+    const intentFailure = structuredClone(await intentWorker.send({
+        type: 'GITHUB_ASCENT_DELETE_INTENT', aid,
+    }, editSender));
+    assert.equal(intentFailure.error.code, 'settings-unavailable');
+    assert.equal(intentWorker.session.bpbGithubAscentDeleteIntents, undefined,
+        'an unreadable gate must not fabricate a deletion intent');
+
+    const pendingWorker = createWorker({
+        settings,
+        auth: AUTH,
+        github: noGithub,
+        session: pendingSession(),
+        syncReadFailures: [new Error('pending settings read failed')],
+    });
+    const pendingFailure = structuredClone(await pendingWorker.send({
+        type: 'GITHUB_ASCENT_DELETE_PENDING',
+    }, listSender));
+    assert.equal(pendingFailure.error.code, 'settings-unavailable');
+    assert.equal(pendingWorker.session.bpbGithubAscentDeleteIntents[aid].state, 'pending');
+
+    const confirmWorker = createWorker({
+        settings,
+        auth: AUTH,
+        github: noGithub,
+        session: pendingSession(),
+        syncReadFailures: [new Error('confirm settings read failed')],
+    });
+    const confirmFailure = structuredClone(await confirmWorker.send({
+        type: 'GITHUB_ASCENT_DELETE_CONFIRM',
+        aid,
+        climberId: 900001,
+        allAscentIds: [],
+        pageComplete: true,
+    }, listSender));
+    assert.equal(confirmFailure.error.code, 'settings-unavailable');
+    assert.equal(confirmWorker.session.bpbGithubAscentDeleteIntents[aid].state, 'pending');
+
+    const queuedWorker = createWorker({
+        settings,
+        auth: AUTH,
+        github: noGithub,
+        session: pendingSession(),
+        syncReadFailures: [null, null, new Error('queued settings read failed')],
+    });
+    const queuedFailure = structuredClone(await queuedWorker.send({
+        type: 'GITHUB_ASCENT_DELETE_CONFIRM',
+        aid,
+        climberId: 900001,
+        allAscentIds: [],
+        pageComplete: true,
+    }, listSender));
+    assert.equal(queuedFailure.error.code, 'settings-unavailable');
+    assert.equal(queuedWorker.session.bpbGithubAscentDeleteIntents[aid].state, 'pending');
+    assert.equal(queuedWorker.githubCalls.length, 0);
+});
+
 test('a deletion tombstone clears pending save data and prevents backup resurrection', async () => {
     const aid = 7654321;
     const tabId = 81;

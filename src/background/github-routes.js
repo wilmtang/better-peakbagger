@@ -548,6 +548,18 @@ export function createGithubRoutes({
             if (positiveAscentId(record?.identity?.ascentId) === ascentId) delete snapshots[key];
         }
     });
+    const deletionSettings = async () => {
+        try {
+            return { settings: await Settings.requireCurrent() };
+        } catch {
+            return {
+                error: {
+                    code: 'settings-unavailable',
+                    message: 'Deletion settings could not be read. Reload the page and try again.',
+                },
+            };
+        }
+    };
 
     // Phase one: intercept only Peakbagger's two native Delete submitters and
     // durably record intent before the destructive POST is allowed to proceed.
@@ -557,7 +569,9 @@ export function createGithubRoutes({
         if (!ascentId || !isAscentEditSender(sender, ascentId)) {
             return { ok: false, error: { code: 'forbidden' } };
         }
-        const settings = await Settings.get();
+        const deletionGate = await deletionSettings();
+        if (deletionGate.error) return { ok: false, error: deletionGate.error };
+        const settings = deletionGate.settings;
         if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
             return { ok: false, error: { code: 'disabled' } };
         }
@@ -585,7 +599,9 @@ export function createGithubRoutes({
     // blocked without repeating the deletion.
     const pendingAscentDeletions = async sender => {
         if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const settings = await Settings.get();
+        const deletionGate = await deletionSettings();
+        if (deletionGate.error) return { ok: false, error: deletionGate.error };
+        const settings = deletionGate.settings;
         if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
             return { ok: true, aids: [] };
         }
@@ -616,7 +632,9 @@ export function createGithubRoutes({
         if (!record || record.state !== 'pending' || record.sourceTabId !== senderTabId(sender)) {
             return { ok: false, error: { code: 'no-delete-intent' } };
         }
-        const settings = await Settings.get();
+        const deletionGate = await deletionSettings();
+        if (deletionGate.error) return { ok: false, error: deletionGate.error };
+        const settings = deletionGate.settings;
         if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
             return { ok: false, error: { code: 'disabled' } };
         }
@@ -679,8 +697,19 @@ export function createGithubRoutes({
         if (typeof resolveGithubAccess === 'function') {
             return resolveGithubAccess({ requireEnabled, signal });
         }
-        if (requireEnabled && !(await Settings.get()).enableGithubBackup) {
-            return { error: { code: 'disabled' } };
+        if (requireEnabled) {
+            let settings;
+            try {
+                settings = await Settings.requireCurrent();
+            } catch {
+                return {
+                    error: {
+                        code: 'settings-unavailable',
+                        message: 'GitHub backup settings could not be read. Reload the page and try again.',
+                    },
+                };
+            }
+            if (!settings.enableGithubBackup) return { error: { code: 'disabled' } };
         }
         const snapshot = await GithubAuth.authStore.readSnapshot();
         const auth = snapshot.auth;

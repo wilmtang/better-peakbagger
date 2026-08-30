@@ -14,6 +14,7 @@ const loadDeleteForm = async ({
     confirm = true,
     intentResponse = { ok: true },
     draft = null,
+    settingsReadError = null,
 } = {}) => {
     const messages = [];
     const alerts = [];
@@ -25,6 +26,9 @@ const loadDeleteForm = async ({
         local: draft ? { [DRAFT_KEY]: draft } : {},
         bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'],
         prepare: current => {
+            if (settingsReadError) {
+                current.chrome.storage.sync.get = async () => { throw settingsReadError; };
+            }
             const form = current.window.document.getElementById('Form1');
             for (const id of ['DeleteButton', 'DeleteButton2']) {
                 const input = current.window.document.createElement('input');
@@ -120,6 +124,21 @@ test('the native delete remains uninterrupted when deletion mirroring is off', a
     await waitFor(dom, () => nativeSubmissions.length === 1);
     assert.deepEqual(nativeSubmissions, [{ id: 'DeleteButton', allowed: true }]);
     assert.equal(messages.some(message => message.type === 'GITHUB_ASCENT_DELETE_INTENT'), false);
+    dom.window.close();
+});
+
+test('an unreadable deletion setting keeps Peakbagger unchanged and explains recovery', async () => {
+    const { dom, button, messages, alerts, nativeSubmissions } = await loadDeleteForm({
+        settingsReadError: new Error('sync settings unavailable'),
+    });
+
+    assert.equal(submit(dom, button), false);
+    await waitFor(dom, () => alerts.length === 1);
+    assert.deepEqual(nativeSubmissions, []);
+    assert.equal(messages.some(message => message.type === 'GITHUB_ASCENT_DELETE_INTENT'), false);
+    assert.match(alerts[0], /Peakbagger was not changed/);
+    assert.match(alerts[0], /Reload the page and try again/);
+    assert.equal(dom.window.document.activeElement, button);
     dom.window.close();
 });
 
