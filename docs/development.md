@@ -225,6 +225,12 @@ The reload marker (`dist/.better-peakbagger-reload`) exists only in watch mode.
 It is an internal development coordination file, not extension runtime state;
 one-off and release builds replace `dist/` and do not package it.
 
+The managed Firefox loop derives its Firefox-specific source in a sibling
+candidate directory, validates that complete generation, and publishes it with
+the same rollback-capable directory swap as `dist/`. A failed copy, manifest
+transformation, validation, or publication leaves the prior tree and reload
+token unchanged.
+
 ## How the build works
 
 `scripts/build-config.mjs` is the **single source of truth** for how the

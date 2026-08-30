@@ -350,7 +350,7 @@ flowchart LR
     file["User-selected GPX<br/>on ascentedit.aspx"]
     parse["Parse on the page<br/>source XML remains there"]
     analyze["background analyzeTrack()<br/>validate + complete corridor lookup<br/>encounter scoring + derived fields"]
-    job["storage.session job<br/>30-minute TTL"]
+    job["storage.session metadata + GPX generation<br/>30-minute TTL"]
     drafts["Identity-bound ascent drafts<br/>cleaned GPX + Preview once"]
     review["User reviews and clicks Save"]
 
@@ -524,9 +524,15 @@ to Peakbagger's form.
 ### 7. Draft identity, ordering, and exactly-once Preview
 
 Capture jobs and prepared drafts live in `storage.session` and expire after 30
-minutes. Draft delivery requires a matching sender tab, job, peak, and climber.
-Every selected draft is registered before its tab navigates, closing the race
-between content-script startup and worker state.
+minutes. Bounded mutable job metadata holds only a generation-specific payload
+reference; the immutable reduced GPX lives under its own session key. Payload
+publication precedes the metadata pointer, failed publication rolls back, and
+startup/alarm reconciliation migrates legacy embedded payloads, rejects missing
+generations, and removes orphans. Cancellation, expiry, replacement, source
+closure, selection invalidation, and successful Preview consumption all remove
+the owned payload. Draft delivery requires a matching sender tab, job, peak,
+and climber. Every selected draft is registered before its tab navigates,
+closing the race between content-script startup and worker state.
 
 Selection, opening, Preview completion, replacement, and cleanup share one
 per-source lifecycle queue and generation. Opening first enters a persisted
@@ -1592,7 +1598,7 @@ comparison, first-visit compromises, and lockstep invariant are in
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
 | `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; credentials leave it only for their explicit manual settings-file export, favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
-| `storage.session` | Capture jobs, prepared drafts, pending report-save intents, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/report-save/backup/delete records expire after 30 minutes |
+| `storage.session` | Capture-job metadata and generation-scoped reduced GPX payloads, prepared drafts, pending report-save intents, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/report-save/backup/delete records expire after 30 minutes |
 | IndexedDB `betterPeakbaggerPhotos` | Photo catalog, annotation projects, original/thumbnail blobs, upload journal, ImgBB delete URLs, tombstones | Authoritative device-local photo library; deleted assets are eligible for pruning after 30 days, tombstones remain |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |

@@ -491,6 +491,9 @@ best-effort `storage.local` LRU index. Important properties:
   without aborting the others, and the final cancellation aborts transport;
 - writes are serialized, validated tiles larger than the selected total cache
   budget are not stored, and oldest entries are trimmed first;
+- byte totals and LRU order update incrementally, while dirty index generations
+  are coalesced into bounded checkpoints; `close()` waits for active reads and
+  reports whether the final dirty generation persisted;
 - quota pressure, index-write failure, or browser eviction never makes terrain
   fail if the network tile itself is usable;
 - only DEM bytes use this cache. Raster and vector imagery follow normal

@@ -1,10 +1,12 @@
 # Code, performance, and UX audit plan — 2026-08-29
 
-Status: **active audit; remediation not begun.** This is a documentation-only
-plan. No runtime remediation has been implemented or approved by this file.
+Status: **implemented and archived on 2026-08-30.** All 17 findings received
+runtime remediation in focused commits. The closure ledger distinguishes the
+verified code and packaged-browser evidence from four release proof gaps that
+require live services, physical hardware, assistive technology, or platform CI.
 
 Baseline: clean local `main` at `452a394e`, 60 commits ahead of `origin/main`.
-The completed [2026-08-19 code/performance/UX audit](../archive/codebase-audit-2026-08-19.md)
+The completed [2026-08-19 code/performance/UX audit](codebase-audit-2026-08-19.md)
 was reconciled before opening anything here. Its 14 findings remain closed
 except where current source adds a new route outside a formerly closed
 invariant. This pass found seven P1 findings, seven P2 findings, and three P3
@@ -724,18 +726,98 @@ not “fixed and verified” merely because its unit tests are green.
 
 ### Fixed and verified
 
-None. This audit changed documentation only; F1–F17 remain open.
+- **F1** (`62c63af`): queued ascent deletion, individual backup, and profile
+  backup re-resolve authorization and repository identity at execution. Queue
+  interleavings cover disconnect, repository replacement, restart, and read
+  failure without destructive live writes.
+- **F2** (`1794c44`): pre-ID snapshots stay source-tab scoped; only an
+  unambiguous positive ascent ID may recover across tabs. Collision, reload,
+  replacement, expiry, restart, and later-ID cases are covered.
+- **F3** (`269c326`): native deletion and every worker phase require current
+  settings. Rejected reads preserve the page and intent with actionable error
+  copy; explicit cleanup-off remains covered.
+- **F4** (`0a646ec`): photo returns bind to URL, report identity, frame, and
+  document generation, with navigation/reload invalidation and receiver-side
+  rejection.
+- **F6** (`7f1c53e`): analysis caps Peakbagger structures, spatially indexes
+  route edges, reuses shared metrics, and yields under abort and monotonic CPU
+  budgets. The scale suite covers 20,000 points plus 5,000 peaks and exact
+  result equivalence.
+- **F7** (`8249cfb`): report draft-manager and photo-editor navigation require
+  one-use, document-bound trusted-action capabilities. Synthetic activation,
+  replay, wrong action, and wrong document fail before tab creation.
+- **F8** (`d6e5400`, `2e078a5`): transport revisions order acknowledgements,
+  storage pushes, optimistic patches, rejection, timeout, and disposal. Real
+  cross-tab analyzer updates passed in both packaged browsers.
+- **F9** (`71066f1`): the Moon model retains every horizon interval overlapping
+  the mountain-local civil date, selects active/upcoming/previous intervals at
+  the chosen instant, and distinguishes polar states. DST, International Date
+  Line, polar, and no-event vectors pass; visible zone-aware rise/set context,
+  live semantics, and fixed light/dark responsive geometry passed hidden Chrome
+  and Firefox inspection. The nearest-eighth phase and same-instant Moon
+  position calculations were separately re-audited and remained correct.
+- **F10** (`310e40a`): analyzer, map, and local-upload surfaces suspend and
+  restore through persisted `pagehide`/`pageshow`, with terminal disposal kept
+  separate. Real HTTPS fixtures preserved the exact document and one listener
+  set through back/forward cache in both packaged browsers.
+- **F12** (`ec57887`): ARIA copy and resize baselines use measured visible map
+  content while retaining a separate stored preference. First-key/pointer
+  response, short/tall geometry, persistence, and growth restoration passed in
+  Chrome and Firefox.
+- **F13** (`9214fa3`, `b2a5b3d`): extrema-aware chart sampling is bounded by
+  canvas width, retains endpoints, group boundaries, and selection, and reuses
+  the live chart without rebuild animation. A real 20,000-point analyzer passed
+  point and frame/resize budgets at narrow and wide packaged-browser viewports.
+- **F16** (`b3212c2`): terrain byte/LRU state is incremental and dirty index
+  generations are coalesced with observable close/flush behavior. The 1,000-tile
+  storage/byte budget passed, as did hidden hardware-rendered terrain checks on
+  Apple M3 Pro Metal in Chrome and hardware WebGL in Firefox.
+- **F17** (`4ed7c15`): immutable GPX uses generation-scoped session records;
+  payload-first publication, rollback, lifecycle cleanup, restart migration,
+  missing-data failure, and orphan reconciliation are covered. Multiple
+  near-limit jobs now write bounded metadata, and real Chrome/Firefox workers
+  proved exactly-once draft handoff and payload consumption.
 
 ### Intentionally not changed
 
-- No runtime, manifest, dependency, build, or test behavior changed while
-  producing this plan.
-- Previously archived findings listed above remain closed because current source
-  and focused probes did not disprove their remediation.
+- The investigated findings listed above were not reopened: no current evidence
+  justified changing ascent-filter coalescing, terrain in-flight fetch sharing,
+  the primary `dist/` publisher, helper-page leases, draft rollback,
+  photo-library journaling, terrain origin validation, or raw-GPX narrowing.
+- Provider ownership and privacy remain fail closed; raw provider GPX still
+  never leaves or persists beyond its page, and no extension path clicks a
+  Peakbagger Save control.
+- The two development-only `image-size` advisories remain governed by the dated
+  2026-09-21 CI allowance; production dependencies remained clean at audit
+  baseline. This remediation did not expand that policy.
+- No destructive live GitHub write, live-provider scrape, store submission,
+  release, tag, or push was performed as part of remediation.
 
 ### Changed but not fully proven
 
-None yet. During implementation, put any landed change with missing browser,
-hardware, live-service, accessibility, platform, or remote-outcome evidence
-here until that evidence exists. Do not move it into “Fixed and verified” by
-wording alone.
+- **F5** (`1c7b15e`) bounds every provider dispatch and detaches best-effort
+  page cancellation; deterministic stalls and hidden real-worker checks pass.
+  Live Garmin and Strava DOM/export compatibility was not exercised.
+- **F11** (`e004891`) owns resize completion through Pointer Events and gives
+  media, map, and table controls 44-pixel targets. Synthetic touch/pointer,
+  cancellation, capture loss, keyboard, Undo, autosave, geometry, and scroll
+  assertions pass in both packaged browsers; physical touch feel remains
+  untested.
+- **F14** (`67db64b`) supplies per-cause programmatic errors and a high-contrast
+  Analyzer select focus ring, including narrow 200% wrapping and focus geometry
+  in hidden Chrome and Firefox. Actual screen-reader speech and native onscreen
+  select rendering remain manual evidence.
+- **F15** (`bbaaac4`) stages, validates, and rollback-publishes the Firefox
+  development tree atomically. Local injected failures cover copy, manifest,
+  token, validation, publish, rollback, and cleanup; macOS/Linux/Windows CI was
+  not run in this remediation session.
+
+Final aggregate verification after the runtime commits: `npm test` **1,720
+passed**, `npm run test:scale` **14 passed**, and `npm run lint` passed with the
+same eight reviewed repository-owned warnings. `npm run verify:browsers` passed
+with the real unpacked extension in hidden Chrome for Testing 151.0.7922.34 and
+hidden Firefox 154.0.1 at 1000×760; no window was shown or focused. Terrain
+verification separately asserted hardware rendering. Hidden checks do not prove
+native focus or window placement, physical touch, screen-reader speech, live
+provider or GitHub behavior, abrupt process loss, store acceptance, or slower
+devices.

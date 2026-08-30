@@ -51,7 +51,7 @@ permission to read device location. It covers:
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
 | `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, GitHub token/repository, ImgBB API key, report drafts, and automatic-backup state | Device-local; never browser-synced. |
-| `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Authorization is removed when it completes, fails, or expires. |
+| `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
 | Peakbagger `localStorage` | Page-specific filter state and the early theme mirror | Remains with the Peakbagger site data. |
@@ -78,9 +78,9 @@ Activity capture is a short-lived, user-started transaction:
    ambiguous evidence and already-loaded tabs use the live account-page check.
    No arbitrary page text or form data is copied. Every required lookup must
    succeed before results appear.
-5. **Prepared drafts:** derived ascent fields and a reduced track stay in
-   `storage.session`, are bound to the expected tabs, and expire after 30
-   minutes.
+5. **Prepared drafts:** derived ascent fields and a generation-scoped reduced
+   track stay separately in `storage.session`, are bound to the expected tabs,
+   and expire after 30 minutes.
 6. **GPS Preview:** after the user selects **Open drafts**, Peakbagger receives a
    newly serialized GPX. Trackpoints and waypoints share a 3,000-point limit.
 7. **Review and Save:** the extension may prepare GPS Preview, but it never
