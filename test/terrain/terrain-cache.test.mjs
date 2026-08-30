@@ -42,6 +42,23 @@ const makeStorageArea = () => {
     };
 };
 
+const makeRecordingStorageArea = ({ failSets = 0 } = {}) => {
+    const storage = makeStorageArea();
+    let setCalls = 0;
+    let serializedBytes = 0;
+    return {
+        ...storage,
+        get setCalls() { return setCalls; },
+        get serializedBytes() { return serializedBytes; },
+        async set(patch) {
+            setCalls++;
+            serializedBytes += JSON.stringify(patch).length;
+            if (setCalls <= failSets) throw new Error('injected storage failure');
+            Object.assign(storage.values, structuredClone(patch));
+        }
+    };
+};
+
 const loadCacheModule = () => {
     const dom = new JSDOM('<!doctype html>', { runScripts: 'outside-only' });
     // Tests pass cacheStorage/storageArea explicitly, so the module needs no
@@ -135,6 +152,122 @@ test('DEM cache reuses a tile without another network request', async () => {
     assert.deepEqual(new Uint8Array((await loader.load(request, new AbortController())).data), makeWebp(24, 7));
     assert.equal(fetches, 1);
     await loader.flush();
+    dom.window.close();
+});
+
+test('a 1,000-tile DEM burst persists a bounded index generation instead of every prefix', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeRecordingStorageArea();
+    let clock = 100;
+    const loader = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => ++clock,
+        fetchFn: async () => webpResponse(makeWebp(24, 7))
+    });
+
+    await Promise.all(Array.from({ length: 1_000 }, (_, x) =>
+        loader.load({ url: `bpb-dem://10/${x}/0.webp` })));
+    assert.equal(await loader.flush(), true);
+
+    const index = storageArea.values[module.INDEX_KEY];
+    assert.equal(Object.keys(index).length, 1_000);
+    const finalBytes = JSON.stringify({ [module.INDEX_KEY]: index }).length;
+    assert.ok(storageArea.setCalls <= 4,
+        `expected at most 4 coalesced index writes, observed ${storageArea.setCalls}`);
+    assert.ok(storageArea.serializedBytes <= finalBytes * 4,
+        `expected serialized bytes proportional to the final index, observed ${storageArea.serializedBytes}`);
+
+    const writesAfterBurst = storageArea.setCalls;
+    const previousUsed = index['https://tiles.mapterhorn.com/10/0/0.webp'].used;
+    await loader.load({ url: 'bpb-dem://10/0/0.webp' });
+    assert.equal(await loader.flush(), true);
+    assert.ok(storageArea.values[module.INDEX_KEY]['https://tiles.mapterhorn.com/10/0/0.webp'].used > previousUsed,
+        'a cache hit must persist its refreshed LRU timestamp');
+    assert.equal(storageArea.setCalls, writesAfterBurst + 1);
+
+    assert.equal(await loader.flush(), true);
+    assert.equal(storageArea.setCalls, writesAfterBurst + 1,
+        'flushing an already-persisted generation must not rewrite it');
+    assert.equal(await loader.close(), true);
+    dom.window.close();
+});
+
+test('DEM cache close retries transient index failures and reports a persistent failure', async () => {
+    const { dom, module } = loadCacheModule();
+    const transientStorage = makeRecordingStorageArea({ failSets: 1 });
+    const transientLoader = module.create({
+        limitMb: 1,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: transientStorage,
+        ResponseCtor: Response,
+        fetchFn: async () => webpResponse(makeWebp(24, 3))
+    });
+
+    await transientLoader.load({ url: 'bpb-dem://1/0/0.webp' });
+    assert.equal(await transientLoader.close(), true);
+    assert.equal(transientStorage.setCalls, 2);
+    assert.equal(Object.keys(transientStorage.values[module.INDEX_KEY]).length, 1);
+
+    const persistentStorage = makeRecordingStorageArea({ failSets: Number.POSITIVE_INFINITY });
+    const persistentLoader = module.create({
+        limitMb: 1,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: persistentStorage,
+        ResponseCtor: Response,
+        fetchFn: async () => webpResponse(makeWebp(24, 4))
+    });
+
+    await persistentLoader.load({ url: 'bpb-dem://1/1/0.webp' });
+    assert.equal(await persistentLoader.close(), false,
+        'the owner must be able to observe an unpersisted final generation');
+    assert.equal(persistentStorage.setCalls, 2,
+        'persistent quota/privacy failures must remain bounded and best effort');
+    dom.window.close();
+});
+
+test('DEM cache close waits for an active cache hit before persisting its LRU update', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeRecordingStorageArea();
+    const remoteUrl = 'https://tiles.mapterhorn.com/1/1/0.webp';
+    const cache = await cacheStorage.open(module.CACHE_NAME);
+    await cache.put(remoteUrl, webpResponse(makeWebp(24, 5), {
+        'x-bpb-size': '24',
+        'x-bpb-used': '1'
+    }));
+    storageArea.values[module.INDEX_KEY] = { [remoteUrl]: { size: 24, used: 1 } };
+
+    const originalMatch = cache.match.bind(cache);
+    let announceMatch;
+    const matchStarted = new Promise(resolve => { announceMatch = resolve; });
+    let releaseMatch;
+    const matchGate = new Promise(resolve => { releaseMatch = resolve; });
+    cache.match = async value => {
+        announceMatch();
+        await matchGate;
+        return originalMatch(value);
+    };
+
+    const loader = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => 50,
+        fetchFn: async () => { throw new Error('the cached tile must not use the network'); }
+    });
+    const pending = loader.load({ url: 'bpb-dem://1/1/0.webp' });
+    await matchStarted;
+    const closing = loader.close();
+    releaseMatch();
+    assert.equal(new Uint8Array((await pending).data)[20], 5);
+    assert.equal(await closing, true);
+    assert.equal(storageArea.values[module.INDEX_KEY][remoteUrl].used, 50);
+    assert.equal(storageArea.setCalls, 1);
     dom.window.close();
 });
 

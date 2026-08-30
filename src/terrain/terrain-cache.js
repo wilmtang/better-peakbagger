@@ -212,13 +212,31 @@ const create = ({
     const CachedResponse = ResponseCtor || globalThis.Response;
     let statePromise = null;
     let writeQueue = Promise.resolve();
+    let persistenceQueue = Promise.resolve();
     let saveTimer = null;
     let closed = false;
+    let dirtyGeneration = 0;
+    let persistedGeneration = 0;
+    let closePromise = null;
     const inFlight = new Map();
+    const activeLoads = new Set();
 
     const saveIndex = async state => {
-        if (!local || typeof local.set !== 'function' || !state) return;
-        try { await local.set({ [INDEX_KEY]: state.index }); } catch (error) { /* Cache data remains usable without its LRU index. */ }
+        if (!local || typeof local.set !== 'function' || !state) return false;
+        const generation = dirtyGeneration;
+        if (generation <= persistedGeneration) return true;
+        const snapshot = Object.fromEntries(Object.entries(state.index)
+            .map(([url, entry]) => [url, { size: entry.size, used: entry.used }]));
+        let saved = false;
+        persistenceQueue = persistenceQueue.then(async () => {
+            try {
+                await local.set({ [INDEX_KEY]: snapshot });
+                persistedGeneration = Math.max(persistedGeneration, generation);
+                saved = true;
+            } catch (error) { /* Cache data remains usable without its LRU index. */ }
+        }).catch(() => {});
+        await persistenceQueue;
+        return saved;
     };
 
     const removeStoredIndex = async () => {
@@ -226,18 +244,53 @@ const create = ({
         try { await local.remove(INDEX_KEY); } catch (error) { /* Best-effort cleanup. */ }
     };
 
-    const trim = async state => {
-        let total = Object.values(state.index).reduce((sum, entry) => sum + entry.size, 0);
-        if (total <= limitBytes) return false;
-
-        const oldest = Object.entries(state.index).sort((a, b) => a[1].used - b[1].used);
-        for (const [url, entry] of oldest) {
-            if (total <= limitBytes) break;
-            try { await state.cache.delete(url); } catch (error) { continue; }
-            delete state.index[url];
-            total -= entry.size;
-        }
+    const removeIndexEntry = (state, url) => {
+        const entry = state.index[url];
+        if (!entry) return false;
+        delete state.index[url];
+        state.lru.delete(url);
+        state.totalBytes = Math.max(0, state.totalBytes - entry.size);
         return true;
+    };
+
+    const setIndexEntry = (state, url, entry) => {
+        const previous = state.index[url];
+        if (previous) state.totalBytes -= previous.size;
+        state.index[url] = entry;
+        state.totalBytes += entry.size;
+        state.lru.delete(url);
+        state.lru.set(url, entry);
+    };
+
+    const trim = async state => {
+        if (state.totalBytes <= limitBytes) return false;
+
+        let changed = false;
+        for (const [url] of [...state.lru]) {
+            if (state.totalBytes <= limitBytes) break;
+            try { await state.cache.delete(url); } catch (error) { continue; }
+            changed = removeIndexEntry(state, url) || changed;
+        }
+        return changed;
+    };
+
+    const scheduleSave = state => {
+        if (saveTimer !== null || !state || closed) return;
+        saveTimer = setTimeout(() => {
+            saveTimer = null;
+            void saveIndex(state).then(saved => {
+                // A mutation that landed while a successful snapshot was in
+                // flight owns the next checkpoint. A failed best-effort write
+                // waits for another mutation or an explicit flush/close rather
+                // than spinning forever against a full storage quota.
+                if (saved && dirtyGeneration > persistedGeneration) scheduleSave(state);
+            });
+        }, 1000);
+    };
+
+    const markDirty = state => {
+        dirtyGeneration++;
+        scheduleSave(state);
     };
 
     const initialize = async () => {
@@ -252,6 +305,7 @@ const create = ({
         const requests = await cache.keys();
         const actualUrls = new Set(requests.map(item => item.url));
         const index = Object.fromEntries(Object.entries(storedIndex).filter(([url]) => actualUrls.has(url)));
+        let metadataChanged = Object.keys(index).length !== Object.keys(storedIndex).length;
 
         // Rebuild metadata if the browser kept CacheStorage but purged the
         // small local index independently.
@@ -265,13 +319,22 @@ const create = ({
                     size: Math.floor(size),
                     used: Number.isFinite(used) && used > 0 ? Math.floor(used) : now()
                 };
+                metadataChanged = true;
             } else {
                 await cache.delete(item);
+                metadataChanged = true;
             }
         }
 
-        const state = { cache, index };
-        if (await trim(state)) await saveIndex(state);
+        const orderedEntries = Object.entries(index).sort((a, b) => a[1].used - b[1].used);
+        const state = {
+            cache,
+            index,
+            lru: new Map(orderedEntries),
+            totalBytes: orderedEntries.reduce((sum, [, entry]) => sum + entry.size, 0),
+        };
+        if (await trim(state)) metadataChanged = true;
+        if (metadataChanged) markDirty(state);
         return state;
     };
 
@@ -280,32 +343,22 @@ const create = ({
         return statePromise;
     };
 
-    const scheduleSave = state => {
-        if (saveTimer !== null || !state) return;
-        saveTimer = setTimeout(() => {
-            saveTimer = null;
-            void saveIndex(state);
-        }, 1000);
-    };
-
     const read = async remoteUrl => {
         const state = await getState();
         if (!state) return null;
         try {
             const response = await state.cache.match(remoteUrl);
             if (!response) {
-                delete state.index[remoteUrl];
-                scheduleSave(state);
+                if (removeIndexEntry(state, remoteUrl)) markDirty(state);
                 return null;
             }
             const data = await readBoundedWebp(response);
-            state.index[remoteUrl] = { size: data.byteLength, used: now() };
-            scheduleSave(state);
+            setIndexEntry(state, remoteUrl, { size: data.byteLength, used: now() });
+            markDirty(state);
             return data;
         } catch (error) {
             try { await state.cache.delete(remoteUrl); } catch (deleteError) { /* Best-effort corrupt-entry cleanup. */ }
-            delete state.index[remoteUrl];
-            scheduleSave(state);
+            if (removeIndexEntry(state, remoteUrl)) markDirty(state);
             return null;
         }
     };
@@ -325,9 +378,9 @@ const create = ({
             });
             try {
                 await state.cache.put(remoteUrl, response);
-                state.index[remoteUrl] = { size: data.byteLength, used };
+                setIndexEntry(state, remoteUrl, { size: data.byteLength, used });
                 await trim(state);
-                await saveIndex(state);
+                markDirty(state);
             } catch (error) {
             // Quota pressure or browser eviction is a normal cache miss,
             // never a reason to fail terrain rendering.
@@ -410,7 +463,7 @@ const create = ({
         }
     };
 
-    const load = async (parameters, abortController) => {
+    const loadInternal = async (parameters, abortController) => {
         const remoteUrl = parseTileUrl(parameters && parameters.url);
         if (!remoteUrl) throw new Error('Invalid DEM tile URL');
         if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
@@ -426,18 +479,37 @@ const create = ({
         return subscribe(remoteUrl, owner, caller);
     };
 
-    const flush = async () => {
+    const load = async (parameters, abortController) => {
+        if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
+        const operation = loadInternal(parameters, abortController);
+        activeLoads.add(operation);
+        try {
+            return await operation;
+        } finally {
+            activeLoads.delete(operation);
+        }
+    };
+
+    const flush = async ({ attempts = 1 } = {}) => {
         await writeQueue;
         const state = await getState();
         if (saveTimer !== null) {
             clearTimeout(saveTimer);
             saveTimer = null;
         }
-        await saveIndex(state);
+        await persistenceQueue;
+        if (!state || dirtyGeneration <= persistedGeneration) return true;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (await saveIndex(state)) {
+                await persistenceQueue;
+                if (dirtyGeneration <= persistedGeneration) return true;
+            }
+        }
+        return dirtyGeneration <= persistedGeneration;
     };
 
-    const close = async () => {
-        if (closed) return;
+    const close = () => {
+        if (closePromise) return closePromise;
         closed = true;
         for (const owner of inFlight.values()) {
             owner.cancel();
@@ -445,7 +517,14 @@ const create = ({
             owner.deadline.clear();
         }
         inFlight.clear();
-        await flush();
+        closePromise = (async () => {
+            await Promise.allSettled([...activeLoads]);
+            // A transient storage failure gets one final retry. Persistent
+            // quota/privacy failures remain best effort, but the false return
+            // makes the unpersisted generation observable to the owner.
+            return flush({ attempts: 2 });
+        })();
+        return closePromise;
     };
 
     return { load, flush, close };
