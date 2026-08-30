@@ -1066,6 +1066,8 @@ const loadElevationAnalyzer = async (gpxSource, {
     const { window } = dom;
     let chartConfig = null;
     let chartInstance = null;
+    let chartConstructions = 0;
+    let chartDestructions = 0;
     let activeElements = [];
     const updateModes = [];
     const eventQueries = [];
@@ -1144,13 +1146,14 @@ const loadElevationAnalyzer = async (gpxSource, {
     }
     window.Chart = class ChartStub {
         constructor(context, config) {
+            chartConstructions++;
             chartConfig = config;
             chartInstance = this;
             this.data = config.data;
             this.options = config.options;
             this.visibility = config.data.datasets.map(dataset => dataset.hidden !== true);
         }
-        destroy() {}
+        destroy() { chartDestructions++; }
         update(mode) { updateModes.push(mode); }
         isDatasetVisible(index) { return this.visibility[index] === true; }
         setDatasetVisibility(index, visible) { this.visibility[index] = visible; }
@@ -1177,6 +1180,8 @@ const loadElevationAnalyzer = async (gpxSource, {
         analysisText,
         chartConfig: () => chartConfig,
         chartInstance: () => chartInstance,
+        chartConstructions: () => chartConstructions,
+        chartDestructions: () => chartDestructions,
         setActiveElements: elements => { activeElements = elements; },
         updateModes,
         eventQueries,
@@ -1592,8 +1597,12 @@ test('shipped GPX analyzer renders the full Capitol regression without artificia
     assert.match(analysisText(),
         /Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/);
     assert.match(analysisText(), /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/);
-    assert.equal(distanceSeries.data.length, 971);
-    assert.equal(timeSeries.data.length, 971);
+    assert.ok(distanceSeries.data.length <= 640 && distanceSeries.data.length >= 256,
+        `the distance series must honor the fallback canvas budget, got ${distanceSeries.data.length}`);
+    assert.ok(timeSeries.data.length <= 640 && timeSeries.data.length >= 256,
+        `the time series must honor the fallback canvas budget, got ${timeSeries.data.length}`);
+    assert.equal(chartConfig().options.animation, false,
+        'large charts must not queue a long default Chart.js animation');
     assert.equal(distanceSeries.data.some(point => point._raw === null), false,
         'the shipped distance chart must not reintroduce a break at any Capitol segment boundary');
     assert.equal(timeSeries.data.some(point => point._raw === null), false,
@@ -1604,6 +1613,62 @@ test('shipped GPX analyzer renders the full Capitol regression without artificia
     assert.ok(timeSeries.data.every((point, index, points) =>
         index === 0 || point.x >= points[index - 1].x),
     'the shipped time chart must remain chronological');
+
+    dom.window.close();
+});
+
+test('a 20,000-point analyzer stays canvas-bounded and updates settings in place', async () => {
+    const samples = Array.from({ length: 20_000 }, (_, index) => {
+        const elevation = index >= 4_316 && index <= 4_326 ? 200
+            : index >= 17_649 && index <= 17_659
+                ? 3_000
+                : Math.round(1_500 + Math.sin(index / 40) * 180);
+        return `<trkpt lat="${(40 + index / 1_000_000).toFixed(6)}" lon="${(-105 - index / 1_000_000).toFixed(6)}">`
+            + `<ele>${elevation}</ele><time>${new Date(Date.UTC(2026, 6, 10) + index * 1_000).toISOString()}</time></trkpt>`;
+    }).join('');
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>${samples}</trkseg></trk></gpx>`;
+    const {
+        dom, chartConfig, chartConstructions, chartDestructions, setActiveElements, updateModes
+    } = await loadElevationAnalyzer(source, {
+        ascentDate: 'Jul 10, 2026',
+        settings: { chartDefaultSeries: 'both' },
+    });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null, 10_000);
+    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
+    assert.ok(distanceSeries.data.length <= 640,
+        `distance data exceeded the fallback canvas budget: ${distanceSeries.data.length}`);
+    assert.ok(timeSeries.data.length <= 640,
+        `time data exceeded the fallback canvas budget: ${timeSeries.data.length}`);
+    assert.equal(chartConfig().options.animation, false);
+    assert.ok(distanceSeries.data.some(point => point._raw?.sourceIndex === 0));
+    assert.ok(distanceSeries.data.some(point => point._raw?.sourceIndex === 19_999));
+    assert.ok(distanceSeries.data.some(point => point._raw?.rawEleM === 200));
+    assert.ok(distanceSeries.data.some(point => point._raw?.rawEleM === 3_000));
+
+    const selectedDatasetIndex = distanceSeries.data.findIndex(point => point._raw?.sourceIndex > 10_000);
+    const selected = distanceSeries.data[selectedDatasetIndex]._raw;
+    setActiveElements([{ datasetIndex: 0, index: selectedDatasetIndex }]);
+    window.document.querySelector('#bpb-gpx-analysis canvas')
+        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.match(window.document.querySelector('.bpb-sun-calculator__summary').textContent, /°/,
+        'a sampled point remains available to Sun synchronization');
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: bridgeSnapshot(window, {
+            units: 'imperial', theme: 'dark', chartDefaultSeries: 'both', enable3dMap: true,
+        }),
+    }));
+    await waitFor(dom, () => window.document.getElementById('bpb-gpx-analysis').dataset.theme === 'dark');
+
+    assert.equal(chartConstructions(), 1, 'settings changes reuse the live Chart.js instance');
+    assert.equal(chartDestructions(), 0, 'settings changes do not destroy the live chart');
+    assert.ok(updateModes.includes('none'), 'the in-place rebuild skips animation');
+    assert.ok(chartConfig().data.datasets[0].data.some(point => point._raw === selected),
+        'the deliberate selection is retained across the in-place rebuild');
 
     dom.window.close();
 });
@@ -1994,7 +2059,7 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
     const copyButton = window.document.getElementById('bpb-gpx-copy-coordinates');
     const status = window.document.getElementById('bpb-gpx-coordinate-status');
     const points = chartConfig().data.datasets[0].data;
-    assert.equal(points.length, 2, 'the simplified chart keeps the endpoints of this straight climb');
+    assert.equal(points.length, 3, 'a chart below its display budget keeps every source point');
 
     assert.equal(canvas.tabIndex, 0);
     assert.equal(canvas.getAttribute('aria-describedby'), status.id);
@@ -2005,7 +2070,7 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
     canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     assert.equal(copyButton.disabled, false);
     assert.match(status.textContent,
-        /^Selected point 1 of 2: 47\.10000, -121\.10000\. Distance: 0\.00 km\./);
+        /^Selected point 1 of 3: 47\.10000, -121\.10000\. Distance: 0\.00 km\./);
     assert.match(status.textContent, /Elevation by Distance: 110 m/);
     assert.deepEqual(eventQueries[0], { mode: 'nearest', intersect: false, axis: 'xy' });
     assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[0] }), 5);
@@ -2014,9 +2079,13 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
 
     canvas.focus();
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    assert.match(status.textContent, /^Selected point 2 of 2: 47\.30000, -121\.30000\./);
+    assert.match(status.textContent, /^Selected point 2 of 3: 47\.20000, -121\.20000\./);
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    assert.match(status.textContent, /^Selected point 3 of 3: 47\.30000, -121\.30000\./);
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-    assert.match(status.textContent, /^Selected point 1 of 2: 47\.10000, -121\.10000\./);
+    assert.match(status.textContent, /^Selected point 2 of 3: 47\.20000, -121\.20000\./);
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    assert.match(status.textContent, /^Selected point 1 of 3: 47\.10000, -121\.10000\./);
 
     copyButton.click();
     await waitFor(dom, () => status.dataset.state === 'success');
@@ -2026,9 +2095,9 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
 
     // Mobile browsers synthesize the same click activation after a tap. The
     // double-click shortcut also delegates to the shared selection/copy path.
-    setActiveElements([{ datasetIndex: 0, index: 1 }]);
+    setActiveElements([{ datasetIndex: 0, index: 2 }]);
     canvas.dispatchEvent(new window.Event('click', { bubbles: true }));
-    assert.match(status.textContent, /^Selected point 2 of 2: 47\.30000, -121\.30000\./);
+    assert.match(status.textContent, /^Selected point 3 of 3: 47\.30000, -121\.30000\./);
     canvas.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
     await waitFor(dom, () => writes.length === 2 && status.dataset.state === 'success');
     assert.deepEqual(writes, [
@@ -2055,11 +2124,13 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
     canvas.focus();
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     const sunSummary = window.document.querySelector('.bpb-sun-calculator__summary').textContent;
     assert.match(sunSummary, /°/, 'the selected point has a calculated Sun reading before replacement');
 
     assert.deepEqual(markerMoves, [
         [47.1, -121.1],
+        [47.2, -121.2],
         [47.3, -121.3]
     ], 'the map marker follows the same points selected on the chart');
 

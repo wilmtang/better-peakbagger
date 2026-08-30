@@ -501,6 +501,47 @@ test('chronological endpoints survive route-order chart sampling', () => {
     assert.equal(metrics.timeChartPoints.at(-1).ms, metrics.endMs);
 });
 
+test('display chart sampling is pixel-bounded and retains semantic profile points', () => {
+    const selectedIndex = 12_345;
+    const points = Array.from({ length: 20_000 }, (_, index) => ({
+        sourceIndex: index,
+        coordinateGroup: index < 8_000 ? 0 : index < 14_000 ? 1 : 2,
+        eleM: index === 4_321 ? -250 : index === 17_654 ? 5_000 : 1_000 + Math.sin(index / 25) * 100,
+    }));
+
+    const narrow = GpxMetrics.sampleChartPoints(points, 320, {
+        required: [points[selectedIndex]],
+    });
+    const wide = GpxMetrics.sampleChartPoints(points, 1_100, {
+        required: [points[selectedIndex]],
+    });
+    const indexes = samples => new Set(samples.map(point => point.sourceIndex));
+    const narrowIndexes = indexes(narrow);
+
+    assert.equal(narrow.length, 320);
+    assert.equal(wide.length, 1_100);
+    assert.ok(wide.length > narrow.length, 'a wider canvas earns a larger shape budget');
+    assert.deepEqual([narrow[0], narrow.at(-1)], [points[0], points.at(-1)]);
+    assert.ok(narrowIndexes.has(selectedIndex), 'the selected point survives a rebuild');
+    assert.ok(narrowIndexes.has(4_321) && narrowIndexes.has(17_654),
+        'global profile extrema remain truthful');
+    assert.ok([7_999, 8_000, 13_999, 14_000].every(index => narrowIndexes.has(index)),
+        'ordinary disconnected-group boundaries are retained');
+});
+
+test('pathological chart groups cannot defeat the display work bound', () => {
+    const points = Array.from({ length: 20_000 }, (_, index) => ({
+        sourceIndex: index,
+        coordinateGroup: index,
+        eleM: index % 101,
+    }));
+    const sampled = GpxMetrics.sampleChartPoints(points, 400);
+
+    assert.equal(sampled.length, 400);
+    assert.equal(sampled[0], points[0]);
+    assert.equal(sampled.at(-1), points.at(-1));
+});
+
 test('summit time remains attached to the highest route point after chronological sorting', () => {
     const start = Date.UTC(2026, 6, 10, 12);
     const summitMs = start + 120_000;

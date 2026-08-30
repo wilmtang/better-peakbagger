@@ -78,6 +78,16 @@ const gpx = `<?xml version="1.0"?><gpx version="1.1"><trk><name>Synthetic</name>
       + `<ele>${1500 + index * 25}</ele><time>2026-07-01T13:${String(index % 60).padStart(2, '0')}:00Z</time></trkpt>`)
         .join('')}</trkseg></trk></gpx>`;
 
+export const createScaleAnalyzerGpx = (pointCount = 20_000) =>
+    `<?xml version="1.0"?><gpx version="1.1"><trk><name>Scale</name><trkseg>${
+        Array.from({ length: pointCount }, (_, index) => {
+            const elevation = index >= 4_316 && index <= 4_326 ? 200
+                : index >= 17_649 && index <= 17_659 ? 3_000
+                    : Math.round(1_500 + Math.sin(index / 40) * 180);
+            return `<trkpt lat="${(40 + index / 1_000_000).toFixed(6)}" lon="${(-105 - index / 1_000_000).toFixed(6)}">`
+                + `<ele>${elevation}</ele><time>${new Date(Date.UTC(2026, 6, 10) + index * 1_000).toISOString()}</time></trkpt>`;
+        }).join('')}</trkseg></trk></gpx>`;
+
 export function createSyntheticCaptureJob(sourceTabId) {
     const timestamp = Date.now();
     return {
@@ -304,6 +314,7 @@ export async function createFixtureCertificate({
 export async function createBrowserFixtureServer({
     temporaryRoot,
     analyzerGpx = gpx,
+    analyzerGpxByCase = {},
     analyzerDelayMs = 0,
 } = {}) {
     const resources = createResourceStack();
@@ -525,7 +536,7 @@ export async function createBrowserFixtureServer({
             if (analyzerDelayMs > 0) {
                 await new Promise(resolve => setTimeout(resolve, analyzerDelayMs));
             }
-            return send('application/gpx+xml', analyzerGpx);
+            return send('application/gpx+xml', analyzerGpxByCase[analyzerCase] || analyzerGpx);
         }
         response.writeHead(404);
         response.end('not found');

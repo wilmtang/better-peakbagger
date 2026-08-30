@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 import {
     createBrowserFixtureServer,
     createFailureCollector,
+    createScaleAnalyzerGpx,
     createSyntheticCaptureJob,
     storeUrls,
     surfaceSelectors,
@@ -73,6 +74,7 @@ try {
     fixture = await createBrowserFixtureServer({
         temporaryRoot: profile,
         analyzerGpx: capitolRegressionGpx,
+        analyzerGpxByCase: { scale: createScaleAnalyzerGpx() },
         analyzerDelayMs: Math.max(0, Number(process.env.BPB_VERIFY_ANALYZER_DELAY_MS) || 0),
     });
     resources.defer('Chrome browser fixture', () => fixture.close());
@@ -2416,14 +2418,87 @@ try {
         return {
             labels: chart.data.datasets.map(dataset => dataset.label),
             pointCounts: chart.data.datasets.map(dataset => dataset.data.length),
+            pointBudget: Math.max(256, Math.min(1200, Math.ceil(canvas.parentElement.getBoundingClientRect().width))),
             breakCounts: chart.data.datasets.map(dataset =>
                 dataset.data.filter(point => point?._raw === null).length),
+            animation: chart.options.animation,
         };
     });
     check(capitolChartState?.labels?.join('|') === 'Elevation by Distance|Elevation by Time'
-        && capitolChartState.pointCounts?.join('|') === '971|971'
-        && capitolChartState.breakCounts?.join('|') === '0|0',
+        && capitolChartState.pointCounts?.every(count => count <= capitolChartState.pointBudget)
+        && capitolChartState.pointCounts?.every(count => count >= 2)
+        && capitolChartState.breakCounts?.join('|') === '0|0'
+        && capitolChartState.animation === false,
     `the packaged analyzer reintroduced a Capitol chart break: ${JSON.stringify(capitolChartState)}`);
+    const scalePage = await context.newPage();
+    await scalePage.setViewportSize({ width: 520, height: 760 });
+    await scalePage.addInitScript(() => {
+        window.__bpbScaleFrameGaps = [];
+        let previous = 0;
+        const record = now => {
+            if (previous) window.__bpbScaleFrameGaps.push(now - previous);
+            previous = now;
+            requestAnimationFrame(record);
+        };
+        requestAnimationFrame(record);
+    });
+    await scalePage.goto(
+        `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-scale`,
+        { waitUntil: 'domcontentloaded' },
+    );
+    const narrowScaleState = await scalePage.waitForFunction(() => {
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
+        if (!chart?.data?.datasets?.length) return null;
+        const raw = chart.data.datasets[0].data.map(point => point?._raw).filter(Boolean);
+        const pointBudget = Math.max(256, Math.min(1200,
+            Math.ceil(canvas.parentElement.getBoundingClientRect().width)));
+        const state = {
+            pointCounts: chart.data.datasets.map(dataset => dataset.data.filter(point => point?._raw).length),
+            pointBudget,
+            sourceIndexes: raw.map(point => point.sourceIndex),
+            rawElevations: raw.map(point => point.rawEleM),
+            animation: chart.options.animation,
+        };
+        return state.pointCounts.every(count => count >= 2 && count <= pointBudget) ? state : null;
+    }, null, { timeout: 30_000 }).then(handle => handle.jsonValue());
+    check(narrowScaleState.animation === false
+        && narrowScaleState.sourceIndexes.includes(0)
+        && narrowScaleState.sourceIndexes.includes(19_999)
+        && narrowScaleState.rawElevations.includes(200)
+        && narrowScaleState.rawElevations.includes(3_000),
+    `the 20,000-point narrow Chrome chart lost endpoints/extrema or animation bounds: ${JSON.stringify(narrowScaleState)}`);
+    await scalePage.locator('#bpb-gpx-analysis canvas').press('ArrowRight');
+    const narrowSelected = await scalePage.locator('#bpb-gpx-coordinate-status').textContent();
+    const narrowSun = await scalePage.locator('.bpb-sun-calculator__summary').textContent();
+    await scalePage.evaluate(() => {
+        window.__bpbScaleChart = globalThis.Chart.getChart(
+            document.querySelector('#bpb-gpx-analysis canvas'));
+    });
+    const resizeStarted = Date.now();
+    await scalePage.setViewportSize({ width: 1100, height: 760 });
+    const wideScaleState = await scalePage.waitForFunction(narrowCount => {
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
+        const count = chart?.data?.datasets?.[0]?.data?.filter(point => point?._raw).length || 0;
+        if (count <= narrowCount) return null;
+        return {
+            count,
+            sameChart: chart === window.__bpbScaleChart,
+            selected: document.getElementById('bpb-gpx-coordinate-status')?.textContent || '',
+            maxFrameGapMs: Math.max(0, ...window.__bpbScaleFrameGaps),
+        };
+    }, narrowScaleState.pointCounts[0], { timeout: 5_000 }).then(handle => handle.jsonValue());
+    const resizeLatencyMs = Date.now() - resizeStarted;
+    check(/Selected point 1 of /.test(narrowSelected || '') && /°/.test(narrowSun || '')
+        && wideScaleState.sameChart
+        && /Selected point 1 of /.test(wideScaleState.selected)
+        && resizeLatencyMs < 1_000
+        && wideScaleState.maxFrameGapMs < 1_000,
+    `the 20,000-point Chrome chart lost interaction/selection or exceeded its latency bound: ${JSON.stringify({
+        narrowSelected, narrowSun, resizeLatencyMs, wideScaleState,
+    })}`);
+    await scalePage.close();
     const analyzerSunState = await offPage.evaluate(() => {
         const panel = document.getElementById('bpb-gpx-analysis');
         const coordinates = panel?.querySelector('.bpb-gpx-coordinate-controls');
@@ -5412,7 +5487,8 @@ if (chromeBfcacheResult?.restored) {
 }
 console.log('  - the saved ascent report/summary split mounts, drags, and persists its bounded ratio');
 console.log('  - short-window map keys and pointer pixels resize visible content, label it exactly, and replace only interacted preferences');
-console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
+console.log('  - the GPX analyzer reproduces the full Capitol metrics within its canvas budget and with zero breaks,');
+console.log('    and a 20,000-point route stays pixel-bounded across narrow/wide resize with its selection intact');
 console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');
 console.log('    scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
 console.log('  - eight terminal Analyzer failures remove chart roles, shortcuts, controls, route state, and');

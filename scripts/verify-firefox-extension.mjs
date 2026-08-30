@@ -18,6 +18,7 @@ import firefox from 'selenium-webdriver/firefox.js';
 
 import {
     createBrowserFixtureServer,
+    createScaleAnalyzerGpx,
     createSyntheticCaptureJob,
     fixtureHost,
     storeUrls,
@@ -157,6 +158,7 @@ async function main() {
         const fixture = await createBrowserFixtureServer({
             temporaryRoot,
             analyzerGpx: capitolRegressionGpx,
+            analyzerGpxByCase: { scale: createScaleAnalyzerGpx() },
         });
         resources.defer('Firefox browser fixture', () => fixture.close());
         const buddyListFixture = await readFile(
@@ -1255,8 +1257,10 @@ async function main() {
           return {
             labels: chart.data.datasets.map(dataset => dataset.label),
             pointCounts: chart.data.datasets.map(dataset => dataset.data.length),
+            pointBudget: Math.max(256, Math.min(1200, Math.ceil(canvas.parentElement.getBoundingClientRect().width))),
             breakCounts: chart.data.datasets.map(dataset =>
               dataset.data.filter(point => point?._raw === null).length),
+            animation: chart.options.animation,
           };
         })(),
       };
@@ -1266,8 +1270,9 @@ async function main() {
           && /Interactive Stats: 17\\.53 miles \\| 5735 ft gain \\| Time: 36h 20m/.test(state.stats)
           && /Adjusted GPX metrics \\(raw GPX \\+15824 ft gain\\)/.test(state.stats)
           && state.chart?.labels?.join("|") === "Elevation by Distance|Elevation by Time"
-          && state.chart?.pointCounts?.join("|") === "971|971"
+          && state.chart?.pointCounts?.every(count => count <= state.chart.pointBudget && count >= 2)
           && state.chart?.breakCounts?.join("|") === "0|0"
+          && state.chart?.animation === false
           && state.sun.exists && state.sun.noDateInput && state.sun.collapsed
           && !state.sun.disabled && state.sun.summary === "Select a chart point"
           && state.sun.placed && state.sun.borderStyle === "solid",
@@ -1276,6 +1281,85 @@ async function main() {
         if (surfaceState.theme === null) {
             throw new Error('Firefox isolated-world theme bundle did not initialize');
         }
+        const analyzerHandle = await driver.getWindowHandle();
+        await driver.switchTo().newWindow('tab');
+        await driver.manage().window().setRect({ width: 520, height: 760 });
+        const scaleStarted = Date.now();
+        await driver.get(
+            `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-scale`,
+        );
+        const narrowScaleState = await waitForScript(driver, `
+      const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+      const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
+      if (!chart?.data?.datasets?.length) return false;
+      const raw = chart.data.datasets[0].data.map(point => point?._raw).filter(Boolean);
+      const pointBudget = Math.max(256, Math.min(1200,
+        Math.ceil(canvas.parentElement.getBoundingClientRect().width)));
+      const state = {
+        pointCounts: chart.data.datasets.map(dataset => dataset.data.filter(point => point?._raw).length),
+        pointBudget,
+        sourceIndexes: raw.map(point => point.sourceIndex),
+        rawElevations: raw.map(point => point.rawEleM),
+        animation: chart.options.animation,
+      };
+      return state.pointCounts.every(count => count >= 2 && count <= pointBudget) ? state : false;
+    `, 'the 20,000-point narrow Firefox analyzer', 30_000);
+        const initialScaleLatencyMs = Date.now() - scaleStarted;
+        assertState(narrowScaleState.animation === false
+            && narrowScaleState.sourceIndexes.includes(0)
+            && narrowScaleState.sourceIndexes.includes(19_999)
+            && narrowScaleState.rawElevations.includes(200)
+            && narrowScaleState.rawElevations.includes(3_000)
+            && initialScaleLatencyMs < 15_000,
+        'Firefox lost scale-chart endpoints/extrema or exceeded the initial bound', {
+            initialScaleLatencyMs, narrowScaleState,
+        });
+        await driver.executeScript(`
+      window.__bpbScaleChart = globalThis.Chart.getChart(
+        document.querySelector('#bpb-gpx-analysis canvas'));
+      window.__bpbScaleFrameGaps = [];
+      let previous = 0;
+      const record = now => {
+        if (previous) window.__bpbScaleFrameGaps.push(now - previous);
+        previous = now;
+        requestAnimationFrame(record);
+      };
+      requestAnimationFrame(record);
+    `);
+        await driver.findElement(By.css('#bpb-gpx-analysis canvas')).sendKeys(Key.ARROW_RIGHT);
+        const narrowScaleSelection = await driver.executeScript(`
+      return {
+        selected: document.getElementById('bpb-gpx-coordinate-status')?.textContent || '',
+        sun: document.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+      };
+    `);
+        const resizeStarted = Date.now();
+        await driver.manage().window().setRect({ width: 1100, height: 760 });
+        const wideScaleState = await waitForScript(driver, `
+      const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+      const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
+      const count = chart?.data?.datasets?.[0]?.data?.filter(point => point?._raw).length || 0;
+      if (count <= ${JSON.stringify(narrowScaleState.pointCounts[0])}) return false;
+      return {
+        count,
+        sameChart: chart === window.__bpbScaleChart,
+        selected: document.getElementById('bpb-gpx-coordinate-status')?.textContent || '',
+        maxFrameGapMs: Math.max(0, ...window.__bpbScaleFrameGaps),
+      };
+    `, 'the wider Firefox scale chart', 5_000);
+        const resizeLatencyMs = Date.now() - resizeStarted;
+        assertState(/Selected point 1 of /.test(narrowScaleSelection.selected)
+            && /°/.test(narrowScaleSelection.sun)
+            && wideScaleState.sameChart
+            && /Selected point 1 of /.test(wideScaleState.selected)
+            && resizeLatencyMs < 1_000
+            && wideScaleState.maxFrameGapMs < 1_000,
+        'Firefox lost scale-chart interaction/selection or exceeded the resize bound', {
+            narrowScaleSelection, resizeLatencyMs, wideScaleState,
+        });
+        await driver.close();
+        await driver.switchTo().window(analyzerHandle);
+        await driver.manage().window().setRect(verificationViewport);
         await driver.executeScript(`
       window.__bpbSettingsPushes = [];
       window.addEventListener('message', event => {
@@ -1285,7 +1369,6 @@ async function main() {
         }
       });
     `);
-        const analyzerHandle = await driver.getWindowHandle();
         await driver.switchTo().newWindow('tab');
         const settingsProbeHandle = await driver.getWindowHandle();
         await driver.get(optionsUrl);
@@ -2725,7 +2808,8 @@ async function main() {
         console.log('  - ordered cross-tab settings pushes updated and restored the analyzer controls');
         console.log('  - Firefox BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
         console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
-        console.log('  - the full Capitol GPX rendered 971 points per chart series with the corrected metrics and zero breaks');
+        console.log('  - the full Capitol GPX rendered within its canvas budget with corrected metrics and zero breaks');
+        console.log('  - a 20,000-point route stayed pixel-bounded across narrow/wide resize with its selection intact');
         console.log('  - short-window map keys and pointer pixels resize visible content and preserve only untouched preferred height');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');

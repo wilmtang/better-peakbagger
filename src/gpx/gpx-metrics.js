@@ -403,6 +403,92 @@ const sampledPointSet = (points, groupProperty) => {
     return sampled;
 };
 
+// Reduce a chart view to the number of samples its canvas can distinguish.
+// Endpoints, explicit selections, global extrema, and ordinary group
+// boundaries take priority; bucket extrema preserve the remaining profile
+// shape. Pathological files can contain more disconnected groups than pixels,
+// so boundary candidates are themselves sampled rather than defeating the
+// hard work bound.
+const sampleChartPoints = (points, maxPoints, {
+    groupProperty = 'coordinateGroup',
+    valueProperty = 'eleM',
+    required = [],
+} = {}) => {
+    if (!Array.isArray(points) || !points.length) return [];
+    const limit = Math.max(2, Math.floor(Number(maxPoints) || 0));
+    if (points.length <= limit) return points.slice();
+
+    const selected = new Set();
+    const add = point => {
+        if (point && selected.size < limit) selected.add(point);
+    };
+    const addEvenly = (candidates, count) => {
+        if (count <= 0 || !candidates.length) return;
+        if (candidates.length <= count) {
+            candidates.forEach(add);
+            return;
+        }
+        for (let index = 0; index < count; index++) {
+            const sourceIndex = count === 1
+                ? Math.floor((candidates.length - 1) / 2)
+                : Math.round(index * (candidates.length - 1) / (count - 1));
+            add(candidates[sourceIndex]);
+        }
+    };
+
+    add(points[0]);
+    add(points.at(-1));
+    required.forEach(point => {
+        if (points.includes(point)) add(point);
+    });
+
+    const finiteValues = points.filter(point => Number.isFinite(point?.[valueProperty]));
+    if (finiteValues.length) {
+        add(finiteValues.reduce((minimum, point) =>
+            point[valueProperty] < minimum[valueProperty] ? point : minimum));
+        add(finiteValues.reduce((maximum, point) =>
+            point[valueProperty] > maximum[valueProperty] ? point : maximum));
+    }
+
+    const boundaries = [];
+    let groupStart = 0;
+    for (let index = 1; index <= points.length; index++) {
+        if (index < points.length
+            && points[index]?.[groupProperty] === points[groupStart]?.[groupProperty]) continue;
+        boundaries.push(points[groupStart], points[index - 1]);
+        groupStart = index;
+    }
+    const boundaryCandidates = [...new Set(boundaries)].filter(point => !selected.has(point));
+    addEvenly(boundaryCandidates, Math.min(boundaryCandidates.length, limit - selected.size));
+
+    const remaining = limit - selected.size;
+    if (remaining > 0) {
+        const bucketCount = Math.max(1, Math.floor(remaining / 2));
+        const extrema = [];
+        for (let bucket = 0; bucket < bucketCount; bucket++) {
+            const start = Math.floor(bucket * points.length / bucketCount);
+            const end = Math.max(start + 1, Math.floor((bucket + 1) * points.length / bucketCount));
+            const bucketPoints = points.slice(start, end)
+                .filter(point => Number.isFinite(point?.[valueProperty]));
+            if (!bucketPoints.length) continue;
+            let minimum = bucketPoints[0];
+            let maximum = bucketPoints[0];
+            bucketPoints.forEach(point => {
+                if (point[valueProperty] < minimum[valueProperty]) minimum = point;
+                if (point[valueProperty] > maximum[valueProperty]) maximum = point;
+            });
+            extrema.push(minimum);
+            if (maximum !== minimum) extrema.push(maximum);
+        }
+        extrema.forEach(add);
+    }
+
+    if (selected.size < limit) {
+        addEvenly(points.filter(point => !selected.has(point)), limit - selected.size);
+    }
+    return points.filter(point => selected.has(point));
+};
+
 const sourceCoordinateGroupFor = point => Number.isSafeInteger(point.coordinateGroup)
     && point.coordinateGroup >= 0 ? point.coordinateGroup : null;
 
@@ -978,6 +1064,7 @@ const API = {
     distanceM: haversineDistanceM,
     computeRouteDistanceM,
     calculateConfirmedGainM,
+    sampleChartPoints,
     computeMetrics,
     computeMetricsForSegments,
     deriveAscentMetrics,

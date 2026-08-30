@@ -458,6 +458,9 @@ const run = async () => {
         let chartInstance = null;
         let chartData = [];
         let timeChartData = [];
+        let lastChartPointBudget = 0;
+        let chartResizeObserver = null;
+        let chartResizeFrame = null;
         let chartMode = 'elevation';
         let hasTimeSeries = false;
         let selectedCoordinateIndex = -1;
@@ -938,6 +941,9 @@ const run = async () => {
                 overlay.dispose();
                 frameLifecycle.dispose();
                 viewport.dispose();
+                if (chartResizeObserver) chartResizeObserver.disconnect();
+                if (chartResizeFrame !== null) cancelAnimationFrame(chartResizeFrame);
+                if (chartInstance) chartInstance.destroy();
             },
         });
 
@@ -1053,8 +1059,64 @@ const run = async () => {
         };
 
         // 4. Chart & UI Renderer Engine
-        const renderData = () => {
+        const chartPointBudget = () => {
+            const width = canvasContainer.getBoundingClientRect().width
+                || container.getBoundingClientRect().width
+                || 640;
+            return Math.max(256, Math.min(1200, Math.ceil(width)));
+        };
+        const sampleChartData = selectedPoint => {
+            const budget = chartPointBudget();
+            lastChartPointBudget = budget;
+            const required = selectedPoint ? [selectedPoint] : [];
+
+            if (chartMode === 'elevation') {
+                const distanceSource = metrics.points;
+                const timeSource = hasTime
+                    ? metrics.points.filter(point => point.timeState === 'valid')
+                        .sort((a, b) => a.ms - b.ms)
+                    : [];
+                const distanceBudget = timeSource.length ? Math.ceil(budget / 2) : budget;
+                const timeBudget = timeSource.length ? Math.floor(budget / 2) : 0;
+                const included = new Set(GpxMetrics.sampleChartPoints(distanceSource, distanceBudget, {
+                    groupProperty: 'coordinateGroup',
+                    valueProperty: 'eleM',
+                    required,
+                }));
+                GpxMetrics.sampleChartPoints(timeSource, timeBudget, {
+                    groupProperty: 'timeCoordinateGroup',
+                    valueProperty: 'eleM',
+                    required,
+                }).forEach(point => included.add(point));
+                chartData = distanceSource.filter(point => included.has(point));
+                timeChartData = timeSource.filter(point => included.has(point));
+            } else if (chartMode === 'progress') {
+                timeChartData = GpxMetrics.sampleChartPoints(metrics.timePoints, budget, {
+                    groupProperty: 'timeCoordinateGroup',
+                    valueProperty: 'distM',
+                    required,
+                });
+                const included = new Set(timeChartData);
+                chartData = metrics.routePoints.filter(point => included.has(point));
+            } else {
+                chartData = GpxMetrics.sampleChartPoints(metrics.routePoints, budget, {
+                    groupProperty: 'coordinateGroup',
+                    valueProperty: 'distM',
+                    required,
+                });
+                timeChartData = [];
+            }
+            hasTimeSeries = chartMode === 'progress'
+                ? timeChartData.length >= 2
+                : hasTime && timeChartData.length >= 2;
+        };
+
+        const renderData = ({ resetSeriesVisibility = false } = {}) => {
             const selectedBeforeRebuild = chartData[selectedCoordinateIndex];
+            sampleChartData(selectedBeforeRebuild);
+            selectedCoordinateIndex = selectedBeforeRebuild
+                ? chartData.indexOf(selectedBeforeRebuild)
+                : -1;
             clearHoverSunPreview();
             if (selectedBeforeRebuild) promptSunSelection();
             const p = panelPalette();
@@ -1246,8 +1308,6 @@ const run = async () => {
                     );
                 });
             }
-
-            if (chartInstance) chartInstance.destroy();
 
             // Initial series visibility follows the setting, but only when both
             // series exist (a time series needs timestamps). The legend's click
@@ -1447,78 +1507,92 @@ const run = async () => {
                 restoreSelectedRouteHighlight();
             };
 
-            chartInstance = new Chart(canvas.getContext('2d'), {
-                type: 'line',
-                data: { datasets },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    interaction: startsSingle ? { mode: 'index', intersect: false } : { mode: 'nearest', intersect: true, axis: 'xy' },
-                    onHover: (event, activeElements) => {
-                        // FRAGILE DEPENDENCY: the hover-to-highlight-on-map
-                        // feature reaches into Peakbagger's own MasterMap iframe
-                        // and uses two private, undocumented globals it defines
-                        // there -- the Leaflet instance `mapsPlaceholder` and
-                        // Leaflet itself as `L`. These are same-origin (so
-                        // reachable) but outside our control; if Peakbagger
-                        // renames or restructures them this feature stops
-                        // working. It fails closed (the guard below simply skips
-                        // the marker), so the chart itself is unaffected.
-                        let hoveredPoint = null;
-                        let hoverSeries = 'distance';
+            const chartOptions = {
+                responsive: true, maintainAspectRatio: false,
+                animation: false,
+                interaction: startsSingle ? { mode: 'index', intersect: false } : { mode: 'nearest', intersect: true, axis: 'xy' },
+                onHover: (event, activeElements) => {
+                    // FRAGILE DEPENDENCY: the hover-to-highlight-on-map
+                    // feature reaches into Peakbagger's own MasterMap iframe
+                    // and uses two private, undocumented globals it defines
+                    // there -- the Leaflet instance `mapsPlaceholder` and
+                    // Leaflet itself as `L`. These are same-origin (so
+                    // reachable) but outside our control; if Peakbagger
+                    // renames or restructures them this feature stops
+                    // working. It fails closed (the guard below simply skips
+                    // the marker), so the chart itself is unaffected.
+                    let hoveredPoint = null;
+                    let hoverSeries = 'distance';
 
-                        if (activeElements.length > 0) {
-                            const datasetIndex = activeElements[0].datasetIndex;
-                            const idx = activeElements[0].index;
-                            const dataset = datasets[datasetIndex];
-                            const candidate = dataset?.data[idx]?._raw;
-                            hoverSeries = dataset?._bpbSeries || 'distance';
-                            if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
-                        }
+                    if (activeElements.length > 0) {
+                        const datasetIndex = activeElements[0].datasetIndex;
+                        const idx = activeElements[0].index;
+                        const dataset = datasets[datasetIndex];
+                        const candidate = dataset?.data[idx]?._raw;
+                        hoverSeries = dataset?._bpbSeries || 'distance';
+                        if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
+                    }
 
-                        if (hoveredPoint) {
-                            renderRouteHighlight(hoveredPoint, hoverSeries);
-                            previewSunPoint(hoveredPoint);
-                        } else {
-                            restoreSelectedRouteHighlight();
-                            restoreSelectedSun();
-                        }
+                    if (hoveredPoint) {
+                        renderRouteHighlight(hoveredPoint, hoverSeries);
+                        previewSunPoint(hoveredPoint);
+                    } else {
+                        restoreSelectedRouteHighlight();
+                        restoreSelectedSun();
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
                     },
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            filter: (tooltipItem, index) => index === 0,
-                            callbacks: {
-                                title: items => {
-                                    const item = items[0];
-                                    return formatChartPoint(
-                                        item.raw._raw,
-                                        item.dataset,
-                                        item.parsed.y
-                                    ).title;
-                                },
-                                label: item => {
-                                    return formatChartPoint(
-                                        item.raw._raw,
-                                        item.dataset,
-                                        item.parsed.y
-                                    ).label;
-                                },
-                                afterBody: items => {
-                                    const item = items[0];
-                                    return formatChartPoint(
-                                        item.raw._raw,
-                                        item.dataset,
-                                        item.parsed.y
-                                    ).afterBody;
-                                }
+                    tooltip: {
+                        filter: (tooltipItem, index) => index === 0,
+                        callbacks: {
+                            title: items => {
+                                const item = items[0];
+                                return formatChartPoint(
+                                    item.raw._raw,
+                                    item.dataset,
+                                    item.parsed.y
+                                ).title;
+                            },
+                            label: item => {
+                                return formatChartPoint(
+                                    item.raw._raw,
+                                    item.dataset,
+                                    item.parsed.y
+                                ).label;
+                            },
+                            afterBody: items => {
+                                const item = items[0];
+                                return formatChartPoint(
+                                    item.raw._raw,
+                                    item.dataset,
+                                    item.parsed.y
+                                ).afterBody;
                             }
                         }
-                    },
-                    scales
+                    }
+                },
+                scales
+            };
+            if (chartInstance?.data && chartInstance?.options) {
+                chartInstance.data.datasets = datasets;
+                Object.assign(chartInstance.options, chartOptions);
+                if (resetSeriesVisibility && typeof chartInstance.setDatasetVisibility === 'function') {
+                    datasets.forEach((dataset, index) =>
+                        chartInstance.setDatasetVisibility(index, dataset.hidden !== true));
                 }
-            });
+                syncChartInteraction();
+                chartInstance.update('none');
+            } else {
+                if (chartInstance) chartInstance.destroy();
+                chartInstance = new Chart(canvas.getContext('2d'), {
+                    type: 'line',
+                    data: { datasets },
+                    options: chartOptions
+                });
+            }
             chartLegend.replaceChildren(...datasets.map((dataset, index) => {
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -1539,6 +1613,18 @@ const run = async () => {
                 selectSunPoint(chartData[selectedCoordinateIndex]);
             }
         };
+
+        if (typeof ResizeObserver === 'function') {
+            chartResizeObserver = new ResizeObserver(() => {
+                if (!metrics.routePoints?.length || chartPointBudget() === lastChartPointBudget) return;
+                if (chartResizeFrame !== null) cancelAnimationFrame(chartResizeFrame);
+                chartResizeFrame = requestAnimationFrame(() => {
+                    chartResizeFrame = null;
+                    if (metrics.routePoints?.length) renderData();
+                });
+            });
+            chartResizeObserver.observe(canvasContainer);
+        }
 
         unitSelect.addEventListener('change', () => {
             BPB.set({ units: unitSelect.value });
@@ -1578,7 +1664,9 @@ const run = async () => {
             if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
             if (changed(['units', 'theme', 'chartDefaultSeries'])) {
                 unitSelect.value = unitPreference(settings);
-                if (metrics.routePoints?.length) renderData();
+                if (metrics.routePoints?.length) {
+                    renderData({ resetSeriesVisibility: changed(['chartDefaultSeries']) });
+                }
                 else applyPanelTheme();
             }
         });
@@ -1647,9 +1735,6 @@ const run = async () => {
                 timeChartData = chartMode === 'elevation'
                     ? metrics.timeChartPoints
                     : metrics.timeProgressChartPoints;
-                hasTimeSeries = chartMode === 'progress'
-                    ? timeChartData.length >= 2
-                    : hasTime && timeChartData.length >= 2;
                 startMs = metrics.startMs;
                 endMs = metrics.endMs;
                 summitMs = metrics.summitMs;
