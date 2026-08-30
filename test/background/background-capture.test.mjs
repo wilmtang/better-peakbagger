@@ -27,7 +27,8 @@ const waitForCondition = async (predicate, timeoutMs = 2000) => {
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
     beforePeakbaggerLogin = null, beforePeakbaggerAccountEvidence = null,
     beforePeakbaggerScript = null, afterPeakbaggerScript = null,
-    beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
+    beforeProviderScript = null, afterProviderScript = null, beforeProviderCapture = null,
+    beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
     afterSessionSet = null, clock = null, groupError = null, faults = {},
     sessionValues = null, browserTabs = null, timerDelayCap = null,
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
@@ -81,10 +82,17 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let peakbaggerPageProbeCalls = 0;
     let peakbaggerAccountEvidenceCalls = 0;
     const peakbaggerScriptPhaseCalls = new Map();
+    const providerScriptPhaseCalls = new Map();
     const loggedErrors = [];
     const runPeakbaggerScriptHook = async (hook, phase, details, advance = false) => {
         const number = (peakbaggerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
         if (advance) peakbaggerScriptPhaseCalls.set(phase, number);
+        if (!hook) return;
+        await hook({ phase, number, tabId: details.target.tabId, details });
+    };
+    const runProviderScriptHook = async (hook, phase, details, advance = false) => {
+        const number = (providerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
+        if (advance) providerScriptPhaseCalls.set(phase, number);
         if (!hook) return;
         await hook({ phase, number, tabId: details.target.tabId, details });
     };
@@ -160,6 +168,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         await runPeakbaggerScriptHook(beforePeakbaggerScript, 'injection', details, true);
                         peakbaggerPageInjected.add(details.target.tabId);
                         await runPeakbaggerScriptHook(afterPeakbaggerScript, 'injection', details);
+                    }
+                    if (details.files.includes('provider-page.js')) {
+                        await runProviderScriptHook(beforeProviderScript, 'injection', details, true);
+                        await runProviderScriptHook(afterProviderScript, 'injection', details);
                     }
                     return [];
                 }
@@ -268,11 +280,20 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         kind: 'ok', requestedUrl: url, url, status: 200, redirected: false, text,
                     } } }];
                 }
+                if (isOwnershipCheck) {
+                    await runProviderScriptHook(beforeProviderScript, 'ownership', details, true);
+                    const result = ownershipResult || capture;
+                    await runProviderScriptHook(afterProviderScript, 'ownership', details);
+                    return [{ result: structuredClone(result) }];
+                }
                 if (isProviderCancel) {
+                    await runProviderScriptHook(beforeProviderScript, 'cancel', details, true);
                     providerCancelCalls.push(details.args?.[0]);
+                    await runProviderScriptHook(afterProviderScript, 'cancel', details);
                     return [{ result: true }];
                 }
                 if (isProviderCapture) {
+                    await runProviderScriptHook(beforeProviderScript, 'capture', details, true);
                     const call = {
                         number: providerCaptureCalls.length + 1,
                         options: structuredClone(details.args?.[0]),
@@ -280,11 +301,13 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     };
                     providerCaptureCalls.push(call);
                     if (beforeProviderCapture) await beforeProviderCapture(call);
-                }
-                const result = isOwnershipCheck && ownershipResult ? ownershipResult
-                    : typeof captureResult === 'function' ? captureResult(providerCaptureCalls.at(-1))
+                    const result = typeof captureResult === 'function'
+                        ? captureResult(providerCaptureCalls.at(-1))
                         : capture;
-                return [{ result: structuredClone(result) }];
+                    await runProviderScriptHook(afterProviderScript, 'capture', details);
+                    return [{ result: structuredClone(result) }];
+                }
+                return [{ result: structuredClone(capture) }];
             }
         },
         action: {
@@ -1724,6 +1747,170 @@ test('cancellation promptly abandons every page-helper executeScript phase', asy
             });
         }
     }
+});
+
+test('cancellation promptly abandons every provider executeScript phase', async t => {
+    for (const phase of ['injection', 'ownership', 'capture']) {
+        for (const stage of ['before', 'after']) {
+            await t.test(`${stage} ${phase} dispatch`, async t => {
+                let reached;
+                let rejectLate;
+                const phaseReached = new Promise(resolve => { reached = resolve; });
+                const lateGate = new Promise((_, reject) => { rejectLate = reject; });
+                const unhandled = [];
+                const onUnhandled = reason => { unhandled.push(reason); };
+                process.on('unhandledRejection', onUnhandled);
+                t.after(() => process.off('unhandledRejection', onUnhandled));
+                const stall = call => {
+                    if (call.phase !== phase || call.number !== 1) return undefined;
+                    reached();
+                    return lateGate;
+                };
+                const harness = createHarness({
+                    ...(stage === 'before'
+                        ? { beforeProviderScript: stall }
+                        : { afterProviderScript: stall }),
+                });
+
+                const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                await phaseReached;
+                const settled = Promise.all([
+                    capture,
+                    harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+                ]);
+                const [started, cancelled] = await Promise.race([
+                    settled,
+                    new Promise((_, reject) => setTimeout(
+                        () => reject(new Error(`cancel did not settle stalled ${stage} ${phase}`)),
+                        500,
+                    )),
+                ]);
+
+                assert.equal(started, null);
+                assert.equal(cancelled.cancelled, true);
+                assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+                await waitForCondition(() => harness.providerCancelCalls.length === 1);
+
+                rejectLate(new Error(`late ${stage} ${phase} rejection`));
+                await new Promise(resolve => setTimeout(resolve, 0));
+                assert.equal(unhandled.length, 0, 'the abandoned browser promise retains a rejection owner');
+                assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined,
+                    'a late provider dispatch cannot resurrect its generation');
+            });
+        }
+    }
+});
+
+test('provider cancellation dispatch is best-effort and never delays Cancel', async t => {
+    for (const stage of ['before', 'after']) {
+        await t.test(`${stage} cancel dispatch`, async () => {
+            let cancelReached;
+            const reached = new Promise(resolve => { cancelReached = resolve; });
+            const stallCancel = call => {
+                if (call.phase !== 'cancel' || call.number !== 1) return undefined;
+                cancelReached();
+                return new Promise(() => {});
+            };
+            const harness = createHarness({
+                beforeProviderCapture: () => new Promise(() => {}),
+                ...(stage === 'before'
+                    ? { beforeProviderScript: stallCancel }
+                    : { afterProviderScript: stallCancel }),
+            });
+
+            const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            await waitForCondition(() => harness.providerCaptureCalls.length === 1);
+            const cancellation = harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+            const [cancelled] = await Promise.race([
+                Promise.all([cancellation, reached]),
+                new Promise((_, reject) => setTimeout(
+                    () => reject(new Error(`Cancel awaited the stalled ${stage} cleanup dispatch`)),
+                    500,
+                )),
+            ]);
+
+            assert.equal(cancelled.cancelled, true);
+            assert.equal(await capture, null);
+            assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+        });
+    }
+});
+
+test('every stalled provider operation returns one typed public deadline failure', async t => {
+    for (const phase of ['injection', 'ownership', 'capture']) {
+        await t.test(phase, async () => {
+            const harness = createHarness({
+                timerDelayCap: 5,
+                beforeProviderScript: call => call.phase === phase && call.number === 1
+                    ? new Promise(() => {})
+                    : undefined,
+            });
+
+            const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(result.phase, 'error');
+            assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
+                code: 'provider-page-timeout',
+                message: 'The activity page did not respond within 20 seconds. Reload the activity and try again.',
+            });
+            assert.equal(harness.values.bpbCaptureJobs['1'].error.code, 'provider-page-timeout');
+        });
+    }
+});
+
+test('source closure abandons a stalled provider ownership read', async () => {
+    let reached;
+    const ownershipReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforeProviderScript: call => {
+            if (call.phase !== 'ownership') return undefined;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await ownershipReached;
+    const generation = harness.values.bpbCaptureJobs['1'].id;
+    harness.tabs.delete(1);
+    harness.tabRemoved.listeners[0](1, { windowId: 9, isWindowClosing: false });
+
+    assert.equal(await Promise.race([
+        capture,
+        new Promise((_, reject) => setTimeout(
+            () => reject(new Error('source closure did not settle provider ownership')), 500,
+        )),
+    ]), null);
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
+    assert.deepEqual(harness.providerCancelCalls, [generation]);
+});
+
+test('expiry abandons a stalled provider capture without retaining its generation', async () => {
+    let reached;
+    const captureReached = new Promise(resolve => { reached = resolve; });
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeProviderScript: call => {
+            if (call.phase !== 'capture') return undefined;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await captureReached;
+    const generation = harness.values.bpbCaptureJobs['1'].id;
+    clock.now += 30 * 60 * 1000 + 1;
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+
+    assert.equal(await Promise.race([
+        capture,
+        new Promise((_, reject) => setTimeout(
+            () => reject(new Error('expiry did not settle provider capture')), 500,
+        )),
+    ]), null);
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
+    assert.deepEqual(harness.providerCancelCalls, [generation]);
 });
 
 test('closing the source tab abandons stalled helper setup and releases its lease', async () => {

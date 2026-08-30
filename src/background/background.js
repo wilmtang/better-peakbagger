@@ -50,6 +50,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const PEAKBAGGER_HELPER_URL = `${PEAKBAGGER_ORIGIN}/Default.aspx`;
     const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
     const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
+    const PROVIDER_OPERATION_TIMEOUT_MS = 20_000;
+    const PROVIDER_CLEANUP_TIMEOUT_MS = 2_000;
     const PEAKBAGGER_PAGE_VERSION = 2;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
         code: 'capture-failed',
@@ -71,6 +73,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const captureAdmissions = new Map();
     const captureCancellationEpochs = new Map();
     const localAnalysisOwners = new Map();
+    const providerCancellationRequests = new Set();
     const lifecycleQueues = new Map();
     const lifecycleEpochs = new Map();
     // Events can arrive in the narrow interval after tabs.create() returns but
@@ -272,17 +275,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         Object.assign(new Error(`Peakbagger page operation timed out during ${phase}.`), { cause }),
     );
 
+    const providerOperationTimeoutError = (phase, cause) => PublicErrors.exception(
+        'provider-page-timeout',
+        'The activity page did not respond within 20 seconds. Reload the activity and try again.',
+        { cause: Object.assign(new Error(`Provider page operation timed out during ${phase}.`), { cause }) },
+    );
+
     // Browser promises are not abortable. Every page-realm operation therefore
     // races the capture owner and one explicit deadline. The abandoned promise
     // retains a rejection handler so a renderer that responds late cannot wake
     // the worker with an unhandled rejection or resume the capture pipeline.
-    const runPeakbaggerBrowserOperation = async ({
-        phase,
+    const runBrowserOperation = async ({
         operation,
-        signal = null,
-        timeoutMs = PEAKBAGGER_OPERATION_TIMEOUT_MS,
-        onCancel = null,
-        onLateResult = null,
+        signal,
+        timeoutMs,
+        onCancel,
+        onLateResult,
+        timeoutError,
     }) => {
         if (signal?.aborted) throw cancelledCaptureError();
         const deadline = Deadline.createRequestDeadline(timeoutMs);
@@ -316,7 +325,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (deadline.expired || Deadline.isTimeout(error)) {
                 try { onCancel?.(); }
                 catch (_cancelError) { /* best-effort page cancellation */ }
-                throw peakbaggerOperationTimeoutError(phase, error);
+                throw timeoutError(error);
             }
             throw error;
         } finally {
@@ -324,6 +333,38 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             deadline.clear();
         }
     };
+
+    const runPeakbaggerBrowserOperation = ({
+        phase,
+        operation,
+        signal = null,
+        timeoutMs = PEAKBAGGER_OPERATION_TIMEOUT_MS,
+        onCancel = null,
+        onLateResult = null,
+    }) => runBrowserOperation({
+        operation,
+        signal,
+        timeoutMs,
+        onCancel,
+        onLateResult,
+        timeoutError: cause => peakbaggerOperationTimeoutError(phase, cause),
+    });
+
+    const runProviderBrowserOperation = ({
+        phase,
+        operation,
+        signal = null,
+        timeoutMs = PROVIDER_OPERATION_TIMEOUT_MS,
+        onCancel = null,
+        onLateResult = null,
+    }) => runBrowserOperation({
+        operation,
+        signal,
+        timeoutMs,
+        onCancel,
+        onLateResult,
+        timeoutError: cause => providerOperationTimeoutError(phase, cause),
+    });
 
     const cleanPeakbaggerHelperLease = value => {
         const expectedUrl = canonicalPeakbaggerUrl(value?.expectedUrl);
@@ -831,64 +872,97 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return [...byId.values()];
     };
 
-    const injectProvider = tabId => ext.scripting.executeScript({
-        target: { tabId },
-        files: ['provider-page.js'],
-        world: 'MAIN'
+    const cancelProviderCapture = async (tabId, generation) => {
+        const results = await runProviderBrowserOperation({
+            phase: 'capture cancellation',
+            timeoutMs: PROVIDER_CLEANUP_TIMEOUT_MS,
+            operation: () => ext.scripting.executeScript({
+                target: { tabId },
+                func: captureGeneration =>
+                    globalThis.BPBProviderPage?.cancelCapture?.(captureGeneration) === true,
+                args: [generation],
+                world: 'MAIN'
+            }),
+        });
+        return !!results?.[0]?.result;
+    };
+
+    const requestProviderCancellation = (tabId, generation) => {
+        if (!Number.isInteger(tabId) || typeof generation !== 'string' || !generation) return;
+        const key = `${tabId}:${generation}`;
+        if (providerCancellationRequests.has(key)) return;
+        providerCancellationRequests.add(key);
+        runDetachedCleanup('provider capture cancellation', async () => {
+            try { await cancelProviderCapture(tabId, generation); }
+            finally { providerCancellationRequests.delete(key); }
+        });
+    };
+
+    const providerOperationCancellation = (tabId, generation) => () =>
+        requestProviderCancellation(tabId, generation);
+
+    const injectProvider = (tabId, generation, signal) => runProviderBrowserOperation({
+        phase: 'injection',
+        signal,
+        onCancel: providerOperationCancellation(tabId, generation),
+        operation: () => ext.scripting.executeScript({
+            target: { tabId },
+            files: ['provider-page.js'],
+            world: 'MAIN'
+        }),
     });
 
-    const inspectProviderOwnership = async (tabId, expectedActivity) => {
-        const results = await ext.scripting.executeScript({
-            target: { tabId },
-            // Narrowed in the page realm: the worker needs the verdict, not the
-            // provider profile identifiers the adapter compared to reach it.
-            func: expected => globalThis.BPBProviderPage.publicOwnership(
-                globalThis.BPBProviderPage.inspectExpectedOwnership(expected)),
-            args: [expectedActivity],
-            world: 'MAIN'
+    const inspectProviderOwnership = async (tabId, expectedActivity, generation, signal) => {
+        const results = await runProviderBrowserOperation({
+            phase: 'ownership inspection',
+            signal,
+            onCancel: providerOperationCancellation(tabId, generation),
+            operation: () => ext.scripting.executeScript({
+                target: { tabId },
+                // Narrowed in the page realm: the worker needs the verdict, not the
+                // provider profile identifiers the adapter compared to reach it.
+                func: expected => globalThis.BPBProviderPage.publicOwnership(
+                    globalThis.BPBProviderPage.inspectExpectedOwnership(expected)),
+                args: [expectedActivity],
+                world: 'MAIN'
+            }),
         });
         if (!results || !results[0]) throw new Error('The activity page returned no ownership result.');
         return results[0].result;
     };
 
-    const captureProvider = async (tabId, capturePreferences, generation, expectedActivity) => {
-        const results = await ext.scripting.executeScript({
-            target: { tabId },
-            func: async (options, captureGeneration, activity) => {
-                try {
-                    return await globalThis.BPBProviderPage.capture(
-                        options,
-                        captureGeneration,
-                        undefined,
-                        activity,
-                    );
-                } catch (error) {
-                    return {
-                        ok: false,
-                        code: 'provider-export-failed',
-                        message: 'The activity provider could not export this GPX. Reload the activity and try again.'
-                    };
-                }
-            },
-            args: [{
-                retainWaypoints: capturePreferences.retainWaypoints,
-                includeTripName: capturePreferences.fillTripInfo
-            }, generation, expectedActivity],
-            world: 'MAIN'
+    const captureProvider = async (tabId, capturePreferences, generation, expectedActivity, signal) => {
+        const results = await runProviderBrowserOperation({
+            phase: 'GPX capture',
+            signal,
+            onCancel: providerOperationCancellation(tabId, generation),
+            operation: () => ext.scripting.executeScript({
+                target: { tabId },
+                func: async (options, captureGeneration, activity) => {
+                    try {
+                        return await globalThis.BPBProviderPage.capture(
+                            options,
+                            captureGeneration,
+                            undefined,
+                            activity,
+                        );
+                    } catch (error) {
+                        return {
+                            ok: false,
+                            code: 'provider-export-failed',
+                            message: 'The activity provider could not export this GPX. Reload the activity and try again.'
+                        };
+                    }
+                },
+                args: [{
+                    retainWaypoints: capturePreferences.retainWaypoints,
+                    includeTripName: capturePreferences.fillTripInfo
+                }, generation, expectedActivity],
+                world: 'MAIN'
+            }),
         });
         if (!results || !results[0]) throw new Error('The activity page returned no capture result.');
         return results[0].result;
-    };
-
-    const cancelProviderCapture = async (tabId, generation) => {
-        const results = await ext.scripting.executeScript({
-            target: { tabId },
-            func: captureGeneration =>
-                globalThis.BPBProviderPage?.cancelCapture?.(captureGeneration) === true,
-            args: [generation],
-            world: 'MAIN'
-        });
-        return !!results?.[0]?.result;
     };
 
     // Shared post-capture pipeline: sanitize → corridor lookup → detect →
@@ -1084,8 +1158,13 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-ownership' })) return;
-            await injectProvider(tabId);
-            const ownership = await inspectProviderOwnership(tabId, expectedActivity);
+            await injectProvider(tabId, generation, signal);
+            const ownership = await inspectProviderOwnership(
+                tabId,
+                expectedActivity,
+                generation,
+                signal,
+            );
             const ownershipMatches = sameProviderActivity(ownership, expectedActivity);
             const ownershipChanged = ownership?.code === 'activity-changed'
                 || (hasProviderActivity(ownership) && !ownershipMatches);
@@ -1140,6 +1219,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 capturePreferences,
                 generation,
                 expectedActivity,
+                signal,
             );
             const captureMatches = sameProviderActivity(capture, expectedActivity);
             const captureChanged = capture?.code === 'activity-changed'
@@ -1223,6 +1303,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 expiresAt: now() + JOB_TTL_MS
             });
         } catch (error) {
+            // Cancellation owners delete or replace the generation separately.
+            // Never turn their intentional abort into a durable error record;
+            // source-tab cleanup is detached and may still be waiting on
+            // storage when this non-abortable browser call loses its race.
+            if (signal?.aborted) return;
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
             await failCaptureJob(tabId, generation, failure.code, failure.message);
         } finally {
@@ -1302,7 +1387,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const process = processCapture(tabId, tab.url, capturePreferences, job.id, controller?.signal);
         processes.set(tabId, { generation: job.id, promise: process, controller });
-        return { kind: 'started', job, process };
+        return { kind: 'started', job, process, signal: controller?.signal };
     };
 
     const startCapture = async message => {
@@ -1329,6 +1414,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             await admission.process;
+            if (admission.signal?.aborted) return null;
             const completed = (await readMap(JOBS_KEY))[tabId];
             return completed?.id === admission.job.id ? publicJob(completed) : null;
         }
@@ -1399,7 +1485,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const abortOwnedWork = (tabId, generation = null) => {
         const provider = processes.get(tabId);
-        if (provider && (generation === null || provider.generation === generation)) provider.controller?.abort();
+        if (provider && (generation === null || provider.generation === generation)) {
+            requestProviderCancellation(tabId, provider.generation);
+            provider.controller?.abort();
+        }
         const local = localAnalysisOwners.get(tabId);
         if (local && (generation === null || local.generation === generation)) local.controller?.abort();
     };
@@ -1417,11 +1506,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const process = processes.get(tabId);
             abortOwnedWork(tabId, current.id);
             if (process?.generation === current.id) processes.delete(tabId);
-            try {
-                await cancelProviderCapture(tabId, current.id);
-            } catch (error) {
-                console.error('Better Peakbagger: provider capture cancellation failed', error);
-            }
         }
         if (cancelled) await setBadge(tabId, '');
         return { ok: cancelled, cancelled, job: cancelled ? null : publicJob(current) };
