@@ -2845,6 +2845,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             markPeakbaggerHelperAdopted(tabId));
     });
     ext.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+        if (changeInfo?.status === 'loading') {
+            runDetachedCleanup('photo source navigation cleanup', () =>
+                photoRoutes.forgetSourceTab(tabId));
+        }
         if (changeInfo?.url) {
             rememberRecentHelperEvent(recentHelperNavigations, tabId, changeInfo.url);
             runDetachedCleanup('temporary Peakbagger tab navigation', () =>

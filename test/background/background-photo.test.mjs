@@ -108,6 +108,7 @@ const peakSender = {
     url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=33&cid=22',
     tab: { id: 41 },
     frameId: 0,
+    documentId: 'report-document-a',
 };
 const photoSender = {
     url: 'chrome-extension://test-extension/photos/photos.html?mode=edit&returnToken=return-token',
@@ -143,6 +144,8 @@ test('opens one bound extension editor and stores a short-lived return context',
     assert.equal(url.searchParams.get('returnToken'), 'return-token');
     const contexts = h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY];
     assert.equal(contexts['return-token'].sourceTabId, 41);
+    assert.equal(contexts['return-token'].sourceDocumentId, 'report-document-a');
+    assert.equal(contexts['return-token'].sourceUrl, peakSender.url);
     assert.equal(contexts['return-token'].editorTabId, 91);
     assert.deepEqual(contexts['return-token'].identity, { cid: 22, aid: null, pid: 33 });
 });
@@ -405,8 +408,13 @@ test('returns one sanitized insertion to the originating tab and rejects replay'
     });
     assert.deepEqual(h.sent, [{
         tabId: 41,
-        message: { type: 'PHOTO_INSERT_RESULT', ...message },
-        options: { frameId: 0 },
+        message: {
+            type: 'PHOTO_INSERT_RESULT',
+            expectedIdentity: { cid: 22, aid: null, pid: 33 },
+            expectedUrl: peakSender.url,
+            ...message,
+        },
+        options: { frameId: 0, documentId: 'report-document-a' },
     }]);
     const replay = await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender);
     assert.equal(replay.ok, false);
@@ -470,6 +478,8 @@ test('forwards only a bounded optional report display width', async () => {
     });
     assert.deepEqual(sized.sent[0].message, {
         type: 'PHOTO_INSERT_RESULT',
+        expectedIdentity: { cid: 22, aid: null, pid: 33 },
+        expectedUrl: peakSender.url,
         returnToken: 'return-token',
         localPhotoId: 'photo-1',
         url: 'https://i.ibb.co/a/topo.jpg',
@@ -511,13 +521,27 @@ test('forwards an insertion whose description is empty', async () => {
         tabId: 41,
         message: {
             type: 'PHOTO_INSERT_RESULT',
+            expectedIdentity: { cid: 22, aid: null, pid: 33 },
+            expectedUrl: peakSender.url,
             returnToken: 'return-token',
             localPhotoId: 'photo-1',
             url: 'https://i.ibb.co/a/topo.jpg',
             alt: '',
         },
-        options: { frameId: 0 },
+        options: { frameId: 0, documentId: 'report-document-a' },
     }]);
+});
+
+test('report navigation invalidates only contexts launched by that source tab', async () => {
+    const h = harness();
+    await h.routes.handlers.PHOTO_EDITOR_OPEN(openMessage, peakSender);
+    assert.ok(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token']);
+
+    await h.routes.forgetSourceTab(photoSender.tab.id);
+    assert.ok(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'],
+        'loading the editor tab must not invalidate its return context');
+    await h.routes.forgetSourceTab(peakSender.tab.id);
+    assert.deepEqual(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY], {});
 });
 
 test('fails closed for wrong editor tab, invalid public URL, and expired contexts', async () => {

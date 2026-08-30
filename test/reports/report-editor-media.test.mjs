@@ -7,6 +7,17 @@ import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL } from '../helpers/report-editor-helpers.mjs';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 
+const returnContext = (url = EDITOR_URL) => {
+    const parsed = new URL(url);
+    parsed.hash = '';
+    const identity = {};
+    for (const key of ['cid', 'aid', 'pid']) {
+        const value = parsed.searchParams.get(key);
+        identity[key] = value == null ? null : Number(value);
+    }
+    return { expectedIdentity: identity, expectedUrl: parsed.toString() };
+};
+
 test('the image popover validates the source and inserts alt text', async () => {
     const dom = await loadEditor();
     const ui = await editorReady(dom);
@@ -177,6 +188,7 @@ test('a validated photo result is inserted only while the rich editor is availab
     let response;
     const message = {
         type: 'PHOTO_INSERT_RESULT',
+        ...returnContext(),
         returnToken: 'return-123',
         localPhotoId: 'photo:123',
         url: 'https://i.ibb.co/example/topo.jpg',
@@ -228,6 +240,7 @@ test('a photo result carries a bounded display width without fixing its height',
         for (const listener of listeners) {
             listener({
                 type: 'PHOTO_INSERT_RESULT',
+                ...returnContext(),
                 localPhotoId: 'photo:123',
                 url: 'https://i.ibb.co/example/topo.jpg',
                 alt: 'North ridge route',
@@ -246,6 +259,43 @@ test('a photo result carries a bounded display width without fixing its height',
         '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route" width="640"]'
         + '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]',
         'invalid optional sizing must not reject the image or leak into saved markup');
+});
+
+test('a photo result cannot cross into a different report document', async () => {
+    const listeners = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.runtime.onMessage = {
+                addListener: listener => listeners.push(listener),
+                removeListener: () => {},
+            };
+        },
+    });
+    await editorReady(dom);
+    const base = {
+        type: 'PHOTO_INSERT_RESULT',
+        ...returnContext(),
+        localPhotoId: 'photo:123',
+        url: 'https://i.ibb.co/example/topo.jpg',
+        alt: 'North ridge route',
+    };
+    const deliver = message => {
+        let response;
+        for (const listener of listeners) {
+            listener(message, { id: 'test-extension' }, value => { response = value; });
+        }
+        return response;
+    };
+
+    assert.deepEqual(JSON.parse(JSON.stringify(deliver({
+        ...base,
+        expectedIdentity: { cid: 900001, aid: 456, pid: null },
+    }))), { ok: false, error: { code: 'wrong-report' } });
+    assert.deepEqual(JSON.parse(JSON.stringify(deliver({
+        ...base,
+        expectedUrl: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900002',
+    }))), { ok: false, error: { code: 'wrong-report' } });
+    assert.equal(dom.window.document.getElementById('JournalText').value, '');
 });
 
 // The photo page accepts a description up to photoLibrary.ALT_LIMIT and the
@@ -268,6 +318,7 @@ test('an inserted photo keeps the full description the library allows', async ()
         for (const listener of listeners) {
             listener({
                 type: 'PHOTO_INSERT_RESULT',
+                ...returnContext(),
                 localPhotoId: 'photo:123',
                 url: 'https://i.ibb.co/example/topo.jpg',
                 alt
@@ -306,6 +357,7 @@ test('an inserted photo without a description is still accepted', async () => {
     for (const listener of listeners) {
         listener({
             type: 'PHOTO_INSERT_RESULT',
+            ...returnContext(),
             localPhotoId: 'photo:123',
             url: 'https://i.ibb.co/example/topo.jpg',
             alt: '   '

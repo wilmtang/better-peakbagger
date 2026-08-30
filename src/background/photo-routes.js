@@ -31,6 +31,15 @@ const cleanDraftIdentity = value => {
     return { cid, aid, pid };
 };
 
+const cleanSourceUrl = value => {
+    try {
+        const url = new URL(value);
+        if (url.protocol !== 'https:' || url.username || url.password) return null;
+        url.hash = '';
+        return url.toString();
+    } catch { return null; }
+};
+
 const cleanPublicInsertion = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const localPhotoId = typeof value.localPhotoId === 'string'
@@ -165,8 +174,9 @@ export function createPhotoRoutes({
             };
         }
         const identity = cleanDraftIdentity(message.identity || {});
+        const sourceUrl = cleanSourceUrl(sender.url);
         const mode = message.mode === 'library' ? 'library' : 'edit';
-        if (!identity) return { ok: false, error: { code: 'invalid-context' } };
+        if (!identity || !sourceUrl) return { ok: false, error: { code: 'invalid-context' } };
         if (!trustedActions.consumeCapability(message, sender, TrustedActions.ACTIONS.PHOTO_EDITOR)) {
             return {
                 ok: false,
@@ -221,6 +231,10 @@ export function createPhotoRoutes({
                     token,
                     sourceTabId: sender.tab.id,
                     sourceFrameId: Number.isInteger(sender.frameId) ? sender.frameId : 0,
+                    sourceDocumentId: typeof sender.documentId === 'string'
+                        ? sender.documentId
+                        : null,
+                    sourceUrl,
                     editorTabId: null,
                     identity,
                     createdAt,
@@ -288,8 +302,15 @@ export function createPhotoRoutes({
             response = await ext.tabs.sendMessage(context.sourceTabId, {
                 type: 'PHOTO_INSERT_RESULT',
                 returnToken: token,
+                expectedIdentity: context.identity,
+                expectedUrl: context.sourceUrl,
                 ...insertion,
-            }, { frameId: context.sourceFrameId });
+            }, {
+                frameId: context.sourceFrameId,
+                ...(context.sourceDocumentId
+                    ? { documentId: context.sourceDocumentId }
+                    : {}),
+            });
         } catch {
             await releaseClaim();
             return {
@@ -326,6 +347,12 @@ export function createPhotoRoutes({
         });
     });
 
+    const forgetSourceTab = tabId => mutateMap(RETURN_CONTEXTS_KEY, contexts => {
+        Object.entries(contexts).forEach(([token, context]) => {
+            if (context?.sourceTabId === tabId) delete contexts[token];
+        });
+    });
+
     return {
         handlers: {
             PHOTO_IMGBB_STATUS: status,
@@ -337,6 +364,7 @@ export function createPhotoRoutes({
         },
         cleanup,
         forgetTab,
+        forgetSourceTab,
         isPhotoPage,
     };
 }
@@ -346,5 +374,6 @@ export const photoRoutes = {
     RETURN_TTL_MS,
     IMGBB_PERMISSION,
     cleanDraftIdentity,
+    cleanSourceUrl,
     cleanPublicInsertion,
 };

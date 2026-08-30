@@ -1335,6 +1335,23 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         } : null;
     };
 
+    const samePhotoReturnContext = message => {
+        const expected = message?.expectedIdentity;
+        if (!expected || typeof expected !== 'object' || Array.isArray(expected)) return false;
+        const identityKeys = ['cid', 'aid', 'pid'];
+        const sameIdentity = identityKeys.every(key => {
+            const current = params.get(key);
+            const wanted = expected[key];
+            return wanted == null ? current == null : current === String(wanted);
+        });
+        if (!sameIdentity || typeof message.expectedUrl !== 'string') return false;
+        try {
+            const current = new URL(location.href);
+            current.hash = '';
+            return current.toString() === message.expectedUrl;
+        } catch { return false; }
+    };
+
     const handlePhotoInsertion = (message, sender, sendResponse) => {
         if (message?.type !== 'PHOTO_INSERT_RESULT') return undefined;
         const insertion = cleanPhotoInsertion(message);
@@ -1344,6 +1361,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             : null;
         if (!trustedSender || !insertion) {
             sendResponse?.({ ok: false, error: { code: 'invalid-result' } });
+            return false;
+        }
+        if (!samePhotoReturnContext(message)) {
+            sendResponse?.({ ok: false, error: { code: 'wrong-report' } });
             return false;
         }
         if (returnToken && handledPhotoReturnTokens.has(returnToken)) {
