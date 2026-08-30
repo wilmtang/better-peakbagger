@@ -43,8 +43,11 @@ test('the web-ext lint gate accepts exactly the owned warnings per file', async 
         'utf8',
     ));
     const resolved = resolveWarningDependencyVersions(packageLock);
-    assert.match(resolved.find(warning => warning.packageName === '@tiptap/core').owner,
-        /TipTap core \(@tiptap\/core 3\.30\.1\)/);
+    assert.equal(
+        resolved.find(warning => warning.packageName === '@tiptap/core').owner,
+        `TipTap core (@tiptap/core ${
+            packageLock.packages['node_modules/@tiptap/core'].version})`,
+    );
     const driftedLock = structuredClone(packageLock);
     driftedLock.packages['node_modules/@tiptap/core'].version = '3.30.0';
     assert.match(
