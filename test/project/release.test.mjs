@@ -551,7 +551,9 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.ok(analyzerProbe.includes('Interactive Stats: 17\\\\.53 miles'),
         'the Firefox verifier must wait for the exact Capitol metric signature');
     assert.match(analyzerProbe,
-        /state\.chart\?\.pointCounts\?\.join\("\|"\) === "971\|971"/);
+        /state\.chart\?\.pointCounts\?\.every\(count => count <= state\.chart\.pointBudget && count >= 2\)/);
+    assert.match(analyzerProbe,
+        /state\.chart\?\.animation === false/);
     assert.match(analyzerProbe,
         /state\.chart\?\.breakCounts\?\.join\("\|"\) === "0\|0"/);
     assert.match(analyzerProbe, /state => state\?\.ready/);
