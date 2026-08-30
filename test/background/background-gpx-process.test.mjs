@@ -48,12 +48,22 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
     let draftSetCalls = 0;
+    const sessionSetPatches = [];
 
     const browser = {
         storage: {
             session: {
-                get: async key => ({ [key]: structuredClone(values[key]) }),
+                get: async key => key === null
+                    ? structuredClone(values)
+                    : { [key]: structuredClone(values[key]) },
                 set: async patch => {
+                    const payloadKeys = Object.keys(patch)
+                        .filter(key => key.startsWith('bpbCapturePayload:'));
+                    if (payloadKeys.length && faults.payloadSet) {
+                        const message = faults.payloadSet;
+                        delete faults.payloadSet;
+                        throw new Error(message);
+                    }
                     if (patch.bpbDraftTabs) {
                         draftSetCalls++;
                         if (faults.draftSet || faults.draftSetAt === draftSetCalls) {
@@ -72,8 +82,19 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
                         delete faults.openedJobSet;
                         throw new Error(message);
                     }
+                    if (patch.bpbCaptureJobs
+                        && Object.values(patch.bpbCaptureJobs).some(job => job?.payloadKey)
+                        && faults.payloadMetadataSet) {
+                        const message = faults.payloadMetadataSet;
+                        delete faults.payloadMetadataSet;
+                        throw new Error(message);
+                    }
+                    sessionSetPatches.push(structuredClone(patch));
                     Object.assign(values, structuredClone(patch));
-                }
+                },
+                remove: async keys => {
+                    (Array.isArray(keys) ? keys : [keys]).forEach(key => { delete values[key]; });
+                },
             },
             sync: {
                 get: async key => {
@@ -195,9 +216,14 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     };
     return {
         send, rawSend, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations, removedTabs,
-        runtimeMessages,
+        runtimeMessages, sessionSetPatches,
         syncGetCalls: () => syncGetCalls, faults,
     };
+};
+
+const storedCaptureGpx = (harness, tabId = 5) => {
+    const job = harness.values.bpbCaptureJobs?.[String(tabId)];
+    return job?.payloadKey ? harness.values[job.payloadKey]?.gpx : undefined;
 };
 
 test('a processed upload produces a capture-shaped job and delivers the current-tab draft', async () => {
@@ -223,7 +249,8 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     assert.equal(job.provider, 'upload');
     assert.equal(job.boundPid, 7);
     assert.equal(job.cid, '77');
-    assert.match(job.uploadGpx, /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
+    assert.equal(job.uploadGpx, undefined, 'job metadata must not embed the immutable GPX');
+    assert.match(storedCaptureGpx(harness), /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
     assert.ok(job.expiresAt > Date.now(), 'the job carries the 30-minute TTL');
     assert.ok(Array.isArray(job.dayStats));
 
@@ -259,7 +286,8 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     });
     assert.equal(banner.action, 'banner');
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'previewed');
-    assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, null);
+    assert.equal(harness.values.bpbCaptureJobs['5'].payloadKey, undefined);
+    assert.equal(storedCaptureGpx(harness), undefined);
     assert.equal(await harness.send({
         type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
         applyLeaseToken: apply.applyLeaseToken,
@@ -534,7 +562,10 @@ test('B selection invalidates A ready and apply generations before any draft ope
         ...firstSelection,
     });
     assert.equal(ready.phase, 'ready');
+    const firstPayloadKey = harness.values.bpbCaptureJobs['5'].payloadKey;
     await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2) });
+    assert.equal(harness.values[firstPayloadKey], undefined,
+        'the new file selection must remove the superseded GPX generation');
 
     const stale = await harness.rawSend({
         type: 'GPX_PROCESS_APPLY',
@@ -586,7 +617,7 @@ test('a corridor with no detectable summit reports no-matches honestly', async (
         type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
     });
     assert.equal(result.phase, 'no-matches');
-    assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, null);
+    assert.equal(harness.values.bpbCaptureJobs['5'].payloadKey, undefined);
 });
 
 test('re-processing supersedes the tab’s job; an apply against the old job is rejected', async () => {
@@ -626,7 +657,7 @@ test('capture privacy settings govern the upload flow identically', async () => 
     });
     assert.equal(ready.phase, 'ready');
     const job = harness.values.bpbCaptureJobs['5'];
-    assert.doesNotMatch(job.uploadGpx, /<wpt/);
+    assert.doesNotMatch(storedCaptureGpx(harness), /<wpt/);
     assert.equal(job.tripName, '');
     assert.doesNotMatch(JSON.stringify(job), /Should not appear|Camp/);
 });
@@ -645,7 +676,7 @@ test('a timeless GPX keeps a blank derived date and unavailable durations', asyn
     const job = harness.values.bpbCaptureJobs['5'];
     assert.equal(job.matches[0].draftFields.upDuration, null);
     assert.equal(job.matches[0].draftFields.downDuration, null);
-    assert.doesNotMatch(job.uploadGpx, /<time>/);
+    assert.doesNotMatch(storedCaptureGpx(harness), /<time>/);
 });
 
 test('the worker rejects an out-of-range local-upload timezone offset', async () => {

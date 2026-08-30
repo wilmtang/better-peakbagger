@@ -20,6 +20,7 @@ import {
     createBrowserFixtureServer,
     createScaleAnalyzerGpx,
     createSyntheticCaptureJob,
+    createSyntheticCapturePayload,
     fixtureHost,
     storeUrls,
     surfaceSelectors,
@@ -2743,11 +2744,13 @@ async function main() {
         });
         assertState(Number.isInteger(sourceTabId), 'Firefox draft source tab identity was unavailable', sourceTabId);
         const seededJob = createSyntheticCaptureJob(sourceTabId);
-        const opened = await driver.executeAsyncScript((job, done) => {
+        const seededPayload = createSyntheticCapturePayload(seededJob);
+        const opened = await driver.executeAsyncScript((job, payload, done) => {
             const api = globalThis.browser || globalThis.chrome;
             api.storage.session.set({
                 bpbCaptureJobs: { [job.sourceTabId]: job },
                 bpbDraftTabs: {},
+                [payload.key]: payload.value,
             }).then(() => api.runtime.sendMessage({
                 type: 'CAPTURE_OPEN_DRAFTS',
                 tabId: job.sourceTabId,
@@ -2756,7 +2759,7 @@ async function main() {
                 const tab = reply?.tabIds?.length ? await api.tabs.get(reply.tabIds[0]) : null;
                 done({ reply, tab });
             }).catch(error => done({ error: String(error) }));
-        }, seededJob);
+        }, seededJob, seededPayload);
         const draftTabId = opened.reply?.tabIds?.[0];
         assertState(
             Number.isInteger(draftTabId),
@@ -2839,16 +2842,18 @@ async function main() {
         );
 
         await driver.switchTo().window(controlHandle);
-        const privateState = await driver.executeAsyncScript((sourceId, draftId, done) => {
+        const privateState = await driver.executeAsyncScript((sourceId, draftId, payloadKey, done) => {
             const api = globalThis.browser || globalThis.chrome;
-            api.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']).then(values => done({
+            api.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs', payloadKey]).then(values => done({
                 job: values.bpbCaptureJobs?.[sourceId] || null,
                 draft: values.bpbDraftTabs?.[draftId] || null,
+                payload: values[payloadKey],
             }), error => done({ error: String(error) }));
-        }, sourceTabId, draftTabId);
+        }, sourceTabId, draftTabId, seededPayload.key);
         assertState(
             privateState.job?.phase === 'previewed'
-        && privateState.job?.uploadGpx === null
+        && privateState.job?.payloadKey === undefined
+        && (privateState.payload === undefined || privateState.payload === null)
         && privateState.draft?.complete === true
         && privateState.draft?.previewStarted === true,
             'Firefox worker did not complete the exactly-once handoff',

@@ -38,6 +38,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const values = sessionValues || {};
     const localValues = {};
     let sessionGetCalls = 0;
+    let payloadSetCalls = 0;
+    let payloadRemoveCalls = 0;
+    const sessionSetPatches = [];
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = browserTabs || new Map([[1, {
         id: 1,
@@ -114,9 +117,23 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 get: async key => {
                     if (faults.sessionGet) throw new Error(faults.sessionGet);
                     sessionGetCalls++;
+                    if (key === null) return structuredClone(values);
+                    if (Array.isArray(key)) {
+                        return Object.fromEntries(key.map(item => [item, structuredClone(values[item])]));
+                    }
                     return { [key]: structuredClone(values[key]) };
                 },
                 set: async patch => {
+                    const payloadKeys = Object.keys(patch)
+                        .filter(key => key.startsWith('bpbCapturePayload:'));
+                    if (payloadKeys.length) {
+                        payloadSetCalls++;
+                        if (faults.payloadSet) {
+                            const message = faults.payloadSet;
+                            delete faults.payloadSet;
+                            throw new Error(message);
+                        }
+                    }
                     if (patch.bpbDraftTabs) {
                         draftSetCalls++;
                         if (faults.draftSet || faults.draftSetAt === draftSetCalls) {
@@ -135,9 +152,26 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         delete faults.openedJobSet;
                         throw new Error(message);
                     }
+                    if (patch.bpbCaptureJobs
+                        && Object.values(patch.bpbCaptureJobs).some(job => job?.payloadKey)
+                        && faults.payloadMetadataSet) {
+                        const message = faults.payloadMetadataSet;
+                        delete faults.payloadMetadataSet;
+                        throw new Error(message);
+                    }
+                    sessionSetPatches.push(structuredClone(patch));
                     Object.assign(values, structuredClone(patch));
                     if (afterSessionSet) await afterSessionSet(structuredClone(patch));
-                }
+                },
+                remove: async keys => {
+                    payloadRemoveCalls++;
+                    if (faults.payloadRemove) {
+                        const message = faults.payloadRemove;
+                        delete faults.payloadRemove;
+                        throw new Error(message);
+                    }
+                    (Array.isArray(keys) ? keys : [keys]).forEach(key => { delete values[key]; });
+                },
             },
             sync: {
                 get: async key => {
@@ -454,8 +488,17 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         peakbaggerPageCalls, peakbaggerPageCancelCalls,
         peakbaggerPageProbeCalls: () => peakbaggerPageProbeCalls,
         peakbaggerAccountEvidenceCalls: () => peakbaggerAccountEvidenceCalls,
-        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
+        sessionGetCalls: () => sessionGetCalls,
+        payloadSetCalls: () => payloadSetCalls,
+        payloadRemoveCalls: () => payloadRemoveCalls,
+        sessionSetPatches,
+        loggedErrors, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
     };
+};
+
+const storedCaptureGpx = (harness, tabId = 1) => {
+    const job = harness.values.bpbCaptureJobs?.[String(tabId)];
+    return job?.payloadKey ? harness.values[job.payloadKey]?.gpx : undefined;
 };
 
 let betaSettingsGeneration = 0;
@@ -512,9 +555,10 @@ test('background capture persists a private job, opens grouped drafts, and previ
         'an existing user Peakbagger tab must never become helper-tab cleanup');
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
-    assert.match(storedJob.uploadGpx,
+    assert.equal(storedJob.uploadGpx, undefined, 'job metadata must not embed the immutable GPX');
+    assert.match(storedCaptureGpx(harness),
         /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
-    assert.doesNotMatch(storedJob.uploadGpx, /<extensions(?:\s|>)/i);
+    assert.doesNotMatch(storedCaptureGpx(harness), /<extensions(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
     assert.deepEqual(harness.providerCaptureCalls[0].options, {
         retainWaypoints: true,
@@ -547,7 +591,8 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(banner.action, 'banner');
     assert.equal(banner.peakName, 'Test Peak');
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(storedCaptureGpx(harness), undefined);
 
     const reopened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     assert.deepEqual([...reopened.tabIds], [100]);
@@ -560,6 +605,158 @@ test('background capture persists a private job, opens grouped drafts, and previ
         applyLeaseToken: apply.applyLeaseToken,
     }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('capture payload creation and metadata publication roll back independently', async () => {
+    for (const [fault, sentinel] of [
+        ['payloadSet', 'PAYLOAD_CREATE_SENTINEL'],
+        ['payloadMetadataSet', 'PAYLOAD_METADATA_SENTINEL'],
+    ]) {
+        const harness = createHarness({ faults: { [fault]: sentinel } });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error');
+        assert.equal(result.error.code, 'capture-failed');
+        assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'error');
+        assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+        assert.deepEqual(Object.keys(harness.values)
+            .filter(key => key.startsWith('bpbCapturePayload:')), [],
+        `${fault} must not leave a generation payload behind`);
+    }
+});
+
+test('selection writes bounded metadata while multiple near-limit capture payloads stay untouched', async () => {
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+    const largeGpx = `<gpx>${'p'.repeat(800_000)}</gpx>`;
+    const jobs = Object.fromEntries([1, 2].map(tabId => {
+        const id = `job-${tabId}-generation`;
+        return [String(tabId), {
+            id,
+            sourceTabId: tabId,
+            provider: 'strava',
+            activityId: String(100 + tabId),
+            phase: 'ready',
+            matches: [{ id: 7, name: 'First Peak' }, { id: 8, name: 'Second Peak' }],
+            selectedIds: [7],
+            payloadKey: `bpbCapturePayload:${id}`,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            expiresAt,
+            error: null,
+        }];
+    }));
+    const sessionValues = {
+        bpbCaptureJobs: jobs,
+        'bpbCapturePayload:job-1-generation': { jobId: 'job-1-generation', gpx: largeGpx },
+        'bpbCapturePayload:job-2-generation': { jobId: 'job-2-generation', gpx: largeGpx },
+    };
+    const harness = createHarness({ sessionValues });
+
+    const startedAt = performance.now();
+    const result = await harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [8] });
+    const elapsedMs = performance.now() - startedAt;
+    assert.deepEqual([...result.selectedIds], [8]);
+    const jobWrites = harness.sessionSetPatches.filter(patch => patch.bpbCaptureJobs);
+    assert.equal(jobWrites.length, 1);
+    const serializedBytes = JSON.stringify(jobWrites[0]).length;
+    assert.ok(serializedBytes < largeGpx.length / 10,
+        `metadata-only selection write unexpectedly serialized ${serializedBytes} bytes`);
+    assert.ok(elapsedMs < 500, `metadata-only selection took ${elapsedMs.toFixed(1)}ms`);
+    assert.doesNotMatch(JSON.stringify(jobWrites[0]), /<gpx>|pppppppp/);
+    assert.equal(harness.values['bpbCapturePayload:job-1-generation'].gpx, largeGpx);
+    assert.equal(harness.values['bpbCapturePayload:job-2-generation'].gpx, largeGpx);
+});
+
+test('capture lifecycle writes do not wait behind an unrelated session-map queue', async () => {
+    let releaseOptionsWrite;
+    const optionsWriteGate = new Promise(resolve => { releaseOptionsWrite = resolve; });
+    let announceOptionsWrite;
+    const optionsWriteStarted = new Promise(resolve => { announceOptionsWrite = resolve; });
+    const harness = createHarness({
+        afterSessionSet: patch => {
+            if (!patch.bpbBetaSettingsTabs) return undefined;
+            announceOptionsWrite();
+            return optionsWriteGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const registration = harness.send({ type: 'OPTIONS_TAB_REGISTER' }, {
+        tab: { id: 20 },
+        url: 'chrome-extension://test-extension/options/options.html',
+    });
+    await optionsWriteStarted;
+    let selectionSettled = false;
+    const selection = harness.send({
+        type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [],
+    }).then(result => {
+        selectionSettled = true;
+        return result;
+    });
+    await waitForCondition(() => selectionSettled);
+    assert.deepEqual([...(await selection).selectedIds], []);
+
+    releaseOptionsWrite();
+    assert.equal((await registration).ok, true);
+});
+
+test('worker restart migrates legacy payloads, rejects missing generations, and removes orphans', async () => {
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+    const sessionValues = {
+        bpbCaptureJobs: {
+            1: {
+                id: 'legacy-job-generation', sourceTabId: 1, provider: 'strava', activityId: '123',
+                phase: 'ready', matches: [], selectedIds: [], uploadGpx: '<gpx>legacy</gpx>',
+                createdAt: Date.now(), updatedAt: Date.now(), expiresAt,
+            },
+            2: {
+                id: 'missing-job-generation', sourceTabId: 2, provider: 'strava', activityId: '456',
+                phase: 'ready', matches: [], selectedIds: [],
+                payloadKey: 'bpbCapturePayload:missing-job-generation',
+                createdAt: Date.now(), updatedAt: Date.now(), expiresAt,
+            },
+        },
+        'bpbCapturePayload:orphan-job-generation': {
+            jobId: 'orphan-job-generation',
+            gpx: '<gpx>orphan</gpx>',
+        },
+    };
+    const harness = createHarness({ sessionValues });
+
+    await waitForCondition(() => harness.values.bpbCaptureJobs['1'].payloadKey
+        && harness.values.bpbCaptureJobs['2'].phase === 'error'
+        && !harness.values['bpbCapturePayload:orphan-job-generation']);
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
+    assert.equal(storedCaptureGpx(harness), '<gpx>legacy</gpx>');
+    assert.equal(harness.values.bpbCaptureJobs['2'].payloadKey, undefined);
+    assert.equal(harness.values.bpbCaptureJobs['2'].error.code, 'capture-payload-missing');
+});
+
+test('a missing live payload fails closed before any draft tab is created', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const payloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    delete harness.values[payloadKey];
+
+    const result = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'job-expired');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'error');
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(harness.tabs.has(100), false);
+});
+
+test('alarm cleanup retries an orphan left by a transient payload deletion failure', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const payloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    harness.faults.payloadRemove = 'TRANSIENT_PAYLOAD_REMOVE_SENTINEL';
+
+    const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    assert.equal(cleared.ok, true);
+    assert.ok(harness.values[payloadKey], 'the injected deletion failure should leave a recoverable orphan');
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+    await waitForCondition(() => !harness.values[payloadKey]);
+    assert.ok(harness.payloadRemoveCalls() >= 2);
 });
 
 test('draft apply leases are exclusive, persisted, expiring, and one-use', async () => {
@@ -1407,8 +1604,8 @@ test('coordinate-only provider GPX still produces a valid Peakbagger draft', asy
     assert.equal(ready.hasCachedGpx, true);
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
-    assert.equal((storedJob.uploadGpx.match(/<trkpt /g) || []).length, 3);
-    assert.doesNotMatch(storedJob.uploadGpx, /<(?:ele|time)>/);
+    assert.equal((storedCaptureGpx(harness).match(/<trkpt /g) || []).length, 3);
+    assert.doesNotMatch(storedCaptureGpx(harness), /<(?:ele|time)>/);
     assert.equal(storedJob.trackSummary.breakCounts.missingElevation, 3);
     assert.equal(storedJob.trackSummary.breakCounts.missingTime, 3);
     assert.equal(storedJob.matches[0].draftFields.date, '2026-07-01');
@@ -1443,7 +1640,7 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     assert.equal(failure.action, 'preview-error');
     assert.match(failure.message, /Invalid GPX file/);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
-    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+    assert.match(storedCaptureGpx(harness), /<gpx/);
     assert.equal(harness.values.bpbDraftTabs['100'].previewStarted, false);
     assert.equal(harness.values.bpbDraftTabs['100'].complete, false);
 
@@ -1460,7 +1657,7 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     }, { tab: { id: 100 } });
     assert.equal(unconfirmed.action, 'preview-error');
     assert.match(unconfirmed.message, /did not confirm/);
-    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+    assert.match(storedCaptureGpx(harness), /<gpx/);
 });
 
 test('discarding a cached capture removes its GPX and draft identities before recapture', async () => {
@@ -1468,7 +1665,7 @@ test('discarding a cached capture removes its GPX and draft identities before re
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const firstJobId = harness.values.bpbCaptureJobs['1'].id;
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
-    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+    assert.match(storedCaptureGpx(harness), /<gpx/);
     assert.equal(harness.values.bpbDraftTabs['100'].jobId, firstJobId);
 
     const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
@@ -2211,6 +2408,7 @@ test('source-tab closure during draft opening cancels and cleans the generation 
         },
     });
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const sourcePayloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
     const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     await reached;
 
@@ -2226,6 +2424,7 @@ test('source-tab closure during draft opening cancels and cleans the generation 
     assert.equal(openResult.error.code, 'draft-open-cancelled');
     await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']
         && !harness.values.bpbDraftTabs?.['100']);
+    assert.equal(harness.values[sourcePayloadKey], undefined);
     assert.equal(harness.tabs.has(100), false);
     assert.deepEqual(harness.removedTabs, [100]);
     harness.tabRemoved.listeners[0](1);
@@ -2248,6 +2447,7 @@ test('expiry during draft opening cancels the generation and removes all expired
         },
     });
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const expiredPayloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
     const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     await reached;
 
@@ -2263,6 +2463,7 @@ test('expiry during draft opening cancels the generation and removes all expired
     assert.equal(openResult.error.code, 'draft-open-cancelled');
     await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']
         && !harness.values.bpbDraftTabs?.['100']);
+    assert.equal(harness.values[expiredPayloadKey], undefined);
     assert.equal(harness.tabs.has(100), false);
     assert.deepEqual(harness.removedTabs, [100]);
 });
@@ -2287,7 +2488,11 @@ test('draft opening cannot restore or mutate a replacement job generation', asyn
         id: 'replacement-job',
         phase: 'ready',
         selectedIds: [7],
-        uploadGpx: '<gpx>replacement</gpx>',
+        payloadKey: 'bpbCapturePayload:replacement-job',
+    };
+    harness.values['bpbCapturePayload:replacement-job'] = {
+        jobId: 'replacement-job',
+        gpx: '<gpx>replacement</gpx>',
     };
     releaseCreate();
 
@@ -2295,7 +2500,7 @@ test('draft opening cannot restore or mutate a replacement job generation', asyn
     assert.equal(openResult.phase, 'error');
     assert.equal(openResult.error.code, 'draft-open-cancelled');
     assert.equal(harness.values.bpbCaptureJobs['1'].id, 'replacement-job');
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, '<gpx>replacement</gpx>');
+    assert.equal(storedCaptureGpx(harness), '<gpx>replacement</gpx>');
     assert.equal(harness.tabs.has(100), false);
     assert.deepEqual(harness.values.bpbDraftTabs || {}, {});
 });
@@ -2304,6 +2509,7 @@ test('installing a replacement job removes records owned by the prior generation
     const harness = createHarness();
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const firstJobId = harness.values.bpbCaptureJobs['1'].id;
+    const firstPayloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
     const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     assert.equal(harness.values.bpbDraftTabs[String(opened.tabIds[0])].jobId, firstJobId);
 
@@ -2311,6 +2517,9 @@ test('installing a replacement job removes records owned by the prior generation
 
     assert.notEqual(replacement.id, firstJobId);
     assert.equal(harness.values.bpbCaptureJobs['1'].id, replacement.id);
+    assert.equal(harness.values[firstPayloadKey], undefined,
+        'installing the replacement metadata must remove the prior generation payload');
+    assert.match(storedCaptureGpx(harness), /<gpx/);
     assert.deepEqual(harness.values.bpbDraftTabs, {},
         'completed draft tabs may remain open for review, but no stale record may join the replacement lifecycle');
     assert.equal(harness.tabs.has(opened.tabIds[0]), true,
@@ -2351,7 +2560,11 @@ test('an old Preview completion cannot clear a replacement job GPX', async () =>
         ...structuredClone(harness.values.bpbCaptureJobs['1']),
         id: 'replacement-job',
         phase: 'ready',
-        uploadGpx: '<gpx>replacement</gpx>',
+        payloadKey: 'bpbCapturePayload:replacement-job',
+    };
+    harness.values['bpbCapturePayload:replacement-job'] = {
+        jobId: 'replacement-job',
+        gpx: '<gpx>replacement</gpx>',
     };
     harness.values.bpbCaptureJobs['1'] = replacement;
     releaseCompletion();
@@ -2359,7 +2572,7 @@ test('an old Preview completion cannot clear a replacement job GPX', async () =>
     assert.equal((await completion).action, 'banner');
     assert.equal(harness.values.bpbCaptureJobs['1'].id, 'replacement-job');
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, '<gpx>replacement</gpx>');
+    assert.equal(storedCaptureGpx(harness), '<gpx>replacement</gpx>');
 });
 
 test('same-day suffixes include only selected ascents and follow track order', async () => {
@@ -2403,9 +2616,9 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(ready.matches.length, 2);
     const storedJob = harness.values.bpbCaptureJobs['1'];
-    assert.match(storedJob.uploadGpx, /<wpt lat="0\.01" lon="0\.02"><name>Camp &amp; Water<\/name><\/wpt>/);
+    assert.match(storedCaptureGpx(harness), /<wpt lat="0\.01" lon="0\.02"><name>Camp &amp; Water<\/name><\/wpt>/);
     assert.equal(storedJob.trackSummary.retainedPointCount + storedJob.trackSummary.retainedWaypointCount <= 3000, true);
-    assert.doesNotMatch(storedJob.uploadGpx, /999|private/);
+    assert.doesNotMatch(storedCaptureGpx(harness), /999|private/);
     storedJob.matches.find(match => match.id === 7).confidence = 80;
     storedJob.matches.find(match => match.id === 7).draftFields.upDistanceM = 300;
     storedJob.matches.find(match => match.id === 8).confidence = 95;
@@ -2444,7 +2657,7 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.equal(harness.values.bpbDraftTabs['100'].dayStatsPending, false);
     assert.deepEqual(harness.tabMessages, [{ tabId: 101, message: { type: 'DRAFT_PROCEED' } }]);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
-    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+    assert.match(storedCaptureGpx(harness), /<gpx/);
 
     const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
     assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2 });
@@ -2466,7 +2679,8 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
         type: 'DRAFT_DAY_STATS_APPLIED', jobId: second.jobId, pid: 7, cid: 77
     }, { tab: { id: 101 } }).then(value => value.ok), true);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(storedCaptureGpx(harness), undefined);
 });
 
 test('waypoints cannot crowd a usable track out of Peakbagger’s total-point limit', async () => {
@@ -2488,7 +2702,7 @@ test('waypoints cannot crowd a usable track out of Peakbagger’s total-point li
     const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'too-many-waypoints');
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
 });
 
 test('single-peak overnight captures fill wilderness nights without creating Trip Info', async () => {
@@ -2549,7 +2763,7 @@ test('Possible and Weak matches are hidden and no coordinate upload is retained'
     const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(result.phase, 'no-matches');
     assert.deepEqual([...result.matches], []);
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
 });
 
 test('non-owned activities show the failure badge and never query coordinates', async () => {
@@ -2562,7 +2776,7 @@ test('non-owned activities show the failure badge and never query coordinates', 
     assert.ok(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'));
     assert.equal(harness.peakbaggerPageCalls.length, 0,
         'ownership must fail before any Peakbagger or GPS-coordinate request');
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
 });
 
 test('provider export failures discard page-world exception text without misreporting ownership', async () => {
@@ -2699,7 +2913,7 @@ test('an activity without a provider GPX ends in a neutral, reusable no-GPS stat
     assert.equal(result.error, null);
     assert.equal(result.message, 'This activity has no recorded route to capture.');
     assert.equal(result.hasCachedGpx, false);
-    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
     assert.equal(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'), false);
 

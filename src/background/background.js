@@ -38,6 +38,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     if (!ext) return;
 
     const JOBS_KEY = 'bpbCaptureJobs';
+    const PAYLOAD_KEY_PREFIX = 'bpbCapturePayload:';
     const DRAFTS_KEY = 'bpbDraftTabs';
     const JOB_TTL_MS = 30 * 60 * 1000;
     const DRAFT_APPLY_LEASE_MS = 30 * 1000;
@@ -81,7 +82,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // that adoption cannot be lost behind storage latency.
     const recentHelperActivations = new Map();
     const recentHelperNavigations = new Map();
-    let mutationQueue = Promise.resolve();
+    const mutationQueues = new Map();
+    const CAPTURE_MUTATION_QUEUE = 'capture-lifecycle';
 
     const now = () => Date.now();
     const isFresh = record => !!record && Number(record.expiresAt) > now();
@@ -132,25 +134,165 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         && value.activityId != null;
 
     const readMap = async key => (await storage().get(key))[key] || {};
-    const mutateMap = (key, mutate) => {
-        const operation = mutationQueue.then(async () => {
-            const map = await readMap(key);
-            const result = await mutate(map);
-            await storage().set({ [key]: map });
-            return result;
+    const mutationQueueKey = storageKey => storageKey === JOBS_KEY || storageKey === DRAFTS_KEY
+        ? CAPTURE_MUTATION_QUEUE
+        : storageKey;
+    const enqueueMutation = (queueKey, mutate) => {
+        const previous = mutationQueues.get(queueKey) || Promise.resolve();
+        const operation = previous.catch(() => {}).then(mutate);
+        mutationQueues.set(queueKey, operation);
+        return operation.finally(() => {
+            if (mutationQueues.get(queueKey) === operation) mutationQueues.delete(queueKey);
         });
-        mutationQueue = operation.catch(() => {});
-        return operation;
     };
-    const mutateLifecycleMaps = mutate => {
-        const operation = mutationQueue.then(async () => {
-            const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
-            const result = await mutate(jobs, drafts);
-            await storage().set({ [JOBS_KEY]: jobs, [DRAFTS_KEY]: drafts });
-            return result;
+    const mutateMap = (key, mutate) => enqueueMutation(mutationQueueKey(key), async () => {
+        const map = await readMap(key);
+        const result = await mutate(map);
+        await storage().set({ [key]: map });
+        return result;
+    });
+    const mutateLifecycleMaps = mutate => enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
+        const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+        const result = await mutate(jobs, drafts);
+        await storage().set({ [JOBS_KEY]: jobs, [DRAFTS_KEY]: drafts });
+        return result;
+    });
+
+    const payloadKeyForJob = jobId => typeof jobId === 'string' && /^[a-z0-9:-]{8,100}$/i.test(jobId)
+        ? `${PAYLOAD_KEY_PREFIX}${jobId}`
+        : null;
+    const referencedPayloadKey = job => {
+        const expected = payloadKeyForJob(job?.id);
+        return expected && job?.payloadKey === expected ? expected : null;
+    };
+    const readCapturePayload = async job => {
+        const key = referencedPayloadKey(job);
+        if (!key) return null;
+        const record = (await storage().get(key))[key];
+        return record?.jobId === job.id && typeof record.gpx === 'string' && record.gpx.length > 0
+            ? record.gpx
+            : null;
+    };
+    const removePayloadKeys = async keys => {
+        const owned = [...new Set((Array.isArray(keys) ? keys : [keys])
+            .filter(key => typeof key === 'string' && key.startsWith(PAYLOAD_KEY_PREFIX)))];
+        if (!owned.length || typeof storage().remove !== 'function') return;
+        try {
+            await storage().remove(owned.length === 1 ? owned[0] : owned);
+        } catch (error) {
+            // The metadata mutation remains authoritative. Startup/alarm
+            // reconciliation retries generation-scoped orphan cleanup.
+            console.error('Better Peakbagger: capture payload cleanup failed', error);
+        }
+    };
+
+    const installCapturePayload = (tabId, generation, gpx, patch) => {
+        return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
+            const jobs = await readMap(JOBS_KEY);
+            const current = jobs[tabId];
+            if (!current || current.id !== generation) return null;
+            const payloadKey = payloadKeyForJob(generation);
+            if (!payloadKey || typeof gpx !== 'string' || !gpx.length) {
+                throw new Error('Capture payload is invalid.');
+            }
+            const previousPayloadKey = referencedPayloadKey(current);
+            await storage().set({ [payloadKey]: { jobId: generation, gpx } });
+            const next = { ...current, ...patch, payloadKey, updatedAt: now() };
+            delete next.uploadGpx;
+            jobs[tabId] = next;
+            try {
+                await storage().set({ [JOBS_KEY]: jobs });
+            } catch (error) {
+                if (previousPayloadKey !== payloadKey) await removePayloadKeys(payloadKey);
+                throw error;
+            }
+            if (previousPayloadKey && previousPayloadKey !== payloadKey) {
+                await removePayloadKeys(previousPayloadKey);
+            }
+            return next;
         });
-        mutationQueue = operation.catch(() => {});
-        return operation;
+    };
+
+    const updateCaptureJobWithoutPayload = (tabId, generation, patch) => {
+        return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
+            const jobs = await readMap(JOBS_KEY);
+            const current = jobs[tabId];
+            if (!current || current.id !== generation) return null;
+            const payloadKey = referencedPayloadKey(current);
+            const next = { ...current, ...patch, updatedAt: now() };
+            delete next.payloadKey;
+            delete next.uploadGpx;
+            jobs[tabId] = next;
+            await storage().set({ [JOBS_KEY]: jobs });
+            await removePayloadKeys(payloadKey);
+            return next;
+        });
+    };
+
+    const reconcileCapturePayloads = () => {
+        return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
+            const snapshot = await storage().get(null);
+            const storedJobs = snapshot?.[JOBS_KEY];
+            const jobs = storedJobs && typeof storedJobs === 'object' && !Array.isArray(storedJobs)
+                ? structuredClone(storedJobs)
+                : {};
+            const payloadPatch = {};
+            let jobsChanged = false;
+
+            // Migrate a pre-split session generation without exposing or
+            // dropping its reduced GPX. The payload write precedes the pointer
+            // write, so a worker stop can create only a recoverable orphan.
+            Object.values(jobs).forEach(job => {
+                const legacyGpx = typeof job?.uploadGpx === 'string' && job.uploadGpx.length > 0
+                    ? job.uploadGpx
+                    : null;
+                if (legacyGpx) {
+                    const payloadKey = payloadKeyForJob(job.id);
+                    if (payloadKey) {
+                        payloadPatch[payloadKey] = { jobId: job.id, gpx: legacyGpx };
+                        job.payloadKey = payloadKey;
+                    }
+                }
+                if (job && Object.hasOwn(job, 'uploadGpx')) {
+                    delete job.uploadGpx;
+                    jobsChanged = true;
+                }
+            });
+            if (Object.keys(payloadPatch).length) await storage().set(payloadPatch);
+
+            const available = { ...snapshot, ...payloadPatch };
+            const referenced = new Set();
+            Object.values(jobs).forEach(job => {
+                const payloadKey = referencedPayloadKey(job);
+                if (!payloadKey) {
+                    if (job?.payloadKey) {
+                        delete job.payloadKey;
+                        jobsChanged = true;
+                    }
+                    return;
+                }
+                const record = available[payloadKey];
+                if (record?.jobId === job.id && typeof record.gpx === 'string' && record.gpx.length > 0) {
+                    referenced.add(payloadKey);
+                    return;
+                }
+                delete job.payloadKey;
+                jobsChanged = true;
+                if (job.phase === 'ready' || job.phase === 'opening' || job.phase === 'opened') {
+                    job.phase = 'error';
+                    job.error = {
+                        code: 'capture-payload-missing',
+                        message: 'The private GPX data is no longer available. Capture the activity again.',
+                    };
+                    job.updatedAt = now();
+                }
+            });
+            if (jobsChanged) await storage().set({ [JOBS_KEY]: jobs });
+
+            const orphaned = Object.keys(snapshot || {})
+                .filter(key => key.startsWith(PAYLOAD_KEY_PREFIX) && !referenced.has(key));
+            await removePayloadKeys(orphaned);
+        });
     };
 
     const runDetachedCleanup = (label, cleanup) => {
@@ -167,7 +309,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const publicMatchSummary = match => ({ ...match, draftFields: undefined });
     const publicJob = job => isFresh(job) ? {
         ...job,
-        hasCachedGpx: typeof job.uploadGpx === 'string' && job.uploadGpx.length > 0,
+        hasCachedGpx: !!referencedPayloadKey(job),
+        payloadKey: undefined,
         uploadGpx: undefined,
         capturePreferences: undefined,
         tripName: undefined,
@@ -200,12 +343,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     const finishCaptureWithoutGps = async (tabId, generation, message) => {
-        const finished = await updateCaptureJob(tabId, generation, {
+        const finished = await updateCaptureJobWithoutPayload(tabId, generation, {
             phase: 'no-gps',
             matches: [],
             selectedIds: [],
             trackSummary: null,
-            uploadGpx: null,
             error: null,
             message: message || 'This activity has no recorded route to capture.',
             expiresAt: now() + JOB_TTL_MS
@@ -1349,19 +1491,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return;
             }
             if (analysis.status === 'no-matches') {
-                await updateCaptureJob(tabId, generation, {
+                await updateCaptureJobWithoutPayload(tabId, generation, {
                     phase: 'no-matches',
                     matches: [],
                     selectedIds: [],
                     trackSummary: analysis.trackSummary,
-                    uploadGpx: null,
                     error: null,
                     expiresAt: now() + JOB_TTL_MS
                 });
                 return;
             }
 
-            await updateCaptureJob(tabId, generation, {
+            await installCapturePayload(tabId, generation, analysis.uploadGpx, {
                 phase: 'ready',
                 cid,
                 provider: capture.provider,
@@ -1372,7 +1513,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 tripName: analysis.tripName,
                 nightsOut: analysis.nightsOut,
                 dayStats: analysis.dayStats,
-                uploadGpx: analysis.uploadGpx,
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
             });
@@ -1525,12 +1665,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
 
         let removedGpx = false;
+        let removedPayloadKey = null;
         await mutateMap(JOBS_KEY, map => {
             const current = map[tabId];
             if (!current || current.id !== job.id) return;
-            removedGpx = typeof current.uploadGpx === 'string' && current.uploadGpx.length > 0;
+            removedPayloadKey = referencedPayloadKey(current);
+            removedGpx = !!removedPayloadKey;
             delete map[tabId];
         });
+        await removePayloadKeys(removedPayloadKey);
         const removedDraftTabIds = await mutateMap(DRAFTS_KEY, drafts => {
             const tabIds = Object.values(drafts)
                 .filter(draft => draft.jobId === job.id)
@@ -1570,12 +1713,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const cancelAdmittedCapture = async (tabId, cancelledAdmission) => {
         let cancelled = cancelledAdmission;
         let current = null;
+        let removedPayloadKey = null;
         await mutateMap(JOBS_KEY, jobs => {
             current = jobs[tabId] || null;
             if (!current || CapturePhases.isTerminal(current.phase)) return;
+            removedPayloadKey = referencedPayloadKey(current);
             delete jobs[tabId];
             cancelled = true;
         });
+        await removePayloadKeys(removedPayloadKey);
         if (cancelled && current) {
             const process = processes.get(tabId);
             abortOwnedWork(tabId, current.id);
@@ -1703,8 +1849,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         });
     };
     const installLifecycleJob = job => {
-        const operation = mutationQueue.then(async () => {
+        return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
             const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+            const replacedPayloadKey = referencedPayloadKey(jobs[job.sourceTabId]);
             const removedDraftTabIds = [];
             Object.entries(drafts).forEach(([draftTabId, draft]) => {
                 if (Number(draft.sourceTabId) === Number(job.sourceTabId) && draft.jobId !== job.id) {
@@ -1716,6 +1863,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const patch = { [JOBS_KEY]: jobs };
             if (removedDraftTabIds.length) patch[DRAFTS_KEY] = drafts;
             await storage().set(patch);
+            await removePayloadKeys(replacedPayloadKey);
             await Promise.all(removedDraftTabIds.map(async draftTabId => {
                 try {
                     await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
@@ -1725,8 +1873,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 }
             }));
         });
-        mutationQueue = operation.catch(() => {});
-        return operation;
     };
 
     const sameDraftIdentity = (left, right) => !!left && !!right
@@ -1944,6 +2090,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             openingId: started.openingId,
             epoch,
         });
+        let payloadMissing = false;
         try {
             if (!isFresh(job)) {
                 throw PublicErrors.exception(
@@ -1976,7 +2123,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     job: publicJob(opened)
                 };
             }
-            if (!job.uploadGpx) {
+            if (!await readCapturePayload(job)) {
+                payloadMissing = true;
                 throw PublicErrors.exception(
                     'job-expired',
                     'Capture results are no longer available. Capture the activity again.'
@@ -2020,6 +2168,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return { tabIds, groupWarning, reused: false, job: publicJob(opened) };
         } catch (cause) {
             await transaction.rollback(cause);
+            if (payloadMissing) {
+                await updateCaptureJobWithoutPayload(tabId, existingJob.id, {
+                    phase: 'error',
+                    error: {
+                        code: 'capture-payload-missing',
+                        message: 'The private GPX data is no longer available. Capture the activity again.',
+                    },
+                });
+            }
             if (PublicErrors.isPublic(cause)) throw cause;
             throw PublicErrors.exception(
                 'draft-open-failed',
@@ -2108,7 +2265,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
             abortOwnedWork(page.tabId);
             invalidateLifecycle(page.tabId);
+            let replacedPayloadKey = null;
             await mutateMap(JOBS_KEY, currentJobs => {
+                replacedPayloadKey = referencedPayloadKey(currentJobs[page.tabId]);
                 currentJobs[page.tabId] = {
                     id: `selection:${selection.pageSessionId}:${selection.selectionGeneration}`,
                     sourceTabId: page.tabId,
@@ -2120,6 +2279,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     ...selection,
                 };
             });
+            await removePayloadKeys(replacedPayloadKey);
             return { ok: true, ...selection };
         });
     };
@@ -2202,14 +2362,22 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 signal: controller?.signal,
             });
             if (analysis.status === 'no-gps') {
-                await finish({ phase: 'no-gps', uploadGpx: null, message: analysis.message });
+                await updateCaptureJobWithoutPayload(tabId, job.id, {
+                    phase: 'no-gps',
+                    message: analysis.message,
+                    expiresAt: now() + JOB_TTL_MS,
+                });
                 return reply({ phase: 'no-gps', message: analysis.message });
             }
             if (analysis.status === 'no-matches') {
-                await finish({ phase: 'no-matches', trackSummary: analysis.trackSummary, uploadGpx: null });
+                await updateCaptureJobWithoutPayload(tabId, job.id, {
+                    phase: 'no-matches',
+                    trackSummary: analysis.trackSummary,
+                    expiresAt: now() + JOB_TTL_MS,
+                });
                 return reply({ phase: 'no-matches', boundPid: page.pid });
             }
-            const updated = await finish({
+            const updated = await installCapturePayload(tabId, job.id, analysis.uploadGpx, {
                 phase: 'ready',
                 matches: analysis.matches,
                 boundFallback: analysis.boundFallback,
@@ -2218,7 +2386,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 tripName: analysis.tripName,
                 nightsOut: analysis.nightsOut,
                 dayStats: analysis.dayStats,
-                uploadGpx: analysis.uploadGpx
+                expiresAt: now() + JOB_TTL_MS,
             });
             if (!updated) {
                 return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
@@ -2253,7 +2421,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         if (!selection || !(await uploadSelectionIsCurrent(tabId, selection))
             || !isFresh(job) || job.provider !== 'upload' || job.id !== message.jobId
             || !sameUploadSelection(job, selection)
-            || job.phase !== 'ready' || !job.uploadGpx) {
+            || job.phase !== 'ready') {
+            return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
+        }
+        const uploadGpx = await readCapturePayload(job);
+        if (!uploadGpx) {
+            await updateCaptureJobWithoutPayload(tabId, job.id, {
+                phase: 'error',
+                error: {
+                    code: 'capture-payload-missing',
+                    message: 'The private GPX data is no longer available. Process the file again.',
+                },
+            });
             return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
         }
         // The page's URL cid, when present, must match the job's verified
@@ -2466,7 +2645,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const currentDrafts = await readMap(DRAFTS_KEY);
             const nextDraft = firstPendingDraft(currentDrafts, draft.jobId);
             if (nextDraft) await notifyDraftToProceed(nextDraft);
-            else await updateCaptureJob(draft.sourceTabId, job.id, { phase: 'previewed', uploadGpx: null });
+            else await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, { phase: 'previewed' });
             const completedDraft = currentDrafts[tabId];
             return {
                 action: 'banner',
@@ -2486,6 +2665,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const currentDraft = firstPendingDraft(drafts, draft.jobId);
         if (!currentDraft || currentDraft.tabId !== tabId) {
             return { action: 'wait', peakName, message: 'Waiting for the previous GPS Preview to finish.' };
+        }
+
+        const uploadGpx = await readCapturePayload(job);
+        if (!uploadGpx) {
+            await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, {
+                phase: 'error',
+                error: {
+                    code: 'capture-payload-missing',
+                    message: 'The private GPX data is no longer available. Capture the activity again.',
+                },
+            });
+            return { action: 'error', message: 'The private draft data expired. Capture the activity again.' };
         }
 
         if (draft.focusOnReady) {
@@ -2533,7 +2724,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 wildernessNightsOut: draft.wildernessNightsOut ?? null
             },
             allowWaypoints: !!job.capturePreferences?.retainWaypoints,
-            gpx: job.uploadGpx
+            gpx: uploadGpx
         };
     };
 
@@ -2601,10 +2792,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return { drafts: { ...map }, removedDraftTabIds };
         });
         const activeJobIds = new Set(Object.values(result.drafts).map(draft => draft.jobId));
+        let removedPayloadKey = null;
         await mutateMap(JOBS_KEY, jobs => {
             const job = jobs[sourceTabId];
-            if (job?.expiresAt <= cutoff && !activeJobIds.has(job.id)) delete jobs[sourceTabId];
+            if (job?.expiresAt <= cutoff && !activeJobIds.has(job.id)) {
+                removedPayloadKey = referencedPayloadKey(job);
+                delete jobs[sourceTabId];
+            }
         });
+        await removePayloadKeys(removedPayloadKey);
         await Promise.all(result.removedDraftTabIds.map(async draftTabId => {
             try {
                 await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
@@ -2636,6 +2832,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         await photoRoutes.cleanup(cutoff);
         await reportDraftRoutes.cleanup(cutoff);
         await cleanupExpiredPeakbaggerHelperLeases(cutoff);
+        await reconcileCapturePayloads();
     };
 
     const isPeakbaggerSender = sender =>
@@ -2954,19 +3151,25 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     .some(candidate => !candidate.complete && compareDraftOrder(candidate, removedDraft) < 0)
             ? firstPendingDraft(remainingDrafts, removedDraft.jobId)
             : null;
+        const removedPayloadKeys = [];
         await mutateMap(JOBS_KEY, jobs => {
             if (jobs[tabId]) {
                 const job = jobs[tabId];
                 const hasPendingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === job.id);
                 if (hasPendingDraft) job.sourceClosed = true;
-                else delete jobs[tabId];
+                else {
+                    removedPayloadKeys.push(referencedPayloadKey(job));
+                    delete jobs[tabId];
+                }
             }
             if (removedDraft) {
                 const sourceJob = Object.values(jobs).find(job => job.id === removedDraft.jobId);
                 const hasSiblingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === removedDraft.jobId);
                 if (sourceJob && !hasSiblingDraft) {
-                    if (sourceJob.sourceClosed) delete jobs[sourceJob.sourceTabId];
-                    else if (sourceJob.uploadGpx) {
+                    if (sourceJob.sourceClosed) {
+                        removedPayloadKeys.push(referencedPayloadKey(sourceJob));
+                        delete jobs[sourceJob.sourceTabId];
+                    } else if (referencedPayloadKey(sourceJob)) {
                         sourceJob.phase = 'ready';
                         sourceJob.openedDraftTabIds = [];
                         sourceJob.updatedAt = now();
@@ -2974,6 +3177,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 }
             }
         });
+        await removePayloadKeys(removedPayloadKeys);
         await notifyDraftToProceed(nextDraft);
     };
 
@@ -3026,6 +3230,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // debounce. Nudging favorites here makes enabling its toggle create the
     // first backup; equal signatures make other settings changes free.
     Settings.subscribe(githubRoutes.onSettingsChanged);
+    runDetachedCleanup('capture payload recovery', reconcileCapturePayloads);
     runDetachedCleanup('temporary Peakbagger tab recovery', () =>
         cleanupExpiredPeakbaggerHelperLeases(now()));
     runDetachedCleanup('photo backup watchdog startup', () =>

@@ -90,8 +90,9 @@ export const createScaleAnalyzerGpx = (pointCount = 20_000) =>
 
 export function createSyntheticCaptureJob(sourceTabId) {
     const timestamp = Date.now();
+    const id = `browser-verify-${timestamp}`;
     return {
-        id: `browser-verify-${timestamp}`,
+        id,
         sourceTabId,
         provider: 'strava',
         activityId: 'browser-verify',
@@ -126,16 +127,23 @@ export function createSyntheticCaptureJob(sourceTabId) {
         tripName: 'Synthetic',
         nightsOut: null,
         dayStats: [],
-        // The draft payload is newly serialized from the narrow allowlist. Unlike
-        // the analyzer download fixture above, it deliberately carries no track
-        // name or other provider metadata.
-        uploadGpx: gpx.replace('<name>Synthetic</name>', ''),
+        payloadKey: `bpbCapturePayload:${id}`,
         error: null,
         createdAt: timestamp,
         updatedAt: timestamp,
         expiresAt: timestamp + 20 * 60 * 1000,
     };
 }
+
+export const createSyntheticCapturePayload = job => ({
+    key: job.payloadKey,
+    value: {
+        jobId: job.id,
+        // Newly serialized from the narrow allowlist. Unlike the analyzer
+        // fixture above, it carries no track name or provider metadata.
+        gpx: gpx.replace('<name>Synthetic</name>', ''),
+    },
+});
 
 const ascentHtml = `<!doctype html><html><head><title>Ascent</title><style>
 body { margin: 18px; font: 13px/1.4 Verdana, Arial, sans-serif; }

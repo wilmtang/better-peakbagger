@@ -31,6 +31,7 @@ import {
     createFailureCollector,
     createScaleAnalyzerGpx,
     createSyntheticCaptureJob,
+    createSyntheticCapturePayload,
     storeUrls,
     surfaceSelectors,
     verificationViewport,
@@ -5400,10 +5401,12 @@ try {
             `the Chrome draft source tab identity was unavailable: ${JSON.stringify(seeded)}`);
         if (Number.isInteger(seeded.sourceTabId)) {
             const job = createSyntheticCaptureJob(seeded.sourceTabId);
-            const opened = await controlPage.evaluate(async ({ sourceTabId, job }) => {
+            const payload = createSyntheticCapturePayload(job);
+            const opened = await controlPage.evaluate(async ({ sourceTabId, job, payload }) => {
                 await chrome.storage.session.set({
                     bpbCaptureJobs: { [sourceTabId]: job },
-                    bpbDraftTabs: {}
+                    bpbDraftTabs: {},
+                    [payload.key]: payload.value,
                 });
                 const reply = await chrome.runtime.sendMessage({
                     type: 'CAPTURE_OPEN_DRAFTS',
@@ -5412,7 +5415,7 @@ try {
                 });
                 if (!reply?.tabIds?.length) return { reply };
                 return { reply };
-            }, { sourceTabId: seeded.sourceTabId, job });
+            }, { sourceTabId: seeded.sourceTabId, job, payload });
             const draftTabId = opened.reply?.tabIds?.[0];
             if (Number.isInteger(draftTabId)) {
                 try {
@@ -5493,15 +5496,19 @@ try {
                     && fixture.requests.lastPreview?.suffixBlank,
                 `the Chrome draft handoff did not attach/fill/Preview exactly once: ${JSON.stringify(fixture.requests)}`);
 
-                const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
-                    const values = await chrome.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']);
+                const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId, payloadKey }) => {
+                    const values = await chrome.storage.session.get([
+                        'bpbCaptureJobs', 'bpbDraftTabs', payloadKey,
+                    ]);
                     return {
                         job: values.bpbCaptureJobs?.[sourceTabId] || null,
-                        draft: values.bpbDraftTabs?.[draftTabId] || null
+                        draft: values.bpbDraftTabs?.[draftTabId] || null,
+                        payload: values[payloadKey],
                     };
-                }, { sourceTabId: seeded.sourceTabId, draftTabId });
+                }, { sourceTabId: seeded.sourceTabId, draftTabId, payloadKey: payload.key });
                 check(privateState.job?.phase === 'previewed'
-                    && privateState.job?.uploadGpx === null
+                    && privateState.job?.payloadKey === undefined
+                    && privateState.payload === undefined
                     && privateState.draft?.complete === true
                     && privateState.draft?.previewStarted === true,
                 `the Chrome worker did not complete the exactly-once handoff: ${JSON.stringify(privateState)}`);
