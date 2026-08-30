@@ -16,6 +16,19 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const analyzerBundle = await readFile(path.join(root, 'dist', 'content', 'gpx-analyzer.js'), 'utf8');
 const capitolRegressionGpx =
     await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+const settingsRevisions = new WeakMap();
+const bridgeSnapshot = (window, settings, detail = {}) => {
+    const revision = (settingsRevisions.get(window) || 0) + 1;
+    settingsRevisions.set(window, revision);
+    return {
+        __bpb: true,
+        dir: 'toPage',
+        ...detail,
+        settings,
+        snapshotRevision: revision,
+        throughRequestId: detail.kind === 'setResult' ? detail.requestId : 0,
+    };
+};
 
 const gpx = `<?xml version="1.0"?>
 <gpx version="1.1">
@@ -164,19 +177,16 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const sendSettings = settings => window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
-        data: { __bpb: true, dir: 'toPage', settings }
+        data: bridgeSnapshot(window, settings)
     })));
     const confirmSetting = (message, settings) => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
-        data: {
-            __bpb: true,
-            dir: 'toPage',
+        data: bridgeSnapshot(window, settings, {
             kind: 'setResult',
             requestId: message.requestId,
             ok: true,
-            settings
-        }
+        })
     }));
     window.postMessage = message => {
         if (message && message.__bpbTerrain === true) {
@@ -644,7 +654,7 @@ const loadOvernightAnalyzer = async ({ forceTimeZoneFailure = false, elevations 
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
             origin: window.location.origin,
-            data: { __bpb: true, dir: 'toPage', settings: { units: 'imperial', theme: 'light' } }
+            data: bridgeSnapshot(window, { units: 'imperial', theme: 'light' })
         })));
     };
 
@@ -715,7 +725,7 @@ test('a local write is not handed back to the subscriber as an external change',
     let current = { units: 'metric', theme: 'light', mapRouteColor: '#2457a7', enable3dMap: false };
     const push = settings => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
-        data: { __bpb: true, dir: 'toPage', settings }
+        data: bridgeSnapshot(window, settings)
     }));
     window.postMessage = message => {
         if (!message || message.dir !== 'toCS') return;
@@ -726,10 +736,9 @@ test('a local write is not handed back to the subscriber as an external change',
         // Confirm the write the way the bridge does.
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window, origin: window.location.origin,
-            data: {
-                __bpb: true, dir: 'toPage', kind: 'setResult',
-                requestId: message.requestId, ok: true, settings: current
-            }
+            data: bridgeSnapshot(window, current, {
+                kind: 'setResult', requestId: message.requestId, ok: true,
+            })
         })));
     };
 
@@ -810,11 +819,9 @@ test('a late or replaced map frame atomically receives every analyzer map featur
             window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
                 source: window,
                 origin: window.location.origin,
-                data: {
-                    __bpb: true,
-                    dir: 'toPage',
-                    settings: { units: 'metric', theme: 'light', enable3dMap: true }
-                }
+                data: bridgeSnapshot(window, {
+                    units: 'metric', theme: 'light', enable3dMap: true,
+                })
             })));
         }
     };
@@ -1025,7 +1032,7 @@ test('a missing GPS track is reported as missing instead of a parse failure', as
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
             origin: window.location.origin,
-            data: { __bpb: true, dir: 'toPage', settings: { units: 'imperial', theme: 'light' } }
+            data: bridgeSnapshot(window, { units: 'imperial', theme: 'light' })
         })));
     };
 
@@ -1158,7 +1165,7 @@ const loadElevationAnalyzer = async (gpxSource, {
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
             origin: window.location.origin,
-            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme, ...settings } }
+            data: bridgeSnapshot(window, { units: 'metric', theme, ...settings })
         })));
     };
 
