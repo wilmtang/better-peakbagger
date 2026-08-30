@@ -1188,14 +1188,18 @@ try {
         // several here that flake when the machine is loaded — see
         // docs/verify-extension-load-flake.md; raising this number treats the
         // symptom and hides real regressions, so it is deliberately not raised.
-        const fallbackImport = await optionsPage.waitForFunction(async () => {
+        const readFallbackImport = () => optionsPage.evaluate(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             const status = document.getElementById('favorites-import-status');
             return favorites?.entries?.length === 6
                 && /Merge complete: 6 added, 0 removed/.test(status?.textContent || '')
                 ? { count: favorites.entries.length, status: status.textContent }
                 : false;
-        }, null, { timeout: 20000 }).then(handle => handle.jsonValue()).catch(() => null);
+        });
+        const fallbackImport = await waitForCondition(readFallbackImport, {
+            description: 'the first-party Buddy import final state',
+            timeoutMs: 20_000,
+        }).catch(() => readFallbackImport());
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
         const fallbackDebug = await optionsPage.evaluate(async () => ({
@@ -2436,6 +2440,10 @@ try {
     await scalePage.addInitScript(() => {
         window.__bpbScaleFrameGaps = [];
         let previous = 0;
+        window.__bpbResetScaleFrameGaps = () => {
+            window.__bpbScaleFrameGaps = [];
+            previous = 0;
+        };
         const record = now => {
             if (previous) window.__bpbScaleFrameGaps.push(now - previous);
             previous = now;
@@ -2475,6 +2483,7 @@ try {
     await scalePage.evaluate(() => {
         window.__bpbScaleChart = globalThis.Chart.getChart(
             document.querySelector('#bpb-gpx-analysis canvas'));
+        window.__bpbResetScaleFrameGaps();
     });
     const resizeStarted = Date.now();
     await scalePage.setViewportSize({ width: 1100, height: 760 });
