@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { mapViewport as MapViewport } from '../../src/gpx/map-viewport.js';
 
-const BOUNDS = { minWidth: 320, maxWidth: 1400, minHeight: 200, maxHeight: 900 };
+const BOUNDS = { minWidth: 320, maxWidth: 1400, minHeight: 240, maxHeight: 720 };
 const RESIZE_RAIL_HEIGHT = 44;
 
 const pointerEvent = (dom, type, {
@@ -60,6 +60,18 @@ const setup = ({ size = { width: 600, height: 400 }, persistDelayMs = 400 } = {}
     return { dom, viewport, persists, invalidated, map, iframe, restore, restoreGlobals };
 };
 
+const emulateRenderedSize = (viewport, {
+    width = 600,
+    wrapperHeightCap = Number.POSITIVE_INFINITY,
+} = {}) => {
+    viewport.element.getBoundingClientRect = () => ({
+        left: 0,
+        right: width,
+        width,
+        height: Math.min(Number.parseFloat(viewport.element.style.height), wrapperHeightCap),
+    });
+};
+
 test('the viewport wraps the map frame and exposes a resize handle', () => {
     const { dom, viewport, iframe, restore } = setup();
     try {
@@ -86,6 +98,101 @@ test('sizes are clamped to the schema bounds the caller supplies', () => {
         assert.deepEqual(viewport.size, { width: BOUNDS.maxWidth, height: BOUNDS.maxHeight });
         viewport.applySize({ width: 1, height: 1 });
         assert.deepEqual(viewport.size, { width: BOUNDS.minWidth, height: BOUNDS.minHeight });
+    } finally { restore(); }
+});
+
+for (const [name, preferredHeight, wrapperHeightCap, effectiveHeight] of [
+    ['minimum preference in a tall window', BOUNDS.minHeight, 1200, BOUNDS.minHeight],
+    ['default preference in a short window', 450, 394, 350],
+    ['maximum preference in a short window', BOUNDS.maxHeight, 584, 540],
+    ['maximum preference in a tall window', BOUNDS.maxHeight, 1200, BOUNDS.maxHeight],
+]) {
+    test(`${name} reports measured map content, not the resize rail or hidden preference`, async () => {
+        const { dom, viewport, restore } = setup({ size: { width: 600, height: preferredHeight } });
+        try {
+            emulateRenderedSize(viewport, { wrapperHeightCap });
+            viewport.scheduleInvalidate();
+            await new Promise(resolve => setTimeout(resolve, 30));
+            assert.equal(viewport.size.height, preferredHeight, 'the untouched preference is retained');
+            assert.equal(viewport.effectiveSize.height, effectiveHeight);
+            assert.match(dom.window.document.getElementById('bpb-map-resize-handle')
+                .getAttribute('aria-label'), new RegExp(`by ${effectiveHeight} pixels high`));
+        } finally { restore(); }
+    });
+}
+
+test('the first keyboard and pointer deltas start from visible short-window height', async () => {
+    const { dom, viewport, persists, restore } = setup({
+        size: { width: 600, height: BOUNDS.maxHeight },
+        persistDelayMs: 30,
+    });
+    try {
+        emulateRenderedSize(viewport, { wrapperHeightCap: 584 });
+        viewport.scheduleInvalidate();
+        await new Promise(resolve => setTimeout(resolve, 30));
+        const handle = dom.window.document.getElementById('bpb-map-resize-handle');
+        assert.equal(viewport.effectiveSize.height, 540);
+
+        handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+            key: 'ArrowUp', bubbles: true, cancelable: true,
+        }));
+        assert.equal(viewport.effectiveSize.height, 530,
+            'the first key changes rendered map content by one step');
+        assert.equal(viewport.size.height, 530,
+            'direct interaction deliberately replaces the hidden preference');
+        await new Promise(resolve => setTimeout(resolve, 80));
+        assert.deepEqual(persists, [{ width: 600, height: 530 }]);
+
+        viewport.element.parentElement.getBoundingClientRect = () => ({
+            left: 0, right: 600, width: 600,
+        });
+        handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            pointerId: 5, pointerType: 'touch', button: 0, clientX: 600, clientY: 530,
+        }));
+        handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            pointerId: 5, pointerType: 'touch', buttons: 1, clientX: 600, clientY: 529,
+        }));
+        assert.equal(viewport.effectiveSize.height, 529,
+            'the first pointer pixel changes rendered map content by one pixel');
+        handle.dispatchEvent(pointerEvent(dom, 'pointerup', {
+            pointerId: 5, pointerType: 'touch', clientX: 600, clientY: 529,
+        }));
+        assert.deepEqual(persists.at(-1), { width: 600, height: 529 });
+    } finally { restore(); }
+});
+
+test('window growth restores only an untouched preferred height', async () => {
+    const { dom, viewport, restore } = setup({ size: { width: 600, height: BOUNDS.maxHeight } });
+    try {
+        let wrapperHeightCap = 584;
+        viewport.element.getBoundingClientRect = () => ({
+            left: 0,
+            right: 600,
+            width: 600,
+            height: Math.min(Number.parseFloat(viewport.element.style.height), wrapperHeightCap),
+        });
+        viewport.scheduleInvalidate();
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.equal(viewport.effectiveSize.height, 540);
+
+        wrapperHeightCap = 1200;
+        dom.window.dispatchEvent(new dom.window.Event('resize'));
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.equal(viewport.effectiveSize.height, BOUNDS.maxHeight);
+        assert.equal(viewport.size.height, BOUNDS.maxHeight,
+            'window growth restores the untouched preference');
+
+        wrapperHeightCap = 584;
+        dom.window.dispatchEvent(new dom.window.Event('resize'));
+        await new Promise(resolve => setTimeout(resolve, 30));
+        const handle = dom.window.document.getElementById('bpb-map-resize-handle');
+        handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+        assert.equal(viewport.size.height, 530);
+        wrapperHeightCap = 1200;
+        dom.window.dispatchEvent(new dom.window.Event('resize'));
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.equal(viewport.effectiveSize.height, 530,
+            'window growth does not resurrect a preference replaced by direct interaction');
     } finally { restore(); }
 });
 

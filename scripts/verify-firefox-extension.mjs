@@ -1588,6 +1588,141 @@ async function main() {
             && afternoonSunGeometry.overflowingContainers.length === 0,
         'Firefox changed a Sun and Moon subview height or overflowed between 10:34 AM and 02:03 PM',
         { morningSunGeometry, afternoonSunGeometry, restoredSunGeometry });
+        const effectiveHeightAnalyzerHandle = await driver.getWindowHandle();
+        const effectiveHeightWindowRect = await driver.manage().window().getRect();
+        await driver.switchTo().newWindow('tab');
+        const effectiveHeightSettingsHandle = await driver.getWindowHandle();
+        await driver.get(optionsUrl);
+        const originalHeightSettings = await driver.executeAsyncScript(done => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+                api.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, mapViewportHeight: 720 },
+                }).then(() => done(bpbSettings))).catch(error => done({ error: String(error) }));
+        });
+        assertState(!originalHeightSettings?.error,
+            'Firefox could not stage the maximum route-explorer height', originalHeightSettings);
+        await driver.switchTo().window(effectiveHeightAnalyzerHandle);
+        await driver.manage().window().setRect({ width: 1200, height: 600 });
+        const shortPreferredHeight = await waitForScript(driver, `
+      const map = document.getElementById('bpb-map-viewport');
+      const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
+      const handle = document.getElementById('bpb-map-resize-handle');
+      const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+      const labelledHeight = Number(/by (\\d+) pixels high/.exec(
+        handle?.getAttribute('aria-label') || '')?.[1]);
+      return map?.style.height === '764px' && contentHeight > 0
+        && labelledHeight === contentHeight ? {
+          viewportHeight: document.documentElement.clientHeight,
+          contentHeight,
+          labelledHeight,
+        } : false;
+    `, 'the short-window Firefox effective map height');
+        await driver.manage().window().setRect({ width: 1200, height: 1100 });
+        const grownUntouchedHeight = await waitForScript(driver, `
+      const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+      const handle = document.getElementById('bpb-map-resize-handle');
+      const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+      const labelledHeight = Number(/by (\\d+) pixels high/.exec(
+        handle?.getAttribute('aria-label') || '')?.[1]);
+      return contentHeight === 720 && labelledHeight === contentHeight
+        ? { contentHeight, labelledHeight } : false;
+    `, 'the grown untouched Firefox map preference');
+        await driver.manage().window().setRect({ width: 1200, height: 600 });
+        await waitForScript(driver, `
+      const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+      return Math.round(frame?.getBoundingClientRect().height || 0)
+        === ${shortPreferredHeight.contentHeight};
+    `, 'the restored short Firefox map constraint');
+        const effectiveMapHandle = await driver.findElement(By.id('bpb-map-resize-handle'));
+        await driver.executeScript('arguments[0].focus();', effectiveMapHandle);
+        await effectiveMapHandle.sendKeys(Key.ARROW_UP);
+        const firstUpHeight = await waitForScript(driver, `
+      const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+      const handle = document.getElementById('bpb-map-resize-handle');
+      const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+      const labelledHeight = Number(/by (\\d+) pixels high/.exec(
+        handle?.getAttribute('aria-label') || '')?.[1]);
+      return contentHeight === ${shortPreferredHeight.contentHeight - 10}
+        && labelledHeight === contentHeight ? { contentHeight, labelledHeight } : false;
+    `, 'the first Firefox short-window ArrowUp');
+        await effectiveMapHandle.sendKeys(Key.ARROW_DOWN);
+        const firstDownHeight = await waitForScript(driver, `
+      const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+      const handle = document.getElementById('bpb-map-resize-handle');
+      const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+      const labelledHeight = Number(/by (\\d+) pixels high/.exec(
+        handle?.getAttribute('aria-label') || '')?.[1]);
+      return contentHeight === ${shortPreferredHeight.contentHeight}
+        && labelledHeight === contentHeight ? { contentHeight, labelledHeight } : false;
+    `, 'the first Firefox short-window ArrowDown');
+        const pointerMovePrevented = await driver.executeScript(`
+      const handle = document.getElementById('bpb-map-resize-handle');
+      const rect = handle.getBoundingClientRect();
+      const pointer = (type, y) => new PointerEvent(type, {
+        bubbles: true, cancelable: true, pointerId: 23, pointerType: 'mouse',
+        button: type === 'pointerdown' ? 0 : -1,
+        buttons: type === 'pointermove' ? 1 : 0,
+        clientX: rect.left + rect.width / 2,
+        clientY: y,
+      });
+      handle.dispatchEvent(pointer('pointerdown', rect.top + rect.height / 2));
+      const move = pointer('pointermove', rect.top + rect.height / 2 - 1);
+      handle.dispatchEvent(move);
+      handle.dispatchEvent(pointer('pointerup', rect.top + rect.height / 2 - 1));
+      return move.defaultPrevented;
+    `);
+        const firstPointerHeight = await waitForScript(driver, `
+      const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+      const handle = document.getElementById('bpb-map-resize-handle');
+      const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+      const labelledHeight = Number(/by (\\d+) pixels high/.exec(
+        handle?.getAttribute('aria-label') || '')?.[1]);
+      return contentHeight === ${firstDownHeight.contentHeight - 1}
+        && labelledHeight === contentHeight ? { contentHeight, labelledHeight } : false;
+    `, 'the first Firefox short-window pointer pixel');
+        await driver.manage().window().setRect({ width: 1200, height: 1100 });
+        const grownInteractedHeight = await waitForScript(driver, `
+      const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+      const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+      return contentHeight === ${firstPointerHeight.contentHeight} ? contentHeight : false;
+    `, 'the grown interacted Firefox map preference');
+        await driver.switchTo().window(effectiveHeightSettingsHandle);
+        const persistedEffectiveHeight = await driver.executeAsyncScript((expected, done) => {
+            const api = globalThis.browser || globalThis.chrome;
+            const deadline = Date.now() + 5000;
+            const read = () => api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => {
+                if (bpbSettings.mapViewportHeight === expected) done(bpbSettings.mapViewportHeight);
+                else if (Date.now() >= deadline) done({ value: bpbSettings.mapViewportHeight });
+                else setTimeout(read, 25);
+            }).catch(error => done({ error: String(error) }));
+            read();
+        }, firstPointerHeight.contentHeight);
+        assertState(shortPreferredHeight.contentHeight === shortPreferredHeight.viewportHeight - 16 - 44
+            && grownUntouchedHeight.contentHeight === 720
+            && firstUpHeight.contentHeight === shortPreferredHeight.contentHeight - 10
+            && firstDownHeight.contentHeight === shortPreferredHeight.contentHeight
+            && firstPointerHeight.contentHeight === firstDownHeight.contentHeight - 1
+            && pointerMovePrevented
+            && persistedEffectiveHeight === firstPointerHeight.contentHeight
+            && grownInteractedHeight === firstPointerHeight.contentHeight,
+        'Firefox short-window map height diverged from visible geometry or preference semantics', {
+            shortPreferredHeight, grownUntouchedHeight, firstUpHeight, firstDownHeight,
+            firstPointerHeight, pointerMovePrevented, persistedEffectiveHeight,
+            grownInteractedHeight,
+        });
+        await driver.executeAsyncScript((original, done) => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.set({ bpbSettings: original })
+                .then(() => done(true), error => done({ error: String(error) }));
+        }, originalHeightSettings);
+        await driver.close();
+        await driver.switchTo().window(effectiveHeightAnalyzerHandle);
+        await driver.manage().window().setRect(effectiveHeightWindowRect);
+        await waitForScript(driver, `
+      return document.getElementById('bpb-map-viewport')?.style.height
+        === '${(originalHeightSettings.mapViewportHeight || 450) + 44}px';
+    `, 'the restored Firefox preferred map height');
         await driver.executeScript(
             'arguments[0].scrollIntoView({ block: "center", inline: "nearest" });',
             analyzerCanvas,
@@ -2591,6 +2726,7 @@ async function main() {
         console.log('  - Firefox BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
         console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
         console.log('  - the full Capitol GPX rendered 971 points per chart series with the corrected metrics and zero breaks');
+        console.log('  - short-window map keys and pointer pixels resize visible content and preserve only untouched preferred height');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
         console.log('  - forged page/frame messages, synthetic clicks, and direct embedding started no terrain work');

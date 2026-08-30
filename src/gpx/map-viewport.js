@@ -48,9 +48,26 @@ export const createMapViewport = ({
         return width > 0 ? Math.round(width) : current.width;
     };
 
+    // `current.height` is the user's preferred map-content height. The side
+    // layout may temporarily cap the wrapper to the visible window, so every
+    // interaction and accessible reading starts from measured content height,
+    // excluding the resize rail. Window growth can then restore an untouched
+    // preference, while a direct resize deliberately replaces it.
+    const renderedContentHeight = () => {
+        if (!element) return current.height;
+        const height = element.getBoundingClientRect().height;
+        return height > railHeight ? Math.round(height - railHeight) : current.height;
+    };
+
+    const effectiveSize = () => ({
+        width: renderedWidth(),
+        height: renderedContentHeight(),
+    });
+
     const syncHandleLabel = () => {
         if (!handle) return;
-        handle.setAttribute('aria-label', `Resize map. Current size ${renderedWidth()} pixels wide by ${current.height} pixels high. Use arrow keys for small steps.`);
+        const effective = effectiveSize();
+        handle.setAttribute('aria-label', `Resize map. Current size ${effective.width} pixels wide by ${effective.height} pixels high. Use arrow keys for small steps.`);
     };
 
     const scheduleInvalidate = () => {
@@ -58,6 +75,7 @@ export const createMapViewport = ({
         const invalidate = () => {
             invalidateFrame = null;
             cancelInvalidate = null;
+            syncHandleLabel();
             try {
                 const map = iframe.contentWindow && iframe.contentWindow.mapsPlaceholder;
                 if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
@@ -199,7 +217,7 @@ export const createMapViewport = ({
                 startX: event.clientX,
                 startY: event.clientY,
                 startWidth: viewportWidth,
-                startHeight: current.height,
+                startHeight: renderedContentHeight(),
                 parentWidth,
                 // Peakbagger centers its fixed-width map. In that layout a
                 // 1 px pointer movement moves the right edge only 0.5 px
@@ -235,10 +253,11 @@ export const createMapViewport = ({
         handle.addEventListener('keydown', event => {
             const largeStep = event.shiftKey;
             const next = { ...current };
-            if (event.key === 'ArrowLeft') next.width = renderedWidth() - (largeStep ? 50 : 10);
-            else if (event.key === 'ArrowRight') next.width = renderedWidth() + (largeStep ? 50 : 10);
-            else if (event.key === 'ArrowUp') next.height -= largeStep ? 50 : 10;
-            else if (event.key === 'ArrowDown') next.height += largeStep ? 50 : 10;
+            const effective = effectiveSize();
+            if (event.key === 'ArrowLeft') next.width = effective.width - (largeStep ? 50 : 10);
+            else if (event.key === 'ArrowRight') next.width = effective.width + (largeStep ? 50 : 10);
+            else if (event.key === 'ArrowUp') next.height = effective.height - (largeStep ? 50 : 10);
+            else if (event.key === 'ArrowDown') next.height = effective.height + (largeStep ? 50 : 10);
             else return;
             event.preventDefault();
             applySize(next);
@@ -280,6 +299,7 @@ export const createMapViewport = ({
     return {
         get element() { return element; },
         get size() { return { ...current }; },
+        get effectiveSize() { return effectiveSize(); },
         attach,
         applySize,
         scheduleInvalidate,

@@ -2854,6 +2854,135 @@ try {
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
     check(!!routeScrubber,
         `the analyzer keyboard selection did not move the route scrubber: ${JSON.stringify(routeScrubber)}`);
+    const effectiveHeightSettingsPage = await context.newPage();
+    await effectiveHeightSettingsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const originalHeightSettings = await effectiveHeightSettingsPage.evaluate(async () => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        await chrome.storage.sync.set({
+            bpbSettings: { ...bpbSettings, mapViewportHeight: 720 },
+        });
+        return bpbSettings;
+    });
+    const effectiveHeightViewport = offPage.viewportSize();
+    await offPage.setViewportSize({ width: 1200, height: 600 });
+    await offPage.locator('#bpb-map-resize-handle').scrollIntoViewIfNeeded();
+    const readEffectiveMapHeight = () => offPage.evaluate(() => {
+        const map = document.getElementById('bpb-map-viewport');
+        const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
+        const handle = document.getElementById('bpb-map-resize-handle');
+        const mapRect = map?.getBoundingClientRect();
+        const frameRect = frame?.getBoundingClientRect();
+        const label = handle?.getAttribute('aria-label') || '';
+        return mapRect && frameRect ? {
+            viewportHeight: document.documentElement.clientHeight,
+            wrapperHeight: Math.round(mapRect.height),
+            contentHeight: Math.round(frameRect.height),
+            labelledHeight: Number(/by (\d+) pixels high/.exec(label)?.[1]),
+            inlineHeight: map?.style.height || '',
+        } : null;
+    });
+    const shortPreferredHeight = await offPage.waitForFunction(() => {
+        const map = document.getElementById('bpb-map-viewport');
+        const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
+        const handle = document.getElementById('bpb-map-resize-handle');
+        const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+        const labelledHeight = Number(/by (\d+) pixels high/.exec(
+            handle?.getAttribute('aria-label') || '')?.[1]);
+        return map?.style.height === '764px' && contentHeight > 0
+            && labelledHeight === contentHeight ? {
+                viewportHeight: document.documentElement.clientHeight,
+                contentHeight,
+                labelledHeight,
+            } : false;
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue());
+    await offPage.setViewportSize({ width: 1200, height: 1100 });
+    const grownUntouchedHeight = await offPage.waitForFunction(() => {
+        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = document.getElementById('bpb-map-resize-handle');
+        const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+        const labelledHeight = Number(/by (\d+) pixels high/.exec(
+            handle?.getAttribute('aria-label') || '')?.[1]);
+        return contentHeight === 720 && labelledHeight === contentHeight
+            ? { contentHeight, labelledHeight } : false;
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue());
+    await offPage.setViewportSize({ width: 1200, height: 600 });
+    await offPage.waitForFunction(expected => {
+        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        return Math.round(frame?.getBoundingClientRect().height || 0) === expected;
+    }, shortPreferredHeight.contentHeight, { timeout: 5000 });
+    const effectiveMapHandle = offPage.locator('#bpb-map-resize-handle');
+    await effectiveMapHandle.focus();
+    await offPage.keyboard.press('ArrowUp');
+    const firstUpHeight = await offPage.waitForFunction(previous => {
+        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = document.getElementById('bpb-map-resize-handle');
+        const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+        const labelledHeight = Number(/by (\d+) pixels high/.exec(
+            handle?.getAttribute('aria-label') || '')?.[1]);
+        return contentHeight === previous - 10 && labelledHeight === contentHeight
+            ? { contentHeight, labelledHeight } : false;
+    }, shortPreferredHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    await offPage.keyboard.press('ArrowDown');
+    const firstDownHeight = await offPage.waitForFunction(expected => {
+        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = document.getElementById('bpb-map-resize-handle');
+        const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+        const labelledHeight = Number(/by (\d+) pixels high/.exec(
+            handle?.getAttribute('aria-label') || '')?.[1]);
+        return contentHeight === expected && labelledHeight === contentHeight
+            ? { contentHeight, labelledHeight } : false;
+    }, shortPreferredHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    const effectiveHandleBox = await effectiveMapHandle.boundingBox();
+    if (effectiveHandleBox) {
+        const x = effectiveHandleBox.x + effectiveHandleBox.width / 2;
+        const y = effectiveHandleBox.y + effectiveHandleBox.height / 2;
+        await offPage.mouse.move(x, y);
+        await offPage.mouse.down();
+        await offPage.mouse.move(x, y - 1);
+        await offPage.mouse.up();
+    }
+    const firstPointerHeight = await offPage.waitForFunction(previous => {
+        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        const handle = document.getElementById('bpb-map-resize-handle');
+        const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
+        const labelledHeight = Number(/by (\d+) pixels high/.exec(
+            handle?.getAttribute('aria-label') || '')?.[1]);
+        return contentHeight === previous - 1 && labelledHeight === contentHeight
+            ? { contentHeight, labelledHeight } : false;
+    }, firstDownHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    await effectiveHeightSettingsPage.waitForTimeout(800);
+    const persistedEffectiveHeight = await effectiveHeightSettingsPage.evaluate(async () => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        return bpbSettings.mapViewportHeight;
+    });
+    await offPage.setViewportSize({ width: 1200, height: 1100 });
+    const grownInteractedHeight = await offPage.waitForFunction(expected => {
+        const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
+        return Math.round(frame?.getBoundingClientRect().height || 0) === expected
+            ? expected : false;
+    }, firstPointerHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
+    check(shortPreferredHeight.contentHeight === shortPreferredHeight.viewportHeight - 16 - 44
+        && shortPreferredHeight.labelledHeight === shortPreferredHeight.contentHeight
+        && grownUntouchedHeight.contentHeight === 720
+        && firstUpHeight.contentHeight === shortPreferredHeight.contentHeight - 10
+        && firstDownHeight.contentHeight === shortPreferredHeight.contentHeight
+        && firstPointerHeight.contentHeight === firstDownHeight.contentHeight - 1
+        && persistedEffectiveHeight === firstPointerHeight.contentHeight
+        && grownInteractedHeight === firstPointerHeight.contentHeight,
+    `the short-window map height diverged from visible geometry or preference semantics: ${JSON.stringify({
+        shortPreferredHeight, grownUntouchedHeight, firstUpHeight, firstDownHeight,
+        firstPointerHeight, persistedEffectiveHeight, grownInteractedHeight,
+        final: await readEffectiveMapHeight(),
+    })}`);
+    await effectiveHeightSettingsPage.evaluate(async original => {
+        await chrome.storage.sync.set({ bpbSettings: original });
+    }, originalHeightSettings);
+    await effectiveHeightSettingsPage.close();
+    if (effectiveHeightViewport) await offPage.setViewportSize(effectiveHeightViewport);
+    await offPage.waitForFunction(expected => {
+        const map = document.getElementById('bpb-map-viewport');
+        return map?.style.height === `${expected + 44}px`;
+    }, originalHeightSettings.mapViewportHeight || 450, { timeout: 5000 });
     const previousExplorerViewport = offPage.viewportSize();
     await offPage.setViewportSize({ width: 900, height: 760 });
     await coordinateCanvas.scrollIntoViewIfNeeded();
@@ -5282,6 +5411,7 @@ if (chromeBfcacheResult?.restored) {
     console.log(`  - Chrome remounted after history traversal; BFCache resume remains unproven because Chrome excluded the fixture: ${JSON.stringify(chromeBfcacheResult?.explanations || [])}`);
 }
 console.log('  - the saved ascent report/summary split mounts, drags, and persists its bounded ratio');
+console.log('  - short-window map keys and pointer pixels resize visible content, label it exactly, and replace only interacted preferences');
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
 console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');
 console.log('    scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
