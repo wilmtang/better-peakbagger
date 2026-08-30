@@ -1276,6 +1276,64 @@ async function main() {
         if (surfaceState.theme === null) {
             throw new Error('Firefox isolated-world theme bundle did not initialize');
         }
+        await driver.executeScript(`
+      window.__bpbSettingsPushes = [];
+      window.addEventListener('message', event => {
+        if (event.source === window && event.data?.__bpb === true
+            && event.data?.dir === 'toPage' && event.data?.kind === 'push') {
+          window.__bpbSettingsPushes.push(event.data);
+        }
+      });
+    `);
+        const analyzerHandle = await driver.getWindowHandle();
+        await driver.switchTo().newWindow('tab');
+        const settingsProbeHandle = await driver.getWindowHandle();
+        await driver.get(optionsUrl);
+        const crossTabSettings = await driver.executeAsyncScript(done => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) => {
+                const original = bpbSettings.mapRouteColor || '#2457a7';
+                const changed = original.toLowerCase() === '#347a3f' ? '#7a3f34' : '#347a3f';
+                return api.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, mapRouteColor: changed },
+                }).then(() => done({ original, changed }));
+            }).catch(error => done({ error: String(error) }));
+        });
+        assertState(!crossTabSettings?.error,
+            'Firefox could not issue the cross-tab settings update', crossTabSettings);
+        await driver.switchTo().window(analyzerHandle);
+        const crossTabBridgeState = await waitForScript(driver, `
+      const expected = ${JSON.stringify(crossTabSettings.changed)};
+      const control = document.getElementById('bpb-map-route-color');
+      const push = window.__bpbSettingsPushes?.find(message =>
+        message.settings?.mapRouteColor === expected);
+      return control?.value === expected && push ? {
+        control: control.value,
+        snapshotRevision: push.snapshotRevision,
+        throughRequestId: push.throughRequestId,
+        metadataInSettings: 'snapshotRevision' in push.settings
+          || 'throughRequestId' in push.settings,
+      } : false;
+    `, 'the ordered Firefox cross-tab settings push');
+        assertState(Number.isSafeInteger(crossTabBridgeState.snapshotRevision)
+            && crossTabBridgeState.snapshotRevision > 0
+            && crossTabBridgeState.throughRequestId === 0
+            && !crossTabBridgeState.metadataInSettings,
+        'Firefox leaked or omitted settings transport ordering metadata', crossTabBridgeState);
+        await driver.switchTo().window(settingsProbeHandle);
+        await driver.executeAsyncScript((original, done) => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.get('bpbSettings').then(({ bpbSettings = {} }) =>
+                api.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, mapRouteColor: original },
+                })).then(() => done(true), error => done(String(error)));
+        }, crossTabSettings.original);
+        await driver.close();
+        await driver.switchTo().window(analyzerHandle);
+        await waitForScript(driver, `
+      return document.getElementById('bpb-map-route-color')?.value
+        === ${JSON.stringify(crossTabSettings.original)};
+    `, 'the restored Firefox analyzer route color');
         const firefoxSunHeaderHeights = await driver.executeScript(`
       const calculator = document.querySelector('.bpb-sun-calculator');
       const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
@@ -2331,6 +2389,7 @@ async function main() {
         console.log('  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant');
         console.log('  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch');
         console.log('  - four native Buddy actions refreshed/synced custom favorites under both removal policies');
+        console.log('  - ordered cross-tab settings pushes updated and restored the analyzer controls');
         console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
         console.log('  - the full Capitol GPX rendered 971 points per chart series with the corrected metrics and zero breaks');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');

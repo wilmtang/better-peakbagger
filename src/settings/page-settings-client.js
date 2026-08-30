@@ -23,6 +23,7 @@ export const createPageSettingsClient = ({
     const safeFallback = Schema.clean(fallback);
     let settings = null;
     let confirmed = null;
+    let confirmedRevision = -1;
     let applied = null;
     let nextRequestId = 1;
     let readyTimer = null;
@@ -62,6 +63,23 @@ export const createPageSettingsClient = ({
         pending.delete(requestId);
         return true;
     };
+    const settleThrough = requestId => {
+        if (!Number.isSafeInteger(requestId) || requestId < 0) return;
+        for (const pendingId of [...pending.keys()]) {
+            if (pendingId <= requestId) settle(pendingId);
+        }
+    };
+    const acceptSnapshot = data => {
+        if (!data.settings
+            || !Number.isSafeInteger(data.snapshotRevision)
+            || data.snapshotRevision <= confirmedRevision
+            || !Number.isSafeInteger(data.throughRequestId)
+            || data.throughRequestId < 0) return false;
+        confirmed = Schema.clean(data.settings);
+        confirmedRevision = data.snapshotRevision;
+        settleThrough(data.throughRequestId);
+        return true;
+    };
     const fail = (requestId, message) => {
         if (!settle(requestId)) return;
         recompute();
@@ -76,36 +94,22 @@ export const createPageSettingsClient = ({
         const data = event.data;
         if (!data || data.__bpb !== true || data.dir !== 'toPage') return;
         if (data.kind === 'setResult') {
-            if (!pending.has(data.requestId)) {
-                // A success reply may arrive after its timer expired. Its
-                // storage snapshot is still authoritative; process it exactly
-                // like an external settings push while newer pending patches
-                // remain layered on top.
-                if (data.ok === true && data.settings) {
-                    confirmed = Schema.clean(data.settings);
-                    recompute();
-                    resolveReady(settings);
-                }
-                return;
-            }
             if (data.ok === true && data.settings) {
-                confirmed = Schema.clean(data.settings);
+                const wasPending = pending.has(data.requestId);
+                const accepted = acceptSnapshot(data);
                 // A later successful snapshot is authoritative through that
                 // request. Clear older requests too so a lost older reply
                 // cannot later roll the confirmed value backward or emit a
                 // false timeout.
-                for (const requestId of [...pending.keys()]) {
-                    if (requestId <= data.requestId) settle(requestId);
-                }
-                recompute();
-                resolveReady(settings);
+                if (wasPending) settleThrough(data.requestId);
+                if (accepted || wasPending) recompute();
+                if (accepted) resolveReady(settings);
                 return;
             }
             fail(data.requestId, data.message);
             return;
         }
-        if (!data.settings) return;
-        confirmed = Schema.clean(data.settings);
+        if (!acceptSnapshot(data)) return;
         recompute();
         resolveReady(settings);
     };

@@ -43,6 +43,8 @@ const setup = async () => {
     const timers = createTimers();
     const posted = [];
     const failures = [];
+    const notifications = [];
+    let snapshotRevision = 0;
     const fallback = { units: 'metric', mapRouteColor: '#2457a7' };
     window.postMessage = message => posted.push(message);
     const client = PageSettingsClient.create({
@@ -55,19 +57,41 @@ const setup = async () => {
         clearTimer: timers.clear,
     });
     client.onWriteFailed(message => failures.push(message));
-    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpb: true, dir: 'toPage', ...data }
+    client.subscribe((settings, changed) => notifications.push({
+        settings: structuredClone(settings),
+        unitsChanged: changed(['units']),
+        colorChanged: changed(['mapRouteColor']),
     }));
+    const dispatch = data => {
+        const revision = data.settings
+            ? (data.snapshotRevision ?? ++snapshotRevision)
+            : undefined;
+        if (Number.isSafeInteger(revision)) snapshotRevision = Math.max(snapshotRevision, revision);
+        window.dispatchEvent(new window.MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: {
+                __bpb: true,
+                dir: 'toPage',
+                ...data,
+                ...(data.settings && {
+                    snapshotRevision: revision,
+                    throughRequestId: data.throughRequestId
+                        ?? (data.kind === 'setResult' ? data.requestId : 0),
+                }),
+            }
+        }));
+    };
     const ready = client.init();
     dispatch({ settings: fallback });
     await ready;
+    notifications.length = 0;
     return {
         client,
         dispatch,
         dom,
         failures,
+        notifications,
         posted,
         timers,
         close() {
@@ -118,6 +142,109 @@ test('a missing settings acknowledgement rolls back, while its late snapshot rem
     assert.equal(fixture.client.get().units, 'imperial',
         'a late success snapshot is processed as an ordinary confirmed update');
     fixture.close();
+});
+
+test('a newer storage push cannot be overwritten by an older write acknowledgement', async () => {
+    const fixture = await setup();
+    const requestId = fixture.client.set({ units: 'imperial' });
+
+    fixture.dispatch({
+        kind: 'push',
+        settings: { units: 'auto', mapRouteColor: '#2457a7' },
+        snapshotRevision: 3,
+        throughRequestId: 0,
+    });
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId,
+        ok: true,
+        settings: { units: 'imperial', mapRouteColor: '#2457a7' },
+        snapshotRevision: 2,
+        throughRequestId: requestId,
+    });
+
+    assert.equal(fixture.client.get().units, 'auto');
+    assert.equal(fixture.timers.size, 0, 'the stale acknowledgement still settles its own request');
+    assert.deepEqual(fixture.failures, []);
+    assert.deepEqual(fixture.notifications.map(entry => ({
+        units: entry.settings.units,
+        unitsChanged: entry.unitsChanged,
+    })), [{ units: 'auto', unitsChanged: true }]);
+    fixture.close();
+});
+
+test('a same-write push advances the base while acknowledgements settle ordered requests', async () => {
+    const fixture = await setup();
+    const unitsId = fixture.client.set({ units: 'imperial' });
+    const colorId = fixture.client.set({ mapRouteColor: '#347a3f' });
+
+    fixture.dispatch({
+        kind: 'push',
+        settings: { units: 'imperial', mapRouteColor: '#2457a7' },
+        snapshotRevision: 3,
+        throughRequestId: 0,
+    });
+    assert.equal(fixture.client.get().units, 'imperial');
+    assert.equal(fixture.client.get().mapRouteColor, '#347a3f',
+        'the request newer than the push boundary remains optimistic');
+    assert.equal(fixture.timers.size, 2,
+        'an uncorrelated storage event cannot settle either pending request');
+
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId: unitsId,
+        ok: true,
+        settings: { units: 'imperial', mapRouteColor: '#2457a7' },
+        snapshotRevision: 2,
+        throughRequestId: unitsId,
+    });
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId: colorId,
+        ok: true,
+        settings: { units: 'imperial', mapRouteColor: '#347a3f' },
+        snapshotRevision: 4,
+        throughRequestId: colorId,
+    });
+
+    assert.equal(fixture.client.get().units, 'imperial');
+    assert.equal(fixture.client.get().mapRouteColor, '#347a3f');
+    assert.equal(fixture.timers.size, 0);
+    assert.deepEqual(fixture.failures, []);
+    fixture.close();
+});
+
+test('out-of-order successes and disposal cannot revive an older bridge snapshot', async () => {
+    const fixture = await setup();
+    const olderId = fixture.client.set({ units: 'imperial' });
+    const newerId = fixture.client.set({ units: 'auto' });
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId: newerId,
+        ok: true,
+        settings: { units: 'auto', mapRouteColor: '#2457a7' },
+        snapshotRevision: 3,
+        throughRequestId: newerId,
+    });
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId: olderId,
+        ok: true,
+        settings: { units: 'imperial', mapRouteColor: '#2457a7' },
+        snapshotRevision: 2,
+        throughRequestId: olderId,
+    });
+    assert.equal(fixture.client.get().units, 'auto');
+
+    fixture.client.dispose();
+    fixture.dispatch({
+        kind: 'push',
+        settings: { units: 'metric', mapRouteColor: '#2457a7' },
+        snapshotRevision: 4,
+        throughRequestId: newerId,
+    });
+    assert.equal(fixture.client.get().units, 'auto');
+    fixture.dom.window.close();
 });
 
 test('an explicit settings failure clears its timer and uses the bridge message once', async () => {

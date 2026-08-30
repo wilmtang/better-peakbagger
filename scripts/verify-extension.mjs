@@ -2211,6 +2211,49 @@ try {
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
+    await offPage.evaluate(() => {
+        window.__bpbSettingsPushes = [];
+        window.addEventListener('message', event => {
+            if (event.source === window && event.data?.__bpb === true
+                && event.data?.dir === 'toPage' && event.data?.kind === 'push') {
+                window.__bpbSettingsPushes.push(event.data);
+            }
+        });
+    });
+    const settingsProbePage = await context.newPage();
+    await settingsProbePage.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const crossTabSettings = await settingsProbePage.evaluate(async () => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        const original = bpbSettings.mapRouteColor || '#2457a7';
+        const changed = original.toLowerCase() === '#347a3f' ? '#7a3f34' : '#347a3f';
+        await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: changed } });
+        return { original, changed };
+    });
+    const crossTabBridgeState = await offPage.waitForFunction(expected => {
+        const control = document.getElementById('bpb-map-route-color');
+        const push = window.__bpbSettingsPushes?.find(message =>
+            message.settings?.mapRouteColor === expected);
+        return control?.value === expected && push ? {
+            control: control.value,
+            snapshotRevision: push.snapshotRevision,
+            throughRequestId: push.throughRequestId,
+            metadataInSettings: 'snapshotRevision' in push.settings
+                || 'throughRequestId' in push.settings,
+        } : false;
+    }, crossTabSettings.changed, { timeout: 5000 }).then(handle => handle.jsonValue());
+    check(Number.isSafeInteger(crossTabBridgeState.snapshotRevision)
+        && crossTabBridgeState.snapshotRevision > 0
+        && crossTabBridgeState.throughRequestId === 0
+        && !crossTabBridgeState.metadataInSettings,
+    `the cross-tab settings push was unordered or leaked protocol metadata: ${JSON.stringify(crossTabBridgeState)}`);
+    await settingsProbePage.evaluate(async original => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, mapRouteColor: original } });
+    }, crossTabSettings.original);
+    await offPage.waitForFunction(expected =>
+        document.getElementById('bpb-map-route-color')?.value === expected,
+    crossTabSettings.original, { timeout: 5000 });
+    await settingsProbePage.close();
     const ascentSplitBefore = await offPage.evaluate(() => {
         const wrapper = document.getElementById('bpb-ascent-table-split');
         const report = document.getElementById('ascent-report');
@@ -5086,7 +5129,7 @@ console.log('  - the worker persists selected helper-tab adoption and reclaims o
 console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
-console.log('  - settings.js initialises in the isolated world and the bridge answers');
+console.log('  - settings.js initialises in the isolated world and ordered cross-tab bridge pushes update analyzer controls');
 console.log('  - the saved ascent report/summary split mounts, drags, and persists its bounded ratio');
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
 console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');

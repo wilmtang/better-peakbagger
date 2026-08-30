@@ -9,6 +9,9 @@
 //   bridge -> page : { __bpb:true, dir:'toPage', settings }
 //                 or { __bpb:true, dir:'toPage', kind:'setResult',
 //                      requestId, ok, settings?, message? }
+// Successful snapshots also carry transport-only snapshotRevision and
+// throughRequestId fields. They order bridge deliveries without becoming
+// settings schema or storage fields.
 // The bridge also pushes updated settings to the page whenever storage changes
 // (options page, another tab), so the chart re-themes / re-units live.
 
@@ -34,8 +37,20 @@ const WRITE_FAILED_MESSAGE = 'Settings couldn’t be saved. Try again.';
 // naming a key or inviting a retry that would be refused identically.
 const WRITE_REFUSED_MESSAGE = 'That setting can’t be changed from this page.';
 
-const send = (settings, detail = {}) =>
-    window.postMessage({ __bpb: true, dir: 'toPage', ...detail, ...(settings && { settings }) }, location.origin);
+let transportRevision = 0;
+let latestRequestId = 0;
+const nextTransportRevision = () => ++transportRevision;
+const cleanRequestId = value => Number.isSafeInteger(value) && value > 0 ? value : null;
+const send = (settings, detail = {}, snapshot = null) => window.postMessage({
+    __bpb: true,
+    dir: 'toPage',
+    ...detail,
+    ...(settings && {
+        settings,
+        snapshotRevision: snapshot?.revision,
+        throughRequestId: snapshot?.throughRequestId ?? latestRequestId,
+    }),
+}, location.origin);
 
 window.addEventListener('message', async event => {
     if (event.source !== window || event.origin !== location.origin) return;
@@ -43,8 +58,14 @@ window.addEventListener('message', async event => {
     if (!data || data.__bpb !== true || data.dir !== 'toCS') return;
 
     if (data.kind === 'get') {
-        send(await S.get());
+        const snapshot = {
+            revision: nextTransportRevision(),
+            throughRequestId: latestRequestId,
+        };
+        send(await S.get(), {}, snapshot);
     } else if (data.kind === 'set' && data.patch && typeof data.patch === 'object') {
+        const requestId = cleanRequestId(data.requestId);
+        if (requestId) latestRequestId = Math.max(latestRequestId, requestId);
         const patch = Object.fromEntries(Object.entries(data.patch)
             .filter(([key]) => WRITABLE_KEYS.has(key)));
         // A patch with nothing writable left in it is refused, not ignored.
@@ -54,22 +75,26 @@ window.addEventListener('message', async event => {
         if (!Object.keys(patch).length) {
             send(null, {
                 kind: 'setResult',
-                requestId: data.requestId,
+                requestId,
                 ok: false,
                 message: WRITE_REFUSED_MESSAGE
             });
             return;
         }
+        const snapshot = {
+            revision: nextTransportRevision(),
+            throughRequestId: requestId || latestRequestId,
+        };
         try {
             const next = await S.set(patch);
-            send(next, { kind: 'setResult', requestId: data.requestId, ok: true });
+            send(next, { kind: 'setResult', requestId, ok: true }, snapshot);
         } catch (error) {
             // The MAIN-world client keeps the last confirmed settings and
             // uses this response to roll back its optimistic controls.
             console.warn('Better Peakbagger: page-world settings write failed', error);
             send(null, {
                 kind: 'setResult',
-                requestId: data.requestId,
+                requestId,
                 ok: false,
                 message: WRITE_FAILED_MESSAGE
             });
@@ -77,4 +102,10 @@ window.addEventListener('message', async event => {
     }
 });
 
-S.subscribe(settings => send(settings));
+S.subscribe(settings => send(settings, { kind: 'push' }, {
+    revision: nextTransportRevision(),
+    // An arbitrary storage event can race a locally pending write and does
+    // not prove that write is part of this snapshot. Only the corresponding
+    // worker acknowledgement carries that causal boundary.
+    throughRequestId: 0,
+}));

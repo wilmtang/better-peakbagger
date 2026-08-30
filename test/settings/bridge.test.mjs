@@ -53,6 +53,27 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
     dom.window.close();
 });
 
+test('bridge snapshots carry transport-only monotonic ordering metadata', async () => {
+    const dom = await loadBridge();
+    sendToBridge(dom, { units: 'imperial' }, 11);
+    await waitFor(dom, () => dom.postedMessages.some(message =>
+        message.kind === 'setResult' && message.requestId === 11));
+
+    const acknowledgement = dom.postedMessages.find(message =>
+        message.kind === 'setResult' && message.requestId === 11);
+    const push = dom.postedMessages.find(message => message.kind === 'push');
+    assert.ok(push && acknowledgement);
+    assert.ok(push.snapshotRevision > acknowledgement.snapshotRevision,
+        'the storage push observed during the write is newer than its delayed acknowledgement');
+    assert.equal(push.throughRequestId, 0,
+        'a storage event must not claim it includes an unrelated pending page write');
+    assert.equal(acknowledgement.throughRequestId, 11);
+    assert.equal('snapshotRevision' in dom.chrome._store.bpbSettings, false,
+        'transport metadata must never enter the settings record');
+    assert.equal('throughRequestId' in dom.chrome._store.bpbSettings, false);
+    dom.window.close();
+});
+
 test('a patch containing no writable keys is refused, not silently dropped', async () => {
     const dom = await loadBridge();
     sendToBridge(dom, { enable3dMap: true, fillAscentDetails: false, fillTripInfo: false }, 7);

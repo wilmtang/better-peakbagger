@@ -308,7 +308,12 @@ patches over its last confirmed settings; a failed worker operation removes
 only that patch and rolls the affected controls back without discarding a
 newer pending change. Each request has a five-second acknowledgement deadline.
 A missing reply is a failure, late confirmed snapshots can still advance the
-base beneath newer pending writes, and page disposal clears every timer.
+base beneath newer pending writes, and page disposal clears every timer. Every
+successful bridge snapshot also carries a transport-only monotonic revision.
+An older acknowledgement can settle its own request but cannot replace a newer
+external storage push; an uncorrelated push never claims that pending local
+writes are already included. These ordering fields are protocol metadata, not
+settings schema, storage, or export fields.
 
 The BigMap and Peak-page bridges are read-only and send only the fields their
 coordinators need. `src/terrain/terrain-map.js` separately validates messages between a
