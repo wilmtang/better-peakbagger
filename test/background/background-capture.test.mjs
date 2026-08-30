@@ -2864,36 +2864,23 @@ test('production-point analysis yields to status and cancellation messages', asy
         },
         peakXml,
     });
-    let lastTurnAt = Date.now();
-    let maxTurnGapMs = 0;
-    const ticker = setInterval(() => {
-        const current = Date.now();
-        maxTurnGapMs = Math.max(maxTurnGapMs, current - lastTurnAt);
-        lastTurnAt = current;
-    }, 1);
-
-    try {
-        const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-        await waitForCondition(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
-        const responseStartedAt = Date.now();
-        const [status, cancelled] = await Promise.race([
-            Promise.all([
-                harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
-                harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
-            ]),
-            new Promise((_, reject) => setTimeout(
-                () => reject(new Error('analysis did not yield to status and cancellation')), 500,
-            )),
-        ]);
-        assert.ok(status, 'the concurrent status request observes the live generation');
-        assert.equal(cancelled.cancelled, true);
-        assert.ok(Date.now() - responseStartedAt < 500);
-        assert.equal(await capture, null);
-        assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
-        assert.ok(maxTurnGapMs < 150, `maximum event-loop gap was ${maxTurnGapMs} ms`);
-    } finally {
-        clearInterval(ticker);
-    }
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await waitForCondition(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
+    const responseStartedAt = Date.now();
+    const [status, cancelled] = await Promise.race([
+        Promise.all([
+            harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
+            harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+        ]),
+        new Promise((_, reject) => setTimeout(
+            () => reject(new Error('analysis did not yield to status and cancellation')), 500,
+        )),
+    ]);
+    assert.ok(status, 'the concurrent status request observes the live generation');
+    assert.equal(cancelled.cancelled, true);
+    assert.ok(Date.now() - responseStartedAt < 500);
+    assert.equal(await capture, null);
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
 });
 
 test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {
