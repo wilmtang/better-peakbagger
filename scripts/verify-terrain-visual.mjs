@@ -1446,12 +1446,34 @@ try {
     // canvas moves focus into the extension frame, where the page cannot see
     // the key at all, so this exercises the frame's handler and its relay.
     const analyzerCanvasPoint = await evaluate(cdp, `(() => {
-        const rect = document.getElementById('bpb-terrain-frame')?.getBoundingClientRect();
-        return rect && rect.width > 40 && rect.height > 40
-            ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-            : null;
+        const frame = document.getElementById('bpb-terrain-frame');
+        const rect = frame?.getBoundingClientRect();
+        const doc = frame?.contentDocument;
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        if (!rect || rect.width <= 40 || rect.height <= 40 || !doc || !map) return null;
+        const fractions = [0.2, 0.35, 0.5, 0.65, 0.8];
+        for (const yFraction of fractions) {
+            for (const xFraction of fractions) {
+                const local = {
+                    x: Math.round(rect.width * xFraction),
+                    y: Math.round(rect.height * yFraction),
+                };
+                const target = doc.elementFromPoint(local.x, local.y);
+                if (!target?.matches?.('canvas.maplibregl-canvas')) continue;
+                let features = [];
+                try {
+                    features = map.queryRenderedFeatures([local.x, local.y], {
+                        layers: ['bpb-route', 'bpb-peaks-ring'],
+                    });
+                } catch { continue; }
+                if (!features.length) return { x: rect.left + local.x, y: rect.top + local.y };
+            }
+        }
+        return null;
     })()`);
-    if (!analyzerCanvasPoint) throw new Error('Could not locate the ascent 3D canvas for its Escape check');
+    if (!analyzerCanvasPoint) {
+        throw new Error('Could not locate empty ascent 3D canvas for its Escape check');
+    }
     await clickAt(cdp, analyzerCanvasPoint.x, analyzerCanvasPoint.y);
     const analyzerFocus = await evaluate(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
