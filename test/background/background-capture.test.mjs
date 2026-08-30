@@ -452,6 +452,22 @@ const openBetaSettings = async (harness, sender, disposition = 'foreground-tab')
     }, sender);
 };
 
+let draftManagerGeneration = 0;
+const openDraftsManager = async (harness, sender) => {
+    const generation = `test-drafts-${++draftManagerGeneration}`;
+    const activation = await harness.send({
+        type: 'TRUSTED_ACTION_ISSUE',
+        action: 'draft-manager',
+        generation,
+    }, sender);
+    assert.equal(activation.ok, true);
+    return harness.send({
+        type: 'OPEN_DRAFTS_MANAGER',
+        generation,
+        activationToken: activation.token,
+    }, sender);
+};
+
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
     const harness = createHarness();
     const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -639,10 +655,14 @@ test('toolbar capture and local GPX create identical new sibling draft records',
 
 test('only a Peakbagger tab can open the report drafts manager', async () => {
     const harness = createHarness();
-    const allowed = await harness.send(
-        { type: 'OPEN_DRAFTS_MANAGER' },
-        { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1' }
-    );
+    const sender = {
+        tab: { id: 5 },
+        documentId: 'report-document',
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1',
+    };
+    const withoutActivation = await harness.send({ type: 'OPEN_DRAFTS_MANAGER' }, sender);
+    assert.equal(withoutActivation.error.code, 'activation-required');
+    const allowed = await openDraftsManager(harness, sender);
     assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
     // The manager is its own page; the worker opens it directly rather than
     // deep-linking into a Settings section that now only points at it.
@@ -772,10 +792,11 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
     };
 
     const tabCreate = createHarness({ faults: { tabCreate: sentinel } });
-    const createResponse = await tabCreate.send(
-        { type: 'OPEN_DRAFTS_MANAGER' },
-        { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1' }
-    );
+    const createResponse = await openDraftsManager(tabCreate, {
+        tab: { id: 5 },
+        documentId: 'report-document',
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1',
+    });
     assert.deepEqual(JSON.parse(JSON.stringify(createResponse)), {
         ok: false,
         error: {

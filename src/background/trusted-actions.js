@@ -18,6 +18,8 @@ const ACTIONS = Object.freeze({
     ASCENT_BACKUP: 'ascent-backup',
     PROFILE_BACKUP: 'profile-backup',
     BETA_SETTINGS: 'beta-settings',
+    DRAFT_MANAGER: 'draft-manager',
+    PHOTO_EDITOR: 'photo-editor',
 });
 const ACTION_SET = new Set(Object.values(ACTIONS));
 const WORKFLOW_ACTIONS = new Set([ACTIONS.ASCENT_BACKUP, ACTIONS.PROFILE_BACKUP]);

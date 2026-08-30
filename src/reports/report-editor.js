@@ -31,6 +31,7 @@ import { createRichEditor, richCommands, richState } from './report-rich-editor.
 import { createMarkdownEditor } from './report-md-editor.js';
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
 // Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
 // dependencies are ES imports and no globals are published.
@@ -53,6 +54,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
     const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;
+    let trustedActionSequence = 0;
+    const nextTrustedActionGeneration = action =>
+        `report-${action}-${Date.now().toString(36)}-${++trustedActionSequence}`;
 
     // Drafts exist to recover user-authored content, not an empty editor or the
     // optional credit scaffold by itself. Compare the parser's canonical
@@ -486,8 +490,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             renderStatus();
         }, DRAFT_MANAGER_FEEDBACK_MS);
     };
-    const openDraftsManager = async () => {
+    const openDraftsManager = async event => {
         if (draftManagerBusy) return;
+        const generation = nextTrustedActionGeneration('drafts');
+        const activation = await TrustedAction.issue(ext, event, 'draft-manager', generation);
+        if (!activation) return;
         draftManagerBusy = true;
         setDraftManagerStatus('');
         const controls = ui.querySelectorAll('.bpb-re-manage, .bpb-re-draft-manage');
@@ -496,7 +503,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             control.setAttribute('aria-busy', 'true');
         }
         try {
-            const response = await RuntimeMessage.send(ext, { type: 'OPEN_DRAFTS_MANAGER' });
+            const response = await RuntimeMessage.send(ext, {
+                type: 'OPEN_DRAFTS_MANAGER',
+                generation,
+                activationToken: activation.token,
+            });
             if (!response?.ok) setDraftManagerStatus('Couldn’t open report drafts. Try again.');
         } finally {
             draftManagerBusy = false;
@@ -1039,8 +1050,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     };
 
     let photoLaunchBusy = false;
-    const launchPhotoEditor = async () => {
+    const launchPhotoEditor = async event => {
         if (photoLaunchBusy) return;
+        const generation = nextTrustedActionGeneration('photos');
+        const activation = await TrustedAction.issue(ext, event, 'photo-editor', generation);
+        if (!activation) return;
         photoLaunchBusy = true;
         imageLaunchStatus.textContent = '';
         imageEdit.disabled = true;
@@ -1049,6 +1063,8 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             const response = await RuntimeMessage.send(ext, {
                 type: 'PHOTO_EDITOR_OPEN',
                 mode: 'edit',
+                generation,
+                activationToken: activation.token,
                 identity: {
                     cid: params.get('cid'),
                     aid: params.get('aid'),
@@ -1138,7 +1154,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (event.key === 'Enter') { event.preventDefault(); applyLink(); }
         if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
     });
-    imageEdit.addEventListener('click', () => { void launchPhotoEditor(); });
+    imageEdit.addEventListener('click', event => { void launchPhotoEditor(event); });
     imageApply.addEventListener('click', applyImage);
     for (const input of [imageSrcInput, imageAltInput]) {
         input.addEventListener('keydown', event => {

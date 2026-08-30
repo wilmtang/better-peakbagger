@@ -2539,6 +2539,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         isPeakbaggerSender,
         mutateMap,
         readMap,
+        trustedActions,
     });
     const reportDraftRoutes = ReportDraftRoutes.createReportDraftRoutes({
         ext,
@@ -2553,13 +2554,26 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
 
-    const openDraftsManager = async sender => {
+    const openDraftsManager = async (message, sender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return {
                 ok: false,
                 error: {
                     code: 'forbidden',
                     message: 'Report drafts can only be opened from a Peakbagger page.',
+                },
+            };
+        }
+        if (!trustedActions.consumeCapability(
+            message,
+            sender,
+            TrustedActions.ACTIONS.DRAFT_MANAGER,
+        )) {
+            return {
+                ok: false,
+                error: {
+                    code: 'activation-required',
+                    message: 'Use the report editor button to open report drafts.',
                 },
             };
         }
@@ -2734,7 +2748,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return favoriteMutations.mutate(message.mutation);
             case 'OPTIONS_TAB_REGISTER': return registerBetaSettingsTab(sender);
             case 'OPEN_BETA_SETTINGS': return openBetaSettings(message, sender);
-            case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
+            case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);

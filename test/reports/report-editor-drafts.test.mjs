@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 
 test('edits autosave a local draft keyed to this climber and form', async () => {
@@ -234,7 +234,12 @@ test('a differing stored draft offers management, and Restore applies it in its 
                 savedAt: Date.now() - 60000
             }
         },
-        prepare: d => { d.chrome.runtime.sendMessage = async message => { messages.push(message); }; }
+        prepare: d => { d.chrome.runtime.sendMessage = async message => {
+            messages.push(message);
+            return message.type === 'TRUSTED_ACTION_ISSUE'
+                ? { ok: true, token: 'draft-token' }
+                : { ok: true };
+        }; }
     });
     await editorReady(dom);
     const doc = dom.window.document;
@@ -245,8 +250,11 @@ test('a differing stored draft offers management, and Restore applies it in its 
     assert.deepEqual(actions.map(button => button.textContent), [
         'Restore draft', 'Delete draft', 'Manage drafts'
     ]);
-    actions[2].click();
-    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_DRAFTS_MANAGER' }]);
+    fireTrustedEvent(actions[2], 'click');
+    await waitFor(dom, () => messages.length === 2);
+    assert.equal(messages[0].action, 'draft-manager');
+    assert.equal(messages[1].type, 'OPEN_DRAFTS_MANAGER');
+    assert.equal(messages[1].activationToken, 'draft-token');
 
     actions[0].click();
     assert.equal(doc.getElementById('bpb-report-editor').dataset.mode, 'markdown');

@@ -22,6 +22,7 @@ const harness = ({
     tabCreateFailure = null,
     tabRemoveFailure = null,
     buildOpenResponse = tabId => ({ ok: true, tabId }),
+    consumeActivation = () => true,
 } = {}) => {
     const local = makeStorageArea();
     const session = makeStorageArea();
@@ -84,6 +85,7 @@ const harness = ({
         readMap,
         randomToken: () => 'return-token',
         keyStore,
+        trustedActions: { consumeCapability: consumeActivation },
         buildOpenResponse,
         logCleanupFailure: message => cleanupLogs.push(message),
     });
@@ -143,6 +145,29 @@ test('opens one bound extension editor and stores a short-lived return context',
     assert.equal(contexts['return-token'].sourceTabId, 41);
     assert.equal(contexts['return-token'].editorTabId, 91);
     assert.deepEqual(contexts['return-token'].identity, { cid: 22, aid: null, pid: 33 });
+});
+
+test('opening a photo editor requires one matching trusted activation', async () => {
+    const consumed = [];
+    const h = harness({
+        consumeActivation: (message, sender, action) => {
+            consumed.push({ message, sender, action });
+            return message.activationToken === 'trusted-token'
+                && message.generation === 'report-photos-1';
+        },
+    });
+    const rejected = await h.routes.handlers.PHOTO_EDITOR_OPEN(openMessage, peakSender);
+    assert.equal(rejected.error.code, 'activation-required');
+    assert.deepEqual(h.created, []);
+    assert.deepEqual(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY], undefined);
+
+    const allowed = await h.routes.handlers.PHOTO_EDITOR_OPEN({
+        ...openMessage,
+        activationToken: 'trusted-token',
+        generation: 'report-photos-1',
+    }, peakSender);
+    assert.equal(allowed.ok, true);
+    assert.equal(consumed.at(-1).action, 'photo-editor');
 });
 
 for (const stage of ['before', 'after']) {

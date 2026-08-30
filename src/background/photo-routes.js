@@ -6,6 +6,7 @@
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { photoLibrary as Library } from '../photos/photo-library.js';
 import { sanitizeReportDimension } from '../reports/report-markup.js';
+import { trustedActions as TrustedActions } from './trusted-actions.js';
 
 const RETURN_CONTEXTS_KEY = 'bpbPhotoEditorReturns';
 const RETURN_TTL_MS = 2 * 60 * 60 * 1000;
@@ -72,10 +73,12 @@ export function createPhotoRoutes({
     readMap,
     randomToken = defaultToken,
     keyStore = ImgbbAuth.keyStore,
+    trustedActions,
     buildOpenResponse = tabId => ({ ok: true, tabId }),
     logCleanupFailure = message => console.error(message),
 } = {}) {
     if (!ext || !storage || !isPeakbaggerSender || !mutateMap || !readMap || !keyStore
+        || !trustedActions
         || typeof buildOpenResponse !== 'function' || typeof logCleanupFailure !== 'function') {
         throw new TypeError('photo routes require extension, storage, and sender dependencies');
     }
@@ -164,6 +167,15 @@ export function createPhotoRoutes({
         const identity = cleanDraftIdentity(message.identity || {});
         const mode = message.mode === 'library' ? 'library' : 'edit';
         if (!identity) return { ok: false, error: { code: 'invalid-context' } };
+        if (!trustedActions.consumeCapability(message, sender, TrustedActions.ACTIONS.PHOTO_EDITOR)) {
+            return {
+                ok: false,
+                error: {
+                    code: 'activation-required',
+                    message: 'Use the report editor button to open the photo editor.',
+                },
+            };
+        }
         const token = randomToken();
         const createdAt = now();
         let contextMayExist = false;

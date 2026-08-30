@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, typeRich, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 
 test('the editor mounts on the ascent form and hides the native textarea', async () => {
@@ -59,6 +59,10 @@ test('the editor always offers the device-wide report drafts manager', async () 
     const dom = await loadEditor({
         prepare: d => {
             d.chrome.runtime.sendMessage = message => {
+                if (message.type === 'TRUSTED_ACTION_ISSUE') {
+                    messages.push(message);
+                    return Promise.resolve({ ok: true, token: 'draft-token' });
+                }
                 messages.push(message);
                 return new Promise(resolve => { release = resolve; });
             };
@@ -71,8 +75,15 @@ test('the editor always offers the device-wide report drafts manager', async () 
     assert.equal(manage?.type, 'button');
     assert.equal(manage?.getAttribute('aria-label'), 'Manage TR drafts');
     manage.click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.deepEqual(messages, [], 'a synthetic host-page click must mint no authority');
+    fireTrustedEvent(manage, 'click');
     await waitFor(dom, () => manage.disabled && manage.getAttribute('aria-busy') === 'true');
-    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_DRAFTS_MANAGER' }]);
+    assert.equal(messages[0].type, 'TRUSTED_ACTION_ISSUE');
+    assert.equal(messages[0].action, 'draft-manager');
+    assert.equal(messages[1].type, 'OPEN_DRAFTS_MANAGER');
+    assert.equal(messages[1].activationToken, 'draft-token');
+    assert.equal(messages[1].generation, messages[0].generation);
     assert.equal(ui.querySelector('.bpb-re-surface').getAttribute('contenteditable'), 'true',
         'opening the manager must not disable report editing');
     release({ ok: true, tabId: 100 });
@@ -119,9 +130,13 @@ test('both report-drafts entry points recover visibly from every messaging failu
                         return nativeSetTimeout(callback, delay, ...args);
                     };
                     d.chrome.runtime.sendMessage = message => {
+                        if (message.type === 'TRUSTED_ACTION_ISSUE') {
+                            return Promise.resolve({ ok: true, token: `draft-token-${calls + 1}` });
+                        }
                         calls++;
-                        assert.deepEqual(JSON.parse(JSON.stringify(message)),
-                            { type: 'OPEN_DRAFTS_MANAGER' });
+                        assert.equal(message.type, 'OPEN_DRAFTS_MANAGER');
+                        assert.equal(message.activationToken, `draft-token-${calls}`);
+                        assert.match(message.generation, /^report-drafts-/);
                         return behavior();
                     };
                 },
@@ -143,7 +158,7 @@ test('both report-drafts entry points recover visibly from every messaging failu
             for (const failure of failures) {
                 behavior = failure;
                 const expectedCalls = calls + 1;
-                manage.click();
+                fireTrustedEvent(manage, 'click');
                 await waitFor(dom, () => calls === expectedCalls
                     && !manage.disabled
                     && /Couldn’t open report drafts/.test(ui.querySelector('.bpb-re-status').textContent));
@@ -160,7 +175,7 @@ test('both report-drafts entry points recover visibly from every messaging failu
 
             behavior = () => Promise.resolve({ ok: true, tabId: 100 });
             const expectedCalls = calls + 1;
-            manage.click();
+            fireTrustedEvent(manage, 'click');
             await waitFor(dom, () => calls === expectedCalls && !manage.disabled);
             assert.equal(ui.querySelector('.bpb-re-status').textContent, '');
         });
@@ -368,4 +383,3 @@ test('Add and Edit saves capture the identities used by the backup handoff even 
     assert.equal(edited.snapshot.ascent.id, 7654321);
     assert.equal(edited.snapshot.report.markdown, '**Saved report**');
 });
-

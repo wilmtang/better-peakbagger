@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL } from '../helpers/report-editor-helpers.mjs';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 
@@ -119,6 +119,10 @@ test('the image popover launches editor and library modes with the report identi
         url: `${EDITOR_URL}&aid=1234&pid=2296`,
         prepare: d => {
             d.chrome.runtime.sendMessage = message => {
+                if (message?.type === 'TRUSTED_ACTION_ISSUE') {
+                    messages.push(message);
+                    return Promise.resolve({ ok: true, token: 'photo-token' });
+                }
                 if (message?.type !== 'PHOTO_EDITOR_OPEN') return Promise.resolve(undefined);
                 messages.push(message);
                 return new Promise(resolve => { release = resolve; });
@@ -130,18 +134,25 @@ test('the image popover launches editor and library modes with the report identi
     const launcher = ui.querySelector('.bpb-re-photo-launch');
 
     launcher.click();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.deepEqual(messages, [], 'a synthetic host-page click must not open an editor');
+    fireTrustedEvent(launcher, 'click');
     await waitFor(dom, () => launcher.disabled);
-    assert.deepEqual(JSON.parse(JSON.stringify(messages[0])), {
+    assert.equal(messages[0].type, 'TRUSTED_ACTION_ISSUE');
+    assert.equal(messages[0].action, 'photo-editor');
+    assert.deepEqual(JSON.parse(JSON.stringify(messages[1])), {
         type: 'PHOTO_EDITOR_OPEN',
         mode: 'edit',
+        generation: messages[0].generation,
+        activationToken: 'photo-token',
         identity: { cid: '900001', aid: '1234', pid: '2296' }
     });
     release({ ok: true, tabId: 44 });
     await waitFor(dom, () => !launcher.disabled);
 
-    launcher.click();
-    await waitFor(dom, () => messages.length === 2);
-    assert.equal(messages[1].mode, 'edit');
+    fireTrustedEvent(launcher, 'click');
+    await waitFor(dom, () => messages.length === 4);
+    assert.equal(messages[3].mode, 'edit');
     release(null);
     await waitFor(dom, () => !launcher.disabled);
     assert.match(ui.querySelector('.bpb-re-image-status').textContent,
