@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+    copyFile,
     mkdir,
     mkdtemp,
     readdir,
@@ -268,5 +269,155 @@ test('Firefox mirrors a completed build before exposing its reload signal', asyn
     } finally {
         await prepared.cleanup();
         await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
+test('failed Firefox generations preserve the complete prior tree and token', async t => {
+    const cases = [
+        {
+            name: 'nested copy',
+            options: () => ({
+                copyTree: async (source, candidate) => {
+                    await mkdir(path.join(candidate, 'content'), { recursive: true });
+                    await copyFile(
+                        path.join(source, 'content', 'theme.js'),
+                        path.join(candidate, 'content', 'theme.js'),
+                    );
+                    throw new Error('COPY_FAILURE_SENTINEL');
+                },
+            }),
+            pattern: /COPY_FAILURE_SENTINEL/,
+        },
+        {
+            name: 'manifest parse',
+            prepare: ({ distDir }) => writeFile(path.join(distDir, 'manifest.json'), '{broken'),
+            options: () => ({}),
+            pattern: /JSON/,
+        },
+        {
+            name: 'manifest write',
+            options: () => ({
+                writeText: async (destination, contents) => {
+                    if (path.basename(destination) === 'manifest.json') {
+                        throw new Error('MANIFEST_WRITE_FAILURE_SENTINEL');
+                    }
+                    return writeFile(destination, contents);
+                },
+            }),
+            pattern: /MANIFEST_WRITE_FAILURE_SENTINEL/,
+        },
+        {
+            name: 'token write',
+            options: () => ({
+                writeText: async (destination, contents) => {
+                    if (path.basename(destination) === RELOAD_SIGNAL) {
+                        throw new Error('TOKEN_WRITE_FAILURE_SENTINEL');
+                    }
+                    return writeFile(destination, contents);
+                },
+            }),
+            pattern: /TOKEN_WRITE_FAILURE_SENTINEL/,
+        },
+        {
+            name: 'validation',
+            options: () => ({
+                validateTree: async () => { throw new Error('VALIDATION_FAILURE_SENTINEL'); },
+            }),
+            pattern: /VALIDATION_FAILURE_SENTINEL/,
+        },
+        {
+            name: 'publication',
+            options: () => ({
+                publishTree: async () => { throw new Error('PUBLICATION_FAILURE_SENTINEL'); },
+            }),
+            pattern: /PUBLICATION_FAILURE_SENTINEL/,
+        },
+        {
+            name: 'publication with transient rollback failure',
+            options: () => {
+                let renames = 0;
+                return {
+                    renameTree: async (...args) => {
+                        renames++;
+                        if (renames === 2) throw new Error('PUBLISH_RENAME_FAILURE_SENTINEL');
+                        if (renames === 3) throw new Error('ROLLBACK_RENAME_FAILURE_SENTINEL');
+                        return rename(...args);
+                    },
+                };
+            },
+            pattern: /rollback recovered after retry/,
+        },
+    ];
+
+    for (const failureCase of cases) {
+        await t.test(failureCase.name, async () => {
+            const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-firefox-atomic-test-'));
+            const distDir = path.join(temporaryRoot, 'dist');
+            await mkdir(path.join(distDir, 'content'), { recursive: true });
+            await writeFile(path.join(distDir, 'content', 'theme.js'), 'old theme\n');
+            await writeFile(path.join(distDir, 'old-only.js'), 'old only\n');
+            await writeFile(path.join(distDir, 'manifest.json'), JSON.stringify({
+                manifest_version: 3,
+                name: 'old',
+                options_ui: { page: 'options/options.html', open_in_tab: true },
+            }));
+            const prepared = await createFirefoxSource({ temporaryRoot });
+
+            try {
+                await syncFirefoxSource({
+                    distDir,
+                    sourceDir: prepared.sourceDir,
+                    reloadToken: 1,
+                });
+                const oldManifest = await readFile(
+                    path.join(prepared.sourceDir, 'manifest.json'), 'utf8');
+
+                await writeFile(path.join(distDir, 'content', 'theme.js'), 'new theme\n');
+                await rm(path.join(distDir, 'old-only.js'));
+                await mkdir(path.join(distDir, 'nested'), { recursive: true });
+                await writeFile(path.join(distDir, 'nested', 'new.js'), 'new nested\n');
+                await writeFile(path.join(distDir, 'manifest.json'), JSON.stringify({
+                    manifest_version: 3,
+                    name: 'new',
+                    options_ui: { page: 'options/options.html', open_in_tab: true },
+                }));
+                await failureCase.prepare?.({ distDir, sourceDir: prepared.sourceDir });
+
+                await assert.rejects(syncFirefoxSource({
+                    distDir,
+                    sourceDir: prepared.sourceDir,
+                    reloadToken: 2,
+                    ...failureCase.options({ distDir, sourceDir: prepared.sourceDir }),
+                }), failureCase.pattern);
+
+                assert.equal(
+                    await readFile(path.join(prepared.sourceDir, 'content', 'theme.js'), 'utf8'),
+                    'old theme\n',
+                );
+                assert.equal(
+                    await readFile(path.join(prepared.sourceDir, 'old-only.js'), 'utf8'),
+                    'old only\n',
+                );
+                assert.equal(
+                    await readFile(path.join(prepared.sourceDir, 'manifest.json'), 'utf8'),
+                    oldManifest,
+                );
+                assert.equal(
+                    await readFile(path.join(prepared.sourceDir, RELOAD_SIGNAL), 'utf8'),
+                    '1\n',
+                );
+                await assert.rejects(
+                    readFile(path.join(prepared.sourceDir, 'nested', 'new.js')),
+                    error => error.code === 'ENOENT',
+                );
+                const leftovers = (await readdir(temporaryRoot))
+                    .filter(name => name.startsWith('.better-peakbagger-firefox-generation-')
+                        || name.includes('.previous-'));
+                assert.deepEqual(leftovers, [], 'failed candidates and swap backups must be disposable');
+            } finally {
+                await prepared.cleanup();
+                await rm(temporaryRoot, { recursive: true, force: true });
+            }
+        });
     }
 });

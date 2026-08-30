@@ -186,8 +186,19 @@ export async function publishBuildTree({
             try {
                 await renameTree(previousDir, targetDir);
             } catch (rollbackError) {
+                // A transient Windows handle can make the first restore rename
+                // fail even after the publishing rename has already failed.
+                // Retry once while the complete previous tree is still parked
+                // beside the target; a recovered rollback still rejects the
+                // generation, but keeps the live source byte-for-byte old.
+                try {
+                    await renameTree(previousDir, targetDir);
+                } catch (retryError) {
+                    throw new AggregateError([publishError, rollbackError, retryError],
+                        'Build publication and rollback both failed.');
+                }
                 throw new AggregateError([publishError, rollbackError],
-                    'Build publication and rollback both failed.');
+                    `Build publication failed (${publishError.message}); rollback recovered after retry.`);
             }
         }
         throw publishError;

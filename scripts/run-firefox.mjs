@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { createFirefoxManifest } from './build-firefox-package.mjs';
-import { RELOAD_SIGNAL } from './build.mjs';
+import { publishBuildTree, RELOAD_SIGNAL } from './build.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = path.resolve(scriptDir, '..');
@@ -53,6 +53,56 @@ async function mirrorDirectory(sourceDir, destinationDir, { preserve = new Set()
     }
 }
 
+const relativeFiles = async (directory, prefix = '') => {
+    const files = [];
+    for (const entry of await readdir(path.join(directory, prefix), { withFileTypes: true })) {
+        const relative = path.join(prefix, entry.name);
+        if (entry.isDirectory()) files.push(...await relativeFiles(directory, relative));
+        else files.push(relative);
+    }
+    return files.sort();
+};
+
+export async function validateFirefoxSource(candidateDir, {
+    distDir = defaultDistDir,
+    reloadToken,
+} = {}) {
+    const expectedFiles = (await relativeFiles(distDir))
+        .filter(relative => relative !== RELOAD_SIGNAL);
+    if (reloadToken !== undefined) expectedFiles.push(RELOAD_SIGNAL);
+    expectedFiles.sort();
+    const actualFiles = await relativeFiles(candidateDir);
+    if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+        throw new Error('Firefox development source does not match the completed build tree.');
+    }
+    for (const relative of expectedFiles) {
+        if (relative === 'manifest.json' || relative === RELOAD_SIGNAL) continue;
+        const [source, candidate] = await Promise.all([
+            readFile(path.join(distDir, relative)),
+            readFile(path.join(candidateDir, relative)),
+        ]);
+        if (!source.equals(candidate)) {
+            throw new Error(`Firefox development source differs from dist: ${relative}`);
+        }
+    }
+
+    const sourceManifest = JSON.parse(
+        await readFile(path.join(distDir, 'manifest.json'), 'utf8'),
+    );
+    const candidateManifest = JSON.parse(
+        await readFile(path.join(candidateDir, 'manifest.json'), 'utf8'),
+    );
+    if (JSON.stringify(candidateManifest) !== JSON.stringify(createFirefoxManifest(sourceManifest))) {
+        throw new Error('Firefox development manifest does not match its source generation.');
+    }
+    if (reloadToken !== undefined) {
+        const token = await readFile(path.join(candidateDir, RELOAD_SIGNAL), 'utf8');
+        if (token !== `${reloadToken}\n`) {
+            throw new Error('Firefox development reload token does not match its source generation.');
+        }
+    }
+}
+
 // Synchronize a complete dist build before changing the watched reload signal.
 // Firefox needs this copy because its development manifest intentionally opens
 // Preferences inline instead of using Chromium's full-tab behavior.
@@ -60,19 +110,42 @@ export async function syncFirefoxSource({
     distDir = defaultDistDir,
     sourceDir,
     reloadToken,
+    copyTree = mirrorDirectory,
+    readText = readFile,
+    writeText = writeFile,
+    validateTree = validateFirefoxSource,
+    publishTree = publishBuildTree,
+    renameTree,
+    removeTree = rm,
 }) {
-    await mirrorDirectory(distDir, sourceDir, {
-        preserve: new Set([RELOAD_SIGNAL]),
-    });
-    const manifest = createFirefoxManifest(
-        JSON.parse(await readFile(path.join(distDir, 'manifest.json'), 'utf8')),
+    if (!sourceDir) throw new Error('Firefox development source directory is required.');
+    const stagingRoot = await mkdtemp(
+        path.join(path.dirname(sourceDir), '.better-peakbagger-firefox-generation-'),
     );
-    await writeFile(
-        path.join(sourceDir, 'manifest.json'),
-        `${JSON.stringify(manifest, null, 2)}\n`,
-    );
-    if (reloadToken !== undefined) {
-        await writeFile(path.join(sourceDir, RELOAD_SIGNAL), `${reloadToken}\n`);
+    const candidateDir = path.join(stagingRoot, 'generation');
+    await mkdir(candidateDir, { recursive: true });
+    try {
+        await copyTree(distDir, candidateDir, {
+            preserve: new Set([RELOAD_SIGNAL]),
+        });
+        const manifest = createFirefoxManifest(
+            JSON.parse(await readText(path.join(distDir, 'manifest.json'), 'utf8')),
+        );
+        await writeText(
+            path.join(candidateDir, 'manifest.json'),
+            `${JSON.stringify(manifest, null, 2)}\n`,
+        );
+        if (reloadToken !== undefined) {
+            await writeText(path.join(candidateDir, RELOAD_SIGNAL), `${reloadToken}\n`);
+        }
+        await validateTree(candidateDir, { distDir, reloadToken });
+        await publishTree({
+            candidateDir,
+            targetDir: sourceDir,
+            ...(renameTree ? { renameTree } : {}),
+        });
+    } finally {
+        await removeTree(stagingRoot, { recursive: true, force: true });
     }
 }
 
