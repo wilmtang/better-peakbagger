@@ -20,6 +20,9 @@ const QUERY_CHUNK_M = 10000;
 const SPATIAL_GAP_M = 10000;
 const ENCOUNTER_WINDOW_M = 300;
 const ENCOUNTER_WINDOW_MS = 5 * 60 * 1000;
+const SPATIAL_CELL_DEG = 0.05;
+const POLAR_INDEX_LAT = 85;
+const LONGITUDE_CELL_COUNT = Math.ceil(360 / SPATIAL_CELL_DEG);
 
 // Geometry primitives come from the shared pure module so the corridor
 // boxes and the analyzer's chart cannot measure the same track differently.
@@ -157,20 +160,154 @@ const sanitizeWaypoints = rawWaypoints => (rawWaypoints || []).flatMap(rawWaypoi
     return [{ lat, lon, name }];
 });
 
+const spatialCellKey = (latIndex, lonIndex) =>
+    `${latIndex}:${((lonIndex % LONGITUDE_CELL_COUNT) + LONGITUDE_CELL_COUNT) % LONGITUDE_CELL_COUNT}`;
+
+const buildElevationRangeIndex = segment => {
+    let size = 1;
+    while (size < segment.length) size *= 2;
+    const minima = new Float64Array(size * 2);
+    const maxima = new Float64Array(size * 2);
+    minima.fill(Infinity);
+    maxima.fill(-Infinity);
+    segment.forEach((point, index) => {
+        if (!Number.isFinite(point.ele)) return;
+        minima[size + index] = point.ele;
+        maxima[size + index] = point.ele;
+    });
+    for (let index = size - 1; index > 0; index--) {
+        minima[index] = Math.min(minima[index * 2], minima[index * 2 + 1]);
+        maxima[index] = Math.max(maxima[index * 2], maxima[index * 2 + 1]);
+    }
+    return { size, minima, maxima };
+};
+
+const queryElevationRange = (index, start, end) => {
+    if (!index || start > end) return { min: null, max: null };
+    let left = start + index.size;
+    let right = end + index.size;
+    let min = Infinity;
+    let max = -Infinity;
+    while (left <= right) {
+        if (left % 2 === 1) {
+            min = Math.min(min, index.minima[left]);
+            max = Math.max(max, index.maxima[left]);
+            left++;
+        }
+        if (right % 2 === 0) {
+            min = Math.min(min, index.minima[right]);
+            max = Math.max(max, index.maxima[right]);
+            right--;
+        }
+        left = Math.floor(left / 2);
+        right = Math.floor(right / 2);
+    }
+    return {
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+    };
+};
+
+const lowerBound = (values, target) => {
+    let low = 0;
+    let high = values.length;
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (values[middle] < target) low = middle + 1;
+        else high = middle;
+    }
+    return low;
+};
+
+const upperBound = (values, target) => {
+    let low = 0;
+    let high = values.length;
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (values[middle] <= target) low = middle + 1;
+        else high = middle;
+    }
+    return low;
+};
+
 const buildTrackIndex = segments => {
     const cumulativeBySegment = [];
     const segmentOffsets = [];
+    const elevationBySegment = [];
+    const edgeBuckets = new Map();
+    const polarEdges = [];
     let totalDistanceM = 0;
-    segments.forEach(segment => {
+    const latPadding = toDeg(QUERY_PADDING_M / EARTH_RADIUS_M);
+    const addEdge = record => {
+        const start = segments[record.segmentIndex][record.edgeIndex];
+        const end = record.singleton
+            ? start
+            : segments[record.segmentIndex][record.edgeIndex + 1];
+        const minLat = Math.max(-90, Math.min(start.lat, end.lat) - latPadding);
+        const maxLat = Math.min(90, Math.max(start.lat, end.lat) + latPadding);
+        const maxAbsoluteLat = Math.max(Math.abs(minLat), Math.abs(maxLat));
+        if (maxAbsoluteLat >= POLAR_INDEX_LAT) {
+            polarEdges.push(record);
+            return;
+        }
+        const referenceLon = start.lon;
+        const endLon = referenceLon + normalizeLonDelta(end.lon - referenceLon);
+        const lonPadding = toDeg(QUERY_PADDING_M
+            / (EARTH_RADIUS_M * Math.max(0.01, Math.cos(toRad(maxAbsoluteLat)))));
+        const minLon = Math.min(referenceLon, endLon) - lonPadding;
+        const maxLon = Math.max(referenceLon, endLon) + lonPadding;
+        const minLatCell = Math.floor((minLat + 90) / SPATIAL_CELL_DEG);
+        const maxLatCell = Math.floor((maxLat + 90) / SPATIAL_CELL_DEG);
+        const minLonCell = Math.floor((minLon + 180) / SPATIAL_CELL_DEG);
+        const maxLonCell = Math.floor((maxLon + 180) / SPATIAL_CELL_DEG);
+        for (let latCell = minLatCell; latCell <= maxLatCell; latCell++) {
+            for (let lonCell = minLonCell; lonCell <= maxLonCell; lonCell++) {
+                const key = spatialCellKey(latCell, lonCell);
+                if (!edgeBuckets.has(key)) edgeBuckets.set(key, []);
+                edgeBuckets.get(key).push(record);
+            }
+        }
+    };
+
+    segments.forEach((segment, segmentIndex) => {
         segmentOffsets.push(totalDistanceM);
         const cumulative = [0];
         for (let index = 1; index < segment.length; index++) {
             cumulative[index] = cumulative[index - 1] + distanceM(segment[index - 1], segment[index]);
         }
         cumulativeBySegment.push(cumulative);
+        elevationBySegment.push(buildElevationRangeIndex(segment));
+        if (segment.length === 1) addEdge({ segmentIndex, edgeIndex: 0, singleton: true });
+        else {
+            for (let edgeIndex = 0; edgeIndex < segment.length - 1; edgeIndex++) {
+                addEdge({ segmentIndex, edgeIndex, singleton: false });
+            }
+        }
         totalDistanceM += cumulative[cumulative.length - 1] || 0;
     });
-    return { cumulativeBySegment, segmentOffsets, totalDistanceM };
+    return {
+        cumulativeBySegment,
+        segmentOffsets,
+        elevationBySegment,
+        edgeBuckets,
+        polarEdges,
+        totalDistanceM,
+    };
+};
+
+const candidateEdges = (trackIndex, peak) => {
+    const candidates = [...trackIndex.polarEdges];
+    if (Math.abs(peak.lat) >= POLAR_INDEX_LAT) return candidates;
+    const latCell = Math.floor((peak.lat + 90) / SPATIAL_CELL_DEG);
+    const lonCell = Math.floor((peak.lon + 180) / SPATIAL_CELL_DEG);
+    const bucket = trackIndex.edgeBuckets.get(spatialCellKey(latCell, lonCell)) || [];
+    if (!candidates.length) return bucket;
+    const seen = new Set(candidates.map(record => `${record.segmentIndex}:${record.edgeIndex}`));
+    for (const record of bucket) {
+        const key = `${record.segmentIndex}:${record.edgeIndex}`;
+        if (!seen.has(key)) candidates.push(record);
+    }
+    return candidates;
 };
 
 const bboxDiagonalM = bbox => distanceM(
@@ -275,7 +412,7 @@ const decodeXml = value => String(value || '').replace(
     }
 );
 
-const parsePeakbaggerPeaks = text => {
+const parsePeakbaggerPeaks = (text, { maxPeaks = Infinity } = {}) => {
     const peaks = [];
     const tagPattern = /<t\b([^>]*)\/?\s*>/gi;
     let tagMatch;
@@ -287,12 +424,19 @@ const parsePeakbaggerPeaks = text => {
         const id = Number.parseInt(attrs.i, 10);
         const lat = Number.parseFloat(attrs.a);
         const lon = Number.parseFloat(attrs.o);
-        if (!Number.isInteger(id) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        if (!Number.isInteger(id) || id <= 0
+            || !Number.isFinite(lat) || lat < -90 || lat > 90
+            || !Number.isFinite(lon) || lon < -180 || lon > 180) continue;
+        if (peaks.length >= maxPeaks) {
+            const error = new Error(`Peak response exceeds its ${maxPeaks}-peak limit.`);
+            error.code = 'too-many-peaks';
+            throw error;
+        }
         const elevationFt = Number.parseFloat(attrs.e);
         peaks.push({
             id,
-            name: attrs.n || `Peak ${id}`,
-            location: attrs.l || '',
+            name: (attrs.n || `Peak ${id}`).replace(/\s+/g, ' ').trim().slice(0, 200),
+            location: (attrs.l || '').replace(/\s+/g, ' ').trim().slice(0, 200),
             lat,
             lon,
             elevationM: Number.isFinite(elevationFt) ? elevationFt / FEET_PER_METER : null,
@@ -309,10 +453,12 @@ const interpolateNullable = (start, end, fraction) => {
 
 const findEncounters = (segments, peak, trackIndex) => {
     const candidates = [];
-    segments.forEach((segment, segmentIndex) => {
+    for (const record of candidateEdges(trackIndex, peak)) {
+        const { segmentIndex, edgeIndex } = record;
+        const segment = segments[segmentIndex];
         const cumulative = trackIndex.cumulativeBySegment[segmentIndex];
         const offset = trackIndex.segmentOffsets[segmentIndex];
-        if (segment.length === 1) {
+        if (record.singleton) {
             const candidateDistanceM = distanceM(segment[0], peak);
             if (candidateDistanceM <= QUERY_PADDING_M) {
                 candidates.push({
@@ -328,29 +474,27 @@ const findEncounters = (segments, peak, trackIndex) => {
                     time: segment[0].time
                 });
             }
-            return;
+            continue;
         }
-        for (let edgeIndex = 0; edgeIndex < segment.length - 1; edgeIndex++) {
-            const start = segment[edgeIndex];
-            const end = segment[edgeIndex + 1];
-            const projected = projectPointToSegment(peak, start, end);
-            if (projected.distanceM > QUERY_PADDING_M) continue;
-            const edgeLengthM = cumulative[edgeIndex + 1] - cumulative[edgeIndex];
-            const segmentDistanceM = cumulative[edgeIndex] + edgeLengthM * projected.fraction;
-            candidates.push({
-                segmentIndex,
-                edgeIndex,
-                fraction: projected.fraction,
-                distanceM: projected.distanceM,
-                segmentDistanceM,
-                globalDistanceM: offset + segmentDistanceM,
-                lat: projected.lat,
-                lon: projected.lon,
-                ele: interpolateNullable(start.ele, end.ele, projected.fraction),
-                time: interpolateNullable(start.time, end.time, projected.fraction)
-            });
-        }
-    });
+        const start = segment[edgeIndex];
+        const end = segment[edgeIndex + 1];
+        const projected = projectPointToSegment(peak, start, end);
+        if (projected.distanceM > QUERY_PADDING_M) continue;
+        const edgeLengthM = cumulative[edgeIndex + 1] - cumulative[edgeIndex];
+        const segmentDistanceM = cumulative[edgeIndex] + edgeLengthM * projected.fraction;
+        candidates.push({
+            segmentIndex,
+            edgeIndex,
+            fraction: projected.fraction,
+            distanceM: projected.distanceM,
+            segmentDistanceM,
+            globalDistanceM: offset + segmentDistanceM,
+            lat: projected.lat,
+            lon: projected.lon,
+            ele: interpolateNullable(start.ele, end.ele, projected.fraction),
+            time: interpolateNullable(start.time, end.time, projected.fraction)
+        });
+    }
 
     candidates.sort((a, b) => a.globalDistanceM - b.globalDistanceM);
     const groups = [];
@@ -371,6 +515,73 @@ const findEncounters = (segments, peak, trackIndex) => {
         candidate.distanceM < best.distanceM ? candidate : best));
 };
 
+const findEncountersAsync = async (segments, peak, trackIndex, checkpoint) => {
+    const candidates = [];
+    let visited = 0;
+    for (const record of candidateEdges(trackIndex, peak)) {
+        if (++visited % 256 === 0) await checkpoint();
+        const { segmentIndex, edgeIndex } = record;
+        const segment = segments[segmentIndex];
+        const cumulative = trackIndex.cumulativeBySegment[segmentIndex];
+        const offset = trackIndex.segmentOffsets[segmentIndex];
+        if (record.singleton) {
+            const candidateDistanceM = distanceM(segment[0], peak);
+            if (candidateDistanceM <= QUERY_PADDING_M) {
+                candidates.push({
+                    segmentIndex,
+                    edgeIndex: 0,
+                    fraction: 0,
+                    distanceM: candidateDistanceM,
+                    segmentDistanceM: 0,
+                    globalDistanceM: offset,
+                    lat: segment[0].lat,
+                    lon: segment[0].lon,
+                    ele: segment[0].ele,
+                    time: segment[0].time,
+                });
+            }
+            continue;
+        }
+        const start = segment[edgeIndex];
+        const end = segment[edgeIndex + 1];
+        const projected = projectPointToSegment(peak, start, end);
+        if (projected.distanceM > QUERY_PADDING_M) continue;
+        const edgeLengthM = cumulative[edgeIndex + 1] - cumulative[edgeIndex];
+        const segmentDistanceM = cumulative[edgeIndex] + edgeLengthM * projected.fraction;
+        candidates.push({
+            segmentIndex,
+            edgeIndex,
+            fraction: projected.fraction,
+            distanceM: projected.distanceM,
+            segmentDistanceM,
+            globalDistanceM: offset + segmentDistanceM,
+            lat: projected.lat,
+            lon: projected.lon,
+            ele: interpolateNullable(start.ele, end.ele, projected.fraction),
+            time: interpolateNullable(start.time, end.time, projected.fraction),
+        });
+    }
+
+    candidates.sort((a, b) => a.globalDistanceM - b.globalDistanceM);
+    const groups = [];
+    for (const candidate of candidates) {
+        const group = groups[groups.length - 1];
+        if (!group) {
+            groups.push([candidate]);
+            continue;
+        }
+        const previous = group[group.length - 1];
+        const closeByDistance = candidate.globalDistanceM - previous.globalDistanceM <= ENCOUNTER_WINDOW_M;
+        const closeByTime = candidate.time === null || previous.time === null
+            || candidate.time - previous.time <= ENCOUNTER_WINDOW_MS;
+        if (candidate.segmentIndex === previous.segmentIndex && closeByDistance && closeByTime) {
+            group.push(candidate);
+        } else groups.push([candidate]);
+    }
+    return groups.map(group => group.reduce((best, candidate) =>
+        candidate.distanceM < best.distanceM ? candidate : best));
+};
+
 const cubicDecay = (value, fullAt, zeroAt) => {
     if (!Number.isFinite(value)) return null;
     if (value <= fullAt) return 1;
@@ -380,24 +591,25 @@ const cubicDecay = (value, fullAt, zeroAt) => {
 };
 
 const scoreEncounter = (segments, peak, encounter, trackIndex, qualityScore) => {
-    const segment = segments[encounter.segmentIndex];
     const cumulative = trackIndex.cumulativeBySegment[encounter.segmentIndex];
-    const nearby = segment.map((point, index) => ({ point, distanceM: cumulative[index] }))
-        .filter(item => Math.abs(item.distanceM - encounter.segmentDistanceM) <= ENCOUNTER_WINDOW_M);
-    const elevations = nearby.map(item => item.point.ele).filter(Number.isFinite);
-    const localMaxM = elevations.length ? Math.max(...elevations) : null;
+    const elevationIndex = trackIndex.elevationBySegment[encounter.segmentIndex];
+    const nearbyStart = lowerBound(cumulative, encounter.segmentDistanceM - ENCOUNTER_WINDOW_M);
+    const nearbyEnd = upperBound(cumulative, encounter.segmentDistanceM + ENCOUNTER_WINDOW_M) - 1;
+    const localMaxM = queryElevationRange(elevationIndex, nearbyStart, nearbyEnd).max;
     const localHighDeltaM = Number.isFinite(encounter.ele) && Number.isFinite(localMaxM)
         ? Math.max(0, localMaxM - encounter.ele)
         : null;
 
-    const before = nearby.filter(item => item.distanceM < encounter.segmentDistanceM && Number.isFinite(item.point.ele));
-    const after = nearby.filter(item => item.distanceM > encounter.segmentDistanceM && Number.isFinite(item.point.ele));
+    const beforeEnd = lowerBound(cumulative, encounter.segmentDistanceM) - 1;
+    const afterStart = upperBound(cumulative, encounter.segmentDistanceM);
+    const beforeMinM = queryElevationRange(elevationIndex, nearbyStart, beforeEnd).min;
+    const afterMinM = queryElevationRange(elevationIndex, afterStart, nearbyEnd).min;
     const shapeParts = [];
-    if (Number.isFinite(encounter.ele) && before.length) {
-        shapeParts.push(clamp((encounter.ele - Math.min(...before.map(item => item.point.ele))) / 20, 0, 1));
+    if (Number.isFinite(encounter.ele) && Number.isFinite(beforeMinM)) {
+        shapeParts.push(clamp((encounter.ele - beforeMinM) / 20, 0, 1));
     }
-    if (Number.isFinite(encounter.ele) && after.length) {
-        shapeParts.push(clamp((encounter.ele - Math.min(...after.map(item => item.point.ele))) / 20, 0, 1));
+    if (Number.isFinite(encounter.ele) && Number.isFinite(afterMinM)) {
+        shapeParts.push(clamp((encounter.ele - afterMinM) / 20, 0, 1));
     }
     const shapeScore = shapeParts.length
         ? shapeParts.reduce((sum, value) => sum + value, 0) / shapeParts.length
@@ -489,6 +701,37 @@ const applyAmbiguityCaps = matches => {
     return matches;
 };
 
+const applyAmbiguityCapsAsync = async (matches, checkpoint) => {
+    const remaining = new Set(matches.map((_match, index) => index));
+    let comparisons = 0;
+    while (remaining.size) {
+        const seed = remaining.values().next().value;
+        remaining.delete(seed);
+        const group = [seed];
+        for (let cursor = 0; cursor < group.length; cursor++) {
+            for (const index of [...remaining]) {
+                if (++comparisons % 256 === 0) await checkpoint();
+                if (!sharesEncounterWindow(matches[group[cursor]].encounter, matches[index].encounter)) continue;
+                group.push(index);
+                remaining.delete(index);
+            }
+        }
+        if (group.length < 2) continue;
+        group.sort((a, b) => matches[b].confidence - matches[a].confidence);
+        const winnerHasLead = matches[group[0]].confidence - matches[group[1]].confidence >= 10;
+        group.forEach((matchIndex, position) => {
+            if (position === 0 && winnerHasLead) return;
+            const match = matches[matchIndex];
+            match.confidence = Math.min(match.confidence, 79);
+            if (match.confidence >= 60) match.classification = 'probable';
+            else if (match.confidence >= 35) match.classification = 'possible';
+            else match.classification = 'weak';
+            match.evidence.ambiguous = true;
+        });
+    }
+    return matches;
+};
+
 const detectPeaks = (segments, peaks, qualityScore = 1) => {
     const trackIndex = buildTrackIndex(segments);
     const matches = [];
@@ -501,6 +744,29 @@ const detectPeaks = (segments, peaks, qualityScore = 1) => {
         matches.push(scored[0]);
     }
     return applyAmbiguityCaps(matches).sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name));
+};
+
+const detectPeaksAsync = async (
+    segments,
+    peaks,
+    qualityScore = 1,
+    { checkpoint = async () => {} } = {},
+) => {
+    const trackIndex = buildTrackIndex(segments);
+    await checkpoint();
+    const matches = [];
+    for (const peak of peaks) {
+        const encounters = await findEncountersAsync(segments, peak, trackIndex, checkpoint);
+        if (encounters.length) {
+            const scored = encounters.map(encounter =>
+                scoreEncounter(segments, peak, encounter, trackIndex, qualityScore));
+            scored.sort((a, b) => b.confidence - a.confidence || a.evidence.distanceM - b.evidence.distanceM);
+            matches.push(scored[0]);
+        }
+        await checkpoint();
+    }
+    const capped = await applyAmbiguityCapsAsync(matches, checkpoint);
+    return capped.sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name));
 };
 
 class MaxHeap {
@@ -564,12 +830,16 @@ const reductionAnchors = (segments, matches) => {
         if (!segment.length) return;
         anchors[segmentIndex].add(0);
         anchors[segmentIndex].add(segment.length - 1);
-        const finiteElevations = segment
-            .map((point, index) => ({ index, ele: point.ele }))
-            .filter(item => Metrics.isPlausibleElevationM(item.ele));
-        if (finiteElevations.length) {
-            anchors[segmentIndex].add(finiteElevations.reduce((best, item) => item.ele < best.ele ? item : best).index);
-            anchors[segmentIndex].add(finiteElevations.reduce((best, item) => item.ele > best.ele ? item : best).index);
+        let lowest = null;
+        let highest = null;
+        segment.forEach((point, index) => {
+            if (!Metrics.isPlausibleElevationM(point.ele)) return;
+            if (!lowest || point.ele < lowest.ele) lowest = { index, ele: point.ele };
+            if (!highest || point.ele > highest.ele) highest = { index, ele: point.ele };
+        });
+        if (lowest) {
+            anchors[segmentIndex].add(lowest.index);
+            anchors[segmentIndex].add(highest.index);
         }
     });
     for (const match of matches || []) {
@@ -642,6 +912,125 @@ const reduceTrack = (segments, matches, limit = MAX_UPLOAD_POINTS) => {
         }
         return retained.map(index => segment[index]);
     });
+
+    return { segments: reducedSegments, originalPointCount, retainedPointCount, maxDeviationM };
+};
+
+const intervalCandidateAsync = async (
+    segment,
+    segmentIndex,
+    startIndex,
+    endIndex,
+    checkpoint,
+) => {
+    if (endIndex - startIndex <= 1) return null;
+    let bestIndex = -1;
+    let errorM = -1;
+    const midpoint = (startIndex + endIndex) / 2;
+    for (let index = startIndex + 1; index < endIndex; index++) {
+        if ((index - startIndex) % 256 === 0) await checkpoint();
+        const candidateErrorM = pointSegmentDistanceM(segment[index], segment[startIndex], segment[endIndex]);
+        if (candidateErrorM > errorM + 1e-9
+            || (Math.abs(candidateErrorM - errorM) <= 1e-9
+                && Math.abs(index - midpoint) < Math.abs(bestIndex - midpoint))) {
+            bestIndex = index;
+            errorM = candidateErrorM;
+        }
+    }
+    return { segmentIndex, startIndex, endIndex, index: bestIndex, errorM };
+};
+
+const reduceTrackAsync = async (
+    segments,
+    matches,
+    limit = MAX_UPLOAD_POINTS,
+    { checkpoint = async () => {} } = {},
+) => {
+    const originalPointCount = segments.reduce((sum, segment) => sum + segment.length, 0);
+    if (segments.length > MAX_TRACK_SEGMENTS) {
+        const error = new Error(`Track has ${segments.length} segments; Peakbagger allows ${MAX_TRACK_SEGMENTS}.`);
+        error.code = 'too-many-segments';
+        throw error;
+    }
+    if (originalPointCount <= limit) {
+        return {
+            segments: segments.map(segment => segment.slice()),
+            originalPointCount,
+            retainedPointCount: originalPointCount,
+            maxDeviationM: 0,
+        };
+    }
+
+    const anchors = reductionAnchors(segments, matches);
+    await checkpoint();
+    const mandatoryCount = anchors.reduce((sum, set) => sum + set.size, 0);
+    if (mandatoryCount > limit) {
+        const error = new Error(`Track requires ${mandatoryCount} protected points, exceeding Peakbagger's ${limit}-point limit.`);
+        error.code = 'mandatory-point-overflow';
+        throw error;
+    }
+
+    const heap = new MaxHeap();
+    for (let segmentIndex = 0; segmentIndex < anchors.length; segmentIndex++) {
+        const sorted = [...anchors[segmentIndex]].sort((a, b) => a - b);
+        for (let index = 1; index < sorted.length; index++) {
+            const candidate = await intervalCandidateAsync(
+                segments[segmentIndex],
+                segmentIndex,
+                sorted[index - 1],
+                sorted[index],
+                checkpoint,
+            );
+            if (candidate) heap.push(candidate);
+        }
+    }
+
+    let retainedPointCount = mandatoryCount;
+    while (retainedPointCount < limit && heap.length) {
+        const candidate = heap.pop();
+        const set = anchors[candidate.segmentIndex];
+        if (set.has(candidate.index)) continue;
+        set.add(candidate.index);
+        retainedPointCount++;
+        const segment = segments[candidate.segmentIndex];
+        const left = await intervalCandidateAsync(
+            segment,
+            candidate.segmentIndex,
+            candidate.startIndex,
+            candidate.index,
+            checkpoint,
+        );
+        const right = await intervalCandidateAsync(
+            segment,
+            candidate.segmentIndex,
+            candidate.index,
+            candidate.endIndex,
+            checkpoint,
+        );
+        if (left) heap.push(left);
+        if (right) heap.push(right);
+        if (retainedPointCount % 64 === 0) await checkpoint();
+    }
+
+    let maxDeviationM = 0;
+    const reducedSegments = [];
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+        const segment = segments[segmentIndex];
+        const retained = [...anchors[segmentIndex]].sort((a, b) => a - b);
+        for (let retainedIndex = 1; retainedIndex < retained.length; retainedIndex++) {
+            const startIndex = retained[retainedIndex - 1];
+            const endIndex = retained[retainedIndex];
+            for (let index = startIndex + 1; index < endIndex; index++) {
+                if ((index - startIndex) % 256 === 0) await checkpoint();
+                maxDeviationM = Math.max(
+                    maxDeviationM,
+                    pointSegmentDistanceM(segment[index], segment[startIndex], segment[endIndex]),
+                );
+            }
+        }
+        reducedSegments.push(retained.map(index => segment[index]));
+        await checkpoint();
+    }
 
     return { segments: reducedSegments, originalPointCount, retainedPointCount, maxDeviationM };
 };
@@ -924,7 +1313,9 @@ const API = {
     buildQueryBoxes,
     parsePeakbaggerPeaks,
     detectPeaks,
+    detectPeaksAsync,
     reduceTrack,
+    reduceTrackAsync,
     serializeUploadGpx,
     calculateDraftFields,
     calculateNightsOut,

@@ -2608,6 +2608,80 @@ test('provider export timeouts preserve the public retryable timeout contract', 
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
 });
 
+test('peak response structure and route-match fanout fail closed at their exact limits', async t => {
+    await t.test('peak response limit plus one', async () => {
+        const peakXml = `<p>${Array.from({ length: 5_001 }, (_, index) =>
+            `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="${index / 1_000_000}" e="426.51" r="100"/>`).join('')}</p>`;
+        const harness = createHarness({ peakXml });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error');
+        assert.equal(result.error.code, 'peak-response-too-large');
+        assert.match(result.error.message, /more than 5,000 nearby summits/);
+    });
+
+    await t.test('route match limit plus one', async () => {
+        const peakXml = `<p>${Array.from({ length: 257 }, (_, index) =>
+            `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="0" e="426.51" r="100"/>`).join('')}</p>`;
+        const harness = createHarness({ peakXml });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error');
+        assert.equal(result.error.code, 'capture-analysis-too-large');
+        assert.match(result.error.message, /more than 256 summit candidates/);
+    });
+});
+
+test('production-point analysis yields to status and cancellation messages', async () => {
+    const baseTime = Date.UTC(2026, 6, 1, 15);
+    const segment = Array.from({ length: 20_000 }, (_, index) => ({
+        lat: Math.sin(index / 7) * 0.0001,
+        lon: -0.3 + index * 0.6 / 19_999,
+        ele: 1_300 + Math.sin(index / 13) * 50,
+        time: baseTime + index * 1_000,
+    }));
+    const peakXml = `<p>${Array.from({ length: 5_000 }, (_, index) =>
+        `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="${-0.3 + index * 0.6 / 4_999}" e="4265.1" r="100"/>`).join('')}</p>`;
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Scale hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [segment],
+        },
+        peakXml,
+    });
+    let lastTurnAt = Date.now();
+    let maxTurnGapMs = 0;
+    const ticker = setInterval(() => {
+        const current = Date.now();
+        maxTurnGapMs = Math.max(maxTurnGapMs, current - lastTurnAt);
+        lastTurnAt = current;
+    }, 1);
+
+    try {
+        const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        await waitForCondition(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
+        const responseStartedAt = Date.now();
+        const [status, cancelled] = await Promise.race([
+            Promise.all([
+                harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
+                harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+            ]),
+            new Promise((_, reject) => setTimeout(
+                () => reject(new Error('analysis did not yield to status and cancellation')), 500,
+            )),
+        ]);
+        assert.ok(status, 'the concurrent status request observes the live generation');
+        assert.equal(cancelled.cancelled, true);
+        assert.ok(Date.now() - responseStartedAt < 500);
+        assert.equal(await capture, null);
+        assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+        assert.ok(maxTurnGapMs < 150, `maximum event-loop gap was ${maxTurnGapMs} ms`);
+    } finally {
+        clearInterval(ticker);
+    }
+});
+
 test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {
     const harness = createHarness({
         ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },

@@ -102,6 +102,25 @@ test('Peakbagger XML parsing decodes each entity only once', () => {
     assert.equal(peak.name, 'A &lt; B &gt; C &#x110000;');
 });
 
+test('Peakbagger peak parsing validates coordinates and enforces its structure cap', () => {
+    const xml = '<p>'
+        + '<t i="1" n=" First   Peak " a="40" o="-105"/>'
+        + '<t i="2" n="Bad latitude" a="91" o="0"/>'
+        + '<t i="3" n="Bad longitude" a="0" o="181"/>'
+        + '<t i="4" n="Second Peak" a="40.1" o="-105.1"/>'
+        + '<t i="5" n="Third Peak" a="40.2" o="-105.2"/>'
+        + '</p>';
+    assert.deepEqual(Core.parsePeakbaggerPeaks(xml, { maxPeaks: 3 }).map(peak => peak.name), [
+        'First Peak',
+        'Second Peak',
+        'Third Peak',
+    ]);
+    assert.throws(
+        () => Core.parsePeakbaggerPeaks(xml, { maxPeaks: 2 }),
+        error => error?.code === 'too-many-peaks',
+    );
+});
+
 test('full-resolution segment projection detects a sparse summit crossing', () => {
     const segments = [[point(0, -0.001, 100), point(0, 0.001, 100)]];
     const matches = Core.detectPeaks(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
@@ -180,6 +199,31 @@ test('chained ambiguity caps every peak regardless of the order Peakbagger retur
     }
 });
 
+test('cooperative peak detection is result-equivalent to the indexed synchronous path', async () => {
+    const segment = Array.from({ length: 1_000 }, (_, index) => ({
+        lat: 40 + Math.sin(index / 17) * 0.0002,
+        lon: -105 + index * 0.02 / 999,
+        ele: 2_000 + Math.sin(index / 23) * 40,
+        time: Date.UTC(2026, 6, 1) + index * 1_000,
+    }));
+    const peaks = Array.from({ length: 80 }, (_, index) => ({
+        id: index + 1,
+        name: `Peak ${index + 1}`,
+        location: 'Test Range',
+        lat: 40,
+        lon: -105 + index * 0.02 / 79,
+        elevationM: 2_000,
+        prominenceFt: 100,
+    }));
+    const synchronous = Core.detectPeaks([segment], peaks, 0.91);
+    let checkpoints = 0;
+    const cooperative = await Core.detectPeaksAsync([segment], peaks, 0.91, {
+        checkpoint: async () => { checkpoints++; },
+    });
+    assert.deepEqual(cooperative, synchronous);
+    assert.ok(checkpoints >= peaks.length, 'every peak offers cancellation a checkpoint');
+});
+
 test('query boxes stay short, padded, and split at the antimeridian', () => {
     const many = Array.from({ length: 220 }, (_value, index) => point(0, index * 0.0005));
     assert.ok(Core.buildQueryBoxes([many]).length > 1);
@@ -212,6 +256,23 @@ test('priority reduction retains original objects, summit brackets, and an exact
     assert.ok(result.segments[0].includes(segment[2000]));
     assert.ok(result.segments[0].every(retained => segment.includes(retained)));
     assert.ok(result.maxDeviationM >= 0);
+});
+
+test('cooperative reduction preserves the exact priority simplifier result', async () => {
+    const segment = Array.from({ length: 4_000 }, (_, index) => ({
+        lat: 40 + Math.sin(index / 9) * 0.001,
+        lon: -105 + index * 0.02 / 3_999,
+        ele: 2_000 + Math.cos(index / 11) * 100,
+        time: Date.UTC(2026, 6, 1) + index * 1_000,
+    }));
+    const matches = [{ encounter: { segmentIndex: 0, edgeIndex: 1_999 } }];
+    const synchronous = Core.reduceTrack([segment], matches, 700);
+    let checkpoints = 0;
+    const cooperative = await Core.reduceTrackAsync([segment], matches, 700, {
+        checkpoint: async () => { checkpoints++; },
+    });
+    assert.deepEqual(cooperative, synchronous);
+    assert.ok(checkpoints > 10, 'long interval scans remain cooperatively interruptible');
 });
 
 test('tracks at the limit are unchanged and mandatory overflow fails closed', () => {

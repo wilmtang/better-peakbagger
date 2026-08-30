@@ -550,14 +550,18 @@ test('B selection invalidates A ready and apply generations before any draft ope
 
 test('the one total corridor deadline aborts a stalled body and reports actionable timeout copy', async () => {
     let signal;
+    let expire;
     const harness = createHarness({
-        setTimeoutImpl: (callback, delay, ...args) => setTimeout(
-            callback,
-            delay === 60_000 ? 0 : delay,
-            ...args,
-        ),
+        setTimeoutImpl: (callback, delay, ...args) => {
+            if (delay === 60_000) {
+                expire = () => callback(...args);
+                return null;
+            }
+            return setTimeout(callback, delay, ...args);
+        },
         beforePeakFetch: ({ options }) => {
             signal = options.signal;
+            expire();
             return new Promise(() => {});
         },
     });

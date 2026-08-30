@@ -18,6 +18,8 @@ test('the capture resource contract preserves the production scale within hard b
     assert.equal(Limits.MAX_GPX_TRACK_POINTS, 20_000);
     assert.equal(Limits.MAX_GPX_TRACK_SEGMENTS, 50);
     assert.equal(Limits.MAX_GPX_WAYPOINTS, 3_000);
+    assert.equal(Limits.MAX_PEAKBAGGER_PEAKS, 5_000);
+    assert.equal(Limits.MAX_CAPTURE_MATCHES, 256);
     assert.equal(Limits.CORRIDOR_CONCURRENCY, 4);
     assert.equal(Limits.MAX_CORRIDOR_BOXES, 64);
     assert.equal(Limits.MAX_CORRIDOR_REQUESTS, Limits.MAX_CORRIDOR_BOXES * 2);

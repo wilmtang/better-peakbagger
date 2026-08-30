@@ -860,7 +860,13 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return results;
     };
 
-    const fetchPeaks = async (boxes, { signal, request }) => {
+    const peakResponseLimitError = cause => PublicErrors.exception(
+        'peak-response-too-large',
+        `Peakbagger returned more than ${CaptureLimits.MAX_PEAKBAGGER_PEAKS.toLocaleString('en-US')} nearby summits. Split the activity into a shorter track and try again.`,
+        { cause },
+    );
+
+    const fetchPeaks = async (boxes, { signal, request, checkpoint = async () => {} }) => {
         const budget = { requests: 0 };
         const responses = await mapWithConcurrency(
             boxes,
@@ -868,7 +874,24 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             box => fetchBox(box, { signal, budget, request }),
         );
         const byId = new Map();
-        responses.forEach(text => Core.parsePeakbaggerPeaks(text).forEach(peak => byId.set(peak.id, peak)));
+        for (const response of responses) {
+            let parsed;
+            try {
+                parsed = Core.parsePeakbaggerPeaks(response, {
+                    maxPeaks: CaptureLimits.MAX_PEAKBAGGER_PEAKS,
+                });
+            } catch (error) {
+                if (error?.code === 'too-many-peaks') throw peakResponseLimitError(error);
+                throw error;
+            }
+            for (const peak of parsed) {
+                byId.set(peak.id, peak);
+                if (byId.size > CaptureLimits.MAX_PEAKBAGGER_PEAKS) {
+                    throw peakResponseLimitError(new Error('Unique peak limit exceeded.'));
+                }
+            }
+            await checkpoint();
+        }
         return [...byId.values()];
     };
 
@@ -965,6 +988,39 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return results[0].result;
     };
 
+    const captureTimeoutError = cause => PublicErrors.exception(
+        'capture-timeout',
+        'Summit lookup took too long. Try a shorter or less fragmented GPX.',
+        cause ? { cause } : undefined,
+    );
+
+    const createCaptureCpuScheduler = ({ signal, deadline, timeoutMs }) => {
+        const monotonicNow = () => typeof globalThis.performance?.now === 'function'
+            ? globalThis.performance.now()
+            : Date.now();
+        const startedAt = monotonicNow();
+        let sliceStartedAt = startedAt;
+        const assertActive = () => {
+            if (signal?.aborted) throw cancelledCaptureError();
+            if (deadline.expired || monotonicNow() - startedAt >= timeoutMs) {
+                deadline.abort();
+                throw captureTimeoutError();
+            }
+        };
+        const checkpoint = async (force = false) => {
+            assertActive();
+            if (!force && monotonicNow() - sliceStartedAt < 8) return;
+            if (typeof globalThis.setTimeout === 'function') {
+                await new Promise(resolve => globalThis.setTimeout(resolve, 0));
+            } else {
+                await Promise.resolve();
+            }
+            sliceStartedAt = monotonicNow();
+            assertActive();
+        };
+        return { assertActive, checkpoint };
+    };
+
     // Shared post-capture pipeline: sanitize → corridor lookup → detect →
     // reduce → serialize → derive. Used by activity capture and the local-file
     // GPX process flow so drafted values can never diverge between the two.
@@ -987,15 +1043,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const cancel = () => deadline.abort();
         if (signal?.aborted) cancel();
         else signal?.addEventListener('abort', cancel, { once: true });
-        const assertActive = () => {
-            if (signal?.aborted) throw cancelledCaptureError();
-            if (deadline.expired) {
-                throw PublicErrors.exception(
-                    'capture-timeout',
-                    'Summit lookup took too long. Try a shorter or less fragmented GPX.',
-                );
-            }
-        };
+        const cpu = createCaptureCpuScheduler({
+            signal,
+            deadline,
+            timeoutMs: CaptureLimits.CORRIDOR_TOTAL_TIMEOUT_MS,
+        });
+        const { assertActive } = cpu;
         try {
             if (!Array.isArray(segments) || segments.length > CaptureLimits.MAX_GPX_TRACK_SEGMENTS
                 || (Array.isArray(waypoints) && waypoints.length > CaptureLimits.MAX_GPX_WAYPOINTS)) {
@@ -1014,6 +1067,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const cleanWaypoints = capturePreferences.retainWaypoints
                 ? Core.sanitizeWaypoints(waypoints)
                 : [];
+            await cpu.checkpoint(true);
             const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
             if (pointCount === 0) {
                 return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
@@ -1032,6 +1086,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             const boxes = Core.buildQueryBoxes(sanitized.segments);
+            await cpu.checkpoint();
             if (!boxes.length) {
                 throw PublicErrors.exception(
                     'invalid-track',
@@ -1049,9 +1104,21 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const peaks = await deadline.run(fetchPeaks(boxes, {
                 signal: deadline.signal,
                 request: peakbaggerRequest,
+                checkpoint: cpu.checkpoint,
             }));
             assertActive();
-            const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
+            const allMatches = await Core.detectPeaksAsync(
+                sanitized.segments,
+                peaks,
+                sanitized.quality.score,
+                { checkpoint: cpu.checkpoint },
+            );
+            if (allMatches.length > CaptureLimits.MAX_CAPTURE_MATCHES) {
+                throw PublicErrors.exception(
+                    'capture-analysis-too-large',
+                    `This route passes more than ${CaptureLimits.MAX_CAPTURE_MATCHES} summit candidates. Split the activity into a shorter track and try again.`,
+                );
+            }
             const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
             const boundBelowBar = boundPid === null ? null
                 : allMatches.find(match => match.id === Number(boundPid)
@@ -1070,12 +1137,22 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 );
             }
             const anchorMatches = boundBelowBar ? [...visibleMatches, boundBelowBar] : visibleMatches;
-            const reduced = Core.reduceTrack(sanitized.segments, anchorMatches, trackPointLimit);
+            const reduced = await Core.reduceTrackAsync(
+                sanitized.segments,
+                anchorMatches,
+                trackPointLimit,
+                { checkpoint: cpu.checkpoint },
+            );
             const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
-            const matches = visibleMatches.map(match => ({
-                ...Core.publicMatch(match),
-                draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata)
-            }));
+            await cpu.checkpoint();
+            const matches = [];
+            for (const match of visibleMatches) {
+                matches.push({
+                    ...Core.publicMatch(match),
+                    draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata),
+                });
+                await cpu.checkpoint();
+            }
             const rawTripName = typeof metadata?.title === 'string' ? metadata.title : '';
             // A below-bar bound peak is still selectable on the ascent form. Keep
             // the source name whenever that fallback can turn the operation into a
@@ -1089,6 +1166,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const dayStats = capturePreferences.fillAscentDetails
                 ? Core.calculateDayStats(sanitized.segments, metadata)
                 : [];
+            await cpu.checkpoint();
 
             const boundFallback = boundBelowBar ? {
                 ...Core.publicMatch(boundBelowBar),
@@ -1097,7 +1175,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
             } : null;
 
-            assertActive();
+            await cpu.checkpoint();
             return {
                 status: 'ready',
                 matches,
@@ -1119,11 +1197,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             deadline.abort();
             if (signal?.aborted) throw cancelledCaptureError();
             if (deadline.expired || Deadline.isTimeout(error)) {
-                throw PublicErrors.exception(
-                    'capture-timeout',
-                    'Summit lookup took too long. Try a shorter or less fragmented GPX.',
-                    { cause: error },
-                );
+                throw captureTimeoutError(error);
             }
             throw error;
         } finally {

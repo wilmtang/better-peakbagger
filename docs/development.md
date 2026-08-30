@@ -164,7 +164,7 @@ script is added or removed without updating it.
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
-| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a synthetic 20,000-point provider track, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. A 2026-08-22 source review found no patched release and renewed only two exact high `image-size` advisories through the development-only `web-ext`/`addons-linter` path, with locked versions and a 2026-09-21 expiry; every other or expired finding fails. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
@@ -538,9 +538,11 @@ add it to the merge-step condition, for example
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
-  20,000-point GPX completeness case, and 1,500-entry favorite
-  render/search/backup path out of the fast local loop. It still uses jsdom
-  rather than a browser and does not impose a cross-machine timing threshold.
+  20,000-point GPX completeness case, 20,000-point/5,000-peak analysis, and
+  1,500-entry favorite render/search/backup path out of the fast local loop.
+  The capture case checks exact sync/cooperative equivalence, internal
+  cancellation checkpoints, a generous total CPU ceiling, and a 100 ms
+  maximum yield gap; it still cannot prove the live MV3 message scheduler.
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe
   equality in source without rewriting it, then checks the built extension
   package. Neither lint stage establishes browser behavior.

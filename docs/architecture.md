@@ -458,6 +458,7 @@ fail-closed contract before summit detection:
 | Encoded GPX body and decoded GPX text | 16 MiB each |
 | Parsed track points / track segments / waypoints | 20,000 / 50 / 3,000 |
 | One Peakbagger summit response | 1 MiB |
+| Parsed Peakbagger summits / route encounters | 5,000 / 256 |
 | One Peakbagger GPX response | 16 MiB |
 | Other Peakbagger HTML responses | 8 MiB |
 | Corridor boxes / total attempts / concurrent requests | 64 / 128 / 4 |
@@ -470,6 +471,16 @@ corridor plan. Oversized or excessively fragmented input is rejected with an
 actionable error and is never silently truncated into a partial summit result.
 Cancellation, job replacement, source closure, and expiry abort both the
 page-owned provider request and the worker-owned Peakbagger lookup generation.
+Provider injection, ownership inspection, capture, and cancellation carry the
+same generation-owned deadline as helper-page work; page cancellation is
+best-effort and never delays the Cancel response.
+
+Detection indexes route edges into bounded geographic cells and builds each
+segment's cumulative distance and elevation range data once. Peak matching and
+the exact priority simplifier yield at internal checkpoints on an 8 ms CPU
+slice, then recheck cancellation and the monotonic 60-second transaction
+budget. Late work cannot restore an abandoned generation, and the cooperative
+path is regression-tested against the synchronous reference result.
 
 Peakbagger login and summit requests made through a signed-in page are one
 bounded capture-owned transaction. Every tab query, helper probe/injection,
