@@ -212,7 +212,10 @@ const gitDataBackend = () => {
 };
 
 const AUTH = { token: 'gho_secret', repo: { owner: 'me', name: 'backup', branch: 'main', fullName: 'me/backup' }, account: { login: 'me' } };
-const PEAK_SENDER = { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' };
+// A successful ascentedit.aspx save navigates the originating tab to the saved
+// ascent page. Keep that tab identity unless a test is explicitly exercising a
+// different tab or cross-document fallback.
+const PEAK_SENDER = { tab: { id: 4 }, url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' };
 const EDIT_SENDER = { tab: { id: 4 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&pid=2296' };
 const LIST_SENDER = { tab: { id: 6 }, url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999' };
 const EXTENSION_SENDER = { url: 'chrome-extension://test/options/options.html' };
@@ -1560,6 +1563,18 @@ test('identical new ascents in separate tabs retain and consume their own save s
         url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
     });
 
+    const unrelated = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        page: page(7000003),
+        pageComplete: true,
+        auto: true,
+    }, savedSender(43, 7000003));
+    assert.equal(unrelated.ok, false);
+    assert.equal(unrelated.error.code, 'no-fresh-save');
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(first, firstSender)]);
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)],
+        'an unrelated tab must consume neither pre-id snapshot');
+
     const firstPush = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT',
         page: page(7000001),
@@ -1585,6 +1600,48 @@ test('identical new ascents in separate tabs retain and consume their own save s
         .find(([path]) => path.includes('a7000002/') && path.endsWith('/report.md'))[1];
     assert.match(report, /Second tab report/);
     assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)], undefined);
+});
+
+test('cross-tab snapshot lookup requires one unique positive ascent id', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({
+        settings: { enableGithubBackup: true, autoGithubBackup: true },
+        auth: AUTH,
+        github: backend.handler,
+    });
+    const first = editSnapshot();
+    first.identity.ascentId = 7654321;
+    first.snapshot.ascent.id = 7654321;
+    first.snapshot.report.markdown = 'Unique id report.';
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...first }, EDIT_SENDER);
+
+    const page = {
+        ascent: { id: 7654321, date: '2026-07-12' },
+        peak: { id: 2296, name: 'Mount Rainier' },
+        report: { markdown: 'Persisted report.' },
+    };
+    const crossTabSender = { ...PEAK_SENDER, tab: { id: 5 } };
+    const unique = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true,
+    }, crossTabSender);
+    assert.equal(unique.ok, true);
+    assert.match(Object.entries(backend.state.contents)
+        .find(([path]) => path.endsWith('/report.md'))[1], /Unique id report/);
+
+    const secondWorker = createWorker({
+        settings: { enableGithubBackup: true, autoGithubBackup: true },
+        auth: AUTH,
+        github: gitDataBackend().handler,
+    });
+    const otherSender = { ...EDIT_SENDER, tab: { id: 44 } };
+    await secondWorker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...first }, EDIT_SENDER);
+    await secondWorker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...first }, otherSender);
+    const ambiguous = await secondWorker.send({
+        type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true,
+    }, crossTabSender);
+    assert.equal(ambiguous.ok, false);
+    assert.equal(ambiguous.error.code, 'no-fresh-save');
+    assert.equal(Object.keys(secondWorker.session.bpbGithubSnapshots).length, 2);
 });
 
 test('individual backup never uses a different same-peak snapshot or accepts a sparse fallback', async () => {

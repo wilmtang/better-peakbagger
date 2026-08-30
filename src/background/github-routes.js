@@ -843,11 +843,12 @@ export function createGithubRoutes({
         return { ascent, peak, report, backup: { ...(base ? base.backup : {}) } };
     };
 
-    // Find the pending snapshot for a saved ascent page. A new ascent had no aid
-    // when it was snapshotted, so match by ascent id first (re-saves/edits), then
-    // by peak+date. A peak-only match can attach a different ascent's report and
-    // fields, so absence of a precise match is handled by the complete edit-form
-    // snapshot supplied by the individual backup surface.
+    // Find the pending snapshot for a saved ascent page. A positive ascent id is
+    // stable across documents, so one unique id match may follow a cross-tab
+    // navigation. A new ascent has no id at save time: peak+date is not unique,
+    // and is therefore usable only in the exact tab that recorded the snapshot.
+    // Ambiguity preserves every candidate and falls back to the complete edit-
+    // form read instead of guessing which exact report Markdown belongs here.
     const findSnapshotForPage = async (page, sender) => {
         const snapshots = await readMap(SNAPSHOTS_KEY);
         const entries = Object.entries(snapshots)
@@ -855,15 +856,23 @@ export function createGithubRoutes({
             .map(([key, record]) => ({ key, record }))
             .sort((a, b) => (b.record.savedAt || 0) - (a.record.savedAt || 0));
         const idOf = e => e.record.identity || {};
-        const ascentId = page && page.ascent ? page.ascent.id : null;
+        const ascentId = positiveAscentId(page?.ascent?.id);
         const peakId = page && page.peak ? page.peak.id : null;
         const date = page && page.ascent ? page.ascent.date : null;
         const sourceTabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
-        const find = predicate => (sourceTabId == null ? null : entries.find(e => e.record.sourceTabId === sourceTabId && predicate(e)))
-            || entries.find(predicate);
-        let match = ascentId != null ? find(e => idOf(e).ascentId === ascentId) : null;
-        if (!match && peakId != null && date) match = find(e => idOf(e).peakId === peakId && idOf(e).date === date);
-        return match || null;
+        if (ascentId) {
+            const idMatches = entries.filter(entry =>
+                positiveAscentId(idOf(entry).ascentId) === ascentId);
+            const sameTab = sourceTabId == null ? null : idMatches.find(entry =>
+                entry.record.sourceTabId === sourceTabId);
+            const unique = sameTab || (idMatches.length === 1 ? idMatches[0] : null);
+            if (unique) return unique;
+        }
+        if (sourceTabId == null || peakId == null || !date) return null;
+        return entries.find(entry => entry.record.sourceTabId === sourceTabId
+            && positiveAscentId(idOf(entry).ascentId) == null
+            && idOf(entry).peakId === peakId
+            && idOf(entry).date === date) || null;
     };
 
     // Token-free, read-only freshness preflight for the individual ascent
