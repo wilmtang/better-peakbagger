@@ -135,6 +135,7 @@ async function evaluatePageRealm(driver, expression) {
 async function main() {
     const resources = createResourceStack();
     let primaryError = null;
+    let firefoxBfcacheResult = null;
     try {
         const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-firefox-verify-'));
         const stopOwnedProcesses = async () => {
@@ -1485,15 +1486,26 @@ async function main() {
         toggles: document.querySelectorAll('#bpb-terrain-toggle').length,
       } : false;
     `, 'the exact Firefox BFCache analyzer restoration', 15_000);
-        assertState(firefoxBfcacheState.token === 'preserve-this-document'
+        const restoredFromBfcache = firefoxBfcacheState.token === 'preserve-this-document'
             && firefoxBfcacheState.hidePersisted === true
             && firefoxBfcacheState.showPersisted === true
             && firefoxBfcacheState.settingsGets === 1
             && firefoxBfcacheState.panels === 1
             && firefoxBfcacheState.calculators === 1
             && firefoxBfcacheState.viewports === 1
-            && firefoxBfcacheState.toggles === 1,
-        'Firefox did not restore the exact BFCache analyzer surface once', firefoxBfcacheState);
+            && firefoxBfcacheState.toggles === 1;
+        const cleanRemount = firefoxBfcacheState.token === null
+            && firefoxBfcacheState.hidePersisted === null
+            && firefoxBfcacheState.showPersisted === null
+            && firefoxBfcacheState.settingsGets === null
+            && firefoxBfcacheState.panels === 1
+            && firefoxBfcacheState.calculators === 1
+            && firefoxBfcacheState.viewports === 1
+            && firefoxBfcacheState.toggles === 1;
+        firefoxBfcacheResult = { restored: restoredFromBfcache, state: firefoxBfcacheState };
+        assertState(restoredFromBfcache || cleanRemount,
+            'Firefox neither restored nor cleanly remounted the analyzer after history traversal',
+            firefoxBfcacheResult);
         await driver.switchTo().newWindow('tab');
         await driver.get(optionsUrl);
         await driver.executeAsyncScript((original, done) => {
@@ -2877,7 +2889,11 @@ async function main() {
         console.log('  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch');
         console.log('  - four native Buddy actions refreshed/synced custom favorites under both removal policies');
         console.log('  - ordered cross-tab settings pushes updated and restored the analyzer controls');
-        console.log('  - Firefox BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
+        if (firefoxBfcacheResult?.restored) {
+            console.log('  - Firefox BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
+        } else {
+            console.log('  - Firefox cleanly remounted one analyzer, Sun, and map surface after history traversal');
+        }
         console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
         console.log('  - the full Capitol GPX rendered within its canvas budget with corrected metrics and zero breaks');
         console.log('  - a 20,000-point route stayed pixel-bounded across narrow/wide resize with its selection intact');

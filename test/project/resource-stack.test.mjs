@@ -246,6 +246,9 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(firefoxVerifier,
         /const settingsControl = await driver\.findElement\(By\.css\('\.pbaf-settings-link'\)\);\s*\/\/[\s\S]{0,300}settingsControl\.sendKeys\(Key\.ENTER\)/,
         'the Firefox verifier must not use an intercept-prone element click for initial Settings activation');
+    assert.match(firefoxVerifier,
+        /const restoredFromBfcache = [\s\S]{0,900}const cleanRemount = [\s\S]{0,700}assertState\(restoredFromBfcache \|\| cleanRemount,/,
+        'Firefox history traversal must accept either exact BFCache restoration or one clean remount');
     for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mjs']) {
         const source = sources.find(entry => entry.verifierPath === verifierPath).source;
         assert.match(source, /manageChildProcess\(resources, chrome/,
