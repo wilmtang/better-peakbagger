@@ -29,15 +29,6 @@ const stale = favorites => ({
     signature: F.backupSignature(favorites),
 });
 
-const membershipChanges = (currentEntries, nextEntries) => {
-    const currentIds = new Set(currentEntries.map(entry => entry.cid));
-    const nextIds = new Set(nextEntries.map(entry => entry.cid));
-    return {
-        added: nextEntries.filter(entry => !currentIds.has(entry.cid)).length,
-        removed: currentEntries.filter(entry => !nextIds.has(entry.cid)).length,
-    };
-};
-
 const cleanCompleteFavorites = value => {
     const cleaned = F.cleanFavorites(value);
     return value
@@ -118,7 +109,7 @@ export const applyFavoritesMutation = (stored, mutation, now = Date.now()) => {
         if (!entries) return invalid(current);
         next = F.mergeBuddies(current, entries, now);
         details.added = next.entries.length - current.entries.length;
-        const missing = membershipChanges(current.entries, entries).added;
+        const missing = F.membershipChanges(current.entries, entries).added;
         details.skipped = missing - details.added;
         break;
     }
@@ -129,7 +120,7 @@ export const applyFavoritesMutation = (stored, mutation, now = Date.now()) => {
         }
         if (mutation.expectedSignature !== F.backupSignature(current)) return stale(current);
         next = replacement;
-        details = { ...details, ...membershipChanges(current.entries, next.entries) };
+        details = { ...details, ...F.membershipChanges(current.entries, next.entries) };
         break;
     }
     default:
