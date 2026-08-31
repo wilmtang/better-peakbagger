@@ -206,7 +206,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     );
     const adoptionFlow = helperLeaseProbe.slice(
         helperLeaseProbe.indexOf('await chrome.tabs.update(transportTab.id, { active: true });'),
-        helperLeaseProbe.indexOf('const adoptedLeases ='),
+        helperLeaseProbe.indexOf('const expireAdoptedLease ='),
     );
     assert.match(adoptionFlow,
         /transportTab[\s\S]*'durable helper adoption'\);[\s\S]*chrome\.tabs\.update\(optionsTab/,

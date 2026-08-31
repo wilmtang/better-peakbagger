@@ -1938,13 +1938,26 @@ try {
             // wait for the worker's user-ownership transfer, then prove it
             // remains durable after returning to Settings.
             await chrome.tabs.update(optionsTab.id, { active: true });
-            const adoptedLeases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-            adoptedLeases[transportTab.id].expiresAt = Date.now() - 1;
-            await chrome.storage.session.set({ [leaseKey]: adoptedLeases });
-            chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
+            const expireAdoptedLease = async () => {
+                const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
+                const lease = leases[transportTab.id];
+                if (!lease) return;
+                leases[transportTab.id] = { ...lease, expiresAt: Date.now() - 1 };
+                await chrome.storage.session.set({ [leaseKey]: leases });
+                chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
+            };
+            await expireAdoptedLease();
             await wait(async () => {
                 const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                return !leases[transportTab.id];
+                const lease = leases[transportTab.id];
+                if (!lease) return true;
+                // Returning to Settings itself emits an activation. Its queued
+                // no-op lease mutation can finish after the verifier's direct
+                // storage injection and restore the old future expiry once.
+                // Reconcile that exact fixture race without postponing an alarm
+                // while the injected expiry remains in place.
+                if (lease.expiresAt > Date.now()) await expireAdoptedLease();
+                return false;
             }, 'adopted helper lease release');
             const adoptedRetained = await chrome.tabs.get(transportTab.id)
                 .then(() => true, () => false);
