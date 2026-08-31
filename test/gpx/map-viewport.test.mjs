@@ -8,22 +8,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { mapViewport as MapViewport } from '../../src/gpx/map-viewport.js';
+import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const BOUNDS = { minWidth: 320, maxWidth: 1400, minHeight: 240, maxHeight: 720 };
 const RESIZE_RAIL_HEIGHT = 44;
-
-const pointerEvent = (dom, type, {
-    pointerId = 1,
-    pointerType = 'mouse',
-    ...init
-} = {}) => {
-    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-    Object.defineProperties(event, {
-        pointerId: { value: pointerId },
-        pointerType: { value: pointerType },
-    });
-    return event;
-};
 
 const setup = ({ size = { width: 600, height: 400 }, persistDelayMs = 400 } = {}) => {
     const dom = new JSDOM('<!doctype html><body><p><iframe src="MasterMap.aspx"></iframe></p></body>', {

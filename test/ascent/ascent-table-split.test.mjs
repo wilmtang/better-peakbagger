@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { ascentTableSplit as Split } from '../../src/ascent/ascent-table-split.js';
+import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const legacyHtml = ({ between = '' } = {}) => `<!doctype html><html><body><form>
   <table class="gray" id="report" width="49%" align="left">
@@ -15,19 +16,6 @@ const legacyHtml = ({ between = '' } = {}) => `<!doctype html><html><body><form>
     <tr><th>Summary Total Data</th></tr><tr><td>Distance</td></tr>
   </table>
 </form></body></html>`;
-
-const pointerEvent = (dom, type, {
-    pointerId = 1,
-    pointerType = 'mouse',
-    ...init
-} = {}) => {
-    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-    Object.defineProperties(event, {
-        pointerId: { value: pointerId },
-        pointerType: { value: pointerType },
-    });
-    return event;
-};
 
 const setup = ({ html = legacyHtml(), saved = null, storage = null } = {}) => {
     const dom = new JSDOM(html, {

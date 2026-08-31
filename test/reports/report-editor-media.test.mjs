@@ -4,21 +4,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
+import { pointerEvent } from '../helpers/pointer-event.mjs';
 import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
-
-const pointerEvent = (dom, type, {
-    pointerId = 1,
-    pointerType = 'mouse',
-    ...init
-} = {}) => {
-    const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, ...init });
-    Object.defineProperties(event, {
-        pointerId: { value: pointerId },
-        pointerType: { value: pointerType },
-    });
-    return event;
-};
 
 const returnContext = (url = EDITOR_URL) => {
     const parsed = new URL(url);
