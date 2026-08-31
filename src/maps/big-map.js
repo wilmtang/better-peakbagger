@@ -633,35 +633,10 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         };
     };
 
-    // The 3D frame asks for Peakbagger's peak dots as its camera settles; the
-    // request is served by the same-origin PLLBB feed the native 2D map uses,
-    // with the parameters read from the MasterMap iframe URL. Group maps have
-    // no peak feed natively, so they answer `unavailable` once and the frame
-    // stops asking.
-    let peaksClient = null;
-    let peaksClientResolved = false;
-    let peaksClientGeneration = 0;
-    const answerPeaksRequest = data => {
-        const requestId = data.requestId;
-        if (!Number.isFinite(requestId)) return;
-        if (!peaksClientResolved) {
-            peaksClientResolved = true;
-            const iframe = findMapIframe();
-            peaksClient = peakMarkers && iframe
-                ? peakMarkers.createClient(iframe.src)
-                : null;
-        }
-        if (!peaksClient) {
-            postTerrain('peaks', { requestId, peaks: [], unavailable: true });
-            return;
-        }
-        const generation = peaksClientGeneration;
-        peaksClient.request(data.bounds).then(peaks => {
-            // A superseded request resolves null and stays silent; the newer
-            // request answers instead.
-            if (peaks && generation === peaksClientGeneration) postTerrain('peaks', { requestId, peaks });
-        });
-    };
+    const peaksResponder = peakMarkers.createTerrainResponder({
+        getIframeSrc: () => findMapIframe()?.src || null,
+        post: postTerrain,
+    });
 
     // Replies from the extension-owned terrain frame (via the isolated-world
     // bridge). Same protocol as the ascent page.
@@ -675,7 +650,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
             return;
         }
         if (data.type === 'peaksRequest' && !terrainCoordinator.isIdle()) {
-            answerPeaksRequest(data);
+            peaksResponder.answer(data);
             return;
         }
         terrainCoordinator.handleMessage(data);
@@ -793,9 +768,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         terrainPrefetchAt = 0;
         if (terrainCoordinator?.isOpen()) terrainCoordinator.reset();
         releaseActiveMap();
-        peaksClient = null;
-        peaksClientResolved = false;
-        peaksClientGeneration++;
+        peaksResponder.reset();
         startBinding();
     };
 

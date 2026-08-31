@@ -801,35 +801,10 @@ const run = async () => {
             }
         };
 
-        // The 3D frame asks for Peakbagger's peak dots as its camera settles;
-        // the request is served by the same-origin PLLBB feed the native 2D
-        // map uses, with the parameters read from the MasterMap iframe URL. A
-        // surface without a usable feed answers `unavailable` once so the
-        // frame stops asking.
-        let peaksClient = null;
-        let peaksClientResolved = false;
-        let peaksClientGeneration = 0;
-        const answerPeaksRequest = data => {
-            const requestId = data.requestId;
-            if (!Number.isFinite(requestId)) return;
-            if (!peaksClientResolved) {
-                peaksClientResolved = true;
-                const mapIframe = currentMapIframe();
-                peaksClient = peakMarkers && mapIframe
-                    ? peakMarkers.createClient(mapIframe.src)
-                    : null;
-            }
-            if (!peaksClient) {
-                postTerrain('peaks', { requestId, peaks: [], unavailable: true });
-                return;
-            }
-            const generation = peaksClientGeneration;
-            peaksClient.request(data.bounds).then(peaks => {
-                // A superseded request resolves null and stays silent; the
-                // newer request answers instead.
-                if (peaks && generation === peaksClientGeneration) postTerrain('peaks', { requestId, peaks });
-            });
-        };
+        const peaksResponder = peakMarkers.createTerrainResponder({
+            getIframeSrc: () => currentMapIframe()?.src || null,
+            post: postTerrain,
+        });
 
         window.addEventListener('message', event => {
             if (event.source !== window || event.origin !== location.origin) return;
@@ -840,7 +815,7 @@ const run = async () => {
                 terrainConsentPending = false;
                 if (data.enabled === true) terrainCoordinator.start(true);
             } else if (data.type === 'peaksRequest' && !terrainCoordinator.isIdle()) {
-                answerPeaksRequest(data);
+                peaksResponder.answer(data);
             } else terrainCoordinator.handleMessage(data);
         });
 
@@ -879,9 +854,7 @@ const run = async () => {
                 } catch (error) { /* The old frame may already be gone. */ }
                 hoverMarker = null;
             }
-            peaksClient = null;
-            peaksClientResolved = false;
-            peaksClientGeneration++;
+            peaksResponder.reset();
             if (reason === 'identity') {
                 const selectedPoint = chartData[selectedCoordinateIndex];
                 if (isCoordinatePoint(selectedPoint)) selectSunPoint(selectedPoint);

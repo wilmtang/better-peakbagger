@@ -77,8 +77,6 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     let terrainThemePref = Schema.DEFAULTS.theme;
     let terrainCacheLimitMb = Schema.DEFAULTS.terrainCacheLimitMb;
     let terrainConsentPending = false;
-    let peaksClient = null;
-    let peaksClientResolved = false;
     // Warm the DEM cache on explicit intent to open 3D (toggle hover/focus),
     // throttled so a lingering cursor posts at most one hint per window.
     const TERRAIN_PREFETCH_THROTTLE_MS = 15 * 1000;
@@ -132,6 +130,10 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     const postTerrain = (type, detail = {}) => window.postMessage({
         __bpbTerrain: true, dir: 'toCS', type, ...detail
     }, location.origin);
+    const peaksResponder = peakMarkers.createTerrainResponder({
+        getIframeSrc: () => iframe.src,
+        post: postTerrain,
+    });
     const terrainFailureNotice = TerrainFailure.createNotice({ container: mount, toggle: terrainToggle });
 
     // Hovering or focusing the idle 3D toggle is explicit intent to open 3D, so
@@ -252,24 +254,6 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     terrainToggle.addEventListener('pointerenter', maybePrefetchTerrain);
     terrainToggle.addEventListener('focus', maybePrefetchTerrain);
 
-    const answerPeaksRequest = data => {
-        const requestId = data.requestId;
-        if (!Number.isFinite(requestId)) return;
-        if (!peaksClientResolved) {
-            peaksClientResolved = true;
-            peaksClient = peakMarkers
-                ? peakMarkers.createClient(iframe.src)
-                : null;
-        }
-        if (!peaksClient) {
-            postTerrain('peaks', { requestId, peaks: [], unavailable: true });
-            return;
-        }
-        peaksClient.request(data.bounds).then(peaks => {
-            if (peaks) postTerrain('peaks', { requestId, peaks });
-        });
-    };
-
     window.addEventListener('message', event => {
         if (event.source !== window || event.origin !== location.origin) return;
         const data = event.data;
@@ -278,7 +262,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
             terrainConsentPending = false;
             if (data.enabled === true) terrainCoordinator.start(true);
         } else if (data.type === 'peaksRequest' && !terrainCoordinator.isIdle()) {
-            answerPeaksRequest(data);
+            peaksResponder.answer(data);
         } else terrainCoordinator.handleMessage(data);
     });
 
@@ -305,8 +289,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     });
 
     const handleIframeLoad = () => {
-        peaksClient = null;
-        peaksClientResolved = false;
+        peaksResponder.reset();
         terrainCoordinator.position();
     };
     window.addEventListener('resize', () => terrainCoordinator.position());

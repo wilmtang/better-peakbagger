@@ -177,6 +177,54 @@ const createClient = iframeSrc => {
     };
 };
 
+// Adapt one peak-feed client to the terrain bridge protocol. The source is
+// resolved once per map-frame generation, including an unusable source, so a
+// surface whose native map has no peak feed answers unavailable consistently.
+// reset() also suppresses a response from a frame that has since been replaced.
+const createTerrainResponder = ({ getIframeSrc, post }) => {
+    if (typeof getIframeSrc !== 'function' || typeof post !== 'function') {
+        throw new TypeError('Peak marker responders require a frame source and post function');
+    }
+    let client = null;
+    let clientResolved = false;
+    let generation = 0;
+
+    const resolveClient = () => {
+        if (clientResolved) return client;
+        clientResolved = true;
+        let iframeSrc = null;
+        try { iframeSrc = getIframeSrc(); } catch (error) { /* A replaced frame is unavailable. */ }
+        client = createClient(iframeSrc);
+        return client;
+    };
+
+    const answer = data => {
+        const requestId = data?.requestId;
+        if (!Number.isFinite(requestId)) return null;
+        const activeClient = resolveClient();
+        if (!activeClient) {
+            post('peaks', { requestId, peaks: [], unavailable: true });
+            return null;
+        }
+        const requestGeneration = generation;
+        const request = activeClient.request(data.bounds);
+        request.then(peaks => {
+            // A superseded request resolves null and stays silent; a reset
+            // means the old frame's otherwise-valid answer is stale too.
+            if (peaks && requestGeneration === generation) post('peaks', { requestId, peaks });
+        });
+        return request;
+    };
+
+    const reset = () => {
+        client = null;
+        clientResolved = false;
+        generation++;
+    };
+
+    return { answer, reset };
+};
+
 export const peakMarkers = {
     MIN_PEAK_ZOOM,
     MAX_PEAKS,
@@ -186,4 +234,5 @@ export const peakMarkers = {
     requestUrl,
     parsePeaks,
     createClient,
+    createTerrainResponder,
 };
