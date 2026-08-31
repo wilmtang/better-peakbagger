@@ -22,10 +22,16 @@ import {
     createSyntheticCaptureJob,
     createSyntheticCapturePayload,
     fixtureHost,
+    installAnalyzerBfcacheProbe,
+    readAnalyzerBfcacheState,
+    readAnalyzerChartState,
+    readScaleChartState,
+    readSunCalculatorGeometry,
     storeUrls,
     surfaceSelectors,
     verificationViewport,
     waitForCondition,
+    webdriverScript,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import {
@@ -1252,19 +1258,7 @@ async function main() {
             borderStyle: calculator ? getComputedStyle(calculator).borderStyle : null,
           };
         })(),
-        chart: (() => {
-          const canvas = document.querySelector("#bpb-gpx-analysis canvas");
-          const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
-          if (!chart) return null;
-          return {
-            labels: chart.data.datasets.map(dataset => dataset.label),
-            pointCounts: chart.data.datasets.map(dataset => dataset.data.length),
-            pointBudget: Math.max(256, Math.min(1200, Math.ceil(canvas.parentElement.getBoundingClientRect().width))),
-            breakCounts: chart.data.datasets.map(dataset =>
-              dataset.data.filter(point => point?._raw === null).length),
-            animation: chart.options.animation,
-          };
-        })(),
+        chart: (${readAnalyzerChartState.toString()})(),
       };
       return {
         ...state,
@@ -1304,22 +1298,12 @@ async function main() {
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-scale`,
         );
-        const narrowScaleState = await waitForScript(driver, `
-      const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-      const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
-      if (!chart?.data?.datasets?.length) return false;
-      const raw = chart.data.datasets[0].data.map(point => point?._raw).filter(Boolean);
-      const pointBudget = Math.max(256, Math.min(1200,
-        Math.ceil(canvas.parentElement.getBoundingClientRect().width)));
-      const state = {
-        pointCounts: chart.data.datasets.map(dataset => dataset.data.filter(point => point?._raw).length),
-        pointBudget,
-        sourceIndexes: raw.map(point => point.sourceIndex),
-        rawElevations: raw.map(point => point.rawEleM),
-        animation: chart.options.animation,
-      };
-      return state.pointCounts.every(count => count >= 2 && count <= pointBudget) ? state : false;
-    `, 'the 20,000-point narrow Firefox analyzer', 30_000);
+        const narrowScaleState = await waitForScript(
+            driver,
+            webdriverScript(readScaleChartState),
+            'the 20,000-point narrow Firefox analyzer',
+            30_000,
+        );
         const initialScaleLatencyMs = Date.now() - scaleStarted;
         assertState(narrowScaleState.animation === false
             && narrowScaleState.sourceIndexes.includes(0)
@@ -1433,29 +1417,7 @@ async function main() {
       return document.getElementById('bpb-map-route-color')?.value
         === ${JSON.stringify(crossTabSettings.original)};
     `, 'the restored Firefox analyzer route color');
-        await driver.executeScript(`
-      const panel = document.getElementById('bpb-gpx-analysis');
-      panel.dataset.bfcacheProbe = 'preserve-this-document';
-      window.__bpbBfcacheProbe = {
-        hidePersisted: null,
-        showPersisted: null,
-        settingsGets: 0,
-      };
-      window.addEventListener('pagehide', event => {
-        window.__bpbBfcacheProbe.hidePersisted = event.persisted;
-      });
-      window.addEventListener('pageshow', event => {
-        if (window.__bpbBfcacheProbe.hidePersisted !== null) {
-          window.__bpbBfcacheProbe.showPersisted = event.persisted;
-        }
-      });
-      window.addEventListener('message', event => {
-        if (event.source === window && event.data?.__bpb === true
-            && event.data?.dir === 'toCS' && event.data?.kind === 'get') {
-          window.__bpbBfcacheProbe.settingsGets++;
-        }
-      });
-    `);
+        await driver.executeScript(webdriverScript(installAnalyzerBfcacheProbe));
         await driver.get(`https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`);
         const awayHandle = await driver.getWindowHandle();
         await driver.switchTo().newWindow('tab');
@@ -1470,22 +1432,12 @@ async function main() {
         await driver.close();
         await driver.switchTo().window(awayHandle);
         await driver.navigate().back();
-        const firefoxBfcacheState = await waitForScript(driver, `
-      const expected = ${JSON.stringify(crossTabSettings.changed)};
-      const panel = document.getElementById('bpb-gpx-analysis');
-      const probe = window.__bpbBfcacheProbe;
-      const control = document.getElementById('bpb-map-route-color');
-      return panel && control?.value === expected ? {
-        token: panel.dataset.bfcacheProbe || null,
-        hidePersisted: probe?.hidePersisted ?? null,
-        showPersisted: probe?.showPersisted ?? null,
-        settingsGets: probe?.settingsGets ?? null,
-        panels: document.querySelectorAll('#bpb-gpx-analysis').length,
-        calculators: document.querySelectorAll('.bpb-sun-calculator').length,
-        viewports: document.querySelectorAll('#bpb-map-viewport').length,
-        toggles: document.querySelectorAll('#bpb-terrain-toggle').length,
-      } : false;
-    `, 'the exact Firefox BFCache analyzer restoration', 15_000);
+        const firefoxBfcacheState = await waitForScript(
+            driver,
+            webdriverScript(readAnalyzerBfcacheState, crossTabSettings.changed),
+            'the exact Firefox BFCache analyzer restoration',
+            15_000,
+        );
         const restoredFromBfcache = firefoxBfcacheState.token === 'preserve-this-document'
             && firefoxBfcacheState.hidePersisted === true
             && firefoxBfcacheState.showPersisted === true
@@ -1595,67 +1547,9 @@ async function main() {
         const analyzerSunToggle = await driver.findElement(By.css('.bpb-sun-calculator__toggle'));
         if ((await analyzerSunToggle.getAttribute('aria-expanded')) !== 'true') await analyzerSunToggle.click();
         const analyzerSunSlider = await driver.findElement(By.css('.bpb-sun-calculator__time'));
-        const readFirefoxSunGeometry = () => driver.executeScript(`
-      const calculator = document.querySelector('.bpb-sun-calculator');
-      const height = selector => calculator?.querySelector(selector)?.getBoundingClientRect().height ?? null;
-      const overflowingText = [
-        '.bpb-sun-calculator__summary',
-        '.bpb-sun-calculator__date-value',
-        '.bpb-sun-calculator__clock',
-        '.bpb-sun-calculator__meta--date',
-        '.bpb-sun-calculator__meta--time',
-        '.bpb-sun-calculator__direction .bpb-sun-calculator__fact-value',
-        '.bpb-sun-calculator__elevation .bpb-sun-calculator__fact-value',
-        '.bpb-sun-calculator__moon-value',
-        '.bpb-sun-calculator__moon-illumination',
-        '.bpb-sun-calculator__moon-position',
-        '.bpb-sun-calculator__moon-events-text',
-        '.bpb-sun-calculator__events',
-        '.bpb-sun-calculator__limitation'
-      ].filter(selector => {
-        const element = calculator?.querySelector(selector);
-        return element && element.getClientRects().length > 0
-          && (element.scrollWidth > element.clientWidth + 1
-            || element.scrollHeight > element.clientHeight + 1);
-      });
-      const overflowingContainers = [
-        '.bpb-sun-calculator__panel',
-        '.bpb-sun-calculator__layout',
-        '.bpb-sun-calculator__controls',
-        '.bpb-sun-calculator__field:first-child',
-        '.bpb-sun-calculator__field:last-child',
-        '.bpb-sun-calculator__reading',
-        '.bpb-sun-calculator__facts',
-        '.bpb-sun-calculator__direction',
-        '.bpb-sun-calculator__elevation',
-        '.bpb-sun-calculator__moon',
-        '.bpb-sun-calculator__events'
-      ].filter(selector => {
-        const element = calculator?.querySelector(selector);
-        return element && element.getClientRects().length > 0
-          && (element.scrollWidth > element.clientWidth + 1
-            || element.scrollHeight > element.clientHeight + 1);
-      });
-      return {
-        calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
-        toggleHeight: height('.bpb-sun-calculator__toggle'),
-        panelHeight: height('.bpb-sun-calculator__panel'),
-        layoutHeight: height('.bpb-sun-calculator__layout'),
-        controlsHeight: height('.bpb-sun-calculator__controls'),
-        dateFieldHeight: height('.bpb-sun-calculator__field:first-child'),
-        timeFieldHeight: height('.bpb-sun-calculator__field:last-child'),
-        readingHeight: height('.bpb-sun-calculator__reading'),
-        compassHeight: height('.bpb-sun-calculator__compass'),
-        factsHeight: height('.bpb-sun-calculator__facts'),
-        directionHeight: height('.bpb-sun-calculator__direction'),
-        elevationHeight: height('.bpb-sun-calculator__elevation'),
-        moonHeight: height('.bpb-sun-calculator__moon'),
-        eventsHeight: height('.bpb-sun-calculator__events'),
-        limitationHeight: height('.bpb-sun-calculator__limitation'),
-        overflowingText,
-        overflowingContainers
-      };
-    `);
+        const readFirefoxSunGeometry = () => driver.executeScript(
+            webdriverScript(readSunCalculatorGeometry),
+        );
         const originalSunMinute = await driver.executeScript(
             'return { minute: Number(arguments[0].value), clock: document.querySelector(".bpb-sun-calculator__clock")?.textContent || "" };',
             analyzerSunSlider,

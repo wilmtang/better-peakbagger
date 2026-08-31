@@ -32,6 +32,11 @@ import {
     createScaleAnalyzerGpx,
     createSyntheticCaptureJob,
     createSyntheticCapturePayload,
+    installAnalyzerBfcacheProbe,
+    readAnalyzerBfcacheState,
+    readAnalyzerChartState,
+    readScaleChartState,
+    readSunCalculatorGeometry,
     storeUrls,
     surfaceSelectors,
     verificationViewport,
@@ -2287,29 +2292,7 @@ try {
         document.getElementById('bpb-map-route-color')?.value === expected,
     crossTabSettings.original, { timeout: 5000 });
 
-    await offPage.evaluate(() => {
-        const panel = document.getElementById('bpb-gpx-analysis');
-        panel.dataset.bfcacheProbe = 'preserve-this-document';
-        window.__bpbBfcacheProbe = {
-            hidePersisted: null,
-            showPersisted: null,
-            settingsGets: 0,
-        };
-        window.addEventListener('pagehide', event => {
-            window.__bpbBfcacheProbe.hidePersisted = event.persisted;
-        });
-        window.addEventListener('pageshow', event => {
-            if (window.__bpbBfcacheProbe.hidePersisted !== null) {
-                window.__bpbBfcacheProbe.showPersisted = event.persisted;
-            }
-        });
-        window.addEventListener('message', event => {
-            if (event.source === window && event.data?.__bpb === true
-                && event.data?.dir === 'toCS' && event.data?.kind === 'get') {
-                window.__bpbBfcacheProbe.settingsGets++;
-            }
-        });
-    });
+    await offPage.evaluate(installAnalyzerBfcacheProbe);
     await offPage.goto(
         `https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`,
         { waitUntil: 'load' },
@@ -2321,21 +2304,11 @@ try {
     // A BFCache restoration does not fire DOMContentLoaded again. Waiting for
     // that event would time out precisely when the persisted path works.
     await offPage.goBack({ waitUntil: 'commit' });
-    const bfcacheState = await offPage.waitForFunction(expected => {
-        const panel = document.getElementById('bpb-gpx-analysis');
-        const probe = window.__bpbBfcacheProbe;
-        const control = document.getElementById('bpb-map-route-color');
-        return panel && control?.value === expected ? {
-            token: panel.dataset.bfcacheProbe || null,
-            hidePersisted: probe?.hidePersisted ?? null,
-            showPersisted: probe?.showPersisted ?? null,
-            settingsGets: probe?.settingsGets ?? null,
-            panels: document.querySelectorAll('#bpb-gpx-analysis').length,
-            calculators: document.querySelectorAll('.bpb-sun-calculator').length,
-            viewports: document.querySelectorAll('#bpb-map-viewport').length,
-            toggles: document.querySelectorAll('#bpb-terrain-toggle').length,
-        } : false;
-    }, crossTabSettings.changed, { timeout: 15_000 }).then(handle => handle.jsonValue());
+    const bfcacheState = await offPage.waitForFunction(
+        readAnalyzerBfcacheState,
+        crossTabSettings.changed,
+        { timeout: 15_000 },
+    ).then(handle => handle.jsonValue());
     const restoredFromBfcache = bfcacheState.token === 'preserve-this-document'
         && bfcacheState.hidePersisted === true
         && bfcacheState.showPersisted === true
@@ -2434,18 +2407,7 @@ try {
         && /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/.test(off.stats),
     `the packaged analyzer did not produce the Capitol regression metrics: ${off.stats.slice(0, 160)}`);
     const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
-    const capitolChartState = await coordinateCanvas.evaluate(canvas => {
-        const chart = globalThis.Chart?.getChart?.(canvas);
-        if (!chart) return null;
-        return {
-            labels: chart.data.datasets.map(dataset => dataset.label),
-            pointCounts: chart.data.datasets.map(dataset => dataset.data.length),
-            pointBudget: Math.max(256, Math.min(1200, Math.ceil(canvas.parentElement.getBoundingClientRect().width))),
-            breakCounts: chart.data.datasets.map(dataset =>
-                dataset.data.filter(point => point?._raw === null).length),
-            animation: chart.options.animation,
-        };
-    });
+    const capitolChartState = await offPage.evaluate(readAnalyzerChartState);
     check(capitolChartState?.labels?.join('|') === 'Elevation by Distance|Elevation by Time'
         && capitolChartState.pointCounts?.every(count => count <= capitolChartState.pointBudget)
         && capitolChartState.pointCounts?.every(count => count >= 2)
@@ -2472,22 +2434,11 @@ try {
         `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-scale`,
         { waitUntil: 'domcontentloaded' },
     );
-    const narrowScaleState = await scalePage.waitForFunction(() => {
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-        const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
-        if (!chart?.data?.datasets?.length) return null;
-        const raw = chart.data.datasets[0].data.map(point => point?._raw).filter(Boolean);
-        const pointBudget = Math.max(256, Math.min(1200,
-            Math.ceil(canvas.parentElement.getBoundingClientRect().width)));
-        const state = {
-            pointCounts: chart.data.datasets.map(dataset => dataset.data.filter(point => point?._raw).length),
-            pointBudget,
-            sourceIndexes: raw.map(point => point.sourceIndex),
-            rawElevations: raw.map(point => point.rawEleM),
-            animation: chart.options.animation,
-        };
-        return state.pointCounts.every(count => count >= 2 && count <= pointBudget) ? state : null;
-    }, null, { timeout: 30_000 }).then(handle => handle.jsonValue());
+    const narrowScaleState = await scalePage.waitForFunction(
+        readScaleChartState,
+        null,
+        { timeout: 30_000 },
+    ).then(handle => handle.jsonValue());
     check(narrowScaleState.animation === false
         && narrowScaleState.sourceIndexes.includes(0)
         && narrowScaleState.sourceIndexes.includes(19_999)
@@ -2557,74 +2508,7 @@ try {
     await coordinateCanvas.scrollIntoViewIfNeeded();
     await offPage.evaluate(() => new Promise(resolve => requestAnimationFrame(() =>
         requestAnimationFrame(resolve))));
-    const readOpenSunGeometry = () => offPage.evaluate(() => {
-        const calculator = document.querySelector('.bpb-sun-calculator');
-        const toggle = calculator?.querySelector('.bpb-sun-calculator__toggle');
-        const panel = calculator?.querySelector('.bpb-sun-calculator__panel');
-        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
-        const height = selector => calculator?.querySelector(selector)?.getBoundingClientRect().height ?? null;
-        const overflowingText = [
-            '.bpb-sun-calculator__summary',
-            '.bpb-sun-calculator__date-value',
-            '.bpb-sun-calculator__clock',
-            '.bpb-sun-calculator__meta--date',
-            '.bpb-sun-calculator__meta--time',
-            '.bpb-sun-calculator__direction .bpb-sun-calculator__fact-value',
-            '.bpb-sun-calculator__elevation .bpb-sun-calculator__fact-value',
-            '.bpb-sun-calculator__moon-value',
-            '.bpb-sun-calculator__moon-illumination',
-            '.bpb-sun-calculator__moon-position',
-            '.bpb-sun-calculator__moon-events-text',
-            '.bpb-sun-calculator__events',
-            '.bpb-sun-calculator__limitation',
-        ].filter(selector => {
-            const element = calculator?.querySelector(selector);
-            return element && element.getClientRects().length > 0
-                && (element.scrollWidth > element.clientWidth + 1
-                    || element.scrollHeight > element.clientHeight + 1);
-        });
-        const overflowingContainers = [
-            '.bpb-sun-calculator__panel',
-            '.bpb-sun-calculator__layout',
-            '.bpb-sun-calculator__controls',
-            '.bpb-sun-calculator__field:first-child',
-            '.bpb-sun-calculator__field:last-child',
-            '.bpb-sun-calculator__reading',
-            '.bpb-sun-calculator__facts',
-            '.bpb-sun-calculator__direction',
-            '.bpb-sun-calculator__elevation',
-            '.bpb-sun-calculator__moon',
-            '.bpb-sun-calculator__events',
-        ].filter(selector => {
-            const element = calculator?.querySelector(selector);
-            return element && element.getClientRects().length > 0
-                && (element.scrollWidth > element.clientWidth + 1
-                    || element.scrollHeight > element.clientHeight + 1);
-        });
-        return {
-            summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
-            layoutState: calculator?.dataset.layoutState || '',
-            calculatorHeight: calculator?.getBoundingClientRect().height ?? null,
-            toggleHeight: toggle?.getBoundingClientRect().height ?? null,
-            panelHeight: panel?.getBoundingClientRect().height ?? null,
-            layoutHeight: height('.bpb-sun-calculator__layout'),
-            controlsHeight: height('.bpb-sun-calculator__controls'),
-            dateFieldHeight: height('.bpb-sun-calculator__field:first-child'),
-            timeFieldHeight: height('.bpb-sun-calculator__field:last-child'),
-            readingHeight: height('.bpb-sun-calculator__reading'),
-            compassHeight: height('.bpb-sun-calculator__compass'),
-            factsHeight: height('.bpb-sun-calculator__facts'),
-            directionHeight: height('.bpb-sun-calculator__direction'),
-            elevationHeight: height('.bpb-sun-calculator__elevation'),
-            moonHeight: height('.bpb-sun-calculator__moon'),
-            eventsHeight: height('.bpb-sun-calculator__events'),
-            limitationHeight: height('.bpb-sun-calculator__limitation'),
-            canvasTop: canvas?.getBoundingClientRect().top ?? null,
-            canvasHeight: canvas?.getBoundingClientRect().height ?? null,
-            overflowingText,
-            overflowingContainers,
-        };
-    });
+    const readOpenSunGeometry = () => offPage.evaluate(readSunCalculatorGeometry);
     const promptSunGeometry = await readOpenSunGeometry();
     const summaryHeightVariants = await analyzerSunToggle.evaluate(toggle => {
         const summary = toggle.querySelector('.bpb-sun-calculator__summary');
