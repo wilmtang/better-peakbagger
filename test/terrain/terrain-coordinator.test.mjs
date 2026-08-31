@@ -4,7 +4,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { terrainCoordinator as TerrainCoordinator } from '../../src/terrain/terrain-coordinator.js';
+import {
+    TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS,
+    terrainCoordinator as TerrainCoordinator,
+} from '../../src/terrain/terrain-coordinator.js';
+import { TERRAIN_FRAME_LOAD_TIMEOUT_MS } from '../../src/terrain/terrain-frame-runtime.js';
+
+test('the outer terrain deadline leaves room for the renderer handoff', () => {
+    assert.ok(TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS >= TERRAIN_FRAME_LOAD_TIMEOUT_MS + 5000,
+        'authorization, iframe startup, and both loaded relays need their own budget');
+});
 
 const setup = ({ enabled = true } = {}) => {
     const dom = new JSDOM('<!doctype html><button id="toggle"></button>');

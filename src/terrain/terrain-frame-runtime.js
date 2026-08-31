@@ -11,6 +11,8 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
+export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
+
 const authorizeThroughWorker = async ({ token, action }) => {
     const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
     if (!runtime || typeof runtime.sendMessage !== 'function'
@@ -45,7 +47,6 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const MAX_BASEMAP_ATTRIBUTION_LENGTH = 600;
     const TERRAIN_EXAGGERATION = 1;
     const TERRAIN_SOURCE_MAX_ZOOM = 18;
-    const MAP_LOAD_TIMEOUT_MS = 15000;
     const GESTURE_HINT_TIMEOUT_MS = 6000;
     // Warming the elevation tiles a tilt is about to ask for. A tilt from a warm
     // cache re-levels the picture invisibly; the visible collapse is the wait for
@@ -2058,7 +2059,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 scheduleTiltWarm();
             });
 
-            loadTimer = setTimeout(() => fail('timeout'), MAP_LOAD_TIMEOUT_MS);
+            loadTimer = setTimeout(() => fail('timeout'), TERRAIN_FRAME_LOAD_TIMEOUT_MS);
             if (typeof ResizeObserver === 'function') {
                 resizeObserver = new ResizeObserver(() => {
                     if (!map) return;

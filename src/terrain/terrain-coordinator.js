@@ -8,7 +8,11 @@
 
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 
-const DEFAULT_LOAD_TIMEOUT_MS = 17000;
+// The frame owns a separate 15-second renderer deadline. Leave enough time
+// around it for worker authorization, iframe startup, and the frame -> bridge
+// -> page loaded relay; otherwise a renderer that completed on time can still
+// lose a race to this outer coordinator deadline and be parked immediately.
+export const TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS = 25000;
 const DEFAULT_CAMERA_TIMEOUT_MS = 1000;
 
 const create = ({
@@ -28,7 +32,7 @@ const create = ({
     onView = () => {},
     theme,
     position,
-    loadTimeoutMs = DEFAULT_LOAD_TIMEOUT_MS,
+    loadTimeoutMs = TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS,
     cameraTimeoutMs = DEFAULT_CAMERA_TIMEOUT_MS
 }) => {
     let state = 'idle';
