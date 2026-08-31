@@ -56,6 +56,30 @@ test('Firefox GPU bearing checks settle before the separate pitch gesture', asyn
         'the verifier must establish the Peak disclosure state instead of blindly toggling it');
     assert.equal(verifier.match(/const normalizedNorth =/g)?.length, 2,
         'both 2D reset checks must accept CSS angles equivalent to zero modulo 360');
+    assert.equal(verifier.match(/waitForTerrainCameraSettled\(page,/g)?.length, 5,
+        'each Firefox camera transition must settle through the diagnostic bounded wait');
+    assert.match(verifier,
+        /TERRAIN_CAMERA_SETTLE_TIMEOUT_MS = 20_000[\s\S]*isMoving: map\.isMoving\(\)/,
+        'the load-sensitive Firefox GPU wait must report the live camera state at its deadline');
+});
+
+test('Chrome solar bearing verification targets exposed settled canvas pixels', async () => {
+    const verifier = await readFile(
+        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        'utf8',
+    );
+    const bearingStart = verifier.indexOf('const exerciseSolarBearing =');
+    const bearingEnd = verifier.indexOf('const assertSolarNorthUp =');
+    assert.ok(bearingStart >= 0 && bearingStart < bearingEnd);
+    const bearingCheck = verifier.slice(bearingStart, bearingEnd);
+    assert.match(bearingCheck, /map\?\.loaded\(\) && !map\.isMoving\(\)/,
+        'the initial compass state must own a settled MapLibre camera');
+    assert.match(bearingCheck,
+        /frameDocument\.elementFromPoint\(localX, localY\) !== canvas/,
+        'the secondary drag must start on an exposed canvas pixel, not the iframe center');
+    assert.doesNotMatch(bearingCheck,
+        /rect\.left \+ rect\.width \/ 2/,
+        'a centered frame coordinate can land on a marker or popup overlay');
 });
 
 test('Chrome tilted-peak verification targets the live canvas and proves the pitch', async () => {

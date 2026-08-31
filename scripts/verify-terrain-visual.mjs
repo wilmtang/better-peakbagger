@@ -425,7 +425,7 @@ const exerciseSolarBearing = async (cdp, label) => {
             ready: Boolean(calculator && panel && !panel.hidden && north?.style.transform
                 && sun?.style.transform && moonMarker?.style.transform && daylightRange?.style.transform
                 && /^M /.test(daylightRange?.querySelector('path')?.getAttribute('d') || '')
-                && map?.loaded()),
+                && map?.loaded() && !map.isMoving()),
             summary: calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
             direction: calculator?.querySelector('.bpb-sun-calculator__direction')?.textContent || '',
             moon: calculator?.querySelector('.bpb-sun-calculator__moon')?.textContent || '',
@@ -445,12 +445,26 @@ const exerciseSolarBearing = async (cdp, label) => {
     }
 
     const target = await evaluate(cdp, `(() => {
-        const rect = document.getElementById('bpb-terrain-frame')?.getBoundingClientRect();
-        return rect && rect.width > 200 && rect.height > 200
-            ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-            : null;
+        const frame = document.getElementById('bpb-terrain-frame');
+        const frameRect = frame?.getBoundingClientRect();
+        const frameDocument = frame?.contentDocument;
+        const canvas = frameDocument?.querySelector('canvas.maplibregl-canvas');
+        const canvasRect = canvas?.getBoundingClientRect();
+        if (!frameRect || !canvasRect || canvasRect.width <= 200 || canvasRect.height <= 200) return null;
+        const candidates = [[0.25, 0.7], [0.25, 0.3], [0.4, 0.75], [0.4, 0.25]];
+        for (const [xRatio, yRatio] of candidates) {
+            const localX = canvasRect.left + canvasRect.width * xRatio;
+            const localY = canvasRect.top + canvasRect.height * yRatio;
+            if (canvasRect.right - localX < 170) continue;
+            if (frameDocument.elementFromPoint(localX, localY) !== canvas) continue;
+            return {
+                x: frameRect.left + frame.clientLeft + localX,
+                y: frameRect.top + frame.clientTop + localY,
+            };
+        }
+        return null;
     })()`);
-    if (!target) throw new Error(`${label}: terrain frame has no bearing-drag target`);
+    if (!target) throw new Error(`${label}: terrain canvas has no exposed bearing-drag target`);
     await cdp.call('Input.dispatchMouseEvent', {
         type: 'mousePressed', x: target.x, y: target.y, button: 'right', buttons: 2, clickCount: 1
     });

@@ -23,9 +23,9 @@ import {
     listenServer,
 } from './resource-stack.mjs';
 
-
 const viewport = { width: 1000, height: 760 };
 const fixtureHost = 'www.peakbagger.com';
+const TERRAIN_CAMERA_SETTLE_TIMEOUT_MS = 20_000;
 const syntheticTerrariumWebp = Buffer.from(
     'UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef',
     'base64',
@@ -82,6 +82,30 @@ function createFixtureServer({ key, cert }) {
     });
     return server;
 }
+
+const waitForTerrainCameraSettled = async (page, label) => {
+    try {
+        await page.waitForFunction(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return Boolean(map) && !map.isMoving();
+        }, null, { timeout: TERRAIN_CAMERA_SETTLE_TIMEOUT_MS });
+    } catch (error) {
+        const state = await page.evaluate(() => {
+            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+            return map ? {
+                isMoving: map.isMoving(),
+                isZooming: map.isZooming(),
+                isRotating: map.isRotating(),
+                zoom: map.getZoom(),
+                bearing: map.getBearing(),
+                pitch: map.getPitch(),
+            } : null;
+        });
+        throw new Error(`Timed out waiting for Firefox terrain camera to settle after ${label}: ${JSON.stringify(state)}`, {
+            cause: error,
+        });
+    }
+};
 
 async function main() {
     const resources = createResourceStack();
@@ -309,10 +333,7 @@ async function main() {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
             return map?.getZoom() > previous;
         }, rendererState.zoom, { timeout: 8_000 });
-        await page.waitForFunction(() => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            return Boolean(map) && !map.isMoving();
-        }, null, { timeout: 8_000 });
+        await waitForTerrainCameraSettled(page, 'scroll zoom');
 
         const bearingBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
         // Run bearing before pitch. Firefox intermittently loses a synthetic
@@ -354,10 +375,7 @@ async function main() {
             throw new Error(`Firefox Analyzer bearing changed absolute Sun or Moon text: ${JSON.stringify({ analyzerSunInitial, analyzerSunRotated })}`);
         }
 
-        await page.waitForFunction(() => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            return Boolean(map) && !map.isMoving();
-        }, null, { timeout: 8_000 });
+        await waitForTerrainCameraSettled(page, 'Analyzer bearing');
         const pitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
         await page.mouse.move(center.x, center.y);
         await page.mouse.down({ button: 'right' });
@@ -401,10 +419,7 @@ async function main() {
         if (!resized.route || requests.terrain === 0 || requests.basemap === 0 || requests.peaks === 0) {
             throw new Error(`Firefox terrain fixtures were incomplete: ${JSON.stringify({ resized, requests })}`);
         }
-        await page.waitForFunction(() => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            return Boolean(map) && !map.isMoving();
-        }, null, { timeout: 8_000 });
+        await waitForTerrainCameraSettled(page, 'Analyzer resize');
         await page.locator('#bpb-terrain-toggle').click();
         await page.waitForFunction(() =>
             document.getElementById('bpb-terrain-toggle')?.textContent === '3D',
@@ -468,10 +483,7 @@ async function main() {
             };
         });
         const peakCanvas = page.frameLocator('#bpb-terrain-frame').locator('canvas.maplibregl-canvas');
-        await page.waitForFunction(() => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            return Boolean(map) && !map.isMoving();
-        }, null, { timeout: 8_000 });
+        await waitForTerrainCameraSettled(page, 'Peak startup');
         const peakBearingBefore = await peakCanvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
         const peakBox = await peakCanvas.boundingBox();
         if (!peakBox) throw new Error('Firefox Peak terrain canvas had no bearing-drag target');
@@ -507,10 +519,7 @@ async function main() {
             || peakSunRotated.moon !== peakSunInitial.moon) {
             throw new Error(`Firefox Peak bearing changed absolute Sun or Moon text: ${JSON.stringify({ peakSunInitial, peakSunRotated })}`);
         }
-        await page.waitForFunction(() => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            return Boolean(map) && !map.isMoving();
-        }, null, { timeout: 8_000 });
+        await waitForTerrainCameraSettled(page, 'Peak bearing');
         await page.locator('#bpb-terrain-toggle').click();
         await page.waitForFunction(() =>
             document.getElementById('bpb-terrain-toggle')?.textContent === '3D',
