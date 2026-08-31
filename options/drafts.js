@@ -82,15 +82,6 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         return remaining <= DAY_MS ? 'Expires today' : `Expires in ${Math.ceil(remaining / DAY_MS)} days`;
     };
 
-    const actionButton = (className, text, ariaLabel) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = className;
-        button.textContent = text;
-        button.setAttribute('aria-label', ariaLabel);
-        return button;
-    };
-
     const undoControlFor = key => [...listEl.children]
         .find(item => item.dataset.draftKey === key)
         ?.querySelector('[data-action="undo"]');
@@ -272,10 +263,10 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         open.textContent = 'Open';
         open.setAttribute('aria-label', `Open ${title}`);
 
-        const copy = actionButton('secondary', 'Copy Markdown', `Copy ${title} as Markdown`);
+        const copy = OptionsUtils.actionButton('secondary', 'Copy Markdown', `Copy ${title} as Markdown`);
         copy.dataset.action = 'copy';
         copy.addEventListener('click', () => { void copyDraft(draft, copy); });
-        const remove = actionButton('secondary', 'Delete', `Delete ${title}`);
+        const remove = OptionsUtils.actionButton('secondary', 'Delete', `Delete ${title}`);
         remove.dataset.action = 'delete';
         remove.addEventListener('click', () => { void beginDelete(draft); });
         actions.append(open, copy, remove);
@@ -291,7 +282,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         message.textContent = pending.deleting
             ? 'Deleting draft…'
             : pending.restoring ? 'Restoring draft…' : 'Draft deleted';
-        const undo = actionButton(
+        const undo = OptionsUtils.actionButton(
             'draft-undo',
             pending.deleting ? 'Deleting…' : pending.restoring ? 'Restoring…' : 'Undo',
             `Undo deletion of ${pending.title}`

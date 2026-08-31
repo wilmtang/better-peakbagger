@@ -27,6 +27,15 @@ const logMissingElements = (surface, elements) => {
     return true;
 };
 
+const actionButton = (className, text, ariaLabel) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = className;
+    button.textContent = text;
+    button.setAttribute('aria-label', ariaLabel);
+    return button;
+};
+
 // The panel surfaces' only transient channel, and most of its traffic reports a
 // failure or blocks the action. Successes confirm and fade; failures go to the
 // alert region, keep the danger colour, and stay until the user dismisses them
@@ -59,4 +68,10 @@ const createStatusFlash = ({ statusEl, statusErrorEl, statusErrorTextEl, statusE
     return { flash, dismissStatus };
 };
 
-export const optionsUtils = { githubRepoName, withBusy, logMissingElements, createStatusFlash };
+export const optionsUtils = {
+    githubRepoName,
+    withBusy,
+    logMissingElements,
+    actionButton,
+    createStatusFlash,
+};

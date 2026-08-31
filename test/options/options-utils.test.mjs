@@ -3,6 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
 import { optionsUtils as Utils } from '../../options/options-utils.js';
 
 test('options busy runner rejects overlap and always clears its state', async () => {
@@ -48,5 +49,19 @@ test('options missing-element diagnostics name every absent control', () => {
         assert.equal(Utils.logMissingElements('test panel', { present: {} }), false);
     } finally {
         console.error = original;
+    }
+});
+
+test('options action buttons share one accessible non-submit shape', () => {
+    const dom = new JSDOM('<!doctype html><body></body>');
+    const previousDocument = globalThis.document;
+    globalThis.document = dom.window.document;
+    try {
+        const button = Utils.actionButton('secondary', 'Delete', 'Delete Mount Rainier');
+        assert.equal(button.outerHTML,
+            '<button type="button" class="secondary" aria-label="Delete Mount Rainier">Delete</button>');
+    } finally {
+        globalThis.document = previousDocument;
+        dom.window.close();
     }
 });
