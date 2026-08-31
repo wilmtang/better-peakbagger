@@ -200,6 +200,17 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(chromeVerifier,
         /disabledFrameElement\.contentFrame\(\)\.locator\('body'\)[\s\S]{0,200}waitFor\(/,
         'the disabled terrain forgery must follow its live frame and accept a browser-level API denial');
+    const helperLeaseProbe = chromeVerifier.slice(
+        chromeVerifier.indexOf('const helperLeaseState ='),
+        chromeVerifier.indexOf('await captureTransportPage.close();'),
+    );
+    const adoptionFlow = helperLeaseProbe.slice(
+        helperLeaseProbe.indexOf('await chrome.tabs.update(transportTab.id, { active: true });'),
+        helperLeaseProbe.indexOf('const adoptedLeases ='),
+    );
+    assert.match(adoptionFlow,
+        /transportTab[\s\S]*'durable helper adoption'\);[\s\S]*chrome\.tabs\.update\(optionsTab/,
+        'the helper must become durably adopted before the verifier leaves its tab');
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,
         'terminal Chrome readiness errors must retain earlier accumulated surface failures');

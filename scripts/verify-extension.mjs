@@ -1929,11 +1929,15 @@ try {
                 },
             });
             await chrome.tabs.update(transportTab.id, { active: true });
-            await chrome.tabs.update(optionsTab.id, { active: true });
             await wait(async () => {
                 const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
                 return leases[transportTab.id]?.adopted === true;
             }, 'durable helper adoption');
+            // Do not collapse the select-and-return sequence into one browser
+            // scheduling turn. Chrome 128 can coalesce those activation events;
+            // wait for the worker's user-ownership transfer, then prove it
+            // remains durable after returning to Settings.
+            await chrome.tabs.update(optionsTab.id, { active: true });
             const adoptedLeases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
             adoptedLeases[transportTab.id].expiresAt = Date.now() - 1;
             await chrome.storage.session.set({ [leaseKey]: adoptedLeases });
