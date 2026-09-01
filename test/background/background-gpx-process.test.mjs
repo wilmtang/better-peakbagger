@@ -956,6 +956,47 @@ test('an unbound page registers its draft first and then navigates to the chosen
     assert.equal(apply.action, 'apply');
 });
 
+test('unbound draft navigation preserves the committed upload through old-page teardown', async () => {
+    const harness = createHarness();
+    const unboundSender = { tab: { id: 5, windowId: 9 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx' };
+    const selection = uploadSelection(1);
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...selection }, unboundSender);
+    const ready = await harness.rawSend({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+        ...selection,
+    }, unboundSender);
+    const payloadKey = harness.values.bpbCaptureJobs['5'].payloadKey;
+
+    const applied = await harness.rawSend({
+        type: 'GPX_PROCESS_APPLY',
+        jobId: ready.jobId,
+        selectedIds: [7],
+        primaryId: 7,
+        ...selection,
+    }, unboundSender);
+    assert.equal(applied.ok, true);
+
+    const teardown = await harness.rawSend({
+        type: 'GPX_PROCESS_INVALIDATE',
+        ...uploadSelection(2),
+        reason: 'page-lifecycle',
+    }, unboundSender);
+    assert.equal(teardown.preserved, true,
+        'the old page must transfer ownership instead of deleting its committed draft');
+    assert.equal(harness.values.bpbCaptureJobs['5'].id, ready.jobId);
+    assert.ok(harness.values[payloadKey], 'the private GPX remains available to the reloaded draft page');
+
+    const apply = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 5, windowId: 9 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77' },
+    );
+    assert.equal(apply.action, 'apply');
+});
+
 test('a bound peak the track only brushes surfaces as an explicit closest-approach fallback', async () => {
     const harness = createHarness({
         peakXml: '<p><t i="7" n="Bound Peak" a="0.002" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="On Track Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
@@ -1013,6 +1054,11 @@ test('a bound page can only ever fill itself for its own peak', async () => {
     assert.equal(harness.values.bpbDraftTabs['100'].pid, 8);
     assert.equal(harness.values.bpbDraftTabs['100'].focusOnReady, true,
         'with no primary, the first sibling draft takes focus when ready');
+    const sibling = await harness.send(
+        { type: 'DRAFT_READY', pid: '8', cid: '77' },
+        { tab: { id: 100 }, url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' },
+    );
+    assert.equal(sibling.action, 'apply');
 });
 
 // ---- End to end: real fixture page + built content bundle + built worker ----

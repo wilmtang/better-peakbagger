@@ -233,7 +233,7 @@ import tzlookup from 'tz-lookup';
             nativePreview.classList.remove('bpb-native-preview-hidden');
         };
 
-        const restoreNative = () => {
+        const restoreNative = ({ reason = null } = {}) => {
             requestToken++;
             const generation = ++selectionGeneration;
             selectedFile = null;
@@ -241,7 +241,14 @@ import tzlookup from 'tz-lookup';
             void ext.runtime.sendMessage({
                 type: 'GPX_PROCESS_INVALIDATE',
                 ...selectionMessage(generation, newSelectionNonce()),
+                ...(reason ? { reason } : {}),
             }).catch(() => {});
+        };
+
+        const releaseNativeAfterDraftHandoff = () => {
+            requestToken++;
+            selectedFile = null;
+            resetNativeUi();
         };
 
         const nativeGpxFile = () => {
@@ -335,7 +342,7 @@ import tzlookup from 'tz-lookup';
             } else if (applied.groupWarning) {
                 showStatus('info', 'Drafts opened. Your browser didn’t group the tabs.');
             }
-            if (primaryId === null) restoreNative();
+            if (primaryId === null) releaseNativeAfterDraftHandoff();
             // With a primary, src/ascent/ascent-draft.js now fills this page (bound)
             // or the standard draft delivery fills it after navigation
             // (unbound); Peakbagger's postback then restores the native
@@ -737,6 +744,7 @@ import tzlookup from 'tz-lookup';
                 void ext.runtime.sendMessage({
                     type: 'GPX_PROCESS_INVALIDATE',
                     ...selectionMessage(generation, newSelectionNonce()),
+                    reason: 'page-lifecycle',
                 }).catch(() => {});
             },
             onResume: () => {
@@ -746,7 +754,7 @@ import tzlookup from 'tz-lookup';
             },
             onDispose: () => {
                 resetDropCue();
-                restoreNative();
+                restoreNative({ reason: 'page-lifecycle' });
             },
         });
     };

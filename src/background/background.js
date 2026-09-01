@@ -2257,11 +2257,25 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const selection = cleanUploadSelection(message);
         if (!page || !selection) return { ok: false, error: { code: 'invalid-selection' } };
         return serializeLifecycle(page.tabId, async () => {
-            const jobs = await readMap(JOBS_KEY);
+            const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
             const current = jobs[page.tabId];
             if (current?.pageSessionId === selection.pageSessionId
                 && current.selectionGeneration > selection.selectionGeneration) {
                 return { ok: false, error: { code: 'superseded' } };
+            }
+            // Once Apply has committed a draft, the old page's pagehide is an
+            // ownership transfer, not a new upload selection. The new bound
+            // page still needs this job and private payload for DRAFT_READY.
+            // A real file change carries no lifecycle reason and continues to
+            // supersede the generation normally.
+            const preservesCommittedDraft = message.reason === 'page-lifecycle'
+                && current?.provider === 'upload'
+                && (current.phase === 'opened' || current.phase === 'previewed')
+                && Object.values(drafts).some(draft => isFresh(draft)
+                    && draft.jobId === current.id
+                    && Number(draft.sourceTabId) === page.tabId);
+            if (preservesCommittedDraft) {
+                return { ok: true, preserved: true, ...selection };
             }
             abortOwnedWork(page.tabId);
             invalidateLifecycle(page.tabId);

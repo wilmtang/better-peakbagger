@@ -560,6 +560,17 @@ test('persisted history traversal keeps and revalidates the chosen GPX enhanceme
     dom.window.close();
 });
 
+test('page teardown identifies lifecycle invalidation separately from a new file selection', async () => {
+    const dom = await loadEditor({ respond: () => ({ action: 'ignore' }) });
+    await chooseGpx(dom, { name: 'leaving.gpx' });
+
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: false }));
+
+    const invalidations = dom.messages.filter(message => message.type === 'GPX_PROCESS_INVALIDATE');
+    assert.equal(invalidations.at(-1).reason, 'page-lifecycle');
+    dom.window.close();
+});
+
 test('file selection sends only an opaque nonce and fails closed with a dead worker', async () => {
     const dom = await loadEditor();
     let reads = 0;
@@ -963,11 +974,15 @@ test('sibling-only drafts leave this page on its native path with a confirmation
     assert.match(card.querySelector('.bpb-summit-note').textContent,
         /never comes within range of this page’s peak/);
     assert.equal(apply.textContent, 'Open 1 draft');
+    const invalidationsBeforeApply = dom.messages.filter(message =>
+        message.type === 'GPX_PROCESS_INVALIDATE').length;
     apply.click();
     await waitFor(dom, () => uploadStatus(dom));
     assert.match(uploadStatus(dom).textContent, /Opened 1 draft tab in the Peak Drafts group/);
     assert.equal(processButton(dom), null, 'the native upload path returns');
     assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, null);
+    assert.equal(dom.messages.filter(message => message.type === 'GPX_PROCESS_INVALIDATE').length,
+        invalidationsBeforeApply, 'returning the native UI must not revoke the opened draft payload');
 });
 
 test('on an unbound page the highest-confidence selection becomes this page’s peak', async () => {
