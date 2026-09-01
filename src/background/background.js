@@ -2291,56 +2291,74 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         if (!page) {
             return reply({ phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } });
         }
-        if (!selection || !(await uploadSelectionIsCurrent(page.tabId, selection))) {
-            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
-        }
         const tabId = page.tabId;
-        const capturePreferences = await readCapturePreferences();
-        if (!(await uploadSelectionIsCurrent(tabId, selection))) {
-            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
-        }
-        const cid = await peakbaggerLogin();
-        if (!(await uploadSelectionIsCurrent(tabId, selection))) {
-            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
-        }
-        if (!cid) {
-            return reply({ phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } });
-        }
-        if (page.cid && String(page.cid) !== String(cid)) {
-            return reply({ phase: 'error', error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } });
-        }
+        let capturePreferences;
+        let peakbaggerPageRequest;
+        let job;
+        let controller;
+        try {
+            if (!selection || !(await uploadSelectionIsCurrent(tabId, selection))) {
+                return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+            }
+            capturePreferences = await readCapturePreferences();
+            if (!(await uploadSelectionIsCurrent(tabId, selection))) {
+                return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+            }
+            // Peakbagger's managed challenge can reject an MV3 worker while the
+            // signed-in site page remains authorized. Local uploads already belong
+            // to that exact ascent page, so use the same narrow MAIN-world request
+            // bridge as provider capture instead of bypassing it with worker fetch.
+            // The bridge revalidates the canonical login/summit URL and the complete
+            // response shape on both sides of the world boundary.
+            await ensurePeakbaggerPage(tabId);
+            peakbaggerPageRequest = (url, options) =>
+                requestThroughPeakbaggerPage(tabId, url, options);
+            const cid = await peakbaggerLogin({ request: peakbaggerPageRequest });
+            if (!(await uploadSelectionIsCurrent(tabId, selection))) {
+                return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+            }
+            if (!cid) {
+                return reply({ phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } });
+            }
+            if (page.cid && String(page.cid) !== String(cid)) {
+                return reply({ phase: 'error', error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } });
+            }
 
-        // Re-picking a file supersedes any earlier job for this tab (same
-        // tab-keyed map rule capture uses); late results from a superseded run
-        // must never overwrite the newer job.
-        const job = {
-            id: makeId(),
-            sourceTabId: tabId,
-            provider: 'upload',
-            activityId: null,
-            boundPid: page.pid,
-            cid,
-            phase: 'starting',
-            matches: [],
-            selectedIds: [],
-            capturePreferences,
-            createdAt: now(),
-            updatedAt: now(),
-            expiresAt: now() + JOB_TTL_MS,
-            error: null,
-            ...selection,
-        };
-        const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const installed = await serializeLifecycle(tabId, async () => {
-            if (!(await uploadSelectionIsCurrent(tabId, selection))) return false;
-            abortOwnedWork(tabId);
-            invalidateLifecycle(tabId);
-            await installLifecycleJob(job);
-            localAnalysisOwners.set(tabId, { generation: job.id, controller });
-            return true;
-        });
-        if (!installed) {
-            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+            // Re-picking a file supersedes any earlier job for this tab (same
+            // tab-keyed map rule capture uses); late results from a superseded run
+            // must never overwrite the newer job.
+            job = {
+                id: makeId(),
+                sourceTabId: tabId,
+                provider: 'upload',
+                activityId: null,
+                boundPid: page.pid,
+                cid,
+                phase: 'starting',
+                matches: [],
+                selectedIds: [],
+                capturePreferences,
+                createdAt: now(),
+                updatedAt: now(),
+                expiresAt: now() + JOB_TTL_MS,
+                error: null,
+                ...selection,
+            };
+            controller = typeof AbortController === 'function' ? new AbortController() : null;
+            const installed = await serializeLifecycle(tabId, async () => {
+                if (!(await uploadSelectionIsCurrent(tabId, selection))) return false;
+                abortOwnedWork(tabId);
+                invalidateLifecycle(tabId);
+                await installLifecycleJob(job);
+                localAnalysisOwners.set(tabId, { generation: job.id, controller });
+                return true;
+            });
+            if (!installed) {
+                return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+            }
+        } catch (error) {
+            const failure = publicFailure('local GPX processing', error, UNEXPECTED_PROCESS_ERROR);
+            return reply({ phase: 'error', error: failure });
         }
         const finish = patch => mutateMap(JOBS_KEY, map => {
             if (!map[tabId] || map[tabId].id !== job.id) return null;
@@ -2360,6 +2378,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 capturePreferences,
                 boundPid: page.pid,
                 signal: controller?.signal,
+                peakbaggerRequest: peakbaggerPageRequest,
             });
             if (analysis.status === 'no-gps') {
                 await updateCaptureJobWithoutPayload(tabId, job.id, {

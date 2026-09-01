@@ -93,6 +93,10 @@ const buddyListFixture = await resources.guard(readFile(
     path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
     'utf8',
 ));
+const ascentEditFixture = await resources.guard(readFile(
+    path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'),
+    'utf8',
+));
 
 const failureCollector = createFailureCollector();
 const { failures, check } = failureCollector;
@@ -4306,6 +4310,76 @@ try {
             `the Chrome ascent editor did not autofill its date and swap trusted GPX selection to Process: ${
                 JSON.stringify(uploadState)}`);
 
+            // Local-file processing must use the authenticated ascent page for
+            // Peakbagger reads. A worker fetch can be challenged even while the
+            // signed-in page is accepted, and would be invisible in that page's
+            // Network panel. Use an exact production-origin fixture here because
+            // the deliberately narrow page bridge rejects the port-backed visual
+            // fixture above, just as it rejects any non-production origin.
+            const localGpxEditorUrl =
+                'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001';
+            const localGpxLoginUrl = 'https://www.peakbagger.com/Default.aspx';
+            const localGpxSinglePeakUrl =
+                'https://www.peakbagger.com/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4';
+            await context.unroute(localGpxLoginUrl);
+            await context.unroute(localGpxSinglePeakUrl);
+            const localGpxRequestFrames = [];
+            await context.route(localGpxEditorUrl, route => route.fulfill({
+                status: 200,
+                contentType: 'text/html',
+                body: ascentEditFixture,
+            }));
+            await context.route(localGpxLoginUrl, route => {
+                let frameUrl = null;
+                try { frameUrl = route.request().frame().url(); }
+                catch { /* A worker request has no frame. */ }
+                localGpxRequestFrames.push({ kind: 'html', frameUrl });
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'text/html',
+                    body: `<html>
+                        <a href="/climber/climber.aspx?cid=900001">My Home Page</a>
+                        <a href="/climber/climberedit.aspx?cid=900001">Edit Account</a>
+                    </html>`,
+                });
+            });
+            await context.route('**/Async/pllbb2.aspx?**', route => {
+                let frameUrl = null;
+                try { frameUrl = route.request().frame().url(); }
+                catch { /* A worker request has no frame. */ }
+                localGpxRequestFrames.push({ kind: 'peaks', frameUrl });
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'text/xml',
+                    body: '<p></p>',
+                });
+            });
+            const localGpxPage = await context.newPage();
+            await localGpxPage.goto(localGpxEditorUrl);
+            await localGpxPage.locator('#GPXUpload').setInputFiles(fixture.gpxPath);
+            await localGpxPage.locator('.bpb-process-button').click();
+            const localGpxResult = await localGpxPage.waitForFunction(() => {
+                const status = document.querySelector('.bpb-upload-status-error');
+                if (!status) return false;
+                return {
+                    status: status.textContent,
+                    processPresent: !!document.querySelector('.bpb-process-button'),
+                    nativePreviewHidden: document.getElementById('GPXPreview')
+                        ?.classList.contains('bpb-native-preview-hidden') || false,
+                };
+            }, null, { timeout: 15000 }).then(handle => handle.jsonValue()).catch(() => null);
+            const localGpxRequestKinds = localGpxRequestFrames.map(request => request.kind);
+            check(/Summits were searched along the whole track/i.test(localGpxResult?.status || '')
+                && !localGpxResult?.processPresent
+                && !localGpxResult?.nativePreviewHidden
+                && localGpxRequestKinds.filter(kind => kind === 'html').length === 1
+                && localGpxRequestKinds.filter(kind => kind === 'peaks').length >= 1
+                && localGpxRequestFrames.every(request => request.frameUrl === localGpxEditorUrl),
+            `local GPX processing did not keep authenticated reads in its ascent page: ${JSON.stringify({
+                localGpxResult, localGpxRequestFrames,
+            })}`);
+            await localGpxPage.close();
+
             const creditState = await editorPage.waitForFunction(() => {
                 const link = document.querySelector('#bpb-report-editor a[href*="better-peakbagger"]');
                 const textarea = document.getElementById('JournalText');
@@ -5482,7 +5556,7 @@ console.log('  - trusted keyboard/pointer Settings actions preserve modifier dis
 console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
 console.log('  - Peak Lists expose eight in-place sort controls, preserve the URL, and fit the viewport');
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
-console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
+console.log('  - a fresh ascent form autofills its date, swaps Preview for Process, and keeps local-GPX reads in that page');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
 console.log('  - the report editor opens the standalone report-drafts manager page, which renders');
 console.log('    a seeded draft with no settings sidebar');

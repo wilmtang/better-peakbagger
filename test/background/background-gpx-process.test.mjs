@@ -31,7 +31,8 @@ const uploadSelection = generation => ({
 
 const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, beforePeakFetch = null,
     syncGetError = null, beforeSyncGet = null, setTimeoutImpl = setTimeout, faults = {},
-    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>', sessionInitial = {} } = {}) => {
+    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>', loginFailure = null,
+    sessionInitial = {} } = {}) => {
     const values = structuredClone(sessionInitial);
     const localValues = {};
     const syncValues = { bpbSettings: structuredClone(settings) };
@@ -44,6 +45,9 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     const navigations = [];
     const removedTabs = [];
     const runtimeMessages = [];
+    const workerFetchCalls = [];
+    const peakbaggerPageInjected = new Set();
+    const peakbaggerPageRequests = new Map();
     let syncGetCalls = 0;
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
@@ -115,7 +119,40 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
             getURL: path => `chrome-extension://test-extension/${path}`,
             onMessage: { listeners: [], addListener(listener) { this.listeners.push(listener); } },
         },
-        scripting: { executeScript: async () => [] },
+        scripting: {
+            executeScript: async details => {
+                if (details.files) {
+                    if (details.files.includes('peakbagger-page.js')) {
+                        peakbaggerPageInjected.add(details.target.tabId);
+                    }
+                    return [];
+                }
+                const functionSource = String(details.func);
+                if (functionSource.includes('BPBPeakbaggerPage?.version')) {
+                    return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
+                }
+                if (functionSource.includes('BPBPeakbaggerPage?.cancel')) {
+                    const requestId = details.args?.[0];
+                    const controller = peakbaggerPageRequests.get(requestId);
+                    controller?.abort();
+                    return [{ result: !!controller }];
+                }
+                if (functionSource.includes('api.request')
+                    && functionSource.includes('bridge')
+                    && functionSource.includes('missing')) {
+                    if (!peakbaggerPageInjected.has(details.target.tabId)) {
+                        return [{ result: { bridge: 'missing' } }];
+                    }
+                    const [, requestId, url, kind] = details.args;
+                    const controller = new AbortController();
+                    peakbaggerPageRequests.set(requestId, controller);
+                    const value = await requestPeakbaggerPage(url, { kind, signal: controller.signal });
+                    peakbaggerPageRequests.delete(requestId);
+                    return [{ result: { bridge: 'result', value } }];
+                }
+                return [];
+            },
+        },
         action: {
             setBadgeBackgroundColor: async () => {},
             setBadgeText: async () => {}
@@ -163,24 +200,62 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
         alarms: { create: () => {}, onAlarm: { addListener: () => {} } }
     };
 
-    const fetch = async (url, options = {}) => {
+    const requestPeakbaggerPage = async (url, { kind, signal }) => {
         const value = String(url);
         fetchCalls.push(value);
-        if (value.includes('/Default.aspx')) return { ok: true, text: async () => loginHtml };
-        if (value.includes('/Async/pllbb2.aspx')) {
+        const cancelled = () => ({
+            kind: 'transient', requestedUrl: value, url: value, status: 0, redirected: false,
+            error: { source: 'peakbagger', code: 'cancelled', resource: kind },
+        });
+        try {
+            if (value.includes('/Default.aspx')) {
+                if (loginFailure) {
+                    return {
+                        kind: loginFailure === 'cloudflare' ? 'challenged' : 'transient',
+                        requestedUrl: value,
+                        url: value,
+                        status: loginFailure === 'cloudflare' ? 403 : 0,
+                        redirected: false,
+                        error: { source: 'peakbagger', code: loginFailure, resource: kind },
+                    };
+                }
+                return {
+                    kind: 'ok', requestedUrl: value, url: value, status: 200, redirected: false,
+                    text: loginHtml,
+                };
+            }
+            if (!value.includes('/Async/pllbb2.aspx')) throw new Error(`Unexpected page request: ${value}`);
             if (beforePeakFetch) {
-                await beforePeakFetch({
-                    options,
+                const pending = beforePeakFetch({
+                    options: { signal },
                     number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length,
                 });
+                if (pending) {
+                    await Promise.race([
+                        pending,
+                        new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })),
+                    ]);
+                }
             }
+            if (signal.aborted) return cancelled();
             if (failPeakFetch) throw new Error('network unreachable');
             return {
-                ok: true,
-                text: async () => peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
+                kind: 'ok', requestedUrl: value, url: value, status: 200, redirected: false,
+                text: peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+            };
+        } catch (_error) {
+            if (signal.aborted) return cancelled();
+            return {
+                kind: 'transient', requestedUrl: value, url: value, status: 0, redirected: false,
+                error: { source: 'peakbagger', code: 'network', resource: kind },
             };
         }
-        throw new Error(`Unexpected fetch: ${value}`);
+    };
+
+    const fetch = async url => {
+        const value = String(url);
+        workerFetchCalls.push(value);
+        throw new Error(`Unexpected worker fetch: ${value}`);
     };
 
     browser.tabs.group = async details => { grouped.push(structuredClone(details)); return 3; };
@@ -215,7 +290,8 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
         return rawSend(routed, sender);
     };
     return {
-        send, rawSend, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations, removedTabs,
+        send, rawSend, values, tabs, tabMessages, fetchCalls, workerFetchCalls,
+        grouped, groupUpdates, navigations, removedTabs,
         runtimeMessages, sessionSetPatches,
         syncGetCalls: () => syncGetCalls, faults,
     };
@@ -244,6 +320,10 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     assert.equal(ready.matches[0].date, '2026-07-01');
     assert.equal(ready.uploadGpx, undefined, 'the GPX must not ride along in the response');
     assert.equal(ready.matches[0].draftFields, undefined, 'derived field payloads stay in the worker');
+    assert.equal(harness.workerFetchCalls.length, 0,
+        'login and summit reads must stay in the authenticated Peakbagger page');
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Default.aspx')).length, 1);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 1);
 
     const job = harness.values.bpbCaptureJobs['5'];
     assert.equal(job.provider, 'upload');
@@ -311,6 +391,29 @@ test('processing fails closed when Peakbagger is signed out or the account diffe
     }, { tab: { id: 5, windowId: 9 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=999' });
     assert.equal(mismatch.phase, 'error');
     assert.equal(mismatch.error.code, 'identity-mismatch');
+});
+
+test('a page-transport login failure retains the local-file selection identity', async () => {
+    const harness = createHarness({ loginFailure: 'cloudflare' });
+
+    const rejected = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+    });
+
+    assert.equal(rejected.phase, 'error');
+    assert.equal(rejected.error.code, 'cloudflare');
+    assert.deepEqual({
+        pageSessionId: rejected.pageSessionId,
+        selectionGeneration: rejected.selectionGeneration,
+        selectionNonce: rejected.selectionNonce,
+    }, {
+        pageSessionId: 'test-page-session',
+        selectionGeneration: 1,
+        selectionNonce: 'selection-1-nonce',
+    }, 'the page must be able to accept and render a failed preflight reply');
+    assert.equal(harness.workerFetchCalls.length, 0);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Default.aspx')).length, 1);
+    assert.equal(harness.fetchCalls.some(url => url.includes('/Async/pllbb2.aspx')), false);
 });
 
 test('the worker independently rejects a local upload when capture settings are unavailable', async () => {
