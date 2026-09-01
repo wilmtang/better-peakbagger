@@ -128,11 +128,10 @@ import tzlookup from 'tz-lookup';
             const dropHint = document.createElement('span');
             dropHint.id = 'bpb-gpx-drop-hint';
             dropHint.className = 'bpb-gpx-drop-hint';
-            dropHint.textContent = 'Or drag a GPX file here.';
+            dropHint.textContent = 'Or drop one GPX file anywhere on this page.';
             hint.append(captureHint, dropHint);
             uploadCell.append(hint);
         }
-        uploadCell?.classList.add('bpb-gpx-drop-zone');
         const dropHint = document.getElementById('bpb-gpx-drop-hint');
         if (dropHint) {
             const describedBy = new Set((upload.getAttribute('aria-describedby') || '')
@@ -140,6 +139,28 @@ import tzlookup from 'tz-lookup';
             describedBy.add(dropHint.id);
             upload.setAttribute('aria-describedby', [...describedBy].join(' '));
         }
+
+        const dropOverlay = document.createElement('div');
+        dropOverlay.id = 'bpb-gpx-page-drop-overlay';
+        dropOverlay.className = 'bpb-gpx-page-drop-overlay';
+        dropOverlay.setAttribute('role', 'status');
+        dropOverlay.setAttribute('aria-live', 'polite');
+        dropOverlay.setAttribute('aria-atomic', 'true');
+        dropOverlay.setAttribute('aria-hidden', 'true');
+
+        const dropOverlayMessage = document.createElement('div');
+        dropOverlayMessage.className = 'bpb-gpx-page-drop-message';
+        const dropOverlayBadge = document.createElement('span');
+        dropOverlayBadge.className = 'bpb-gpx-page-drop-badge';
+        dropOverlayBadge.setAttribute('aria-hidden', 'true');
+        dropOverlayBadge.textContent = 'GPX';
+        const dropOverlayTitle = document.createElement('strong');
+        dropOverlayTitle.textContent = 'Drop GPX to add it';
+        const dropOverlayDetail = document.createElement('span');
+        dropOverlayDetail.textContent = 'Release anywhere on this page';
+        dropOverlayMessage.append(dropOverlayBadge, dropOverlayTitle, dropOverlayDetail);
+        dropOverlay.append(dropOverlayMessage);
+        document.body.append(dropOverlay);
 
         let button = null;
         let labelElement = null;
@@ -628,46 +649,49 @@ import tzlookup from 'tz-lookup';
 
         const resetDropCue = () => {
             dropDepth = 0;
-            uploadCell?.classList.remove('is-gpx-drag-over');
-            if (dropHint) dropHint.textContent = 'Or drag a GPX file here.';
+            document.documentElement.classList.remove('is-gpx-page-drag-over');
+            dropOverlay.setAttribute('aria-hidden', 'true');
         };
 
         const onDragEnter = event => {
-            if (!uploadCell || !transferHasFiles(event.dataTransfer)) return;
+            if (!transferHasFiles(event.dataTransfer)) return;
             event.preventDefault();
             dropDepth += 1;
-            uploadCell.classList.add('is-gpx-drag-over');
-            if (dropHint) dropHint.textContent = 'Release to choose this GPX file.';
+            document.documentElement.classList.add('is-gpx-page-drag-over');
+            dropOverlay.setAttribute('aria-hidden', 'false');
         };
 
         const onDragOver = event => {
-            if (!uploadCell || !transferHasFiles(event.dataTransfer)) return;
+            if (!transferHasFiles(event.dataTransfer)) return;
             event.preventDefault();
             if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
         };
 
         const onDragLeave = event => {
-            if (!uploadCell?.classList.contains('is-gpx-drag-over')) return;
+            if (!document.documentElement.classList.contains('is-gpx-page-drag-over')) return;
             event.preventDefault();
             dropDepth = Math.max(0, dropDepth - 1);
             if (!dropDepth) resetDropCue();
         };
 
         const onDrop = event => {
-            if (!uploadCell || !transferHasFiles(event.dataTransfer)) return;
+            if (!transferHasFiles(event.dataTransfer)) return;
             event.preventDefault();
             resetDropCue();
             const admission = droppedFileAdmission(droppedFileCollection(event.dataTransfer));
             if (admission.error) {
                 showStatus('error', admission.error);
+                uploadCell?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
                 return;
             }
             try {
                 const attached = attachUploadFiles(admission.files);
+                uploadCell?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
                 void handleFileChange(attached[0]);
             } catch (error) {
                 console.error('Better Peakbagger: dropped GPX attachment failed', error);
                 showStatus('error', 'The dropped GPX could not be attached. Choose it with the file picker instead.');
+                uploadCell?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
             }
         };
 
@@ -677,10 +701,10 @@ import tzlookup from 'tz-lookup';
             if (!event.isTrusted) return;
             void handleFileChange(upload.files && upload.files[0]);
         });
-        uploadCell?.addEventListener('dragenter', onDragEnter);
-        uploadCell?.addEventListener('dragover', onDragOver);
-        uploadCell?.addEventListener('dragleave', onDragLeave);
-        uploadCell?.addEventListener('drop', onDrop);
+        document.addEventListener('dragenter', onDragEnter);
+        document.addEventListener('dragover', onDragOver);
+        document.addEventListener('dragleave', onDragLeave);
+        document.addEventListener('drop', onDrop);
         window.addEventListener('dragend', resetDropCue);
         window.addEventListener('drop', resetDropCue);
         document.getElementById('GPXRemove')?.addEventListener('click', () => restoreNative());

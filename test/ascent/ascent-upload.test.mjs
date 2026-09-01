@@ -157,9 +157,13 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
     assert.equal(hint.parentElement, dom.window.document.getElementById('GPXUpload').closest('td'));
     assert.match(hint.textContent, /Garmin or Strava.*browser toolbar.*capture it directly/);
     assert.equal(dom.window.document.getElementById('bpb-gpx-drop-hint').textContent,
-        'Or drag a GPX file here.');
+        'Or drop one GPX file anywhere on this page.');
     assert.match(dom.window.document.getElementById('GPXUpload').getAttribute('aria-describedby'),
         /\bbpb-gpx-drop-hint\b/);
+    const overlay = dom.window.document.getElementById('bpb-gpx-page-drop-overlay');
+    assert.equal(overlay.getAttribute('role'), 'status');
+    assert.equal(overlay.getAttribute('aria-hidden'), 'true');
+    assert.match(overlay.textContent, /Drop GPX to add it.*Release anywhere on this page/);
     assert.equal(button.getAttribute('aria-busy'), null);
     const native = dom.window.document.getElementById('GPXPreview');
     assert.equal(native.classList.contains('bpb-native-preview-hidden'), true,
@@ -196,34 +200,37 @@ test('the capture draft flow’s programmatic change never triggers the swap', a
     assert.equal(processButton(dom), null, 'a synthetic (untrusted) change must not swap the buttons');
 });
 
-test('dragging one GPX cues the drop and attaches it through the normal selection binding', async () => {
+test('dragging one GPX anywhere on the page cues and attaches it through the normal selection binding', async () => {
     const dom = await loadEditor({
         prepare: installDropFileList,
         respond: () => ({ action: 'ignore' }),
     });
     const { document } = dom.window;
-    const target = document.getElementById('GPXUpload').closest('td');
+    const target = document.getElementById('DateText');
+    const uploadCell = document.getElementById('GPXUpload').closest('td');
+    let revealOptions = null;
+    uploadCell.scrollIntoView = options => { revealOptions = options; };
     const file = new dom.window.File([GPX], 'dragged-walk.gpx', { type: 'application/gpx+xml' });
     const transfer = fileTransfer([file]);
 
     const enter = transferEvent(dom.window, 'dragenter', transfer);
     target.dispatchEvent(enter);
     assert.equal(enter.defaultPrevented, true);
-    assert.equal(target.classList.contains('is-gpx-drag-over'), true);
-    assert.equal(document.getElementById('bpb-gpx-drop-hint').textContent,
-        'Release to choose this GPX file.');
+    assert.equal(document.documentElement.classList.contains('is-gpx-page-drag-over'), true);
+    assert.equal(document.getElementById('bpb-gpx-page-drop-overlay').getAttribute('aria-hidden'), 'false');
 
     const over = transferEvent(dom.window, 'dragover', transfer);
-    target.dispatchEvent(over);
+    document.body.dispatchEvent(over);
     assert.equal(over.defaultPrevented, true);
     assert.equal(transfer.dropEffect, 'copy');
 
     const drop = transferEvent(dom.window, 'drop', transfer);
-    target.dispatchEvent(drop);
+    document.body.dispatchEvent(drop);
     assert.equal(drop.defaultPrevented, true);
-    assert.equal(target.classList.contains('is-gpx-drag-over'), false);
-    assert.equal(document.getElementById('bpb-gpx-drop-hint').textContent,
-        'Or drag a GPX file here.');
+    assert.equal(document.documentElement.classList.contains('is-gpx-page-drag-over'), false);
+    assert.equal(document.getElementById('bpb-gpx-page-drop-overlay').getAttribute('aria-hidden'), 'true');
+    assert.equal(revealOptions?.block, 'center');
+    assert.equal(revealOptions?.inline, 'nearest');
     await waitFor(dom, () => processButton(dom));
 
     const input = document.getElementById('GPXUpload');
@@ -236,13 +243,33 @@ test('dragging one GPX cues the drop and attaches it through the normal selectio
     assert.equal(processButton(dom).disabled, false);
 });
 
+test('the page cue stays stable across child transitions and clears when the file leaves', async () => {
+    const dom = await loadEditor();
+    const { document } = dom.window;
+    const transfer = fileTransfer([
+        new dom.window.File([GPX], 'cross-page.gpx', { type: 'application/gpx+xml' }),
+    ]);
+    const date = document.getElementById('DateText');
+    const report = document.getElementById('JournalText');
+
+    date.dispatchEvent(transferEvent(dom.window, 'dragenter', transfer));
+    report.dispatchEvent(transferEvent(dom.window, 'dragenter', transfer));
+    date.dispatchEvent(transferEvent(dom.window, 'dragleave', transfer));
+    assert.equal(document.documentElement.classList.contains('is-gpx-page-drag-over'), true,
+        'moving between page children must not flash the cue off');
+
+    report.dispatchEvent(transferEvent(dom.window, 'dragleave', transfer));
+    assert.equal(document.documentElement.classList.contains('is-gpx-page-drag-over'), false);
+    assert.equal(document.getElementById('bpb-gpx-page-drop-overlay').getAttribute('aria-hidden'), 'true');
+});
+
 test('multi-file and folder drops are explicit future cases and never choose the first file', async () => {
     const dom = await loadEditor({
         prepare: installDropFileList,
         respond: () => ({ action: 'ignore' }),
     });
     const { document } = dom.window;
-    const target = document.getElementById('GPXUpload').closest('td');
+    const target = document.body;
     const first = new dom.window.File([GPX], 'first.gpx', { type: 'application/gpx+xml' });
     const second = new dom.window.File([GPX], 'second.gpx', { type: 'application/gpx+xml' });
 
@@ -271,7 +298,7 @@ test('non-GPX drops stay local, actionable, and do not disturb an existing selec
     const dom = await loadEditor({ prepare: installDropFileList });
     await chooseGpx(dom, { name: 'kept.gpx' });
     const { document } = dom.window;
-    const target = document.getElementById('GPXUpload').closest('td');
+    const target = document.body;
     const photo = new dom.window.File(['pixels'], 'summit.jpg', { type: 'image/jpeg' });
 
     const textDrop = transferEvent(dom.window, 'drop', {
@@ -922,7 +949,8 @@ test('the stylesheet keeps its reduced-motion and dark-theme guards', async () =
     assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-process-button/);
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-capture-hint/);
-    assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-gpx-drop-zone\.is-gpx-drag-over/);
-    assert.match(css, /\.bpb-gpx-drop-zone \{ transition: none; \}/);
+    assert.match(css, /\.is-gpx-page-drag-over \.bpb-gpx-page-drop-overlay/);
+    assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-gpx-page-drop-overlay/);
+    assert.match(css, /\.bpb-gpx-page-drop-overlay \{ transition: none; \}/);
     assert.match(css, /animation: none !important/);
 });
