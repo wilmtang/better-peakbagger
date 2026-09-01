@@ -15,6 +15,7 @@
 
 import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import {
+    CORRIDOR_TOTAL_TIMEOUT_MS,
     MAX_GPX_BYTES,
     MAX_GPX_TEXT_CHARS,
     gpxLimitMessage,
@@ -22,6 +23,7 @@ import {
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
@@ -32,6 +34,12 @@ import tzlookup from 'tz-lookup';
 
     const ext = globalThis.browser || globalThis.chrome;
     if (!ext) return;
+
+    // The worker owns a 60-second corridor deadline, preceded by login and
+    // selection checks. The page needs a slightly wider backstop around the
+    // whole message round trip so a lost worker reply cannot leave Process in
+    // a permanent busy state.
+    const GPX_PROCESS_REPLY_TIMEOUT_MS = CORRIDOR_TOTAL_TIMEOUT_MS + 20_000;
 
     const pad = value => String(value).padStart(2, '0');
 
@@ -531,14 +539,20 @@ import tzlookup from 'tz-lookup';
                 const utcOffsetMinutes = resolveUtcOffsetMinutes(parsed.segments);
                 if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
                 setBusy('Finding summits…');
-                const response = await ext.runtime.sendMessage({
-                    type: 'GPX_PROCESS_START',
-                    segments: parsed.segments,
-                    waypoints: parsed.waypoints,
-                    trackName: parsed.trackName,
-                    utcOffsetMinutes,
-                    ...selectionMessage(selection.generation, selection.nonce),
-                });
+                const deadline = Deadline.createRequestDeadline(GPX_PROCESS_REPLY_TIMEOUT_MS);
+                let response;
+                try {
+                    response = await deadline.run(ext.runtime.sendMessage({
+                        type: 'GPX_PROCESS_START',
+                        segments: parsed.segments,
+                        waypoints: parsed.waypoints,
+                        trackName: parsed.trackName,
+                        utcOffsetMinutes,
+                        ...selectionMessage(selection.generation, selection.nonce),
+                    }));
+                } finally {
+                    deadline.clear();
+                }
                 if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
                 if (response?.pageSessionId !== pageSessionId
                     || response?.selectionGeneration !== selection.generation
@@ -556,6 +570,11 @@ import tzlookup from 'tz-lookup';
                 }
                 if (error?.code === 'gpx-too-large' || BoundedText.isLimitError(error)) {
                     fail(gpxLimitMessage());
+                    return;
+                }
+                if (Deadline.isTimeout(error)) {
+                    console.error('Better Peakbagger: summit lookup reply timed out', error);
+                    fail('Summit lookup stopped responding. Use Peakbagger’s Preview, or choose the GPX again to retry.');
                     return;
                 }
                 console.error('Better Peakbagger: local GPX read failed', error);

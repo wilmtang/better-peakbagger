@@ -404,6 +404,62 @@ test('a delayed A worker result cannot apply after B is selected, while processe
     assert.equal(applyB.selectionNonce, startB.selectionNonce);
 });
 
+test('a missing summit reply times out, restores Preview, and rejects a late result', async () => {
+    let expireLookup;
+    let releaseLookup;
+    const dom = await loadEditor({
+        prepare: d => {
+            const setTimeout = d.window.setTimeout.bind(d.window);
+            const clearTimeout = d.window.clearTimeout.bind(d.window);
+            d.window.setTimeout = (callback, delay, ...args) => {
+                if (delay === 80_000) {
+                    expireLookup = () => callback(...args);
+                    return 80000;
+                }
+                return setTimeout(callback, delay, ...args);
+            };
+            d.window.clearTimeout = id => {
+                if (id !== 80000) clearTimeout(id);
+            };
+        },
+        respond: async message => {
+            if (message.type !== 'GPX_PROCESS_START') return undefined;
+            await new Promise(resolve => { releaseLookup = resolve; });
+            return {
+                phase: 'ready', jobId: 'late-job', boundPid: 7,
+                matches: [{
+                    id: 7, name: 'Late Peak', confidence: 91,
+                    classification: 'strong', selected: true,
+                }],
+            };
+        },
+    });
+    await chooseGpx(dom, { name: 'slow.gpx' });
+    processButton(dom).click();
+    await waitFor(dom, () => expireLookup && releaseLookup);
+    assert.equal(processButton(dom).querySelector('.bpb-process-label').textContent,
+        'Finding summits…');
+
+    expireLookup();
+    await waitFor(dom, () => uploadStatus(dom));
+    assert.match(uploadStatus(dom).textContent,
+        /Summit lookup stopped responding.*Peakbagger’s Preview.*choose the GPX again/);
+    assert.equal(processButton(dom), null);
+    assert.equal(dom.window.document.getElementById('GPXPreview')
+        .classList.contains('bpb-native-preview-hidden'), false);
+
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    const invalidations = dom.messages.filter(message => message.type === 'GPX_PROCESS_INVALIDATE');
+    assert.equal(invalidations.at(-1).selectionGeneration > start.selectionGeneration, true,
+        'the timeout must supersede and abort the worker generation');
+
+    releaseLookup();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false);
+    assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
+    assert.equal(processButton(dom), null, 'a late ready result must not revive the timed-out selection');
+});
+
 test('B selection supersedes an A Apply that settles late', async () => {
     let releaseApply;
     const dom = await loadEditor({
