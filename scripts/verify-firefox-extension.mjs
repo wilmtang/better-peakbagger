@@ -34,6 +34,7 @@ import {
     webdriverScript,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
+import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.js';
 import {
     isRetryableFirefoxStartup,
     stopOwnedFirefoxProcesses,
@@ -1958,11 +1959,16 @@ async function main() {
         const activeTerrainState = await waitForScript(driver, `
           const frames = document.querySelectorAll('#bpb-terrain-frame');
           const origin = frames[0]?.src || '';
+          const toggle = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
           return {
             ready: frames.length === 1 && origin.startsWith('moz-extension://'),
             frames: frames.length,
-            origin
-          };`, 'Firefox ascent 3D extension frame', 10_000, state => state?.ready);
+            origin,
+            busy: toggle?.getAttribute('aria-busy') || '',
+            pressed: toggle?.getAttribute('aria-pressed') || '',
+            failure: document.getElementById('bpb-terrain-failure')?.textContent || ''
+          };`, 'Firefox ascent 3D extension frame',
+        TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS + 5_000, state => state?.ready);
         const ascentFrameOrigin = activeTerrainState.origin;
 
         await driver.switchTo().frame(forgedFrame);
