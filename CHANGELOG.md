@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Keep Firefox release verification within the extension's bounded 3D startup
+  window.** Slower release runners now get the same maintained terrain transaction
+  deadline as the shipped browser experience before a package is rejected.
+
 ## 3.7.0 — 2026-09-03
 
 - **Plan Peak and GPX outings around the Sun and Moon without sending a coordinate
