@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Measure large-chart responsiveness inside Chrome itself during release
+  verification.** CI process scheduling can no longer reject a responsive packaged
+  chart while interaction, selection, redraw completion, and frame cadence pass.
+
 ## 3.7.1 — 2026-09-03
 
 - **Keep Firefox release verification within the extension's bounded 3D startup
