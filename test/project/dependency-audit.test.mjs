@@ -147,7 +147,7 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
     }
 });
 
-test('the accepted image-size path and patched js-yaml stay dev-only and pinned', async () => {
+test('the accepted image-size path and patched transitive packages stay dev-only and pinned', async () => {
     const [packageJson, lockfile] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
         readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
@@ -161,6 +161,9 @@ test('the accepted image-size path and patched js-yaml stay dev-only and pinned'
     const jsYaml = lockfile.packages['node_modules/js-yaml'];
     assert.equal(jsYaml.version, '4.3.1');
     assert.equal(jsYaml.dev, true, 'js-yaml must stay development-only');
+    const fastUri = lockfile.packages['node_modules/fast-uri'];
+    assert.equal(fastUri.version, '3.1.7');
+    assert.equal(fastUri.dev, true, 'fast-uri must stay development-only');
 });
 
 test('maintained release guidance names the live expiring audit acceptance', async () => {
