@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Keep Firefox reviewer notes within Mozilla's submission limit.** Release
+  metadata now preserves source, dependency, privacy, and terrain details while
+  failing locally before an oversized approval note can reach AMO.
+
 ## 3.7.2 — 2026-09-03
 
 - **Measure large-chart responsiveness inside Chrome itself during release
