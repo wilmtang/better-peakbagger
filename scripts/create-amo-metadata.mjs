@@ -6,6 +6,8 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js
 import { AUTHORED_SOURCE_ROOTS } from './build-config.mjs';
 import { dependencyVersionsFromLock } from './dependency-metadata.mjs';
 
+export const AMO_APPROVAL_NOTES_MAX_LENGTH = 3_000;
+
 const terrainKeepAliveMinutes = TERRAIN_FRAME_KEEP_ALIVE_MS / 60_000;
 if (!Number.isInteger(terrainKeepAliveMinutes) || terrainKeepAliveMinutes < 1) {
     throw new Error('Terrain frame keep-alive must be a positive whole number of minutes');
@@ -35,6 +37,34 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
     const versions = dependencyVersions;
     const authoredRoots = AUTHORED_SOURCE_ROOTS.map(rootName => `${rootName}/`).join(', ');
 
+    const approvalNotes = [
+        `Runtime source under ${authoredRoots} is authored as ES modules. esbuild ${versions.esbuild} bundles classic browser entries as IIFEs in dist/; the terrain frame stays native ESM. web-ext packages dist/. Reproduce with \`npm ci && npm run build:release\` from the tagged source.`,
+        '',
+        'THIRD_PARTY_NOTICES.txt is generated from esbuild metafiles and copied runtime inputs. It records versions, licenses, notice files, SHA-256 notice hashes, and full license text for each shipped npm package, including CodeMirror/Lezer and TipTap/ProseMirror. BetaCreator symbol geometry is the only non-package override.',
+        '',
+        `vendor/chart.umd.min.js is unmodified Chart.js ${versions.chart} (MIT). Package: https://www.npmjs.com/package/chart.js/v/${versions.chart} ; source: https://github.com/chartjs/Chart.js/tree/v${versions.chart}`,
+        '',
+        `vendor/marked.umd.js is unmodified Marked ${versions.marked} (MIT). Package: https://www.npmjs.com/package/marked/v/${versions.marked} ; source: https://github.com/markedjs/marked/tree/v${versions.marked}`,
+        '',
+        `vendor/maplibre-gl.mjs is imported directly by the native terrain-frame module; vendor/maplibre-gl-worker.mjs, its shared module, and CSS are copied unmodified from MapLibre GL JS ${versions.maplibre} (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/${versions.maplibre} ; source: https://github.com/maplibre/maplibre-gl-js/tree/v${versions.maplibre}`,
+        '',
+        `tz-lookup ${versions.tzLookup} (CC0-1.0) is bundled unchanged into content/gpx-analyzer.js and content/ascent-editor.js for offline coordinate-to-IANA-timezone lookup. Package: https://www.npmjs.com/package/tz-lookup/v/${versions.tzLookup} ; source: https://github.com/darkskyapp/tz-lookup`,
+        '',
+        `SunCalc ${versions.sunCalc} (BSD-3-Clause) is bundled only into Peak-page and GPX-analyzer consumers for offline Sun/Moon positions, events, and phase. Package: https://www.npmjs.com/package/suncalc/v/${versions.sunCalc} ; source: https://github.com/mourner/suncalc/tree/v${versions.sunCalc}`,
+        '',
+        `The report editor bundles TipTap core ${versions.tiptap}, ProseMirror view ${versions.prosemirrorView}, and their dependency graph into content/ascent-editor.js. THIRD_PARTY_NOTICES.txt records their package metadata and licenses.`,
+        '',
+        `The optional 3D view is off by default. Its setting discloses external tile requests. An explicit 3D action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer; providers receive the viewed area and request metadata. Returning to 2D stops tile activity and parks a loaded renderer idle and non-interactive for up to ${terrainKeepAliveMinutes} minutes. After that—or immediately if startup fails or 3D is disabled—the renderer is destroyed.`,
+        '',
+        'Tests use synthetic data and masked Peakbagger fixtures. Live Garmin/Strava review requires an activity owned by the signed-in provider account; ambiguous ownership fails closed.',
+    ].join('\n');
+    if (approvalNotes.length > AMO_APPROVAL_NOTES_MAX_LENGTH) {
+        throw new Error(
+            `AMO approval notes exceed ${AMO_APPROVAL_NOTES_MAX_LENGTH} characters `
+            + `(${approvalNotes.length})`,
+        );
+    }
+
     return {
         summary: {
             'en-US': 'Capture activities into Peakbagger drafts, with GPX analysis, ascent filters, and dark mode.',
@@ -60,27 +90,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
                     ].join('\n'),
                 },
             },
-            approval_notes: [
-                `Runtime source under ${authoredRoots} is authored as ES modules. esbuild ${versions.esbuild} bundles and minifies classic browser entries into self-contained IIFEs under dist/; the extension-owned terrain frame remains a native ESM entry. web-ext packages dist/. Run \`npm ci && npm run build:release\` from the tagged source to reproduce the runtime tree.`,
-                '',
-                'The packaged THIRD_PARTY_NOTICES.txt is generated from esbuild metafiles and separately copied runtime inputs. It records the version, declared license, source notice filenames, SHA-256 notice hash, and full notice text for every shipped npm package root, including the CodeMirror/Lezer and TipTap/ProseMirror editor dependency families. The BetaCreator-derived symbol geometry is the sole reviewed non-package override.',
-                '',
-                `vendor/chart.umd.min.js is copied from the unmodified Chart.js ${versions.chart} npm distribution (MIT). Package: https://www.npmjs.com/package/chart.js/v/${versions.chart} ; readable source: https://github.com/chartjs/Chart.js/tree/v${versions.chart}`,
-                '',
-                `vendor/marked.umd.js is copied from the unmodified Marked ${versions.marked} npm distribution (MIT). Package: https://www.npmjs.com/package/marked/v/${versions.marked} ; readable source: https://github.com/markedjs/marked/tree/v${versions.marked}`,
-                '',
-                `vendor/maplibre-gl.mjs is imported directly by the native terrain-frame module. It, vendor/maplibre-gl-worker.mjs, vendor/maplibre-gl-shared.mjs, and vendor/maplibre-gl.css are copied unmodified from the MapLibre GL JS ${versions.maplibre} npm distribution (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/${versions.maplibre} ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v${versions.maplibre}`,
-                '',
-                `The tz-lookup ${versions.tzLookup} CommonJS distribution (CC0-1.0) is bundled by esbuild into content/gpx-analyzer.js and content/ascent-editor.js, with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/${versions.tzLookup} ; readable source: https://github.com/darkskyapp/tz-lookup`,
-                '',
-                `The SunCalc ${versions.sunCalc} ESM distribution (BSD-3-Clause) is bundled by esbuild only into the Peak-page and GPX-analyzer consumers. It calculates Sun and Moon position, Sun rise/set events, and Moon phase entirely offline. Package: https://www.npmjs.com/package/suncalc/v/${versions.sunCalc} ; readable source: https://github.com/mourner/suncalc/tree/v${versions.sunCalc}`,
-                '',
-                `The report editor bundles TipTap core ${versions.tiptap} and ProseMirror view ${versions.prosemirrorView} with their shipped dependency graph into content/ascent-editor.js. Their exact package metadata and license texts are recorded in THIRD_PARTY_NOTICES.txt.`,
-                '',
-                `The optional 3D view is off by default. Its General setting discloses external tile requests; after it is enabled, an explicit 3D terrain action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer from its provider. Those services receive the viewed area and request metadata. Returning to 2D stops that session's tile activity and parks a loaded renderer idle and non-interactive for up to ${terrainKeepAliveMinutes} minutes so a quick return can resume it. After that keep-alive period—or immediately if startup fails or 3D is disabled—the renderer is destroyed.`,
-                '',
-                'Automated tests use synthetic data and masked Peakbagger fixtures. Live Garmin/Strava capture requires the reviewer to use an activity owned by their signed-in provider account; ambiguous ownership fails closed.',
-            ].join('\n'),
+            approval_notes: approvalNotes,
         },
     };
 }

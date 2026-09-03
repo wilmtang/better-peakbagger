@@ -11,7 +11,10 @@ import {
     createFirefoxManifest,
     requirePackagePaths,
 } from '../../scripts/build-firefox-package.mjs';
-import { buildAmoMetadata } from '../../scripts/create-amo-metadata.mjs';
+import {
+    AMO_APPROVAL_NOTES_MAX_LENGTH,
+    buildAmoMetadata,
+} from '../../scripts/create-amo-metadata.mjs';
 import {
     dependencyVersionsFromLock,
     validateReviewedDependencyMetadata,
@@ -364,6 +367,8 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
     }), /Resolved dependency versions/);
     assert.deepEqual(metadata.categories, ['other']);
     assert.deepEqual(metadata.version.compatibility, ['firefox']);
+    assert.ok(metadata.version.approval_notes.length <= AMO_APPROVAL_NOTES_MAX_LENGTH,
+        'approval notes must fit the AMO API limit');
     assert.match(metadata.version.custom_license.name['en-US'], /or later/);
     assert.match(metadata.version.custom_license.text['en-US'], /at your option/);
     assert.match(metadata.version.custom_license.text['en-US'], /GNU AFFERO/);
