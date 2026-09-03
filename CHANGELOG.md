@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.7.0 — 2026-09-03
+
 - **Plan Peak and GPX outings around the Sun and Moon without sending a coordinate
   anywhere.** Validated Peak maps and selected saved-GPX points now show
   mountain-local apparent Sun and Moon direction/elevation, level-horizon
