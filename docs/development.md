@@ -180,6 +180,7 @@ script is added or removed without updating it.
 | `npm run release:bump X.Y.Z` | From a clean synchronized `main`, validates and stamps release metadata and the UTC changelog date; deliberately creates no commit or tag before verification. |
 | `npm run release:check -- vX.Y.Z` | Validates an exact release tag, synchronized versions, stable Gecko identity, store description, and changelog heading. |
 | `npm run release:check-history` | Fails when already-released changelog sections or tags have been rewritten; CI runs it with full Git history. |
+| `npm run release:check:firefox-version -- X.Y.Z --require-unused` | Authenticates to AMO for a read-only exact-version lookup and fails unless the Firefox version is unused; the guarded Firefox-only recovery workflow runs it before retrying a rejected submission. |
 | `npm run release:metadata:firefox` | Converts the canonical store description into the AMO metadata JSON used for submission. |
 | `npm run release:sign:firefox` | Submits the prepared Firefox source to AMO with the release environment's credentials and metadata. |
 | `npm run release:verify-archive -- ARCHIVE.zip BROWSER` | Checks a Chrome or Firefox archive for required runtime files, licenses, browser-specific manifest policy, and forbidden development artifacts. |
