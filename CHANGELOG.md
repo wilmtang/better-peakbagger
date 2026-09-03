@@ -14,6 +14,24 @@
   point without replacing the clicked or keyboard-selected point. The
   calculator does not predict terrain shadows, weather, or actual direct light.
 
+- **Resize saved-ascent details around the work you are doing.** The trip report
+  and summary now share a bounded divider that works by drag or keyboard,
+  remembers its ratio only after a completed interaction, and returns to a
+  readable stacked layout on narrow screens.
+
+- **Keep long-running work attached to the current page, account, and action.**
+  Queued GitHub writes recheck authorization before they run; report and photo
+  navigation is document-bound; capture cancellation reaches provider and
+  summit work; and back/forward restoration keeps one live analyzer, map, and
+  upload surface. Large charts, resize controls, and terrain metadata also stay
+  bounded without weakening review-before-Save or raw-GPX privacy boundaries.
+
+- **Drop a local GPX anywhere on an ascent form and keep its result through the
+  draft handoff.** A restrained page-wide cue accepts the file, then login and
+  summit lookup use the signed-in Peakbagger page so managed human checks do not
+  strand worker requests. Oversized, late, or replaced replies fail closed,
+  while opened draft results survive the source page's expected reload.
+
 ## 3.6.0 — 2026-08-22
 
 - **Trust the release bytes and the browsers that run them.** Tags must come
