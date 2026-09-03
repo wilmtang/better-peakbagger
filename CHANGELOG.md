@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Name ascent and trip-report backups for everything they preserve.** Settings,
+  saved-ascent actions, and the My Ascents bulk flow now consistently call the
+  feature **Ascent and TR backup**.
+
 - **Keep Firefox reviewer notes within Mozilla's submission limit.** Release
   metadata now preserves source, dependency, privacy, and terrain details while
   failing locally before an oversized approval note can reach AMO.

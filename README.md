@@ -131,10 +131,10 @@ the catalog and annotation projects. See the
 
 ![Photo Topos editor with an annotated alpine route and direct ImgBB upload](store-assets/showcase-6-photo-topos.png)
 
-### Back up your Peakbagger data to GitHub
+### Back up your ascents and TRs to GitHub
 
-Keep portable copies of your ascents in a GitHub repository you control, with
-trip reports as Markdown, form data as JSON, and Peakbagger's stored GPX files.
+Keep portable copies of your ascents and TRs in a GitHub repository you control,
+with trip reports as Markdown, form data as JSON, and Peakbagger's stored GPX files.
 Back up one saved ascent or your full history, then keep later edits in sync.
 The same connection can separately transfer settings and favorite climbers or
 preserve photo-library recovery data. Each backup is optional, respects its own

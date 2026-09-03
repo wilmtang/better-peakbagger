@@ -7,7 +7,7 @@ import {
 
 registerCleanup();
 
-test('connected GitHub actions work with ascent backup off and restore with Undo', async () => {
+test('connected GitHub actions work with ascent and TR backup off and restore with Undo', async () => {
     const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
     const messages = [];
@@ -731,11 +731,11 @@ test('a saved ImgBB key without upload access reports the gap instead of looking
     assert.equal(el(dom, 'imgbb-key-remove').hidden, false);
 });
 
-// ---- GitHub connection and ascent-backup setup ----------------------------
+// ---- GitHub connection and ascent and TR backup setup ---------------------
 
 // Wire the options page's GITHUB_AUTH_* messages to a scripted background and a
 
-test('the shared GitHub connection stays visible while ascent backup is off by default', async () => {
+test('the shared GitHub connection stays visible while ascent and TR backup is off by default', async () => {
     const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ enabled: false }) });
     assert.equal(el(dom, 'enable-github-backup').checked, false);
     assert.equal(el(dom, 'github-detail').hidden, false);
@@ -743,7 +743,7 @@ test('the shared GitHub connection stays visible while ascent backup is off by d
     assert.match(el(dom, 'github-panel').textContent, /Connect a GitHub account/);
 });
 
-test('enabling ascent backup persists only the ascent gate and leaves GitHub connection separate', async () => {
+test('enabling ascent and TR backup persists only the ascent gate and leaves GitHub connection separate', async () => {
     let requested = null;
     const dom = await loadOptions({}, {
         prepareChrome: chrome => {
@@ -759,7 +759,8 @@ test('enabling ascent backup persists only the ascent gate and leaves GitHub con
     assert.equal(requested, null);
     assert.equal(dom.chrome._store.bpbSettings.enableGithubBackup, true);
     assert.equal(el(dom, 'github-ascent-detail').hidden, false);
-    assert.match(el(dom, 'github-ascent-panel').textContent, /Connect GitHub above/);
+    assert.match(el(dom, 'github-ascent-panel').textContent,
+        /Connect GitHub above to back up ascents and TRs/);
 });
 
 test('the shared Connect GitHub action requests host permission and keeps denial actionable', async () => {
@@ -781,7 +782,7 @@ test('the shared Connect GitHub action requests host permission and keeps denial
         'the actionable permission error must survive focus changes');
 });
 
-test('the shared Connect GitHub action grants permission without enabling ascent backup', async () => {
+test('the shared Connect GitHub action grants permission without enabling ascent and TR backup', async () => {
     let permissionGranted = false;
     let requested = null;
     let began = false;
@@ -1117,7 +1118,7 @@ test('a connected status renders the account and repository', async () => {
     // The connected state offers a disconnect control.
     const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
     assert.ok(buttons.includes('Disconnect'));
-    // The repository link belongs to the connection, not to ascent backup.
+    // The repository link belongs to the connection, not to ascent and TR backup.
     const repositoryLink = el(dom, 'github-panel').querySelector('a[href="https://github.com/ada/peaks"]');
     assert.ok(repositoryLink, 'the connected panel links to the selected repository');
     assert.equal(repositoryLink.textContent, 'View repository');
@@ -1194,7 +1195,13 @@ test('the connected ascent panel keeps a fresh repository-backed count across or
         },
     });
 
-    await waitFor(dom, () => /No ascents backed up yet/.test(el(dom, 'github-ascent-panel').textContent));
+    await waitFor(dom, () => /No ascent and TR backups yet/.test(el(dom, 'github-ascent-panel').textContent));
+    assert.match(el(dom, 'github-ascent-panel').textContent,
+        /Back up ascent and TR automatically after each save/);
+    assert.match(el(dom, 'github-ascent-panel').textContent,
+        /Remove ascent and TR backup files after I delete an ascent/);
+    assert.match(el(dom, 'github-ascent-panel').textContent,
+        /choose Back up all ascents and TRs/);
     assert.equal(el(dom, 'github-ascent-panel').querySelector('a[href="https://github.com/ada/peaks"]'), null,
         'the repository link belongs to the GitHub connection, not the ascent summary');
 
@@ -1206,7 +1213,7 @@ test('the connected ascent panel keeps a fresh repository-backed count across or
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.equal(summaryReads, readsBeforeFocus,
         'window focus alone must not re-query GitHub');
-    assert.match(el(dom, 'github-ascent-panel').textContent, /No ascents backed up yet/,
+    assert.match(el(dom, 'github-ascent-panel').textContent, /No ascent and TR backups yet/,
         'the cached summary stays painted, with no Checking… flash');
 
     // The explicit control is still a forced refetch.
@@ -1251,14 +1258,14 @@ test('returning from My Ascents refreshes the backup count once inside its TTL',
             };
         },
     });
-    await waitFor(dom, () => /No ascents backed up yet/.test(el(dom, 'github-ascent-panel').textContent));
+    await waitFor(dom, () => /No ascent and TR backups yet/.test(el(dom, 'github-ascent-panel').textContent));
     Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Open My Ascents').click();
     await waitFor(dom, () => opened === target);
 
     ascentCount = 4;
     dom.window.dispatchEvent(new dom.window.Event('focus'));
-    await waitFor(dom, () => /4 ascents backed up/.test(el(dom, 'github-ascent-panel').textContent));
+    await waitFor(dom, () => /4 ascent and TR backups/.test(el(dom, 'github-ascent-panel').textContent));
     assert.equal(summaryReads, 2);
     dom.window.dispatchEvent(new dom.window.Event('focus'));
     await new Promise(resolve => dom.window.setTimeout(resolve, 30));
@@ -1300,7 +1307,7 @@ test('an expired visible summary refreshes once without blanking the old count',
             };
         },
     });
-    await waitFor(dom, () => /2 ascents backed up/.test(el(dom, 'github-ascent-panel').textContent));
+    await waitFor(dom, () => /2 ascent and TR backups/.test(el(dom, 'github-ascent-panel').textContent));
     now += 60_001;
     ascentCount = 5;
     finishRefresh = () => {};
@@ -1310,12 +1317,12 @@ test('an expired visible summary refreshes once without blanking the old count',
     dom.window.document.dispatchEvent(new dom.window.Event('visibilitychange'));
     dom.window.dispatchEvent(new dom.window.Event('focus'));
     await waitFor(dom, () => /Updating/.test(el(dom, 'github-ascent-panel').textContent));
-    assert.match(el(dom, 'github-ascent-panel').textContent, /2 ascents backed up/,
+    assert.match(el(dom, 'github-ascent-panel').textContent, /2 ascent and TR backups/,
         'the previous count stays visible while the refresh is pending');
     assert.doesNotMatch(el(dom, 'github-ascent-panel').textContent, /Checking existing backups/);
     assert.equal(summaryReads, 2, 'visibility and focus share one in-flight refresh');
     finishRefresh();
-    await waitFor(dom, () => /5 ascents backed up/.test(el(dom, 'github-ascent-panel').textContent));
+    await waitFor(dom, () => /5 ascent and TR backups/.test(el(dom, 'github-ascent-panel').textContent));
 });
 
 test('the GitHub panel re-checks access only after an actual round trip to GitHub', async () => {

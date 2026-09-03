@@ -4082,7 +4082,7 @@ try {
         }, surfaceSelectors.profileBackup, { timeout: 10000 })
             .then(handle => handle.jsonValue())
             .catch(() => null);
-        check(state?.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy),
+        check(state?.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy),
             `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(state)}`);
         await profilePage.close();
     }

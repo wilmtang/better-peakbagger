@@ -503,7 +503,7 @@ test('profile backfill validates and commits multiple ascents as one batch', asy
 
     assert.equal(result.ok, true);
     assert.equal(result.result.count, 2);
-    assert.equal(result.result.message, 'Back up 2 ascents');
+    assert.equal(result.result.message, 'Back up 2 ascents and TRs');
     assert.equal(result.result.items.length, 2);
     assert.equal(backend.state.tree.tree.filter(entry => entry.path.endsWith('/ascent.json')).length, 2);
     assert.equal(backend.state.tree.tree.filter(entry => entry.path.endsWith('/report.md')).length, 2);
@@ -1478,7 +1478,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     assert.equal(status.auto, true);
 });
 
-test('an individual ascent backup has an overall deadline and retains its snapshot on timeout', async () => {
+test('an individual ascent and TR backup has an overall deadline and retains its snapshot on timeout', async () => {
     const worker = createWorker({
         settings: { enableGithubBackup: true, autoGithubBackup: true },
         auth: AUTH,

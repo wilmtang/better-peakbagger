@@ -35,15 +35,16 @@ test('owned lists show a restrained full-profile backup entry point', async () =
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     const panel = dom.window.document.getElementById('bpb-profile-backup');
-    assert.match(panel.textContent, /Back up your Peakbagger profile/);
-    assert.match(panel.textContent, /every ascent from every year/);
+    assert.match(panel.textContent, /Back up your ascents and TRs/);
+    assert.match(panel.textContent, /every ascent and its TR from every year/);
     assert.match(panel.textContent, /even when this page shows only one year/);
     assert.match(panel.textContent, /me\/backup/);
-    assert.equal(panel.querySelector('.bpb-profile-primary').textContent, 'Back up all ascents');
+    assert.equal(panel.querySelector('.bpb-profile-primary').textContent, 'Back up all ascents and TRs');
+    assert.equal(panel.getAttribute('aria-label'), 'Ascent and TR backup');
 
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Refresh all').click();
-    assert.match(panel.textContent, /Refresh every ascent\?/);
-    assert.match(panel.textContent, /every ascent from every year/);
+    assert.match(panel.textContent, /Refresh all ascents and TRs\?/);
+    assert.match(panel.textContent, /every ascent and its TR from every year/);
     assert.match(panel.textContent, /groups of up to 10/);
 });
 
@@ -70,7 +71,7 @@ test('a synthetic host-page click cannot start a profile backup workflow', async
 
     assert.deepEqual(sent, []);
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent,
-        /Back up your Peakbagger profile/);
+        /Back up your ascents and TRs/);
 });
 
 test('profile backup keeps a retry surface when worker availability is unknown', async () => {
@@ -99,7 +100,7 @@ test('profile backup keeps a retry surface when worker availability is unknown',
 
     workerAvailable = true;
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Try again').click();
-    await waitFor(dom, () => /Back up your Peakbagger profile/.test(panel.textContent));
+    await waitFor(dom, () => /Back up your ascents and TRs/.test(panel.textContent));
     assert.match(panel.textContent, /me\/backup/);
 });
 
@@ -431,7 +432,7 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
-    await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
+    await waitFor(dom, () => /Ascent and TR backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const push = sent.find(message => message.type === 'GITHUB_BACKUP_PROFILE_BATCH');
     assert.ok(push);
@@ -493,7 +494,7 @@ test('Pause immediately acknowledges and aborts a retractable Peakbagger read', 
     assert.equal([...panel.querySelectorAll('button')]
         .find(control => control.textContent === 'Pause requested').disabled, true);
     assert.equal(dom.window.document.activeElement.textContent, 'Cancel');
-    await waitFor(dom, () => /Profile backup paused/.test(panel.textContent));
+    await waitFor(dom, () => /Ascent and TR backup paused/.test(panel.textContent));
     assert.equal(readAborted, true);
     assert.equal(panel.getAttribute('aria-busy'), 'false');
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_PROFILE_BATCH'), false);
@@ -547,13 +548,13 @@ test('Cancel during a GitHub write says it will stop after that batch and counts
     cancel.focus();
     cancel.click();
 
-    assert.match(panel.textContent, /Stopping profile backup.*Stopping after the current GitHub batch…/s);
+    assert.match(panel.textContent, /Stopping ascent and TR backup.*Stopping after the current GitHub batch…/s);
     assert.equal(panel.getAttribute('aria-busy'), 'true');
     assert.equal(panel.querySelector('button').textContent, 'Cancel requested');
     assert.equal(panel.querySelector('button').disabled, true);
     assert.equal(dom.window.document.activeElement.classList.contains('bpb-profile-copy'), true);
     releaseBatch({ ok: true, result: { count: 1 } });
-    await waitFor(dom, () => /Profile backup stopped/.test(panel.textContent));
+    await waitFor(dom, () => /Ascent and TR backup stopped/.test(panel.textContent));
     assert.match(panel.textContent, /Cancelled\. Backed up 1; skipped 37; failed 0; not backed up 0/);
     assert.deepEqual(JSON.parse(JSON.stringify(pushes)), [[9100001]]);
     assert.equal(panel.getAttribute('aria-busy'), 'false');
@@ -603,7 +604,7 @@ test('a GPS-flagged ascent fetches its track from the current GPXFile endpoint',
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
-    await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
+    await waitFor(dom, () => /Ascent and TR backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const gpxRequest = requested.find(href => /GPXFile\.aspx/i.test(href));
     assert.ok(gpxRequest, 'the track is fetched from the renamed endpoint');
@@ -662,7 +663,7 @@ test('a 200 error page for the track fails with an honest, redirect-naming reaso
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
-    await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
+    await waitFor(dom, () => /Ascent and TR backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');
     assert.match(panel.textContent, /Backed up 0; skipped 37; failed 1/);
@@ -703,7 +704,7 @@ test('a GitHub write error pauses visibly and resume retries the same ascent', a
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     fireTrustedEvent(dom.window.document.querySelector('.bpb-profile-primary'), 'click');
-    await waitFor(dom, () => /GitHub backup paused/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
+    await waitFor(dom, () => /Ascent and TR backup paused/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');
     assert.match(panel.textContent, /GitHub is temporarily rate-limiting requests/);
@@ -712,7 +713,7 @@ test('a GitHub write error pauses visibly and resume retries the same ascent', a
     assert.deepEqual(pushed, [[9100001]]);
 
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Resume').click();
-    await waitFor(dom, () => /Profile backup complete/.test(panel.textContent));
+    await waitFor(dom, () => /Ascent and TR backup complete/.test(panel.textContent));
     assert.deepEqual(pushed, [[9100001], [9100001]]);
     assert.match(panel.textContent, /Backed up 1; skipped 37; failed 0/);
 });

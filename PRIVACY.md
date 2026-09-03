@@ -243,23 +243,23 @@ parked and idle for a few minutes before release, and the cache is not cleared.
 ## GitHub connection and backup (optional)
 
 GitHub is disconnected by default. Connecting requires the user to grant host
-access, authorize the extension, and select one repository. Ascent backup and
-automatic backups for settings, favorites, and photo metadata are separate and
-off by default. Backup never blocks or changes Peakbagger Save.
+access, authorize the extension, and select one repository. Ascent and TR backup
+is separate from automatic backups for settings, favorites, and photo metadata;
+all are off by default. Backup never blocks or changes Peakbagger Save.
 
 ### What a backup contains
 
 | Backup | Included | Excluded |
 | --- | --- | --- |
-| Ascent | User-entered ascent fields, Markdown trip report, and Peakbagger's stored, user-approved GPS track | Raw Garmin or Strava GPX |
+| Ascent and TR | User-entered ascent fields, Markdown trip report, and Peakbagger's stored, user-approved GPS track | Raw Garmin or Strava GPX |
 | `settings.json` | Validated settings, export time, schema version, and extension version | Credentials, repository choice, favorites, drafts, caches, ascents, activity, and GPS data |
 | `favorite-climbers.json` | Custom climber ids, displayed names, added-at timestamps, provenance, and export time | Buddy cache and credentials |
 | `photo-library.json` | Catalog metadata, public URLs, sanitized source file name, hashes/dimensions, title/alt state, lineage, report references, annotation projects, tombstones, and version/export metadata | Image bytes, ImgBB key and delete URLs, upload journal, transient editor state, and GitHub credentials |
 
 ### When a backup happens
 
-- **Ascents:** after **Back up to GitHub**, **Back up all ascents**, or a
-  confirmed **Refresh all**; or after each save when automatic ascent backup is
+- **Ascents and TRs:** after **Back up ascent and TR**, **Back up all ascents and TRs**, or a
+  confirmed **Refresh all**; or after each save when automatic ascent and TR backup is
   enabled. Profile runs read each owned ascent from Peakbagger and send one at a
   time. Existing repository folders act as resume checkpoints.
 - **Settings and favorites:** after an explicit backup, or after a change when
@@ -273,17 +273,17 @@ off by default. Backup never blocks or changes Peakbagger Save.
 Backups go only to the selected repository. Ascents use named mountain folders
 plus a small repository marker; other data uses the fixed root files above. A
 populated repository is inspected and requires confirmation before selection,
-and unrelated files are preserved. Automatic ascent backup never changes the
+and unrelated files are preserved. Automatic ascent and TR backup never changes the
 three root recovery files.
 
 ### Deletion, ownership, and authorization
 
-- If **Remove backup files after I delete an ascent** is separately enabled,
+- If **Remove ascent and TR backup files after I delete an ascent** is separately enabled,
   the extension first verifies the ascent is absent from the authenticated,
   complete My Ascents list. It then removes only Better Peakbagger's
   `report.md`, `ascent.json`, and `track.gpx` from the current branch. User files
   and Git history remain. Failed or unconfirmed deletion does not change GitHub.
-- Ascent backup appears only for ascents owned by the signed-in climber.
+- Ascent and TR backup appears only for ascents owned by the signed-in climber.
   Full-profile actions also verify the user's My Ascents identity and edit
   access for every parsed row, failing closed otherwise.
 - GitHub sign-in uses device flow with a public client id and no client secret.

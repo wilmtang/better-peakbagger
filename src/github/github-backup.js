@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — GitHub ascent-backup payload builder (pure).
+// Better Peakbagger — GitHub ascent and TR backup payload builder (pure).
 //
 // Turns one save-time ascent snapshot into the files of a single backup folder:
 // report.md (the trip report as real Markdown), ascent.json (every structured
@@ -461,7 +461,7 @@ const commitDate = date => {
     return prefix === 'undated' ? '' : prefix;
 };
 
-// "Add ascent: Mount Rainier, 2026-07-12" — or "Update ascent: …" on a
+// "Add ascent and TR: Mount Rainier, 2026-07-12" — or "Update ascent and TR: …" on a
 // re-sync. The date is dropped when unknown.
 const commitSubject = (snapshot, options = {}) => {
     const ascent = (snapshot && snapshot.ascent) || {};
@@ -469,7 +469,7 @@ const commitSubject = (snapshot, options = {}) => {
     const verb = options.update ? 'Update' : 'Add';
     const name = trimString(peak.name) || 'ascent';
     const date = commitDate(ascent.date);
-    return `${verb} ascent: ${name}${date ? `, ${date}` : ''}`;
+    return `${verb} ascent and TR: ${name}${date ? `, ${date}` : ''}`;
 };
 
 // The full logical commit payload for the GitHub client. `existingFolders`

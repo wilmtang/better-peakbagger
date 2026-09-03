@@ -103,7 +103,7 @@ test('removing a Buddy from custom favorites is opt-in', () => {
     assert.equal(Schema.clean({ removeFavoriteWhenBuddyRemoved: 'yes' }).removeFavoriteWhenBuddyRemoved, false);
 });
 
-test('automatic settings backup is opt-in and independent of ascent backup', () => {
+test('automatic settings backup is opt-in and independent of ascent and TR backup', () => {
     assert.equal(Schema.DEFAULTS.autoSettingsBackup, false);
     assert.equal(Schema.clean({}).autoSettingsBackup, false);
     assert.equal(Schema.clean({
@@ -113,7 +113,7 @@ test('automatic settings backup is opt-in and independent of ascent backup', () 
     assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, false);
 });
 
-test('automatic favorites backup is opt-in and independent of ascent backup', () => {
+test('automatic favorites backup is opt-in and independent of ascent and TR backup', () => {
     assert.equal(Schema.DEFAULTS.autoFavoritesBackup, false);
     assert.equal(Schema.clean({}).autoFavoritesBackup, false);
     assert.equal(Schema.clean({
@@ -123,7 +123,7 @@ test('automatic favorites backup is opt-in and independent of ascent backup', ()
     assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, false);
 });
 
-test('automatic photo-library metadata backup is opt-in and independent of ascent backup', () => {
+test('automatic photo-library metadata backup is opt-in and independent of ascent and TR backup', () => {
     assert.equal(Schema.DEFAULTS.autoPhotoLibraryBackup, false);
     assert.equal(Schema.clean({}).autoPhotoLibraryBackup, false);
     assert.equal(Schema.clean({

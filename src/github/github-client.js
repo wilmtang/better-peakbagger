@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — GitHub Git Data client for the ascent backup (pure).
+// Better Peakbagger — GitHub Git Data client for the ascent and TR backup (pure).
 //
 // Pushes one or more ascents, or one or more root files, as one atomic commit
 // through GitHub's Git Data API:
@@ -282,7 +282,7 @@ const createGithubClient = ({
 
     const normalizeBatch = entries => {
         if (!Array.isArray(entries) || entries.length === 0) {
-            throw new TypeError('github client requires at least one ascent backup');
+            throw new TypeError('github client requires at least one ascent and TR backup');
         }
         const seen = new Set();
         return entries.map(entry => {
@@ -299,8 +299,8 @@ const createGithubClient = ({
     const commitMessageFor = backups => {
         if (backups.length === 1) return backups[0].message;
         return backups.every(backup => backup.isUpdate)
-            ? `Refresh ${backups.length} ascents`
-            : `Back up ${backups.length} ascents`;
+            ? `Refresh ${backups.length} ascents and TRs`
+            : `Back up ${backups.length} ascents and TRs`;
     };
 
     const commitBatchOnce = async entries => {
@@ -436,7 +436,7 @@ const createGithubClient = ({
         const paths = [...new Set(removals)];
         if (!paths.length) return emptyAscentDeletion(folders);
 
-        const message = `Delete ascent backup: ${ascentId}`;
+        const message = `Delete ascent and TR backup: ${ascentId}`;
         const tree = await request('POST', '/git/trees', {
             body: {
                 base_tree: head.baseTreeSha,

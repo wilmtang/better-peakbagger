@@ -44,7 +44,7 @@ from several directories when a shipped surface crosses those boundaries.
 
 | Directory | Ownership |
 | --- | --- |
-| `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and saved-ascent backup |
+| `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and backup of saved ascents and TRs |
 | `src/background/` | Extension service-worker coordination |
 | `src/capture/` | Provider adapters, ownership checks, and pure capture analysis |
 | `src/favorites/` | Favorite-climber data and climber-page controls |

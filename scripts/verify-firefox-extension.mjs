@@ -2366,12 +2366,12 @@ async function main() {
     `);
         const profileBackupState = await driver.wait(async () => {
             const state = await readProfileBackupState();
-            return state.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy)
+            return state.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy)
                 ? state
                 : false;
         }, 10_000).catch(readProfileBackupState);
         assertState(
-            profileBackupState.primary === 'Back up all ascents'
+            profileBackupState.primary === 'Back up all ascents and TRs'
         && /fixture\/backup/.test(profileBackupState.copy),
             'Firefox full-profile backup surface did not mount for its verified owner',
             profileBackupState,

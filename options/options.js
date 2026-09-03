@@ -164,7 +164,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         return operation;
     };
 
-    // GitHub connection and ascent-backup setup own their panels together; the
+    // GitHub connection and ascent and TR backup setup own their panels together; the
     // options page drives GITHUB_AUTH_* messages and never sees the token.
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
     // The custom-list workspace lives on its own page (options/favorites.html);

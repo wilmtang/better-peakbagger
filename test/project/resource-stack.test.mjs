@@ -271,7 +271,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         entry => entry.verifierPath === 'scripts/verify-firefox-extension.mjs'
     ).source;
     assert.match(firefoxVerifier,
-        /const profileBackupState = await driver\.wait\(async \(\) => \{[\s\S]*primary === 'Back up all ascents'/,
+        /const profileBackupState = await driver\.wait\(async \(\) => \{[\s\S]*primary === 'Back up all ascents and TRs'/,
         'the Firefox profile-backup check must wait for asserted content, not merely its container');
     assert.match(firefoxVerifier,
         /const settingsControl = await driver\.findElement\(By\.css\('\.pbaf-settings-link'\)\);\s*\/\/[\s\S]{0,300}settingsControl\.sendKeys\(Key\.ENTER\)/,

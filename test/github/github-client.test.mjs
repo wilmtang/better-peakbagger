@@ -106,7 +106,7 @@ test('an Add inlines files into one tree, creates one commit, and fast-forwards 
     assert.ok(treeCall.body.tree.every(e => typeof e.content === 'string'));
 
     const commitCall = calls.find(c => c.key === 'POST /repos/me/backup/git/commits');
-    assert.equal(commitCall.body.message, 'Add ascent: Mount Rainier, 2026-07-12');
+    assert.equal(commitCall.body.message, 'Add ascent and TR: Mount Rainier, 2026-07-12');
     assert.deepEqual(commitCall.body.parents, ['C0']);
     // Authorization is the injected token as a bearer.
     assert.equal(commitCall.headers.Authorization, 'Bearer t');
@@ -133,7 +133,7 @@ test('ten ascents share one atomic tree, commit, and branch update', async () =>
 
     assert.equal(result.count, 10);
     assert.equal(result.items.length, 10);
-    assert.equal(result.message, 'Back up 10 ascents');
+    assert.equal(result.message, 'Back up 10 ascents and TRs');
     assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/trees').length, 1);
     assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/commits').length, 1);
     assert.equal(calls.filter(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').length, 1);
@@ -378,7 +378,7 @@ test('a rename re-sync removes owned old paths and preserves user files', async 
     // The re-saved ascent moved to 2026-07-12 and no longer has a GPX track.
     const result = await client.pushAscentBackup(snapshot(), {});
     assert.equal(result.isUpdate, true);
-    assert.equal(result.message, 'Update ascent: Mount Rainier, 2026-07-12');
+    assert.equal(result.message, 'Update ascent and TR: Mount Rainier, 2026-07-12');
 
     const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
     const byPath = Object.fromEntries(treeCall.body.tree.map(e => [e.path, e]));
@@ -519,7 +519,7 @@ test('deleting an ascent removes only owned files from exact terminal-id folders
     assert.deepEqual(result, {
         sha: 'C1',
         commitUrl: 'https://github.com/me/backup/commit/C1',
-        message: 'Delete ascent backup: 1234567',
+        message: 'Delete ascent and TR backup: 1234567',
         removedFileCount: 5,
         folders: [first, second],
         noOp: false,
@@ -539,7 +539,7 @@ test('deleting an ascent removes only owned files from exact terminal-id folders
         entry.path.endsWith('/notes.md') || entry.path.endsWith('/photos/caption.txt')),
     'user-added files must remain in the base tree');
     assert.deepEqual(calls.find(call => call.key === 'POST /repos/me/backup/git/commits').body, {
-        message: 'Delete ascent backup: 1234567',
+        message: 'Delete ascent and TR backup: 1234567',
         tree: 'T1',
         parents: ['C0'],
     });

@@ -44,7 +44,7 @@ record merge before writing or restoring.
 
 | Concern | Full profile | Automatic after Add/Edit | Manual saved-ascent action |
 | --- | --- | --- | --- |
-| User trigger | **Back up all ascents** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Separate opt-in; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up to GitHub** beside Peakbagger's owner actions |
+| User trigger | **Back up all ascents and TRs** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Separate opt-in; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up ascent and TR** beside Peakbagger's owner actions |
 | Raw fields | Fetch each owner-only `AscentEdit.aspx?aid=…`; shared persisted-form reader | Fetch that ascent's owner-only edit URL; shared persisted-form reader | Same as automatic; the same `runBackup()` function |
 | Raw-field mapper | `src/ascent/ascent-snapshot.js` via `src/ascent/ascent-backup-source.js` | Same | Same |
 | Report body | Persisted `JournalText`, bracket markup converted to Markdown | Fresh save-time exact Markdown sidecar when present; otherwise persisted `JournalText` conversion | Fresh sidecar if a matching save transaction still exists; otherwise persisted conversion |
@@ -325,8 +325,8 @@ cancelable session grant and renews that grant per batch. Automatic backup
 after a fresh saved-ascent snapshot remains a separate opt-in route and cannot
 be manufactured from a page-script click.
 
-The Settings ascent-backup panel performs a separate, extension-page-only
-repository summary read. It reports either **No ascents backed up yet** or the
+The Settings ascent and TR backup panel performs a separate, extension-page-only
+repository summary read. It reports either **No ascent and TR backups yet** or the
 count of marker-validated ascent folders and links to the selected repository.
 It refreshes when Settings regains focus, so returning from a bulk or individual
 backup gives durable confirmation without exposing folder names to the page.
@@ -372,9 +372,9 @@ script supplied a complete persisted form. Without both a pending snapshot and
 
 ## Opt-in deletion mirroring
 
-**Remove backup files after I delete an ascent** is a separate, default-off
-setting under ascent backup. It is independent of automatic save backup but is
-forced off when the parent ascent-backup gate is disabled.
+**Remove ascent and TR backup files after I delete an ascent** is a separate, default-off
+setting under ascent and TR backup. It is independent of automatic save backup but is
+forced off when the parent ascent and TR backup gate is disabled.
 
 The transaction deliberately has two phases:
 
@@ -432,7 +432,7 @@ with `j=-1`, `y=9999`, and a default `sort=AscentDate`.
 The worker preflight returns only root backup folder leaves. The work-list diff
 extracts exact terminal `-a<aid>` identities:
 
-- **Back up all ascents** skips ids already represented in the repository.
+- **Back up all ascents and TRs** skips ids already represented in the repository.
 - **Refresh all** includes every unique list id after explicit confirmation.
 - A failed or never-reached ascent has no committed folder change, so a later
   ordinary run naturally retries it.
@@ -891,9 +891,9 @@ No ascent in a batch is visible on the branch before step 8. A failed earlier
 operation leaves the branch unchanged. A failed final ref update leaves an
 unreferenced commit object, not a partial folder update.
 
-Single commits read `Add ascent: …` or `Update ascent: …`. Multi-ascent commits
-read `Back up N ascents` unless every entry is an update, in which case they
-read `Refresh N ascents`.
+Single commits read `Add ascent and TR: …` or `Update ascent and TR: …`.
+Multi-ascent commits read `Back up N ascents and TRs` unless every entry is an
+update, in which case they read `Refresh N ascents and TRs`.
 
 ### Internal and external concurrency
 
@@ -1172,7 +1172,7 @@ expected GPX failure as `null`, or bypassing the worker write queue.
 - GitHub host access is optional: `https://github.com/*` for device flow and
   `https://api.github.com/*` for repository APIs.
 - `enableGithubBackup`, `autoGithubBackup`, and
-  `removeGithubBackupOnDelete` are synced ascent-backup booleans. Disabling the
+  `removeGithubBackupOnDelete` are synced ascent and TR backup booleans. Disabling the
   parent gate forces both subordinate choices off. Neither gates settings or
   favorite transfer.
 - `autoSettingsBackup` and `autoFavoritesBackup` are independent, synced,

@@ -98,7 +98,7 @@ The diagram encodes six important boundaries:
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
 - [Favorite climbers](#deep-dive-favorite-climbers)
-- [GitHub ascent and full-profile backup](#deep-dive-github-ascent-and-full-profile-backup)
+- [GitHub ascent and TR backup](#deep-dive-github-ascent-and-tr-backup)
 - [Site-wide theme startup](#deep-dive-site-wide-theme-startup)
 - [Storage and lifecycle](#deep-dive-storage-and-lifecycle)
 - [Verification boundaries](#deep-dive-verification-boundaries)
@@ -155,7 +155,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
-| Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
+| Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.js` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
@@ -1397,7 +1397,7 @@ token. The worker accepts those messages only from an extension page, reuses the
 shared GitHub connection and selected repository, and writes the fixed root
 path `favorite-climbers.json` through the same repository-marker check, exact base tree,
 non-forced ref update, shared write queue, and bounded conflict retry as
-ascent backup. Because it is a root file rather than an ascent folder, that
+ascent and TR backup. Because it is a root file rather than an ascent folder, that
 write can share one commit with a settings backup submitted at the same moment. Restore is an extension-only read; a missing file is reported as
 “no backup” and does not become an empty replacement.
 
@@ -1409,8 +1409,8 @@ backup does not read or write `favorite-climbers.json`; favorite transfer happen
 after the explicit options-page action. A successful write leaves an affirmative
 status and the worker-returned commit link visible without exposing the token.
 
-The GitHub connection is independent of the ascent-backup setting. Turning
-ascent backup off removes ascent capture and backup affordances without
+The GitHub connection is independent of the ascent and TR backup setting. Turning
+ascent and TR backup off removes ascent capture and backup affordances without
 disconnecting GitHub or disabling explicit favorite backup and restore.
 
 Peakbagger HTML and authenticated cookies remain within the Peakbagger/browser
@@ -1497,7 +1497,7 @@ HTML and storage, so an authenticated, minimal, read-only browser check is
 required before a release that changes Buddy parsing, owner detection, request
 classification, or the live options/climber UI.
 
-## Deep dive: GitHub ascent and full-profile backup
+## Deep dive: GitHub ascent and TR backup
 
 GitHub backup is explicit and opt-in. The optional host permissions are
 requested only when the feature is enabled. GitHub device flow and repository

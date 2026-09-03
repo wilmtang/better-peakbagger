@@ -73,7 +73,7 @@ export function createGithubRoutes({
     photoBackupSettings = Settings,
     trustedActions = null,
 }) {
-    // ---- GitHub ascent backup: auth + repository setup ---------------------
+    // ---- GitHub ascent and TR backup: auth + repository setup --------------
     //
     // These GitHub routes keep the token in the worker and never return it in a
     // GitHub response. The separate exact-Settings-page file route may include
@@ -750,7 +750,7 @@ export function createGithubRoutes({
             if (deadline.expired || Deadline.isTimeout(error)) {
                 throw new GithubErrors.GithubError(
                     GithubErrors.ERROR_CODES.TIMEOUT,
-                    'The GitHub ascent backup operation took too long to complete.',
+                    'The GitHub ascent and TR backup operation took too long to complete.',
                     { cause: error },
                 );
             }
@@ -835,7 +835,7 @@ export function createGithubRoutes({
         } catch (error) {
             return {
                 ok: false,
-                error: GithubErrors.publicError(error, 'Could not check the existing ascent backups.'),
+                error: GithubErrors.publicError(error, 'Could not check the existing ascent and TR backups.'),
             };
         }
     };

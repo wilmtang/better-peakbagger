@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Shared Peakbagger source reader for every GitHub ascent-backup surface.
+// Shared Peakbagger source reader for every GitHub ascent and TR backup surface.
 //
 // This module owns the correctness-critical boundary between Peakbagger's
 // authenticated HTML/GPX responses and a complete backup snapshot. Callers own

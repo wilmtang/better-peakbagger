@@ -87,7 +87,7 @@ test('buildBackup flags a rename and names the old folder for atomic removal', (
     assert.equal(backup.isUpdate, true);
     assert.equal(backup.folder, '2026-07-12-mount-rainier-a1234567');
     assert.equal(backup.previousFolder, '2026-06-01-mount-rainier-a1234567');
-    assert.equal(backup.message, 'Update ascent: Mount Rainier, 2026-07-12');
+    assert.equal(backup.message, 'Update ascent and TR: Mount Rainier, 2026-07-12');
     assert.deepEqual(backup.files.map(f => f.path), [
         '2026-07-12-mount-rainier-a1234567/report.md',
         '2026-07-12-mount-rainier-a1234567/ascent.json',
@@ -99,7 +99,7 @@ test('buildBackup with no existing folder is an Add and has no previousFolder', 
     const backup = Backup.buildBackup(baseSnapshot(), { existingFolders: [] });
     assert.equal(backup.isUpdate, false);
     assert.equal(backup.previousFolder, null);
-    assert.equal(backup.message, 'Add ascent: Mount Rainier, 2026-07-12');
+    assert.equal(backup.message, 'Add ascent and TR: Mount Rainier, 2026-07-12');
 });
 
 test('an unchanged slug re-sync updates in place with no removal', () => {
@@ -334,9 +334,9 @@ test('backup comparison rejects URLs that do not prove the backed-up entity', ()
 // ---- commit subject -------------------------------------------------------
 
 test('commit subject reads as a sentence and drops an unknown date', () => {
-    assert.equal(Backup.commitSubject(baseSnapshot(), {}), 'Add ascent: Mount Rainier, 2026-07-12');
-    assert.equal(Backup.commitSubject(baseSnapshot(), { update: true }), 'Update ascent: Mount Rainier, 2026-07-12');
+    assert.equal(Backup.commitSubject(baseSnapshot(), {}), 'Add ascent and TR: Mount Rainier, 2026-07-12');
+    assert.equal(Backup.commitSubject(baseSnapshot(), { update: true }), 'Update ascent and TR: Mount Rainier, 2026-07-12');
 
     const undated = baseSnapshot(); undated.ascent.date = '';
-    assert.equal(Backup.commitSubject(undated, {}), 'Add ascent: Mount Rainier');
+    assert.equal(Backup.commitSubject(undated, {}), 'Add ascent and TR: Mount Rainier');
 });
