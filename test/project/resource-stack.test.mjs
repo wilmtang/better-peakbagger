@@ -204,12 +204,15 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         chromeVerifier.indexOf('const helperLeaseState ='),
         chromeVerifier.indexOf('await captureTransportPage.close();'),
     );
+    assert.match(helperLeaseProbe,
+        /const adoptedHelper = await chrome\.tabs\.create\(\{[\s\S]*?active: false,[\s\S]*?windowId: optionsTab\.windowId/,
+        'the helper lease probe must create an inactive tab in the options tab window');
     const adoptionFlow = helperLeaseProbe.slice(
-        helperLeaseProbe.indexOf('await chrome.tabs.update(transportTab.id, { active: true });'),
+        helperLeaseProbe.indexOf('await chrome.tabs.update(adoptedHelper.id, { active: true });'),
         helperLeaseProbe.indexOf('const expireAdoptedLease ='),
     );
     assert.match(adoptionFlow,
-        /transportTab[\s\S]*'durable helper adoption'\);[\s\S]*chrome\.tabs\.update\(optionsTab/,
+        /adoptedHelper[\s\S]*'durable helper adoption'\);[\s\S]*chrome\.tabs\.update\(optionsTab/,
         'the helper must become durably adopted before the verifier leaves its tab');
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,

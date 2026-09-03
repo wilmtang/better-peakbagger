@@ -1913,8 +1913,9 @@ try {
                 }
             };
             const optionsTab = await chrome.tabs.getCurrent();
-            const transportTab = (await chrome.tabs.query({})).find(tab => tab.url === loginUrl);
-            if (!optionsTab?.id || !transportTab?.id) return { error: 'lease test tabs not found' };
+            if (!optionsTab?.id || !Number.isInteger(optionsTab.windowId)) {
+                return { error: 'options tab identity unavailable' };
+            }
             const makeLease = (tab, generation, expiresAt) => ({
                 tabId: tab.id,
                 generation,
@@ -1924,23 +1925,30 @@ try {
                 adopted: false,
             });
 
-            // Playwright's most recently opened page is commonly already the
-            // active tab. Establish a different active tab first so selecting
-            // the helper below necessarily emits tabs.onActivated.
-            await chrome.tabs.update(optionsTab.id, { active: true });
+            // Create the probe in the options tab's exact window. Playwright
+            // pages are not guaranteed to share a window on every Chrome
+            // floor, and activating an already-active tab emits no event.
+            const adoptedHelper = await chrome.tabs.create({
+                active: false,
+                windowId: optionsTab.windowId,
+                url: loginUrl,
+            });
+            await wait(async () => (await chrome.tabs.get(adoptedHelper.id)).status === 'complete',
+                'adopted helper load');
+            const loadedAdoptedHelper = await chrome.tabs.get(adoptedHelper.id);
             await chrome.storage.session.set({
                 [leaseKey]: {
-                    [transportTab.id]: makeLease(
-                        transportTab,
+                    [adoptedHelper.id]: makeLease(
+                        loadedAdoptedHelper,
                         'verify-adopted-helper',
                         Date.now() + 60_000,
                     ),
                 },
             });
-            await chrome.tabs.update(transportTab.id, { active: true });
+            await chrome.tabs.update(adoptedHelper.id, { active: true });
             await wait(async () => {
                 const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                return leases[transportTab.id]?.adopted === true;
+                return leases[adoptedHelper.id]?.adopted === true;
             }, 'durable helper adoption');
             // Do not collapse the select-and-return sequence into one browser
             // scheduling turn. Chrome 128 can coalesce those activation events;
@@ -1949,16 +1957,16 @@ try {
             await chrome.tabs.update(optionsTab.id, { active: true });
             const expireAdoptedLease = async () => {
                 const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                const lease = leases[transportTab.id];
+                const lease = leases[adoptedHelper.id];
                 if (!lease) return;
-                leases[transportTab.id] = { ...lease, expiresAt: Date.now() - 1 };
+                leases[adoptedHelper.id] = { ...lease, expiresAt: Date.now() - 1 };
                 await chrome.storage.session.set({ [leaseKey]: leases });
                 chrome.alarms.create(cleanupAlarm, { when: Date.now() + 50 });
             };
             await expireAdoptedLease();
             await wait(async () => {
                 const leases = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
-                const lease = leases[transportTab.id];
+                const lease = leases[adoptedHelper.id];
                 if (!lease) return true;
                 // Returning to Settings itself emits an activation. Its queued
                 // no-op lease mutation can finish after the verifier's direct
@@ -1968,10 +1976,15 @@ try {
                 if (lease.expiresAt > Date.now()) await expireAdoptedLease();
                 return false;
             }, 'adopted helper lease release');
-            const adoptedRetained = await chrome.tabs.get(transportTab.id)
+            const adoptedRetained = await chrome.tabs.get(adoptedHelper.id)
                 .then(() => true, () => false);
+            await chrome.tabs.remove(adoptedHelper.id);
 
-            const scratch = await chrome.tabs.create({ active: false, url: loginUrl });
+            const scratch = await chrome.tabs.create({
+                active: false,
+                windowId: optionsTab.windowId,
+                url: loginUrl,
+            });
             await wait(async () => (await chrome.tabs.get(scratch.id)).status === 'complete',
                 'scratch helper load');
             const loadedScratch = await chrome.tabs.get(scratch.id);
