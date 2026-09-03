@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.7.1 — 2026-09-03
+
 - **Keep Firefox release verification within the extension's bounded 3D startup
   window.** Slower release runners now get the same maintained terrain transaction
   deadline as the shipped browser experience before a package is rejected.
