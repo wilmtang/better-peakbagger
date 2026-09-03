@@ -1769,16 +1769,42 @@ try {
         null, { timeout: 10000 });
         await climberPage.bringToFront();
         await climberPage.locator('#BuddyButton').click();
+        const syncedAdditionUi = await climberPage.waitForFunction(() =>
+            document.getElementById('BuddyButton')?.value === 'Remove from My Buddy List'
+                && document.getElementById('bpb-climber-favorite')?.textContent === '★',
+        null, { timeout: 20000 }).then(() => true).catch(() => false);
         await optionsPage.bringToFront();
-        await optionsPage.waitForFunction(async () =>
-            (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache?.entries?.some(entry => entry.cid === 900002),
-        null, { timeout: 10000 });
+        const syncedAdditionStorage = await optionsPage.waitForFunction(async () => {
+            const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
+                'bpbFavoriteClimbers', 'bpbBuddyCache'
+            ]);
+            return favorites?.entries?.some(entry => entry.cid === 900002)
+                && cache?.entries?.some(entry => entry.cid === 900002);
+        }, null, { timeout: 20000 }).then(() => true).catch(() => false);
+        const syncedAdditionRequests = await waitForCondition(() =>
+            fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations >= 3
+                && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports >= 3,
+        { description: 'the opt-in Buddy addition refresh', timeoutMs: 20000 })
+            .then(() => true).catch(() => false);
+        check(syncedAdditionUi && syncedAdditionStorage && syncedAdditionRequests,
+            `the opt-in Buddy addition did not settle before removal: ${JSON.stringify({
+                syncedAdditionUi,
+                syncedAdditionStorage,
+                syncedAdditionRequests,
+                before: buddyMutationBaseline,
+                after: fixture.requests,
+            })}`);
         await climberPage.bringToFront();
         await climberPage.locator('#BuddyButton').click();
+        const syncedRemovalRequests = await waitForCondition(() =>
+            fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations >= 4
+                && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports >= 4,
+        { description: 'the opt-in Buddy removal refresh', timeoutMs: 20000 })
+            .then(() => true).catch(() => false);
         const removalSyncedUi = await climberPage.waitForFunction(() =>
             document.getElementById('BuddyButton')?.value === 'Add to My Buddy List'
                 && document.getElementById('bpb-climber-favorite')?.textContent === '☆',
-        null, { timeout: 10000 }).then(() => true).catch(() => false);
+        null, { timeout: 20000 }).then(() => true).catch(() => false);
         await optionsPage.bringToFront();
         const removalSyncedStorage = await optionsPage.waitForFunction(async () => {
             const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
@@ -1786,12 +1812,12 @@ try {
             ]);
             return favorites?.entries && !favorites.entries.some(entry => entry.cid === 900002)
                 && cache?.entries && !cache.entries.some(entry => entry.cid === 900002);
-        }, null, { timeout: 10000 }).then(() => true).catch(() => false);
+        }, null, { timeout: 20000 }).then(() => true).catch(() => false);
         const buddyMutationsStayedInPlace = await climberPage.evaluate(() => ({
             loads: sessionStorage.getItem('bpbFixtureClimberLoads'),
             url: location.href,
         }));
-        check(removalSyncedUi && removalSyncedStorage
+        check(syncedRemovalRequests && removalSyncedUi && removalSyncedStorage
             && fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations === 4
             && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports === 4
             && buddyMutationsStayedInPlace.loads === '1'
@@ -1799,6 +1825,7 @@ try {
         `opt-in Buddy removal sync or its one-refresh-per-action contract failed: ${JSON.stringify({
             removalSyncedUi,
             removalSyncedStorage,
+            syncedRemovalRequests,
             buddyMutationsStayedInPlace,
             before: buddyMutationBaseline,
             after: fixture.requests,

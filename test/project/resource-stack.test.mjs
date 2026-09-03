@@ -214,6 +214,13 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(adoptionFlow,
         /adoptedHelper[\s\S]*'durable helper adoption'\);[\s\S]*chrome\.tabs\.update\(optionsTab/,
         'the helper must become durably adopted before the verifier leaves its tab');
+    const buddyRemovalProbe = chromeVerifier.slice(
+        chromeVerifier.indexOf('const syncedAdditionUi ='),
+        chromeVerifier.indexOf('const buddyMutationsStayedInPlace ='),
+    );
+    assert.match(buddyRemovalProbe,
+        /syncedAdditionUi[\s\S]*syncedAdditionStorage[\s\S]*syncedAdditionRequests[\s\S]*BuddyButton'\)\.click\(\)[\s\S]*syncedRemovalRequests/,
+        'the final Buddy removal must wait for the preceding addition to settle completely');
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,
         'terminal Chrome readiness errors must retain earlier accumulated surface failures');
