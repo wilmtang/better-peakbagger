@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "128",
   "name": "Better Peakbagger",
-  "version": "3.7.1",
+  "version": "3.7.2",
   "description": "Captures Garmin and Strava into Peakbagger drafts, plus 3D maps, GPX analysis, beta filters, dark mode, and more.",
   "homepage_url": "https://github.com/wilmtang/better-peakbagger",
   "icons": {

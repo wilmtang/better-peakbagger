@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.7.2 — 2026-09-03
+
 - **Measure large-chart responsiveness inside Chrome itself during release
   verification.** CI process scheduling can no longer reject a responsive packaged
   chart while interaction, selection, redraw completion, and frame cadence pass.
