@@ -15,6 +15,7 @@ import {
     AMO_APPROVAL_NOTES_MAX_LENGTH,
     buildAmoMetadata,
 } from '../../scripts/create-amo-metadata.mjs';
+import { createAmoJwt, inspectAmoVersion } from '../../scripts/check-amo-version.mjs';
 import {
     dependencyVersionsFromLock,
     validateReviewedDependencyMetadata,
@@ -407,6 +408,65 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
     assert.doesNotMatch(metadata.version.approval_notes, /Returning to 2D destroys the renderer/);
     assert.match(metadata.description['en-US'], /coordinate corridor boxes/);
     assert.match(metadata.description['en-US'], /Waypoint coordinates and names are included by default/);
+});
+
+test('Firefox retry inspection distinguishes an unused version without mutating AMO', async () => {
+    const requests = [];
+    const unused = await inspectAmoVersion({
+        addonId: 'better-peakbagger@wilmtang.github.io',
+        version: '3.7.2',
+        issuer: 'issuer',
+        secret: 'secret',
+        nowSeconds: 1_788_407_200,
+        fetchImpl: async (url, options) => {
+            requests.push({ url: url.href, options });
+            return new Response('{}', { status: 404 });
+        },
+    });
+    assert.deepEqual(unused, { state: 'unused', version: '3.7.2' });
+    assert.equal(requests.length, 1);
+    assert.match(requests[0].url, /versions\/v3\.7\.2\/$/);
+    assert.equal(requests[0].options.method, undefined);
+    assert.match(requests[0].options.headers.Authorization, /^JWT [^.]+\.[^.]+\.[^.]+$/);
+
+    const present = await inspectAmoVersion({
+        addonId: 'better-peakbagger@wilmtang.github.io',
+        version: '3.7.2',
+        issuer: 'issuer',
+        secret: 'secret',
+        fetchImpl: async () => new Response(JSON.stringify({
+            version: '3.7.2',
+            channel: 'listed',
+            file: { status: 'awaiting_review' },
+        }), { status: 200 }),
+    });
+    assert.deepEqual(present, {
+        state: 'present',
+        version: '3.7.2',
+        channel: 'listed',
+        fileStatus: 'awaiting_review',
+    });
+    assert.throws(() => createAmoJwt({ issuer: '', secret: '' }), /credentials/);
+    await assert.rejects(() => inspectAmoVersion({
+        addonId: 'id',
+        version: 'v3.7.2',
+        issuer: 'issuer',
+        secret: 'secret',
+        fetchImpl: async () => new Response('{}', { status: 404 }),
+    }), /exact semver/);
+});
+
+test('Firefox recovery workflow reuses one verified artifact and never invokes Chrome', async () => {
+    const workflow = await readFile(
+        new URL('../../.github/workflows/retry-firefox-release.yml', import.meta.url),
+        'utf8',
+    );
+    assert.match(workflow, /workflow_dispatch:/);
+    assert.match(workflow, /run-id: \$\{\{ inputs\.release_run_id \}\}/);
+    assert.match(workflow, /release:verify-archive/);
+    assert.match(workflow, /release:check:firefox-version.*--require-unused/);
+    assert.match(workflow, /release:sign:firefox/);
+    assert.doesNotMatch(workflow, /publish-chrome|CHROME_WEBSTORE|Submit Chrome/);
 });
 
 test('every bundle entry belongs to an AMO-declared authored source root', () => {

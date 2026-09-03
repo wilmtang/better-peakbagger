@@ -83,6 +83,10 @@ async function main() {
         packageLock,
         changelog,
     });
+    if (process.argv.includes('--metadata-only')) {
+        console.log(`Release metadata is consistent for ${version}.`);
+        return;
+    }
     const headCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
         encoding: 'utf8',
     }).trim();

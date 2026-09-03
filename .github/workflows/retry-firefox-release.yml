@@ -1,0 +1,102 @@
+name: Retry Firefox Add-ons submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact immutable release tag to recover
+        required: true
+        type: string
+      release_run_id:
+        description: Release run containing the verified package artifact
+        required: true
+        type: string
+
+concurrency:
+  group: firefox-store-retry-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  firefox:
+    name: Retry Firefox Add-ons
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: browser-stores
+    permissions:
+      actions: read
+      contents: read
+    env:
+      TARGET_TAG: ${{ inputs.tag }}
+      RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+    steps:
+      - name: Check out protected main recovery tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate recovery source and release run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! [[ "$TARGET_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Target tag must be exact vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          if ! [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Release run ID must be numeric" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$GITHUB_SHA" = "$(git rev-parse refs/remotes/origin/main)"
+          tag_commit="$(git rev-list -n 1 "$TARGET_TAG")"
+          git merge-base --is-ancestor "$tag_commit" refs/remotes/origin/main
+          npm run release:check -- "$TARGET_TAG" --metadata-only
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID")"
+          test "$(jq -r .event <<<"$run_json")" = push
+          test "$(jq -r .head_sha <<<"$run_json")" = "$tag_commit"
+          test "$(jq -r .name <<<"$run_json")" = "Release browser extensions"
+
+      - name: Download verified Firefox package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: browser-extension-${{ inputs.tag }}
+          path: release-package
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.release_run_id }}
+
+      - name: Revalidate the preserved Firefox package
+        run: |
+          version="${TARGET_TAG#v}"
+          npm run release:verify-archive -- \
+            "release-package/better_peakbagger-${version}-firefox.zip" firefox
+
+      - name: Confirm the Firefox version is unused
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npm run release:check:firefox-version -- "${TARGET_TAG#v}" --require-unused
+
+      - name: Create bounded Firefox listing metadata
+        run: npm run release:metadata:firefox
+
+      - name: Prepare verified Firefox package
+        run: |
+          version="${TARGET_TAG#v}"
+          mkdir -p web-ext-artifacts/firefox-source
+          unzip -q "release-package/better_peakbagger-${version}-firefox.zip" \
+            -d web-ext-artifacts/firefox-source
+
+      - name: Submit Firefox package for review
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npm run release:sign:firefox
