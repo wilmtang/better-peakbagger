@@ -227,6 +227,15 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(chromeVerifier,
         /const mapLayers = [^;]+;[\s\S]{0,320}if \(!Array\.isArray\(mapLayers\)\) return false;/,
         'terminal Analyzer checks must wait for the separately loading map-layer seam');
+    const scaleResizeProbe = chromeVerifier.slice(
+        chromeVerifier.indexOf('const scalePage = await context.newPage();'),
+        chromeVerifier.indexOf('await scalePage.close();'),
+    );
+    assert.doesNotMatch(scaleResizeProbe, /Date\.now\(\)/,
+        'the scale resize must not confuse Node scheduling delay with browser latency');
+    assert.match(scaleResizeProbe,
+        /waitForFunction[\s\S]*timeout: 5_000[\s\S]*maxFrameGapMs < 1_000/,
+        'the scale resize must retain bounded completion and in-page responsiveness checks');
     const retryProbeStart = chromeVerifier.indexOf('const unavailableCases =');
     const retryProbeEnd = chromeVerifier.indexOf('const offPage = await openAscent();');
     assert.notEqual(retryProbeStart, -1);
