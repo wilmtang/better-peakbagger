@@ -81,7 +81,18 @@ import { units as Units } from '../src/ui/units.js';
     };
 
     const retry = () => beginCapture(true);
-    const openPeakbagger = () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` });
+    const openPeakbagger = async () => {
+        if (Number.isInteger(currentJob?.error?.recoveryTabId)) {
+            try {
+                const focused = await ext.runtime.sendMessage({
+                    type: 'CAPTURE_FOCUS_RECOVERY',
+                    tabId: activeTab.id,
+                });
+                if (focused?.ok) return;
+            } catch { /* fall through to a new canonical first-party tab */ }
+        }
+        await ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` });
+    };
     const openSettings = () => {
         try { void ext.runtime.openOptionsPage(); } catch { /* unavailable in a broken extension context */ }
     };

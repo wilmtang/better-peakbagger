@@ -832,6 +832,49 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
     dom.window.close();
 });
 
+test('popup focuses the exact preserved Peakbagger challenge instead of opening a duplicate', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const opened = [];
+    const messages = [];
+    const job = {
+        phase: 'error',
+        provider: 'strava',
+        error: {
+            code: 'cloudflare',
+            recoveryTabId: 44,
+        },
+    };
+    dom.window.chrome = {
+        tabs: {
+            query: async () => [{ id: 9 }],
+            create: async details => { opened.push(details); },
+        },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                if (message.type === 'CAPTURE_FOCUS_RECOVERY') return { ok: true, tabId: 44 };
+                return null;
+            },
+        },
+    };
+
+    dom.window.eval(source);
+    const state = dom.window.document.getElementById('state');
+    await waitFor(() => /Peakbagger needs a human check/.test(state.textContent));
+    state.querySelector('button').click();
+    await waitFor(() => messages.some(message => message.type === 'CAPTURE_FOCUS_RECOVERY'));
+    assert.deepEqual(opened, []);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(messages.find(message => message.type === 'CAPTURE_FOCUS_RECOVERY'))),
+        { type: 'CAPTURE_FOCUS_RECOVERY', tabId: 9 },
+    );
+    dom.window.close();
+});
+
 test('popup names Peakbagger transport failures and offers direct recovery', async () => {
     const cases = [
         {

@@ -10,7 +10,13 @@ test('capture terminal phases have one shared immutable definition', () => {
         'ready', 'no-matches', 'no-gps', 'error', 'opening', 'opened', 'previewed'
     ]);
     assert.equal(Object.isFrozen(capturePhases.TERMINAL_PHASES), true);
+    assert.deepEqual(capturePhases.REUSABLE_PHASES, [
+        'ready', 'no-matches', 'no-gps', 'opening', 'opened', 'previewed'
+    ]);
+    assert.equal(Object.isFrozen(capturePhases.REUSABLE_PHASES), true);
     for (const phase of capturePhases.TERMINAL_PHASES) assert.equal(capturePhases.isTerminal(phase), true);
+    for (const phase of capturePhases.REUSABLE_PHASES) assert.equal(capturePhases.isReusable(phase), true);
+    assert.equal(capturePhases.isReusable('error'), false);
     for (const phase of ['starting', 'checking-peakbagger', 'analyzing', null]) {
         assert.equal(capturePhases.isTerminal(phase), false);
     }

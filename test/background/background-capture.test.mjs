@@ -1297,9 +1297,52 @@ test('toolbar capture preserves actionable Peakbagger human-check recovery', asy
     assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
         code: 'cloudflare',
         message: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.',
+        recoveryTabId: 5,
     });
     assert.doesNotMatch(JSON.stringify(harness.values), /PRIVATE CHALLENGE BODY/,
         'challenge HTML must not be retained with the capture job');
+});
+
+test('a challenged helper is adopted and focused only while it remains Peakbagger', async () => {
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ({
+            kind: 'challenged',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'peaks', status: 403 },
+        }),
+    });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.error.recoveryTabId, 100);
+    assert.equal(harness.tabs.has(100), true, 'the challenge page stays open for the user');
+    assert.deepEqual(harness.removedTabs, []);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined,
+        'the adopted tab is no longer cleanup-owned by the extension');
+
+    const sender = { url: 'chrome-extension://test-extension/popup/popup.html' };
+    const focused = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
+    assert.deepEqual(JSON.parse(JSON.stringify(focused)), { ok: true, tabId: 100 });
+    assert.equal(harness.tabs.get(100).active, true);
+    assert.deepEqual(harness.windowUpdates.at(-1), [9, { focused: true }]);
+
+    harness.tabs.get(100).active = false;
+    harness.tabs.get(100).url = 'https://example.com/reused-id';
+    const updatesBefore = harness.windowUpdates.length;
+    const rejected = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.error.code, 'not-found');
+    assert.equal(harness.tabs.get(100).active, false, 'an ID-reused tab is never focused');
+    assert.equal(harness.windowUpdates.length, updatesBefore);
+
+    const forbidden = await harness.send(
+        { type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 },
+        { tab: { id: 1 }, url: 'https://www.strava.com/activities/123' },
+    );
+    assert.equal(forbidden.error.code, 'forbidden');
 });
 
 test('activity capture creates and removes an inactive Peakbagger request tab when needed', async () => {
@@ -3101,6 +3144,62 @@ test('production-point analysis yields to status and cancellation messages', asy
     assert.ok(Date.now() - responseStartedAt < 500);
     assert.equal(await capture, null);
     assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+});
+
+test('successful captures are reused but recoverable errors are re-evaluated on the next gesture', async () => {
+    const readyHarness = createHarness();
+    const firstReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const reusedReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(reusedReady.id, firstReady.id);
+    assert.equal(readyHarness.providerCaptureCalls.length, 1);
+
+    const successfulCapture = {
+        ok: true,
+        provider: 'strava',
+        activityId: '123',
+        metadata: { title: 'Recovered hike', localStart: '2026-07-01T08:00:00-07:00' },
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16, 0) },
+        ]],
+    };
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: call => call.number === 1 ? {
+            ok: false,
+            code: 'provider-unavailable',
+            provider: 'strava',
+            activityId: '123',
+        } : successfulCapture,
+    });
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.error.code, 'provider-unavailable');
+    const recovered = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(recovered.phase, 'ready');
+    assert.notEqual(recovered.id, failed.id);
+    assert.equal(harness.providerCaptureCalls.length, 2,
+        'reopening the popup rechecks a recoverable failure without a hidden second click');
+});
+
+test('a shown rate-limit time cannot be bypassed by a forced retry', async () => {
+    const clock = { now: Date.now() };
+    const retryAt = clock.now + 60_000;
+    const harness = createHarness({
+        clock,
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: {
+            ok: false,
+            code: 'provider-rate-limited',
+            retryAt,
+            provider: 'strava',
+            activityId: '123',
+        },
+    });
+    const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.id, limited.id);
+    assert.equal(blocked.error.retryAt, retryAt);
+    assert.equal(harness.providerCaptureCalls.length, 1);
 });
 
 test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {

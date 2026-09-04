@@ -343,6 +343,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const failCaptureJob = async (tabId, generation, code, message, details = {}) => {
         const retryAt = Number(details.retryAt);
+        const recoveryTabId = Number(details.recoveryTabId);
         const failed = await updateCaptureJob(tabId, generation, {
             phase: 'error',
             error: {
@@ -351,6 +352,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 ...((code === 'provider-rate-limited' || code === 'rate-limit')
                     && Number.isFinite(retryAt) && retryAt >= now() && retryAt <= now() + 24 * 60 * 60 * 1000
                     ? { retryAt: Math.trunc(retryAt) }
+                    : {}),
+                ...((code === 'cloudflare' || code === 'peakbagger-signed-out')
+                    && Number.isInteger(recoveryTabId)
+                    ? { recoveryTabId }
                     : {}),
             },
         });
@@ -400,14 +405,25 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         if (!peakbaggerScheduler.resume()) throw schedulerState.reason;
     };
 
-    const schedulePeakbaggerRequest = (request, url, options = {}) => peakbaggerScheduler.run(
+    const schedulePeakbaggerRequest = (
+        request,
+        url,
+        options = {},
+        { recoveryTabId = null, adoptForRecovery = null } = {},
+    ) => peakbaggerScheduler.run(
         async schedulerSignal => {
             const response = await request(url, { ...options, signal: schedulerSignal });
             const code = response?.error?.code;
             if (code !== 'cloudflare' && code !== 'rate-limit') return response;
 
             const failure = peakbaggerPublicError(response.error);
+            if (code === 'cloudflare' && Number.isInteger(recoveryTabId)) {
+                failure.recoveryTabId = recoveryTabId;
+            }
             peakbaggerScheduler.stop(failure, { exceptSignal: schedulerSignal });
+            if (code === 'cloudflare' && typeof adoptForRecovery === 'function') {
+                await adoptForRecovery();
+            }
             if (code === 'rate-limit' && failure.retryAt) {
                 try {
                     await storage().set({
@@ -420,7 +436,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     console.error('Better Peakbagger: Peakbagger cooldown storage failed', error);
                 }
             }
-            return response;
+            throw failure;
         },
         { signal: options.signal },
     );
@@ -1015,13 +1031,27 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const accountEvidenceIsFresh = created || tab.status !== 'complete';
             await waitForPeakbaggerTab(tab.id, signal);
             await ensurePeakbaggerPage(tab.id, signal);
+            let adoptedForRecovery = false;
             return {
+                tabId: tab.id,
                 freshAccount: () => accountEvidenceIsFresh
                     ? readFreshPeakbaggerAccount(tab.id, signal)
                     : Promise.resolve(null),
                 request: (url, options) => requestThroughPeakbaggerPage(tab.id, url, options),
+                adoptForRecovery: async () => {
+                    adoptedForRecovery = true;
+                    if (created) {
+                        try { await markPeakbaggerHelperAdopted(tab.id); }
+                        catch (error) {
+                            console.error('Better Peakbagger: challenge tab adoption failed', error);
+                        }
+                    }
+                    return tab.id;
+                },
                 release: () => created
-                    ? closePeakbaggerHelperLease(tab.id, generation)
+                    ? (adoptedForRecovery
+                        ? forgetPeakbaggerHelperLease(tab.id, generation)
+                        : closePeakbaggerHelperLease(tab.id, generation))
                     : Promise.resolve(),
             };
         } catch (error) {
@@ -1498,16 +1528,25 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
             await ensurePeakbaggerRequestsAllowed();
             peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, generation, signal);
-            const peakbaggerRequest = (url, options) =>
-                schedulePeakbaggerRequest(peakbaggerPage.request, url, options);
+            const peakbaggerRequest = (url, options) => schedulePeakbaggerRequest(
+                peakbaggerPage.request,
+                url,
+                options,
+                {
+                    recoveryTabId: peakbaggerPage.tabId,
+                    adoptForRecovery: peakbaggerPage.adoptForRecovery,
+                },
+            );
             const cid = await peakbaggerPage.freshAccount()
                 || await peakbaggerLogin({ request: peakbaggerRequest, signal });
             if (!cid) {
+                const recoveryTabId = await peakbaggerPage.adoptForRecovery();
                 await failCaptureJob(
                     tabId,
                     generation,
                     'peakbagger-signed-out',
                     'Your Peakbagger login could not be verified. Open Peakbagger, confirm you’re signed in, then try again.',
+                    { recoveryTabId },
                 );
                 return;
             }
@@ -1607,6 +1646,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
             await failCaptureJob(tabId, generation, failure.code, failure.message, {
                 retryAt: error?.retryAt,
+                recoveryTabId: error?.recoveryTabId,
             });
         } finally {
             if (peakbaggerPage) {
@@ -1652,8 +1692,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         if (processes.has(tabId)) {
             return { kind: 'wait', process: processes.get(tabId), activity, capturePreferences };
         }
+        const retryAt = Number(current?.error?.retryAt);
+        const activeCooldown = current?.phase === 'error'
+            && (current.error?.code === 'provider-rate-limited' || current.error?.code === 'rate-limit')
+            && Number.isFinite(retryAt) && retryAt >= now();
+        if (sameActivity && activeCooldown) {
+            return { kind: 'complete', value: publicJob(current) };
+        }
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
-            && current.expiresAt > now() && CapturePhases.isTerminal(current.phase)) {
+            && current.expiresAt > now() && CapturePhases.isReusable(current.phase)) {
             return { kind: 'complete', value: publicJob(current) };
         }
         await setBadge(tabId, '');
@@ -2415,6 +2462,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     requestThroughPeakbaggerPage(tabId, requestUrl, requestOptions),
                 url,
                 options,
+                { recoveryTabId: tabId },
             );
             const cid = await peakbaggerLogin({ request: peakbaggerPageRequest });
             if (!(await uploadSelectionIsCurrent(tabId, selection))) {
@@ -2972,6 +3020,24 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         catch { return false; }
     };
 
+    const focusCaptureRecoveryTab = async (message, sender) => {
+        if (!isExtensionPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const sourceTabId = Number(message?.tabId);
+        if (!Number.isInteger(sourceTabId)) return { ok: false, error: { code: 'invalid-tab' } };
+        const job = (await readMap(JOBS_KEY))[sourceTabId];
+        const recoveryTabId = Number(job?.error?.recoveryTabId);
+        if (!Number.isInteger(recoveryTabId)) return { ok: false, error: { code: 'not-found' } };
+        try {
+            const tab = await ext.tabs.get(recoveryTabId);
+            if (!canonicalPeakbaggerTab(tab)) return { ok: false, error: { code: 'not-found' } };
+            await ext.tabs.update(recoveryTabId, { active: true });
+            if (Number.isInteger(tab.windowId)) await ext.windows.update(tab.windowId, { focused: true });
+            return { ok: true, tabId: recoveryTabId };
+        } catch {
+            return { ok: false, error: { code: 'not-found' } };
+        }
+    };
+
     const terrainFrameUrl = (() => {
         try { return ext.runtime.getURL('terrain/terrain.html'); }
         catch { return null; }
@@ -3227,6 +3293,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             case 'OPEN_BETA_SETTINGS': return openBetaSettings(message, sender);
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(message, sender);
             case 'CAPTURE_START': return startCapture(message);
+            case 'CAPTURE_FOCUS_RECOVERY': return focusCaptureRecoveryTab(message, sender);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);
                 const job = jobs[Number(message.tabId)] || null;
