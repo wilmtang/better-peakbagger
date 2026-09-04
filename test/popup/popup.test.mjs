@@ -165,6 +165,49 @@ test('popup resolves auto units without a page to sniff, and never mixes systems
     dom.window.close();
 });
 
+test('popup starts admission before units resolve and delays the first result paint', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    let resolveSettings;
+    const settings = new Promise(resolve => { resolveSettings = resolve; });
+    const messages = [];
+    const diagnostics = [];
+    dom.window.BPB_CAPTURE_DIAGNOSTICS = true;
+    dom.window.console.debug = (...args) => diagnostics.push(args);
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        storage: {
+            sync: { get: async () => settings, set: async () => {} },
+            onChanged: { addListener() {}, removeListener() {} }
+        },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return unitsJob;
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => messages.some(message => message.type === 'CAPTURE_START'));
+    assert.equal(dom.window.document.querySelector('.peak-evidence'), null,
+        'a fast worker result must not flash the fallback unit system');
+    assert.match(dom.window.document.getElementById('state').textContent, /Loading your display units/);
+
+    resolveSettings({ bpbSettings: { units: 'metric' } });
+    await waitFor(() => dom.window.document.querySelector('.peak-evidence'));
+    assert.match(dom.window.document.querySelector('.peak-evidence').textContent, /^8 m from summit/);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0][0], 'Better Peakbagger popup diagnostics');
+    assert.equal(diagnostics[0][1].outcome, 'ready');
+    assert.ok(Number.isFinite(diagnostics[0][1].popupToReadyMs));
+    assert.doesNotMatch(JSON.stringify(diagnostics[0][1]), /garmin|strava|Unit Peak|activity|coordinates/i);
+    dom.window.close();
+});
+
 test('popup discards the cached GPX before offering a fresh capture', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

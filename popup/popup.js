@@ -31,8 +31,26 @@ import { units as Units } from '../src/ui/units.js';
     // imperial fallback rather than inventing a second source of truth or
     // persisting a "last units seen" value for a cosmetic tie-break.
     let displayUnits = Units.IMPERIAL;
+    let displayUnitsReady = false;
+    let pendingUnitsJob = null;
     let pollTimer = null;
     let capturePending = false;
+    let popupCaptureStartedAt = null;
+    let popupDiagnosticReported = false;
+
+    const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
+    const reportPopupDiagnostic = job => {
+        if (globalThis.BPB_CAPTURE_DIAGNOSTICS !== true
+            || popupDiagnosticReported
+            || popupCaptureStartedAt === null
+            || !CapturePhases.isTerminal(job?.phase)) return;
+        popupDiagnosticReported = true;
+        console.debug('Better Peakbagger popup diagnostics', {
+            version: 1,
+            outcome: job.phase,
+            popupToReadyMs: Math.round(Math.max(0, monotonicNow() - popupCaptureStartedAt) * 10) / 10,
+        });
+    };
 
     const clear = element => { while (element.firstChild) element.firstChild.remove(); };
 
@@ -289,6 +307,15 @@ import { units as Units } from '../src/ui/units.js';
         providerLabel.textContent = job.provider === 'garmin'
             ? 'Garmin Connect activity'
             : job.provider === 'strava' ? 'Strava activity' : 'Capture this activity';
+        const needsUnits = job.phase === 'ready' || job.phase === 'opening'
+            || job.phase === 'opened' || job.phase === 'previewed';
+        if (needsUnits && !displayUnitsReady) {
+            pendingUnitsJob = job;
+            stateCard('Preparing detected ascents…', 'Loading your display units.', { loading: true });
+            return;
+        }
+        pendingUnitsJob = null;
+        reportPopupDiagnostic(job);
         if (job.phase === 'error') return errorState(job.error);
         if (job.phase === 'no-gps') {
             stateCard(
@@ -353,6 +380,8 @@ import { units as Units } from '../src/ui/units.js';
 
     const beginCapture = force => {
         clearTimeout(pollTimer);
+        popupCaptureStartedAt = globalThis.BPB_CAPTURE_DIAGNOSTICS === true ? monotonicNow() : null;
+        popupDiagnosticReported = false;
         capturePending = true;
         pollFailures = 0;
         stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', {
@@ -438,13 +467,16 @@ import { units as Units } from '../src/ui/units.js';
         }
     });
 
-    // Units are resolved before the first render, so no card is ever painted in
-    // the wrong system and then corrected.
-    void Promise.all([
-        ext.tabs.query({ active: true, currentWindow: true }),
-        Settings.get().catch(() => null)
-    ]).then(([tabs, settings]) => {
+    // Admission does not depend on a cosmetic units read. Start as soon as the
+    // active tab is known, but hold a fast result card until units resolve so
+    // distances are never painted in one system and corrected in another.
+    void Settings.get().catch(() => null).then(settings => {
         displayUnits = Units.resolveUnits(settings);
+        displayUnitsReady = true;
+        const pending = pendingUnitsJob;
+        if (pending && currentJob === pending) render(pending);
+    });
+    void ext.tabs.query({ active: true, currentWindow: true }).then(tabs => {
         activeTab = tabs[0];
         if (!activeTab) {
             errorState({ code: 'unsupported', message: 'No active browser tab is available.' });

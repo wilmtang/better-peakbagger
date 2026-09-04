@@ -7,6 +7,7 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from '../capture/capture-core.js';
+import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { captureErrorMessage } from '../capture/capture-error-policy.js';
 import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
@@ -93,6 +94,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const CAPTURE_MUTATION_QUEUE = 'capture-lifecycle';
 
     const now = () => Date.now();
+    const newCaptureDiagnostics = () => createCaptureDiagnostics({
+        enabled: globalThis.BPB_CAPTURE_DIAGNOSTICS === true,
+        report: snapshot => console.debug('Better Peakbagger capture diagnostics', snapshot),
+    });
     const peakbaggerScheduler = createPeakbaggerRequestScheduler({
         concurrency: CaptureLimits.CORRIDOR_CONCURRENCY,
     });
@@ -1244,7 +1249,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return results[0].result;
     };
 
-    const captureProvider = async (tabId, capturePreferences, generation, expectedActivity, signal) => {
+    const captureProvider = async (
+        tabId,
+        capturePreferences,
+        generation,
+        expectedActivity,
+        signal,
+        diagnostic = false,
+    ) => {
         const results = await runProviderBrowserOperation({
             phase: 'GPX capture',
             signal,
@@ -1252,13 +1264,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             onCancel: providerOperationCancellation(tabId, generation),
             operation: () => ext.scripting.executeScript({
                 target: { tabId },
-                func: async (options, captureGeneration, timeoutMs, activity) => {
+                func: async (options, captureGeneration, timeoutMs, activity, includeDiagnostics) => {
                     try {
                         return await globalThis.BPBProviderPage.capture(
                             options,
                             captureGeneration,
                             timeoutMs,
                             activity,
+                            includeDiagnostics,
                         );
                     } catch (error) {
                         return {
@@ -1270,7 +1283,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 args: [{
                     retainWaypoints: capturePreferences.retainWaypoints,
                     includeTripName: capturePreferences.fillTripInfo
-                }, generation, PROVIDER_EXPORT_TIMEOUT_MS, expectedActivity],
+                }, generation, PROVIDER_EXPORT_TIMEOUT_MS, expectedActivity, diagnostic === true],
                 world: 'MAIN'
             }),
         });
@@ -1327,6 +1340,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         boundPid = null,
         onPhase = async () => {},
         onProgress = async () => {},
+        diagnostics = createCaptureDiagnostics(),
         signal = null,
         peakbaggerRequest = fetchPeakbaggerResource,
     }) => {
@@ -1360,6 +1374,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 : [];
             await cpu.checkpoint(true);
             const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
+            diagnostics.mark('local.sanitize');
+            diagnostics.count('track.source-points', sourcePointCount);
+            diagnostics.count('track.sanitized-points', pointCount);
+            diagnostics.count('track.waypoints', cleanWaypoints.length);
             if (pointCount === 0) {
                 return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
             }
@@ -1378,6 +1396,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
             const boxes = Core.buildQueryBoxes(sanitized.segments);
             await cpu.checkpoint();
+            diagnostics.mark('local.boxes');
+            diagnostics.count('peakbagger.areas', boxes.length);
             if (!boxes.length) {
                 throw PublicErrors.exception(
                     'invalid-track',
@@ -1399,6 +1419,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 onProgress,
             }));
             assertActive();
+            diagnostics.mark('peakbagger.corridor');
+            diagnostics.count('peakbagger.candidates', peaks.length);
             await onPhase('preparing-results');
             const allMatches = await Core.detectPeaksAsync(
                 sanitized.segments,
@@ -1406,6 +1428,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 sanitized.quality.score,
                 { checkpoint: cpu.checkpoint },
             );
+            diagnostics.mark('local.matching');
+            diagnostics.count('track.matches', allMatches.length);
             if (allMatches.length > CaptureLimits.MAX_CAPTURE_MATCHES) {
                 throw PublicErrors.exception(
                     'capture-analysis-too-large',
@@ -1438,6 +1462,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             );
             const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
             await cpu.checkpoint();
+            diagnostics.mark('local.reduction');
             const matches = [];
             for (const match of visibleMatches) {
                 matches.push({
@@ -1469,6 +1494,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             } : null;
 
             await cpu.checkpoint();
+            diagnostics.mark('local.derivation');
             return {
                 status: 'ready',
                 matches,
@@ -1499,8 +1525,16 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
     };
 
-    const processCapture = async (tabId, expectedUrl, capturePreferences, generation, signal) => {
+    const processCapture = async (
+        tabId,
+        expectedUrl,
+        capturePreferences,
+        generation,
+        signal,
+        diagnostics = newCaptureDiagnostics(),
+    ) => {
         let peakbaggerPage = null;
+        let diagnosticOutcome = 'error';
         try {
             const expectedActivity = providerFromUrl(expectedUrl);
             if (!expectedActivity) {
@@ -1514,6 +1548,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
             const tab = await ext.tabs.get(tabId);
             const startingActivity = providerFromUrl(tab?.url);
+            diagnostics.mark('activity.validation');
             if (!sameProviderActivity(startingActivity, expectedActivity)) {
                 await failCaptureJob(
                     tabId,
@@ -1526,6 +1561,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
             if (!await updateCaptureJob(tabId, generation, { phase: 'waiting-provider', progress: null })) return;
             await injectProvider(tabId, generation, signal);
+            diagnostics.mark('provider.injection');
             if (!await updateCaptureJob(tabId, generation, { phase: 'verifying-ownership' })) return;
             const ownership = await inspectProviderOwnership(
                 tabId,
@@ -1533,6 +1569,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 generation,
                 signal,
             );
+            diagnostics.mark('provider.ownership');
             const ownershipMatches = sameProviderActivity(ownership, expectedActivity);
             const ownershipChanged = ownership?.code === 'activity-changed'
                 || (hasProviderActivity(ownership) && !ownershipMatches);
@@ -1563,6 +1600,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             );
             const cid = await peakbaggerPage.freshAccount()
                 || await peakbaggerLogin({ request: peakbaggerRequest, signal });
+            diagnostics.mark('peakbagger.account');
             if (!cid) {
                 const recoveryTabId = await peakbaggerPage.adoptForRecovery();
                 await failCaptureJob(
@@ -1593,7 +1631,16 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 generation,
                 expectedActivity,
                 signal,
+                diagnostics.enabled,
             );
+            diagnostics.mark('provider.capture');
+            const pageDiagnostics = capture?.diagnostics;
+            for (const name of ['headers', 'body', 'parse', 'metadata']) {
+                diagnostics.add(`provider.${name}`, pageDiagnostics?.durationsMs?.[name]);
+            }
+            for (const name of ['track-points', 'segments', 'waypoints']) {
+                diagnostics.count(`provider.${name}`, pageDiagnostics?.counts?.[name]);
+            }
             const captureMatches = sameProviderActivity(capture, expectedActivity);
             const captureChanged = capture?.code === 'activity-changed'
                 || (hasProviderActivity(capture) && !captureMatches);
@@ -1604,6 +1651,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         generation,
                         captureErrorMessage('no-gps-data'),
                     );
+                    diagnostics.mark('storage.publish');
+                    diagnosticOutcome = 'no-gps';
                     return;
                 }
                 const code = captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed');
@@ -1643,6 +1692,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 capturePreferences,
                 signal,
                 peakbaggerRequest,
+                diagnostics,
                 onPhase: (phase, progress = null) => updateCaptureJob(
                     tabId,
                     generation,
@@ -1652,6 +1702,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             });
             if (analysis.status === 'no-gps') {
                 await finishCaptureWithoutGps(tabId, generation, analysis.message);
+                diagnostics.mark('storage.publish');
+                diagnosticOutcome = 'no-gps';
                 return;
             }
             if (analysis.status === 'no-matches') {
@@ -1663,6 +1715,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     error: null,
                     expiresAt: now() + JOB_TTL_MS
                 });
+                diagnostics.mark('storage.publish');
+                diagnosticOutcome = 'no-matches';
                 return;
             }
 
@@ -1680,6 +1734,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
             });
+            diagnostics.mark('storage.publish');
+            diagnosticOutcome = 'ready';
         } catch (error) {
             // Cancellation owners delete or replace the generation separately.
             // Never turn their intentional abort into a durable error record;
@@ -1691,7 +1747,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 retryAt: error?.retryAt,
                 recoveryTabId: error?.recoveryTabId,
             });
+            diagnostics.mark('storage.failure');
         } finally {
+            diagnostics.finish(signal?.aborted ? 'cancelled' : diagnosticOutcome);
             if (peakbaggerPage) {
                 try { await peakbaggerPage.release(); }
                 catch (error) { console.error('Better Peakbagger: temporary request tab cleanup failed', error); }
@@ -1710,16 +1768,21 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     const admitCapture = async (message, tabId, admissionEpoch) => {
+        const diagnostics = newCaptureDiagnostics();
         const cancelled = () => captureCancellationEpochs.get(tabId) !== admissionEpoch;
-        const cancelledAdmission = () => ({ kind: 'cancelled' });
+        const cancelledAdmission = () => {
+            diagnostics.finish('cancelled');
+            return { kind: 'cancelled' };
+        };
         const tab = await ext.tabs.get(tabId);
-        if (cancelled()) return cancelledAdmission();
-        const capturePreferences = await readCapturePreferences();
+        diagnostics.mark('admission.active-tab');
         if (cancelled()) return cancelledAdmission();
         const activity = providerFromUrl(tab.url);
         if (!activity) {
             await setBadge(tabId, '');
             if (cancelled()) return cancelledAdmission();
+            diagnostics.mark('admission.unsupported');
+            diagnostics.finish('unsupported');
             return {
                 kind: 'complete',
                 value: {
@@ -1728,11 +1791,22 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 },
             };
         }
+        let capturePreferences;
+        try {
+            capturePreferences = await readCapturePreferences();
+            diagnostics.mark('admission.settings');
+        } catch (error) {
+            diagnostics.finish('error');
+            throw error;
+        }
+        if (cancelled()) return cancelledAdmission();
         const jobs = await readMap(JOBS_KEY);
+        diagnostics.mark('admission.jobs');
         if (cancelled()) return cancelledAdmission();
         const current = jobs[tabId];
         const sameActivity = current && current.provider === activity.provider && current.activityId === activity.activityId;
         if (processes.has(tabId)) {
+            diagnostics.finish('joined');
             return { kind: 'wait', process: processes.get(tabId), activity, capturePreferences };
         }
         const retryAt = Number(current?.error?.retryAt);
@@ -1740,10 +1814,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             && (current.error?.code === 'provider-rate-limited' || current.error?.code === 'rate-limit')
             && Number.isFinite(retryAt) && retryAt >= now();
         if (sameActivity && activeCooldown) {
+            diagnostics.finish('cooldown');
             return { kind: 'complete', value: publicJob(current) };
         }
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
             && current.expiresAt > now() && CapturePhases.isReusable(current.phase)) {
+            diagnostics.finish('reused');
             return { kind: 'complete', value: publicJob(current) };
         }
         await setBadge(tabId, '');
@@ -1766,6 +1842,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         abortOwnedWork(tabId);
         invalidateLifecycle(tabId);
         await serializeLifecycle(tabId, () => installLifecycleJob(job));
+        diagnostics.mark('admission.storage');
         if (cancelled()) {
             await mutateMap(JOBS_KEY, map => {
                 if (map[tabId]?.id === job.id) delete map[tabId];
@@ -1773,7 +1850,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return cancelledAdmission();
         }
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const process = processCapture(tabId, tab.url, capturePreferences, job.id, controller?.signal);
+        const process = processCapture(
+            tabId,
+            tab.url,
+            capturePreferences,
+            job.id,
+            controller?.signal,
+            diagnostics,
+        );
         processes.set(tabId, { generation: job.id, promise: process, controller });
         return { kind: 'started', job, process, signal: controller?.signal };
     };

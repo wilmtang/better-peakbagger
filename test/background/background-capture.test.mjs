@@ -34,6 +34,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
+    captureDiagnostics = false,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = sessionValues || {};
     const localValues = {};
@@ -335,6 +336,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         options: structuredClone(details.args?.[0]),
                         generation: details.args?.[1],
                         timeoutMs: details.args?.[2],
+                        diagnostics: details.args?.[4] === true,
                     };
                     providerCaptureCalls.push(call);
                     if (beforeProviderCapture) await beforeProviderCapture(call);
@@ -457,6 +459,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
 
     const workerConsole = Object.create(console);
     workerConsole.error = (...args) => { loggedErrors.push(args); };
+    const loggedDiagnostics = [];
+    workerConsole.debug = (...args) => { loggedDiagnostics.push(args); };
     const WorkerDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
     const context = vm.createContext({
         browser,
@@ -476,6 +480,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             ? setTimeout
             : (callback, delay, ...args) => setTimeout(callback, Math.min(delay, timerDelayCap), ...args),
         clearTimeout,
+        BPB_CAPTURE_DIAGNOSTICS: captureDiagnostics,
     });
     context.globalThis = context;
     context.self = context;
@@ -495,7 +500,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         payloadSetCalls: () => payloadSetCalls,
         payloadRemoveCalls: () => payloadRemoveCalls,
         sessionSetPatches,
-        loggedErrors, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
+        loggedErrors, loggedDiagnostics, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
     };
 };
 
@@ -608,6 +613,42 @@ test('background capture persists a private job, opens grouped drafts, and previ
         applyLeaseToken: apply.applyLeaseToken,
     }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('capture diagnostics stay local and contain only duration and count labels', async () => {
+    const harness = createHarness({
+        captureDiagnostics: true,
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Diagnostic hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15) },
+                { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16) },
+            ]],
+            waypoints: [],
+            diagnostics: {
+                durationsMs: { headers: 4.2, body: 2.1, parse: 0.8, metadata: 0.2 },
+                counts: { 'track-points': 2, segments: 1, waypoints: 0 },
+            },
+        },
+    });
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.providerCaptureCalls[0].diagnostics, true);
+    assert.equal(harness.loggedDiagnostics.length, 1);
+    const [label, rawSnapshot] = harness.loggedDiagnostics[0];
+    const snapshot = JSON.parse(JSON.stringify(rawSnapshot));
+    assert.equal(label, 'Better Peakbagger capture diagnostics');
+    assert.equal(snapshot.outcome, 'ready');
+    assert.equal(snapshot.durationsMs['provider.headers'], 4.2);
+    assert.equal(snapshot.counts['provider.track-points'], 2);
+    assert.ok(snapshot.durationsMs['peakbagger.corridor'] >= 0);
+    assert.ok(snapshot.counts['peakbagger.areas'] >= 1);
+    assert.doesNotMatch(JSON.stringify(snapshot), /Diagnostic hike|strava|activities|latitude|longitude|gpx/i);
+    assert.doesNotMatch(JSON.stringify(harness.values), /diagnostics|durationsMs/,
+        'diagnostics are never persisted with session capture data');
 });
 
 test('capture payload creation and metadata publication roll back independently', async () => {
@@ -1262,6 +1303,23 @@ test('toolbar capture fails closed when privacy settings cannot be read', async 
         harness.loggedErrors.flat().map(value => value instanceof Error ? value.message : String(value)).join('\n'),
         /SYNC_CAPTURE_SETTINGS_SENTINEL/
     );
+});
+
+test('an unsupported tab is rejected before the authoritative settings read', async () => {
+    const sentinel = 'SETTINGS_MUST_NOT_BE_READ';
+    const tabs = new Map([[1, {
+        id: 1,
+        windowId: 9,
+        url: 'https://example.com/not-an-activity',
+        active: true,
+        status: 'complete',
+    }]]);
+    const harness = createHarness({ browserTabs: tabs, faults: { syncGet: sentinel } });
+    const response = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(response.error.code, 'unsupported');
+    assert.equal(harness.scriptCalls.length, 0);
+    assert.doesNotMatch(harness.loggedErrors.flat().join('\n'), new RegExp(sentinel));
 });
 
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {

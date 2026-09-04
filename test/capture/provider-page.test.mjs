@@ -10,6 +10,7 @@ import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
 // The built bundle (IIFE) evaluated in each page's jsdom realm, so the module
 // reads that page's document/location — exactly as the injected script does.
 const source = await fs.readFile(new URL('../../dist/provider-page.js', import.meta.url), 'utf8');
+const fixture = name => fs.readFile(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 
 const load = (html, url) => {
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
@@ -133,6 +134,29 @@ test('signed-out and changed provider DOMs fail with distinct states', () => {
     assert.equal(unknown.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
 });
 
+test('sanitized provider contract corpus pins structural ownership outcomes', async t => {
+    const cases = [
+        ['Strava owned', 'strava-owned.html', 'https://www.strava.com/activities/123', true, null],
+        ['Strava localized owned', 'strava-owned-es.html', 'https://www.strava.com/activities/123', true, null],
+        ['Strava other owner', 'strava-other-owner.html', 'https://www.strava.com/activities/123', false, 'not-owner'],
+        ['Strava signed out', 'strava-signed-out.html', 'https://www.strava.com/activities/123', false, 'provider-signed-out'],
+        ['Garmin owned', 'garmin-owned.html', 'https://connect.garmin.com/app/activity/777', true, null],
+        ['Garmin other owner', 'garmin-other-owner.html', 'https://connect.garmin.com/app/activity/777', false, 'not-owner'],
+        ['Garmin signed out', 'garmin-signed-out.html', 'https://connect.garmin.com/app/activity/777', false, 'provider-signed-out'],
+        ['loading skeleton', 'provider-loading.html', 'https://www.strava.com/activities/123', false, 'ownership-unverified'],
+        ['human check', 'provider-challenge.html', 'https://www.strava.com/activities/123', false, 'provider-human-check'],
+    ];
+    for (const [name, file, url, ok, code] of cases) {
+        await t.test(name, async () => {
+            const dom = load(await fixture(file), url);
+            const result = dom.window.BPBProviderPage.inspectOwnership();
+            assert.equal(result.ok, ok);
+            if (code) assert.equal(result.code, code);
+            dom.window.close();
+        });
+    }
+});
+
 test('ownership wait tolerates staged SPA rendering and returns only after proof is complete', async () => {
     const dom = load('<main><h1>Loading activity</h1></main>', 'https://www.strava.com/activities/123');
     const pending = dom.window.BPBProviderPage.waitForOwnership(
@@ -224,6 +248,31 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.deepEqual([...capture.waypoints], []);
     assert.equal(capture.metadata.title, undefined);
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
+    assert.equal('diagnostics' in capture, false, 'production capture output stays narrow by default');
+});
+
+test('opt-in provider diagnostics contain only local durations and aggregate counts', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    dom.window.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/gpx+xml' },
+        text: async () => '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>',
+    });
+
+    const capture = await dom.window.BPBProviderPage.capture(
+        {},
+        'diagnostic-capture',
+        1000,
+        { provider: 'strava', activityId: '123' },
+        true,
+    );
+    const diagnostics = JSON.parse(JSON.stringify(capture.diagnostics));
+    assert.equal(capture.ok, true);
+    assert.deepEqual(Object.keys(diagnostics.durationsMs).sort(), ['body', 'headers', 'metadata', 'parse']);
+    assert.ok(Object.values(diagnostics.durationsMs).every(value => Number.isFinite(value) && value >= 0));
+    assert.deepEqual(diagnostics.counts, { 'track-points': 2, segments: 1, waypoints: 0 });
+    assert.doesNotMatch(JSON.stringify(diagnostics), /strava|activities|latitude|longitude|gpx/i);
 });
 
 test('provider capture excludes extension-owned and nested fake GPX geometry', async () => {

@@ -31,6 +31,7 @@ const NO_GPS_MESSAGE = captureErrorMessage('no-gps-data');
 const EXPORT_FAILURE_MESSAGE = captureErrorMessage('provider-export-failed');
 const EXPORT_TIMEOUT_MESSAGE = captureErrorMessage('provider-export-timeout');
 const activeCaptures = new Map();
+const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
 
 const providerFailure = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
 
@@ -299,9 +300,27 @@ const capture = async (
     generation = null,
     timeoutMs = PROVIDER_EXPORT_TIMEOUT_MS,
     expectedActivity = null,
+    includeDiagnostics = false,
 ) => {
+    const diagnostic = includeDiagnostics === true;
+    const durationsMs = Object.create(null);
+    const counts = Object.create(null);
+    const measure = diagnostic ? async (name, operation) => {
+        const started = monotonicNow();
+        try { return await operation(); }
+        finally { durationsMs[name] = Math.round((monotonicNow() - started) * 10) / 10; }
+    } : (_name, operation) => operation();
+    const measureSync = diagnostic ? (name, operation) => {
+        const started = monotonicNow();
+        try { return operation(); }
+        finally { durationsMs[name] = Math.round((monotonicNow() - started) * 10) / 10; }
+    } : (_name, operation) => operation();
+    const withDiagnostics = result => diagnostic ? {
+        ...result,
+        diagnostics: { durationsMs: { ...durationsMs }, counts: { ...counts } },
+    } : result;
     const ownership = inspectExpectedOwnership(expectedActivity);
-    if (!ownership.ok) return ownership;
+    if (!ownership.ok) return withDiagnostics(ownership);
     const request = ownership.provider === 'garmin'
         ? garminExportRequest(ownership.activityId)
         : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
@@ -309,20 +328,20 @@ const capture = async (
     const deadline = Deadline.createRequestDeadline(timeoutMs);
     activeCaptures.set(captureKey, deadline);
     try {
-        const response = await deadline.run(fetch(request.endpoint, {
+        const response = await measure('headers', () => deadline.run(fetch(request.endpoint, {
             credentials: 'include',
             redirect: 'follow',
             headers: request.headers,
             signal: deadline.signal
-        }));
+        })));
         let responseClass = classifyProviderResponse(response, { provider: ownership.provider });
         if (responseClass.needsBodyProbe) {
-            const bodyText = await deadline.run(BoundedText.readBoundedResponseText(response, {
+            const bodyText = await measure('body', () => deadline.run(BoundedText.readBoundedResponseText(response, {
                 maxBytes: PROVIDER_RESPONSE_PROBE_BYTES,
                 maxChars: PROVIDER_RESPONSE_PROBE_CHARS,
                 signal: deadline.signal,
                 label: 'Provider response',
-            }));
+            })));
             responseClass = classifyProviderResponse(response, {
                 provider: ownership.provider,
                 bodyText,
@@ -334,13 +353,13 @@ const capture = async (
                 : providerFailure(responseClass.code, responseClass);
         }
         const beforeBody = inspectExpectedOwnership(expectedActivity);
-        if (!beforeBody.ok) return publicOwnership(beforeBody);
-        const text = await deadline.run(BoundedText.readBoundedResponseText(response, {
+        if (!beforeBody.ok) return withDiagnostics(publicOwnership(beforeBody));
+        const text = await measure('body', () => deadline.run(BoundedText.readBoundedResponseText(response, {
             maxBytes: MAX_GPX_BYTES,
             maxChars: MAX_GPX_TEXT_CHARS,
             signal: deadline.signal,
             label: 'Provider GPX',
-        }));
+        })));
         const bodyClass = classifyProviderBody(text);
         if (!bodyClass.ok) {
             throw bodyClass.code === 'no-gps-data'
@@ -348,19 +367,24 @@ const capture = async (
                 : providerFailure(bodyClass.code);
         }
         const afterBody = inspectExpectedOwnership(expectedActivity);
-        if (!afterBody.ok) return publicOwnership(afterBody);
-        const parsed = parseGpxData(text, options);
-        const metadata = activityMetadata(ownership.provider);
+        if (!afterBody.ok) return withDiagnostics(publicOwnership(afterBody));
+        const parsed = measureSync('parse', () => parseGpxData(text, options));
+        if (diagnostic) {
+            counts['track-points'] = parsed.segments.reduce((sum, segment) => sum + segment.length, 0);
+            counts.segments = parsed.segments.length;
+            counts.waypoints = parsed.waypoints.length;
+        }
+        const metadata = measureSync('metadata', () => activityMetadata(ownership.provider));
         if (options.includeTripName) {
             metadata.title = parsed.trackName
                     || cleanName((document.querySelector('main') || document.body).querySelector('h1')?.textContent || '');
         }
-        return {
+        return withDiagnostics({
             ...publicOwnership(ownership),
             segments: parsed.segments,
             waypoints: parsed.waypoints,
             metadata
-        };
+        });
     } catch (error) {
         const noGps = error?.code === 'no-gps-data';
         const tooLarge = error?.code === 'gpx-too-large' || BoundedText.isLimitError(error);
@@ -374,7 +398,7 @@ const capture = async (
                 : timedOut ? 'provider-export-timeout'
                     : cancelled ? 'provider-export-cancelled'
                         : classifiedCode || 'provider-export-failed';
-        return {
+        return withDiagnostics({
             ok: false,
             code,
             provider: ownership.provider,
@@ -388,7 +412,7 @@ const capture = async (
                         : code === 'provider-export-failed'
                             ? EXPORT_FAILURE_MESSAGE
                             : captureErrorMessage(code)
-        };
+        });
     } finally {
         deadline.clear();
         if (activeCaptures.get(captureKey) === deadline) activeCaptures.delete(captureKey);
