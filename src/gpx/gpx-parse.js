@@ -91,6 +91,29 @@ const noGpsError = () => {
 
 const gpxLimitError = () => Object.assign(new Error(gpxLimitMessage()), { code: 'gpx-too-large' });
 
+const exceedsElementLimit = (text, localName, limit) => {
+    const element = new RegExp(`<\\s*(?:[\\w.-]+:)?${localName}(?=[\\s/>])`, 'gi');
+    let count = 0;
+    while (element.exec(text)) {
+        count++;
+        if (count > limit) return true;
+    }
+    return false;
+};
+
+// Fail closed before DOMParser materializes a certainly excessive document.
+// This deliberately counts namespaced and nested lookalikes too: the later
+// ownership-aware DOM walk may ignore nested extension geometry, but an input
+// that already exceeds a safety ceiling before filtering is not worth building
+// into a full page-realm DOM merely to discover that distinction.
+const preflightGpxStructure = text => {
+    if (exceedsElementLimit(text, 'trkpt', MAX_GPX_TRACK_POINTS)
+        || exceedsElementLimit(text, 'trkseg', MAX_GPX_TRACK_SEGMENTS)
+        || exceedsElementLimit(text, 'wpt', MAX_GPX_WAYPOINTS)) {
+        throw gpxLimitError();
+    }
+};
+
 const parseGpxDocument = (xml, options = {}) => {
     if (elementsByLocalName(xml, 'parsererror').length) {
         const error = new Error('The GPX file contains invalid XML.');
@@ -142,6 +165,7 @@ const parseGpxDocument = (xml, options = {}) => {
 
 const parseGpxData = (text, options = {}) => {
     if (typeof text !== 'string' || text.length > MAX_GPX_TEXT_CHARS) throw gpxLimitError();
+    preflightGpxStructure(text);
     const xml = new DOMParser().parseFromString(text, 'application/xml');
     return parseGpxDocument(xml, options);
 };
@@ -152,4 +176,5 @@ export const gpxParse = {
     parseTrackPoint,
     cleanName,
     noGpsError,
+    preflightGpxStructure,
 };

@@ -259,7 +259,18 @@ const activityMetadata = provider => {
     }
     let utcOffsetMinutes = null;
     if (provider === 'garmin') {
-        const match = /\(UTC([+-])(\d{2}):(\d{2})\)/i.exec(main.textContent || '');
+        const scopes = [
+            timeElement?.parentElement,
+            ...document.querySelectorAll([
+                '[data-testid*="time" i]',
+                '[class*="ActivityMetaInfo" i]',
+                '[class*="ActivityDetails" i]',
+            ].join(',')),
+        ].filter(Boolean).slice(0, 8);
+        const timeZoneText = scopes
+            .map(scope => (scope.textContent || '').slice(0, 500))
+            .join(' ');
+        const match = /\(UTC([+-])(\d{2}):(\d{2})\)/i.exec(timeZoneText);
         if (match) {
             const value = Number(match[2]) * 60 + Number(match[3]);
             utcOffsetMinutes = match[1] === '-' ? -value : value;
