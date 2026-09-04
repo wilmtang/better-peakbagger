@@ -330,7 +330,7 @@ test('Garmin unavailability returns bounded typed copy instead of page exception
     assert.equal(capture.ok, false);
     assert.equal(capture.code, 'provider-unavailable');
     assert.equal(capture.message,
-        'The activity provider is temporarily unavailable. Try again later.');
+        'The provider could not complete the export. Wait a moment, then try again.');
     assert.doesNotMatch(capture.message, /503|Garmin/);
     assert.doesNotMatch(capture.message, /ownership/i);
 });
@@ -415,7 +415,7 @@ test('a never-settling provider fetch ends at one public deadline and releases t
     const capture = await dom.window.BPBProviderPage.capture({}, 'capture-timeout', 10);
     assert.equal(capture.ok, false);
     assert.equal(capture.code, 'provider-export-timeout');
-    assert.equal(capture.message, 'The activity provider took too long to export this GPX. Try again.');
+    assert.equal(capture.message, 'Reload the activity, wait for it to finish, then capture again.');
     assert.equal(aborted, true);
 });
 
@@ -433,7 +433,7 @@ test('the same provider deadline bounds a stalled GPX body read', async () => {
 
     const capture = await dom.window.BPBProviderPage.capture({}, 'body-timeout', 10);
     assert.equal(capture.code, 'provider-export-timeout');
-    assert.match(capture.message, /took too long/i);
+    assert.match(capture.message, /reload the activity/i);
     assert.equal(aborted, true);
 });
 
@@ -490,7 +490,7 @@ test('an unavailable or trackless provider export is reported as no GPS data', a
             const capture = await dom.window.BPBProviderPage.capture();
             assert.equal(capture.ok, false);
             assert.equal(capture.code, 'no-gps-data');
-            assert.match(capture.message, /no recorded route to capture/i);
+            assert.match(capture.message, /no recorded route yet/i);
         });
     }
 });

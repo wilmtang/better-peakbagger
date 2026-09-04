@@ -13,6 +13,7 @@ import {
     classifyProviderBody,
     classifyProviderResponse,
 } from './provider-response.js';
+import { captureErrorMessage } from './capture-error-policy.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
@@ -22,22 +23,12 @@ import {
     gpxLimitMessage,
 } from './capture-resource-limits.js';
 
-const NO_GPS_MESSAGE = 'This activity has no recorded route to capture.';
-const EXPORT_FAILURE_MESSAGE = 'The activity provider could not export this GPX. Reload the activity and try again.';
-const EXPORT_TIMEOUT_MESSAGE = 'The activity provider took too long to export this GPX. Try again.';
+const NO_GPS_MESSAGE = captureErrorMessage('no-gps-data');
+const EXPORT_FAILURE_MESSAGE = captureErrorMessage('provider-export-failed');
+const EXPORT_TIMEOUT_MESSAGE = captureErrorMessage('provider-export-timeout');
 const PROVIDER_TIMEOUT_MS = 30000;
 const OWNERSHIP_WAIT_MS = 8000;
 const activeCaptures = new Map();
-
-const providerFailureMessage = code => ({
-    'provider-signed-out': 'Sign in to the activity provider before capturing.',
-    'provider-human-check': 'The activity provider needs you to complete a security check before capturing.',
-    'provider-rate-limited': 'The activity provider is temporarily limiting requests. Wait before trying again.',
-    'provider-forbidden': 'The activity provider refused the GPX export. Open the activity and confirm it is available to your account.',
-    'provider-unavailable': 'The activity provider is temporarily unavailable. Try again later.',
-    'provider-response-changed': 'The activity provider returned an unexpected response. Reload the activity before trying again.',
-    'invalid-gpx': 'The activity provider returned invalid GPX data. Reload the activity before trying again.',
-}[code] || EXPORT_FAILURE_MESSAGE);
 
 const providerFailure = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
 
@@ -381,7 +372,9 @@ const capture = async (
             message: noGps ? NO_GPS_MESSAGE
                 : tooLarge ? gpxLimitMessage()
                     : timedOut ? EXPORT_TIMEOUT_MESSAGE
-                        : providerFailureMessage(code)
+                        : code === 'provider-export-failed'
+                            ? EXPORT_FAILURE_MESSAGE
+                            : captureErrorMessage(code)
         };
     } finally {
         deadline.clear();

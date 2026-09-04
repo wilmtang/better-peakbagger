@@ -8,6 +8,7 @@
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from '../capture/capture-core.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
+import { captureErrorMessage } from '../capture/capture-error-policy.js';
 import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
@@ -56,7 +57,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const PEAKBAGGER_PAGE_VERSION = 2;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
         code: 'capture-failed',
-        message: 'Capture stopped unexpectedly. Reload the activity and try again.',
+        message: captureErrorMessage('capture-failed'),
     });
     const UNEXPECTED_PROCESS_ERROR = Object.freeze({
         code: 'process-failed',
@@ -107,7 +108,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             console.error('Better Peakbagger: capture settings read failed', cause);
             throw PublicErrors.exception(
                 'settings-unavailable',
-                'Capture settings could not be read. Reload and try again. Nothing was captured.',
+                captureErrorMessage('settings-unavailable'),
                 { cause }
             );
         }
@@ -387,7 +388,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const cancelledCaptureError = () => PublicErrors.exception(
         'capture-cancelled',
-        'Capture was cancelled. Nothing was retained.',
+        captureErrorMessage('capture-cancelled'),
     );
 
     const peakbaggerPageError = (code, message, cause) =>
@@ -427,7 +428,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const providerOperationTimeoutError = (phase, cause) => PublicErrors.exception(
         'provider-page-timeout',
-        'The activity page did not respond within 20 seconds. Reload the activity and try again.',
+        captureErrorMessage('provider-page-timeout'),
         { cause: Object.assign(new Error(`Provider page operation timed out during ${phase}.`), { cause }) },
     );
 
@@ -1123,7 +1124,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         return {
                             ok: false,
                             code: 'provider-export-failed',
-                            message: 'The activity provider could not export this GPX. Reload the activity and try again.'
                         };
                     }
                 },
@@ -1140,7 +1140,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const captureTimeoutError = cause => PublicErrors.exception(
         'capture-timeout',
-        'Summit lookup took too long. Try a shorter or less fragmented GPX.',
+        captureErrorMessage('capture-timeout'),
         cause ? { cause } : undefined,
     );
 
@@ -1365,7 +1365,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     tabId,
                     generation,
                     'activity-changed',
-                    'The activity page changed before capture started.',
+                    captureErrorMessage('activity-changed'),
                 );
                 return;
             }
@@ -1376,7 +1376,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     tabId,
                     generation,
                     'activity-changed',
-                    'The activity page changed before capture started.',
+                    captureErrorMessage('activity-changed'),
                 );
                 return;
             }
@@ -1393,22 +1393,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const ownershipChanged = ownership?.code === 'activity-changed'
                 || (hasProviderActivity(ownership) && !ownershipMatches);
             if (!ownership || !ownership.ok || !ownershipMatches) {
-                const messages = {
-                    unsupported: 'Open a Garmin Connect or Strava activity first.',
-                    'activity-changed': 'The activity page changed before capture could finish.',
-                    'provider-signed-out': 'Sign in to the activity provider before capturing.',
-                    'provider-human-check': 'The activity provider needs you to complete a security check before capturing.',
-                    'provider-page-not-ready': 'The activity page did not finish loading. Reload it, wait for the activity to appear, then try again.',
-                    'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
-                    'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.'
-                };
+                const code = ownershipChanged
+                    ? 'activity-changed'
+                    : (ownership?.code || 'capture-failed');
                 await failCaptureJob(
                     tabId,
                     generation,
-                    ownershipChanged ? 'activity-changed' : (ownership?.code || 'capture-failed'),
-                    ownershipChanged
-                        ? messages['activity-changed']
-                        : (messages[ownership?.code] || 'The activity could not be captured.'),
+                    code,
+                    captureErrorMessage(code),
                 );
                 return;
             }
@@ -1435,7 +1427,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     tabId,
                     generation,
                     'activity-changed',
-                    'The activity page changed before capture could finish.',
+                    captureErrorMessage('activity-changed'),
                 );
                 return;
             }
@@ -1455,38 +1447,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     await finishCaptureWithoutGps(
                         tabId,
                         generation,
-                        'This activity has no recorded route to capture.',
+                        captureErrorMessage('no-gps-data'),
                     );
                     return;
                 }
-                const messages = {
-                    'activity-changed': 'The activity page changed before capture could finish.',
-                    'provider-signed-out': 'Sign in to the activity provider before capturing.',
-                    'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
-                    'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
-                    'gpx-too-large': CaptureLimits.gpxLimitMessage(),
-                    'provider-export-timeout': 'The activity provider took too long to export this GPX. Try again.',
-                    'provider-human-check': 'The activity provider needs you to complete a security check before capturing.',
-                    'provider-rate-limited': 'The activity provider is temporarily limiting requests. Wait before trying again.',
-                    'provider-forbidden': 'The activity provider refused the GPX export. Open the activity and confirm it is available to your account.',
-                    'provider-unavailable': 'The activity provider is temporarily unavailable. Try again later.',
-                    'provider-response-changed': 'The activity provider returned an unexpected response. Reload the activity before trying again.',
-                    'invalid-gpx': 'The activity provider returned invalid GPX data. Reload the activity before trying again.',
-                    'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.',
-                    // cancelCapture deletes the job before it aborts the page
-                    // fetch, so this normally lands on an already-removed job
-                    // and is never shown. It is mapped anyway: an unmapped code
-                    // would surface a cancellation the user asked for as an
-                    // unexplained failure.
-                    'provider-export-cancelled': 'Capture was cancelled. Nothing was captured.'
-                };
+                const code = captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed');
                 await failCaptureJob(
                     tabId,
                     generation,
-                    captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed'),
-                    captureChanged
-                        ? messages['activity-changed']
-                        : (messages[capture?.code] || 'The activity could not be captured.'),
+                    code,
+                    code === 'gpx-too-large'
+                        ? CaptureLimits.gpxLimitMessage()
+                        : captureErrorMessage(code),
                     { retryAt: capture?.retryAt },
                 );
                 return;
@@ -1574,7 +1546,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 kind: 'complete',
                 value: {
                     phase: 'error',
-                    error: { code: 'unsupported', message: 'Open a Garmin Connect or Strava activity first.' },
+                    error: { code: 'unsupported', message: captureErrorMessage('unsupported') },
                 },
             };
         }

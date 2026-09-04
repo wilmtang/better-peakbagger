@@ -740,7 +740,8 @@ test('popup stops status polling when capture finishes without storing a job', a
     };
 
     dom.window.eval(source);
-    await waitFor(() => /Open a supported activity first/.test(dom.window.document.getElementById('state').textContent));
+    await waitFor(() => /Open a Garmin Connect or Strava activity/.test(
+        dom.window.document.getElementById('state').textContent));
     await new Promise(resolve => setTimeout(resolve, 20));
     const stoppedAt = statusCalls;
     await new Promise(resolve => setTimeout(resolve, 30));
@@ -817,22 +818,17 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
 
     dom.window.eval(source);
     const state = dom.window.document.getElementById('state');
-    await waitFor(() => /Peakbagger is asking for a human check/.test(state.textContent));
+    await waitFor(() => /Peakbagger needs a human check/.test(state.textContent));
 
     const actions = [...state.querySelectorAll('button')];
-    assert.deepEqual(actions.map(action => action.textContent), [
-        'Complete check on Peakbagger',
-        'I’ve completed it — try again',
-    ]);
+    assert.deepEqual(actions.map(action => action.textContent), ['Open Peakbagger']);
     assert.equal(actions[0].classList.contains('primary'), true,
         'completing the blocking check is the obvious primary action');
     actions[0].click();
     await waitFor(() => opened.length === 1);
     assert.equal(opened[0].url, 'https://www.peakbagger.com/Default.aspx');
 
-    actions[1].click();
-    await waitFor(() => starts.length === 2);
-    assert.deepEqual(starts, [false, true]);
+    assert.deepEqual(starts, [false]);
     dom.window.close();
 });
 
@@ -841,12 +837,12 @@ test('popup names Peakbagger transport failures and offers direct recovery', asy
         {
             code: 'peakbagger-tab-load-timeout',
             title: 'Peakbagger didn’t finish loading',
-            message: 'Peakbagger did not finish loading within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
+            message: 'Open or reload Peakbagger, wait for it to finish, then select Better Peakbagger again.',
         },
         {
             code: 'peakbagger-response-invalid',
             title: 'Peakbagger response changed',
-            message: 'Peakbagger returned summit data that could not be verified. Reload Peakbagger and try the capture again.',
+            message: 'Reload Peakbagger once. If capture still fails, Better Peakbagger may need an update.',
         },
     ];
 
@@ -880,15 +876,97 @@ test('popup names Peakbagger transport failures and offers direct recovery', asy
 
         assert.equal(state.querySelector('.state-title').textContent, item.title);
         const actions = [...state.querySelectorAll('button')];
-        assert.deepEqual(actions.map(action => action.textContent), ['Open Peakbagger', 'Try again']);
+        assert.deepEqual(actions.map(action => action.textContent), ['Open Peakbagger']);
         assert.equal(actions[0].classList.contains('primary'), true);
         actions[0].click();
         await waitFor(() => opened.length === 1);
         assert.equal(opened[0].url, 'https://www.peakbagger.com/Default.aspx');
-        actions[1].click();
-        await waitFor(() => starts.length === 2);
-        assert.deepEqual(starts, [false, true]);
+        assert.deepEqual(starts, [false]);
         dom.window.close();
+    }
+});
+
+test('popup recovery actions match the shared capture error policy', async t => {
+    const cases = [
+        {
+            code: 'provider-human-check',
+            title: 'Your activity provider needs a human check',
+            action: 'Return to Garmin',
+            invoked: calls => calls.updates.length === 1,
+        },
+        {
+            code: 'provider-response-changed',
+            title: 'The activity response changed',
+            action: 'Reload activity',
+            invoked: calls => calls.reloads.length === 1,
+        },
+        {
+            code: 'provider-unavailable',
+            title: 'Your activity provider is unavailable',
+            action: 'Try again',
+            invoked: calls => calls.starts.length === 2,
+        },
+        {
+            code: 'provider-rate-limited',
+            title: 'Your activity provider needs a pause',
+            action: null,
+            retryAt: Date.now() + 60000,
+            invoked: () => true,
+        },
+        {
+            code: 'gpx-too-large',
+            title: 'This GPX is too large',
+            message: 'The GPX exceeds the exact safe limit.',
+            action: null,
+            invoked: () => true,
+        },
+    ];
+
+    for (const item of cases) {
+        await t.test(item.code, async () => {
+            const dom = new JSDOM(html, {
+                url: 'chrome-extension://better-peakbagger/popup/popup.html',
+                runScripts: 'outside-only'
+            });
+            const calls = { updates: [], reloads: [], starts: [] };
+            const job = {
+                phase: 'error',
+                provider: 'garmin',
+                error: {
+                    code: item.code,
+                    message: item.message || 'UNTRUSTED_DRIFTED_COPY',
+                    ...(item.retryAt ? { retryAt: item.retryAt } : {}),
+                },
+            };
+            dom.window.chrome = {
+                tabs: {
+                    query: async () => [{ id: 9 }],
+                    update: async (...args) => { calls.updates.push(args); },
+                    reload: async (...args) => { calls.reloads.push(args); },
+                    create: async () => ({ id: 10 }),
+                },
+                runtime: {
+                    sendMessage: async message => {
+                        if (message.type === 'CAPTURE_STATUS') return null;
+                        if (message.type === 'CAPTURE_START') calls.starts.push(message.force);
+                        return job;
+                    },
+                },
+            };
+
+            dom.window.eval(source);
+            const state = dom.window.document.getElementById('state');
+            await waitFor(() => state.textContent.includes(item.title));
+            const actions = [...state.querySelectorAll('button')];
+            assert.deepEqual(actions.map(action => action.textContent), item.action ? [item.action] : []);
+            assert.doesNotMatch(state.textContent, /UNTRUSTED_DRIFTED_COPY/);
+            if (item.code === 'gpx-too-large') assert.match(state.textContent, /exact safe limit/);
+            if (item.retryAt) assert.match(state.textContent, /Try again after/);
+            actions[0]?.click();
+            await waitFor(() => item.invoked(calls));
+            assert.deepEqual(calls.starts.slice(0, 1), [false]);
+            dom.window.close();
+        });
     }
 });
 

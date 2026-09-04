@@ -1059,7 +1059,7 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
     assert.equal(scriptingResponse.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(scriptingResponse.error)), {
         code: 'capture-failed',
-        message: 'Capture stopped unexpectedly. Reload the activity and try again.',
+        message: 'The activity could not be captured. Reload it before trying again.',
     });
     assertPrivate(scripting, scriptingResponse);
 
@@ -1251,7 +1251,7 @@ test('toolbar capture fails closed when privacy settings cannot be read', async 
     assert.equal(response.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(response.error)), {
         code: 'settings-unavailable',
-        message: 'Capture settings could not be read. Reload and try again. Nothing was captured.',
+        message: 'Reload the extension and try again. Nothing was captured.',
     });
     assert.equal(harness.scriptCalls.length, 0, 'the provider page must not be injected');
     assert.equal(harness.fetchCalls.length, 0, 'no Peakbagger or coordinate request may start');
@@ -2048,7 +2048,7 @@ test('every stalled provider operation returns one typed public deadline failure
             assert.equal(result.phase, 'error');
             assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
                 code: 'provider-page-timeout',
-                message: 'The activity page did not respond within 20 seconds. Reload the activity and try again.',
+                message: 'Reload the activity, wait for its details to appear, then select Better Peakbagger again.',
             });
             assert.equal(harness.values.bpbCaptureJobs['1'].error.code, 'provider-page-timeout');
         });
@@ -2795,7 +2795,7 @@ test('provider export failures discard page-world exception text without misrepo
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'provider-export-failed');
     assert.equal(result.error.message,
-        'The activity provider could not export this GPX. Reload the activity and try again.');
+        'Reload the activity and try the capture again.');
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(result.error.message, /ownership changed/i);
@@ -2817,7 +2817,7 @@ test('provider export timeouts preserve the public retryable timeout contract', 
     assert.equal(result.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
         code: 'provider-export-timeout',
-        message: 'The activity provider took too long to export this GPX. Try again.'
+        message: 'Reload the activity, wait for it to finish, then capture again.'
     });
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|internal timeout/i);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
@@ -2825,12 +2825,12 @@ test('provider export timeouts preserve the public retryable timeout contract', 
 
 test('provider response classifications cross the worker only as allowlisted recovery data', async t => {
     const cases = [
-        ['provider-human-check', 'security check'],
+        ['provider-human-check', 'complete the check'],
         ['provider-rate-limited', 'temporarily limiting requests'],
-        ['provider-forbidden', 'refused the GPX export'],
-        ['provider-unavailable', 'temporarily unavailable'],
-        ['provider-response-changed', 'unexpected response'],
-        ['invalid-gpx', 'invalid GPX data'],
+        ['provider-forbidden', 'available to your signed-in account'],
+        ['provider-unavailable', 'could not complete the export'],
+        ['provider-response-changed', 'changed its export'],
+        ['invalid-gpx', 'provider response'],
     ];
     for (const [code, message] of cases) {
         await t.test(code, async () => {
@@ -2931,7 +2931,8 @@ test('an activity without a provider GPX ends in a neutral, reusable no-GPS stat
     const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(result.phase, 'no-gps');
     assert.equal(result.error, null);
-    assert.equal(result.message, 'This activity has no recorded route to capture.');
+    assert.equal(result.message,
+        'This activity has no recorded route yet. If provider processing is still underway, wait and check again.');
     assert.equal(result.hasCachedGpx, false);
     assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);

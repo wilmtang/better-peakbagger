@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
+import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
 import { matchLabel } from '../src/capture/match-confidence.js';
-import { peakbaggerCloudflare as Cloudflare } from '../src/peakbagger/peakbagger-cloudflare.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
@@ -85,76 +85,54 @@ import { units as Units } from '../src/ui/units.js';
     const openSettings = () => {
         try { void ext.runtime.openOptionsPage(); } catch { /* unavailable in a broken extension context */ }
     };
+    const providerName = () => currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava';
+    const focusProvider = () => ext.tabs.update(activeTab.id, { active: true });
+    const reloadProvider = async () => {
+        await ext.tabs.reload(activeTab.id);
+    };
+    const openProviderSignIn = () => ext.tabs.create({
+        url: currentJob?.provider === 'garmin'
+            ? 'https://connect.garmin.com/signin/'
+            : 'https://www.strava.com/login'
+    });
+    const actionForRecovery = recovery => ({
+        retry: { label: 'Try again', primary: true, onClick: retry },
+        'check-again': { label: 'Check again', primary: true, onClick: retry },
+        settings: { label: 'Settings', onClick: openSettings },
+        'focus-provider': { label: `Return to ${providerName()}`, primary: true, onClick: focusProvider },
+        'reload-provider': { label: 'Reload activity', primary: true, onClick: reloadProvider },
+        'provider-sign-in': { label: `Open ${providerName()} sign in`, primary: true, onClick: openProviderSignIn },
+        'open-peakbagger': { label: 'Open Peakbagger', primary: true, onClick: openPeakbagger },
+    }[recovery] || null);
+    const dynamicErrorMessages = new Set([
+        'gpx-too-large',
+        'track-too-large',
+        'capture-analysis-too-large',
+        'peak-response-too-large',
+        'too-many-waypoints',
+        'invalid-track',
+    ]);
     const errorState = error => {
         const code = error?.code || 'capture-failed';
-        const signedOut = code === 'peakbagger-signed-out';
-        const providerSignedOut = code === 'provider-signed-out';
-        const notOwner = code === 'not-owner';
-        const humanCheck = code === 'cloudflare';
-        const peakbaggerRecoveryTitle = ({
-            'peakbagger-tab-access-failed': 'Couldn’t access Peakbagger',
-            'peakbagger-tab-open-failed': 'Couldn’t open Peakbagger',
-            'peakbagger-tab-load-failed': 'Peakbagger didn’t finish loading',
-            'peakbagger-tab-load-timeout': 'Peakbagger didn’t finish loading',
-            'peakbagger-tab-changed': 'Peakbagger tab changed',
-            'peakbagger-page-connect-failed': 'Couldn’t connect to Peakbagger',
-            'peakbagger-page-unavailable': 'Couldn’t connect to Peakbagger',
-            'peakbagger-response-invalid': 'Peakbagger response changed',
-        })[code];
-        if (code === 'unsupported') {
-            stateCard(
-                'Open an activity to begin',
-                'Open a Garmin Connect or Strava activity, then select Better Peakbagger again.',
-                { kind: 'empty', action: { label: 'Settings', onClick: openSettings } }
-            );
-            return;
-        }
-        let title = 'Capture stopped';
-        let actions = [{ label: 'Try again', onClick: retry }];
-        if (notOwner) {
-            title = 'This activity isn’t yours';
-            actions = [];
-        } else if (signedOut) {
-            title = 'Check your Peakbagger session';
-            actions = [
-                { label: 'Open Peakbagger', onClick: openPeakbagger },
-                { label: 'I’m signed in — try again', onClick: retry }
-            ];
-        } else if (humanCheck) {
-            title = Cloudflare.copy.title;
-            actions = [
-                {
-                    label: Cloudflare.copy.action,
-                    primary: true,
-                    onClick: openPeakbagger
-                },
-                { label: 'I’ve completed it — try again', onClick: retry }
-            ];
-        } else if (peakbaggerRecoveryTitle) {
-            title = peakbaggerRecoveryTitle;
-            actions = [
-                { label: 'Open Peakbagger', primary: true, onClick: openPeakbagger },
-                { label: 'Try again', onClick: retry },
-            ];
-        } else if (providerSignedOut) {
-            actions = [
-                {
-                    label: `Open ${currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava'} sign in`,
-                    onClick: () => ext.tabs.create({
-                        url: currentJob?.provider === 'garmin'
-                            ? 'https://connect.garmin.com/signin/'
-                            : 'https://www.strava.com/login'
-                    })
-                },
-                { label: 'I’m signed in — try again', onClick: retry }
-            ];
+        const policy = captureErrorPolicy(code);
+        const action = actionForRecovery(policy.recovery);
+        let detail = dynamicErrorMessages.has(code) && error?.message
+            ? error.message
+            : policy.message;
+        if (policy.recovery === 'wait' && Number.isFinite(error?.retryAt)) {
+            const retryTime = new Date(error.retryAt).toLocaleTimeString([], {
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+            detail = `${detail} Try again after ${retryTime}.`;
         }
         stateCard(
-            title,
-            error?.message || 'The activity could not be captured.',
+            policy.title,
+            detail,
             {
-                kind: notOwner ? 'locked' : 'error',
-                actions
+                kind: code === 'unsupported' ? 'empty'
+                    : policy.recovery === 'none' ? 'locked' : 'error',
+                actions: action ? [action] : [],
             }
         );
     };
