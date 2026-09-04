@@ -344,20 +344,29 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const failCaptureJob = async (tabId, generation, code, message, details = {}) => {
         const retryAt = Number(details.retryAt);
         const recoveryTabId = Number(details.recoveryTabId);
-        const failed = await updateCaptureJob(tabId, generation, {
-            phase: 'error',
-            error: {
-                code,
-                message,
-                ...((code === 'provider-rate-limited' || code === 'rate-limit')
-                    && Number.isFinite(retryAt) && retryAt >= now() && retryAt <= now() + 24 * 60 * 60 * 1000
-                    ? { retryAt: Math.trunc(retryAt) }
-                    : {}),
-                ...((code === 'cloudflare' || code === 'peakbagger-signed-out')
-                    && Number.isInteger(recoveryTabId)
-                    ? { recoveryTabId }
-                    : {}),
-            },
+        const failed = await mutateMap(JOBS_KEY, jobs => {
+            const current = jobs[tabId];
+            if (!current || current.id !== generation) return null;
+            const stage = CapturePhases.isActive(current.phase) ? current.phase : null;
+            jobs[tabId] = {
+                ...current,
+                phase: 'error',
+                updatedAt: now(),
+                ...(stage ? { failedStage: stage } : {}),
+                error: {
+                    code,
+                    message,
+                    ...((code === 'provider-rate-limited' || code === 'rate-limit')
+                        && Number.isFinite(retryAt) && retryAt >= now() && retryAt <= now() + 24 * 60 * 60 * 1000
+                        ? { retryAt: Math.trunc(retryAt) }
+                        : {}),
+                    ...((code === 'cloudflare' || code === 'peakbagger-signed-out')
+                        && Number.isInteger(recoveryTabId)
+                        ? { recoveryTabId }
+                        : {}),
+                },
+            };
+            return jobs[tabId];
         });
         if (!failed) return null;
         if (code === 'not-owner') await setBadge(tabId, '!', '#b42318');
@@ -1136,12 +1145,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         { cause },
     );
 
-    const fetchPeaks = async (boxes, { signal, request, checkpoint = async () => {} }) => {
+    const fetchPeaks = async (boxes, {
+        signal,
+        request,
+        checkpoint = async () => {},
+        onProgress = async () => {},
+    }) => {
         const budget = { requests: 0 };
+        let completed = 0;
         const responses = await mapWithConcurrency(
             boxes,
             CaptureLimits.CORRIDOR_CONCURRENCY,
-            box => fetchBox(box, { signal, budget, request }),
+            async box => {
+                const response = await fetchBox(box, { signal, budget, request });
+                completed++;
+                await onProgress({ completed, total: boxes.length });
+                return response;
+            },
         );
         const byId = new Map();
         for (const response of responses) {
@@ -1306,6 +1326,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         capturePreferences,
         boundPid = null,
         onPhase = async () => {},
+        onProgress = async () => {},
         signal = null,
         peakbaggerRequest = fetchPeakbaggerResource,
     }) => {
@@ -1369,14 +1390,16 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     `This GPX needs ${boxes.length} summit-search areas; the safe limit is ${CaptureLimits.MAX_CORRIDOR_BOXES}. Split the activity into shorter tracks and try again.`,
                 );
             }
-            await onPhase('finding-peaks');
+            await onPhase('searching-summits', { completed: 0, total: boxes.length });
             assertActive();
             const peaks = await deadline.run(fetchPeaks(boxes, {
                 signal: deadline.signal,
                 request: peakbaggerRequest,
                 checkpoint: cpu.checkpoint,
+                onProgress,
             }));
             assertActive();
+            await onPhase('preparing-results');
             const allMatches = await Core.detectPeaksAsync(
                 sanitized.segments,
                 peaks,
@@ -1501,8 +1524,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return;
             }
 
-            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-ownership' })) return;
+            if (!await updateCaptureJob(tabId, generation, { phase: 'waiting-provider', progress: null })) return;
             await injectProvider(tabId, generation, signal);
+            if (!await updateCaptureJob(tabId, generation, { phase: 'verifying-ownership' })) return;
             const ownership = await inspectProviderOwnership(
                 tabId,
                 expectedActivity,
@@ -1525,7 +1549,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return;
             }
 
-            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
+            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger', progress: null })) return;
             await ensurePeakbaggerRequestsAllowed();
             peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, generation, signal);
             const peakbaggerRequest = (url, options) => schedulePeakbaggerRequest(
@@ -1550,8 +1574,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 );
                 return;
             }
-            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
-
             const currentTab = await ext.tabs.get(tabId);
             const currentActivity = providerFromUrl(currentTab.url);
             if (!sameProviderActivity(currentActivity, expectedActivity)) {
@@ -1564,6 +1586,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return;
             }
 
+            if (!await updateCaptureJob(tabId, generation, { phase: 'exporting-gpx', progress: null })) return;
             const capture = await captureProvider(
                 tabId,
                 capturePreferences,
@@ -1596,8 +1619,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return;
             }
 
-            if (!await updateCaptureJob(tabId, generation, { phase: 'analyzing' })) return;
+            if (!await updateCaptureJob(tabId, generation, { phase: 'processing-track', progress: null })) return;
             await setBadge(tabId, '');
+            let progressBucket = 0;
+            const reportProgress = async progress => {
+                const completed = Number(progress?.completed);
+                const total = Number(progress?.total);
+                if (!Number.isInteger(completed) || !Number.isInteger(total)
+                    || total < 1 || total > CaptureLimits.MAX_CORRIDOR_BOXES
+                    || completed < 1 || completed > total) return;
+                const bucket = completed === total ? 10 : Math.floor(completed * 10 / total);
+                if (bucket <= progressBucket) return;
+                progressBucket = bucket;
+                await updateCaptureJob(tabId, generation, {
+                    phase: 'searching-summits',
+                    progress: { completed, total },
+                });
+            };
             const analysis = await analyzeTrack({
                 segments: capture.segments,
                 waypoints: capture.waypoints,
@@ -1605,7 +1643,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 capturePreferences,
                 signal,
                 peakbaggerRequest,
-                onPhase: phase => updateCaptureJob(tabId, generation, { phase })
+                onPhase: (phase, progress = null) => updateCaptureJob(
+                    tabId,
+                    generation,
+                    { phase, progress },
+                ),
+                onProgress: reportProgress,
             });
             if (analysis.status === 'no-gps') {
                 await finishCaptureWithoutGps(tabId, generation, analysis.message);
@@ -1711,7 +1754,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             sourceTabId: tabId,
             provider: activity.provider,
             activityId: activity.activityId,
-            phase: 'starting',
+            phase: 'validating-activity',
             matches: [],
             selectedIds: [],
             capturePreferences,

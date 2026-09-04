@@ -148,13 +148,35 @@ import { units as Units } from '../src/ui/units.js';
         );
     };
 
-    const phaseText = phase => ({
-        starting: ['Starting capture…', 'Checking the active activity page.'],
-        'checking-peakbagger': ['Checking Peakbagger…', 'Verifying your Peakbagger session before accessing any GPS coordinates.'],
-        'checking-ownership': ['Verifying ownership…', 'Confirming the signed-in provider account matches the activity author.'],
-        analyzing: ['Reading the track…', 'Keeping only coordinates, elevation, time, and segment boundaries in memory.'],
-        'finding-peaks': ['Detecting summits…', 'Comparing the full-resolution path with nearby Peakbagger summits.']
-    }[phase] || ['Working…', 'Preparing detected ascent drafts.']);
+    const phaseText = job => {
+        if (job.phase === 'searching-summits') {
+            const completed = Number(job.progress?.completed);
+            const total = Number(job.progress?.total);
+            const bounded = Number.isInteger(completed) && Number.isInteger(total)
+                && total > 0 && completed >= 0 && completed <= total;
+            return [
+                'Searching summit areas…',
+                bounded
+                    ? `${completed} of ${total} areas checked.`
+                    : 'Comparing the route with nearby Peakbagger summits.',
+            ];
+        }
+        return ({
+            'validating-activity': ['Checking this activity…', 'Confirming the active tab is a supported activity.'],
+            'waiting-provider': ['Waiting for the activity…', 'Loading the provider page needed to verify this activity.'],
+            'verifying-ownership': ['Verifying ownership…', 'Confirming the signed-in provider account matches the activity author.'],
+            'checking-peakbagger': ['Checking Peakbagger…', 'Verifying your Peakbagger session before accessing any GPS coordinates.'],
+            'exporting-gpx': ['Getting the GPS track…', 'Requesting this activity’s route from the signed-in provider page.'],
+            'processing-track': ['Processing the track…', 'Keeping only route fields needed to detect ascents.'],
+            'preparing-results': ['Preparing detected ascents…', 'Matching the route and preparing a private review list.'],
+            // Old non-terminal jobs can survive a service-worker update. Keep
+            // their cards understandable until cleanup expires them.
+            starting: ['Starting capture…', 'Checking the active activity page.'],
+            'checking-ownership': ['Verifying ownership…', 'Confirming the signed-in provider account matches the activity author.'],
+            analyzing: ['Processing the track…', 'Keeping only route fields needed to detect ascents.'],
+            'finding-peaks': ['Searching summit areas…', 'Comparing the route with nearby Peakbagger summits.'],
+        }[job.phase] || ['Working…', 'Preparing detected ascent drafts.']);
+    };
 
     const cancelCapture = async () => {
         clearTimeout(pollTimer);
@@ -286,7 +308,7 @@ import { units as Units } from '../src/ui/units.js';
         }
         if (job.phase === 'ready' || job.phase === 'opening'
             || job.phase === 'opened' || job.phase === 'previewed') return renderResults(job);
-        const [title, detail] = phaseText(job.phase);
+        const [title, detail] = phaseText(job);
         stateCard(title, detail, { loading: true, action: { label: 'Cancel', onClick: cancelCapture } });
     };
 

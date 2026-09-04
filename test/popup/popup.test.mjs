@@ -751,6 +751,45 @@ test('popup stops status polling when capture finishes without storing a job', a
     dom.window.close();
 });
 
+test('popup names each capture stage and shows bounded summit-area progress', async () => {
+    const cases = [
+        ['validating-activity', 'Checking this activity…', 'supported activity'],
+        ['waiting-provider', 'Waiting for the activity…', 'Loading the provider page'],
+        ['verifying-ownership', 'Verifying ownership…', 'activity author'],
+        ['checking-peakbagger', 'Checking Peakbagger…', 'before accessing any GPS coordinates'],
+        ['exporting-gpx', 'Getting the GPS track…', 'signed-in provider page'],
+        ['processing-track', 'Processing the track…', 'route fields'],
+        ['searching-summits', 'Searching summit areas…', '3 of 8 areas checked'],
+        ['preparing-results', 'Preparing detected ascents…', 'private review list'],
+    ];
+    for (const [phase, title, detail] of cases) {
+        const dom = new JSDOM(html, {
+            url: 'chrome-extension://better-peakbagger/popup/popup.html',
+            runScripts: 'outside-only'
+        });
+        const job = {
+            phase,
+            provider: 'garmin',
+            ...(phase === 'searching-summits' ? { progress: { completed: 3, total: 8 } } : {}),
+        };
+        dom.window.chrome = {
+            tabs: { query: async () => [{ id: 9 }] },
+            runtime: {
+                sendMessage: async message => {
+                    if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                    return { ok: true };
+                },
+            },
+        };
+        dom.window.eval(source);
+        const state = dom.window.document.getElementById('state');
+        await waitFor(() => state.textContent.includes(title));
+        assert.match(state.textContent, new RegExp(detail));
+        assert.deepEqual([...state.querySelectorAll('button')].map(item => item.textContent), ['Cancel']);
+        dom.window.close();
+    }
+});
+
 test('popup shows a neutral unsupported-page state with discoverable Settings', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

@@ -277,14 +277,15 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     }
                     if (peakbaggerPageRequestError) throw new Error(peakbaggerPageRequestError);
                     const controller = new AbortController();
+                    const number = peakbaggerPageCalls.filter(item => item.kind === kind).length + 1;
                     peakbaggerPageRequests.set(requestId, controller);
-                    const call = { requestId, url, kind, options: { signal: controller.signal } };
+                    const call = { requestId, url, kind, number, options: { signal: controller.signal } };
                     peakbaggerPageCalls.push(call);
                     await runPeakbaggerScriptHook(afterPeakbaggerScript, 'request', details);
                     const callback = kind === 'html' ? beforePeakbaggerLogin : beforePeakFetch;
                     const callbackResult = callback?.({
                         options: call.options,
-                        number: peakbaggerPageCalls.filter(item => item.kind === kind).length,
+                        number,
                     });
                     if (callbackResult) {
                         await Promise.race([
@@ -3179,6 +3180,90 @@ test('successful captures are reused but recoverable errors are re-evaluated on 
     assert.notEqual(recovered.id, failed.id);
     assert.equal(harness.providerCaptureCalls.length, 2,
         'reopening the popup rechecks a recoverable failure without a hidden second click');
+});
+
+test('activity capture publishes truthful monotonic phases and throttled summit progress', async () => {
+    const completionOrder = [];
+    const segment = Array.from({ length: 11 }, (_, index) => ({
+        lat: 0,
+        lon: index * 0.085,
+        ele: 100,
+        time: Date.UTC(2026, 6, 1, 15) + index * 100_000,
+    }));
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Progress hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [segment],
+        },
+        beforePeakFetch: ({ number }) => new Promise(resolve =>
+            setTimeout(resolve, (5 - (number % 5)) * 2)),
+        peakbaggerPagePeakResult: call => {
+            completionOrder.push(call.number);
+            return {
+                kind: 'ok',
+                requestedUrl: call.url,
+                url: call.url,
+                status: 200,
+                redirected: false,
+                text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+            };
+        },
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.ok(completionOrder.length > 4);
+    assert.notDeepEqual(completionOrder, [...completionOrder].sort((left, right) => left - right),
+        'the fixture completes concurrent area reads out of dispatch order');
+
+    const snapshots = harness.sessionSetPatches
+        .map(patch => patch.bpbCaptureJobs?.['1'])
+        .filter(job => job?.id === ready.id);
+    const phases = snapshots.map(job => job.phase)
+        .filter((phase, index, all) => index === 0 || phase !== all[index - 1]);
+    assert.deepEqual(phases, [
+        'validating-activity',
+        'waiting-provider',
+        'verifying-ownership',
+        'checking-peakbagger',
+        'exporting-gpx',
+        'processing-track',
+        'searching-summits',
+        'preparing-results',
+        'ready',
+    ]);
+
+    const progressWrites = snapshots
+        .filter(job => job.phase === 'searching-summits' && job.progress)
+        .map(job => job.progress);
+    assert.deepEqual(progressWrites[0], { completed: 0, total: completionOrder.length });
+    assert.deepEqual(progressWrites.at(-1), {
+        completed: completionOrder.length,
+        total: completionOrder.length,
+    });
+    assert.ok(progressWrites.every((progress, index) => index === 0
+        || progress.completed > progressWrites[index - 1].completed));
+    assert.ok(progressWrites.length <= 11,
+        'coarse deciles cap session writes even when every area completes separately');
+});
+
+test('capture failures retain the exact stage without moving the error policy into UI copy', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: {
+            ok: false,
+            code: 'provider-unavailable',
+            provider: 'strava',
+            activityId: '123',
+        },
+    });
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.phase, 'error');
+    assert.equal(failed.failedStage, 'exporting-gpx');
+    assert.equal('stage' in failed.error, false);
 });
 
 test('a shown rate-limit time cannot be bypassed by a forced retry', async () => {
