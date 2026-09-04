@@ -2823,6 +2823,38 @@ test('provider export timeouts preserve the public retryable timeout contract', 
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
 });
 
+test('provider response classifications cross the worker only as allowlisted recovery data', async t => {
+    const cases = [
+        ['provider-human-check', 'security check'],
+        ['provider-rate-limited', 'temporarily limiting requests'],
+        ['provider-forbidden', 'refused the GPX export'],
+        ['provider-unavailable', 'temporarily unavailable'],
+        ['provider-response-changed', 'unexpected response'],
+        ['invalid-gpx', 'invalid GPX data'],
+    ];
+    for (const [code, message] of cases) {
+        await t.test(code, async () => {
+            const retryAt = Date.now() + 60000;
+            const harness = createHarness({
+                ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+                captureResult: {
+                    ok: false,
+                    code,
+                    provider: 'strava',
+                    activityId: '123',
+                    retryAt,
+                    message: 'RAW_PROVIDER_RESPONSE_SENTINEL',
+                },
+            });
+            const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(result.error.code, code);
+            assert.match(result.error.message, new RegExp(message, 'i'));
+            assert.doesNotMatch(JSON.stringify(result), /RAW_PROVIDER_RESPONSE_SENTINEL/);
+            assert.equal('retryAt' in result.error, code === 'provider-rate-limited');
+        });
+    }
+});
+
 test('peak response structure and route-match fanout fail closed at their exact limits', async t => {
     await t.test('peak response limit plus one', async () => {
         const peakXml = `<p>${Array.from({ length: 5_001 }, (_, index) =>

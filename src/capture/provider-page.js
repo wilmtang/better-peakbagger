@@ -7,6 +7,12 @@
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
 import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.js';
+import {
+    PROVIDER_RESPONSE_PROBE_BYTES,
+    PROVIDER_RESPONSE_PROBE_CHARS,
+    classifyProviderBody,
+    classifyProviderResponse,
+} from './provider-response.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
@@ -22,6 +28,18 @@ const EXPORT_TIMEOUT_MESSAGE = 'The activity provider took too long to export th
 const PROVIDER_TIMEOUT_MS = 30000;
 const OWNERSHIP_WAIT_MS = 8000;
 const activeCaptures = new Map();
+
+const providerFailureMessage = code => ({
+    'provider-signed-out': 'Sign in to the activity provider before capturing.',
+    'provider-human-check': 'The activity provider needs you to complete a security check before capturing.',
+    'provider-rate-limited': 'The activity provider is temporarily limiting requests. Wait before trying again.',
+    'provider-forbidden': 'The activity provider refused the GPX export. Open the activity and confirm it is available to your account.',
+    'provider-unavailable': 'The activity provider is temporarily unavailable. Try again later.',
+    'provider-response-changed': 'The activity provider returned an unexpected response. Reload the activity before trying again.',
+    'invalid-gpx': 'The activity provider returned invalid GPX data. Reload the activity before trying again.',
+}[code] || EXPORT_FAILURE_MESSAGE);
+
+const providerFailure = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
 
 const profileId = (href, provider) => providerProfileId(href, provider, location.href);
 
@@ -293,10 +311,23 @@ const capture = async (
             headers: request.headers,
             signal: deadline.signal
         }));
-        if (response.status === 204 || response.status === 404) throw noGpsError();
-        if (!response.ok) {
-            const providerName = ownership.provider === 'garmin' ? 'Garmin' : 'Strava';
-            throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
+        let responseClass = classifyProviderResponse(response, { provider: ownership.provider });
+        if (responseClass.needsBodyProbe) {
+            const bodyText = await deadline.run(BoundedText.readBoundedResponseText(response, {
+                maxBytes: PROVIDER_RESPONSE_PROBE_BYTES,
+                maxChars: PROVIDER_RESPONSE_PROBE_CHARS,
+                signal: deadline.signal,
+                label: 'Provider response',
+            }));
+            responseClass = classifyProviderResponse(response, {
+                provider: ownership.provider,
+                bodyText,
+            });
+        }
+        if (!responseClass.ok) {
+            throw responseClass.code === 'no-gps-data'
+                ? noGpsError()
+                : providerFailure(responseClass.code, responseClass);
         }
         const beforeBody = inspectExpectedOwnership(expectedActivity);
         if (!beforeBody.ok) return publicOwnership(beforeBody);
@@ -306,7 +337,12 @@ const capture = async (
             signal: deadline.signal,
             label: 'Provider GPX',
         }));
-        if (!text.trim()) throw noGpsError();
+        const bodyClass = classifyProviderBody(text);
+        if (!bodyClass.ok) {
+            throw bodyClass.code === 'no-gps-data'
+                ? noGpsError()
+                : providerFailure(bodyClass.code);
+        }
         const afterBody = inspectExpectedOwnership(expectedActivity);
         if (!afterBody.ok) return publicOwnership(afterBody);
         const parsed = parseGpxData(text, options);
@@ -326,19 +362,26 @@ const capture = async (
         const tooLarge = error?.code === 'gpx-too-large' || BoundedText.isLimitError(error);
         const timedOut = deadline.expired || Deadline.isTimeout(error);
         const cancelled = !timedOut && !!deadline.signal?.aborted;
+        const classifiedCode = typeof error?.code === 'string' && error.code.startsWith('provider-')
+            ? error.code
+            : error?.code === 'invalid-gpx' ? 'invalid-gpx' : null;
+        const code = noGps ? 'no-gps-data'
+            : tooLarge ? 'gpx-too-large'
+                : timedOut ? 'provider-export-timeout'
+                    : cancelled ? 'provider-export-cancelled'
+                        : classifiedCode || 'provider-export-failed';
         return {
             ok: false,
-            code: noGps ? 'no-gps-data'
-                : tooLarge ? 'gpx-too-large'
-                    : timedOut ? 'provider-export-timeout'
-                        : cancelled ? 'provider-export-cancelled'
-                            : 'provider-export-failed',
+            code,
             provider: ownership.provider,
             activityId: ownership.activityId,
+            ...(code === 'provider-rate-limited' && Number.isFinite(error?.retryAt)
+                ? { retryAt: error.retryAt }
+                : {}),
             message: noGps ? NO_GPS_MESSAGE
                 : tooLarge ? gpxLimitMessage()
                     : timedOut ? EXPORT_TIMEOUT_MESSAGE
-                        : EXPORT_FAILURE_MESSAGE
+                        : providerFailureMessage(code)
         };
     } finally {
         deadline.clear();

@@ -331,10 +331,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return jobs[tabId];
     });
 
-    const failCaptureJob = async (tabId, generation, code, message) => {
+    const failCaptureJob = async (tabId, generation, code, message, details = {}) => {
+        const retryAt = Number(details.retryAt);
         const failed = await updateCaptureJob(tabId, generation, {
             phase: 'error',
-            error: { code, message },
+            error: {
+                code,
+                message,
+                ...(code === 'provider-rate-limited'
+                    && Number.isFinite(retryAt) && retryAt >= now() && retryAt <= now() + 24 * 60 * 60 * 1000
+                    ? { retryAt: Math.trunc(retryAt) }
+                    : {}),
+            },
         });
         if (!failed) return null;
         if (code === 'not-owner') await setBadge(tabId, '!', '#b42318');
@@ -1458,6 +1466,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
                     'gpx-too-large': CaptureLimits.gpxLimitMessage(),
                     'provider-export-timeout': 'The activity provider took too long to export this GPX. Try again.',
+                    'provider-human-check': 'The activity provider needs you to complete a security check before capturing.',
+                    'provider-rate-limited': 'The activity provider is temporarily limiting requests. Wait before trying again.',
+                    'provider-forbidden': 'The activity provider refused the GPX export. Open the activity and confirm it is available to your account.',
+                    'provider-unavailable': 'The activity provider is temporarily unavailable. Try again later.',
+                    'provider-response-changed': 'The activity provider returned an unexpected response. Reload the activity before trying again.',
+                    'invalid-gpx': 'The activity provider returned invalid GPX data. Reload the activity before trying again.',
                     'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.',
                     // cancelCapture deletes the job before it aborts the page
                     // fetch, so this normally lands on an already-removed job
@@ -1472,7 +1486,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed'),
                     captureChanged
                         ? messages['activity-changed']
-                        : (messages[capture?.code] || 'The activity could not be captured.')
+                        : (messages[capture?.code] || 'The activity could not be captured.'),
+                    { retryAt: capture?.retryAt },
                 );
                 return;
             }

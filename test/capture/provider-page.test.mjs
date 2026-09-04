@@ -321,18 +321,87 @@ test('Garmin current-session capture uses the gc-api route and same-page CSRF he
     assert.equal(requested[0].options.credentials, 'include');
 });
 
-test('Garmin export failures return bounded copy instead of page exception text', async () => {
+test('Garmin unavailability returns bounded typed copy instead of page exception text', async () => {
     const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
     dom.window.USE_DI_SESSION = true;
     dom.window.fetch = async () => ({ ok: false, status: 503 });
 
     const capture = await dom.window.BPBProviderPage.capture();
     assert.equal(capture.ok, false);
-    assert.equal(capture.code, 'provider-export-failed');
+    assert.equal(capture.code, 'provider-unavailable');
     assert.equal(capture.message,
-        'The activity provider could not export this GPX. Reload the activity and try again.');
+        'The activity provider is temporarily unavailable. Try again later.');
     assert.doesNotMatch(capture.message, /503|Garmin/);
     assert.doesNotMatch(capture.message, /ownership/i);
+});
+
+test('provider export classifies response failures before GPX parsing', async t => {
+    const now = Date.now();
+    const cases = [
+        { name: 'signed out', response: { ok: false, status: 401 }, code: 'provider-signed-out' },
+        {
+            name: 'challenge header',
+            response: { ok: false, status: 403, headers: { 'cf-mitigated': 'challenge' } },
+            code: 'provider-human-check',
+        },
+        {
+            name: 'challenge body',
+            response: { ok: false, status: 403, text: async () => '<title>Just a moment...</title>' },
+            code: 'provider-human-check',
+        },
+        {
+            name: 'forbidden',
+            response: { ok: false, status: 403, text: async () => '<p>Forbidden</p>' },
+            code: 'provider-forbidden',
+        },
+        { name: 'missing endpoint', response: { ok: false, status: 404 }, code: 'provider-response-changed' },
+        {
+            name: 'rate limited',
+            response: { ok: false, status: 429, headers: { 'retry-after': '60' } },
+            code: 'provider-rate-limited',
+            retryAt: true,
+        },
+        { name: 'unavailable', response: { ok: false, status: 503 }, code: 'provider-unavailable' },
+        {
+            name: 'login redirect',
+            response: { ok: true, status: 200, url: 'https://www.strava.com/login' },
+            code: 'provider-signed-out',
+        },
+        {
+            name: 'HTML interstitial',
+            response: {
+                ok: true,
+                status: 200,
+                headers: { 'content-type': 'text/html' },
+                text: async () => '<!doctype html><p>Changed</p>',
+            },
+            code: 'provider-response-changed',
+        },
+        {
+            name: 'JSON response',
+            response: { ok: true, status: 200, headers: { 'content-type': 'application/json' } },
+            code: 'provider-response-changed',
+        },
+        {
+            name: 'invalid GPX',
+            response: { ok: true, status: 200, text: async () => '<not-gpx/>' },
+            code: 'invalid-gpx',
+        },
+    ];
+    for (const item of cases) {
+        await t.test(item.name, async () => {
+            const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+            dom.window.fetch = async () => item.response;
+            const result = await dom.window.BPBProviderPage.capture();
+            assert.equal(result.code, item.code);
+            assert.doesNotMatch(JSON.stringify(result), /Forbidden|Just a moment|not-gpx/);
+            if (item.retryAt) {
+                assert.ok(result.retryAt >= now + 59000 && result.retryAt <= Date.now() + 61000);
+            } else {
+                assert.equal('retryAt' in result, false);
+            }
+        });
+    }
 });
 
 test('a never-settling provider fetch ends at one public deadline and releases the socket', async () => {
@@ -408,7 +477,6 @@ test('cancelling one provider generation aborts only its in-page request', async
 
 test('an unavailable or trackless provider export is reported as no GPS data', async t => {
     const cases = [
-        { name: 'not found', response: { ok: false, status: 404 } },
         { name: 'no content', response: { ok: true, status: 204 } },
         { name: 'empty body', response: { ok: true, status: 200, text: async () => '  ' } },
         { name: 'GPX without trackpoints', response: { ok: true, status: 200, text: async () => '<gpx><trk><trkseg/></trk></gpx>' } }
