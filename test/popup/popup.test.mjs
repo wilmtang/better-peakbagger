@@ -20,6 +20,10 @@ test('popup stops spinner motion when the user requests reduced motion', () => {
     assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.spinner\s*{[^}]*animation:\s*none/s);
 });
 
+test('popup width can contract for browser zoom without horizontal clipping', () => {
+    assert.match(css, /body\s*{[^}]*width:\s*390px;[^}]*max-width:\s*100vw;/s);
+});
+
 test('popup theme bootstrap loads before the stylesheet', () => {
     const dom = new JSDOM(html);
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))

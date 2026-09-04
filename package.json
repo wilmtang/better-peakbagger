@@ -19,6 +19,7 @@
     "start": "node scripts/run-development.mjs",
     "test": "npm run build && node --test \"test/**/*.test.mjs\"",
     "test:scale": "npm run build && node --test \"test/scale/**/*.scale.mjs\"",
+    "verify:capture-popup": "npm run build && node scripts/verify-capture-popup.mjs",
     "verify:provider-contracts": "npm run build && node scripts/verify-provider-contracts.mjs",
     "verify:provider-performance": "npm run build && node scripts/verify-provider-performance.mjs",
     "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs",
