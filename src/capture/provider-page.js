@@ -20,6 +20,7 @@ const NO_GPS_MESSAGE = 'This activity has no recorded route to capture.';
 const EXPORT_FAILURE_MESSAGE = 'The activity provider could not export this GPX. Reload the activity and try again.';
 const EXPORT_TIMEOUT_MESSAGE = 'The activity provider took too long to export this GPX. Try again.';
 const PROVIDER_TIMEOUT_MS = 30000;
+const OWNERSHIP_WAIT_MS = 8000;
 const activeCaptures = new Map();
 
 const profileId = (href, provider) => providerProfileId(href, provider, location.href);
@@ -58,6 +59,13 @@ const hasSignedOutCue = provider => {
     });
 };
 
+const hasHumanCheckCue = () => !!document.querySelector([
+    '#challenge-form',
+    'input[name="cf-turnstile-response"]',
+    'iframe[src*="challenges.cloudflare.com"]',
+    '[data-cf-challenge]',
+].join(','));
+
 const inspectOwnership = (urlValue = location.href) => {
     const activity = providerFromUrl(urlValue);
     if (!activity) return { ok: false, code: 'unsupported' };
@@ -76,6 +84,10 @@ const inspectOwnership = (urlValue = location.href) => {
     const viewerId = viewer.id;
     const authorId = author.id;
 
+    if (hasHumanCheckCue()) {
+        return { ok: false, code: 'provider-human-check', provider, activityId, terminal: true };
+    }
+
     const hasEditControl = provider === 'strava'
         ? [...document.querySelectorAll('a[href]')].some(link => {
             try {
@@ -92,13 +104,20 @@ const inspectOwnership = (urlValue = location.href) => {
         });
 
     if (viewer.ambiguous || author.ambiguous) {
-        return { ok: false, code: 'ownership-unverified', provider, activityId };
+        return { ok: false, code: 'ownership-unverified', provider, activityId, terminal: true };
     }
     if (!viewerId) {
-        return { ok: false, code: hasSignedOutCue(provider) ? 'provider-signed-out' : 'ownership-unverified', provider, activityId };
+        const signedOut = hasSignedOutCue(provider);
+        return {
+            ok: false,
+            code: signedOut ? 'provider-signed-out' : 'ownership-unverified',
+            provider,
+            activityId,
+            ...(signedOut ? { terminal: true } : {}),
+        };
     }
     if (authorId && viewerId !== authorId) {
-        return { ok: false, code: 'not-owner', provider, activityId };
+        return { ok: false, code: 'not-owner', provider, activityId, terminal: true };
     }
     if (!authorId || !hasEditControl) {
         return { ok: false, code: 'ownership-unverified', provider, activityId };
@@ -145,6 +164,62 @@ const publicOwnership = result => {
         ...(result.provider ? { provider: result.provider } : {}),
         ...(result.activityId ? { activityId: result.activityId } : {})
     };
+};
+
+const waitForOwnership = async (
+    expectedActivity,
+    generation = null,
+    timeoutMs = OWNERSHIP_WAIT_MS,
+) => {
+    const captureKey = typeof generation === 'string' && generation
+        ? generation
+        : Symbol('ownership');
+    const deadline = Deadline.createRequestDeadline(timeoutMs);
+    activeCaptures.set(captureKey, deadline);
+    let observer = null;
+    let finish = null;
+    const settled = new Promise(resolve => { finish = resolve; });
+    const check = () => {
+        if (deadline.signal?.aborted && !deadline.expired) {
+            finish({ ok: false, code: 'provider-page-cancelled' });
+            return;
+        }
+        const result = inspectExpectedOwnership(expectedActivity);
+        if (result.ok || result.terminal === true
+            || ['unsupported', 'activity-changed'].includes(result.code)) {
+            finish(publicOwnership(result));
+        }
+    };
+    try {
+        const root = document.body || document.documentElement;
+        if (root && typeof MutationObserver === 'function') {
+            observer = new MutationObserver(check);
+            observer.observe(root, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['href', 'aria-label', 'data-testid'],
+            });
+        }
+        deadline.signal?.addEventListener('abort', check, { once: true });
+        check();
+        return await deadline.run(settled);
+    } catch (error) {
+        if (deadline.expired || Deadline.isTimeout(error)) {
+            const current = providerFromUrl(location.href);
+            return {
+                ok: false,
+                code: 'provider-page-not-ready',
+                ...(current || cleanExpectedActivity(expectedActivity) || {}),
+            };
+        }
+        return { ok: false, code: 'provider-page-cancelled' };
+    } finally {
+        observer?.disconnect();
+        deadline.signal?.removeEventListener('abort', check);
+        deadline.clear();
+        if (activeCaptures.get(captureKey) === deadline) activeCaptures.delete(captureKey);
+    }
 };
 
 const { parseGpxData, cleanName, noGpsError } = gpxParse;
@@ -283,6 +358,7 @@ const API = {
     profileId,
     inspectOwnership,
     inspectExpectedOwnership,
+    waitForOwnership,
     publicOwnership,
     parseGpxData,
     garminExportRequest,

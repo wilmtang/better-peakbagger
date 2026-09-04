@@ -211,7 +211,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 }
                 const functionSource = String(details.func);
                 const isOwnershipCheck = functionSource.includes('inspectOwnership')
-                    || functionSource.includes('inspectExpectedOwnership');
+                    || functionSource.includes('inspectExpectedOwnership')
+                    || functionSource.includes('waitForOwnership');
                 const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
                 const isProviderCancel = functionSource.includes('cancelCapture');
                 const isPeakbaggerAccountEvidence = functionSource.includes('accountEvidence');

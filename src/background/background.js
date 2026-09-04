@@ -1086,9 +1086,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 target: { tabId },
                 // Narrowed in the page realm: the worker needs the verdict, not the
                 // provider profile identifiers the adapter compared to reach it.
-                func: expected => globalThis.BPBProviderPage.publicOwnership(
-                    globalThis.BPBProviderPage.inspectExpectedOwnership(expected)),
-                args: [expectedActivity],
+                func: (expected, captureGeneration) =>
+                    globalThis.BPBProviderPage.waitForOwnership(expected, captureGeneration),
+                args: [expectedActivity, generation],
                 world: 'MAIN'
             }),
         });
@@ -1389,6 +1389,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     unsupported: 'Open a Garmin Connect or Strava activity first.',
                     'activity-changed': 'The activity page changed before capture could finish.',
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
+                    'provider-human-check': 'The activity provider needs you to complete a security check before capturing.',
+                    'provider-page-not-ready': 'The activity page did not finish loading. Reload it, wait for the activity to appear, then try again.',
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.'
                 };

@@ -133,6 +133,75 @@ test('signed-out and changed provider DOMs fail with distinct states', () => {
     assert.equal(unknown.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
 });
 
+test('ownership wait tolerates staged SPA rendering and returns only after proof is complete', async () => {
+    const dom = load('<main><h1>Loading activity</h1></main>', 'https://www.strava.com/activities/123');
+    const pending = dom.window.BPBProviderPage.waitForOwnership(
+        { provider: 'strava', activityId: '123' },
+        'staged-ownership',
+        1000,
+    );
+    dom.window.document.body.insertAdjacentHTML('afterbegin',
+        '<header id="global-header"><a href="/athletes/42">Viewer</a></header>');
+    await Promise.resolve();
+    dom.window.document.querySelector('main').insertAdjacentHTML('afterbegin',
+        '<section id="heading"><a href="/athletes/42">Author</a></section>');
+    await Promise.resolve();
+    dom.window.document.querySelector('main').insertAdjacentHTML('beforeend',
+        '<a href="/activities/123/edit">Edit</a>');
+
+    assert.deepEqual({ ...await pending }, {
+        ok: true,
+        provider: 'strava',
+        activityId: '123',
+    });
+});
+
+test('ownership wait classifies stable blockers and bounded incomplete pages', async t => {
+    const cases = [
+        {
+            name: 'signed out',
+            html: '<a href="/login">Log In</a>',
+            code: 'provider-signed-out',
+            timeoutMs: 100,
+        },
+        {
+            name: 'human check',
+            html: '<form id="challenge-form"></form>',
+            code: 'provider-human-check',
+            timeoutMs: 100,
+        },
+        {
+            name: 'not ready',
+            html: '<main><h1>Loading</h1></main>',
+            code: 'provider-page-not-ready',
+            timeoutMs: 5,
+        },
+    ];
+    for (const item of cases) {
+        await t.test(item.name, async () => {
+            const dom = load(item.html, 'https://www.strava.com/activities/123');
+            const result = await dom.window.BPBProviderPage.waitForOwnership(
+                { provider: 'strava', activityId: '123' },
+                `wait-${item.name}`,
+                item.timeoutMs,
+            );
+            assert.equal(result.code, item.code);
+        });
+    }
+});
+
+test('ownership wait is cancelled by its capture generation', async () => {
+    const dom = load('<main><h1>Loading</h1></main>', 'https://www.strava.com/activities/123');
+    const pending = dom.window.BPBProviderPage.waitForOwnership(
+        { provider: 'strava', activityId: '123' },
+        'cancel-ownership',
+        1000,
+    );
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('other-generation'), false);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('cancel-ownership'), true);
+    assert.equal((await pending).code, 'provider-page-cancelled');
+});
+
 test('successful capture fetches only the provider GPX endpoint', async () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     const requested = [];
