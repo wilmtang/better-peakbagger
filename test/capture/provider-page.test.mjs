@@ -43,7 +43,7 @@ const garminPage = ({ csrfToken = 'csrf-123' } = {}) => `
   </div>
 </body></html>`;
 
-test('provider activity URL parsing accepts Garmin redirects and fails closed', () => {
+test('provider activity URL parsing accepts supported Garmin and Strava hosts and fails closed', () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     const parse = dom.window.BPBProviderPage.providerFromUrl;
 
@@ -62,6 +62,7 @@ test('provider activity URL parsing accepts Garmin redirects and fails closed', 
         'https://connect.garmin.com/app/activity/not-a-number',
         'https://connect.garmin.com.evil.example/app/activity/777',
         'https://www.strava.com.evil.example/activities/123',
+        'https://clubs.strava.com/activities/123',
         'https://www.strava.com/athletes/123'
     ]) {
         assert.equal(parse(value), null, value);
@@ -83,6 +84,30 @@ test('Strava ownership requires matching profile IDs and the owner edit link', (
 
     const noEdit = load(stravaPage({ edit: false }), 'https://www.strava.com/activities/123');
     assert.equal(noEdit.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+});
+
+test('ownership rejects foreign, contradictory, and malformed profile evidence', () => {
+    const foreign = load(stravaPage().replaceAll('/athletes/42', 'https://evil.example/athletes/42'),
+        'https://www.strava.com/activities/123');
+    assert.equal(foreign.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+
+    const contradictory = load(`<!doctype html><body>
+      <header id="global-header"><a href="/athletes/42">Viewer</a></header>
+      <header data-testid="global-header"><a href="/athletes/99">Other viewer</a></header>
+      <main><section id="heading"><a href="/athletes/42">Author</a></section>
+        <a href="/activities/123/edit">Edit</a></main>
+    </body>`, 'https://www.strava.com/activities/123');
+    assert.equal(contradictory.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+
+    const malformed = load(garminPage().replaceAll('ABC-123', '%E0%A4%A').replaceAll('abc-123', '%E0%A4%A'),
+        'https://connect.garmin.com/app/activity/777');
+    assert.equal(malformed.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+});
+
+test('Strava ownership rejects a foreign edit link even when its path matches', () => {
+    const html = stravaPage().replace('/activities/123/edit', 'https://evil.example/activities/123/edit');
+    const dom = load(html, 'https://www.strava.com/activities/123');
+    assert.equal(dom.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
 });
 
 test('Garmin ownership accepts matching UUID profiles only with Edit an Activity', () => {

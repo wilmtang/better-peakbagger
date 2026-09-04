@@ -6,7 +6,7 @@
 // used for analysis leave by default; an explicit capture setting may also
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
-import { providerFromUrl } from './provider-url.js';
+import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
@@ -16,27 +16,13 @@ import {
     gpxLimitMessage,
 } from './capture-resource-limits.js';
 
-const PROFILE_PATTERNS = {
-    garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
-    strava: /\/athletes\/(\d+)(?:[/?#]|$)/i
-};
 const NO_GPS_MESSAGE = 'This activity has no recorded route to capture.';
 const EXPORT_FAILURE_MESSAGE = 'The activity provider could not export this GPX. Reload the activity and try again.';
 const EXPORT_TIMEOUT_MESSAGE = 'The activity provider took too long to export this GPX. Try again.';
 const PROVIDER_TIMEOUT_MS = 30000;
 const activeCaptures = new Map();
 
-const profileId = (href, provider) => {
-    if (!href) return null;
-    let pathname;
-    try {
-        pathname = new URL(href, location.href).pathname;
-    } catch (_error) {
-        return null;
-    }
-    const match = PROFILE_PATTERNS[provider].exec(pathname);
-    return match ? decodeURIComponent(match[1]).toLowerCase() : null;
-};
+const profileId = (href, provider) => providerProfileId(href, provider, location.href);
 
 const idsInScope = (scope, provider) => {
     if (!scope) return [];
@@ -46,14 +32,19 @@ const idsInScope = (scope, provider) => {
     return [...new Set(ids)];
 };
 
-const firstScopeWithOneId = (selectors, provider) => {
-    for (const selector of selectors) {
-        for (const scope of document.querySelectorAll(selector)) {
-            const ids = idsInScope(scope, provider);
-            if (ids.length === 1) return ids[0];
+const identityFromTiers = (selectorTiers, provider) => {
+    for (const selectors of selectorTiers) {
+        const ids = new Set();
+        for (const selector of selectors) {
+            for (const scope of document.querySelectorAll(selector)) {
+                for (const id of idsInScope(scope, provider)) ids.add(id);
+            }
         }
+        if (ids.size) return ids.size === 1
+            ? { id: [...ids][0], ambiguous: false }
+            : { id: null, ambiguous: true };
     }
-    return null;
+    return { id: null, ambiguous: false };
 };
 
 const hasSignedOutCue = provider => {
@@ -72,20 +63,25 @@ const inspectOwnership = (urlValue = location.href) => {
     if (!activity) return { ok: false, code: 'unsupported' };
     const { provider, activityId } = activity;
 
-    const viewerSelectors = provider === 'strava'
-        ? ['#global-header', '[data-testid="global-header"]', 'body > header', 'nav[aria-label*="global" i]']
-        : ['#garmin-header', '[data-testid="garmin-header"]', 'header.header', 'body > header', 'nav[aria-label*="global" i]'];
-    const authorSelectors = provider === 'strava'
-        ? ['[data-testid="activity-header"]', '#heading', 'main header', 'main']
-        : ['[data-testid="activity-header"]', '[class*="ActivityHeaderContainer_headerContainer" i]',
-            '[class*="ActivityMetaInfo_activityMetadataHeader" i]', 'main header', 'main'];
-    const viewerId = firstScopeWithOneId(viewerSelectors, provider);
-    const authorId = firstScopeWithOneId(authorSelectors, provider);
+    const viewerSelectorTiers = provider === 'strava'
+        ? [['#global-header', '[data-testid="global-header"]'], ['body > header', 'nav[aria-label*="global" i]']]
+        : [['#garmin-header', '[data-testid="garmin-header"]', 'header.header'],
+            ['body > header', 'nav[aria-label*="global" i]']];
+    const authorSelectorTiers = provider === 'strava'
+        ? [['[data-testid="activity-header"]', '#heading'], ['main header'], ['main']]
+        : [['[data-testid="activity-header"]', '[class*="ActivityHeaderContainer_headerContainer" i]',
+            '[class*="ActivityMetaInfo_activityMetadataHeader" i]'], ['main header'], ['main']];
+    const viewer = identityFromTiers(viewerSelectorTiers, provider);
+    const author = identityFromTiers(authorSelectorTiers, provider);
+    const viewerId = viewer.id;
+    const authorId = author.id;
 
     const hasEditControl = provider === 'strava'
         ? [...document.querySelectorAll('a[href]')].some(link => {
             try {
-                return new URL(link.getAttribute('href'), location.href).pathname === `/activities/${activityId}/edit`;
+                const url = new URL(link.getAttribute('href'), location.href);
+                return url.protocol === 'https:' && isProviderHost(provider, url.hostname)
+                    && url.pathname === `/activities/${activityId}/edit`;
             } catch (_error) {
                 return false;
             }
@@ -95,6 +91,9 @@ const inspectOwnership = (urlValue = location.href) => {
             return /edit an activity/i.test(label.trim());
         });
 
+    if (viewer.ambiguous || author.ambiguous) {
+        return { ok: false, code: 'ownership-unverified', provider, activityId };
+    }
     if (!viewerId) {
         return { ok: false, code: hasSignedOutCue(provider) ? 'provider-signed-out' : 'ownership-unverified', provider, activityId };
     }

@@ -5,6 +5,31 @@
 // and the provider page. Both sides must agree on the provider/activity pair
 // or the ownership and draft-identity checks fail closed.
 
+const PROVIDER_HOSTS = Object.freeze({
+    garmin: Object.freeze(['connect.garmin.com']),
+    strava: Object.freeze(['strava.com', 'www.strava.com', 'm.strava.com']),
+});
+
+const PROFILE_PATTERNS = Object.freeze({
+    garmin: /^\/(?:app|modern)\/profile\/([^/?#]+)(?:[/?#]|$)/i,
+    strava: /^\/athletes\/(\d+)(?:[/?#]|$)/i,
+});
+
+export const isProviderHost = (provider, hostname) =>
+    PROVIDER_HOSTS[provider]?.includes(String(hostname || '').toLowerCase()) === true;
+
+export const providerProfileId = (href, provider, baseUrl) => {
+    if (!href || !PROFILE_PATTERNS[provider]) return null;
+    try {
+        const url = new URL(href, baseUrl);
+        if (url.protocol !== 'https:' || !isProviderHost(provider, url.hostname)) return null;
+        const match = PROFILE_PATTERNS[provider].exec(url.pathname);
+        return match ? decodeURIComponent(match[1]).toLowerCase() : null;
+    } catch (_error) {
+        return null;
+    }
+};
+
 export const providerFromUrl = urlValue => {
     try {
         const url = new URL(urlValue);
@@ -13,11 +38,11 @@ export const providerFromUrl = urlValue => {
         // Accept both so a toolbar click that races that navigation still
         // identifies the same activity; generated links remain canonical.
         let match = /^\/(?:app|modern)\/activity\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
-        if (url.hostname === 'connect.garmin.com' && match) {
+        if (isProviderHost('garmin', url.hostname) && match) {
             return { provider: 'garmin', activityId: match[1] };
         }
         match = /^\/activities\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
-        if (/(^|\.)strava\.com$/i.test(url.hostname) && match) {
+        if (isProviderHost('strava', url.hostname) && match) {
             return { provider: 'strava', activityId: match[1] };
         }
     } catch (_error) {
