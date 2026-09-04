@@ -19,6 +19,7 @@ import {
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
+import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
@@ -54,6 +55,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const BETA_SETTINGS_TABS_KEY = 'bpbBetaSettingsTabs';
     const PEAKBAGGER_HELPER_LEASES_KEY = 'bpbPeakbaggerHelperLeases';
+    const PEAKBAGGER_COOLDOWN_KEY = 'bpbPeakbaggerCooldown';
     const PEAKBAGGER_HELPER_URL = `${PEAKBAGGER_ORIGIN}/Default.aspx`;
     const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
     const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
@@ -91,6 +93,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const CAPTURE_MUTATION_QUEUE = 'capture-lifecycle';
 
     const now = () => Date.now();
+    const peakbaggerScheduler = createPeakbaggerRequestScheduler({
+        concurrency: CaptureLimits.CORRIDOR_CONCURRENCY,
+    });
     const isFresh = record => !!record && Number(record.expiresAt) > now();
     const makeId = () => `${now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const publicFailure = (context, error, fallback) => {
@@ -343,7 +348,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             error: {
                 code,
                 message,
-                ...(code === 'provider-rate-limited'
+                ...((code === 'provider-rate-limited' || code === 'rate-limit')
                     && Number.isFinite(retryAt) && retryAt >= now() && retryAt <= now() + 24 * 60 * 60 * 1000
                     ? { retryAt: Math.trunc(retryAt) }
                     : {}),
@@ -354,6 +359,71 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         else if (code === 'ownership-unverified' || code === 'provider-signed-out') await setBadge(tabId, '!', '#b54708');
         return failed;
     };
+
+    const cleanPeakbaggerRetryAt = value => {
+        const retryAt = Number(value);
+        return Number.isFinite(retryAt) && retryAt >= now()
+            && retryAt <= now() + 24 * 60 * 60 * 1000
+            ? Math.trunc(retryAt)
+            : null;
+    };
+
+    const peakbaggerPublicError = error => {
+        const failure = PeakbaggerError.exception(error);
+        const publicError = PublicErrors.exception(
+            failure.code || 'peakbagger-unavailable',
+            failure.message,
+            { cause: failure },
+        );
+        const retryAt = cleanPeakbaggerRetryAt(error?.retryAt);
+        if (failure.code === 'rate-limit' && retryAt) publicError.retryAt = retryAt;
+        return publicError;
+    };
+
+    const activePeakbaggerCooldown = async () => {
+        const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY];
+        const retryAt = cleanPeakbaggerRetryAt(stored?.retryAt);
+        if (stored?.code === 'rate-limit' && retryAt) return { code: 'rate-limit', retryAt };
+        if (stored && typeof storage().remove === 'function') await storage().remove(PEAKBAGGER_COOLDOWN_KEY);
+        return null;
+    };
+
+    const ensurePeakbaggerRequestsAllowed = async () => {
+        const cooldown = await activePeakbaggerCooldown();
+        if (cooldown) {
+            const error = PublicErrors.exception('rate-limit', captureErrorMessage('rate-limit'));
+            error.retryAt = cooldown.retryAt;
+            throw error;
+        }
+        const schedulerState = peakbaggerScheduler.state();
+        if (!schedulerState.stopped) return;
+        if (!peakbaggerScheduler.resume()) throw schedulerState.reason;
+    };
+
+    const schedulePeakbaggerRequest = (request, url, options = {}) => peakbaggerScheduler.run(
+        async schedulerSignal => {
+            const response = await request(url, { ...options, signal: schedulerSignal });
+            const code = response?.error?.code;
+            if (code !== 'cloudflare' && code !== 'rate-limit') return response;
+
+            const failure = peakbaggerPublicError(response.error);
+            peakbaggerScheduler.stop(failure, { exceptSignal: schedulerSignal });
+            if (code === 'rate-limit' && failure.retryAt) {
+                try {
+                    await storage().set({
+                        [PEAKBAGGER_COOLDOWN_KEY]: { code: 'rate-limit', retryAt: failure.retryAt },
+                    });
+                } catch (error) {
+                    // The in-memory stop remains authoritative for this worker.
+                    // A storage failure must not hide the known rate-limit
+                    // outcome behind a generic capture error.
+                    console.error('Better Peakbagger: Peakbagger cooldown storage failed', error);
+                }
+            }
+            return response;
+        },
+        { signal: options.signal },
+    );
 
     const finishCaptureWithoutGps = async (tabId, generation, message) => {
         const finished = await updateCaptureJobWithoutPayload(tabId, generation, {
@@ -373,16 +443,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const peakbaggerLogin = async ({ request = fetchPeakbaggerResource, signal } = {}) => {
         const response = await request(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html', signal });
         if (response.kind !== 'ok') {
-            const failure = PeakbaggerError.exception(response.error);
+            const failure = peakbaggerPublicError(response.error);
             // PeakbaggerError owns stable recovery copy, but only PublicError
             // messages may cross the worker boundary. Promote the typed
             // Peakbagger failure here so a human check, outage, or rate limit
             // is not collapsed into the generic unexpected-capture fallback.
-            throw PublicErrors.exception(
-                failure.code || 'peakbagger-unavailable',
-                failure.message,
-                { cause: failure },
-            );
+            throw failure;
         }
         const html = response.text;
         const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
@@ -795,7 +861,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 new Error('The Peakbagger page returned an invalid failure.'),
             );
         }
-        const error = PeakbaggerError.failure(code, { resource, status: result.status });
+        const retryAt = code === 'rate-limit' ? cleanPeakbaggerRetryAt(result.error?.retryAt) : null;
+        const error = PeakbaggerError.failure(code, {
+            resource,
+            status: result.status,
+            ...(retryAt ? { retryAt } : {}),
+        });
         return {
             kind: result.kind,
             requestedUrl,
@@ -992,13 +1063,27 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             );
             if (response.kind === 'ok') return response.text;
             if (response.error?.code === 'cancelled') throw cancelledCaptureError();
-            lastError = PeakbaggerError.exception(response.error);
-            if (response.kind !== 'transient') break;
+            lastError = peakbaggerPublicError(response.error);
+            if (response.error?.code !== 'network' && response.error?.code !== 'server') break;
+            if (attempt === 0) {
+                if (signal?.aborted) throw cancelledCaptureError();
+                const delayMs = 150 + Math.floor(Math.random() * 101);
+                await new Promise((resolve, reject) => {
+                    const cancelled = () => {
+                        clearTimeout(timer);
+                        reject(cancelledCaptureError());
+                    };
+                    const timer = setTimeout(() => {
+                        signal?.removeEventListener('abort', cancelled);
+                        resolve();
+                    }, delayMs);
+                    signal?.addEventListener('abort', cancelled, { once: true });
+                });
+            }
         }
-        throw PublicErrors.exception(
-            lastError?.code || 'peakbagger-unavailable',
-            lastError?.message || 'Peakbagger could not return nearby summit data. Try again.',
-            { cause: lastError }
+        throw lastError || PublicErrors.exception(
+            'peakbagger-unavailable',
+            'Peakbagger could not return nearby summit data. Try again.',
         );
     };
 
@@ -1411,9 +1496,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
+            await ensurePeakbaggerRequestsAllowed();
             peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, generation, signal);
+            const peakbaggerRequest = (url, options) =>
+                schedulePeakbaggerRequest(peakbaggerPage.request, url, options);
             const cid = await peakbaggerPage.freshAccount()
-                || await peakbaggerLogin({ request: peakbaggerPage.request, signal });
+                || await peakbaggerLogin({ request: peakbaggerRequest, signal });
             if (!cid) {
                 await failCaptureJob(
                     tabId,
@@ -1477,7 +1565,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 metadata: capture.metadata,
                 capturePreferences,
                 signal,
-                peakbaggerRequest: peakbaggerPage.request,
+                peakbaggerRequest,
                 onPhase: phase => updateCaptureJob(tabId, generation, { phase })
             });
             if (analysis.status === 'no-gps') {
@@ -1517,7 +1605,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // storage when this non-abortable browser call loses its race.
             if (signal?.aborted) return;
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
-            await failCaptureJob(tabId, generation, failure.code, failure.message);
+            await failCaptureJob(tabId, generation, failure.code, failure.message, {
+                retryAt: error?.retryAt,
+            });
         } finally {
             if (peakbaggerPage) {
                 try { await peakbaggerPage.release(); }
@@ -2318,9 +2408,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // bridge as provider capture instead of bypassing it with worker fetch.
             // The bridge revalidates the canonical login/summit URL and the complete
             // response shape on both sides of the world boundary.
+            await ensurePeakbaggerRequestsAllowed();
             await ensurePeakbaggerPage(tabId);
-            peakbaggerPageRequest = (url, options) =>
-                requestThroughPeakbaggerPage(tabId, url, options);
+            peakbaggerPageRequest = (url, options) => schedulePeakbaggerRequest(
+                (requestUrl, requestOptions) =>
+                    requestThroughPeakbaggerPage(tabId, requestUrl, requestOptions),
+                url,
+                options,
+            );
             const cid = await peakbaggerLogin({ request: peakbaggerPageRequest });
             if (!(await uploadSelectionIsCurrent(tabId, selection))) {
                 return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });

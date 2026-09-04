@@ -16,6 +16,7 @@ import {
 } from '../capture/capture-resource-limits.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
+const MAX_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 const OWNER_REQUIRED_KINDS = new Set(['buddies', 'edit', 'list']);
 
 const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
@@ -40,6 +41,22 @@ const baseResult = ({ requestedUrl, response }) => ({
     status: Number(response && response.status) || (response && response.ok === true ? 200 : 0),
     redirected: !!(response && response.redirected),
 });
+const headerValue = (headers, name) => {
+    if (!headers) return '';
+    if (typeof headers.get === 'function') return String(headers.get(name) || '').trim();
+    const key = Object.keys(headers).find(candidate => candidate.toLowerCase() === name.toLowerCase());
+    return key ? String(headers[key] || '').trim() : '';
+};
+const cleanRetryAt = (headers, timestamp) => {
+    const value = headerValue(headers, 'retry-after');
+    if (!value) return null;
+    const seconds = /^\d+$/.test(value) ? Number(value) : null;
+    const candidate = seconds === null ? Date.parse(value) : timestamp + seconds * 1000;
+    return Number.isFinite(candidate) && candidate >= timestamp
+        && candidate <= timestamp + MAX_RETRY_DELAY_MS
+        ? Math.trunc(candidate)
+        : null;
+};
 const rejected = (base, orchestrationKind, error) => ({
     kind: orchestrationKind,
     requestedUrl: base.requestedUrl,
@@ -50,7 +67,7 @@ const rejected = (base, orchestrationKind, error) => ({
     reason: PeakbaggerError.message(error),
 });
 
-const responseFailure = (classification, base, text, resource) => {
+const responseFailure = (classification, base, text, resource, headers, timestamp) => {
     let code;
     if (classification === 'challenged') code = 'cloudflare';
     else if (base.status === 429) code = 'rate-limit';
@@ -60,9 +77,11 @@ const responseFailure = (classification, base, text, resource) => {
     else if (base.status === 404) code = 'not-found';
     else if (base.status < 200 || base.status >= 300) code = 'http';
     else code = 'unexpected-content';
+    const retryAt = code === 'rate-limit' ? cleanRetryAt(headers, timestamp) : null;
     return PeakbaggerError.failure(code, {
         resource,
         status: base.status,
+        ...(retryAt ? { retryAt } : {}),
         ...(base.redirected && pageName(base.url) ? { redirectedTo: pageName(base.url) } : {}),
     });
 };
@@ -74,6 +93,7 @@ export const fetchPeakbaggerResource = async (url, {
     init = {},
     signal = init.signal,
 } = {}) => {
+    const startedAt = Date.now();
     const requestedUrl = trim(url);
     if (!isPeakbaggerUrl(requestedUrl) || typeof fetchFn !== 'function') {
         const base = { requestedUrl, url: requestedUrl, status: 0, redirected: false };
@@ -143,7 +163,14 @@ export const fetchPeakbaggerResource = async (url, {
 
     const classification = classifyResponse(base.status, response && response.headers, text, { kind });
     if (classification !== 'ok') {
-        return rejected(base, classification, responseFailure(classification, base, text, kind));
+        return rejected(base, classification, responseFailure(
+            classification,
+            base,
+            text,
+            kind,
+            response && response.headers,
+            startedAt,
+        ));
     }
     return { kind: 'ok', ...base, text };
 };

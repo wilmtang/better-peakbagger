@@ -2243,6 +2243,185 @@ test('cancelling during corridor lookup aborts the background request owner imme
         'cancellation cannot start the retry attempt');
 });
 
+test('Peakbagger corridor concurrency is capped across activity tabs', async () => {
+    const tabs = new Map(Array.from({ length: 6 }, (_, index) => [index + 1, {
+        id: index + 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: index === 0,
+        status: 'complete',
+    }]));
+    tabs.set(50, {
+        id: 50,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/Default.aspx',
+        active: false,
+        status: 'complete',
+    });
+    const releases = [];
+    let inFlight = 0;
+    let maximum = 0;
+    const harness = createHarness({
+        browserTabs: tabs,
+        beforePeakFetch: () => {
+            inFlight++;
+            maximum = Math.max(maximum, inFlight);
+            return new Promise(resolve => releases.push(() => {
+                inFlight--;
+                resolve();
+            }));
+        },
+    });
+    const captures = Array.from({ length: 6 }, (_, index) =>
+        harness.send({ type: 'CAPTURE_START', tabId: index + 1, force: false }));
+
+    await waitForCondition(() => releases.length === 4);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 4);
+    releases.shift()();
+    await waitForCondition(() => releases.length === 4);
+    while (releases.length) releases.shift()();
+    await waitForCondition(() => harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length === 6);
+    while (releases.length) releases.shift()();
+
+    const results = await Promise.all(captures);
+    assert.ok(results.every(result => result.phase === 'ready'));
+    assert.equal(maximum, 4, 'the worker owns one aggregate Peakbagger ceiling');
+});
+
+test('one Peakbagger challenge stops active and queued sibling captures without retrying', async () => {
+    const tabs = new Map(Array.from({ length: 6 }, (_, index) => [index + 1, {
+        id: index + 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: index === 0,
+        status: 'complete',
+    }]));
+    tabs.set(50, {
+        id: 50,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/Default.aspx',
+        active: false,
+        status: 'complete',
+    });
+    const harness = createHarness({
+        browserTabs: tabs,
+        beforePeakFetch: ({ number }) => number === 1 ? undefined : new Promise(() => {}),
+        peakbaggerPagePeakResult: call => ({
+            kind: 'challenged',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'peaks', status: 403 },
+        }),
+    });
+    const results = await Promise.all(Array.from({ length: 6 }, (_, index) =>
+        harness.send({ type: 'CAPTURE_START', tabId: index + 1, force: false })));
+
+    assert.ok(results.every(result => result.phase === 'error'
+        && result.error.code === 'cloudflare'));
+    const attempted = harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length;
+    assert.ok(attempted >= 1 && attempted <= 4,
+        'the first refusal stops every request that has not reached the global ceiling');
+});
+
+test('a validated Peakbagger rate limit survives worker restart and resumes only after its time', async () => {
+    const clock = { now: Date.now() };
+    const retryAt = clock.now + 60_000;
+    let responses = 0;
+    const tabs = new Map([[1, {
+        id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', active: true, status: 'complete',
+    }], [2, {
+        id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', active: false, status: 'complete',
+    }], [50, {
+        id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', active: false, status: 'complete',
+    }]]);
+    const harness = createHarness({
+        browserTabs: tabs,
+        clock,
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 429,
+            redirected: false,
+            error: {
+                source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt,
+            },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(limited.error.code, 'rate-limit');
+    assert.equal(limited.error.retryAt, retryAt);
+    assert.equal(responses, 1, '429 is never retried');
+
+    const restarted = createHarness({
+        browserTabs: tabs,
+        clock,
+        sessionValues: harness.values,
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 429,
+            redirected: false,
+            error: {
+                source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt,
+            },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const stillLimited = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: false });
+    assert.equal(stillLimited.error.code, 'rate-limit');
+    assert.equal(stillLimited.error.retryAt, retryAt);
+    assert.equal(responses, 1, 'the session cooldown blocks another tab before any request');
+
+    clock.now = retryAt + 1;
+    const resumed = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: true });
+    assert.equal(resumed.phase, 'ready');
+    assert.equal(responses, 2);
+});
+
+test('summit lookup retries only network and server failures once', async () => {
+    let responses = 0;
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 503,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'server', resource: 'peaks', status: 503 },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'ready', JSON.stringify(result));
+    assert.equal(responses, 2);
+});
+
 test('expiry during corridor lookup aborts work and removes the expired generation', async () => {
     let peakSignal;
     let reached;

@@ -97,17 +97,39 @@ test('a bare HTTP 403 is not mislabeled as Cloudflare', async () => {
 });
 
 test('rate limits and server failures remain transient but are not mislabeled as Cloudflare', async () => {
+    const startedAt = Date.now();
     const rateLimit = await fetchPeakbaggerResource(URL, {
-        kind: 'buddies', fetchFn: async () => response({ status: 429, body: 'slow down' }),
+        kind: 'buddies', fetchFn: async () => response({
+            status: 429,
+            body: 'slow down',
+            headers: new Headers({ 'retry-after': '60' }),
+        }),
     });
     assert.equal(rateLimit.kind, 'transient');
     assert.equal(rateLimit.error.code, 'rate-limit');
+    assert.ok(rateLimit.error.retryAt >= startedAt + 60_000
+        && rateLimit.error.retryAt <= Date.now() + 60_000);
 
     const server = await fetchPeakbaggerResource(URL, {
         kind: 'buddies', fetchFn: async () => response({ status: 503, body: 'maintenance' }),
     });
     assert.equal(server.kind, 'transient');
     assert.equal(server.error.code, 'server');
+});
+
+test('Peakbagger retry hints are accepted only inside the bounded cooldown window', async () => {
+    for (const retryAfter of ['-1', 'not-a-date', String(24 * 60 * 60 + 1)]) {
+        const result = await fetchPeakbaggerResource(URL, {
+            kind: 'buddies',
+            fetchFn: async () => response({
+                status: 429,
+                body: 'slow down',
+                headers: new Headers({ 'retry-after': retryAfter }),
+            }),
+        });
+        assert.equal(result.error.code, 'rate-limit');
+        assert.equal('retryAt' in result.error, false, retryAfter);
+    }
 });
 
 test('network rejection, timeout, and unreadable bodies have distinct errors', async () => {
