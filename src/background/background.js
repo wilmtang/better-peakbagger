@@ -11,6 +11,11 @@ import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { captureErrorMessage } from '../capture/capture-error-policy.js';
 import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
+import {
+    PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,
+    PROVIDER_EXPORT_TIMEOUT_MS,
+    PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
+} from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
@@ -52,7 +57,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const PEAKBAGGER_HELPER_URL = `${PEAKBAGGER_ORIGIN}/Default.aspx`;
     const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
     const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
-    const PROVIDER_OPERATION_TIMEOUT_MS = 20_000;
     const PROVIDER_CLEANUP_TIMEOUT_MS = 2_000;
     const PEAKBAGGER_PAGE_VERSION = 2;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
@@ -505,7 +509,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         phase,
         operation,
         signal = null,
-        timeoutMs = PROVIDER_OPERATION_TIMEOUT_MS,
+        timeoutMs = PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
         onCancel = null,
         onLateResult = null,
     }) => runBrowserOperation({
@@ -1109,15 +1113,16 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const results = await runProviderBrowserOperation({
             phase: 'GPX capture',
             signal,
+            timeoutMs: PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,
             onCancel: providerOperationCancellation(tabId, generation),
             operation: () => ext.scripting.executeScript({
                 target: { tabId },
-                func: async (options, captureGeneration, activity) => {
+                func: async (options, captureGeneration, timeoutMs, activity) => {
                     try {
                         return await globalThis.BPBProviderPage.capture(
                             options,
                             captureGeneration,
-                            undefined,
+                            timeoutMs,
                             activity,
                         );
                     } catch (error) {
@@ -1130,7 +1135,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 args: [{
                     retainWaypoints: capturePreferences.retainWaypoints,
                     includeTripName: capturePreferences.fillTripInfo
-                }, generation, expectedActivity],
+                }, generation, PROVIDER_EXPORT_TIMEOUT_MS, expectedActivity],
                 world: 'MAIN'
             }),
         });

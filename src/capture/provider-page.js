@@ -14,6 +14,10 @@ import {
     classifyProviderResponse,
 } from './provider-response.js';
 import { captureErrorMessage } from './capture-error-policy.js';
+import {
+    PROVIDER_EXPORT_TIMEOUT_MS,
+    PROVIDER_OWNERSHIP_TIMEOUT_MS,
+} from './provider-timing.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
@@ -26,8 +30,6 @@ import {
 const NO_GPS_MESSAGE = captureErrorMessage('no-gps-data');
 const EXPORT_FAILURE_MESSAGE = captureErrorMessage('provider-export-failed');
 const EXPORT_TIMEOUT_MESSAGE = captureErrorMessage('provider-export-timeout');
-const PROVIDER_TIMEOUT_MS = 30000;
-const OWNERSHIP_WAIT_MS = 8000;
 const activeCaptures = new Map();
 
 const providerFailure = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
@@ -178,7 +180,7 @@ const publicOwnership = result => {
 const waitForOwnership = async (
     expectedActivity,
     generation = null,
-    timeoutMs = OWNERSHIP_WAIT_MS,
+    timeoutMs = PROVIDER_OWNERSHIP_TIMEOUT_MS,
 ) => {
     const captureKey = typeof generation === 'string' && generation
         ? generation
@@ -284,7 +286,7 @@ const garminExportRequest = activityId => {
 const capture = async (
     options = {},
     generation = null,
-    timeoutMs = PROVIDER_TIMEOUT_MS,
+    timeoutMs = PROVIDER_EXPORT_TIMEOUT_MS,
     expectedActivity = null,
 ) => {
     const ownership = inspectExpectedOwnership(expectedActivity);

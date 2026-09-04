@@ -333,6 +333,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         number: providerCaptureCalls.length + 1,
                         options: structuredClone(details.args?.[0]),
                         generation: details.args?.[1],
+                        timeoutMs: details.args?.[2],
                     };
                     providerCaptureCalls.push(call);
                     if (beforeProviderCapture) await beforeProviderCapture(call);
@@ -2821,6 +2822,13 @@ test('provider export timeouts preserve the public retryable timeout contract', 
     });
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|internal timeout/i);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
+});
+
+test('the worker passes the page-owned provider deadline inside its dispatch margin', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.equal(harness.providerCaptureCalls[0].timeoutMs, 30000);
 });
 
 test('provider response classifications cross the worker only as allowlisted recovery data', async t => {
