@@ -65,7 +65,7 @@
     "globals": "^17.11.0",
     "jsdom": "^30.0.1",
     "jszip": "^3.10.1",
-    "maplibre-gl": "^6.5.0",
+    "maplibre-gl": "^6.6.0",
     "marked": "^18.0.11",
     "playwright": "^1.62.1",
     "selenium-webdriver": "^4.48.0",
