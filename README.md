@@ -245,6 +245,16 @@ page must provide unambiguous ownership signals. Better Peakbagger fails closed
 if it cannot verify those conditions. You must click the toolbar icon for each
 capture; the extension does not keep permanent provider access.
 
+### What should I do when a capture stops?
+
+Follow the one action shown in the popup. Depending on the cause, Better
+Peakbagger will ask you to reload the activity, sign in, return to the provider,
+open the exact Peakbagger human-check page, wait until a rate limit passes, try
+again after a temporary outage, or use a shorter track. After completing a
+sign-in, reload, or human check, return to the activity and click the extension
+again; the new click rechecks the page instead of replaying the old failure.
+Better Peakbagger never solves a CAPTCHA or retries through a stated cooldown.
+
 ### What do Strong and Probable mean for a captured activity?
 
 They describe the evidence that your recorded route encountered a summit—not a

@@ -165,6 +165,8 @@ script is added or removed without updating it.
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run verify:capture-popup` | Builds and renders every capture recovery family in hidden Chrome for Testing and Firefox at 390×620 in light/dark plus a 200% effective viewport; asserts one policy-owned action and no clipping. This is content layout, not native popup chrome or focus proof. |
+| `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
 | `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. A 2026-08-22 source review found no patched release and renewed only two exact high `image-size` advisories through the development-only `web-ext`/`addons-linter` path, with locked versions and a 2026-09-21 expiry; every other or expired finding fails. |
@@ -367,6 +369,13 @@ values or arbitrary page text. The worker revalidates both result shapes.
 Neither API is a general fetch, DOM, or module seam. Do not generalize these
 exceptions.
 
+`BPB_CAPTURE_DIAGNOSTICS` is a local developer/test switch, not telemetry. When
+set to the boolean `true` in the worker or popup realm, the capture path emits
+one allowlisted duration/count object to that realm's console. The worker asks
+the provider adapter for its timings through an explicit capture argument; a
+page global alone does not enable them. The hook is inert by default, persists nothing, and has no string or
+payload channel for URLs, account identity, coordinates, GPX, or response text.
+
 ## Dependency updates
 
 Dependabot opens weekly grouped pull requests. npm updates merge without a
@@ -551,6 +560,21 @@ add it to the merge-step condition, for example
   The capture case checks exact sync/cooperative equivalence, internal
   cancellation checkpoints, a generous total CPU ceiling, and a 100 ms
   maximum yield gap; it still cannot prove the live MV3 message scheduler.
+- `npm run verify:provider-performance` measures native `DOMParser` and
+  extraction for synthetic 1,000-, 5,000-, and 20,000-point GPX plus early
+  over-limit rejection in hidden Chrome and Firefox. It blocks network and does
+  not estimate provider latency or slower hardware.
+- `npm run verify:provider-contracts` routes sanitized provider-shaped pages to
+  the exact Garmin and Strava HTTPS origins, intercepts every request, and
+  exercises ownership, loading, sign-out, localization, navigation, Garmin
+  session mode, response redirects, rate limits, and challenge markers in
+  native browser DOM/fetch implementations. It proves the checked fixture
+  contract only—not current live markup, endpoints, sessions, or challenges.
+- `npm run verify:capture-popup` runs the shipped popup bundle and styles in
+  hidden Chrome and Firefox against every recovery family at a 390×620 physical
+  viewport in light/dark and at a 195×310 CSS viewport rendered at 2x scale to
+  model 200% zoom. It proves action mapping and content containment, not native
+  popup sizing, dismissal, browser focus, or screen-reader speech.
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe
   equality in source without rewriting it, then checks the built extension
   package. Neither lint stage establishes browser behavior.

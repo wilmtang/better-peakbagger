@@ -1,10 +1,11 @@
 # Garmin/Strava capture reliability, performance, and UX audit — 2026-09-03
 
-Status: **active remediation plan; runtime behavior is unchanged.** This audit
-found five P1 findings, four P2 findings, and one measurement-gated P3 finding.
-Implementation must preserve the existing fail-closed ownership decision, raw
-GPX privacy boundary, complete summit lookup, generation cancellation, and
-manual Peakbagger Save.
+Status: **archived remediation record, closed 2026-09-07.** All ten findings
+received implemented remediation and local verification. Measurement and live
+compatibility gaps remain explicitly recorded below. The remediation preserves fail-closed ownership, the raw GPX
+privacy boundary, complete summit lookup, generation cancellation, and manual
+Peakbagger Save. Live providers and native browser chrome remain explicit proof
+gaps in the closure ledger.
 
 Baseline: clean local `main` at `c81eb331`, one commit ahead of `origin/main`.
 The completed [2026-08-29 code/performance/UX audit](../archive/codebase-audit-2026-08-29.md)
@@ -607,18 +608,95 @@ green fixture is not proof of current live provider compatibility.
 
 ### Fixed and verified
 
-- None yet; this is a documentation-only audit.
+- **F1 — provider identity trust** (`1eb0f66`): exact activity/profile host
+  allowlists, non-throwing identity normalization, and complete contradictory
+  evidence rejection are covered by provider URL/page bundle tests.
+- **F2 — provider readiness** (`27c141f`): a generation-owned eight-second DOM
+  observer accepts staged ownership only after all evidence exists and returns
+  distinct signed-out, human-check, navigation, cancellation, and timeout
+  outcomes. Tests prove no export begins before approval.
+- **F3 — provider response semantics** (`af279f7`): final URL, status, content
+  type, documented challenge marker, bounded prefix, and validated retry time
+  produce allowlisted public codes without response leakage. Garmin and Strava
+  response matrices pass.
+- **F4 — deadline ownership** (`41bcfa0`): the page owns the 30-second
+  fetch/read/parse/result deadline and the worker adds a two-second dispatch
+  margin. Fake-clock tests pin timeout and cancellation precedence.
+- **F5 — Peakbagger traffic ownership** (`72fac97`): one FIFO scheduler caps
+  requests at four across activity tabs, aborts siblings on challenge/rate
+  limit, persists a validated cooldown, and retries only network/server failure
+  once. Cross-tab, restart, fake-clock, and cancellation tests pass.
+- **F6 — recovery lifecycle** (`7be1c18`): new toolbar gestures re-evaluate
+  errors, explicit no-GPS/no-match checks can force refresh, cooldown cannot be
+  bypassed, and an exact validated helper challenge can be adopted/focused.
+- **F7 — shared failure UX** (`c07ffea`): every public code has one shared
+  title, message, retry policy, and permitted recovery kind; worker exceptions
+  remain bounded and popup action-family tests are exhaustive.
+- **F8 — truthful progress** (`a904a8e`): stable phase names, failed-stage
+  retention, and decile-throttled completed/total summit-area progress are
+  covered across held async boundaries and bounded session writes.
+- **F9 — provider parse responsiveness** (`eeef6ce`): structural preflight
+  rejects over-limit GPX before DOM construction. Hidden Chrome for Testing
+  151.0.7922.34 measured 1k/5k/20k parses at 6.7/15.3/60.4 ms and rejection at
+  2.8 ms; hidden Firefox 153.0 measured 5/15/61 ms and rejection at 2 ms, all
+  at 1280×720.
+- **F10 — measured startup and provider assurance** (`12fe594`): unsupported
+  tabs bypass settings I/O; popup admission starts while display units resolve
+  but result paint waits for those units. Opt-in diagnostics accept only
+  allowlisted local durations/counts and never persist. Sanitized, intercepted
+  HTTPS provider contracts pass in hidden Chrome for Testing 151.0.7922.34 and
+  Firefox 153.0 at 1280×720, covering ownership, localization, SPA navigation,
+  Garmin session mode, redirects, challenge, rate limit, and no-GPS.
+- **Failure layout accessibility** (`30b1d56`): all eight recovery families fit
+  their policy-owned action (or no action for wait/terminal cases) with no clipping in hidden Chrome for Testing 151.0.7922.34 and
+  Firefox 153.0 at a 390×620 physical viewport, light/dark, and a 195×310 CSS
+  viewport rendered at 2x scale for 200% zoom. Representative screenshots were
+  visually inspected; the primary action remains above the fold.
+- Final repository gates passed: `npm test` **1,809/1,809**; `npm run
+  test:scale` **14/14**; `npm run lint` with the eight maintained owned
+  warnings; documentation/development tests **20/20**; and `git diff --check`.
+  `npm run verify:browsers` passed against the real unpacked extension in hidden
+  Chrome for Testing 151.0.7922.34 (new headless, 1000×760) and hidden Firefox
+  155.0 (1000×760). Verifier-owned processes and disposable artifacts were
+  checked after completion.
 
 ### Intentionally not changed
 
-- Runtime behavior, permissions, provider traffic, and release state were not
-  changed while creating this plan.
-- No live provider, Peakbagger, CAPTCHA, store, push, tag, release, or destructive
-  account operation was performed.
+- Ownership still rechecks before and after the provider body read. A stable
+  document-generation shortcut was not adopted without live drift evidence.
+- Provider helper reuse and Peakbagger box batching/merging were not adopted:
+  the measured fixture path did not justify stale-generation, attribution,
+  response-size, cancellation, wider-corridor, or completeness risk.
+- Peakbagger login still completes before provider coordinate export. Overlap
+  would change the documented privacy order and needs a separate product choice.
+- No persistent provider permission, cookie access, official API migration,
+  CAPTCHA automation, clearance-cookie copying, user-agent spoofing, proxy
+  rotation, or background login automation was added.
+- The committed provider verifiers intercept all network requests. An earlier
+  exploratory hidden-page navigation reached a Strava activity URL; it did not
+  establish authenticated capture or live compatibility. No account mutation,
+  push, tag, store submission, or release was performed.
 
 ### Changed but not fully proven
 
-- None yet. Live Garmin/Strava DOM and export behavior, native toolbar
-  `activeTab`, native popup dismissal/focus, real anti-bot recovery, physical
-  devices, screen-reader speech, and store acceptance remain proof gaps for
-  future implementation.
+- Current live Garmin/Strava DOM, localization, authenticated export endpoints,
+  and real provider/Peakbagger challenge or rate-limit responses remain
+  unverified. The secret-free corpus is compatibility regression evidence, not
+  live-provider proof; its live-check stamps remain "not performed" for both
+  browser families on 2026-09-03.
+- The hidden real-extension gates do not prove the native toolbar `activeTab`
+  grant, popup dismissal/focus/browser chrome, permission prompts, or a user's
+  completion of a human check. The popup content was visually inspected as an
+  ordinary hidden page, not as native popup chrome.
+- Screen-reader speech, physical devices, slower hardware outside the measured
+  parser matrix, production network/load distribution, future provider policy,
+  store acceptance, legal review, and provider endorsement remain unproven.
+- F9's native gate measures synchronous parse/extraction wall time and early
+  rejection. Native animation-frame gaps, peak heap, structured-clone cost, and
+  renderer cancellation latency were not separately measured; the synchronous
+  parser cannot interrupt itself mid-parse. Those measurements remain follow-up
+  evidence before replacing the bounded DOM parser.
+- F10's duration hooks and fixture timings do not establish a production median,
+  tail distribution, or end-to-end speedup. Admission ordering is proven by
+  deferred-settings tests; corridor timing combines queue, bridge, and network
+  work. Further optimizations still require comparative measurements.

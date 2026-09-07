@@ -1,6 +1,6 @@
 # Active plans
 
-- [Garmin/Strava capture reliability, performance, and UX audit — 2026-09-03](garmin-strava-capture-audit-2026-09-03.md)
+None.
 
 Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
