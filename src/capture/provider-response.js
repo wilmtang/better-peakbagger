@@ -4,7 +4,8 @@
 // Pure classification for authenticated Garmin/Strava GPX responses. A 2xx
 // status is not sufficient evidence of GPX: sign-in redirects, managed
 // challenges, and changed JSON/HTML endpoints can all look successful to
-// fetch(). Only allowlisted codes and a bounded retry timestamp leave here.
+// the provider request. Only allowlisted codes and a bounded retry timestamp
+// leave here.
 
 import { isProviderHost } from './provider-url.js';
 

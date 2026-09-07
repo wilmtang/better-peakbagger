@@ -430,7 +430,7 @@ test('the worker independently rejects a local upload when capture settings are 
     assert.equal(response.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(response.error)), {
         code: 'settings-unavailable',
-        message: 'Capture settings could not be read. Reload and try again. Nothing was captured.',
+        message: 'Reload the extension and try again. Nothing was captured.',
     });
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
     assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, undefined);
