@@ -2436,6 +2436,8 @@ try {
             summary: rect(summary),
             role: handle?.getAttribute('role'),
             orientation: handle?.getAttribute('aria-orientation'),
+            background: handle ? getComputedStyle(handle).backgroundColor : null,
+            border: handle ? getComputedStyle(handle).borderWidth : null,
             value: Number(handle?.getAttribute('aria-valuenow')),
         };
     });
@@ -2470,7 +2472,9 @@ try {
             === 'ascent-report|bpb-ascent-table-resize-handle|ascent-summary'
         && ascentSplitBefore.role === 'separator'
         && ascentSplitBefore.orientation === 'vertical'
-        && ascentSplitBefore.handle?.width >= 43.5
+        && Math.abs(ascentSplitBefore.handle?.width - 13) <= 0.5
+        && ascentSplitBefore.background === 'rgba(0, 0, 0, 0)'
+        && ascentSplitBefore.border === '0px'
         && ascentSplitBefore.handle?.height >= 43.5
         && ascentSplitBefore.report?.right <= ascentSplitBefore.handle?.left + 1
         && ascentSplitBefore.handle?.right <= ascentSplitBefore.summary?.left + 1

@@ -1807,7 +1807,7 @@ async function main() {
         && firefoxResizeTargets.mapHandle?.height >= 43.5
         && firefoxResizeTargets.mapHandle.top >= firefoxResizeTargets.mapFrame?.bottom - 1
         && firefoxResizeTargets.mapTouchAction === 'none'
-        && firefoxResizeTargets.splitHandle?.width >= 43.5
+        && Math.abs(firefoxResizeTargets.splitHandle?.width - 13) <= 0.5
         && firefoxResizeTargets.splitHandle?.height >= 43.5
         && firefoxResizeTargets.report?.right <= firefoxResizeTargets.splitHandle.left + 1
         && firefoxResizeTargets.splitHandle.right <= firefoxResizeTargets.summary?.left + 1

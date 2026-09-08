@@ -29,6 +29,7 @@ const setup = ({ html = legacyHtml(), saved = null, storage = null } = {}) => {
         doc: dom.window.document,
         storage: storage || dom.window.localStorage,
     });
+    if (split) split.handle.getBoundingClientRect = () => ({ width: 13 });
     const restore = () => {
         globalThis.document = previousDocument;
         dom.window.close();
@@ -77,13 +78,14 @@ test('pointer dragging resizes both columns and persists once released', () => {
     const { dom, split, restore } = setup();
     try {
         split.wrapper.getBoundingClientRect = () => ({ width: 1013, left: 0, right: 1013 });
+        const initial = split.leftPercent;
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
             button: 0, clientX: 500,
         }));
         split.handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
             clientX: 600,
         }));
-        assert.ok(split.leftPercent > 59 && split.leftPercent < 60,
+        assert.equal(split.leftPercent, initial + 10,
             '100 px of a 1000 px split adds ten percentage points');
         assert.equal(dom.window.localStorage.getItem(Split.storageKey), null,
             'an in-progress gesture is not persisted');
@@ -104,6 +106,8 @@ test('touch cancellation and capture loss persist the visible split once', () =>
     const { dom, split, restore } = setup({ storage });
     try {
         split.wrapper.getBoundingClientRect = () => ({ width: 1044, left: 0, right: 1044 });
+        split.handle.getBoundingClientRect = () => ({ width: 44 });
+        const initial = split.leftPercent;
         const touch = { pointerId: 11, pointerType: 'touch' };
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
             ...touch, button: 0, clientX: 500,
@@ -112,6 +116,8 @@ test('touch cancellation and capture loss persist the visible split once', () =>
             ...touch, clientX: 600,
         });
         split.handle.dispatchEvent(move);
+        assert.equal(split.leftPercent, initial + 10,
+            'touch dragging uses the wider rendered handle when calculating the split');
         assert.equal(move.defaultPrevented, true, 'touch movement cannot scroll the page');
         split.handle.dispatchEvent(pointerEvent(dom, 'pointercancel', touch));
         split.handle.dispatchEvent(pointerEvent(dom, 'lostpointercapture', touch));
