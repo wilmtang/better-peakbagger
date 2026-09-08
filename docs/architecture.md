@@ -1680,13 +1680,17 @@ No single green command proves the extension works:
   notice fails. Generated line and column numbers are not pinned, because every
   vendored warning's position is a byte offset into a bundle. Both lint stages
   run in CI and in release CI. Neither establishes runtime behavior.
-- `npm run audit:ci` currently permits only two exact high `image-size`
+- `npm run audit:ci` currently permits two exact high `image-size`
   advisories through the development-only `web-ext`/`addons-linter` lint path,
   with advisory ids, package versions, install paths, and a 2026-09-21 expiry
   pinned in `scripts/check-npm-audit.mjs`. A 2026-08-22 source review confirmed
   that the registry still has no patched release and that the parser remains
   limited to extension-owned icons and theme images during development lint;
-  every other finding fails. The older
+  a September 8 review additionally accepts one moderate `adm-zip` advisory
+  in the dev-only `web-ext`/`firefox-profile` path, with the same expiry and
+  exact versions. web-ext copies XPIs or writes proxies without calling the
+  vulnerable extractor; the installed-tool regression test pins that boundary.
+  Every other finding fails. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.18 through a scoped override.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox

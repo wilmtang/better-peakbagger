@@ -43,24 +43,34 @@ const acceptedAudit = () => auditWith({
         ],
         nodes: ['node_modules/image-size'],
     },
+    'adm-zip': {
+        severity: 'moderate',
+        via: [{ source: 1193734, url: 'https://github.com/advisories/GHSA-vwc7-r8mq-g2x9' }],
+        nodes: ['node_modules/adm-zip'],
+    },
+    'firefox-profile': {
+        severity: 'moderate',
+        via: ['adm-zip'],
+        nodes: ['node_modules/firefox-profile'],
+    },
     'web-ext': {
         severity: 'high',
-        via: ['addons-linter'],
+        via: ['addons-linter', 'firefox-profile'],
         nodes: ['node_modules/web-ext'],
     },
-});
+}, { moderate: 2, high: 3 });
 
 const acceptedLock = () => ({
     packages: Object.fromEntries(Object.entries(AUDIT_ACCEPTANCE.lockedPackages)
         .map(([packagePath, version]) => [packagePath, { version, dev: true }])),
 });
 
-test('the npm audit gate accepts only the reviewed image-size lint path before expiry', () => {
+test('the npm audit gate accepts only the reviewed development paths before expiry', () => {
     assert.deepEqual(
         evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-22'),
         {
             status: 'accepted',
-            message: 'Accepted two image-size advisories only in the dev-only web-ext lint path through 2026-09-21.',
+            message: 'Accepted two image-size lint advisories and one unused adm-zip extraction advisory only in the pinned dev-only web-ext paths through 2026-09-21.',
         },
     );
 
@@ -116,6 +126,27 @@ test('the npm audit gate rejects advisory, path, package, severity, and lock dri
         () => evaluateAudit({ metadata: { vulnerabilities: { total: 3 } }, vulnerabilities: {} }),
         /missing vulnerability detail/
     );
+});
+
+test('the adm-zip acceptance rejects new consumers, advisories, versions, and severity', () => {
+    for (const mutate of [
+        audit => audit.vulnerabilities['adm-zip'].via.push({ source: 123, url: 'https://github.com/advisories/new' }),
+        audit => audit.vulnerabilities['adm-zip'].nodes.push('node_modules/other/node_modules/adm-zip'),
+        audit => { audit.vulnerabilities['adm-zip'].severity = 'high'; },
+        audit => audit.vulnerabilities['firefox-profile'].via.push('other'),
+        audit => audit.vulnerabilities['web-ext'].via.push('other'),
+    ]) {
+        const audit = acceptedAudit();
+        mutate(audit);
+        assert.throws(() => evaluateAudit(audit, acceptedLock(), '2026-09-08'), /changed/);
+    }
+    for (const name of ['adm-zip', 'firefox-profile']) {
+        const lock = acceptedLock();
+        lock.packages[`node_modules/${name}`].dev = false;
+        assert.throws(() => evaluateAudit(acceptedAudit(), lock, '2026-09-08'), /lock changed/);
+        lock.packages[`node_modules/${name}`] = { dev: true, version: '99.0.0' };
+        assert.throws(() => evaluateAudit(acceptedAudit(), lock, '2026-09-08'), /lock changed/);
+    }
 });
 
 // npm changing its report shape must not read as "nothing found".
@@ -183,6 +214,8 @@ test('maintained release guidance names the live expiring audit acceptance', asy
             `${relative} must name the bounded acceptance count and package`);
         assert.match(source, /web-ext/);
         assert.match(source, /addons-linter/);
+        assert.match(source, /adm-zip/);
+        assert.match(source, /firefox-profile/);
         assert.match(source, new RegExp(AUDIT_ACCEPTANCE.expires));
         assert.doesNotMatch(source, /accepts no advisories|no accepted exceptions|accepts no finding/i);
     }
