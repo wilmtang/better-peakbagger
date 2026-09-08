@@ -6,14 +6,20 @@
   <title>GPX analyzer showcase</title>
   <link rel="stylesheet" href="/scripts/showcase/showcase.css">
   <script>
-    window.addEventListener('message', event => {
-      if (event.source !== window || !event.data || event.data.__bpb !== true || event.data.dir !== 'toCS') return;
-      window.postMessage({
-        __bpb: true,
-        dir: 'toPage',
-        settings: { units: 'imperial', theme: 'light', chartDefaultSeries: 'both' }
-      }, location.origin);
-    });
+    let fixtureSettings = { units: 'imperial', theme: 'light', chartDefaultSeries: 'both' };
+    window.chrome = {
+      runtime: {
+        sendMessage: async message => {
+          if (message.type !== 'SETTINGS_PATCH') return { ok: false };
+          fixtureSettings = { ...fixtureSettings, ...message.patch };
+          return { ok: true, settings: fixtureSettings };
+        }
+      },
+      storage: {
+        sync: { get: async () => ({ bpbSettings: fixtureSettings }) },
+        onChanged: { addListener: () => {}, removeListener: () => {} }
+      }
+    };
   </script>
 </head>
 <body class="gpx-showcase-page">
@@ -41,6 +47,7 @@
   </main>
 
   <script src="/dist/vendor/chart.umd.min.js"></script>
+  <script src="/dist/content/ascent-bridge.js"></script>
   <script src="/dist/content/gpx-analyzer.js"></script>
   <script>
     const hoverFraction = Math.min(.88, Math.max(.12, Number(new URLSearchParams(location.search).get('hover')) || .56));

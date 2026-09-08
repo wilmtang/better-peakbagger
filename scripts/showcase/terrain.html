@@ -17,12 +17,29 @@
     .terrain-check .analyzer-shell > a { color: #174d82; font-size: 11px; }
   </style>
   <script>
-    // Extension resources live under dist/; the isolated 3D bridge reads real
-    // settings from chrome.storage (it imports settings now, not a page global).
+    const params = new URLSearchParams(location.search);
+    const wide = params.get('map') === 'wide';
+    const size = /^(\d{3,4})x(\d{3,4})$/.exec(params.get('viewport') || '');
+    let fixtureSettings = {
+      units: 'imperial', theme: params.get('theme') === 'dark' ? 'dark' : 'light',
+      chartDefaultSeries: 'both', enable3dMap: true,
+      mapViewportWidth: size ? Number(size[1]) : (wide ? 800 : 450),
+      mapViewportHeight: size ? Number(size[2]) : 450,
+      terrainCacheLimitMb: 256
+    };
+    // Use the production settings bridge. Only storage and its worker write
+    // endpoint are synthetic; snapshot revisions and acknowledgements stay real.
     window.chrome = {
-      runtime: { getURL: path => new URL(`/dist/${path}`, location.origin).href },
+      runtime: {
+        getURL: path => new URL(`/dist/${path}`, location.origin).href,
+        sendMessage: async message => {
+          if (message.type !== 'SETTINGS_PATCH') return { ok: false };
+          fixtureSettings = { ...fixtureSettings, ...message.patch };
+          return { ok: true, settings: fixtureSettings };
+        }
+      },
       storage: {
-        sync: { get: async () => ({ bpbSettings: { enable3dMap: true } }) },
+        sync: { get: async () => ({ bpbSettings: fixtureSettings }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
       }
     };
@@ -39,25 +56,6 @@
         document.head.append(style);
       });
     })();
-    window.addEventListener('message', event => {
-      if (event.source !== window || !event.data || event.data.__bpb !== true || event.data.dir !== 'toCS') return;
-      const params = new URLSearchParams(location.search);
-      const wide = params.get('map') === 'wide';
-      const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
-      // The tile level-of-detail measurement needs the same frame size the
-      // investigation used, which neither default matches.
-      const size = /^(\d{3,4})x(\d{3,4})$/.exec(params.get('viewport') || '');
-      window.postMessage({
-        __bpb: true,
-        dir: 'toPage',
-        settings: {
-          units: 'imperial', theme, chartDefaultSeries: 'both', enable3dMap: true,
-          mapViewportWidth: size ? Number(size[1]) : (wide ? 800 : 450),
-          mapViewportHeight: size ? Number(size[2]) : 450,
-          terrainCacheLimitMb: 256
-        }
-      }, location.origin);
-    });
   </script>
   <script src="/scripts/showcase/terrain-activation-fixture.js"></script>
 </head>
@@ -76,6 +74,7 @@
 
   <script src="/dist/vendor/chart.umd.min.js"></script>
   <script src="/dist/content/terrain-map.js"></script>
+  <script src="/dist/content/ascent-bridge.js"></script>
   <script src="/dist/content/gpx-analyzer.js"></script>
   <script>
     // The toggle enables as soon as the GPX parses, but the drape is read from
