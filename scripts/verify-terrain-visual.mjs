@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 
 import {
     createFixtureCertificate,
@@ -201,7 +202,9 @@ const waitForPageState = async (cdp, expression, timeoutMs = 30000) => {
         } catch { /* Navigation may replace the execution context mid-poll. */ }
         await delay(200);
     }
-    throw new Error(`Timed out waiting for page state: ${JSON.stringify(lastValue)}`);
+    const terrain = await evaluate(cdp, `(${readTerrainReadiness.toString()})()`)
+        .catch(error => ({ probeError: String(error) }));
+    throw new Error(`Timed out waiting for page state: ${JSON.stringify({ lastValue, terrain })}`);
 };
 
 const isBoundedMapterhornTile = value => {

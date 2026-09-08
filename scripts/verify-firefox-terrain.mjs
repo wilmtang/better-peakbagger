@@ -6,6 +6,7 @@
 import { createServer } from 'node:https';
 
 import { firefox } from 'playwright';
+import { readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 
 import {
     createFixtureCertificate,
@@ -237,20 +238,8 @@ async function main() {
           && map.getSource('basemap');
             }, null, { timeout: 45_000 });
         } catch (error) {
-            const state = await page.evaluate(() => {
-                const frame = document.getElementById('bpb-terrain-frame');
-                const map = frame?.contentWindow?.__bpbTerrainTestMap;
-                return {
-                    frame: Boolean(frame),
-                    frameOpacity: frame?.style.opacity || null,
-                    frameReadyState: frame?.contentDocument?.readyState || null,
-                    map: Boolean(map),
-                    mapLoaded: map?.loaded() || false,
-                    route: Boolean(map?.getLayer('bpb-route')),
-                    peaks: Boolean(map?.getLayer('bpb-peaks-ring')),
-                    basemap: Boolean(map?.getSource('basemap')),
-                };
-            });
+            const state = await page.evaluate(readTerrainReadiness)
+                .catch(probeError => ({ probeError: String(probeError) }));
             throw new Error(`Timed out waiting for Firefox terrain readiness: ${JSON.stringify({ state, requests, errors })}`, {
                 cause: error,
             });
