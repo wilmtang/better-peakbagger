@@ -159,7 +159,7 @@ test('the accepted image-size path and patched transitive packages stay dev-only
         assert.equal(entry.dev, true, `${packagePath} must stay development-only`);
     }
     const jsYaml = lockfile.packages['node_modules/js-yaml'];
-    assert.equal(jsYaml.version, '4.3.1');
+    assert.equal(jsYaml.version, '4.3.2', 'empty merge sources must use the patched CPU limit');
     assert.equal(jsYaml.dev, true, 'js-yaml must stay development-only');
     const fastUri = lockfile.packages['node_modules/fast-uri'];
     assert.equal(fastUri.version, '3.1.7');
