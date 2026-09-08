@@ -101,6 +101,44 @@ const ascentEditFixture = await resources.guard(readFile(
 const failureCollector = createFailureCollector();
 const { failures, check } = failureCollector;
 
+// The dark site's global button rules used to paint the entire 44px media
+// touch target, leaving an unexplained square beside its tiny corner dot.
+const verifyMediaResizeAppearance = async (page, handle) => {
+    const originalTheme = await page.locator('html').getAttribute('data-bpb-theme');
+    try {
+        for (const theme of ['light', 'dark']) {
+            await page.locator('html').evaluate((html, value) => {
+                html.dataset.bpbTheme = value;
+            }, theme);
+            await handle.hover();
+            const appearance = await handle.evaluate(element => {
+                const style = getComputedStyle(element);
+                const icon = getComputedStyle(element, '::before');
+                return {
+                    label: element.getAttribute('aria-label'),
+                    background: style.backgroundColor,
+                    border: style.borderWidth,
+                    shadow: style.boxShadow,
+                    icon: icon.maskImage,
+                    iconWidth: icon.width,
+                    iconRight: icon.right,
+                    iconBottom: icon.bottom,
+                };
+            });
+            check(appearance.background === 'rgba(0, 0, 0, 0)'
+                && appearance.border === '0px' && appearance.shadow === 'none'
+                && appearance.icon !== 'none' && appearance.iconWidth === '20px'
+                && appearance.iconRight === '12px' && appearance.iconBottom === '12px',
+            `${theme} media resize should show a centered icon without button chrome: ${JSON.stringify(appearance)}`);
+        }
+    } finally {
+        await page.locator('html').evaluate((html, theme) => {
+            if (theme === null) html.removeAttribute('data-bpb-theme');
+            else html.dataset.bpbTheme = theme;
+        }, originalTheme);
+    }
+};
+
 const readDownloadText = async download => {
     const stream = await download.createReadStream();
     const chunks = [];
@@ -4802,6 +4840,7 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich image did not reveal its resize handle');
+                if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
                 const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
                     const media = document.querySelector('.bpb-re-image-resize img');
                     const handle = document.querySelector('[aria-label="Resize image"]');
@@ -4887,6 +4926,7 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich video did not reveal its resize handle');
+                if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
                 const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
                     const media = document.querySelector('.bpb-re-video-resize video');
                     const handle = document.querySelector('[aria-label="Resize video"]');
@@ -4993,6 +5033,7 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'the Rich YouTube iframe did not expose its resize handle');
+                if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
                 const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
                     const media = document.querySelector('.bpb-re-youtube-resize iframe');
                     const handle = document.querySelector('[aria-label="Resize YouTube video"]');
