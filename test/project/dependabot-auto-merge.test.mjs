@@ -152,13 +152,18 @@ test('the declared and locked TipTap family moves as one version', () => {
     assert.ok(declared.length > 1, 'the project must exercise a real TipTap family');
     assert.equal(new Set(declared.map(([_name, range]) => range)).size, 1,
         'all direct TipTap requirements must have the same range');
+    const version = declared[0][1];
+    assert.match(version, /^\d+\.\d+\.\d+$/,
+        'exact TipTap requirements prevent untouched siblings resolving past the grouped release');
 
     const locked = Object.entries(packageLock.packages)
-        .filter(([packagePath]) => packagePath.startsWith('node_modules/@tiptap/'))
+        .filter(([packagePath]) => /(?:^|\/)node_modules\/@tiptap\//.test(packagePath))
         .map(([_packagePath, metadata]) => metadata.version);
     assert.ok(locked.length >= declared.length);
     assert.equal(new Set(locked).size, 1,
         'all direct and transitive TipTap packages must resolve to one lockstep version');
+    assert.equal(locked[0], version,
+        'nested and top-level TipTap resolutions must match the exact manifest version');
 });
 
 test('copied runtime updates add hardware GPU gates to stable required checks', () => {

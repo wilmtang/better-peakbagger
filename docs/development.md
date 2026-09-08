@@ -399,8 +399,19 @@ member against an unchanged sibling is exactly the breakage grouping prevents.
 The npm updater also uses `versioning-strategy: increase`: Dependabot raises the
 minimum in every matching manifest range even when an older caret already
 admits the release. That makes already-satisfied TipTap siblings visible to the
-group instead of producing a partial family update that `npm ci` rejects on its
-exact peer requirements.
+group. This alone did not prevent PR #19 from mixing 3.30.6 with 3.31.3 during
+lockfile resolution. Direct TipTap requirements therefore use one exact version,
+and the policy check requires every top-level and nested TipTap installation to
+match it. Keep the family grouped and update its exact pins together; do not use
+`--legacy-peer-deps` to accept an inconsistent update.
+
+Existing Dependabot PRs can retain an older updater job definition: the
+2026-09-06 recreation of #19 still used the former `editor`/`vendored` groups and
+`requirements-update-strategy: null`, despite the current default-branch config.
+When diagnosing recurrence, inspect the **Dependabot Updates** job definition as
+well as the PR test logs. Recreating an old PR is not evidence that the new
+configuration ran; verify a fresh scheduled update uses the current groups and
+strategy after integrating the old branches.
 
 Within npm, group membership no longer decides whether an update waits, since
 none of those groups do. It decides how much of `dist/` one merge can move,
