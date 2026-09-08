@@ -21,6 +21,8 @@
 // matching Add/Edit success in this tab. Validation and navigation failures
 // therefore keep the local recovery copy.
 
+import { installReportLocalPhotos } from './report-local-photos.js';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { reportMarkup as Markup } from './report-markup.js';
@@ -54,6 +56,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
     const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;
+    let localPhotos = null;
     let trustedActionSequence = 0;
     const nextTrustedActionGeneration = action =>
         `report-${action}-${Date.now().toString(36)}-${++trustedActionSequence}`;
@@ -637,6 +640,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // preview document, then adopts its nodes without assigning innerHTML.
     const renderSanitizedPreviewHtml = html => {
         const parsed = new DOMParser().parseFromString(html, 'text/html');
+        for (const image of parsed.body.querySelectorAll('img')) {
+            const src = image.getAttribute('src');
+            if (!PendingPhoto.id(src)) continue;
+            image.removeAttribute('src');
+            image.alt ||= 'Not uploaded';
+            void localPhotos?.resolvePreview(src).then(value => { image.src = value; }).catch(() => {});
+        }
         preview.replaceChildren(...parsed.body.childNodes);
     };
 
@@ -780,7 +790,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             state.autosaveTimer = null;
         }
         if (state.terminalSubmission) return;
-        if (!['rich', 'markdown'].includes(state.mode)) return; // uninitialized/Plain: native behavior, native risks
+        if (!['rich', 'markdown'].includes(state.mode) && !PendingPhoto.ids(textarea.value).length) return;
         flushSync();
         const revision = draftEditRevision;
         let removing = false;
@@ -1118,7 +1128,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     let photoLaunchBusy = false;
-    const launchPhotoEditor = async event => {
+    const launchPhotoEditor = async (event, localPhotoId = null) => {
         if (photoLaunchBusy) return;
         const generation = nextTrustedActionGeneration('photos');
         const activation = await TrustedAction.issue(ext, event, 'photo-editor', generation);
@@ -1130,6 +1140,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         try {
             const response = await RuntimeMessage.send(ext, {
                 type: 'PHOTO_EDITOR_OPEN',
+                ...(localPhotoId ? { localPhotoId } : {}),
                 mode: 'edit',
                 generation,
                 activationToken: activation.token,
@@ -1140,7 +1151,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 }
             });
             if (!response?.ok) {
-                imageLaunchStatus.textContent = 'Couldn’t open the photo editor. Try again.';
+                const message = response?.error?.message || 'Couldn’t open the photo editor. Try again.';
+                if (localPhotoId) localPhotos.showError(message);
+                else imageLaunchStatus.textContent = message;
             }
         } finally {
             photoLaunchBusy = false;
@@ -1284,11 +1297,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             ariaLabel: 'Trip report',
             onUpdate: () => { state.richDirty = true; state.creditScaffold = false; scheduleSync(); },
             onStateChange: () => refreshToolbar(),
-            shortcuts: { 'Mod-k': openLinkBox }
+            shortcuts: { 'Mod-k': openLinkBox },
+            resolveLocalImage: src => localPhotos.resolvePreview(src),
+            editLocalImage: (event, src) => localPhotos.edit(event, src)
         });
     };
 
     const setMode = (mode, { persist = true, flush = true } = {}) => {
+        if (localPhotos?.busy()) return;
         if (flush) flushSync();   // capture the outgoing mode's content first
         else if (state.syncTimer !== null) {
             globalThis.clearTimeout(state.syncTimer);
@@ -1432,6 +1448,20 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const handlePhotoInsertion = (message, sender, sendResponse) => {
+        if (message?.type === 'PHOTO_LOCAL_RESULT') {
+            if (!samePhotoReturnContext(message) || sender?.id !== ext.runtime.id) {
+                sendResponse?.({ ok: false });
+                return false;
+            }
+            if (handledPhotoReturnTokens.has(message.returnToken)) {
+                sendResponse?.({ ok: true });
+                return false;
+            }
+            const ok = state.mode === 'rich' && localPhotos.receive(message, sender);
+            if (ok) rememberPhotoReturnToken(message.returnToken);
+            sendResponse?.({ ok });
+            return false;
+        }
         if (message?.type !== 'PHOTO_INSERT_RESULT') return undefined;
         const insertion = cleanPhotoInsertion(message);
         const trustedSender = sender?.id === ext.runtime.id;
@@ -1466,6 +1496,32 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     // ---- Boot ----------------------------------------------------------------------
+
+    localPhotos = installReportLocalPhotos({
+        ext, form, textarea, ui, getEditor: () => richEditor,
+        flush: flushSync, saveDraft: saveDraftNow, launchEditor: launchPhotoEditor,
+        replaceText: replacements => {
+            flushSync();
+            const replace = text => {
+                for (const [from, to] of replacements) text = text.split(from).join(to);
+                return text;
+            };
+            if (state.mode === 'rich') {
+                const transaction = richEditor.state.tr;
+                richEditor.state.doc.descendants((node, pos) => {
+                    if (node.type.name === 'image' && replacements.has(node.attrs.src)) {
+                        transaction.setNodeMarkup(pos, null, { ...node.attrs, src: replacements.get(node.attrs.src) });
+                    }
+                });
+                richEditor.view.dispatch(transaction);
+            } else if (state.mode === 'markdown') {
+                mdEditor.setValue(replace(mdEditor.getValue()));
+                state.mdDirty = true;
+            } else {
+                textarea.value = replace(textarea.value);
+            }
+        },
+    });
 
     const initialize = async () => {
         const settings = await Settings.get();

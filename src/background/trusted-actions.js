@@ -20,9 +20,10 @@ const ACTIONS = Object.freeze({
     BETA_SETTINGS: 'beta-settings',
     DRAFT_MANAGER: 'draft-manager',
     PHOTO_EDITOR: 'photo-editor',
+    REPORT_PHOTOS: 'report-photos',
 });
 const ACTION_SET = new Set(Object.values(ACTIONS));
-const WORKFLOW_ACTIONS = new Set([ACTIONS.ASCENT_BACKUP, ACTIONS.PROFILE_BACKUP]);
+const WORKFLOW_ACTIONS = new Set([ACTIONS.ASCENT_BACKUP, ACTIONS.PROFILE_BACKUP, ACTIONS.REPORT_PHOTOS]);
 
 const defaultToken = () => {
     const bytes = new Uint8Array(24);

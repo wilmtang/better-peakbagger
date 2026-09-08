@@ -402,8 +402,7 @@ add/delete row and column, header-row toggle, and table removal.
 
 The Rich toolbar's image popover preserves direct URL insertion and adds two
 extension-owned paths: **Upload and edit…** and **Choose from library…**. These
-actions do not put local files or an ImgBB API key into the Peakbagger content
-script. The report surface sends only its cleaned climber/ascent/peak identity
+toolbar actions do not put an ImgBB API key into the Peakbagger content script. The report surface sends only its cleaned climber/ascent/peak identity
 to the worker, which opens `photos/photos.html` with a random return context
 bound to the source tab/frame and editor tab.
 
@@ -415,6 +414,37 @@ inserting a normal image node. Expired, replayed, mismatched-tab, malformed, and
 non-Rich results fail closed. If the report tab disappears after ImgBB accepts
 the upload, the upload remains in the local photo library; insertion is a later
 operation and cannot roll it back.
+
+With ImgBB configured and its optional host access granted, users can paste an
+image directly into Rich text. The image is decoded and re-encoded without source
+metadata, then saved to extension-owned IndexedDB before its TR draft is persisted.
+Each source and flattened snapshot is bounded to 16 MiB; existing decoded-image
+bounds still apply. A **Not uploaded** label and **Edit photo** action accompany
+the image. Double-click opens an editable copy in Photo Topos; **Save and return**
+updates the local report image without uploading. Autosave in that separate tab
+cannot mutate the snapshot already accepted by the TR.
+
+Local images use reserved `https://bpb-photo.invalid/<uuid>` references through
+Rich text, Markdown, Plain, and draft restoration. The image node view resolves
+pixels through report-scoped worker messaging; credentials never enter the content
+script. These references are device-local and are not hosted image links.
+
+A trusted Save Ascent click (either button) or implicit form submission grants a
+bounded upload workflow. The report becomes temporarily inert while its remaining
+photos upload sequentially. The worker owns credentials, report identity checks,
+revision-checked upload journals, and confirmed public URLs. Only after all URLs
+are available does the editor replace local references and resume native form
+validation with `requestSubmit`; it never clicks Save or bypasses validation with
+`submit()`. Failures keep the report open. Confirmed uploads are reused, definite
+provider refusals allow correction, and uncertain outcomes require reconciliation
+in the photo library/ImgBB rather than automatic duplicate uploads.
+
+`node scripts/verify-report-photos.mjs` checks the real packaged extension in
+hidden Chrome over an HTTPS Peakbagger fixture, including clipboard paste, draft
+restoration, double-click editing, local return, and the final native form POST.
+It mocks ImgBB and optional permission status, so it does not prove live uploads,
+native permission prompts, or Peakbagger server acceptance. Screenshots go to
+`tmp/report-photos` (or `BPB_REPORT_PHOTOS_OUTPUT`).
 
 The complete upload, local-catalog, credential, recovery, and deletion
 contracts live in [photo-topo-editor.md](photo-topo-editor.md).

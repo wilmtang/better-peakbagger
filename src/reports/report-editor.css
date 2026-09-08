@@ -1215,3 +1215,35 @@ html[data-bpb-theme="dark"] .bpb-re-conversion button {
 html[data-bpb-theme="dark"] .bpb-re-conversion button:hover {
     background: #35301f;
 }
+
+/* Local images keep their upload state beside the image, outside report markup. */
+.bpb-re-local-photo-actions {
+    display: flex;
+    align-items: center;
+    position: absolute;
+    left: 0;
+    right: 44px;
+    bottom: 6px;
+    gap: 12px;
+    padding: 5px 0;
+    font: 12px/1.4 system-ui, sans-serif;
+    color: var(--bpb-muted, #666);
+}
+.bpb-re-local-photo-actions[hidden] { display: none; }
+.bpb-re-local-photo-actions button {
+    font: inherit;
+    color: var(--bpb-link, #1769aa);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    padding: 3px 5px;
+    cursor: pointer;
+}
+.bpb-re-local-photo-actions button:focus-visible { outline: 2px solid currentColor; }
+.bpb-re-local-photo-status {
+    padding: 8px 12px;
+    font: 13px/1.5 system-ui, sans-serif;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-local-photo-actions { color: #aaa; }
+html[data-bpb-theme="dark"] .bpb-re-local-photo-actions button { color: #8ab4f8; }

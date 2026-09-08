@@ -42,6 +42,7 @@ test('the packaged photo page exposes the editor, library, and credential bounda
         'photos/imgbb-client.js',
         'photos/photo-report-size.js',
         'photos/photo-upload-transaction.js',
+        'photos/report-photo.js',
         'photos-main.js',
     ]);
     assert.ok(COPY_FILES.some(([from, to]) =>

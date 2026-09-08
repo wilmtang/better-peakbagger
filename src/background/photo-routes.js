@@ -6,6 +6,8 @@
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { photoLibrary as Library } from '../photos/photo-library.js';
 import { sanitizeReportDimension } from '../reports/report-markup.js';
+import { createReportPhotoService, reportPhotoOwner } from './report-photo-service.js';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 
 const RETURN_CONTEXTS_KEY = 'bpbPhotoEditorReturns';
@@ -128,6 +130,38 @@ export function createPhotoRoutes({
     const permissionGranted = async () => !!(ext.permissions?.contains
         && await ext.permissions.contains(IMGBB_PERMISSION));
 
+    const reportPhotos = createReportPhotoService({ keyStore, permissionGranted });
+    const reportOwner = sender => isPeakbaggerSender(sender) && Number.isInteger(sender.tab?.id)
+        ? reportPhotoOwner(sender.url) : null;
+    const reportRoute = operation => async (message, sender) => {
+        const owner = reportOwner(sender);
+        if (!owner) return { ok: false, error: { code: 'forbidden' } };
+        try { return { ok: true, ...await operation(message, sender, owner) }; }
+        catch (error) { return { ok: false, error: { message: error.message } }; }
+    };
+    const reportStatus = reportRoute(async () => ({
+        configured: !!await keyStore.read(), permissionGranted: await permissionGranted(),
+    }));
+    const createReportPhoto = reportRoute(async (message, sender, owner) => {
+        if (!trustedActions.consumeCapability(message, sender, TrustedActions.ACTIONS.REPORT_PHOTOS)) {
+            throw new Error('Paste a photo into the report to add it.');
+        }
+        if (!await keyStore.read() || !await permissionGranted()) {
+            throw new Error('Set up ImgBB in Settings before pasting photos.');
+        }
+        return reportPhotos.create(owner, message);
+    });
+    const readReportPhoto = reportRoute(async (message, sender, owner) => {
+        const { image } = await reportPhotos.read(owner, message.localPhotoId);
+        return { dataUrl: image.dataUrl };
+    });
+    const uploadReportPhoto = reportRoute(async (message, sender, owner) => {
+        if (!await trustedActions.consumeGrant(message, sender, TrustedActions.ACTIONS.REPORT_PHOTOS)) {
+            throw new Error('Use Save Ascent to upload report photos.');
+        }
+        return reportPhotos.uploadOne(owner, message.localPhotoId);
+    });
+
     const status = async (_message, sender) => {
         if (!isCredentialPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const stored = await keyStore.read();
@@ -186,6 +220,11 @@ export function createPhotoRoutes({
                 },
             };
         }
+        const pendingId = message.localPhotoId;
+        if (pendingId) {
+            try { await reportPhotos.read(reportOwner(sender), pendingId); }
+            catch (error) { return { ok: false, error: { message: error.message } }; }
+        }
         const token = randomToken();
         const createdAt = now();
         let contextMayExist = false;
@@ -235,6 +274,7 @@ export function createPhotoRoutes({
                         ? sender.documentId
                         : null,
                     sourceUrl,
+                    localPhotoId: pendingId || null,
                     editorTabId: null,
                     identity,
                     createdAt,
@@ -246,6 +286,7 @@ export function createPhotoRoutes({
             const url = new URL(photoPageBase);
             url.searchParams.set('mode', mode);
             url.searchParams.set('returnToken', token);
+            if (pendingId) url.searchParams.set('localPhotoId', pendingId);
             const tab = await ext.tabs.create({ url: url.toString() });
             if (!Number.isInteger(tab?.id)) throw new Error('Photo editor tab did not open.');
             createdTabId = tab.id;
@@ -268,7 +309,7 @@ export function createPhotoRoutes({
     const insertResult = async (message, sender) => {
         if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const token = typeof message.returnToken === 'string' ? message.returnToken : '';
-        const insertion = cleanPublicInsertion(message);
+        let insertion = cleanPublicInsertion(message);
         if (!token || !insertion) return { ok: false, error: { code: 'invalid-result' } };
 
         const context = await mutateMap(RETURN_CONTEXTS_KEY, contexts => {
@@ -297,10 +338,22 @@ export function createPhotoRoutes({
                 candidate.consumed = true;
             }
         });
+        if (context.localPhotoId) {
+            try {
+                insertion = await reportPhotos.saveEdit(reportPhotoOwner(context.sourceUrl), message, context.localPhotoId);
+            } catch (error) {
+                await releaseClaim();
+                return { ok: false, error: { message: error.message } };
+            }
+        } else if (PendingPhoto.id(insertion.url)) {
+            await releaseClaim();
+            return { ok: false, error: { code: 'invalid-result' } };
+        }
         let response;
         try {
             response = await ext.tabs.sendMessage(context.sourceTabId, {
-                type: 'PHOTO_INSERT_RESULT',
+                type: context.localPhotoId ? 'PHOTO_LOCAL_RESULT' : 'PHOTO_INSERT_RESULT',
+                ...(context.localPhotoId ? { replacesLocalPhotoId: context.localPhotoId } : {}),
                 returnToken: token,
                 expectedIdentity: context.identity,
                 expectedUrl: context.sourceUrl,
@@ -317,7 +370,9 @@ export function createPhotoRoutes({
                 ok: false,
                 error: {
                     code: 'insert-failed',
-                    message: 'The photo was uploaded, but the original report tab is no longer available.',
+                    message: context.localPhotoId
+                        ? 'The photo is saved locally, but the original report tab is no longer available.'
+                        : 'The photo was uploaded, but the original report tab is no longer available.',
                 },
             };
         }
@@ -327,7 +382,9 @@ export function createPhotoRoutes({
                 ok: false,
                 error: {
                     code: 'insert-failed',
-                    message: 'The photo was uploaded but could not be inserted into the report.',
+                    message: context.localPhotoId
+                        ? 'The photo is saved locally. Keep the original image in the report, switch the report to Rich text, and choose Save and return again.'
+                        : 'The photo was uploaded but could not be inserted into the report.',
                 },
             };
         }
@@ -355,6 +412,10 @@ export function createPhotoRoutes({
 
     return {
         handlers: {
+            PHOTO_REPORT_STATUS: reportStatus,
+            PHOTO_REPORT_CREATE: createReportPhoto,
+            PHOTO_REPORT_READ: readReportPhoto,
+            PHOTO_REPORT_UPLOAD: uploadReportPhoto,
             PHOTO_IMGBB_STATUS: status,
             PHOTO_IMGBB_SAVE_KEY: saveKey,
             PHOTO_IMGBB_REMOVE_KEY: removeKey,

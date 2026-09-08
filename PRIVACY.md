@@ -197,7 +197,10 @@ date. That happens entirely locally.
 ## Photo topo editor and ImgBB upload (optional)
 
 The photo editor stores the selected image, thumbnail, source metadata,
-annotation project, title, and alt text in device-local IndexedDB. Source image
+annotation project, title, and alt text in device-local IndexedDB. Pasting into a
+Rich text TR stores metadata-free pixels and a local report image reference.
+Double-clicking opens a separate editable copy; **Save and return** keeps it local.
+Saving the TR uploads its remaining local images before submitting the report. Source image
 bytes can contain camera metadata; they stay local and are never uploaded by
 Better Peakbagger.
 
@@ -207,9 +210,9 @@ project JSON, local/report identity, API key, and delete URL.
 
 | Topic | Policy |
 | --- | --- |
-| Local limits | Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
-| Upload | Only after **Upload and insert**, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
-| API key | The saved key remains in device-local extension storage. The background worker gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Removing it does not affect earlier uploads. |
+| Local limits | TR pasted images and flattened local report snapshots: at most 16 MiB each. Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
+| Upload | After **Upload and insert** in the standalone photo editor, or after the user saves a TR containing pasted local photos, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
+| API key | The saved key remains in device-local extension storage. The background worker uses it directly for user-initiated TR photo uploads and gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Removing it does not affect earlier uploads. |
 | Catalog | Stores public URLs, source/export metadata and hashes, upload/reachability state, lineage, report references, and local asset availability because ImgBB's v1 API has no account-gallery listing operation. |
 | Delete URL | Stored separately in device-local IndexedDB. It is never placed in a report or GitHub backup. Removing a local entry or report reference does not delete the remote ImgBB image. |
 | Recently Deleted | Removed items can be restored locally. After 30 days their image and project assets become eligible for pruning; tombstones remain to prevent older backups from resurrecting them. |
