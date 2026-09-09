@@ -3,7 +3,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { readTerrainReadiness } from '../../scripts/terrain-readiness-diagnostics.mjs';
+import { installTerrainLifecycleProbe, readTerrainReadiness } from '../../scripts/terrain-readiness-diagnostics.mjs';
+
+test('lifecycle diagnostics retain bounded reasons without capturing terrain payloads', () => {
+    let receive;
+    const context = vm.createContext({
+        performance: { now: () => 123 },
+        addEventListener: (_type, listener) => { receive = listener; },
+    });
+    vm.runInContext(`(${installTerrainLifecycleProbe.toString()})()`, context);
+    receive({ data: { __bpbTerrain: true, type: 'view' } });
+    assert.equal(context.__bpbTerrainLifecycle.length, 0);
+    for (let index = 0; index < 45; index++) {
+        receive({ data: { __bpbTerrainFrame: true, type: 'error', reason: 'timeout', route: 'excluded' } });
+    }
+    assert.equal(context.__bpbTerrainLifecycle.length, 40);
+    assert.equal(context.__bpbTerrainLifecycle[0].reason, 'timeout');
+    assert.equal(context.__bpbTerrainLifecycle[0].route, undefined);
+});
 
 const probe = elements => JSON.parse(JSON.stringify(vm.runInNewContext(
     `(${readTerrainReadiness.toString()})()`, {

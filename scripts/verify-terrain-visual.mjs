@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
+import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 
 import {
     createFixtureCertificate,
@@ -820,6 +820,9 @@ try {
         cdp.call('Runtime.enable'),
         cdp.call('Network.enable')
     ]);
+    await cdp.call('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(${installTerrainLifecycleProbe.toString()})()`,
+    });
 
     // A software renderer would still paint plausible-looking screenshots, so a
     // silent fall back to SwiftShader could pass this suite while proving

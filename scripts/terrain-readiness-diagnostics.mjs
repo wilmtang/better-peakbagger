@@ -2,6 +2,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document */
 
+export function installTerrainLifecycleProbe() {
+    globalThis.__bpbTerrainLifecycle = [];
+    globalThis.addEventListener('message', event => {
+        const data = event.data;
+        if (!(data?.__bpbTerrain || data?.__bpbTerrainFrame)
+            || !['init', 'ready', 'loaded', 'error', 'destroy', 'destroyed', 'resume'].includes(data.type)) return;
+        globalThis.__bpbTerrainLifecycle.push({
+            time: Math.round(performance.now()), type: data.type,
+            dir: data.dir, reason: data.reason,
+        });
+        if (globalThis.__bpbTerrainLifecycle.length > 40) globalThis.__bpbTerrainLifecycle.shift();
+    });
+}
+
 // Self-contained so CDP and Playwright can evaluate the same probe in the page.
 // Only read state: a timeout must not reset the map or conceal the failed view.
 export function readTerrainReadiness() {
@@ -14,6 +28,7 @@ export function readTerrainReadiness() {
             text: toggle.textContent, title: toggle.title, disabled: toggle.disabled,
         } : null,
         frame: frame ? { opacity: frame.style.opacity } : null,
+        lifecycle: globalThis.__bpbTerrainLifecycle || [],
     };
     try {
         const doc = frame?.contentDocument;
