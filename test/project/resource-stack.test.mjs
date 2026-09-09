@@ -228,6 +228,15 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(markdownReload,
         /waitForFunction[\s\S]*dataset\.mode === 'markdown'[\s\S]*Draft saved on this device[\s\S]*editorPage\.reload/,
         'draft recovery must await the new Markdown autosave before leaving the page');
+    const backupSetup = chromeVerifier.slice(
+        chromeVerifier.indexOf("await optionsPage.locator('#units').selectOption('auto');"),
+        chromeVerifier.indexOf('// --- Extension-owned photo editor and local library'),
+    );
+    assert.match(backupSetup,
+        /waitForFunction[\s\S]*units === 'auto'[\s\S]*SETTINGS_PATCH[\s\S]*enableGithubBackup: true/,
+        'the backup fixture must settle options and use the serialized settings route');
+    assert.doesNotMatch(backupSetup, /chrome\.storage\.sync\.set\(/,
+        'a raw fixture replacement must not overwrite a real pending settings patch');
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,
         'terminal Chrome readiness errors must retain earlier accumulated surface failures');

@@ -390,19 +390,25 @@ try {
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(optionPersisted, 'the Chrome options page did not persist a real setting change');
         await optionsPage.locator('#units').selectOption('auto');
+        await optionsPage.waitForFunction(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'auto',
+        null, { timeout: 5000 });
         await optionsPage.evaluate(async () => {
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-            await Promise.all([
-                chrome.storage.sync.set({
-                    bpbSettings: { ...bpbSettings, enableGithubBackup: true }
-                }),
-                chrome.storage.local.set({
-                    bpbGithubAuth: {
-                        token: 'browser-verification-only',
-                        repo: { owner: 'fixture', name: 'backup', branch: 'main', fullName: 'fixture/backup' }
-                    }
-                })
-            ]);
+            // Use the worker's settings queue. A raw read/replace here can
+            // race the real options write and silently disable the later
+            // owner-only backup fixture when that stale write completes.
+            const response = await chrome.runtime.sendMessage({
+                type: 'SETTINGS_PATCH', patch: { enableGithubBackup: true },
+            });
+            if (!response?.ok || response.settings?.enableGithubBackup !== true) {
+                throw new Error('Chrome backup fixture settings were not acknowledged');
+            }
+            await chrome.storage.local.set({
+                bpbGithubAuth: {
+                    token: 'browser-verification-only',
+                    repo: { owner: 'fixture', name: 'backup', branch: 'main', fullName: 'fixture/backup' }
+                }
+            });
         });
 
         // --- Extension-owned photo editor and local library -----------------
@@ -4125,8 +4131,15 @@ try {
         }, surfaceSelectors.profileBackup, { timeout: 10000 })
             .then(handle => handle.jsonValue())
             .catch(() => null);
+        const diagnostics = state || await profilePage.evaluate(selector => ({
+            url: location.href,
+            readyState: document.readyState,
+            title: document.title,
+            panel: document.querySelector(selector)?.textContent || null,
+            filterMounted: Boolean(document.getElementById('pbaf-bar')),
+        }), surfaceSelectors.profileBackup);
         check(state?.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy),
-            `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(state)}`);
+            `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(diagnostics)}`);
         await profilePage.close();
     }
 

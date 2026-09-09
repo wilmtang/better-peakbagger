@@ -126,3 +126,12 @@ is best-effort, so restoration could correctly use the older Rich draft. The
 verifier now waits for the current Markdown save status before reloading and
 reports live mode/content/status if restoration fails. A held-write regression
 proves that the previous Rich draft remains stored until Markdown is committed.
+
+The follow-up also exposed a Chrome 128 backup-fixture setup race: the harness
+selected Auto units and immediately replaced the whole settings record directly,
+competing with the worker-owned options save. It now awaits the Auto setting and
+queues the backup enablement through `SETTINGS_PATCH`, with an acknowledgement.
+Profile-mount failures retain live page/panel state. The stable Chrome required
+check now includes Chrome 128; previously its omission allowed that floor to
+fail without blocking the aggregate. Auto-merge was paused until this gate and
+the fixture setup were corrected.
