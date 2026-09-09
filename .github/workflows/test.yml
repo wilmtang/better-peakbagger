@@ -245,9 +245,10 @@ jobs:
     name: Firefox copied-runtime GPU smoke
     needs: dependency-impact
     if: needs.dependency-impact.outputs.copied-runtime == 'true'
-    # Keep both GPU jobs on the same arm64 M1 runner class. The verifier reports
-    # the WebGL renderer and fails closed if Firefox falls back to software GL.
-    runs-on: macos-15
+    # Firefox terrain initialization stalls for ~38 seconds on the hosted M1
+    # runner, exceeding the real renderer deadline before the first frame.
+    # Use the standard Intel runner; still reject software WebGL explicitly.
+    runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
       - name: Check out source
