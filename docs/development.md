@@ -28,7 +28,9 @@ Better Peakbagger module uses a global as an internal dependency.
   Testing — stable Chrome refuses `--load-extension`).
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
   `npx playwright install firefox` additionally installs the isolated Firefox
-  build used by the GPU terrain check.
+  build used by the GPU terrain check. On macOS this check selects ANGLE Metal
+  and verifies the unsanitized hardware renderer before loading terrain; native
+  OpenGL on hosted virtual Macs can stall past the production startup deadline.
 - OpenSSL. Every browser fixture server — both extension verifiers, both
   terrain verifiers, and `showcase:render` — creates a one-day self-signed
   certificate in a disposable directory and deletes it in teardown, so the local
@@ -465,6 +467,10 @@ resolved Chart.js, Marked, and MapLibre versions from the base and proposed
 lockfiles; additions and removals count as changes, and an unreadable base fails
 closed. The browser jobs refuse software WebGL and exercise the real copied
 MapLibre modules in hidden Chrome and Firefox.
+Browser-tooling changes (Playwright and its core), source or script changes,
+manifest changes, and changes to the test workflow also require these GPU checks.
+That keeps a fixture or graphics-backend regression from waiting unnoticed until
+the next copied-library update.
 
 The release rehearsal remains a gate because those focused GPU checks do not
 visually inspect the report editor, charts, native browser UI, or live provider
@@ -591,9 +597,11 @@ add it to the merge-step condition, for example
   package. Neither lint stage establishes browser behavior.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render the true MapLibre
   frame on a reported hardware GPU, but their
-  showcase pages provide their own settings/chrome stubs and their Mapterhorn
-  requests are intercepted with a synthetic CORS-enabled DEM, so it does not run
-  the real settings or bridge code or exercise the live terrain service.
+  analyzer showcases load the production settings bridge over stubbed extension
+  storage and runtime APIs. Mapterhorn requests are intercepted with a synthetic
+  CORS-enabled DEM. These checks exercise the real bridge protocol but not the
+  actual extension manifest, worker lifecycle, settings storage, or live terrain
+  service.
 - `npm run terrain:lod` measures which elevation level each visible pixel is
   actually drawn from, on the same real GPU frame, so the tilt detail behaviour is
   a number rather than an impression. It generates its own continuous DEM tiles

@@ -30,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect copied runtime version changes
+      - name: Detect terrain runtime and verification changes
         id: impact
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
