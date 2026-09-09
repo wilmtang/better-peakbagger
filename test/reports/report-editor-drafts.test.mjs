@@ -144,13 +144,30 @@ test('a failed empty-draft removal discloses that the older device copy remains'
 });
 
 test('switching saved draft modes marks and persists the latest recovery mode', async () => {
-    const dom = await loadEditor({ accelerateAutosave: true });
+    let releaseMarkdownWrite;
+    const dom = await loadEditor({
+        accelerateAutosave: true,
+        prepare: d => {
+            const nativeSet = d.chrome.storage.local.set;
+            d.chrome.storage.local.set = async patch => {
+                if (patch[DRAFT_KEY]?.mode === 'markdown') {
+                    await new Promise(resolve => { releaseMarkdownWrite = resolve; });
+                }
+                return nativeSet(patch);
+            };
+        },
+    });
     await editorReady(dom);
     typeRich(dom, '<p>mode recovery</p>');
     await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.mode === 'rich');
 
     modeButton(dom.window.document, 'Markdown').click();
     assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, 'Unsaved changes');
+    await waitFor(dom, () => releaseMarkdownWrite);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].mode, 'rich',
+        'the prior saved draft is still Rich until the new mode write finishes');
+    assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, 'Saving…');
+    releaseMarkdownWrite();
     await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.mode === 'markdown'
         && /^Draft saved on this device/.test(
             dom.window.document.querySelector('.bpb-re-status').textContent));

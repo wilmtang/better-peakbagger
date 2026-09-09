@@ -5238,6 +5238,14 @@ try {
             check(/<b>windy<\/b>/.test(split?.previewHtml || '') && /<ol><li>rope<\/li><\/ol>/.test(split?.previewHtml || ''),
                 `the live preview did not render the final formatting (html=${JSON.stringify(split?.previewHtml)})`);
 
+            // Switching modes schedules a new autosave. The earlier Rich-text
+            // save cannot prove that Markdown (including its source) is durable.
+            // pagehide delivery is best-effort, so never race that write with reload.
+            await editorPage.waitForFunction(() =>
+                document.getElementById('bpb-report-editor')?.dataset.mode === 'markdown'
+                && /^Draft saved on this device/.test(document.querySelector('.bpb-re-status')?.textContent || ''),
+            null, { timeout: 10000 });
+
             // A reload serves the pristine form again; the draft must be
             // offered back and restore into the mode it was written in.
             await editorPage.reload({ waitUntil: 'load' });
@@ -5295,7 +5303,15 @@ try {
                         && state.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]'
                         && state.markdownVisible ? state : false;
                 }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
-                if (!restored) throw new Error('restoring the draft did not reach a visible Markdown editor');
+                if (!restored) {
+                    const state = await editorPage.evaluate(() => ({
+                        mode: document.getElementById('bpb-report-editor')?.dataset.mode,
+                        value: document.getElementById('JournalText')?.value,
+                        status: document.querySelector('.bpb-re-status')?.textContent,
+                        draftOffered: !document.querySelector('.bpb-re-draft')?.hidden,
+                    }));
+                    throw new Error(`restoring the draft did not reach a visible Markdown editor: ${JSON.stringify(state)}`);
+                }
             }
 
             // Exercise the broader Marked-token pipeline through the real

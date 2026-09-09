@@ -114,3 +114,15 @@ dark surfaces. All browser runs were hidden and used disposable profiles.
   older Firefox. Separate real-extension checks cover the manifest and worker.
 - The final PR and subsequent mainline run are recorded by GitHub. This ledger
   cites the successful implementation run rather than predicting their result.
+
+## Mainline follow-up
+
+PR #22 auto-merged after all required checks passed, closing PRs #19 and #20
+through their preserved ancestry. The first mainline run then exposed a separate
+[Chrome draft-recovery verifier race](https://github.com/wilmtang/better-peakbagger/actions/runs/34295157874):
+it waited for the Rich-text draft save, switched to Markdown, and immediately
+reloaded while the new mode's autosave was still pending. Pagehide persistence
+is best-effort, so restoration could correctly use the older Rich draft. The
+verifier now waits for the current Markdown save status before reloading and
+reports live mode/content/status if restoration fails. A held-write regression
+proves that the previous Rich draft remains stored until Markdown is committed.
