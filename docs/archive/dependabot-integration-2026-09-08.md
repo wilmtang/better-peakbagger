@@ -2,80 +2,106 @@
 
 ## Evidence and cause
 
-Auto-merge was successfully enabled on both open npm PRs. The four-check main
-ruleset correctly blocked their failing checks. Tooling PR #21 was merged by
-`github-actions` on September 6, confirming that the queue path works.
+Auto-merge was enabled on both open npm PRs. The four-check main ruleset
+correctly blocked failing checks; the queue itself was working. Tooling PR #21
+was merged by `github-actions` on September 6.
 
-- [Editor PR #19 test run](https://github.com/wilmtang/better-peakbagger/actions/runs/34008062466):
-  `npm ci` failed with `ERESOLVE`, before application tests ran. Most TipTap
-  packages resolved to 3.30.6, but extension-link and extensions resolved to
-  3.31.3 with exact 3.31.3 peers. Two manifest ranges remained at `^3.30.5`.
-- [Dependabot updater run](https://github.com/wilmtang/better-peakbagger/actions/runs/34007935413):
-  its job definition says `command: recreate`, group `editor`, former
-  `editor`/`vendored` rules, and `requirements-update-strategy: null`. The
-  default branch already contains the renamed groups and `increase` strategy.
-  This recreation therefore retained configuration predating the earlier fix;
-  inspecting only the current YAML would miss the recurrence mechanism.
-- [MapLibre PR #20 test run](https://github.com/wilmtang/better-peakbagger/actions/runs/34007976080):
-  ordinary Node/scale/browser checks passed, while both copied-runtime GPU jobs
-  failed readiness. Chrome timed out on the dark 448×448 terrain surface;
-  Firefox reported frame opacity 0 and mapLoaded false, despite route, peaks,
-  and basemap objects existing. Those logs do not establish a renderer defect
-  or a specific timing cause. Both checks passed locally with MapLibre 6.6.0.
+- [Editor PR #19](https://github.com/wilmtang/better-peakbagger/actions/runs/34008062466)
+  failed `npm ci` with `ERESOLVE`: TipTap 3.30.6 was mixed with 3.31.3 siblings
+  requiring exact peers. Two manifest ranges still admitted newer versions.
+  The [updater job](https://github.com/wilmtang/better-peakbagger/actions/runs/34007935413)
+  was a `recreate` using former `editor`/`vendored` groups and a null requirements
+  update strategy, despite the default branch already having renamed groups
+  and `versioning-strategy: increase`. Recreating an old PR retained its old
+  job configuration. Current YAML alone did not explain that recurrence.
+- [MapLibre PR #20](https://github.com/wilmtang/better-peakbagger/actions/runs/34007976080)
+  passed ordinary checks but failed both GPU jobs. New diagnostics in
+  [the integration run](https://github.com/wilmtang/better-peakbagger/actions/runs/34292334802)
+  exposed obsolete settings replies in analyzer showcases: missing revision
+  and request acknowledgement fields made the production client reject them.
+  The hosted light system theme therefore defeated the dark-theme assertion;
+  a locally dark system concealed the mismatch. The fixture also silently
+  used the default map width instead of its requested wide width.
+- Firefox additionally polled transient `map.loaded()` dirty flags and used a
+  resize threshold that was already true before resizing. After those checks
+  were corrected, bounded lifecycle traces exposed a separate startup failure:
+  the frame became ready in under a second but timeout handling did not run
+  until about 38 seconds on hosted ARM and 49 seconds on hosted Intel. Twelve
+  DEM requests started, but no basemap or peak requests followed. Switching
+  CPU architecture did not repair it.
+- Playwright's locked Firefox 153 used native macOS OpenGL. Playwright 1.63
+  supplies Firefox 155 with a selectable ANGLE Metal backend. The revised
+  hidden check reports and requires that backend on macOS. The
+  [successful hosted run](https://github.com/wilmtang/better-peakbagger/actions/runs/34294343657)
+  reports `ANGLE Metal Renderer: Apple Paravirtual device` and completes the
+  Firefox terrain assertions about nine seconds after its renderer probe.
+  This proves the newer browser plus Metal configuration resolves the hosted
+  failure; it does not isolate every upstream browser change from the backend
+  change. Production startup deadlines were not raised.
 
 ## Fixed and verified
 
-- `ce80d68`: merged `origin/main`, including the already auto-merged tooling
-  update, while preserving all 18 pre-existing local commits.
-- `339c5f2`: real two-parent merge of
-  `dependabot/npm_and_yarn/editor-a5f38f0bb7`. All direct TipTap dependencies
-  are now exact 3.30.6 pins; every nested and top-level lockfile resolution must
-  match. CodeMirror updates are included. Fresh `npm ci`, 1,822 tests, seven
-  dependency-policy tests, and hidden real-extension Chrome verification passed.
-- `e511bad`: real two-parent merge of
-  `dependabot/npm_and_yarn/vendored-d2e2e9d766`, updating MapLibre to 6.6.0.
-  Fresh installation, 101 terrain/project tests, and both hidden terrain GPU
-  checks passed. All three source heads are ancestors of local main.
-- `fa4dada`: shared read-only timeout diagnostics now report current toggle
-  failure text, frame opacity, theme, canvas, renderer/context loss, and
-  per-source readiness. Ten diagnostic/showcase tests and focused ESLint passed.
-- `8c5f0ff`: updated js-yaml from 4.3.1 to 4.3.2 for
-  [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh).
-  Fresh installation, seven dependency-audit tests, and full lint passed
-  (eight owned web-ext warnings).
+- `ce80d68` merged `origin/main`, including the tooling update, preserving the
+  18 pre-existing local commits. `339c5f2` and `e511bad` are real two-parent
+  merges preserving the full names and ancestry of
+  `dependabot/npm_and_yarn/editor-a5f38f0bb7` and
+  `dependabot/npm_and_yarn/vendored-d2e2e9d766`.
+- Every direct TipTap dependency is pinned to 3.30.6. A regression checks
+  every nested and top-level resolution against the same pin. CodeMirror
+  updates and MapLibre 6.6.0 are included; fresh `npm ci` passed.
+- Analyzer showcases now load the production settings bridge over narrowly
+  stubbed extension APIs. A real-bridge regression covers settings reads,
+  acknowledged writes, and rejection of page-owned theme changes.
+- Terrain diagnostics retain bounded lifecycle reasons without route payloads.
+  Firefox waits for visible markers and loaded sources, settles gestures, and
+  proves a real canvas-width change. The unsanitized renderer is checked before
+  loading terrain. Playwright's default unsafe SwiftShader opt-in is removed
+  from the Chrome extension verifier.
+- GPU gates now also run for Playwright/core upgrades, source and script edits,
+  manifest changes, and test-workflow edits. They no longer wait for the next
+  copied-library update to expose a broken verifier. Thirteen impact and
+  dependency-policy tests, focused lint, and the impact CLI passed.
+- js-yaml is patched to 4.3.2. The remaining adm-zip advisory has no patched
+  published release at review time. Source review and an installed-web-ext
+  regression establish that its XPI/proxy installation copies bytes or writes
+  a path, without invoking firefox-profile's vulnerable extraction methods.
+  `audit:ci` now permits only the reviewed, pinned dev-only advisory graph
+  through September 21; new advisories, paths, versions, severity changes,
+  or expiry still fail closed.
 
-Final combined-tree validation passed all 1,824 tests and 14 scale tests.
-Local commands used Node 26.8.1/npm 12.0.2; hosted CI's Node 24 was not rerun.
+Local combined verification at `fea2139` passed 1,828 unit tests, focused lint,
+`audit:ci`, hidden Chrome 153 extension smoke, and hidden Firefox 155 terrain.
+Earlier integration checks passed all 14 scale tests and full lint (eight
+owned web-ext warnings). The hosted run linked above validates Node 24,
+Chrome 128/current, Firefox 152/latest, both GPU checks, scale, lint, and audit.
+The final PR head must pass the same gates before merging via
+[PR #22](https://github.com/wilmtang/better-peakbagger/pull/22).
 
-Chrome extension verification used hidden Chrome for Testing 151.0.7922.34 at
-1000×760, with the verifier's additional narrow-surface checks.
-The separate terrain run reported ANGLE Metal on Apple M3 Pro; the Firefox
-153.0 terrain run reported “Apple M1, or similar” at 1000×760, including a
-448×448 resized canvas. Chrome exercised 1000×760/1000×900 pages and narrow
-terrain surfaces; its dark screenshot was inspected. These fixture checks
-prove no native window placement, browser chrome, or live provider behavior.
-The final process inspection found no remaining test-profile browser processes.
+Local Firefox used Apple M3 Pro ANGLE Metal at a 1000×760 viewport and proved
+an actual 748×448 resized canvas. Hosted Firefox used the same viewport and
+size on Apple Paravirtual Metal. Chrome terrain additionally checks narrow and
+dark surfaces. All browser runs were hidden and used disposable profiles.
 
 ## Intentionally not changed
 
-- Required checks, hardware-renderer assertions, provenance checks, and the
-  privileged auto-merge workflow remain enforced. There is no admin bypass,
-  retry-until-green loop, or relaxed npm peer resolution.
-- No new audit exception was added. Current `audit:ci` still rejects
-  [GHSA-vwc7-r8mq-g2x9](https://github.com/advisories/GHSA-vwc7-r8mq-g2x9)
-  through `web-ext → firefox-profile → adm-zip`. Registry latest is still
-  affected 0.6.0. Existing image-size exceptions remain unchanged. The
-  js-yaml repair does not make the overall audit green.
-- No push, remote PR closure, branch deletion, or ruleset change was performed.
+- The four stable required checks, strict current-base requirement, signed bot
+  provenance checks, and privileged auto-merge workflow remain enforced. There
+  is no admin bypass, relaxed peer resolution, or production timeout increase.
+- The adm-zip vulnerability is not patched by the bounded acceptance. Existing
+  image-size exceptions also remain. These development-tool advisories require
+  a patched upstream release or another explicit review by September 21.
+- The concurrent report-image layout commit `3a4a081` is preserved locally and
+  excluded from PR #22. No store release or tag is part of this integration.
 
 ## Changed but not fully proven
 
-- Hosted GPU readiness failures were not reproduced locally. The diagnostics
-  are tested, but their output from the original hosted failure is unavailable.
-- A fresh Dependabot scheduled job must demonstrate the current grouping and
-  version strategy; the old recreation is not that evidence. Exact TipTap pins
-  prevent silent caret drift but do not prove every future updater run succeeds.
-- GitHub still has the old open PR heads and failing checks. Local integration
-  is complete; remote CI and subsequent auto-merge are not proven. A fresh CI
-  run would also encounter the unaccepted adm-zip advisory until it is repaired
-  or separately reviewed.
+- A fresh scheduled Dependabot job must demonstrate the current grouping and
+  update strategy; an old recreation is not that evidence. Exact TipTap pins
+  and regression checks prevent silent version drift, but cannot prove every
+  future updater run succeeds.
+- The Metal terrain fixture proves browser rendering and interaction. It does
+  not prove native focus/window placement, real extension storage/worker
+  lifecycle, live provider behavior, or the native-OpenGL terrain path on
+  older Firefox. Separate real-extension checks cover the manifest and worker.
+- The final PR and subsequent mainline run are recorded by GitHub. This ledger
+  cites the successful implementation run rather than predicting their result.
