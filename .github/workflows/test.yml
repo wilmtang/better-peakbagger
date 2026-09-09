@@ -245,10 +245,8 @@ jobs:
     name: Firefox copied-runtime GPU smoke
     needs: dependency-impact
     if: needs.dependency-impact.outputs.copied-runtime == 'true'
-    # Firefox terrain initialization stalls for ~38 seconds on the hosted M1
-    # runner, exceeding the real renderer deadline before the first frame.
-    # Use the standard Intel runner; still reject software WebGL explicitly.
-    runs-on: macos-15-intel
+    # Firefox uses ANGLE Metal on macOS; native OpenGL stalls in hosted VMs.
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - name: Check out source

@@ -124,6 +124,12 @@ async function main() {
             firefoxUserPrefs: {
                 'network.dns.localDomains': fixtureHost,
                 'webgl.disabled': false,
+                // Firefox 155 supports ANGLE Metal on macOS. Native OpenGL
+                // stalls during terrain startup on GitHub's virtual Macs.
+                ...(process.platform === 'darwin' ? { 'webgl.disable-angle': false } : {}),
+                // Synthetic isolated profile: report the actual adapter rather
+                // than Firefox's generic "Apple M1, or similar" privacy label.
+                'webgl.sanitize-unmasked-renderer': false,
             },
         });
         resources.defer('Firefox terrain browser', () => browser.close());
@@ -132,6 +138,20 @@ async function main() {
         const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
         resources.defer('Firefox terrain context', () => context.close());
         const page = await context.newPage();
+        const startupRenderer = await page.evaluate(() => {
+            const gl = document.createElement('canvas').getContext('webgl2');
+            const info = gl?.getExtension('WEBGL_debug_renderer_info');
+            const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl?.getParameter(gl.RENDERER);
+            gl?.getExtension('WEBGL_lose_context')?.loseContext();
+            return renderer;
+        });
+        console.log(`Firefox ${browser.version()} startup renderer: ${startupRenderer}`);
+        if (!startupRenderer || /swiftshader|software|llvmpipe/i.test(startupRenderer)) {
+            throw new Error(`Firefox requires hardware WebGL: ${startupRenderer}`);
+        }
+        if (process.platform === 'darwin' && !/ANGLE Metal Renderer/.test(startupRenderer)) {
+            throw new Error(`Firefox requires ANGLE Metal on macOS: ${startupRenderer}`);
+        }
         await page.addInitScript(installTerrainLifecycleProbe);
         const errors = [];
         const requests = { terrain: 0, basemap: 0, peaks: 0 };
