@@ -157,7 +157,8 @@ try {
         // Playwright disables BFCache by default for test determinism. This
         // verifier explicitly exercises persisted pagehide/pageshow, so remove
         // only that default launch argument and diagnose any real exclusion.
-        ignoreDefaultArgs: ['--disable-back-forward-cache'],
+        // Playwright also opts macOS into software WebGL fallback by default.
+        ignoreDefaultArgs: ['--disable-back-forward-cache', '--enable-unsafe-swiftshader'],
         viewport: verificationViewport,
         args: [
             `--disable-extensions-except=${dist}`,

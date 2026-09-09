@@ -175,7 +175,7 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
     assert.match(testWorkflow,
         /^  chrome-required:\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$CHROME_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
     assert.match(testWorkflow,
-        /^  firefox-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15-intel\n[\s\S]*?npm run terrain:verify:firefox/m);
+        /^  firefox-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15\n[\s\S]*?npm run terrain:verify:firefox/m);
     assert.match(testWorkflow,
         /^  firefox-required:\n[\s\S]*?name: Firefox extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$FIREFOX_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
 });
