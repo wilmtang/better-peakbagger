@@ -319,6 +319,23 @@ table.gray th, table.gray td { border: 1px solid #b5b7b2; padding: 6px 8px; text
 <a href="/map/BigMap.aspx?t=A">Full Screen Map</a>
 </body></html>`;
 
+// Keep oversized media out of the analyzer fixture's normal geometry, while
+// exercising the real saved-ascent layout on an explicit fixture variant.
+const ascentImageSource = `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750">'
+    + '<rect width="1200" height="750" fill="#477e86"/>'
+    + '<path d="M0 750L400 100L700 550L950 250L1200 750Z" fill="#b3d5cc"/>'
+    + '</svg>',
+)}`;
+const ascentImageHtml = [
+    ['width-only', 'width="640"'],
+    ['both-dimensions', 'width="640" height="400"'],
+    ['authored-ratio', 'width="640" height="200"'],
+    ['original', ''],
+    ['height-only', 'height="200"'],
+].map(([id, dimensions]) => `<p>${id}<br><img id="split-image-${id}" ${dimensions}
+    src="${ascentImageSource}" alt="Synthetic mountain"></p>`).join('');
+
 const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></head><body>
 <iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300"></iframe>
 </body></html>`;
@@ -618,9 +635,15 @@ export async function createBrowserFixtureServer({
         }
         if (/ascent\.aspx/i.test(url.pathname)) {
             const analyzerCase = (url.searchParams.get('aid') || '').replace(/^analyzer-/, '');
-            const body = analyzerCase && analyzerCase !== url.searchParams.get('aid')
-                ? ascentHtml.replace('/track.gpx', `/track.gpx?case=${encodeURIComponent(analyzerCase)}`)
+            const layoutHtml = url.searchParams.get('layout') === 'images'
+                ? ascentHtml.replace(/<br clear="left">[\s\S]*$/, '</body></html>').replace(
+                    '<td colspan="2">A long climb report with enough prose to make the adjustable column width visible.</td>',
+                    `<td>Trip Report</td><td>${ascentImageHtml}</td>`,
+                )
                 : ascentHtml;
+            const body = analyzerCase && analyzerCase !== url.searchParams.get('aid')
+                ? layoutHtml.replace('/track.gpx', `/track.gpx?case=${encodeURIComponent(analyzerCase)}`)
+                : layoutHtml;
             return send('text/html; charset=utf-8', body);
         }
         if (/peakascents\.aspx/i.test(url.pathname)) {

@@ -74,6 +74,30 @@ test('unrelated or separated gray tables are left untouched', () => {
     } finally { separated.restore(); }
 });
 
+test('image height caps and authored ratios preserve saved dimensions', () => {
+    const { dom, split, restore } = setup({ html: legacyHtml().replace('A long report.', `
+        <img id="height-only" height="200">
+        <img id="sized" width="640" height="200">
+        <img id="original">
+        <img id="invalid" height="invalid">
+    `) + '<img id="outside" height="200">' });
+    try {
+        const image = dom.window.document.getElementById('height-only');
+        assert.equal(image.style.getPropertyValue('--bpb-ascent-image-max-height'), '200px');
+        split.applyPercent(25);
+        split.applyPercent(75);
+        assert.equal(image.getAttribute('height'), '200');
+        assert.equal(image.getAttribute('width'), null);
+        const sized = dom.window.document.getElementById('sized');
+        assert.equal(sized.style.getPropertyValue('--bpb-ascent-image-aspect-ratio'), '640 / 200');
+        assert.equal(sized.getAttribute('width'), '640');
+        assert.equal(sized.getAttribute('height'), '200');
+        for (const id of ['original', 'invalid', 'outside']) {
+            assert.equal(dom.window.document.getElementById(id).getAttribute('style'), null);
+        }
+    } finally { restore(); }
+});
+
 test('pointer dragging resizes both columns and persists once released', () => {
     const { dom, split, restore } = setup();
     try {

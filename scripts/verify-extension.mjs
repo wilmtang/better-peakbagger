@@ -2489,6 +2489,77 @@ try {
             path: process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT,
         });
     }
+    const imagePage = await context.newPage();
+    try {
+        await imagePage.setViewportSize({ width: 1200, height: 800 });
+        await imagePage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?layout=images`);
+        const imageHandle = imagePage.locator('#bpb-ascent-table-resize-handle');
+        await imageHandle.waitFor();
+        await imagePage.waitForFunction(() => {
+            const images = [...document.querySelectorAll('#ascent-report img')];
+            return images.length === 5 && images.every(image => image.complete && image.naturalWidth);
+        });
+        const imageAttributes = () => imagePage.locator('#ascent-report img').evaluateAll(images =>
+            images.map(image => [image.getAttribute('width'), image.getAttribute('height')]));
+        const originalAttributes = await imageAttributes();
+        const checkImageLayout = async (label, { stacked = false, wide = false } = {}) => {
+            const state = await imagePage.evaluate(() => {
+                const rect = element => {
+                    const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+                    return { left, right, top, bottom, width, height };
+                };
+                return {
+                    report: rect(document.getElementById('ascent-report')),
+                    handle: rect(document.getElementById('bpb-ascent-table-resize-handle')),
+                    summary: rect(document.getElementById('ascent-summary')),
+                    images: [...document.querySelectorAll('#ascent-report img')].map(image => ({
+                        ...rect(image), cell: rect(image.closest('td')), id: image.id,
+                    })),
+                    viewport: innerWidth,
+                    pageWidth: document.documentElement.scrollWidth,
+                };
+            });
+            check(state.pageWidth <= state.viewport
+                && (stacked ? state.summary.top >= state.report.bottom
+                    : state.report.right <= state.handle.left + 1
+                        && state.handle.right <= state.summary.left + 1)
+                && state.images.every(image => image.width > 0
+                    && image.right <= image.cell.right + 1
+                    && Math.abs(image.width / image.height
+                        - (image.id.endsWith('authored-ratio') ? 3.2 : 1.6)) < 0.02
+                    && image.width <= (image.id.endsWith('height-only') ? 320
+                        : image.id.endsWith('original') ? 1200 : 640) + 1)
+                && (!wide || state.images.every(image => image.id.endsWith('original')
+                    || Math.abs(image.width - (image.id.endsWith('height-only') ? 320 : 640)) <= 1)),
+            `ascent image layout failed (${label}): ${JSON.stringify(state)}`);
+        };
+        for (const theme of ['light', 'dark']) {
+            await imagePage.locator('html').evaluate((html, value) => {
+                html.dataset.bpbTheme = value;
+            }, theme);
+            await imagePage.setViewportSize({ width: 1200, height: 800 });
+            await imageHandle.press('Home');
+            await checkImageLayout(`${theme} narrow report`);
+            if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+                await imagePage.locator('#bpb-ascent-table-split').screenshot({
+                    path: `${process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT}.${theme}-narrow.png`,
+                });
+            }
+            await imageHandle.press('End');
+            await checkImageLayout(`${theme} restored report`, { wide: true });
+            await imagePage.setViewportSize({ width: 600, height: 800 });
+            await checkImageLayout(`${theme} stacked`, { stacked: true });
+            if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+                await imagePage.locator('#bpb-ascent-table-split').screenshot({
+                    path: `${process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT}.${theme}-stacked.png`,
+                });
+            }
+        }
+        check(JSON.stringify(await imageAttributes()) === JSON.stringify(originalAttributes),
+            'resizing an ascent rewrote saved image dimensions');
+    } finally {
+        await imagePage.close();
+    }
     check(/Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/.test(off.stats)
         && /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/.test(off.stats),
     `the packaged analyzer did not produce the Capitol regression metrics: ${off.stats.slice(0, 160)}`);

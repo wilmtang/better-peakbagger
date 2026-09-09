@@ -23,6 +23,15 @@
     box-sizing: border-box;
 }
 
+/* Saved dimensions are preferred sizes, not minimum table widths. Let images
+ * shrink with their cell and recover their authored size when it grows. */
+#bpb-ascent-table-split > .bpb-ascent-table-split__table img {
+    max-width: 100%;
+    height: auto;
+    max-height: var(--bpb-ascent-image-max-height, none);
+    aspect-ratio: var(--bpb-ascent-image-aspect-ratio, auto);
+}
+
 #bpb-ascent-table-resize-handle {
     align-self: stretch;
     position: relative;

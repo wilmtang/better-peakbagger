@@ -95,6 +95,20 @@ export const mountAscentTableSplit = ({
     right.classList.add('bpb-ascent-table-split__table', 'bpb-ascent-table-split__summary');
     wrapper.append(left, handle, right);
 
+    // CSS height:auto releases fixed heights while shrinking. Preserve an
+    // authored ratio, or a height-only size cap, without waiting for image load
+    // or rewriting the report's width/height attributes.
+    for (const image of wrapper.querySelectorAll('img[height]')) {
+        const height = Number(image.getAttribute('height'));
+        if (!Number.isFinite(height) || height <= 0) continue;
+        const width = Number(image.getAttribute('width'));
+        if (Number.isFinite(width) && width > 0) {
+            image.style.setProperty('--bpb-ascent-image-aspect-ratio', `${width} / ${height}`);
+        } else if (!image.hasAttribute('width')) {
+            image.style.setProperty('--bpb-ascent-image-max-height', `${height}px`);
+        }
+    }
+
     const storageArea = (() => {
         if (storage) return storage;
         try { return globalThis.localStorage; }
