@@ -195,7 +195,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     'the verifier must send a real coordinator message before requiring the lazy worker target');
     assert.match(chromeVerifier, /waitForFunction\([\s\S]*Interactive Stats:/);
     assert.match(chromeVerifier,
-        /name: 'Restore draft'[\s\S]{0,900}markdownVisible[\s\S]{0,500}restoring the draft did not reach a visible Markdown editor/,
+        /name: 'Restore draft'[\s\S]{0,900}markdownVisible[\s\S]{0,1100}restoring the draft did not reach a visible Markdown editor/,
         'draft recovery must reach its visible Markdown postcondition before the verifier types into CodeMirror');
     assert.match(chromeVerifier,
         /disabledFrameElement\.contentFrame\(\)\.locator\('body'\)[\s\S]{0,200}waitFor\(/,
@@ -221,6 +221,22 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(buddyRemovalProbe,
         /syncedAdditionUi[\s\S]*syncedAdditionStorage[\s\S]*syncedAdditionRequests[\s\S]*BuddyButton'\)\.click\(\)[\s\S]*syncedRemovalRequests/,
         'the final Buddy removal must wait for the preceding addition to settle completely');
+    const markdownReload = chromeVerifier.slice(
+        chromeVerifier.indexOf('// The split pane: source and live preview visible together'),
+        chromeVerifier.indexOf("const offered = await editorPage.locator('.bpb-re-draft')"),
+    );
+    assert.match(markdownReload,
+        /waitForFunction[\s\S]*dataset\.mode === 'markdown'[\s\S]*Draft saved on this device[\s\S]*editorPage\.reload/,
+        'draft recovery must await the new Markdown autosave before leaving the page');
+    const backupSetup = chromeVerifier.slice(
+        chromeVerifier.indexOf("await optionsPage.locator('#units').selectOption('auto');"),
+        chromeVerifier.indexOf('// --- Extension-owned photo editor and local library'),
+    );
+    assert.match(backupSetup,
+        /waitForFunction[\s\S]*units === 'auto'[\s\S]*SETTINGS_PATCH[\s\S]*enableGithubBackup: true/,
+        'the backup fixture must settle options and use the serialized settings route');
+    assert.doesNotMatch(backupSetup, /chrome\.storage\.sync\.set\(/,
+        'a raw fixture replacement must not overwrite a real pending settings patch');
     assert.match(chromeVerifier, /current value:/);
     assert.match(chromeVerifier, /priorFailures: \[\.\.\.failures\]/,
         'terminal Chrome readiness errors must retain earlier accumulated surface failures');
