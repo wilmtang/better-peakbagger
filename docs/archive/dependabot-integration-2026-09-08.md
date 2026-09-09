@@ -39,6 +39,15 @@ was merged by `github-actions` on September 6.
   failure; it does not isolate every upstream browser change from the backend
   change. Production startup deadlines were not raised.
 
+- The [final-head run](https://github.com/wilmtang/better-peakbagger/actions/runs/34294638252)
+  passed every Firefox 152 extension assertion, then failed only during QUIT
+  with `Failed to decode response from marionette`. The teardown now accepts
+  only this exact response-loss error after a bounded OS process check confirms
+  that the owned Firefox processes exited. Unknown protocol errors, failed
+  process inspection, lingering processes, and earlier assertion failures
+  remain failures. All 62 focused teardown/resource/release tests and hidden
+  Firefox extension verification passed locally.
+
 ## Fixed and verified
 
 - `ce80d68` merged `origin/main`, including the tooling update, preserving the

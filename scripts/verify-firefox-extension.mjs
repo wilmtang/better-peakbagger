@@ -37,10 +37,11 @@ import { prepareFirefoxSource } from './run-firefox.mjs';
 import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.js';
 import {
     isRetryableFirefoxStartup,
+    quitFirefoxDriver,
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
-import { createResourceStack, quitWebDriver } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
@@ -196,7 +197,7 @@ async function main() {
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
         const driver = await startFirefoxDriver(options, temporaryRoot);
-        resources.defer('Firefox WebDriver', () => quitWebDriver(driver));
+        resources.defer('Firefox WebDriver', () => quitFirefoxDriver(driver, temporaryRoot));
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
         const addonId = await driver.installAddon(extensionSource, true);
