@@ -221,6 +221,7 @@ jobs:
     needs:
       - dependency-impact
       - chrome
+      - chrome-floor
       - chrome-terrain
     if: always()
     runs-on: ubuntu-latest
@@ -231,10 +232,12 @@ jobs:
           IMPACT_RESULT: ${{ needs.dependency-impact.result }}
           COPIED_RUNTIME: ${{ needs.dependency-impact.outputs.copied-runtime }}
           CHROME_RESULT: ${{ needs.chrome.result }}
+          CHROME_FLOOR_RESULT: ${{ needs.chrome-floor.result }}
           GPU_RESULT: ${{ needs.chrome-terrain.result }}
         run: |
           test "$IMPACT_RESULT" = success
           test "$CHROME_RESULT" = success
+          test "$CHROME_FLOOR_RESULT" = success
           if test "$COPIED_RUNTIME" = true; then
             test "$GPU_RESULT" = success
           else
