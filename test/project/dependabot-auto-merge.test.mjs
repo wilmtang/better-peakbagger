@@ -174,6 +174,14 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
         /^  chrome-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15[\s\S]*?npm run terrain:verify/m);
     assert.match(testWorkflow,
         /^  chrome-required:\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$CHROME_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
+    const chromeRequired = testWorkflow.slice(
+        testWorkflow.indexOf('  chrome-required:'), testWorkflow.indexOf('  firefox-terrain:'),
+    );
+    assert.match(chromeRequired, /^      - chrome-floor$/m,
+        'the stable required check must await the minimum supported Chrome');
+    assert.match(chromeRequired, /CHROME_FLOOR_RESULT: \$\{\{ needs\.chrome-floor\.result \}\}/);
+    assert.match(chromeRequired, /test "\$CHROME_FLOOR_RESULT" = success/,
+        'a failed or skipped Chrome floor must block merging');
     assert.match(testWorkflow,
         /^  firefox-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15\n[\s\S]*?npm run terrain:verify:firefox/m);
     assert.match(testWorkflow,
