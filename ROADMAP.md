@@ -6,7 +6,7 @@ enough for an issue; shipped work belongs in [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidate work
 
-- Reconcile the GitHub ascent backup with Peakbagger's own CSV export, so a
+- Reconcile the GitHub ascent and TR backup with Peakbagger's own CSV export, so a
   user can diff what the backup holds against what Peakbagger reports without
   matching rows by hand. The backup itself shipped in 3.0.0 — see
   [docs/github-ascent-backup.md](docs/github-ascent-backup.md) — and already

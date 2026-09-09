@@ -8,11 +8,14 @@ import { photoStore as Store } from '../src/photos/photo-store.js';
 import { photoArchive as Archive } from '../src/photos/photo-archive.js';
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
 import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.js';
+import { reportPhoto as PendingPhoto } from '../src/photos/report-photo.js';
 import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.js';
 import { settings as Settings } from '../src/settings/settings.js';
 
 const ext = globalThis.browser || globalThis.chrome;
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const LOCAL_PHOTO_ID = new URL(location.href).searchParams.get('localPhotoId') || '';
+let localPhotoReturned = false;
 const RETURN_TOKEN = new URL(location.href).searchParams.get('returnToken') || '';
 const START_MODE = new URL(location.href).searchParams.get('mode') === 'library' ? 'library' : 'edit';
 const IMGBB_PERMISSION = { origins: ['https://api.imgbb.com/*'] };
@@ -209,7 +212,7 @@ const paintReportWidthControls = () => {
             return option;
         }));
     }
-    for (const control of ui.reportWidthControls) control.hidden = !RETURN_TOKEN;
+    for (const control of ui.reportWidthControls) control.hidden = !RETURN_TOKEN || !!LOCAL_PHOTO_ID;
     setReportImageWidth(reportImageWidth);
 };
 
@@ -370,7 +373,7 @@ const setView = view => {
     if (!editor) void renderLibrary();
 };
 
-const editorMutationLocked = () => busy || PUBLISHED_STATES.includes(photo?.remote.state);
+const editorMutationLocked = () => localPhotoReturned || busy || PUBLISHED_STATES.includes(photo?.remote.state);
 
 const editorMutationControls = () => [
     ui.title,
@@ -405,7 +408,7 @@ const updateEditorControls = () => {
     ui.addAtCenter.disabled = locked || activeTool === 'select' || !project;
     for (const control of ui.annotationList.querySelectorAll('button')) control.disabled = locked;
     for (const control of ui.routePointList.querySelectorAll('button')) control.disabled = locked;
-    ui.upload.disabled = busy || !project || PUBLISHED_STATES.includes(photo?.remote.state);
+    ui.upload.disabled = busy || localPhotoReturned || !project || PUBLISHED_STATES.includes(photo?.remote.state);
     ui.showEditor.disabled = busy;
     ui.showLibrary.disabled = busy;
     ui.file.disabled = busy;
@@ -1774,7 +1777,33 @@ const onPhotoPaste = event => {
     void chooseFile(file);
 };
 
+const saveLocalAndReturn = async () => {
+    if (busy || localPhotoReturned || !project || !sourceBitmap) return;
+    if (dragSession) endDrag();
+    if (routeSession) finishRoute(false);
+    setBusy(true, 'Saving photo locally…');
+    try {
+        if (!await persistDraft({ required: true })) return;
+        const exported = await Renderer.exportProject({ project, source: sourceBitmap });
+        if (exported.bytes > PendingPhoto.MAX_BYTES) {
+            throw new Error('This edited image is too large to return. Choose JPEG or a lower quality and save again.');
+        }
+        const response = await send({
+            type: 'PHOTO_INSERT_COMMIT', returnToken: RETURN_TOKEN,
+            localPhotoId: photo.localId, url: PendingPhoto.url(photo.localId), alt: photo.alt,
+            dataUrl: await PendingPhoto.toDataUrl(exported.blob),
+        });
+        if (!response?.ok) throw new Error(response?.error?.message || 'The report is no longer available. Your photo is saved on this device.');
+        localPhotoReturned = true;
+        setEditorStatus('Photo updated in the report. It will upload when you save the TR.');
+        toast('Saved to the report. You can close this tab.');
+    } catch (error) {
+        toast(error.message, { duration: 0 });
+    } finally { setBusy(false); }
+};
+
 const uploadAndInsert = async () => {
+    if (LOCAL_PHOTO_ID) return saveLocalAndReturn();
     if (busy || !project || !sourceBitmap) return;
     if (PUBLISHED_STATES.includes(photo?.remote.state)) {
         toast('This photo is already on ImgBB. Use “Edit as new version” in the library to change it.');
@@ -2949,9 +2978,15 @@ const initialize = async () => {
     await recoverOperations();
     await refreshCredential();
     await refreshPhotoBackupStatus();
-    ui.upload.textContent = RETURN_TOKEN ? 'Upload and insert' : 'Upload to ImgBB';
+    ui.upload.textContent = LOCAL_PHOTO_ID ? 'Save and return' : RETURN_TOKEN ? 'Upload and insert' : 'Upload to ImgBB';
     setView(START_MODE === 'library' ? 'library' : 'editor');
     await renderLibrary();
+    if (LOCAL_PHOTO_ID) {
+        const bundle = await store.getBundle(LOCAL_PHOTO_ID);
+        if (!bundle?.photo) throw new Error('The local photo is unavailable.');
+        await editAsNewVersion(bundle.photo);
+        setEditorStatus('Edits stay on this device. Save and return to update the TR.');
+    }
     scheduleLibraryMaintenance();
 };
 

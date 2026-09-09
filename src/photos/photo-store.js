@@ -269,6 +269,30 @@ const createPhotoStore = async options => {
 
     const putDraft = bundle => putBundle(bundle, { editableOnly: true });
 
+    // Local report snapshots are private device data, excluded from catalog
+    // backup. Tie the flattened pixels to the exact editable photo revision.
+    const putReportImage = async ({ localId, owner, dataUrl, exported, revision }) => {
+        const transaction = database.transaction([STORES.photos, STORES.projects, STORES.metadata], 'readwrite');
+        try {
+            const photo = await requestResult(transaction.objectStore(STORES.photos).get(localId));
+            if (!photo || photo.deletedAt || photo.remote.state !== 'draft' || photo.revision !== revision) {
+                throw new PhotoStoreConflictError(localId);
+            }
+            const project = await requestResult(transaction.objectStore(STORES.projects).get(localId));
+            transaction.objectStore(STORES.metadata).put({
+                key: `report-image:${localId}`, localId, owner, dataUrl, exported, revision,
+                content: JSON.stringify({ project: { ...project, updatedAt: null }, title: photo.title, alt: photo.alt }),
+            });
+        } catch (error) { return abortAndRethrow(transaction, error); }
+        await transactionDone(transaction);
+    };
+    const getReportImage = async localId => {
+        const transaction = database.transaction(STORES.metadata, 'readonly');
+        const value = await requestResult(transaction.objectStore(STORES.metadata).get(`report-image:${localId}`));
+        await transactionDone(transaction);
+        return value || null;
+    };
+
     const getBundle = async localId => {
         const transaction = database.transaction([
             STORES.photos,
@@ -797,6 +821,7 @@ const createPhotoStore = async options => {
             STORES.projects,
             STORES.originals,
             STORES.thumbnails,
+            STORES.metadata,
         ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         let cleaned;
@@ -816,6 +841,7 @@ const createPhotoStore = async options => {
         transaction.objectStore(STORES.projects).delete(localId);
         transaction.objectStore(STORES.originals).delete(localId);
         transaction.objectStore(STORES.thumbnails).delete(localId);
+        transaction.objectStore(STORES.metadata).delete(`report-image:${localId}`);
         await transactionDone(transaction);
         return cleaned;
     };
@@ -835,6 +861,7 @@ const createPhotoStore = async options => {
             STORES.projects,
             STORES.originals,
             STORES.thumbnails,
+            STORES.metadata,
         ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const pruning = [];
@@ -885,6 +912,7 @@ const createPhotoStore = async options => {
                 transaction.objectStore(STORES.projects).delete(photo.localId);
                 transaction.objectStore(STORES.originals).delete(photo.localId);
                 transaction.objectStore(STORES.thumbnails).delete(photo.localId);
+                transaction.objectStore(STORES.metadata).delete(`report-image:${photo.localId}`);
             }
         } catch (error) {
             return abortAndRethrow(transaction, error);
@@ -912,6 +940,7 @@ const createPhotoStore = async options => {
                 transaction.objectStore(storeName).delete(localId);
             }
         }
+        metadata.delete(`report-image:${localId}`);
         if (photo || tombstone) advanceCatalog(metadata, cleanCatalogState(catalogValue));
         const cursorRequest = transaction.objectStore(STORES.operations)
             .index('byLocalId').openKeyCursor(localId);
@@ -1075,6 +1104,8 @@ const createPhotoStore = async options => {
 
     return {
         getBundle,
+        putReportImage,
+        getReportImage,
         listPhotos,
         getThumbnails,
         listBackupBundles,

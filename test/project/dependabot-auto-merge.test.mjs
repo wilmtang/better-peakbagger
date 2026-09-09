@@ -152,13 +152,18 @@ test('the declared and locked TipTap family moves as one version', () => {
     assert.ok(declared.length > 1, 'the project must exercise a real TipTap family');
     assert.equal(new Set(declared.map(([_name, range]) => range)).size, 1,
         'all direct TipTap requirements must have the same range');
+    const version = declared[0][1];
+    assert.match(version, /^\d+\.\d+\.\d+$/,
+        'exact TipTap requirements prevent untouched siblings resolving past the grouped release');
 
     const locked = Object.entries(packageLock.packages)
-        .filter(([packagePath]) => packagePath.startsWith('node_modules/@tiptap/'))
+        .filter(([packagePath]) => /(?:^|\/)node_modules\/@tiptap\//.test(packagePath))
         .map(([_packagePath, metadata]) => metadata.version);
     assert.ok(locked.length >= declared.length);
     assert.equal(new Set(locked).size, 1,
         'all direct and transitive TipTap packages must resolve to one lockstep version');
+    assert.equal(locked[0], version,
+        'nested and top-level TipTap resolutions must match the exact manifest version');
 });
 
 test('copied runtime updates add hardware GPU gates to stable required checks', () => {
@@ -170,7 +175,7 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
     assert.match(testWorkflow,
         /^  chrome-required:\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$CHROME_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
     assert.match(testWorkflow,
-        /^  firefox-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15[\s\S]*?npm run terrain:verify:firefox/m);
+        /^  firefox-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15\n[\s\S]*?npm run terrain:verify:firefox/m);
     assert.match(testWorkflow,
         /^  firefox-required:\n[\s\S]*?name: Firefox extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$FIREFOX_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
 });

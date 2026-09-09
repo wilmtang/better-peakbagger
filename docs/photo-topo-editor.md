@@ -46,7 +46,10 @@ an open project. A
 title is required — it is filled from the file name when available — and the
 alt text describing the image is optional. Drafts autosave to the browser
 profile.
-Nothing leaves the device until the user chooses **Upload and insert**.
+The standalone photo workflow uploads only when the user chooses **Upload and insert**.
+A photo pasted into a Rich text TR follows a deferred workflow: double-click opens
+an editable copy here, **Save and return** updates it locally, and saving the TR
+uploads it. See [TR local photos](trip-report-editor.md#photo-topo-editor-and-library-handoff).
 
 The 128 MiB source ceiling is independent of both the upload and project-archive
 limits. Source hashing uses Web Crypto's one-shot SHA-256 API, which has no
@@ -111,7 +114,8 @@ The boundaries are deliberate:
    A manual settings-file export includes the API key with a keep-private
    warning; the delete URL remains excluded. The saved key is never exposed to
    Peakbagger, another website, or status UI.
-   The background worker provides it only to Better Peakbagger's exact packaged
+   The background worker also uses the key internally for user-initiated TR photo
+   uploads. It provides the key only to Better Peakbagger's exact packaged
    photo page immediately before that page sends a direct upload to ImgBB.
 4. The report return token is random, tab- and frame-bound, single-use, and
    expires after two hours. The worker validates both the extension-page sender
@@ -189,7 +193,7 @@ and reports that blob's byte length as the upload estimate. Annotation, format,
 quality, undo/redo, and geometry changes invalidate the cached blob. Upload
 reuses a current cached encoding and only then computes its SHA-256, avoiding a
 second full-resolution encode in the usual path. When the synced
-`enableGithubBackup` ascent-backup gate is on, an estimate above 5 MiB warns
+`enableGithubBackup` ascent and TR backup gate is on, an estimate above 5 MiB warns
 that GitHub may not show the external image in its rendered `report.md`. The
 warning updates live with the setting and is not an upload gate; ImgBB still
 decides the account's actual size limit.

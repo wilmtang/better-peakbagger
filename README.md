@@ -131,10 +131,10 @@ the catalog and annotation projects. See the
 
 ![Photo Topos editor with an annotated alpine route and direct ImgBB upload](store-assets/showcase-6-photo-topos.png)
 
-### Back up your Peakbagger data to GitHub
+### Back up your ascents and TRs to GitHub
 
-Keep portable copies of your ascents in a GitHub repository you control, with
-trip reports as Markdown, form data as JSON, and Peakbagger's stored GPX files.
+Keep portable copies of your ascents and TRs in a GitHub repository you control,
+with trip reports as Markdown, form data as JSON, and Peakbagger's stored GPX files.
 Back up one saved ascent or your full history, then keep later edits in sync.
 The same connection can separately transfer settings and favorite climbers or
 preserve photo-library recovery data. Each backup is optional, respects its own
@@ -244,6 +244,16 @@ No. You must be signed in, the activity must belong to your account, and the
 page must provide unambiguous ownership signals. Better Peakbagger fails closed
 if it cannot verify those conditions. You must click the toolbar icon for each
 capture; the extension does not keep permanent provider access.
+
+### What should I do when a capture stops?
+
+Follow the one action shown in the popup. Depending on the cause, Better
+Peakbagger will ask you to reload the activity, sign in, return to the provider,
+open the exact Peakbagger human-check page, wait until a rate limit passes, try
+again after a temporary outage, or use a shorter track. After completing a
+sign-in, reload, or human check, return to the activity and click the extension
+again; the new click rechecks the page instead of replaying the old failure.
+Better Peakbagger never solves a CAPTCHA or retries through a stated cooldown.
 
 ### What do Strong and Probable mean for a captured activity?
 

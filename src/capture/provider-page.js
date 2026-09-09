@@ -6,7 +6,18 @@
 // used for analysis leave by default; an explicit capture setting may also
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
-import { providerFromUrl } from './provider-url.js';
+import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.js';
+import {
+    PROVIDER_RESPONSE_PROBE_BYTES,
+    PROVIDER_RESPONSE_PROBE_CHARS,
+    classifyProviderBody,
+    classifyProviderResponse,
+} from './provider-response.js';
+import { captureErrorMessage } from './capture-error-policy.js';
+import {
+    PROVIDER_EXPORT_TIMEOUT_MS,
+    PROVIDER_OWNERSHIP_TIMEOUT_MS,
+} from './provider-timing.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
@@ -16,27 +27,15 @@ import {
     gpxLimitMessage,
 } from './capture-resource-limits.js';
 
-const PROFILE_PATTERNS = {
-    garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
-    strava: /\/athletes\/(\d+)(?:[/?#]|$)/i
-};
-const NO_GPS_MESSAGE = 'This activity has no recorded route to capture.';
-const EXPORT_FAILURE_MESSAGE = 'The activity provider could not export this GPX. Reload the activity and try again.';
-const EXPORT_TIMEOUT_MESSAGE = 'The activity provider took too long to export this GPX. Try again.';
-const PROVIDER_TIMEOUT_MS = 30000;
+const NO_GPS_MESSAGE = captureErrorMessage('no-gps-data');
+const EXPORT_FAILURE_MESSAGE = captureErrorMessage('provider-export-failed');
+const EXPORT_TIMEOUT_MESSAGE = captureErrorMessage('provider-export-timeout');
 const activeCaptures = new Map();
+const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
 
-const profileId = (href, provider) => {
-    if (!href) return null;
-    let pathname;
-    try {
-        pathname = new URL(href, location.href).pathname;
-    } catch (_error) {
-        return null;
-    }
-    const match = PROFILE_PATTERNS[provider].exec(pathname);
-    return match ? decodeURIComponent(match[1]).toLowerCase() : null;
-};
+const providerFailure = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
+
+const profileId = (href, provider) => providerProfileId(href, provider, location.href);
 
 const idsInScope = (scope, provider) => {
     if (!scope) return [];
@@ -46,14 +45,19 @@ const idsInScope = (scope, provider) => {
     return [...new Set(ids)];
 };
 
-const firstScopeWithOneId = (selectors, provider) => {
-    for (const selector of selectors) {
-        for (const scope of document.querySelectorAll(selector)) {
-            const ids = idsInScope(scope, provider);
-            if (ids.length === 1) return ids[0];
+const identityFromTiers = (selectorTiers, provider) => {
+    for (const selectors of selectorTiers) {
+        const ids = new Set();
+        for (const selector of selectors) {
+            for (const scope of document.querySelectorAll(selector)) {
+                for (const id of idsInScope(scope, provider)) ids.add(id);
+            }
         }
+        if (ids.size) return ids.size === 1
+            ? { id: [...ids][0], ambiguous: false }
+            : { id: null, ambiguous: true };
     }
-    return null;
+    return { id: null, ambiguous: false };
 };
 
 const hasSignedOutCue = provider => {
@@ -67,25 +71,41 @@ const hasSignedOutCue = provider => {
     });
 };
 
+const hasHumanCheckCue = () => !!document.querySelector([
+    '#challenge-form',
+    'input[name="cf-turnstile-response"]',
+    'iframe[src*="challenges.cloudflare.com"]',
+    '[data-cf-challenge]',
+].join(','));
+
 const inspectOwnership = (urlValue = location.href) => {
     const activity = providerFromUrl(urlValue);
     if (!activity) return { ok: false, code: 'unsupported' };
     const { provider, activityId } = activity;
 
-    const viewerSelectors = provider === 'strava'
-        ? ['#global-header', '[data-testid="global-header"]', 'body > header', 'nav[aria-label*="global" i]']
-        : ['#garmin-header', '[data-testid="garmin-header"]', 'header.header', 'body > header', 'nav[aria-label*="global" i]'];
-    const authorSelectors = provider === 'strava'
-        ? ['[data-testid="activity-header"]', '#heading', 'main header', 'main']
-        : ['[data-testid="activity-header"]', '[class*="ActivityHeaderContainer_headerContainer" i]',
-            '[class*="ActivityMetaInfo_activityMetadataHeader" i]', 'main header', 'main'];
-    const viewerId = firstScopeWithOneId(viewerSelectors, provider);
-    const authorId = firstScopeWithOneId(authorSelectors, provider);
+    const viewerSelectorTiers = provider === 'strava'
+        ? [['#global-header', '[data-testid="global-header"]'], ['body > header', 'nav[aria-label*="global" i]']]
+        : [['#garmin-header', '[data-testid="garmin-header"]', 'header.header'],
+            ['body > header', 'nav[aria-label*="global" i]']];
+    const authorSelectorTiers = provider === 'strava'
+        ? [['[data-testid="activity-header"]', '#heading'], ['main header'], ['main']]
+        : [['[data-testid="activity-header"]', '[class*="ActivityHeaderContainer_headerContainer" i]',
+            '[class*="ActivityMetaInfo_activityMetadataHeader" i]'], ['main header'], ['main']];
+    const viewer = identityFromTiers(viewerSelectorTiers, provider);
+    const author = identityFromTiers(authorSelectorTiers, provider);
+    const viewerId = viewer.id;
+    const authorId = author.id;
+
+    if (hasHumanCheckCue()) {
+        return { ok: false, code: 'provider-human-check', provider, activityId, terminal: true };
+    }
 
     const hasEditControl = provider === 'strava'
         ? [...document.querySelectorAll('a[href]')].some(link => {
             try {
-                return new URL(link.getAttribute('href'), location.href).pathname === `/activities/${activityId}/edit`;
+                const url = new URL(link.getAttribute('href'), location.href);
+                return url.protocol === 'https:' && isProviderHost(provider, url.hostname)
+                    && url.pathname === `/activities/${activityId}/edit`;
             } catch (_error) {
                 return false;
             }
@@ -95,11 +115,21 @@ const inspectOwnership = (urlValue = location.href) => {
             return /edit an activity/i.test(label.trim());
         });
 
+    if (viewer.ambiguous || author.ambiguous) {
+        return { ok: false, code: 'ownership-unverified', provider, activityId, terminal: true };
+    }
     if (!viewerId) {
-        return { ok: false, code: hasSignedOutCue(provider) ? 'provider-signed-out' : 'ownership-unverified', provider, activityId };
+        const signedOut = hasSignedOutCue(provider);
+        return {
+            ok: false,
+            code: signedOut ? 'provider-signed-out' : 'ownership-unverified',
+            provider,
+            activityId,
+            ...(signedOut ? { terminal: true } : {}),
+        };
     }
     if (authorId && viewerId !== authorId) {
-        return { ok: false, code: 'not-owner', provider, activityId };
+        return { ok: false, code: 'not-owner', provider, activityId, terminal: true };
     }
     if (!authorId || !hasEditControl) {
         return { ok: false, code: 'ownership-unverified', provider, activityId };
@@ -148,6 +178,62 @@ const publicOwnership = result => {
     };
 };
 
+const waitForOwnership = async (
+    expectedActivity,
+    generation = null,
+    timeoutMs = PROVIDER_OWNERSHIP_TIMEOUT_MS,
+) => {
+    const captureKey = typeof generation === 'string' && generation
+        ? generation
+        : Symbol('ownership');
+    const deadline = Deadline.createRequestDeadline(timeoutMs);
+    activeCaptures.set(captureKey, deadline);
+    let observer = null;
+    let finish = null;
+    const settled = new Promise(resolve => { finish = resolve; });
+    const check = () => {
+        if (deadline.signal?.aborted && !deadline.expired) {
+            finish({ ok: false, code: 'provider-page-cancelled' });
+            return;
+        }
+        const result = inspectExpectedOwnership(expectedActivity);
+        if (result.ok || result.terminal === true
+            || ['unsupported', 'activity-changed'].includes(result.code)) {
+            finish(publicOwnership(result));
+        }
+    };
+    try {
+        const root = document.body || document.documentElement;
+        if (root && typeof MutationObserver === 'function') {
+            observer = new MutationObserver(check);
+            observer.observe(root, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['href', 'aria-label', 'data-testid'],
+            });
+        }
+        deadline.signal?.addEventListener('abort', check, { once: true });
+        check();
+        return await deadline.run(settled);
+    } catch (error) {
+        if (deadline.expired || Deadline.isTimeout(error)) {
+            const current = providerFromUrl(location.href);
+            return {
+                ok: false,
+                code: 'provider-page-not-ready',
+                ...(current || cleanExpectedActivity(expectedActivity) || {}),
+            };
+        }
+        return { ok: false, code: 'provider-page-cancelled' };
+    } finally {
+        observer?.disconnect();
+        deadline.signal?.removeEventListener('abort', check);
+        deadline.clear();
+        if (activeCaptures.get(captureKey) === deadline) activeCaptures.delete(captureKey);
+    }
+};
+
 const { parseGpxData, cleanName, noGpsError } = gpxParse;
 
 const activityMetadata = provider => {
@@ -174,7 +260,18 @@ const activityMetadata = provider => {
     }
     let utcOffsetMinutes = null;
     if (provider === 'garmin') {
-        const match = /\(UTC([+-])(\d{2}):(\d{2})\)/i.exec(main.textContent || '');
+        const scopes = [
+            timeElement?.parentElement,
+            ...document.querySelectorAll([
+                '[data-testid*="time" i]',
+                '[class*="ActivityMetaInfo" i]',
+                '[class*="ActivityDetails" i]',
+            ].join(',')),
+        ].filter(Boolean).slice(0, 8);
+        const timeZoneText = scopes
+            .map(scope => (scope.textContent || '').slice(0, 500))
+            .join(' ');
+        const match = /\(UTC([+-])(\d{2}):(\d{2})\)/i.exec(timeZoneText);
         if (match) {
             const value = Number(match[2]) * 60 + Number(match[3]);
             utcOffsetMinutes = match[1] === '-' ? -value : value;
@@ -201,11 +298,29 @@ const garminExportRequest = activityId => {
 const capture = async (
     options = {},
     generation = null,
-    timeoutMs = PROVIDER_TIMEOUT_MS,
+    timeoutMs = PROVIDER_EXPORT_TIMEOUT_MS,
     expectedActivity = null,
+    includeDiagnostics = false,
 ) => {
+    const diagnostic = includeDiagnostics === true;
+    const durationsMs = Object.create(null);
+    const counts = Object.create(null);
+    const measure = diagnostic ? async (name, operation) => {
+        const started = monotonicNow();
+        try { return await operation(); }
+        finally { durationsMs[name] = Math.round((monotonicNow() - started) * 10) / 10; }
+    } : (_name, operation) => operation();
+    const measureSync = diagnostic ? (name, operation) => {
+        const started = monotonicNow();
+        try { return operation(); }
+        finally { durationsMs[name] = Math.round((monotonicNow() - started) * 10) / 10; }
+    } : (_name, operation) => operation();
+    const withDiagnostics = result => diagnostic ? {
+        ...result,
+        diagnostics: { durationsMs: { ...durationsMs }, counts: { ...counts } },
+    } : result;
     const ownership = inspectExpectedOwnership(expectedActivity);
-    if (!ownership.ok) return ownership;
+    if (!ownership.ok) return withDiagnostics(ownership);
     const request = ownership.provider === 'garmin'
         ? garminExportRequest(ownership.activityId)
         : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
@@ -213,59 +328,91 @@ const capture = async (
     const deadline = Deadline.createRequestDeadline(timeoutMs);
     activeCaptures.set(captureKey, deadline);
     try {
-        const response = await deadline.run(fetch(request.endpoint, {
+        const response = await measure('headers', () => deadline.run(fetch(request.endpoint, {
             credentials: 'include',
             redirect: 'follow',
             headers: request.headers,
             signal: deadline.signal
-        }));
-        if (response.status === 204 || response.status === 404) throw noGpsError();
-        if (!response.ok) {
-            const providerName = ownership.provider === 'garmin' ? 'Garmin' : 'Strava';
-            throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
+        })));
+        let responseClass = classifyProviderResponse(response, { provider: ownership.provider });
+        if (responseClass.needsBodyProbe) {
+            const bodyText = await measure('body', () => deadline.run(BoundedText.readBoundedResponseText(response, {
+                maxBytes: PROVIDER_RESPONSE_PROBE_BYTES,
+                maxChars: PROVIDER_RESPONSE_PROBE_CHARS,
+                signal: deadline.signal,
+                label: 'Provider response',
+            })));
+            responseClass = classifyProviderResponse(response, {
+                provider: ownership.provider,
+                bodyText,
+            });
+        }
+        if (!responseClass.ok) {
+            throw responseClass.code === 'no-gps-data'
+                ? noGpsError()
+                : providerFailure(responseClass.code, responseClass);
         }
         const beforeBody = inspectExpectedOwnership(expectedActivity);
-        if (!beforeBody.ok) return publicOwnership(beforeBody);
-        const text = await deadline.run(BoundedText.readBoundedResponseText(response, {
+        if (!beforeBody.ok) return withDiagnostics(publicOwnership(beforeBody));
+        const text = await measure('body', () => deadline.run(BoundedText.readBoundedResponseText(response, {
             maxBytes: MAX_GPX_BYTES,
             maxChars: MAX_GPX_TEXT_CHARS,
             signal: deadline.signal,
             label: 'Provider GPX',
-        }));
-        if (!text.trim()) throw noGpsError();
+        })));
+        const bodyClass = classifyProviderBody(text);
+        if (!bodyClass.ok) {
+            throw bodyClass.code === 'no-gps-data'
+                ? noGpsError()
+                : providerFailure(bodyClass.code);
+        }
         const afterBody = inspectExpectedOwnership(expectedActivity);
-        if (!afterBody.ok) return publicOwnership(afterBody);
-        const parsed = parseGpxData(text, options);
-        const metadata = activityMetadata(ownership.provider);
+        if (!afterBody.ok) return withDiagnostics(publicOwnership(afterBody));
+        const parsed = measureSync('parse', () => parseGpxData(text, options));
+        if (diagnostic) {
+            counts['track-points'] = parsed.segments.reduce((sum, segment) => sum + segment.length, 0);
+            counts.segments = parsed.segments.length;
+            counts.waypoints = parsed.waypoints.length;
+        }
+        const metadata = measureSync('metadata', () => activityMetadata(ownership.provider));
         if (options.includeTripName) {
             metadata.title = parsed.trackName
                     || cleanName((document.querySelector('main') || document.body).querySelector('h1')?.textContent || '');
         }
-        return {
+        return withDiagnostics({
             ...publicOwnership(ownership),
             segments: parsed.segments,
             waypoints: parsed.waypoints,
             metadata
-        };
+        });
     } catch (error) {
         const noGps = error?.code === 'no-gps-data';
         const tooLarge = error?.code === 'gpx-too-large' || BoundedText.isLimitError(error);
         const timedOut = deadline.expired || Deadline.isTimeout(error);
         const cancelled = !timedOut && !!deadline.signal?.aborted;
-        return {
+        const classifiedCode = typeof error?.code === 'string' && error.code.startsWith('provider-')
+            ? error.code
+            : error?.code === 'invalid-gpx' ? 'invalid-gpx' : null;
+        const code = noGps ? 'no-gps-data'
+            : tooLarge ? 'gpx-too-large'
+                : timedOut ? 'provider-export-timeout'
+                    : cancelled ? 'provider-export-cancelled'
+                        : classifiedCode || 'provider-export-failed';
+        return withDiagnostics({
             ok: false,
-            code: noGps ? 'no-gps-data'
-                : tooLarge ? 'gpx-too-large'
-                    : timedOut ? 'provider-export-timeout'
-                        : cancelled ? 'provider-export-cancelled'
-                            : 'provider-export-failed',
+            code,
             provider: ownership.provider,
             activityId: ownership.activityId,
+            ...(code === 'provider-rate-limited' && Number.isFinite(error?.retryAt)
+                ? { retryAt: error.retryAt }
+                : {}),
             message: noGps ? NO_GPS_MESSAGE
                 : tooLarge ? gpxLimitMessage()
                     : timedOut ? EXPORT_TIMEOUT_MESSAGE
-                        : EXPORT_FAILURE_MESSAGE
-        };
+                        : code === 'provider-export-failed'
+                            ? EXPORT_FAILURE_MESSAGE
+                            : captureErrorMessage(code)
+        });
     } finally {
         deadline.clear();
         if (activeCaptures.get(captureKey) === deadline) activeCaptures.delete(captureKey);
@@ -284,6 +431,7 @@ const API = {
     profileId,
     inspectOwnership,
     inspectExpectedOwnership,
+    waitForOwnership,
     publicOwnership,
     parseGpxData,
     garminExportRequest,

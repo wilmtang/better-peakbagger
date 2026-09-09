@@ -9,6 +9,7 @@ import {
     COPIED_RUNTIME_PACKAGES,
     copiedRuntimeChanged,
     copiedRuntimeVersions,
+    terrainVerificationRequired,
 } from '../../scripts/copied-runtime-impact.mjs';
 
 const lock = (overrides = {}) => ({
@@ -36,6 +37,27 @@ test('adding or removing a copied runtime is treated as a runtime change', () =>
     assert.equal(copiedRuntimeChanged(lock(), removed), true);
     assert.equal(copiedRuntimeVersions(removed).marked, null);
     assert.throws(() => copiedRuntimeVersions({}), /no packages inventory/);
+});
+
+test('GPU gates cover browser upgrades and source or fixture changes before the next library update', () => {
+    for (const name of ['playwright', 'playwright-core']) {
+        const before = lock();
+        before.packages[`node_modules/${name}`] = { version: '1.62.1' };
+        const after = structuredClone(before);
+        after.packages[`node_modules/${name}`].version = '1.63.0';
+        assert.equal(terrainVerificationRequired(before, after), true);
+        assert.equal(terrainVerificationRequired(after, before), true);
+    }
+    for (const file of ['src/settings/bridge.js', 'src/terrain/terrain-frame-runtime.js',
+        'scripts/showcase/terrain.html', 'scripts/verify-firefox-terrain.mjs',
+        'scripts/build-config.mjs', 'manifest.json', '.github/workflows/test.yml']) {
+        assert.equal(terrainVerificationRequired(lock(), lock(), [file]), true, file);
+    }
+    assert.equal(terrainVerificationRequired(lock(), lock(), ['docs/development.md']), false);
+    const unrelated = lock();
+    unrelated.packages['node_modules/eslint'] = { version: '99.0.0' };
+    assert.equal(terrainVerificationRequired(lock(), unrelated, ['package-lock.json']), false);
+    assert.equal(terrainVerificationRequired(lock(), lock({ 'maplibre-gl': '2.0.0' })), true);
 });
 
 test('Firefox GPU bearing checks settle before the separate pitch gesture', async () => {

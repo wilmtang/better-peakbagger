@@ -976,6 +976,14 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
         subLinks.slice(6).map(link => link.getAttribute('href')),
         'Backup & sync subsections should follow their sidebar order',
     );
+    const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');
+    const ascentBackup = doc.getElementById('github-backup');
+    assert.equal(ascentBackupLink.textContent, 'Ascent and TR backup');
+    assert.equal(ascentBackup.querySelector('h3').textContent, 'Ascent and TR backup');
+    assert.match(ascentBackup.textContent, /Back up ascents and TRs to GitHub/);
+    assert.match(ascentBackup.textContent, /Enable ascent and TR backup/);
+    assert.equal(doc.getElementById('github-ascent-panel').getAttribute('aria-label'),
+        'Ascent and TR backup options');
 });
 
 const activeLinks = dom =>

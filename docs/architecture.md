@@ -98,7 +98,7 @@ The diagram encodes six important boundaries:
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
 - [Favorite climbers](#deep-dive-favorite-climbers)
-- [GitHub ascent and full-profile backup](#deep-dive-github-ascent-and-full-profile-backup)
+- [GitHub ascent and TR backup](#deep-dive-github-ascent-and-tr-backup)
 - [Site-wide theme startup](#deep-dive-site-wide-theme-startup)
 - [Storage and lifecycle](#deep-dive-storage-and-lifecycle)
 - [Verification boundaries](#deep-dive-verification-boundaries)
@@ -155,7 +155,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
-| Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
+| Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.js` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
@@ -368,10 +368,15 @@ the provider adapter into that page's MAIN world.
 
 Before export, the adapter requires a signed-in viewer identity, a matching
 activity-author identity, and the provider's owner-only edit control. Missing,
-ambiguous, or changed DOM is not proof of ownership. Signed-out, not-owner, and
-ownership-unavailable states fail closed. The worker verifies Peakbagger login
+contradictory, foreign-origin, malformed, or changed DOM is not proof of
+ownership. Activity and profile links are accepted only on the exact supported
+provider hosts. The generation-owned adapter observes the relevant page roots
+for up to eight seconds so a staged SPA render can become verifiably owned;
+signed-out, not-owner, human-check, activity-changed, and exhausted-readiness
+states remain distinct and fail closed. The worker verifies Peakbagger login
 before it asks the provider page for coordinates. It also requires an
-authoritative settings read before provider injection; the local-file
+authoritative settings read before provider injection; unsupported tabs are
+rejected before that read because they cannot start capture. The local-file
 controller requires the same read before parsing, and the worker independently
 re-reads those privacy choices before retaining allowlisted fields. A storage
 failure captures nothing.
@@ -388,11 +393,12 @@ undocumented provider dependencies. Their shared output is intentionally
 narrow; a provider change should fail that adapter, not weaken ownership or
 fall through to a second scraping strategy.
 
-Ownership detection reads English provider affordances — Strava's
-`/activities/<id>/edit` link and Garmin's "Edit an Activity" control. A
-localized provider UI therefore fails closed as `ownership-unverified` rather
-than capturing; that is the correct direction, but it is a known coverage
-limit, not a proof of non-ownership.
+Strava ownership uses the activity-specific edit URL and is independent of its
+visible label. Garmin still corroborates identity with the English "Edit an
+Activity" accessible control because no stable localized structural equivalent
+has been established. An unrecognized localized Garmin UI therefore fails
+closed as `ownership-unverified`; that is a compatibility limit, not a proof of
+non-ownership.
 
 ### 2. One parser and two representations
 
@@ -400,6 +406,16 @@ limit, not a proof of non-ownership.
 file selection. It returns track segments with latitude, longitude, optional
 elevation and time; optional waypoint latitude, longitude, and normalized name;
 and an optional normalized first track name. It never returns source XML.
+
+Before parsing a provider response, the adapter classifies its final URL,
+status, content type, documented challenge marker, and—only where necessary—a
+small bounded body prefix. Sign-out, human check, rate limit, forbidden,
+unavailable, changed-response, no-GPS, and invalid-GPX outcomes stay distinct;
+raw headers and bodies never cross the page boundary. The page owns one
+30-second deadline covering response headers, bounded body read, parse, and
+result construction. The worker allows a two-second dispatch/clone margin so
+its wrapper cannot replace the page's accurate timeout with an earlier generic
+failure.
 
 The analysis representation preserves every valid source point long enough to
 validate the track, calculate geometry, find summit encounters, and derive
@@ -426,10 +442,30 @@ pure algorithms in `src/capture/capture-core.js`. The pipeline sanitizes coordin
 preserves segment boundaries, rejects unusable time/elevation data, and computes
 corridor boxes from the validated track.
 
-The worker queries Peakbagger for every corridor box with bounded retry. Results
-are not presented until the whole lookup succeeds. A partial response is not
-equivalent to “no peaks,” because presenting it would silently omit summits and
-could create the wrong drafts.
+The worker queries Peakbagger for every corridor box through one origin-wide
+FIFO scheduler capped at four in-flight requests across all activity tabs.
+Only network and server failures receive one bounded jittered retry. A
+Cloudflare challenge stops active and queued sibling work and preserves the
+exact leased helper tab for user recovery; a validated rate limit does the same
+and stores its bounded retry time in `storage.session` so a worker restart
+cannot resume early. Results are not presented until the whole lookup succeeds.
+A partial response is not equivalent to “no peaks,” because presenting it would
+silently omit summits and could create the wrong drafts.
+
+The popup renders the transaction as stable, truthful phases: validating the
+activity, waiting for the provider, verifying ownership, checking Peakbagger,
+exporting GPX, processing the track, searching summit areas, and preparing
+results. Summit lookup publishes completed/total area progress only when it
+crosses the next decile, bounding session writes to eleven. A terminal failure
+retains its failed stage. One shared pure error policy owns each public title,
+message, retry safety, and recovery kind; the popup maps that kind to at most
+one direct action such as reload, sign in, return to the provider, open the
+preserved Peakbagger check, wait, or use a shorter track.
+
+Successful and already-opened jobs can be reused, but terminal errors are not
+replayed after a new toolbar gesture: the worker rechecks the page and session.
+No-GPS and no-match results remain reusable until the user explicitly chooses
+**Check again**. A validated cooldown is authoritative even for a forced retry.
 
 Shared distance, elevation-gain, and scoring primitives live in
 `src/gpx/gpx-metrics.js` and `src/capture/capture-core.js`. The ascent-page analyzer and the
@@ -476,7 +512,7 @@ fail-closed contract before summit detection:
 | Parsed Peakbagger summits / route encounters | 5,000 / 256 |
 | One Peakbagger GPX response | 16 MiB |
 | Other Peakbagger HTML responses | 8 MiB |
-| Corridor boxes / total attempts / concurrent requests | 64 / 128 / 4 |
+| Corridor boxes / total attempts / concurrent Peakbagger requests origin-wide | 64 / 128 / 4 |
 | Complete sanitize, corridor, and detection transaction | 60 seconds |
 
 Response bodies are counted while streaming after content decoding; a missing,
@@ -486,9 +522,10 @@ corridor plan. Oversized or excessively fragmented input is rejected with an
 actionable error and is never silently truncated into a partial summit result.
 Cancellation, job replacement, source closure, and expiry abort both the
 page-owned provider request and the worker-owned Peakbagger lookup generation.
-Provider injection, ownership inspection, capture, and cancellation carry the
-same generation-owned deadline as helper-page work; page cancellation is
-best-effort and never delays the Cancel response.
+Provider ownership and export use their page-owned eight- and 30-second
+deadlines; the worker adds only the documented dispatch margin. Helper-page
+work remains separately bounded. Page cancellation is best-effort and never
+delays the Cancel response.
 
 Detection indexes route edges into bounded geographic cells and builds each
 segment's cumulative distance and elevation range data once. Peak matching and
@@ -505,6 +542,14 @@ Temporary request tabs carry a generation-bound `storage.session` lease with
 their exact URL. Activation or navigation permanently transfers ownership to
 the user, while release or restart cleanup may remove only an expired,
 unadopted tab whose current URL still exactly matches the lease.
+
+Provider parsing is preflighted before DOM construction and is measured in
+hidden native Chrome and Firefox at 1,000, 5,000, and 20,000 points plus the
+limit-plus-one rejection. Local developer/test realms can opt into
+`BPB_CAPTURE_DIAGNOSTICS` for one allowlisted duration/count record covering
+admission through storage and popup-to-ready. The hook writes only to the local
+console, is inert by default, and cannot accept URLs, identities, coordinates,
+GPX, page text, or response bodies.
 
 ### 6. Reduction and serialization
 
@@ -1397,7 +1442,7 @@ token. The worker accepts those messages only from an extension page, reuses the
 shared GitHub connection and selected repository, and writes the fixed root
 path `favorite-climbers.json` through the same repository-marker check, exact base tree,
 non-forced ref update, shared write queue, and bounded conflict retry as
-ascent backup. Because it is a root file rather than an ascent folder, that
+ascent and TR backup. Because it is a root file rather than an ascent folder, that
 write can share one commit with a settings backup submitted at the same moment. Restore is an extension-only read; a missing file is reported as
 “no backup” and does not become an empty replacement.
 
@@ -1409,8 +1454,8 @@ backup does not read or write `favorite-climbers.json`; favorite transfer happen
 after the explicit options-page action. A successful write leaves an affirmative
 status and the worker-returned commit link visible without exposing the token.
 
-The GitHub connection is independent of the ascent-backup setting. Turning
-ascent backup off removes ascent capture and backup affordances without
+The GitHub connection is independent of the ascent and TR backup setting. Turning
+ascent and TR backup off removes ascent capture and backup affordances without
 disconnecting GitHub or disabling explicit favorite backup and restore.
 
 Peakbagger HTML and authenticated cookies remain within the Peakbagger/browser
@@ -1497,7 +1542,7 @@ HTML and storage, so an authenticated, minimal, read-only browser check is
 required before a release that changes Buddy parsing, owner detection, request
 classification, or the live options/climber UI.
 
-## Deep dive: GitHub ascent and full-profile backup
+## Deep dive: GitHub ascent and TR backup
 
 GitHub backup is explicit and opt-in. The optional host permissions are
 requested only when the feature is enabled. GitHub device flow and repository
@@ -1598,7 +1643,7 @@ comparison, first-visit compromises, and lockstep invariant are in
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
 | `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; credentials leave it only for their explicit manual settings-file export, favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
-| `storage.session` | Capture-job metadata and generation-scoped reduced GPX payloads, prepared drafts, pending report-save intents, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/report-save/backup/delete records expire after 30 minutes |
+| `storage.session` | Capture-job metadata and generation-scoped reduced GPX payloads, prepared drafts, Peakbagger helper leases and validated rate-limit cooldown, pending report-save intents, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/report-save/backup/delete records expire after 30 minutes, helper leases expire, and cooldown is discarded at its validated retry time |
 | IndexedDB `betterPeakbaggerPhotos` | Photo catalog, annotation projects, original/thumbnail blobs, upload journal, ImgBB delete URLs, tombstones | Authoritative device-local photo library; deleted assets are eligible for pruning after 30 days, tombstones remain |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |
@@ -1635,13 +1680,17 @@ No single green command proves the extension works:
   notice fails. Generated line and column numbers are not pinned, because every
   vendored warning's position is a byte offset into a bundle. Both lint stages
   run in CI and in release CI. Neither establishes runtime behavior.
-- `npm run audit:ci` currently permits only two exact high `image-size`
+- `npm run audit:ci` currently permits two exact high `image-size`
   advisories through the development-only `web-ext`/`addons-linter` lint path,
   with advisory ids, package versions, install paths, and a 2026-09-21 expiry
   pinned in `scripts/check-npm-audit.mjs`. A 2026-08-22 source review confirmed
   that the registry still has no patched release and that the parser remains
   limited to extension-owned icons and theme images during development lint;
-  every other finding fails. The older
+  a September 8 review additionally accepts one moderate `adm-zip` advisory
+  in the dev-only `web-ext`/`firefox-profile` path, with the same expiry and
+  exact versions. web-ext copies XPIs or writes proxies without calling the
+  vulnerable extractor; the installed-tool regression test pins that boundary.
+  Every other finding fails. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.18 through a scoped override.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox

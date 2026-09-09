@@ -623,21 +623,27 @@
     transition: opacity 100ms ease;
 }
 
+/* This is an invisible touch target, not a form button. The site-wide dark
+ * theme paints buttons with !important rules, so reset that chrome explicitly. */
+#bpb-report-editor .bpb-re-surface [data-resize-handle] {
+    appearance: none;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+}
+
 .bpb-re-surface .bpb-re-image-resize-handle::before,
 .bpb-re-surface .bpb-re-video-resize-handle::before,
 .bpb-re-surface .bpb-re-youtube-resize-handle::before {
     content: "";
     position: absolute;
-    right: 0;
-    bottom: 0;
-    box-sizing: border-box;
-    width: 14px;
-    height: 14px;
-    border: 2px solid #fff;
-    border-radius: 50%;
+    right: 12px;
+    bottom: 12px;
+    width: 20px;
+    height: 20px;
     background: #3b76c4;
-    box-shadow: 0 0 0 1px rgba(23, 50, 86, 0.55);
-    transform: translate(45%, 45%);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 5h6M5 5v6M5 5l14 14M19 19h-6M19 19v-6' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 /* An iframe receives pointer input inside its embedded document, so it cannot
@@ -1062,10 +1068,8 @@ html[data-bpb-theme="dark"] .bpb-re button {
     color: #c7c1b8;
 }
 
-html[data-bpb-theme="dark"] .bpb-re .bpb-re-image-resize-handle {
-    border: 2px solid #181a1b !important;
-    background: #6d9ee8 !important;
-    box-shadow: 0 0 0 1px #b8cff2;
+html[data-bpb-theme="dark"] .bpb-re-surface [data-resize-handle]::before {
+    background: #6d9ee8;
 }
 
 html[data-bpb-theme="dark"] .bpb-re-format {
@@ -1211,3 +1215,35 @@ html[data-bpb-theme="dark"] .bpb-re-conversion button {
 html[data-bpb-theme="dark"] .bpb-re-conversion button:hover {
     background: #35301f;
 }
+
+/* Local images keep their upload state beside the image, outside report markup. */
+.bpb-re-local-photo-actions {
+    display: flex;
+    align-items: center;
+    position: absolute;
+    left: 0;
+    right: 44px;
+    bottom: 6px;
+    gap: 12px;
+    padding: 5px 0;
+    font: 12px/1.4 system-ui, sans-serif;
+    color: var(--bpb-muted, #666);
+}
+.bpb-re-local-photo-actions[hidden] { display: none; }
+.bpb-re-local-photo-actions button {
+    font: inherit;
+    color: var(--bpb-link, #1769aa);
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    padding: 3px 5px;
+    cursor: pointer;
+}
+.bpb-re-local-photo-actions button:focus-visible { outline: 2px solid currentColor; }
+.bpb-re-local-photo-status {
+    padding: 8px 12px;
+    font: 13px/1.5 system-ui, sans-serif;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-local-photo-actions { color: #aaa; }
+html[data-bpb-theme="dark"] .bpb-re-local-photo-actions button { color: #8ab4f8; }

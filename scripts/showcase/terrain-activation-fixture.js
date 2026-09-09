@@ -13,6 +13,7 @@
 
   const runtime = globalThis.chrome && globalThis.chrome.runtime;
   if (!runtime) throw new Error('Terrain activation fixture requires chrome.runtime');
+  const fallback = runtime.sendMessage;
   runtime.sendMessage = async message => {
     if (message?.type === 'TERRAIN_ACTIVATION_ISSUE'
       && (message.action === 'init' || message.action === 'prefetch')) {
@@ -26,6 +27,6 @@
       capabilities.delete(message.activation);
       return { ok: action === 'prefetch' };
     }
-    return { ok: false };
+    return fallback ? fallback(message) : { ok: false };
   };
 })();

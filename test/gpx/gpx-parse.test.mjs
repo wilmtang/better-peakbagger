@@ -17,7 +17,14 @@ import {
 const { DOMParser } = new JSDOM('').window;
 globalThis.DOMParser = DOMParser;
 
-const { parseGpxData, parseGpxDocument, parseTrackPoint, cleanName, noGpsError } = gpxParse;
+const {
+    parseGpxData,
+    parseGpxDocument,
+    parseTrackPoint,
+    cleanName,
+    noGpsError,
+    preflightGpxStructure,
+} = gpxParse;
 
 test('multi-track GPX flattens to segments in document order with analysis fields only', () => {
     const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"
@@ -73,6 +80,13 @@ test('prefixed GPX namespaces retain direct ownership semantics', () => {
     assert.deepEqual(parsed.segments[0].map(({ lat, lon }) => [lat, lon]), [[3, 4], [5, 6]]);
     assert.deepEqual(parsed.waypoints, [{ lat: 1, lon: 2, name: 'Camp' }]);
     assert.equal(parsed.trackName, 'Prefixed');
+});
+
+test('GPX structure limits reject excessive namespaced input before DOM construction', () => {
+    const tooManySegments = `<g:gpx>${'<g:trkseg/>'.repeat(MAX_GPX_TRACK_SEGMENTS + 1)}</g:gpx>`;
+    assert.throws(() => preflightGpxStructure(tooManySegments), error => error.code === 'gpx-too-large');
+    assert.doesNotThrow(() => preflightGpxStructure(
+        `<g:gpx>${'<g:trkseg/>'.repeat(MAX_GPX_TRACK_SEGMENTS)}</g:gpx>`));
 });
 
 test('text and document entry points return the same direct-owned quality tree', () => {

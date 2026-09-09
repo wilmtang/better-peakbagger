@@ -51,7 +51,7 @@ permission to read device location. It covers:
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
 | `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, GitHub token/repository, ImgBB API key, report drafts, and automatic-backup state | Device-local; never browser-synced. |
-| `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Authorization is removed when it completes, fails, or expires. |
+| `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
 | Peakbagger `localStorage` | Page-specific filter state and the early theme mirror | Remains with the Peakbagger site data. |
@@ -60,30 +60,38 @@ permission to read device location. It covers:
 
 Activity capture is a short-lived, user-started transaction:
 
-1. **Ownership check:** capture stops before reading coordinates unless the
+1. **Supported tab and settings:** an unsupported page is rejected without
+   reading capture settings. On a recognized activity, capture stops before
+   provider injection if the authoritative settings read fails. UI defaults
+   never authorize capture or become an exported or remote settings backup.
+2. **Ownership check:** capture stops before reading coordinates unless the
    activity page unambiguously proves that the signed-in Garmin or Strava user
    owns the activity. Profile and author identifiers are compared on the page;
    only the verdict, provider, and activity id reach the extension.
-2. **Settings check:** capture stops before parsing or retaining data if current
-   capture settings cannot be read. UI defaults never authorize capture or
-   become an exported or remote settings backup.
-3. **Local analysis:** raw provider GPX is parsed on the activity page. It is
+3. **Peakbagger session check:** a Peakbagger tab verifies the signed-in
+   account before the provider page is asked for coordinates. The extension
+   does not request cookie-reading permission or copy cookie values; the site
+   handles its own signed-in session. A page freshly opened or loaded for
+   capture may satisfy the check from a small allowlist of Peakbagger's global
+   account-navigation links and their consistent climber ID; ambiguous evidence
+   and already-loaded tabs use the live account-page check. No arbitrary page
+   text or form data is copied.
+4. **Provider export and local analysis:** the response is classified before
+   parsing so sign-out, challenge, rate limit, changed response, invalid GPX,
+   and no recorded route remain distinct. Raw provider GPX is parsed on the
+   activity page. It is
    never persisted, sent to the developer, or forwarded as source XML.
-4. **Peakbagger session and summit lookup:** a Peakbagger tab makes the login
-   check and the small bounding-box requests derived from the track corridor.
-   The extension does not request cookie-reading permission or copy cookie
-   values; the site handles its own signed-in session. A page freshly opened or
-   loaded for capture may satisfy the login check from a small allowlist of
-   Peakbagger's global account-navigation links and their consistent climber ID;
-   ambiguous evidence and already-loaded tabs use the live account-page check.
-   No arbitrary page text or form data is copied. Every required lookup must
-   succeed before results appear.
-5. **Prepared drafts:** derived ascent fields and a generation-scoped reduced
+5. **Summit lookup:** the Peakbagger tab makes small bounding-box requests
+   derived from the track corridor. At most four Peakbagger requests are active
+   across captures. A challenge or rate limit stops sibling traffic; a valid
+   retry time may remain in session storage. Every required lookup must succeed
+   before results appear.
+6. **Prepared drafts:** derived ascent fields and a generation-scoped reduced
    track stay separately in `storage.session`, are bound to the expected tabs,
    and expire after 30 minutes.
-6. **GPS Preview:** after the user selects **Open drafts**, Peakbagger receives a
+7. **GPS Preview:** after the user selects **Open drafts**, Peakbagger receives a
    newly serialized GPX. Trackpoints and waypoints share a 3,000-point limit.
-7. **Review and Save:** the extension may prepare GPS Preview, but it never
+8. **Review and Save:** the extension may prepare GPS Preview, but it never
    clicks a Peakbagger Save control. Publication remains with the user.
 
 The reduced GPX can contain:
@@ -98,6 +106,11 @@ descriptions, routes, waypoint elevation/time/symbols, and extension elements.
 Derived form values such as date, ascent times, distance, gain, per-day
 statistics, and nights out remain only in the prepared draft until it expires
 or is discarded.
+
+There is no capture telemetry. A disabled-by-default developer/test diagnostic
+switch can print one local console record containing only allowlisted durations
+and aggregate counts. It accepts and persists no provider identity, URL,
+coordinates, GPX, page text, response body, cookies, or headers.
 
 ## Processing a GPX file you upload
 
@@ -184,7 +197,10 @@ date. That happens entirely locally.
 ## Photo topo editor and ImgBB upload (optional)
 
 The photo editor stores the selected image, thumbnail, source metadata,
-annotation project, title, and alt text in device-local IndexedDB. Source image
+annotation project, title, and alt text in device-local IndexedDB. Pasting into a
+Rich text TR stores metadata-free pixels and a local report image reference.
+Double-clicking opens a separate editable copy; **Save and return** keeps it local.
+Saving the TR uploads its remaining local images before submitting the report. Source image
 bytes can contain camera metadata; they stay local and are never uploaded by
 Better Peakbagger.
 
@@ -194,9 +210,9 @@ project JSON, local/report identity, API key, and delete URL.
 
 | Topic | Policy |
 | --- | --- |
-| Local limits | Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
-| Upload | Only after **Upload and insert**, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
-| API key | The saved key remains in device-local extension storage. The background worker gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Removing it does not affect earlier uploads. |
+| Local limits | TR pasted images and flattened local report snapshots: at most 16 MiB each. Decodable images: at most 64 megapixels and 16,384 pixels per side. Source processing/storage: at most 128 MiB. Editable bundles: at most 40 MiB. The original file is never changed. |
+| Upload | After **Upload and insert** in the standalone photo editor, or after the user saves a TR containing pasted local photos, ImgBB receives the flattened image, chosen upload name, the user's API key, IP address, and ordinary request metadata. ImgBB applies its own upload-byte limit. |
+| API key | The saved key remains in device-local extension storage. The background worker uses it directly for user-initiated TR photo uploads and gives it only to Better Peakbagger's exact packaged photo page for a direct ImgBB upload; it is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. Removing it does not affect earlier uploads. |
 | Catalog | Stores public URLs, source/export metadata and hashes, upload/reachability state, lineage, report references, and local asset availability because ImgBB's v1 API has no account-gallery listing operation. |
 | Delete URL | Stored separately in device-local IndexedDB. It is never placed in a report or GitHub backup. Removing a local entry or report reference does not delete the remote ImgBB image. |
 | Recently Deleted | Removed items can be restored locally. After 30 days their image and project assets become eligible for pruning; tombstones remain to prevent older backups from resurrecting them. |
@@ -243,23 +259,23 @@ parked and idle for a few minutes before release, and the cache is not cleared.
 ## GitHub connection and backup (optional)
 
 GitHub is disconnected by default. Connecting requires the user to grant host
-access, authorize the extension, and select one repository. Ascent backup and
-automatic backups for settings, favorites, and photo metadata are separate and
-off by default. Backup never blocks or changes Peakbagger Save.
+access, authorize the extension, and select one repository. Ascent and TR backup
+is separate from automatic backups for settings, favorites, and photo metadata;
+all are off by default. Backup never blocks or changes Peakbagger Save.
 
 ### What a backup contains
 
 | Backup | Included | Excluded |
 | --- | --- | --- |
-| Ascent | User-entered ascent fields, Markdown trip report, and Peakbagger's stored, user-approved GPS track | Raw Garmin or Strava GPX |
+| Ascent and TR | User-entered ascent fields, Markdown trip report, and Peakbagger's stored, user-approved GPS track | Raw Garmin or Strava GPX |
 | `settings.json` | Validated settings, export time, schema version, and extension version | Credentials, repository choice, favorites, drafts, caches, ascents, activity, and GPS data |
 | `favorite-climbers.json` | Custom climber ids, displayed names, added-at timestamps, provenance, and export time | Buddy cache and credentials |
 | `photo-library.json` | Catalog metadata, public URLs, sanitized source file name, hashes/dimensions, title/alt state, lineage, report references, annotation projects, tombstones, and version/export metadata | Image bytes, ImgBB key and delete URLs, upload journal, transient editor state, and GitHub credentials |
 
 ### When a backup happens
 
-- **Ascents:** after **Back up to GitHub**, **Back up all ascents**, or a
-  confirmed **Refresh all**; or after each save when automatic ascent backup is
+- **Ascents and TRs:** after **Back up ascent and TR**, **Back up all ascents and TRs**, or a
+  confirmed **Refresh all**; or after each save when automatic ascent and TR backup is
   enabled. Profile runs read each owned ascent from Peakbagger and send one at a
   time. Existing repository folders act as resume checkpoints.
 - **Settings and favorites:** after an explicit backup, or after a change when
@@ -273,17 +289,17 @@ off by default. Backup never blocks or changes Peakbagger Save.
 Backups go only to the selected repository. Ascents use named mountain folders
 plus a small repository marker; other data uses the fixed root files above. A
 populated repository is inspected and requires confirmation before selection,
-and unrelated files are preserved. Automatic ascent backup never changes the
+and unrelated files are preserved. Automatic ascent and TR backup never changes the
 three root recovery files.
 
 ### Deletion, ownership, and authorization
 
-- If **Remove backup files after I delete an ascent** is separately enabled,
+- If **Remove ascent and TR backup files after I delete an ascent** is separately enabled,
   the extension first verifies the ascent is absent from the authenticated,
   complete My Ascents list. It then removes only Better Peakbagger's
   `report.md`, `ascent.json`, and `track.gpx` from the current branch. User files
   and Git history remain. Failed or unconfirmed deletion does not change GitHub.
-- Ascent backup appears only for ascents owned by the signed-in climber.
+- Ascent and TR backup appears only for ascents owned by the signed-in climber.
   Full-profile actions also verify the user's My Ascents identity and edit
   access for every parsed row, failing closed otherwise.
 - GitHub sign-in uses device flow with a public client id and no client secret.

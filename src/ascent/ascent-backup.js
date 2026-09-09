@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — saved ascent page GitHub backup affordance.
+// Better Peakbagger — saved ascent and TR page GitHub backup affordance.
 //
 // Runs in the isolated world on ascent.aspx. It fails closed: no affordance
 // unless the signed-in climber owns this ascent, the feature is enabled, and a
@@ -69,7 +69,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         el('button', {
             type: 'button',
             class: 'bpb-gh-btn',
-            text: 'Back up to GitHub',
+            text: 'Back up ascent and TR',
             onclick: event => runBackup(info, { event }),
         }),
     );
@@ -263,7 +263,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         const editLink = AscentPage.ascentEditLink(document, info.ascentId);
         const actions = editLink && editLink.parentElement;
         if (!actions) return;
-        control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'GitHub backup' }, [
+        control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'Ascent and TR backup' }, [
             el('span', { class: 'bpb-gh-body', 'aria-live': 'polite' }),
         ]);
         actions.append(document.createTextNode(' '), control);

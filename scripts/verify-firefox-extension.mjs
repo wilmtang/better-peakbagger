@@ -37,10 +37,11 @@ import { prepareFirefoxSource } from './run-firefox.mjs';
 import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.js';
 import {
     isRetryableFirefoxStartup,
+    quitFirefoxDriver,
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
-import { createResourceStack, quitWebDriver } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
@@ -196,7 +197,7 @@ async function main() {
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
         const driver = await startFirefoxDriver(options, temporaryRoot);
-        resources.defer('Firefox WebDriver', () => quitWebDriver(driver));
+        resources.defer('Firefox WebDriver', () => quitFirefoxDriver(driver, temporaryRoot));
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
         const addonId = await driver.installAddon(extensionSource, true);
@@ -1807,7 +1808,7 @@ async function main() {
         && firefoxResizeTargets.mapHandle?.height >= 43.5
         && firefoxResizeTargets.mapHandle.top >= firefoxResizeTargets.mapFrame?.bottom - 1
         && firefoxResizeTargets.mapTouchAction === 'none'
-        && firefoxResizeTargets.splitHandle?.width >= 43.5
+        && Math.abs(firefoxResizeTargets.splitHandle?.width - 13) <= 0.5
         && firefoxResizeTargets.splitHandle?.height >= 43.5
         && firefoxResizeTargets.report?.right <= firefoxResizeTargets.splitHandle.left + 1
         && firefoxResizeTargets.splitHandle.right <= firefoxResizeTargets.summary?.left + 1
@@ -2366,12 +2367,12 @@ async function main() {
     `);
         const profileBackupState = await driver.wait(async () => {
             const state = await readProfileBackupState();
-            return state.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy)
+            return state.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy)
                 ? state
                 : false;
         }, 10_000).catch(readProfileBackupState);
         assertState(
-            profileBackupState.primary === 'Back up all ascents'
+            profileBackupState.primary === 'Back up all ascents and TRs'
         && /fixture\/backup/.test(profileBackupState.copy),
             'Firefox full-profile backup surface did not mount for its verified owner',
             profileBackupState,

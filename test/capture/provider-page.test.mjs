@@ -10,6 +10,7 @@ import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
 // The built bundle (IIFE) evaluated in each page's jsdom realm, so the module
 // reads that page's document/location — exactly as the injected script does.
 const source = await fs.readFile(new URL('../../dist/provider-page.js', import.meta.url), 'utf8');
+const fixture = name => fs.readFile(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 
 const load = (html, url) => {
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
@@ -43,7 +44,7 @@ const garminPage = ({ csrfToken = 'csrf-123' } = {}) => `
   </div>
 </body></html>`;
 
-test('provider activity URL parsing accepts Garmin redirects and fails closed', () => {
+test('provider activity URL parsing accepts supported Garmin and Strava hosts and fails closed', () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     const parse = dom.window.BPBProviderPage.providerFromUrl;
 
@@ -62,6 +63,7 @@ test('provider activity URL parsing accepts Garmin redirects and fails closed', 
         'https://connect.garmin.com/app/activity/not-a-number',
         'https://connect.garmin.com.evil.example/app/activity/777',
         'https://www.strava.com.evil.example/activities/123',
+        'https://clubs.strava.com/activities/123',
         'https://www.strava.com/athletes/123'
     ]) {
         assert.equal(parse(value), null, value);
@@ -83,6 +85,30 @@ test('Strava ownership requires matching profile IDs and the owner edit link', (
 
     const noEdit = load(stravaPage({ edit: false }), 'https://www.strava.com/activities/123');
     assert.equal(noEdit.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+});
+
+test('ownership rejects foreign, contradictory, and malformed profile evidence', () => {
+    const foreign = load(stravaPage().replaceAll('/athletes/42', 'https://evil.example/athletes/42'),
+        'https://www.strava.com/activities/123');
+    assert.equal(foreign.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+
+    const contradictory = load(`<!doctype html><body>
+      <header id="global-header"><a href="/athletes/42">Viewer</a></header>
+      <header data-testid="global-header"><a href="/athletes/99">Other viewer</a></header>
+      <main><section id="heading"><a href="/athletes/42">Author</a></section>
+        <a href="/activities/123/edit">Edit</a></main>
+    </body>`, 'https://www.strava.com/activities/123');
+    assert.equal(contradictory.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+
+    const malformed = load(garminPage().replaceAll('ABC-123', '%E0%A4%A').replaceAll('abc-123', '%E0%A4%A'),
+        'https://connect.garmin.com/app/activity/777');
+    assert.equal(malformed.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
+});
+
+test('Strava ownership rejects a foreign edit link even when its path matches', () => {
+    const html = stravaPage().replace('/activities/123/edit', 'https://evil.example/activities/123/edit');
+    const dom = load(html, 'https://www.strava.com/activities/123');
+    assert.equal(dom.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
 });
 
 test('Garmin ownership accepts matching UUID profiles only with Edit an Activity', () => {
@@ -108,6 +134,98 @@ test('signed-out and changed provider DOMs fail with distinct states', () => {
     assert.equal(unknown.window.BPBProviderPage.inspectOwnership().code, 'ownership-unverified');
 });
 
+test('sanitized provider contract corpus pins structural ownership outcomes', async t => {
+    const cases = [
+        ['Strava owned', 'strava-owned.html', 'https://www.strava.com/activities/123', true, null],
+        ['Strava localized owned', 'strava-owned-es.html', 'https://www.strava.com/activities/123', true, null],
+        ['Strava other owner', 'strava-other-owner.html', 'https://www.strava.com/activities/123', false, 'not-owner'],
+        ['Strava signed out', 'strava-signed-out.html', 'https://www.strava.com/activities/123', false, 'provider-signed-out'],
+        ['Garmin owned', 'garmin-owned.html', 'https://connect.garmin.com/app/activity/777', true, null],
+        ['Garmin other owner', 'garmin-other-owner.html', 'https://connect.garmin.com/app/activity/777', false, 'not-owner'],
+        ['Garmin signed out', 'garmin-signed-out.html', 'https://connect.garmin.com/app/activity/777', false, 'provider-signed-out'],
+        ['loading skeleton', 'provider-loading.html', 'https://www.strava.com/activities/123', false, 'ownership-unverified'],
+        ['human check', 'provider-challenge.html', 'https://www.strava.com/activities/123', false, 'provider-human-check'],
+    ];
+    for (const [name, file, url, ok, code] of cases) {
+        await t.test(name, async () => {
+            const dom = load(await fixture(file), url);
+            const result = dom.window.BPBProviderPage.inspectOwnership();
+            assert.equal(result.ok, ok);
+            if (code) assert.equal(result.code, code);
+            dom.window.close();
+        });
+    }
+});
+
+test('ownership wait tolerates staged SPA rendering and returns only after proof is complete', async () => {
+    const dom = load('<main><h1>Loading activity</h1></main>', 'https://www.strava.com/activities/123');
+    const pending = dom.window.BPBProviderPage.waitForOwnership(
+        { provider: 'strava', activityId: '123' },
+        'staged-ownership',
+        1000,
+    );
+    dom.window.document.body.insertAdjacentHTML('afterbegin',
+        '<header id="global-header"><a href="/athletes/42">Viewer</a></header>');
+    await Promise.resolve();
+    dom.window.document.querySelector('main').insertAdjacentHTML('afterbegin',
+        '<section id="heading"><a href="/athletes/42">Author</a></section>');
+    await Promise.resolve();
+    dom.window.document.querySelector('main').insertAdjacentHTML('beforeend',
+        '<a href="/activities/123/edit">Edit</a>');
+
+    assert.deepEqual({ ...await pending }, {
+        ok: true,
+        provider: 'strava',
+        activityId: '123',
+    });
+});
+
+test('ownership wait classifies stable blockers and bounded incomplete pages', async t => {
+    const cases = [
+        {
+            name: 'signed out',
+            html: '<a href="/login">Log In</a>',
+            code: 'provider-signed-out',
+            timeoutMs: 100,
+        },
+        {
+            name: 'human check',
+            html: '<form id="challenge-form"></form>',
+            code: 'provider-human-check',
+            timeoutMs: 100,
+        },
+        {
+            name: 'not ready',
+            html: '<main><h1>Loading</h1></main>',
+            code: 'provider-page-not-ready',
+            timeoutMs: 5,
+        },
+    ];
+    for (const item of cases) {
+        await t.test(item.name, async () => {
+            const dom = load(item.html, 'https://www.strava.com/activities/123');
+            const result = await dom.window.BPBProviderPage.waitForOwnership(
+                { provider: 'strava', activityId: '123' },
+                `wait-${item.name}`,
+                item.timeoutMs,
+            );
+            assert.equal(result.code, item.code);
+        });
+    }
+});
+
+test('ownership wait is cancelled by its capture generation', async () => {
+    const dom = load('<main><h1>Loading</h1></main>', 'https://www.strava.com/activities/123');
+    const pending = dom.window.BPBProviderPage.waitForOwnership(
+        { provider: 'strava', activityId: '123' },
+        'cancel-ownership',
+        1000,
+    );
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('other-generation'), false);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('cancel-ownership'), true);
+    assert.equal((await pending).code, 'provider-page-cancelled');
+});
+
 test('successful capture fetches only the provider GPX endpoint', async () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     const requested = [];
@@ -130,6 +248,31 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.deepEqual([...capture.waypoints], []);
     assert.equal(capture.metadata.title, undefined);
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
+    assert.equal('diagnostics' in capture, false, 'production capture output stays narrow by default');
+});
+
+test('opt-in provider diagnostics contain only local durations and aggregate counts', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    dom.window.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/gpx+xml' },
+        text: async () => '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>',
+    });
+
+    const capture = await dom.window.BPBProviderPage.capture(
+        {},
+        'diagnostic-capture',
+        1000,
+        { provider: 'strava', activityId: '123' },
+        true,
+    );
+    const diagnostics = JSON.parse(JSON.stringify(capture.diagnostics));
+    assert.equal(capture.ok, true);
+    assert.deepEqual(Object.keys(diagnostics.durationsMs).sort(), ['body', 'headers', 'metadata', 'parse']);
+    assert.ok(Object.values(diagnostics.durationsMs).every(value => Number.isFinite(value) && value >= 0));
+    assert.deepEqual(diagnostics.counts, { 'track-points': 2, segments: 1, waypoints: 0 });
+    assert.doesNotMatch(JSON.stringify(diagnostics), /strava|activities|latitude|longitude|gpx/i);
 });
 
 test('provider capture excludes extension-owned and nested fake GPX geometry', async () => {
@@ -227,18 +370,87 @@ test('Garmin current-session capture uses the gc-api route and same-page CSRF he
     assert.equal(requested[0].options.credentials, 'include');
 });
 
-test('Garmin export failures return bounded copy instead of page exception text', async () => {
+test('Garmin unavailability returns bounded typed copy instead of page exception text', async () => {
     const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
     dom.window.USE_DI_SESSION = true;
     dom.window.fetch = async () => ({ ok: false, status: 503 });
 
     const capture = await dom.window.BPBProviderPage.capture();
     assert.equal(capture.ok, false);
-    assert.equal(capture.code, 'provider-export-failed');
+    assert.equal(capture.code, 'provider-unavailable');
     assert.equal(capture.message,
-        'The activity provider could not export this GPX. Reload the activity and try again.');
+        'The provider could not complete the export. Wait a moment, then try again.');
     assert.doesNotMatch(capture.message, /503|Garmin/);
     assert.doesNotMatch(capture.message, /ownership/i);
+});
+
+test('provider export classifies response failures before GPX parsing', async t => {
+    const now = Date.now();
+    const cases = [
+        { name: 'signed out', response: { ok: false, status: 401 }, code: 'provider-signed-out' },
+        {
+            name: 'challenge header',
+            response: { ok: false, status: 403, headers: { 'cf-mitigated': 'challenge' } },
+            code: 'provider-human-check',
+        },
+        {
+            name: 'challenge body',
+            response: { ok: false, status: 403, text: async () => '<title>Just a moment...</title>' },
+            code: 'provider-human-check',
+        },
+        {
+            name: 'forbidden',
+            response: { ok: false, status: 403, text: async () => '<p>Forbidden</p>' },
+            code: 'provider-forbidden',
+        },
+        { name: 'missing endpoint', response: { ok: false, status: 404 }, code: 'provider-response-changed' },
+        {
+            name: 'rate limited',
+            response: { ok: false, status: 429, headers: { 'retry-after': '60' } },
+            code: 'provider-rate-limited',
+            retryAt: true,
+        },
+        { name: 'unavailable', response: { ok: false, status: 503 }, code: 'provider-unavailable' },
+        {
+            name: 'login redirect',
+            response: { ok: true, status: 200, url: 'https://www.strava.com/login' },
+            code: 'provider-signed-out',
+        },
+        {
+            name: 'HTML interstitial',
+            response: {
+                ok: true,
+                status: 200,
+                headers: { 'content-type': 'text/html' },
+                text: async () => '<!doctype html><p>Changed</p>',
+            },
+            code: 'provider-response-changed',
+        },
+        {
+            name: 'JSON response',
+            response: { ok: true, status: 200, headers: { 'content-type': 'application/json' } },
+            code: 'provider-response-changed',
+        },
+        {
+            name: 'invalid GPX',
+            response: { ok: true, status: 200, text: async () => '<not-gpx/>' },
+            code: 'invalid-gpx',
+        },
+    ];
+    for (const item of cases) {
+        await t.test(item.name, async () => {
+            const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+            dom.window.fetch = async () => item.response;
+            const result = await dom.window.BPBProviderPage.capture();
+            assert.equal(result.code, item.code);
+            assert.doesNotMatch(JSON.stringify(result), /Forbidden|Just a moment|not-gpx/);
+            if (item.retryAt) {
+                assert.ok(result.retryAt >= now + 59000 && result.retryAt <= Date.now() + 61000);
+            } else {
+                assert.equal('retryAt' in result, false);
+            }
+        });
+    }
 });
 
 test('a never-settling provider fetch ends at one public deadline and releases the socket', async () => {
@@ -252,7 +464,7 @@ test('a never-settling provider fetch ends at one public deadline and releases t
     const capture = await dom.window.BPBProviderPage.capture({}, 'capture-timeout', 10);
     assert.equal(capture.ok, false);
     assert.equal(capture.code, 'provider-export-timeout');
-    assert.equal(capture.message, 'The activity provider took too long to export this GPX. Try again.');
+    assert.equal(capture.message, 'Reload the activity, wait for it to finish, then capture again.');
     assert.equal(aborted, true);
 });
 
@@ -270,7 +482,7 @@ test('the same provider deadline bounds a stalled GPX body read', async () => {
 
     const capture = await dom.window.BPBProviderPage.capture({}, 'body-timeout', 10);
     assert.equal(capture.code, 'provider-export-timeout');
-    assert.match(capture.message, /took too long/i);
+    assert.match(capture.message, /reload the activity/i);
     assert.equal(aborted, true);
 });
 
@@ -314,7 +526,6 @@ test('cancelling one provider generation aborts only its in-page request', async
 
 test('an unavailable or trackless provider export is reported as no GPS data', async t => {
     const cases = [
-        { name: 'not found', response: { ok: false, status: 404 } },
         { name: 'no content', response: { ok: true, status: 204 } },
         { name: 'empty body', response: { ok: true, status: 200, text: async () => '  ' } },
         { name: 'GPX without trackpoints', response: { ok: true, status: 200, text: async () => '<gpx><trk><trkseg/></trk></gpx>' } }
@@ -328,7 +539,7 @@ test('an unavailable or trackless provider export is reported as no GPS data', a
             const capture = await dom.window.BPBProviderPage.capture();
             assert.equal(capture.ok, false);
             assert.equal(capture.code, 'no-gps-data');
-            assert.match(capture.message, /no recorded route to capture/i);
+            assert.match(capture.message, /no recorded route yet/i);
         });
     }
 });

@@ -6,7 +6,7 @@
  * this file adds the popup's own 390px column and its capture-result rows.
  */
 
-body { width: 390px; min-height: 180px; }
+body { width: 390px; max-width: 100vw; min-height: 180px; }
 
 main { padding: 16px; }
 
@@ -80,6 +80,17 @@ button.primary, button.secondary { width: 100%; }
 /* Only between two label-width buttons: after the full-width primary the next
    action starts a new line, where an indent reads as a misalignment. */
 .state-card button.secondary + button.secondary { margin-left: 8px; }
+
+/* Browser zoom can halve the effective CSS width of the popup. Keep the
+   blocker and its one recovery action above the fold; the provider is already
+   named by the failure title/action at this size. */
+@media (max-width: 220px) {
+  main { padding: 12px; }
+  .brand { margin-bottom: 10px; }
+  .brand p { display: none; }
+  .state-card { padding: 11px; }
+  .state-card button { margin-top: 8px; min-height: 36px; }
+}
 
 /* An icon button in the header: no chrome until it is pointed at. */
 .settings-button {

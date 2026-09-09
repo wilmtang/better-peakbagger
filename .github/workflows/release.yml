@@ -46,9 +46,10 @@ jobs:
       # The test workflow runs this too, but nothing makes a release wait for
       # that workflow, and test/project/dependency-audit.test.mjs only exercises
       # evaluateAudit() against synthetic reports — it never calls npm audit. The
-      # gate currently permits only two exact high image-size advisories through
-      # the dev-only web-ext/addons-linter path, expiring 2026-09-21; every other
-      # finding fails, so the build that reaches both stores has to run it.
+      # gate permits two exact high image-size advisories through the dev-only
+      # web-ext/addons-linter path and one moderate adm-zip advisory through
+      # web-ext/firefox-profile's unused extractor, expiring 2026-09-21. Every
+      # other finding fails, so the build that reaches both stores must run it.
       - name: Check dependency advisories
         run: npm run audit:ci
 

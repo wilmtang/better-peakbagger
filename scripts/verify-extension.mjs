@@ -101,6 +101,44 @@ const ascentEditFixture = await resources.guard(readFile(
 const failureCollector = createFailureCollector();
 const { failures, check } = failureCollector;
 
+// The dark site's global button rules used to paint the entire 44px media
+// touch target, leaving an unexplained square beside its tiny corner dot.
+const verifyMediaResizeAppearance = async (page, handle) => {
+    const originalTheme = await page.locator('html').getAttribute('data-bpb-theme');
+    try {
+        for (const theme of ['light', 'dark']) {
+            await page.locator('html').evaluate((html, value) => {
+                html.dataset.bpbTheme = value;
+            }, theme);
+            await handle.hover();
+            const appearance = await handle.evaluate(element => {
+                const style = getComputedStyle(element);
+                const icon = getComputedStyle(element, '::before');
+                return {
+                    label: element.getAttribute('aria-label'),
+                    background: style.backgroundColor,
+                    border: style.borderWidth,
+                    shadow: style.boxShadow,
+                    icon: icon.maskImage,
+                    iconWidth: icon.width,
+                    iconRight: icon.right,
+                    iconBottom: icon.bottom,
+                };
+            });
+            check(appearance.background === 'rgba(0, 0, 0, 0)'
+                && appearance.border === '0px' && appearance.shadow === 'none'
+                && appearance.icon !== 'none' && appearance.iconWidth === '20px'
+                && appearance.iconRight === '12px' && appearance.iconBottom === '12px',
+            `${theme} media resize should show a centered icon without button chrome: ${JSON.stringify(appearance)}`);
+        }
+    } finally {
+        await page.locator('html').evaluate((html, theme) => {
+            if (theme === null) html.removeAttribute('data-bpb-theme');
+            else html.dataset.bpbTheme = theme;
+        }, originalTheme);
+    }
+};
+
 const readDownloadText = async download => {
     const stream = await download.createReadStream();
     const chunks = [];
@@ -119,7 +157,8 @@ try {
         // Playwright disables BFCache by default for test determinism. This
         // verifier explicitly exercises persisted pagehide/pageshow, so remove
         // only that default launch argument and diagnose any real exclusion.
-        ignoreDefaultArgs: ['--disable-back-forward-cache'],
+        // Playwright also opts macOS into software WebGL fallback by default.
+        ignoreDefaultArgs: ['--disable-back-forward-cache', '--enable-unsafe-swiftshader'],
         viewport: verificationViewport,
         args: [
             `--disable-extensions-except=${dist}`,
@@ -2398,6 +2437,8 @@ try {
             summary: rect(summary),
             role: handle?.getAttribute('role'),
             orientation: handle?.getAttribute('aria-orientation'),
+            background: handle ? getComputedStyle(handle).backgroundColor : null,
+            border: handle ? getComputedStyle(handle).borderWidth : null,
             value: Number(handle?.getAttribute('aria-valuenow')),
         };
     });
@@ -2432,7 +2473,9 @@ try {
             === 'ascent-report|bpb-ascent-table-resize-handle|ascent-summary'
         && ascentSplitBefore.role === 'separator'
         && ascentSplitBefore.orientation === 'vertical'
-        && ascentSplitBefore.handle?.width >= 43.5
+        && Math.abs(ascentSplitBefore.handle?.width - 13) <= 0.5
+        && ascentSplitBefore.background === 'rgba(0, 0, 0, 0)'
+        && ascentSplitBefore.border === '0px'
         && ascentSplitBefore.handle?.height >= 43.5
         && ascentSplitBefore.report?.right <= ascentSplitBefore.handle?.left + 1
         && ascentSplitBefore.handle?.right <= ascentSplitBefore.summary?.left + 1
@@ -4082,7 +4125,7 @@ try {
         }, surfaceSelectors.profileBackup, { timeout: 10000 })
             .then(handle => handle.jsonValue())
             .catch(() => null);
-        check(state?.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy),
+        check(state?.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy),
             `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(state)}`);
         await profilePage.close();
     }
@@ -4802,6 +4845,7 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich image did not reveal its resize handle');
+                if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
                 const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
                     const media = document.querySelector('.bpb-re-image-resize img');
                     const handle = document.querySelector('[aria-label="Resize image"]');
@@ -4887,6 +4931,7 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'selecting a Rich video did not reveal its resize handle');
+                if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
                 const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
                     const media = document.querySelector('.bpb-re-video-resize video');
                     const handle = document.querySelector('[aria-label="Resize video"]');
@@ -4993,6 +5038,7 @@ try {
                     return style.opacity === '1' && style.pointerEvents === 'auto';
                 }, null, { timeout: 3000 }).then(() => true).catch(() => false);
                 check(handleReady, 'the Rich YouTube iframe did not expose its resize handle');
+                if (handleReady) await verifyMediaResizeAppearance(editorPage, resizeHandle);
                 const resizeGeometry = handleReady ? await editorPage.evaluate(() => {
                     const media = document.querySelector('.bpb-re-youtube-resize iframe');
                     const handle = document.querySelector('[aria-label="Resize YouTube video"]');

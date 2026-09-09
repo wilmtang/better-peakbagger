@@ -61,9 +61,12 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'reports/report-markup.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/public-errors.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/photo-routes.js', 'background/settings-file-routes.js', 'background/terrain-activation.js', 'background/trusted-actions.js', 'background/terrain-prefetch.js', 'background/background.js']);
+        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.js', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.js', 'background/settings-file-routes.js', 'background/terrain-activation.js', 'background/trusted-actions.js', 'background/terrain-prefetch.js', 'background/background.js']);
     assert.deepEqual(bundleSources('provider-page.js'), [
         'capture/provider-url.js',
+        'capture/provider-response.js',
+        'capture/capture-error-policy.js',
+        'capture/provider-timing.js',
         'gpx/gpx-parse.js',
         'net/request-deadline.js',
         'capture/provider-page.js',
@@ -99,7 +102,7 @@ test('extension panels share one pre-paint theme bootstrap', () => {
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
     assert.deepEqual(bundleSources('popup/popup-head.js'),
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
-    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'capture/match-confidence.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-origin.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js']);
+    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/match-confidence.js', 'peakbagger/peakbagger-origin.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js']);
 });
 
 test('the site theme runs its tiny fallback before the full dynamic bundle', () => {
@@ -244,7 +247,7 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ui/units.js', 'ui/page-lifecycle.js', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'reports/report-editor.js']);
+        ['ui/units.js', 'ui/page-lifecycle.js', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.js', 'reports/report-editor.js']);
     const timezoneConsumers = await Promise.all([
         'src/ascent/ascent-upload.js',
         'src/time/mountain-time.js'

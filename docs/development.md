@@ -28,7 +28,9 @@ Better Peakbagger module uses a global as an internal dependency.
   Testing — stable Chrome refuses `--load-extension`).
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
   `npx playwright install firefox` additionally installs the isolated Firefox
-  build used by the GPU terrain check.
+  build used by the GPU terrain check. On macOS this check selects ANGLE Metal
+  and verifies the unsanitized hardware renderer before loading terrain; native
+  OpenGL on hosted virtual Macs can stall past the production startup deadline.
 - OpenSSL. Every browser fixture server — both extension verifiers, both
   terrain verifiers, and `showcase:render` — creates a one-day self-signed
   certificate in a disposable directory and deletes it in teardown, so the local
@@ -44,7 +46,7 @@ from several directories when a shipped surface crosses those boundaries.
 
 | Directory | Ownership |
 | --- | --- |
-| `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and saved-ascent backup |
+| `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and backup of saved ascents and TRs |
 | `src/background/` | Extension service-worker coordination |
 | `src/capture/` | Provider adapters, ownership checks, and pure capture analysis |
 | `src/favorites/` | Favorite-climber data and climber-page controls |
@@ -165,8 +167,11 @@ script is added or removed without updating it.
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run verify:capture-popup` | Builds and renders every capture recovery family in hidden Chrome for Testing and Firefox at 390×620 in light/dark plus a 200% effective viewport; asserts one policy-owned action and no clipping. This is content layout, not native popup chrome or focus proof. |
+| `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
+| `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
-| `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. A 2026-08-22 source review found no patched release and renewed only two exact high `image-size` advisories through the development-only `web-ext`/`addons-linter` path, with locked versions and a 2026-09-21 expiry; every other or expired finding fails. |
+| `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. Accepts two exact high `image-size` advisories through development-only `web-ext`/`addons-linter`, plus one moderate `adm-zip` advisory through `web-ext`/`firefox-profile`'s unused extractor (reviewed 2026-09-08). The installed-tool test verifies XPI copying and proxy installation avoid extraction. Versions, paths, advisory IDs, and a 2026-09-21 expiry are pinned; every other or expired finding fails. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
 | `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
@@ -366,6 +371,13 @@ values or arbitrary page text. The worker revalidates both result shapes.
 Neither API is a general fetch, DOM, or module seam. Do not generalize these
 exceptions.
 
+`BPB_CAPTURE_DIAGNOSTICS` is a local developer/test switch, not telemetry. When
+set to the boolean `true` in the worker or popup realm, the capture path emits
+one allowlisted duration/count object to that realm's console. The worker asks
+the provider adapter for its timings through an explicit capture argument; a
+page global alone does not enable them. The hook is inert by default, persists nothing, and has no string or
+payload channel for URLs, account identity, coordinates, GPX, or response text.
+
 ## Dependency updates
 
 Dependabot opens weekly grouped pull requests. npm updates merge without a
@@ -389,8 +401,19 @@ member against an unchanged sibling is exactly the breakage grouping prevents.
 The npm updater also uses `versioning-strategy: increase`: Dependabot raises the
 minimum in every matching manifest range even when an older caret already
 admits the release. That makes already-satisfied TipTap siblings visible to the
-group instead of producing a partial family update that `npm ci` rejects on its
-exact peer requirements.
+group. This alone did not prevent PR #19 from mixing 3.30.6 with 3.31.3 during
+lockfile resolution. Direct TipTap requirements therefore use one exact version,
+and the policy check requires every top-level and nested TipTap installation to
+match it. Keep the family grouped and update its exact pins together; do not use
+`--legacy-peer-deps` to accept an inconsistent update.
+
+Existing Dependabot PRs can retain an older updater job definition: the
+2026-09-06 recreation of #19 still used the former `editor`/`vendored` groups and
+`requirements-update-strategy: null`, despite the current default-branch config.
+When diagnosing recurrence, inspect the **Dependabot Updates** job definition as
+well as the PR test logs. Recreating an old PR is not evidence that the new
+configuration ran; verify a fresh scheduled update uses the current groups and
+strategy after integrating the old branches.
 
 Within npm, group membership no longer decides whether an update waits, since
 none of those groups do. It decides how much of `dist/` one merge can move,
@@ -444,6 +467,10 @@ resolved Chart.js, Marked, and MapLibre versions from the base and proposed
 lockfiles; additions and removals count as changes, and an unreadable base fails
 closed. The browser jobs refuse software WebGL and exercise the real copied
 MapLibre modules in hidden Chrome and Firefox.
+Browser-tooling changes (Playwright and its core), source or script changes,
+manifest changes, and changes to the test workflow also require these GPU checks.
+That keeps a fixture or graphics-backend regression from waiting unnoticed until
+the next copied-library update.
 
 The release rehearsal remains a gate because those focused GPU checks do not
 visually inspect the report editor, charts, native browser UI, or live provider
@@ -550,14 +577,31 @@ add it to the merge-step condition, for example
   The capture case checks exact sync/cooperative equivalence, internal
   cancellation checkpoints, a generous total CPU ceiling, and a 100 ms
   maximum yield gap; it still cannot prove the live MV3 message scheduler.
+- `npm run verify:provider-performance` measures native `DOMParser` and
+  extraction for synthetic 1,000-, 5,000-, and 20,000-point GPX plus early
+  over-limit rejection in hidden Chrome and Firefox. It blocks network and does
+  not estimate provider latency or slower hardware.
+- `npm run verify:provider-contracts` routes sanitized provider-shaped pages to
+  the exact Garmin and Strava HTTPS origins, intercepts every request, and
+  exercises ownership, loading, sign-out, localization, navigation, Garmin
+  session mode, response redirects, rate limits, and challenge markers in
+  native browser DOM/fetch implementations. It proves the checked fixture
+  contract only—not current live markup, endpoints, sessions, or challenges.
+- `npm run verify:capture-popup` runs the shipped popup bundle and styles in
+  hidden Chrome and Firefox against every recovery family at a 390×620 physical
+  viewport in light/dark and at a 195×310 CSS viewport rendered at 2x scale to
+  model 200% zoom. It proves action mapping and content containment, not native
+  popup sizing, dismissal, browser focus, or screen-reader speech.
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe
   equality in source without rewriting it, then checks the built extension
   package. Neither lint stage establishes browser behavior.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render the true MapLibre
   frame on a reported hardware GPU, but their
-  showcase pages provide their own settings/chrome stubs and their Mapterhorn
-  requests are intercepted with a synthetic CORS-enabled DEM, so it does not run
-  the real settings or bridge code or exercise the live terrain service.
+  analyzer showcases load the production settings bridge over stubbed extension
+  storage and runtime APIs. Mapterhorn requests are intercepted with a synthetic
+  CORS-enabled DEM. These checks exercise the real bridge protocol but not the
+  actual extension manifest, worker lifecycle, settings storage, or live terrain
+  service.
 - `npm run terrain:lod` measures which elevation level each visible pixel is
   actually drawn from, on the same real GPU frame, so the tilt detail behaviour is
   a number rather than an impression. It generates its own continuous DEM tiles

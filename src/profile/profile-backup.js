@@ -46,7 +46,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         panel = node('section', {
             id: 'bpb-profile-backup',
             class: 'bpb-profile-panel',
-            'aria-label': 'GitHub profile backup',
+            'aria-label': 'Ascent and TR backup',
         }, [
             node('div', { class: 'bpb-profile-body', 'aria-live': 'polite' }),
         ]);
@@ -91,22 +91,22 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const renderIdle = status => body(
         node('div', { class: 'bpb-profile-copy' }, [
-            node('strong', { text: 'Back up your Peakbagger profile' }),
-            node('span', { text: `Archive every ascent from every year to ${status.repo.fullName}, even when this page shows only one year. Existing backups are skipped.` }),
+            node('strong', { text: 'Back up your ascents and TRs' }),
+            node('span', { text: `Archive every ascent and its TR from every year to ${status.repo.fullName}, even when this page shows only one year. Existing backups are skipped.` }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
-            button('Back up all ascents', event => startBackup(false, event), true),
+            button('Back up all ascents and TRs', event => startBackup(false, event), true),
             button('Refresh all', renderRefreshConfirmation),
         ]),
     );
 
     const renderRefreshConfirmation = () => body(
         node('div', { class: 'bpb-profile-copy' }, [
-            node('strong', { text: 'Refresh every ascent?' }),
-            node('span', { text: 'This re-syncs every ascent from every year and commits them to GitHub in groups of up to 10, including unchanged entries.' }),
+            node('strong', { text: 'Refresh all ascents and TRs?' }),
+            node('span', { text: 'This re-syncs every ascent and its TR from every year and commits them to GitHub in groups of up to 10, including unchanged entries.' }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
-            button('Refresh every ascent', event => startBackup(true, event), true),
+            button('Refresh all ascents and TRs', event => startBackup(true, event), true),
             button('Cancel', () => initialize()),
         ]),
     );
@@ -248,7 +248,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             const statusCopy = node('div', {
                 class: 'bpb-profile-copy', tabindex: '-1',
             }, [
-                node('strong', { text: cancelling ? 'Stopping profile backup' : 'Pause requested' }),
+                node('strong', { text: cancelling ? 'Stopping ascent and TR backup' : 'Pause requested' }),
                 node('span', {
                     text: writing
                         ? cancelling
@@ -279,7 +279,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 : `Cancelled. Backed up ${state.backedUp}; skipped ${state.skipped}; failed ${state.failures.length}; not backed up ${state.notReached}.`;
             return body(
                 node('div', { class: 'bpb-profile-copy' }, [
-                    node('strong', { text: state.status === 'complete' ? 'Profile backup complete' : 'Profile backup stopped' }),
+                    node('strong', { text: state.status === 'complete' ? 'Ascent and TR backup complete' : 'Ascent and TR backup stopped' }),
                     node('span', { text: summary }),
                 ]),
                 renderFailures(state.failures),
@@ -291,7 +291,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 const batchSize = state.pauseBatchSize || state.buffered || 1;
                 return body(
                     node('div', { class: 'bpb-profile-copy' }, [
-                        node('strong', { text: 'GitHub backup paused' }),
+                        node('strong', { text: 'Ascent and TR backup paused' }),
                         node('span', { text: `The ${batchSize}-ascent batch is still ready. Resume will retry it; nothing was discarded.` }),
                     ]),
                     renderFailures(state.pauseError ? [state.pauseError] : []),
@@ -304,7 +304,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 ? 'Several ascents could not be reached. Check your connection before resuming.'
                 : 'Backup paused. This tab must stay open.';
             return body(
-                node('div', { class: 'bpb-profile-copy' }, [node('strong', { text: 'Profile backup paused' }), node('span', { text: copy })]),
+                node('div', { class: 'bpb-profile-copy' }, [node('strong', { text: 'Ascent and TR backup paused' }), node('span', { text: copy })]),
                 renderFailures(state.failures),
                 node('div', { class: 'bpb-profile-actions' }, [
                     button('Resume', () => { void runner.resume(); }, true), button('Cancel', () => runner.cancel()),
@@ -511,7 +511,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             if (!ensurePanel()) return;
             body(
                 node('div', { class: 'bpb-profile-copy' }, [
-                    node('strong', { text: 'Profile backup is temporarily unavailable' }),
+                    node('strong', { text: 'Ascent and TR backup is temporarily unavailable' }),
                     node('span', { text: 'Better Peakbagger could not check GitHub. Your ascent list is unchanged.' }),
                 ]),
                 node('div', { class: 'bpb-profile-actions' }, [

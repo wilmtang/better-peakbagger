@@ -6,6 +6,7 @@
 import { createServer } from 'node:https';
 
 import { firefox } from 'playwright';
+import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
 
 import {
     createFixtureCertificate,
@@ -123,6 +124,12 @@ async function main() {
             firefoxUserPrefs: {
                 'network.dns.localDomains': fixtureHost,
                 'webgl.disabled': false,
+                // Firefox 155 supports ANGLE Metal on macOS. Native OpenGL
+                // stalls during terrain startup on GitHub's virtual Macs.
+                ...(process.platform === 'darwin' ? { 'webgl.disable-angle': false } : {}),
+                // Synthetic isolated profile: report the actual adapter rather
+                // than Firefox's generic "Apple M1, or similar" privacy label.
+                'webgl.sanitize-unmasked-renderer': false,
             },
         });
         resources.defer('Firefox terrain browser', () => browser.close());
@@ -131,6 +138,21 @@ async function main() {
         const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
         resources.defer('Firefox terrain context', () => context.close());
         const page = await context.newPage();
+        const startupRenderer = await page.evaluate(() => {
+            const gl = document.createElement('canvas').getContext('webgl2');
+            const info = gl?.getExtension('WEBGL_debug_renderer_info');
+            const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl?.getParameter(gl.RENDERER);
+            gl?.getExtension('WEBGL_lose_context')?.loseContext();
+            return renderer;
+        });
+        console.log(`Firefox ${browser.version()} startup renderer: ${startupRenderer}`);
+        if (!startupRenderer || /swiftshader|software|llvmpipe/i.test(startupRenderer)) {
+            throw new Error(`Firefox requires hardware WebGL: ${startupRenderer}`);
+        }
+        if (process.platform === 'darwin' && !/ANGLE Metal Renderer/.test(startupRenderer)) {
+            throw new Error(`Firefox requires ANGLE Metal on macOS: ${startupRenderer}`);
+        }
+        await page.addInitScript(installTerrainLifecycleProbe);
         const errors = [];
         const requests = { terrain: 0, basemap: 0, peaks: 0 };
         page.on('pageerror', error => errors.push(String(error)));
@@ -232,25 +254,17 @@ async function main() {
                 const frame = document.getElementById('bpb-terrain-frame');
                 const win = frame?.contentWindow;
                 const map = win?.__bpbTerrainTestMap;
-                return frame?.style.opacity === '1' && map?.loaded()
+                // map.loaded() includes transient dirty flags. A RAF-polled
+                // probe can repeatedly run before MapLibre clears them even
+                // while the visible map and all its sources are ready.
+                return frame?.style.opacity === '1' && map?.isStyleLoaded() && map.areTilesLoaded()
           && map.getLayer('bpb-route') && map.getLayer('bpb-peaks-ring')
-          && map.getSource('basemap');
+          && map.getSource('basemap')
+          && frame.contentDocument.querySelector('.bpb-terrain-peak-marker');
             }, null, { timeout: 45_000 });
         } catch (error) {
-            const state = await page.evaluate(() => {
-                const frame = document.getElementById('bpb-terrain-frame');
-                const map = frame?.contentWindow?.__bpbTerrainTestMap;
-                return {
-                    frame: Boolean(frame),
-                    frameOpacity: frame?.style.opacity || null,
-                    frameReadyState: frame?.contentDocument?.readyState || null,
-                    map: Boolean(map),
-                    mapLoaded: map?.loaded() || false,
-                    route: Boolean(map?.getLayer('bpb-route')),
-                    peaks: Boolean(map?.getLayer('bpb-peaks-ring')),
-                    basemap: Boolean(map?.getSource('basemap')),
-                };
-            });
+            const state = await page.evaluate(readTerrainReadiness)
+                .catch(probeError => ({ probeError: String(probeError) }));
             throw new Error(`Timed out waiting for Firefox terrain readiness: ${JSON.stringify({ state, requests, errors })}`, {
                 cause: error,
             });
@@ -400,22 +414,20 @@ async function main() {
             return Math.abs((map?.getPitch() ?? previous) - previous) > 1;
         }, ctrlPitchBefore, { timeout: 8_000 });
 
-        await page.evaluate(() => {
-            const mount = document.querySelector('.terrain-check .map-shell');
-            mount.style.width = '620px';
-        });
-        const resized = await page.waitForFunction(() => {
+        const widthBeforeResize = await canvas.evaluate(element => element.width);
+        await page.locator('#bpb-map-resize-handle').press('Shift+ArrowLeft');
+        const resized = await page.waitForFunction(previousWidth => {
             const frameElement = document.getElementById('bpb-terrain-frame');
             const win = frameElement?.contentWindow;
             const canvasElement = frameElement?.contentDocument?.querySelector('canvas.maplibregl-canvas');
             const map = win?.__bpbTerrainTestMap;
-            return canvasElement?.width > 0 && canvasElement.width < 800
-        && map?.loaded() && map.getLayer('bpb-route') ? {
+            return canvasElement?.width > 0 && canvasElement.width < previousWidth - 20
+        && map?.isStyleLoaded() && map.areTilesLoaded() && map.getLayer('bpb-route') ? {
                     width: canvasElement.width,
                     height: canvasElement.height,
                     route: Boolean(map.getLayer('bpb-route')),
                 } : false;
-        }, null, { timeout: 10_000 }).then(handle => handle.jsonValue());
+        }, widthBeforeResize, { timeout: 10_000 }).then(handle => handle.jsonValue());
         if (!resized.route || requests.terrain === 0 || requests.basemap === 0 || requests.peaks === 0) {
             throw new Error(`Firefox terrain fixtures were incomplete: ${JSON.stringify({ resized, requests })}`);
         }
@@ -464,7 +476,8 @@ async function main() {
         await page.locator('#bpb-terrain-toggle').click();
         await page.waitForFunction(() => {
             const frame = document.getElementById('bpb-terrain-frame');
-            return frame?.style.opacity === '1' && frame.contentWindow?.__bpbTerrainTestMap?.loaded();
+            const map = frame?.contentWindow?.__bpbTerrainTestMap;
+            return frame?.style.opacity === '1' && map?.isStyleLoaded() && map.areTilesLoaded();
         }, null, { timeout: 45_000 });
         const peakSunToggle = page.locator('.bpb-sun-calculator__toggle');
         if (await peakSunToggle.getAttribute('aria-expanded') !== 'true') {

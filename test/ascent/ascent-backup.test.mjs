@@ -80,7 +80,8 @@ test('the affordance mounts as a compact control beside the native ascent action
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
     const actions = dom.window.document.getElementById('owneractions');
     assert.equal(control(dom).parentElement, actions);
-    assert.equal(control(dom).textContent.trim(), 'Back up to GitHub');
+    assert.equal(control(dom).textContent.trim(), 'Back up ascent and TR');
+    assert.equal(control(dom).getAttribute('aria-label'), 'Ascent and TR backup');
     assert.equal(dom.window.document.body.firstElementChild, dom.window.document.getElementById('page'));
 });
 
@@ -162,7 +163,7 @@ test('a synthetic host-page click cannot read or send a manual backup', async ()
     assert.equal(editReads, readsBeforeClick);
     assert.equal(sent.some(message => message.type === 'TRUSTED_ACTION_ISSUE'), false);
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false);
-    assert.match(control(dom).textContent, /Back up to GitHub/);
+    assert.match(control(dom).textContent, /Back up ascent and TR/);
 });
 
 test('a 200 error page for a displayed track aborts without replacing the backup', async () => {
@@ -248,7 +249,7 @@ test('automatic mode on a revisit falls back to the manual button, not an error'
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false,
         'a revisit must not claim or attempt that a backup is running');
     finishCheck({ ok: true, current: false });
-    await waitFor(dom, () => control(dom) && /Back up to GitHub/.test(control(dom).textContent));
+    await waitFor(dom, () => control(dom) && /Back up ascent and TR/.test(control(dom).textContent));
     assert.ok(control(dom).querySelector('.bpb-gh-btn'), 'the manual Back up button is offered');
 });
 

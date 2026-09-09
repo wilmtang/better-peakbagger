@@ -18,6 +18,7 @@ import { Editor, Extension, Mark, Node, getStyleProperty, mergeAttributes } from
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import Image from '@tiptap/extension-image';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
@@ -220,8 +221,24 @@ const ReportImage = Image.extend({
             image.loading = 'lazy';
             image.referrerPolicy = 'no-referrer';
 
+            let previewGeneration = 0;
+            let previewSource = null;
+            let localControls;
             const applyImageAttributes = updatedNode => {
+                const pending = PendingPhoto.id(updatedNode.attrs.src);
+                const changedSource = previewSource !== updatedNode.attrs.src;
+                previewSource = updatedNode.attrs.src;
+                const generation = changedSource ? ++previewGeneration : previewGeneration;
+                if (localControls) localControls.hidden = !pending;
+                if (pending && changedSource) {
+                    image.removeAttribute('src');
+                    image.alt = updatedNode.attrs.alt || 'Local photo';
+                    void this.options.resolveLocalImage?.(updatedNode.attrs.src).then(src => {
+                        if (generation === previewGeneration) image.src = src;
+                    }).catch(() => { image.alt = 'Local photo unavailable — restore it or remove it'; });
+                }
                 for (const name of ['src', 'alt', 'title']) {
+                    if (name === 'src' && pending) continue;
                     const value = updatedNode.attrs[name];
                     if (value === null || value === undefined) image.removeAttribute(name);
                     else image.setAttribute(name, value);
@@ -231,7 +248,7 @@ const ReportImage = Image.extend({
             };
 
             for (const [name, value] of Object.entries(mergeAttributes(this.options.HTMLAttributes, HTMLAttributes))) {
-                if (value !== null && value !== undefined && name !== 'width' && name !== 'height') {
+                if (value !== null && value !== undefined && name !== 'width' && name !== 'height' && name !== 'src') {
                     image.setAttribute(name, value);
                 }
             }
@@ -299,6 +316,24 @@ const ReportImage = Image.extend({
                 }
             });
 
+            localControls = document.createElement('span');
+            localControls.className = 'bpb-re-local-photo-actions';
+            localControls.contentEditable = 'false';
+            localControls.hidden = !PendingPhoto.id(node.attrs.src);
+            const label = document.createElement('span');
+            label.textContent = 'Not uploaded';
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.textContent = 'Edit photo';
+            const open = event => this.options.editLocalImage?.(event, currentNode.attrs.src);
+            edit.addEventListener('click', open);
+            image.addEventListener('dblclick', open);
+            localControls.append(label, edit);
+            nodeView.dom.querySelector('[data-resize-wrapper]').append(localControls);
+            const stopResizeEvent = nodeView.stopEvent;
+            nodeView.stopEvent = event => localControls.contains(event.target) || stopResizeEvent(event);
+            const destroy = nodeView.destroy;
+            nodeView.destroy = () => { previewGeneration++; destroy(); };
             return nodeView;
         };
     }
@@ -480,7 +515,7 @@ const shortcutExtension = handlers => Extension.create({
 // but make the editing boundary explicit and predictable.
 const ReportLink = Link.extend({ inclusive: false });
 
-export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts }) => {
+export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, onStateChange, shortcuts, resolveLocalImage, editLocalImage }) => {
     const editor = new Editor({
         element,
         extensions: [
@@ -490,7 +525,7 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
             }),
             ReportLink.configure({ openOnClick: false, autolink: true, defaultProtocol: 'https' }),
             Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
-            ReportImage.configure({ inline: true }),
+            ReportImage.configure({ inline: true, resolveLocalImage, editLocalImage }),
             ReportVideo,
             Subscript, Superscript, Highlight,
             TextStyle, ReportColor,

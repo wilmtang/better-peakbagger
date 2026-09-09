@@ -17,7 +17,6 @@ const STORAGE_KEY = 'pbAscentTableSplit.v1';
 const DEFAULT_LEFT_PERCENT = 50;
 const MIN_LEFT_PERCENT = 25;
 const MAX_LEFT_PERCENT = 75;
-const HANDLE_WIDTH = 44;
 
 const normalize = value => (value || '').replace(/\s+/g, ' ').trim();
 const clampPercent = value => {
@@ -138,7 +137,7 @@ export const mountAscentTableSplit = ({
     handle.addEventListener('pointerdown', event => {
         if (event.button !== 0 || drag) return;
         const rect = wrapper.getBoundingClientRect();
-        const availableWidth = rect.width - HANDLE_WIDTH;
+        const availableWidth = rect.width - handle.getBoundingClientRect().width;
         if (!(availableWidth > 0)) return;
         drag = {
             pointerId: pointerIdOf(event),

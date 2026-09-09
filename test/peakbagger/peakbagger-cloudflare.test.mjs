@@ -36,11 +36,19 @@ test('human-check copy and recovery action have one owner', () => {
     });
 });
 
-test('runtime Cloudflare signatures and human-check copy remain centralized', async () => {
+test('runtime Cloudflare signatures and Peakbagger human-check copy remain centralized', async () => {
     const sourceRoot = fileURLToPath(new URL('../../src/', import.meta.url));
     const files = (await walkFiles(sourceRoot, file => file.endsWith('.js')))
-        .filter(file => path.basename(file) !== 'peakbagger-cloudflare.js');
+        .filter(file => !['peakbagger-cloudflare.js', 'provider-response.js'].includes(path.basename(file)));
     const source = (await Promise.all(files.map(file => readFile(file, 'utf8')))).join('\n');
     assert.doesNotMatch(source, /cf-mitigated|_cf_chl_opt|cf-chl-|challenge-platform|Just a moment/);
     assert.doesNotMatch(source, /Peakbagger is asking for a human check|Complete check on Peakbagger/);
+
+    const providerClassifier = await readFile(
+        fileURLToPath(new URL('../../src/capture/provider-response.js', import.meta.url)),
+        'utf8',
+    );
+    assert.match(providerClassifier, /cf-mitigated/,
+        'the provider boundary owns its separate documented response marker');
+    assert.doesNotMatch(providerClassifier, /Peakbagger is asking for a human check|Complete check on Peakbagger/);
 });

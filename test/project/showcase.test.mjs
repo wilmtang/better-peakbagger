@@ -6,6 +6,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
+import { createPageSettingsClient } from '../../src/settings/page-settings-client.js';
 
 import {
     instrumentTerrainFrameHtml,
@@ -20,6 +22,46 @@ const peakMapShowcase = await readFile(new URL('../../scripts/showcase/peak-map.
 const bigMapNativeShowcase = await readFile(new URL('../../scripts/showcase/big-map-native.html', import.meta.url), 'utf8');
 const terrainFrame = await readFile(new URL('../../terrain/terrain.html', import.meta.url), 'utf8');
 const terrainGpx = await readFile(new URL('../../scripts/showcase/terrain.gpx', import.meta.url), 'utf8');
+
+test('analyzer showcases deliver settings and writes through the production revisioned bridge', { timeout: 5000 }, async t => {
+    const bridge = await readFile(new URL('../../dist/content/ascent-bridge.js', import.meta.url), 'utf8');
+    const activation = await readFile(new URL('../../scripts/showcase/terrain-activation-fixture.js', import.meta.url), 'utf8');
+    for (const [name, source, expected] of [
+        ['terrain', terrainShowcase, { theme: 'dark', mapViewportWidth: 800 }],
+        ['gpx', gpxShowcase, { theme: 'light' }],
+    ]) {
+        assert.match(source, /src="\/dist\/content\/ascent-bridge\.js"/);
+        assert.doesNotMatch(source, /dir:\s*'toPage'/, 'fixtures must not duplicate the settings protocol');
+        const dom = new JSDOM(source, {
+            url: 'https://www.peakbagger.com/climber/ascent.aspx?theme=dark&map=wide',
+            runScripts: 'outside-only',
+        });
+        t.after(() => dom.window.close());
+        const { window } = dom;
+        // jsdom does not populate MessageEvent.source for postMessage.
+        window.postMessage = data => window.dispatchEvent(new window.MessageEvent('message', {
+            data, source: window, origin: window.location.origin,
+        }));
+        window.eval(window.document.querySelector('script:not([src])').textContent);
+        if (name === 'terrain') window.eval(activation);
+        window.eval(bridge);
+        const client = createPageSettingsClient({ ownerWindow: window, ownerLocation: window.location });
+        t.after(() => client.dispose());
+        const settings = await client.init();
+        for (const [key, value] of Object.entries(expected)) assert.equal(settings[key], value, `${name}: ${key}`);
+        const reconciled = new Promise(resolve => window.addEventListener('message', event => {
+            if (event.data.kind === 'setResult' && event.data.ok) resolve();
+        }));
+        client.set({ mapViewportWidth: 620 });
+        await reconciled;
+        assert.equal((await window.chrome.storage.sync.get()).bpbSettings.mapViewportWidth, 620);
+        const failures = [];
+        client.onWriteFailed(message => failures.push(message));
+        client.set({ theme: 'system' });
+        assert.equal(client.get().theme, expected.theme, 'production allowlist still owns theme writes');
+        assert.equal(failures.length, 1);
+    }
+});
 
 test('GPX showcase preserves the production map-then-chart order', () => {
     const mapIndex = gpxShowcase.indexOf('class="map-card"');

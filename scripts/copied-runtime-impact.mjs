@@ -28,6 +28,28 @@ export function copiedRuntimeChanged(basePackageLock, currentPackageLock) {
     return COPIED_RUNTIME_PACKAGES.some(packageName => base[packageName] !== current[packageName]);
 }
 
+// Keep the existing workflow output stable, but also validate the harness and
+// browser that prove copied-runtime safety. Otherwise a broken fixture can sit
+// unnoticed until the next MapLibre update is blocked by its first GPU run.
+export function terrainVerificationRequired(basePackageLock, currentPackageLock, changedPaths = []) {
+    if (copiedRuntimeChanged(basePackageLock, currentPackageLock)) return true;
+    if (['playwright', 'playwright-core'].some(name =>
+        basePackageLock.packages[`node_modules/${name}`]?.version
+        !== currentPackageLock.packages[`node_modules/${name}`]?.version)) return true;
+    return changedPaths.some(file => file.startsWith('src/') || file.startsWith('scripts/')
+        || file === 'manifest.json' || file === '.github/workflows/test.yml');
+}
+
+function pathsChangedSince(revision) {
+    const result = spawnSync('git', ['diff', '--name-only', '-z', revision, 'HEAD', '--'], {
+        encoding: 'utf8',
+        maxBuffer: 20 * 1024 * 1024,
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(`could not compare verification inputs: ${result.stderr.trim()}`);
+    return result.stdout.split('\0').filter(Boolean);
+}
+
 function packageLockAtRevision(revision) {
     const result = spawnSync('git', ['show', `${revision}:package-lock.json`], {
         encoding: 'utf8',
@@ -50,9 +72,9 @@ async function main() {
     const current = JSON.parse(await readFile('package-lock.json', 'utf8'));
     const isInitialRevision = /^0+$/.test(baseRevision);
     const changed = isInitialRevision
-        || copiedRuntimeChanged(packageLockAtRevision(baseRevision), current);
+        || terrainVerificationRequired(packageLockAtRevision(baseRevision), current, pathsChangedSince(baseRevision));
     const versions = copiedRuntimeVersions(current);
-    console.log(`Copied runtime ${changed ? 'changed' : 'unchanged'}: ${JSON.stringify(versions)}`);
+    console.log(`Terrain verification ${changed ? 'required' : 'not required'}; copied runtime: ${JSON.stringify(versions)}`);
 
     const outputPath = process.env.GITHUB_OUTPUT;
     if (!outputPath) throw new Error('GITHUB_OUTPUT is required');

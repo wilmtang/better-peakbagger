@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
+import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
 import { matchLabel } from '../src/capture/match-confidence.js';
-import { peakbaggerCloudflare as Cloudflare } from '../src/peakbagger/peakbagger-cloudflare.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
@@ -31,8 +31,26 @@ import { units as Units } from '../src/ui/units.js';
     // imperial fallback rather than inventing a second source of truth or
     // persisting a "last units seen" value for a cosmetic tie-break.
     let displayUnits = Units.IMPERIAL;
+    let displayUnitsReady = false;
+    let pendingUnitsJob = null;
     let pollTimer = null;
     let capturePending = false;
+    let popupCaptureStartedAt = null;
+    let popupDiagnosticReported = false;
+
+    const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
+    const reportPopupDiagnostic = job => {
+        if (globalThis.BPB_CAPTURE_DIAGNOSTICS !== true
+            || popupDiagnosticReported
+            || popupCaptureStartedAt === null
+            || !CapturePhases.isTerminal(job?.phase)) return;
+        popupDiagnosticReported = true;
+        console.debug('Better Peakbagger popup diagnostics', {
+            version: 1,
+            outcome: job.phase,
+            popupToReadyMs: Math.round(Math.max(0, monotonicNow() - popupCaptureStartedAt) * 10) / 10,
+        });
+    };
 
     const clear = element => { while (element.firstChild) element.firstChild.remove(); };
 
@@ -81,91 +99,102 @@ import { units as Units } from '../src/ui/units.js';
     };
 
     const retry = () => beginCapture(true);
-    const openPeakbagger = () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` });
+    const openPeakbagger = async () => {
+        if (Number.isInteger(currentJob?.error?.recoveryTabId)) {
+            try {
+                const focused = await ext.runtime.sendMessage({
+                    type: 'CAPTURE_FOCUS_RECOVERY',
+                    tabId: activeTab.id,
+                });
+                if (focused?.ok) return;
+            } catch { /* fall through to a new canonical first-party tab */ }
+        }
+        await ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` });
+    };
     const openSettings = () => {
         try { void ext.runtime.openOptionsPage(); } catch { /* unavailable in a broken extension context */ }
     };
+    const providerName = () => currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava';
+    const focusProvider = () => ext.tabs.update(activeTab.id, { active: true });
+    const reloadProvider = async () => {
+        await ext.tabs.reload(activeTab.id);
+    };
+    const openProviderSignIn = () => ext.tabs.create({
+        url: currentJob?.provider === 'garmin'
+            ? 'https://connect.garmin.com/signin/'
+            : 'https://www.strava.com/login'
+    });
+    const actionForRecovery = recovery => ({
+        retry: { label: 'Try again', primary: true, onClick: retry },
+        'check-again': { label: 'Check again', primary: true, onClick: retry },
+        settings: { label: 'Settings', onClick: openSettings },
+        'focus-provider': { label: `Return to ${providerName()}`, primary: true, onClick: focusProvider },
+        'reload-provider': { label: 'Reload activity', primary: true, onClick: reloadProvider },
+        'provider-sign-in': { label: `Open ${providerName()} sign in`, primary: true, onClick: openProviderSignIn },
+        'open-peakbagger': { label: 'Open Peakbagger', primary: true, onClick: openPeakbagger },
+    }[recovery] || null);
+    const dynamicErrorMessages = new Set([
+        'gpx-too-large',
+        'track-too-large',
+        'capture-analysis-too-large',
+        'peak-response-too-large',
+        'too-many-waypoints',
+        'invalid-track',
+    ]);
     const errorState = error => {
         const code = error?.code || 'capture-failed';
-        const signedOut = code === 'peakbagger-signed-out';
-        const providerSignedOut = code === 'provider-signed-out';
-        const notOwner = code === 'not-owner';
-        const humanCheck = code === 'cloudflare';
-        const peakbaggerRecoveryTitle = ({
-            'peakbagger-tab-access-failed': 'Couldn’t access Peakbagger',
-            'peakbagger-tab-open-failed': 'Couldn’t open Peakbagger',
-            'peakbagger-tab-load-failed': 'Peakbagger didn’t finish loading',
-            'peakbagger-tab-load-timeout': 'Peakbagger didn’t finish loading',
-            'peakbagger-tab-changed': 'Peakbagger tab changed',
-            'peakbagger-page-connect-failed': 'Couldn’t connect to Peakbagger',
-            'peakbagger-page-unavailable': 'Couldn’t connect to Peakbagger',
-            'peakbagger-response-invalid': 'Peakbagger response changed',
-        })[code];
-        if (code === 'unsupported') {
-            stateCard(
-                'Open an activity to begin',
-                'Open a Garmin Connect or Strava activity, then select Better Peakbagger again.',
-                { kind: 'empty', action: { label: 'Settings', onClick: openSettings } }
-            );
-            return;
-        }
-        let title = 'Capture stopped';
-        let actions = [{ label: 'Try again', onClick: retry }];
-        if (notOwner) {
-            title = 'This activity isn’t yours';
-            actions = [];
-        } else if (signedOut) {
-            title = 'Check your Peakbagger session';
-            actions = [
-                { label: 'Open Peakbagger', onClick: openPeakbagger },
-                { label: 'I’m signed in — try again', onClick: retry }
-            ];
-        } else if (humanCheck) {
-            title = Cloudflare.copy.title;
-            actions = [
-                {
-                    label: Cloudflare.copy.action,
-                    primary: true,
-                    onClick: openPeakbagger
-                },
-                { label: 'I’ve completed it — try again', onClick: retry }
-            ];
-        } else if (peakbaggerRecoveryTitle) {
-            title = peakbaggerRecoveryTitle;
-            actions = [
-                { label: 'Open Peakbagger', primary: true, onClick: openPeakbagger },
-                { label: 'Try again', onClick: retry },
-            ];
-        } else if (providerSignedOut) {
-            actions = [
-                {
-                    label: `Open ${currentJob?.provider === 'garmin' ? 'Garmin' : 'Strava'} sign in`,
-                    onClick: () => ext.tabs.create({
-                        url: currentJob?.provider === 'garmin'
-                            ? 'https://connect.garmin.com/signin/'
-                            : 'https://www.strava.com/login'
-                    })
-                },
-                { label: 'I’m signed in — try again', onClick: retry }
-            ];
+        const policy = captureErrorPolicy(code);
+        const action = actionForRecovery(policy.recovery);
+        let detail = dynamicErrorMessages.has(code) && error?.message
+            ? error.message
+            : policy.message;
+        if (policy.recovery === 'wait' && Number.isFinite(error?.retryAt)) {
+            const retryTime = new Date(error.retryAt).toLocaleTimeString([], {
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+            detail = `${detail} Try again after ${retryTime}.`;
         }
         stateCard(
-            title,
-            error?.message || 'The activity could not be captured.',
+            policy.title,
+            detail,
             {
-                kind: notOwner ? 'locked' : 'error',
-                actions
+                kind: code === 'unsupported' ? 'empty'
+                    : policy.recovery === 'none' ? 'locked' : 'error',
+                actions: action ? [action] : [],
             }
         );
     };
 
-    const phaseText = phase => ({
-        starting: ['Starting capture…', 'Checking the active activity page.'],
-        'checking-peakbagger': ['Checking Peakbagger…', 'Verifying your Peakbagger session before accessing any GPS coordinates.'],
-        'checking-ownership': ['Verifying ownership…', 'Confirming the signed-in provider account matches the activity author.'],
-        analyzing: ['Reading the track…', 'Keeping only coordinates, elevation, time, and segment boundaries in memory.'],
-        'finding-peaks': ['Detecting summits…', 'Comparing the full-resolution path with nearby Peakbagger summits.']
-    }[phase] || ['Working…', 'Preparing detected ascent drafts.']);
+    const phaseText = job => {
+        if (job.phase === 'searching-summits') {
+            const completed = Number(job.progress?.completed);
+            const total = Number(job.progress?.total);
+            const bounded = Number.isInteger(completed) && Number.isInteger(total)
+                && total > 0 && completed >= 0 && completed <= total;
+            return [
+                'Searching summit areas…',
+                bounded
+                    ? `${completed} of ${total} areas checked.`
+                    : 'Comparing the route with nearby Peakbagger summits.',
+            ];
+        }
+        return ({
+            'validating-activity': ['Checking this activity…', 'Confirming the active tab is a supported activity.'],
+            'waiting-provider': ['Waiting for the activity…', 'Loading the provider page needed to verify this activity.'],
+            'verifying-ownership': ['Verifying ownership…', 'Confirming the signed-in provider account matches the activity author.'],
+            'checking-peakbagger': ['Checking Peakbagger…', 'Verifying your Peakbagger session before accessing any GPS coordinates.'],
+            'exporting-gpx': ['Getting the GPS track…', 'Requesting this activity’s route from the signed-in provider page.'],
+            'processing-track': ['Processing the track…', 'Keeping only route fields needed to detect ascents.'],
+            'preparing-results': ['Preparing detected ascents…', 'Matching the route and preparing a private review list.'],
+            // Old non-terminal jobs can survive a service-worker update. Keep
+            // their cards understandable until cleanup expires them.
+            starting: ['Starting capture…', 'Checking the active activity page.'],
+            'checking-ownership': ['Verifying ownership…', 'Confirming the signed-in provider account matches the activity author.'],
+            analyzing: ['Processing the track…', 'Keeping only route fields needed to detect ascents.'],
+            'finding-peaks': ['Searching summit areas…', 'Comparing the route with nearby Peakbagger summits.'],
+        }[job.phase] || ['Working…', 'Preparing detected ascent drafts.']);
+    };
 
     const cancelCapture = async () => {
         clearTimeout(pollTimer);
@@ -278,6 +307,15 @@ import { units as Units } from '../src/ui/units.js';
         providerLabel.textContent = job.provider === 'garmin'
             ? 'Garmin Connect activity'
             : job.provider === 'strava' ? 'Strava activity' : 'Capture this activity';
+        const needsUnits = job.phase === 'ready' || job.phase === 'opening'
+            || job.phase === 'opened' || job.phase === 'previewed';
+        if (needsUnits && !displayUnitsReady) {
+            pendingUnitsJob = job;
+            stateCard('Preparing detected ascents…', 'Loading your display units.', { loading: true });
+            return;
+        }
+        pendingUnitsJob = null;
+        reportPopupDiagnostic(job);
         if (job.phase === 'error') return errorState(job.error);
         if (job.phase === 'no-gps') {
             stateCard(
@@ -297,7 +335,7 @@ import { units as Units } from '../src/ui/units.js';
         }
         if (job.phase === 'ready' || job.phase === 'opening'
             || job.phase === 'opened' || job.phase === 'previewed') return renderResults(job);
-        const [title, detail] = phaseText(job.phase);
+        const [title, detail] = phaseText(job);
         stateCard(title, detail, { loading: true, action: { label: 'Cancel', onClick: cancelCapture } });
     };
 
@@ -342,6 +380,8 @@ import { units as Units } from '../src/ui/units.js';
 
     const beginCapture = force => {
         clearTimeout(pollTimer);
+        popupCaptureStartedAt = globalThis.BPB_CAPTURE_DIAGNOSTICS === true ? monotonicNow() : null;
+        popupDiagnosticReported = false;
         capturePending = true;
         pollFailures = 0;
         stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', {
@@ -427,13 +467,16 @@ import { units as Units } from '../src/ui/units.js';
         }
     });
 
-    // Units are resolved before the first render, so no card is ever painted in
-    // the wrong system and then corrected.
-    void Promise.all([
-        ext.tabs.query({ active: true, currentWindow: true }),
-        Settings.get().catch(() => null)
-    ]).then(([tabs, settings]) => {
+    // Admission does not depend on a cosmetic units read. Start as soon as the
+    // active tab is known, but hold a fast result card until units resolve so
+    // distances are never painted in one system and corrected in another.
+    void Settings.get().catch(() => null).then(settings => {
         displayUnits = Units.resolveUnits(settings);
+        displayUnitsReady = true;
+        const pending = pendingUnitsJob;
+        if (pending && currentJob === pending) render(pending);
+    });
+    void ext.tabs.query({ active: true, currentWindow: true }).then(tabs => {
         activeTab = tabs[0];
         if (!activeTab) {
             errorState({ code: 'unsupported', message: 'No active browser tab is available.' });

@@ -330,7 +330,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorites-github-actions[hidden] { display: none; }
 .favorites-github-actions button:disabled { cursor: wait; opacity: .55; }
 
-/* GitHub connection and ascent-backup panels. Each detail row spans the card width and is a
+/* GitHub connection and ascent and TR backup panels. Each detail row spans the card width and is a
    plain block rather than the label/control split the other rows use. */
 .github-detail { display: block; }
 .github-detail[hidden] { display: none; }

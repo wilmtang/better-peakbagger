@@ -3,10 +3,11 @@
  * Better Peakbagger — resizable saved-ascent trip-report / summary split. */
 
 #bpb-ascent-table-split {
+    --bpb-ascent-handle-width: 13px;
     display: grid;
     grid-template-columns:
         minmax(0, var(--bpb-ascent-report-share, 50fr))
-        44px
+        var(--bpb-ascent-handle-width)
         minmax(0, var(--bpb-ascent-summary-share, 50fr));
     align-items: start;
     clear: both;
@@ -26,14 +27,15 @@
     align-self: stretch;
     position: relative;
     appearance: none;
-    width: 44px;
+    width: var(--bpb-ascent-handle-width);
     min-height: 44px;
     margin: 0;
     padding: 0;
-    border: 0;
+    /* Site-wide dark button rules must not turn the divider into a panel. */
+    border: 0 !important;
     border-radius: 5px;
     color: #727b84;
-    background: transparent;
+    background: transparent !important;
     cursor: col-resize;
     touch-action: none;
 }
@@ -43,7 +45,7 @@
     position: absolute;
     top: 6px;
     bottom: 6px;
-    left: 20px;
+    left: calc(50% - 1.5px);
     width: 3px;
     border-radius: 999px;
     background: currentColor;
@@ -54,7 +56,7 @@
 #bpb-ascent-table-resize-handle:hover,
 #bpb-ascent-table-resize-handle:focus-visible {
     color: #2f6b3f;
-    background: rgb(47 107 63 / 8%);
+    background: rgb(47 107 63 / 8%) !important;
 }
 
 #bpb-ascent-table-resize-handle:hover::before,
@@ -82,11 +84,17 @@ html.bpb-ascent-table-split-resizing * {
 :root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle:hover,
 :root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle:focus-visible {
     color: #7ac78d;
-    background: rgb(122 199 141 / 10%);
+    background: rgb(122 199 141 / 10%) !important;
 }
 
 :root[data-bpb-theme="dark"] #bpb-ascent-table-resize-handle:focus-visible {
     outline-color: #7ac78d;
+}
+
+@media (pointer: coarse) {
+    #bpb-ascent-table-split {
+        --bpb-ascent-handle-width: 44px;
+    }
 }
 
 @media (max-width: 680px) {

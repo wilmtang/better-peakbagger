@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — options-page GitHub connection and ascent-backup setup.
+// Better Peakbagger — options-page GitHub connection and ascent and TR backup setup.
 //
 // This controller is the setup surface only and never sees the token: the background
 // worker owns the device-flow poll and the storage.local token/repo, and this
@@ -9,7 +9,7 @@
 // off to GitHub's own install page for repository scoping, then discovering and
 // selecting the granted repo. The shared Connect action requests the optional
 // github.com / api.github.com host permissions that the worker needs; the
-// ascent-backup setting controls only ascent-specific affordances and writes.
+// ascent and TR backup setting controls only ascent-specific affordances and writes.
 
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { githubErrors as GithubErrors } from '../src/github/github-errors.js';
@@ -246,7 +246,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     // The repository belongs to the connection, not to any one backup, so its
-    // link sits here beside the account rather than inside ascent backup.
+    // link sits here beside the account rather than inside ascent and TR backup.
     const renderConnected = status => {
         choosingRepo = false;
         confirmingExistingRepo = false;
@@ -291,8 +291,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const count = Number.isInteger(summary.count) && summary.count >= 0 ? summary.count : 0;
         const repo = status?.repo?.fullName || `${status?.repo?.owner}/${status?.repo?.name}`;
         summaryEl.textContent = count === 0
-            ? 'No ascents backed up yet.'
-            : `${count} ascent${count === 1 ? '' : 's'} backed up to ${repo}.`;
+            ? 'No ascent and TR backups yet.'
+            : `${count} ascent and TR backup${count === 1 ? '' : 's'} in ${repo}.`;
         if (updating) summaryEl.append(' ', el('span', {
             class: 'github-summary-updating',
             text: 'Updating…',
@@ -407,7 +407,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 type: 'checkbox', id: 'github-auto-backup', checked: !!currentSettings.autoGithubBackup,
                 onchange: event => { void save({ autoGithubBackup: event.target.checked }); },
             }),
-            el('span', { text: 'Back up automatically after each save' }),
+            el('span', { text: 'Back up ascent and TR automatically after each save' }),
         ]);
         const deleteToggle = el('label', { class: 'github-auto', for: 'github-delete-backup' }, [
             el('input', {
@@ -415,16 +415,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 checked: !!currentSettings.removeGithubBackupOnDelete,
                 onchange: event => { void save({ removeGithubBackupOnDelete: event.target.checked }); },
             }),
-            el('span', { text: 'Remove backup files after I delete an ascent' }),
+            el('span', { text: 'Remove ascent and TR backup files after I delete an ascent' }),
         ]);
         const deleteHint = el('p', {
             class: 'github-hint',
             text: 'Peakbagger is checked first. Better Peakbagger removes only its report, ascent data, and GPX from the current branch; Git history and your own files remain.',
         });
         const historyHint = el('p', { class: 'github-hint github-history' }, [
-            document.createTextNode('New saves and edits are backed up automatically. To back up ascents saved before you connected, '),
+            document.createTextNode('New and edited ascents and TRs are backed up automatically. To back up earlier ascents and TRs, '),
             el('button', { type: 'button', class: 'github-link', text: 'Open My Ascents', onclick: openMyAscents }),
-            document.createTextNode(' and choose Back up all ascents (it covers every year).'),
+            document.createTextNode(' and choose Back up all ascents and TRs (it covers every year).'),
         ]);
         renderAscent(
             summaryEl,
@@ -451,7 +451,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
         renderAscent(el('p', {
             class: 'github-line',
-            text: 'Connect GitHub above to back up ascents.',
+            text: 'Connect GitHub above to back up ascents and TRs.',
         }));
     };
 
@@ -671,7 +671,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // This listener exists for exactly one reason: the user left for GitHub's
     // install or new-repository page and came back. It used to run on every
-    // window focus, so with Settings open and ascent backup connected, each
+    // window focus, so with Settings open and ascent and TR backup connected, each
     // alt-tab back to the browser cost one GitHub API request and a visible
     // "Checking…" flash — and could replace a confirmation mid-read.
     window.addEventListener('focus', () => {

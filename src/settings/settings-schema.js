@@ -55,7 +55,7 @@ const DEFAULTS = {
     // `null` is the user's explicit Original choice; uploaded pixels remain
     // full resolution either way.
     reportImageWidth: 640,
-    // GitHub ascent backup. The feature gate is an ordinary synced boolean
+    // GitHub ascent and TR backup. The feature gate is an ordinary synced boolean
     // like the others; the token and chosen repo deliberately do NOT live
     // in this schema (they must never sync) — src/github/github-auth.js owns those
     // in storage.local. `autoGithubBackup` performs the push without the
@@ -67,10 +67,10 @@ const DEFAULTS = {
     removeGithubBackupOnDelete: false,
     // Automatic GitHub push of the settings backup file on change.
     // Deliberately independent of enableGithubBackup (that gate belongs to
-    // ascent backup); inert without a device-local token/repository.
+    // ascent and TR backup); inert without a device-local token/repository.
     autoSettingsBackup: false,
     autoFavoritesBackup: false,
-    // Metadata-only photo-library recovery. Independent of ascent backup;
+    // Metadata-only photo-library recovery. Independent of ascent and TR backup;
     // the ImgBB key, deletion URLs, and pixels never enter this setting.
     autoPhotoLibraryBackup: false,
     mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,

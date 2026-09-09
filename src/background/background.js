@@ -7,12 +7,20 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from '../capture/capture-core.js';
+import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
+import { captureErrorMessage } from '../capture/capture-error-policy.js';
 import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
+import {
+    PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,
+    PROVIDER_EXPORT_TIMEOUT_MS,
+    PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
+} from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
+import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
@@ -48,15 +56,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const BETA_SETTINGS_TABS_KEY = 'bpbBetaSettingsTabs';
     const PEAKBAGGER_HELPER_LEASES_KEY = 'bpbPeakbaggerHelperLeases';
+    const PEAKBAGGER_COOLDOWN_KEY = 'bpbPeakbaggerCooldown';
     const PEAKBAGGER_HELPER_URL = `${PEAKBAGGER_ORIGIN}/Default.aspx`;
     const PEAKBAGGER_OPERATION_TIMEOUT_MS = 20_000;
     const PEAKBAGGER_CLEANUP_TIMEOUT_MS = 2_000;
-    const PROVIDER_OPERATION_TIMEOUT_MS = 20_000;
     const PROVIDER_CLEANUP_TIMEOUT_MS = 2_000;
     const PEAKBAGGER_PAGE_VERSION = 2;
     const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
         code: 'capture-failed',
-        message: 'Capture stopped unexpectedly. Reload the activity and try again.',
+        message: captureErrorMessage('capture-failed'),
     });
     const UNEXPECTED_PROCESS_ERROR = Object.freeze({
         code: 'process-failed',
@@ -86,6 +94,13 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const CAPTURE_MUTATION_QUEUE = 'capture-lifecycle';
 
     const now = () => Date.now();
+    const newCaptureDiagnostics = () => createCaptureDiagnostics({
+        enabled: globalThis.BPB_CAPTURE_DIAGNOSTICS === true,
+        report: snapshot => console.debug('Better Peakbagger capture diagnostics', snapshot),
+    });
+    const peakbaggerScheduler = createPeakbaggerRequestScheduler({
+        concurrency: CaptureLimits.CORRIDOR_CONCURRENCY,
+    });
     const isFresh = record => !!record && Number(record.expiresAt) > now();
     const makeId = () => `${now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const publicFailure = (context, error, fallback) => {
@@ -107,7 +122,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             console.error('Better Peakbagger: capture settings read failed', cause);
             throw PublicErrors.exception(
                 'settings-unavailable',
-                'Capture settings could not be read. Reload and try again. Nothing was captured.',
+                captureErrorMessage('settings-unavailable'),
                 { cause }
             );
         }
@@ -331,16 +346,114 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return jobs[tabId];
     });
 
-    const failCaptureJob = async (tabId, generation, code, message) => {
-        const failed = await updateCaptureJob(tabId, generation, {
-            phase: 'error',
-            error: { code, message },
+    const failCaptureJob = async (tabId, generation, code, message, details = {}) => {
+        const retryAt = Number(details.retryAt);
+        const recoveryTabId = Number(details.recoveryTabId);
+        const failed = await mutateMap(JOBS_KEY, jobs => {
+            const current = jobs[tabId];
+            if (!current || current.id !== generation) return null;
+            const stage = CapturePhases.isActive(current.phase) ? current.phase : null;
+            jobs[tabId] = {
+                ...current,
+                phase: 'error',
+                updatedAt: now(),
+                ...(stage ? { failedStage: stage } : {}),
+                error: {
+                    code,
+                    message,
+                    ...((code === 'provider-rate-limited' || code === 'rate-limit')
+                        && Number.isFinite(retryAt) && retryAt >= now() && retryAt <= now() + 24 * 60 * 60 * 1000
+                        ? { retryAt: Math.trunc(retryAt) }
+                        : {}),
+                    ...((code === 'cloudflare' || code === 'peakbagger-signed-out')
+                        && Number.isInteger(recoveryTabId)
+                        ? { recoveryTabId }
+                        : {}),
+                },
+            };
+            return jobs[tabId];
         });
         if (!failed) return null;
         if (code === 'not-owner') await setBadge(tabId, '!', '#b42318');
         else if (code === 'ownership-unverified' || code === 'provider-signed-out') await setBadge(tabId, '!', '#b54708');
         return failed;
     };
+
+    const cleanPeakbaggerRetryAt = value => {
+        const retryAt = Number(value);
+        return Number.isFinite(retryAt) && retryAt >= now()
+            && retryAt <= now() + 24 * 60 * 60 * 1000
+            ? Math.trunc(retryAt)
+            : null;
+    };
+
+    const peakbaggerPublicError = error => {
+        const failure = PeakbaggerError.exception(error);
+        const publicError = PublicErrors.exception(
+            failure.code || 'peakbagger-unavailable',
+            failure.message,
+            { cause: failure },
+        );
+        const retryAt = cleanPeakbaggerRetryAt(error?.retryAt);
+        if (failure.code === 'rate-limit' && retryAt) publicError.retryAt = retryAt;
+        return publicError;
+    };
+
+    const activePeakbaggerCooldown = async () => {
+        const stored = (await storage().get(PEAKBAGGER_COOLDOWN_KEY))[PEAKBAGGER_COOLDOWN_KEY];
+        const retryAt = cleanPeakbaggerRetryAt(stored?.retryAt);
+        if (stored?.code === 'rate-limit' && retryAt) return { code: 'rate-limit', retryAt };
+        if (stored && typeof storage().remove === 'function') await storage().remove(PEAKBAGGER_COOLDOWN_KEY);
+        return null;
+    };
+
+    const ensurePeakbaggerRequestsAllowed = async () => {
+        const cooldown = await activePeakbaggerCooldown();
+        if (cooldown) {
+            const error = PublicErrors.exception('rate-limit', captureErrorMessage('rate-limit'));
+            error.retryAt = cooldown.retryAt;
+            throw error;
+        }
+        const schedulerState = peakbaggerScheduler.state();
+        if (!schedulerState.stopped) return;
+        if (!peakbaggerScheduler.resume()) throw schedulerState.reason;
+    };
+
+    const schedulePeakbaggerRequest = (
+        request,
+        url,
+        options = {},
+        { recoveryTabId = null, adoptForRecovery = null } = {},
+    ) => peakbaggerScheduler.run(
+        async schedulerSignal => {
+            const response = await request(url, { ...options, signal: schedulerSignal });
+            const code = response?.error?.code;
+            if (code !== 'cloudflare' && code !== 'rate-limit') return response;
+
+            const failure = peakbaggerPublicError(response.error);
+            if (code === 'cloudflare' && Number.isInteger(recoveryTabId)) {
+                failure.recoveryTabId = recoveryTabId;
+            }
+            peakbaggerScheduler.stop(failure, { exceptSignal: schedulerSignal });
+            if (code === 'cloudflare' && typeof adoptForRecovery === 'function') {
+                await adoptForRecovery();
+            }
+            if (code === 'rate-limit' && failure.retryAt) {
+                try {
+                    await storage().set({
+                        [PEAKBAGGER_COOLDOWN_KEY]: { code: 'rate-limit', retryAt: failure.retryAt },
+                    });
+                } catch (error) {
+                    // The in-memory stop remains authoritative for this worker.
+                    // A storage failure must not hide the known rate-limit
+                    // outcome behind a generic capture error.
+                    console.error('Better Peakbagger: Peakbagger cooldown storage failed', error);
+                }
+            }
+            throw failure;
+        },
+        { signal: options.signal },
+    );
 
     const finishCaptureWithoutGps = async (tabId, generation, message) => {
         const finished = await updateCaptureJobWithoutPayload(tabId, generation, {
@@ -360,16 +473,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const peakbaggerLogin = async ({ request = fetchPeakbaggerResource, signal } = {}) => {
         const response = await request(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html', signal });
         if (response.kind !== 'ok') {
-            const failure = PeakbaggerError.exception(response.error);
+            const failure = peakbaggerPublicError(response.error);
             // PeakbaggerError owns stable recovery copy, but only PublicError
             // messages may cross the worker boundary. Promote the typed
             // Peakbagger failure here so a human check, outage, or rate limit
             // is not collapsed into the generic unexpected-capture fallback.
-            throw PublicErrors.exception(
-                failure.code || 'peakbagger-unavailable',
-                failure.message,
-                { cause: failure },
-            );
+            throw failure;
         }
         const html = response.text;
         const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
@@ -379,7 +488,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const cancelledCaptureError = () => PublicErrors.exception(
         'capture-cancelled',
-        'Capture was cancelled. Nothing was retained.',
+        captureErrorMessage('capture-cancelled'),
     );
 
     const peakbaggerPageError = (code, message, cause) =>
@@ -419,7 +528,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const providerOperationTimeoutError = (phase, cause) => PublicErrors.exception(
         'provider-page-timeout',
-        'The activity page did not respond within 20 seconds. Reload the activity and try again.',
+        captureErrorMessage('provider-page-timeout'),
         { cause: Object.assign(new Error(`Provider page operation timed out during ${phase}.`), { cause }) },
     );
 
@@ -496,7 +605,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         phase,
         operation,
         signal = null,
-        timeoutMs = PROVIDER_OPERATION_TIMEOUT_MS,
+        timeoutMs = PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
         onCancel = null,
         onLateResult = null,
     }) => runBrowserOperation({
@@ -782,7 +891,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 new Error('The Peakbagger page returned an invalid failure.'),
             );
         }
-        const error = PeakbaggerError.failure(code, { resource, status: result.status });
+        const retryAt = code === 'rate-limit' ? cleanPeakbaggerRetryAt(result.error?.retryAt) : null;
+        const error = PeakbaggerError.failure(code, {
+            resource,
+            status: result.status,
+            ...(retryAt ? { retryAt } : {}),
+        });
         return {
             kind: result.kind,
             requestedUrl,
@@ -931,13 +1045,27 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const accountEvidenceIsFresh = created || tab.status !== 'complete';
             await waitForPeakbaggerTab(tab.id, signal);
             await ensurePeakbaggerPage(tab.id, signal);
+            let adoptedForRecovery = false;
             return {
+                tabId: tab.id,
                 freshAccount: () => accountEvidenceIsFresh
                     ? readFreshPeakbaggerAccount(tab.id, signal)
                     : Promise.resolve(null),
                 request: (url, options) => requestThroughPeakbaggerPage(tab.id, url, options),
+                adoptForRecovery: async () => {
+                    adoptedForRecovery = true;
+                    if (created) {
+                        try { await markPeakbaggerHelperAdopted(tab.id); }
+                        catch (error) {
+                            console.error('Better Peakbagger: challenge tab adoption failed', error);
+                        }
+                    }
+                    return tab.id;
+                },
                 release: () => created
-                    ? closePeakbaggerHelperLease(tab.id, generation)
+                    ? (adoptedForRecovery
+                        ? forgetPeakbaggerHelperLease(tab.id, generation)
+                        : closePeakbaggerHelperLease(tab.id, generation))
                     : Promise.resolve(),
             };
         } catch (error) {
@@ -979,13 +1107,27 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             );
             if (response.kind === 'ok') return response.text;
             if (response.error?.code === 'cancelled') throw cancelledCaptureError();
-            lastError = PeakbaggerError.exception(response.error);
-            if (response.kind !== 'transient') break;
+            lastError = peakbaggerPublicError(response.error);
+            if (response.error?.code !== 'network' && response.error?.code !== 'server') break;
+            if (attempt === 0) {
+                if (signal?.aborted) throw cancelledCaptureError();
+                const delayMs = 150 + Math.floor(Math.random() * 101);
+                await new Promise((resolve, reject) => {
+                    const cancelled = () => {
+                        clearTimeout(timer);
+                        reject(cancelledCaptureError());
+                    };
+                    const timer = setTimeout(() => {
+                        signal?.removeEventListener('abort', cancelled);
+                        resolve();
+                    }, delayMs);
+                    signal?.addEventListener('abort', cancelled, { once: true });
+                });
+            }
         }
-        throw PublicErrors.exception(
-            lastError?.code || 'peakbagger-unavailable',
-            lastError?.message || 'Peakbagger could not return nearby summit data. Try again.',
-            { cause: lastError }
+        throw lastError || PublicErrors.exception(
+            'peakbagger-unavailable',
+            'Peakbagger could not return nearby summit data. Try again.',
         );
     };
 
@@ -1008,12 +1150,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         { cause },
     );
 
-    const fetchPeaks = async (boxes, { signal, request, checkpoint = async () => {} }) => {
+    const fetchPeaks = async (boxes, {
+        signal,
+        request,
+        checkpoint = async () => {},
+        onProgress = async () => {},
+    }) => {
         const budget = { requests: 0 };
+        let completed = 0;
         const responses = await mapWithConcurrency(
             boxes,
             CaptureLimits.CORRIDOR_CONCURRENCY,
-            box => fetchBox(box, { signal, budget, request }),
+            async box => {
+                const response = await fetchBox(box, { signal, budget, request });
+                completed++;
+                await onProgress({ completed, total: boxes.length });
+                return response;
+            },
         );
         const byId = new Map();
         for (const response of responses) {
@@ -1086,9 +1239,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 target: { tabId },
                 // Narrowed in the page realm: the worker needs the verdict, not the
                 // provider profile identifiers the adapter compared to reach it.
-                func: expected => globalThis.BPBProviderPage.publicOwnership(
-                    globalThis.BPBProviderPage.inspectExpectedOwnership(expected)),
-                args: [expectedActivity],
+                func: (expected, captureGeneration) =>
+                    globalThis.BPBProviderPage.waitForOwnership(expected, captureGeneration),
+                args: [expectedActivity, generation],
                 world: 'MAIN'
             }),
         });
@@ -1096,33 +1249,41 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return results[0].result;
     };
 
-    const captureProvider = async (tabId, capturePreferences, generation, expectedActivity, signal) => {
+    const captureProvider = async (
+        tabId,
+        capturePreferences,
+        generation,
+        expectedActivity,
+        signal,
+        diagnostic = false,
+    ) => {
         const results = await runProviderBrowserOperation({
             phase: 'GPX capture',
             signal,
+            timeoutMs: PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,
             onCancel: providerOperationCancellation(tabId, generation),
             operation: () => ext.scripting.executeScript({
                 target: { tabId },
-                func: async (options, captureGeneration, activity) => {
+                func: async (options, captureGeneration, timeoutMs, activity, includeDiagnostics) => {
                     try {
                         return await globalThis.BPBProviderPage.capture(
                             options,
                             captureGeneration,
-                            undefined,
+                            timeoutMs,
                             activity,
+                            includeDiagnostics,
                         );
                     } catch (error) {
                         return {
                             ok: false,
                             code: 'provider-export-failed',
-                            message: 'The activity provider could not export this GPX. Reload the activity and try again.'
                         };
                     }
                 },
                 args: [{
                     retainWaypoints: capturePreferences.retainWaypoints,
                     includeTripName: capturePreferences.fillTripInfo
-                }, generation, expectedActivity],
+                }, generation, PROVIDER_EXPORT_TIMEOUT_MS, expectedActivity, diagnostic === true],
                 world: 'MAIN'
             }),
         });
@@ -1132,7 +1293,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const captureTimeoutError = cause => PublicErrors.exception(
         'capture-timeout',
-        'Summit lookup took too long. Try a shorter or less fragmented GPX.',
+        captureErrorMessage('capture-timeout'),
         cause ? { cause } : undefined,
     );
 
@@ -1178,6 +1339,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         capturePreferences,
         boundPid = null,
         onPhase = async () => {},
+        onProgress = async () => {},
+        diagnostics = createCaptureDiagnostics(),
         signal = null,
         peakbaggerRequest = fetchPeakbaggerResource,
     }) => {
@@ -1211,6 +1374,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 : [];
             await cpu.checkpoint(true);
             const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
+            diagnostics.mark('local.sanitize');
+            diagnostics.count('track.source-points', sourcePointCount);
+            diagnostics.count('track.sanitized-points', pointCount);
+            diagnostics.count('track.waypoints', cleanWaypoints.length);
             if (pointCount === 0) {
                 return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
             }
@@ -1229,6 +1396,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
             const boxes = Core.buildQueryBoxes(sanitized.segments);
             await cpu.checkpoint();
+            diagnostics.mark('local.boxes');
+            diagnostics.count('peakbagger.areas', boxes.length);
             if (!boxes.length) {
                 throw PublicErrors.exception(
                     'invalid-track',
@@ -1241,20 +1410,26 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     `This GPX needs ${boxes.length} summit-search areas; the safe limit is ${CaptureLimits.MAX_CORRIDOR_BOXES}. Split the activity into shorter tracks and try again.`,
                 );
             }
-            await onPhase('finding-peaks');
+            await onPhase('searching-summits', { completed: 0, total: boxes.length });
             assertActive();
             const peaks = await deadline.run(fetchPeaks(boxes, {
                 signal: deadline.signal,
                 request: peakbaggerRequest,
                 checkpoint: cpu.checkpoint,
+                onProgress,
             }));
             assertActive();
+            diagnostics.mark('peakbagger.corridor');
+            diagnostics.count('peakbagger.candidates', peaks.length);
+            await onPhase('preparing-results');
             const allMatches = await Core.detectPeaksAsync(
                 sanitized.segments,
                 peaks,
                 sanitized.quality.score,
                 { checkpoint: cpu.checkpoint },
             );
+            diagnostics.mark('local.matching');
+            diagnostics.count('track.matches', allMatches.length);
             if (allMatches.length > CaptureLimits.MAX_CAPTURE_MATCHES) {
                 throw PublicErrors.exception(
                     'capture-analysis-too-large',
@@ -1287,6 +1462,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             );
             const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
             await cpu.checkpoint();
+            diagnostics.mark('local.reduction');
             const matches = [];
             for (const match of visibleMatches) {
                 matches.push({
@@ -1318,6 +1494,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             } : null;
 
             await cpu.checkpoint();
+            diagnostics.mark('local.derivation');
             return {
                 status: 'ready',
                 matches,
@@ -1348,8 +1525,16 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
     };
 
-    const processCapture = async (tabId, expectedUrl, capturePreferences, generation, signal) => {
+    const processCapture = async (
+        tabId,
+        expectedUrl,
+        capturePreferences,
+        generation,
+        signal,
+        diagnostics = newCaptureDiagnostics(),
+    ) => {
         let peakbaggerPage = null;
+        let diagnosticOutcome = 'error';
         try {
             const expectedActivity = providerFromUrl(expectedUrl);
             if (!expectedActivity) {
@@ -1357,67 +1542,76 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     tabId,
                     generation,
                     'activity-changed',
-                    'The activity page changed before capture started.',
+                    captureErrorMessage('activity-changed'),
                 );
                 return;
             }
             const tab = await ext.tabs.get(tabId);
             const startingActivity = providerFromUrl(tab?.url);
+            diagnostics.mark('activity.validation');
             if (!sameProviderActivity(startingActivity, expectedActivity)) {
                 await failCaptureJob(
                     tabId,
                     generation,
                     'activity-changed',
-                    'The activity page changed before capture started.',
+                    captureErrorMessage('activity-changed'),
                 );
                 return;
             }
 
-            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-ownership' })) return;
+            if (!await updateCaptureJob(tabId, generation, { phase: 'waiting-provider', progress: null })) return;
             await injectProvider(tabId, generation, signal);
+            diagnostics.mark('provider.injection');
+            if (!await updateCaptureJob(tabId, generation, { phase: 'verifying-ownership' })) return;
             const ownership = await inspectProviderOwnership(
                 tabId,
                 expectedActivity,
                 generation,
                 signal,
             );
+            diagnostics.mark('provider.ownership');
             const ownershipMatches = sameProviderActivity(ownership, expectedActivity);
             const ownershipChanged = ownership?.code === 'activity-changed'
                 || (hasProviderActivity(ownership) && !ownershipMatches);
             if (!ownership || !ownership.ok || !ownershipMatches) {
-                const messages = {
-                    unsupported: 'Open a Garmin Connect or Strava activity first.',
-                    'activity-changed': 'The activity page changed before capture could finish.',
-                    'provider-signed-out': 'Sign in to the activity provider before capturing.',
-                    'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
-                    'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.'
-                };
+                const code = ownershipChanged
+                    ? 'activity-changed'
+                    : (ownership?.code || 'capture-failed');
                 await failCaptureJob(
                     tabId,
                     generation,
-                    ownershipChanged ? 'activity-changed' : (ownership?.code || 'capture-failed'),
-                    ownershipChanged
-                        ? messages['activity-changed']
-                        : (messages[ownership?.code] || 'The activity could not be captured.'),
+                    code,
+                    captureErrorMessage(code),
                 );
                 return;
             }
 
-            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
+            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger', progress: null })) return;
+            await ensurePeakbaggerRequestsAllowed();
             peakbaggerPage = await acquirePeakbaggerPage(tab.windowId, generation, signal);
+            const peakbaggerRequest = (url, options) => schedulePeakbaggerRequest(
+                peakbaggerPage.request,
+                url,
+                options,
+                {
+                    recoveryTabId: peakbaggerPage.tabId,
+                    adoptForRecovery: peakbaggerPage.adoptForRecovery,
+                },
+            );
             const cid = await peakbaggerPage.freshAccount()
-                || await peakbaggerLogin({ request: peakbaggerPage.request, signal });
+                || await peakbaggerLogin({ request: peakbaggerRequest, signal });
+            diagnostics.mark('peakbagger.account');
             if (!cid) {
+                const recoveryTabId = await peakbaggerPage.adoptForRecovery();
                 await failCaptureJob(
                     tabId,
                     generation,
                     'peakbagger-signed-out',
                     'Your Peakbagger login could not be verified. Open Peakbagger, confirm you’re signed in, then try again.',
+                    { recoveryTabId },
                 );
                 return;
             }
-            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
-
             const currentTab = await ext.tabs.get(tabId);
             const currentActivity = providerFromUrl(currentTab.url);
             if (!sameProviderActivity(currentActivity, expectedActivity)) {
@@ -1425,18 +1619,28 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     tabId,
                     generation,
                     'activity-changed',
-                    'The activity page changed before capture could finish.',
+                    captureErrorMessage('activity-changed'),
                 );
                 return;
             }
 
+            if (!await updateCaptureJob(tabId, generation, { phase: 'exporting-gpx', progress: null })) return;
             const capture = await captureProvider(
                 tabId,
                 capturePreferences,
                 generation,
                 expectedActivity,
                 signal,
+                diagnostics.enabled,
             );
+            diagnostics.mark('provider.capture');
+            const pageDiagnostics = capture?.diagnostics;
+            for (const name of ['headers', 'body', 'parse', 'metadata']) {
+                diagnostics.add(`provider.${name}`, pageDiagnostics?.durationsMs?.[name]);
+            }
+            for (const name of ['track-points', 'segments', 'waypoints']) {
+                diagnostics.count(`provider.${name}`, pageDiagnostics?.counts?.[name]);
+            }
             const captureMatches = sameProviderActivity(capture, expectedActivity);
             const captureChanged = capture?.code === 'activity-changed'
                 || (hasProviderActivity(capture) && !captureMatches);
@@ -1445,49 +1649,61 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     await finishCaptureWithoutGps(
                         tabId,
                         generation,
-                        'This activity has no recorded route to capture.',
+                        captureErrorMessage('no-gps-data'),
                     );
+                    diagnostics.mark('storage.publish');
+                    diagnosticOutcome = 'no-gps';
                     return;
                 }
-                const messages = {
-                    'activity-changed': 'The activity page changed before capture could finish.',
-                    'provider-signed-out': 'Sign in to the activity provider before capturing.',
-                    'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
-                    'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
-                    'gpx-too-large': CaptureLimits.gpxLimitMessage(),
-                    'provider-export-timeout': 'The activity provider took too long to export this GPX. Try again.',
-                    'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.',
-                    // cancelCapture deletes the job before it aborts the page
-                    // fetch, so this normally lands on an already-removed job
-                    // and is never shown. It is mapped anyway: an unmapped code
-                    // would surface a cancellation the user asked for as an
-                    // unexplained failure.
-                    'provider-export-cancelled': 'Capture was cancelled. Nothing was captured.'
-                };
+                const code = captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed');
                 await failCaptureJob(
                     tabId,
                     generation,
-                    captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed'),
-                    captureChanged
-                        ? messages['activity-changed']
-                        : (messages[capture?.code] || 'The activity could not be captured.')
+                    code,
+                    code === 'gpx-too-large'
+                        ? CaptureLimits.gpxLimitMessage()
+                        : captureErrorMessage(code),
+                    { retryAt: capture?.retryAt },
                 );
                 return;
             }
 
-            if (!await updateCaptureJob(tabId, generation, { phase: 'analyzing' })) return;
+            if (!await updateCaptureJob(tabId, generation, { phase: 'processing-track', progress: null })) return;
             await setBadge(tabId, '');
+            let progressBucket = 0;
+            const reportProgress = async progress => {
+                const completed = Number(progress?.completed);
+                const total = Number(progress?.total);
+                if (!Number.isInteger(completed) || !Number.isInteger(total)
+                    || total < 1 || total > CaptureLimits.MAX_CORRIDOR_BOXES
+                    || completed < 1 || completed > total) return;
+                const bucket = completed === total ? 10 : Math.floor(completed * 10 / total);
+                if (bucket <= progressBucket) return;
+                progressBucket = bucket;
+                await updateCaptureJob(tabId, generation, {
+                    phase: 'searching-summits',
+                    progress: { completed, total },
+                });
+            };
             const analysis = await analyzeTrack({
                 segments: capture.segments,
                 waypoints: capture.waypoints,
                 metadata: capture.metadata,
                 capturePreferences,
                 signal,
-                peakbaggerRequest: peakbaggerPage.request,
-                onPhase: phase => updateCaptureJob(tabId, generation, { phase })
+                peakbaggerRequest,
+                diagnostics,
+                onPhase: (phase, progress = null) => updateCaptureJob(
+                    tabId,
+                    generation,
+                    { phase, progress },
+                ),
+                onProgress: reportProgress,
             });
             if (analysis.status === 'no-gps') {
                 await finishCaptureWithoutGps(tabId, generation, analysis.message);
+                diagnostics.mark('storage.publish');
+                diagnosticOutcome = 'no-gps';
                 return;
             }
             if (analysis.status === 'no-matches') {
@@ -1499,6 +1715,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     error: null,
                     expiresAt: now() + JOB_TTL_MS
                 });
+                diagnostics.mark('storage.publish');
+                diagnosticOutcome = 'no-matches';
                 return;
             }
 
@@ -1516,6 +1734,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
             });
+            diagnostics.mark('storage.publish');
+            diagnosticOutcome = 'ready';
         } catch (error) {
             // Cancellation owners delete or replace the generation separately.
             // Never turn their intentional abort into a durable error record;
@@ -1523,8 +1743,13 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // storage when this non-abortable browser call loses its race.
             if (signal?.aborted) return;
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
-            await failCaptureJob(tabId, generation, failure.code, failure.message);
+            await failCaptureJob(tabId, generation, failure.code, failure.message, {
+                retryAt: error?.retryAt,
+                recoveryTabId: error?.recoveryTabId,
+            });
+            diagnostics.mark('storage.failure');
         } finally {
+            diagnostics.finish(signal?.aborted ? 'cancelled' : diagnosticOutcome);
             if (peakbaggerPage) {
                 try { await peakbaggerPage.release(); }
                 catch (error) { console.error('Better Peakbagger: temporary request tab cleanup failed', error); }
@@ -1543,33 +1768,58 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     const admitCapture = async (message, tabId, admissionEpoch) => {
+        const diagnostics = newCaptureDiagnostics();
         const cancelled = () => captureCancellationEpochs.get(tabId) !== admissionEpoch;
-        const cancelledAdmission = () => ({ kind: 'cancelled' });
+        const cancelledAdmission = () => {
+            diagnostics.finish('cancelled');
+            return { kind: 'cancelled' };
+        };
         const tab = await ext.tabs.get(tabId);
-        if (cancelled()) return cancelledAdmission();
-        const capturePreferences = await readCapturePreferences();
+        diagnostics.mark('admission.active-tab');
         if (cancelled()) return cancelledAdmission();
         const activity = providerFromUrl(tab.url);
         if (!activity) {
             await setBadge(tabId, '');
             if (cancelled()) return cancelledAdmission();
+            diagnostics.mark('admission.unsupported');
+            diagnostics.finish('unsupported');
             return {
                 kind: 'complete',
                 value: {
                     phase: 'error',
-                    error: { code: 'unsupported', message: 'Open a Garmin Connect or Strava activity first.' },
+                    error: { code: 'unsupported', message: captureErrorMessage('unsupported') },
                 },
             };
         }
+        let capturePreferences;
+        try {
+            capturePreferences = await readCapturePreferences();
+            diagnostics.mark('admission.settings');
+        } catch (error) {
+            diagnostics.finish('error');
+            throw error;
+        }
+        if (cancelled()) return cancelledAdmission();
         const jobs = await readMap(JOBS_KEY);
+        diagnostics.mark('admission.jobs');
         if (cancelled()) return cancelledAdmission();
         const current = jobs[tabId];
         const sameActivity = current && current.provider === activity.provider && current.activityId === activity.activityId;
         if (processes.has(tabId)) {
+            diagnostics.finish('joined');
             return { kind: 'wait', process: processes.get(tabId), activity, capturePreferences };
         }
+        const retryAt = Number(current?.error?.retryAt);
+        const activeCooldown = current?.phase === 'error'
+            && (current.error?.code === 'provider-rate-limited' || current.error?.code === 'rate-limit')
+            && Number.isFinite(retryAt) && retryAt >= now();
+        if (sameActivity && activeCooldown) {
+            diagnostics.finish('cooldown');
+            return { kind: 'complete', value: publicJob(current) };
+        }
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
-            && current.expiresAt > now() && CapturePhases.isTerminal(current.phase)) {
+            && current.expiresAt > now() && CapturePhases.isReusable(current.phase)) {
+            diagnostics.finish('reused');
             return { kind: 'complete', value: publicJob(current) };
         }
         await setBadge(tabId, '');
@@ -1580,7 +1830,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             sourceTabId: tabId,
             provider: activity.provider,
             activityId: activity.activityId,
-            phase: 'starting',
+            phase: 'validating-activity',
             matches: [],
             selectedIds: [],
             capturePreferences,
@@ -1592,6 +1842,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         abortOwnedWork(tabId);
         invalidateLifecycle(tabId);
         await serializeLifecycle(tabId, () => installLifecycleJob(job));
+        diagnostics.mark('admission.storage');
         if (cancelled()) {
             await mutateMap(JOBS_KEY, map => {
                 if (map[tabId]?.id === job.id) delete map[tabId];
@@ -1599,7 +1850,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return cancelledAdmission();
         }
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const process = processCapture(tabId, tab.url, capturePreferences, job.id, controller?.signal);
+        const process = processCapture(
+            tabId,
+            tab.url,
+            capturePreferences,
+            job.id,
+            controller?.signal,
+            diagnostics,
+        );
         processes.set(tabId, { generation: job.id, promise: process, controller });
         return { kind: 'started', job, process, signal: controller?.signal };
     };
@@ -2324,9 +2582,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // bridge as provider capture instead of bypassing it with worker fetch.
             // The bridge revalidates the canonical login/summit URL and the complete
             // response shape on both sides of the world boundary.
+            await ensurePeakbaggerRequestsAllowed();
             await ensurePeakbaggerPage(tabId);
-            peakbaggerPageRequest = (url, options) =>
-                requestThroughPeakbaggerPage(tabId, url, options);
+            peakbaggerPageRequest = (url, options) => schedulePeakbaggerRequest(
+                (requestUrl, requestOptions) =>
+                    requestThroughPeakbaggerPage(tabId, requestUrl, requestOptions),
+                url,
+                options,
+                { recoveryTabId: tabId },
+            );
             const cid = await peakbaggerLogin({ request: peakbaggerPageRequest });
             if (!(await uploadSelectionIsCurrent(tabId, selection))) {
                 return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
@@ -2883,6 +3147,24 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         catch { return false; }
     };
 
+    const focusCaptureRecoveryTab = async (message, sender) => {
+        if (!isExtensionPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const sourceTabId = Number(message?.tabId);
+        if (!Number.isInteger(sourceTabId)) return { ok: false, error: { code: 'invalid-tab' } };
+        const job = (await readMap(JOBS_KEY))[sourceTabId];
+        const recoveryTabId = Number(job?.error?.recoveryTabId);
+        if (!Number.isInteger(recoveryTabId)) return { ok: false, error: { code: 'not-found' } };
+        try {
+            const tab = await ext.tabs.get(recoveryTabId);
+            if (!canonicalPeakbaggerTab(tab)) return { ok: false, error: { code: 'not-found' } };
+            await ext.tabs.update(recoveryTabId, { active: true });
+            if (Number.isInteger(tab.windowId)) await ext.windows.update(tab.windowId, { focused: true });
+            return { ok: true, tabId: recoveryTabId };
+        } catch {
+            return { ok: false, error: { code: 'not-found' } };
+        }
+    };
+
     const terrainFrameUrl = (() => {
         try { return ext.runtime.getURL('terrain/terrain.html'); }
         catch { return null; }
@@ -3138,6 +3420,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             case 'OPEN_BETA_SETTINGS': return openBetaSettings(message, sender);
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(message, sender);
             case 'CAPTURE_START': return startCapture(message);
+            case 'CAPTURE_FOCUS_RECOVERY': return focusCaptureRecoveryTab(message, sender);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);
                 const job = jobs[Number(message.tabId)] || null;

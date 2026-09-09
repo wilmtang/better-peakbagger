@@ -34,6 +34,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
+    captureDiagnostics = false,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = sessionValues || {};
     const localValues = {};
@@ -211,7 +212,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 }
                 const functionSource = String(details.func);
                 const isOwnershipCheck = functionSource.includes('inspectOwnership')
-                    || functionSource.includes('inspectExpectedOwnership');
+                    || functionSource.includes('inspectExpectedOwnership')
+                    || functionSource.includes('waitForOwnership');
                 const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
                 const isProviderCancel = functionSource.includes('cancelCapture');
                 const isPeakbaggerAccountEvidence = functionSource.includes('accountEvidence');
@@ -276,14 +278,15 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     }
                     if (peakbaggerPageRequestError) throw new Error(peakbaggerPageRequestError);
                     const controller = new AbortController();
+                    const number = peakbaggerPageCalls.filter(item => item.kind === kind).length + 1;
                     peakbaggerPageRequests.set(requestId, controller);
-                    const call = { requestId, url, kind, options: { signal: controller.signal } };
+                    const call = { requestId, url, kind, number, options: { signal: controller.signal } };
                     peakbaggerPageCalls.push(call);
                     await runPeakbaggerScriptHook(afterPeakbaggerScript, 'request', details);
                     const callback = kind === 'html' ? beforePeakbaggerLogin : beforePeakFetch;
                     const callbackResult = callback?.({
                         options: call.options,
-                        number: peakbaggerPageCalls.filter(item => item.kind === kind).length,
+                        number,
                     });
                     if (callbackResult) {
                         await Promise.race([
@@ -332,6 +335,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         number: providerCaptureCalls.length + 1,
                         options: structuredClone(details.args?.[0]),
                         generation: details.args?.[1],
+                        timeoutMs: details.args?.[2],
+                        diagnostics: details.args?.[4] === true,
                     };
                     providerCaptureCalls.push(call);
                     if (beforeProviderCapture) await beforeProviderCapture(call);
@@ -454,6 +459,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
 
     const workerConsole = Object.create(console);
     workerConsole.error = (...args) => { loggedErrors.push(args); };
+    const loggedDiagnostics = [];
+    workerConsole.debug = (...args) => { loggedDiagnostics.push(args); };
     const WorkerDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
     const context = vm.createContext({
         browser,
@@ -473,6 +480,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             ? setTimeout
             : (callback, delay, ...args) => setTimeout(callback, Math.min(delay, timerDelayCap), ...args),
         clearTimeout,
+        BPB_CAPTURE_DIAGNOSTICS: captureDiagnostics,
     });
     context.globalThis = context;
     context.self = context;
@@ -492,7 +500,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         payloadSetCalls: () => payloadSetCalls,
         payloadRemoveCalls: () => payloadRemoveCalls,
         sessionSetPatches,
-        loggedErrors, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
+        loggedErrors, loggedDiagnostics, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
     };
 };
 
@@ -605,6 +613,42 @@ test('background capture persists a private job, opens grouped drafts, and previ
         applyLeaseToken: apply.applyLeaseToken,
     }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('capture diagnostics stay local and contain only duration and count labels', async () => {
+    const harness = createHarness({
+        captureDiagnostics: true,
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Diagnostic hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15) },
+                { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16) },
+            ]],
+            waypoints: [],
+            diagnostics: {
+                durationsMs: { headers: 4.2, body: 2.1, parse: 0.8, metadata: 0.2 },
+                counts: { 'track-points': 2, segments: 1, waypoints: 0 },
+            },
+        },
+    });
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.providerCaptureCalls[0].diagnostics, true);
+    assert.equal(harness.loggedDiagnostics.length, 1);
+    const [label, rawSnapshot] = harness.loggedDiagnostics[0];
+    const snapshot = JSON.parse(JSON.stringify(rawSnapshot));
+    assert.equal(label, 'Better Peakbagger capture diagnostics');
+    assert.equal(snapshot.outcome, 'ready');
+    assert.equal(snapshot.durationsMs['provider.headers'], 4.2);
+    assert.equal(snapshot.counts['provider.track-points'], 2);
+    assert.ok(snapshot.durationsMs['peakbagger.corridor'] >= 0);
+    assert.ok(snapshot.counts['peakbagger.areas'] >= 1);
+    assert.doesNotMatch(JSON.stringify(snapshot), /Diagnostic hike|strava|activities|latitude|longitude|gpx/i);
+    assert.doesNotMatch(JSON.stringify(harness.values), /diagnostics|durationsMs/,
+        'diagnostics are never persisted with session capture data');
 });
 
 test('capture payload creation and metadata publication roll back independently', async () => {
@@ -1058,7 +1102,7 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
     assert.equal(scriptingResponse.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(scriptingResponse.error)), {
         code: 'capture-failed',
-        message: 'Capture stopped unexpectedly. Reload the activity and try again.',
+        message: 'The activity could not be captured. Reload it before trying again.',
     });
     assertPrivate(scripting, scriptingResponse);
 
@@ -1250,7 +1294,7 @@ test('toolbar capture fails closed when privacy settings cannot be read', async 
     assert.equal(response.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(response.error)), {
         code: 'settings-unavailable',
-        message: 'Capture settings could not be read. Reload and try again. Nothing was captured.',
+        message: 'Reload the extension and try again. Nothing was captured.',
     });
     assert.equal(harness.scriptCalls.length, 0, 'the provider page must not be injected');
     assert.equal(harness.fetchCalls.length, 0, 'no Peakbagger or coordinate request may start');
@@ -1259,6 +1303,23 @@ test('toolbar capture fails closed when privacy settings cannot be read', async 
         harness.loggedErrors.flat().map(value => value instanceof Error ? value.message : String(value)).join('\n'),
         /SYNC_CAPTURE_SETTINGS_SENTINEL/
     );
+});
+
+test('an unsupported tab is rejected before the authoritative settings read', async () => {
+    const sentinel = 'SETTINGS_MUST_NOT_BE_READ';
+    const tabs = new Map([[1, {
+        id: 1,
+        windowId: 9,
+        url: 'https://example.com/not-an-activity',
+        active: true,
+        status: 'complete',
+    }]]);
+    const harness = createHarness({ browserTabs: tabs, faults: { syncGet: sentinel } });
+    const response = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(response.error.code, 'unsupported');
+    assert.equal(harness.scriptCalls.length, 0);
+    assert.doesNotMatch(harness.loggedErrors.flat().join('\n'), new RegExp(sentinel));
 });
 
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {
@@ -1295,9 +1356,52 @@ test('toolbar capture preserves actionable Peakbagger human-check recovery', asy
     assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
         code: 'cloudflare',
         message: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.',
+        recoveryTabId: 5,
     });
     assert.doesNotMatch(JSON.stringify(harness.values), /PRIVATE CHALLENGE BODY/,
         'challenge HTML must not be retained with the capture job');
+});
+
+test('a challenged helper is adopted and focused only while it remains Peakbagger', async () => {
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ({
+            kind: 'challenged',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'peaks', status: 403 },
+        }),
+    });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.error.recoveryTabId, 100);
+    assert.equal(harness.tabs.has(100), true, 'the challenge page stays open for the user');
+    assert.deepEqual(harness.removedTabs, []);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined,
+        'the adopted tab is no longer cleanup-owned by the extension');
+
+    const sender = { url: 'chrome-extension://test-extension/popup/popup.html' };
+    const focused = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
+    assert.deepEqual(JSON.parse(JSON.stringify(focused)), { ok: true, tabId: 100 });
+    assert.equal(harness.tabs.get(100).active, true);
+    assert.deepEqual(harness.windowUpdates.at(-1), [9, { focused: true }]);
+
+    harness.tabs.get(100).active = false;
+    harness.tabs.get(100).url = 'https://example.com/reused-id';
+    const updatesBefore = harness.windowUpdates.length;
+    const rejected = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.error.code, 'not-found');
+    assert.equal(harness.tabs.get(100).active, false, 'an ID-reused tab is never focused');
+    assert.equal(harness.windowUpdates.length, updatesBefore);
+
+    const forbidden = await harness.send(
+        { type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 },
+        { tab: { id: 1 }, url: 'https://www.strava.com/activities/123' },
+    );
+    assert.equal(forbidden.error.code, 'forbidden');
 });
 
 test('activity capture creates and removes an inactive Peakbagger request tab when needed', async () => {
@@ -2047,7 +2151,7 @@ test('every stalled provider operation returns one typed public deadline failure
             assert.equal(result.phase, 'error');
             assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
                 code: 'provider-page-timeout',
-                message: 'The activity page did not respond within 20 seconds. Reload the activity and try again.',
+                message: 'Reload the activity, wait for its details to appear, then select Better Peakbagger again.',
             });
             assert.equal(harness.values.bpbCaptureJobs['1'].error.code, 'provider-page-timeout');
         });
@@ -2239,6 +2343,185 @@ test('cancelling during corridor lookup aborts the background request owner imme
         'the page-owned Peakbagger request is also aborted');
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1,
         'cancellation cannot start the retry attempt');
+});
+
+test('Peakbagger corridor concurrency is capped across activity tabs', async () => {
+    const tabs = new Map(Array.from({ length: 6 }, (_, index) => [index + 1, {
+        id: index + 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: index === 0,
+        status: 'complete',
+    }]));
+    tabs.set(50, {
+        id: 50,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/Default.aspx',
+        active: false,
+        status: 'complete',
+    });
+    const releases = [];
+    let inFlight = 0;
+    let maximum = 0;
+    const harness = createHarness({
+        browserTabs: tabs,
+        beforePeakFetch: () => {
+            inFlight++;
+            maximum = Math.max(maximum, inFlight);
+            return new Promise(resolve => releases.push(() => {
+                inFlight--;
+                resolve();
+            }));
+        },
+    });
+    const captures = Array.from({ length: 6 }, (_, index) =>
+        harness.send({ type: 'CAPTURE_START', tabId: index + 1, force: false }));
+
+    await waitForCondition(() => releases.length === 4);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 4);
+    releases.shift()();
+    await waitForCondition(() => releases.length === 4);
+    while (releases.length) releases.shift()();
+    await waitForCondition(() => harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length === 6);
+    while (releases.length) releases.shift()();
+
+    const results = await Promise.all(captures);
+    assert.ok(results.every(result => result.phase === 'ready'));
+    assert.equal(maximum, 4, 'the worker owns one aggregate Peakbagger ceiling');
+});
+
+test('one Peakbagger challenge stops active and queued sibling captures without retrying', async () => {
+    const tabs = new Map(Array.from({ length: 6 }, (_, index) => [index + 1, {
+        id: index + 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: index === 0,
+        status: 'complete',
+    }]));
+    tabs.set(50, {
+        id: 50,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/Default.aspx',
+        active: false,
+        status: 'complete',
+    });
+    const harness = createHarness({
+        browserTabs: tabs,
+        beforePeakFetch: ({ number }) => number === 1 ? undefined : new Promise(() => {}),
+        peakbaggerPagePeakResult: call => ({
+            kind: 'challenged',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'peaks', status: 403 },
+        }),
+    });
+    const results = await Promise.all(Array.from({ length: 6 }, (_, index) =>
+        harness.send({ type: 'CAPTURE_START', tabId: index + 1, force: false })));
+
+    assert.ok(results.every(result => result.phase === 'error'
+        && result.error.code === 'cloudflare'));
+    const attempted = harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length;
+    assert.ok(attempted >= 1 && attempted <= 4,
+        'the first refusal stops every request that has not reached the global ceiling');
+});
+
+test('a validated Peakbagger rate limit survives worker restart and resumes only after its time', async () => {
+    const clock = { now: Date.now() };
+    const retryAt = clock.now + 60_000;
+    let responses = 0;
+    const tabs = new Map([[1, {
+        id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', active: true, status: 'complete',
+    }], [2, {
+        id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', active: false, status: 'complete',
+    }], [50, {
+        id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', active: false, status: 'complete',
+    }]]);
+    const harness = createHarness({
+        browserTabs: tabs,
+        clock,
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 429,
+            redirected: false,
+            error: {
+                source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt,
+            },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(limited.error.code, 'rate-limit');
+    assert.equal(limited.error.retryAt, retryAt);
+    assert.equal(responses, 1, '429 is never retried');
+
+    const restarted = createHarness({
+        browserTabs: tabs,
+        clock,
+        sessionValues: harness.values,
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 429,
+            redirected: false,
+            error: {
+                source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt,
+            },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const stillLimited = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: false });
+    assert.equal(stillLimited.error.code, 'rate-limit');
+    assert.equal(stillLimited.error.retryAt, retryAt);
+    assert.equal(responses, 1, 'the session cooldown blocks another tab before any request');
+
+    clock.now = retryAt + 1;
+    const resumed = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: true });
+    assert.equal(resumed.phase, 'ready');
+    assert.equal(responses, 2);
+});
+
+test('summit lookup retries only network and server failures once', async () => {
+    let responses = 0;
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 503,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'server', resource: 'peaks', status: 503 },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'ready', JSON.stringify(result));
+    assert.equal(responses, 2);
 });
 
 test('expiry during corridor lookup aborts work and removes the expired generation', async () => {
@@ -2794,7 +3077,7 @@ test('provider export failures discard page-world exception text without misrepo
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'provider-export-failed');
     assert.equal(result.error.message,
-        'The activity provider could not export this GPX. Reload the activity and try again.');
+        'Reload the activity and try the capture again.');
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(result.error.message, /ownership changed/i);
@@ -2816,10 +3099,49 @@ test('provider export timeouts preserve the public retryable timeout contract', 
     assert.equal(result.phase, 'error');
     assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
         code: 'provider-export-timeout',
-        message: 'The activity provider took too long to export this GPX. Try again.'
+        message: 'Reload the activity, wait for it to finish, then capture again.'
     });
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|internal timeout/i);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
+});
+
+test('the worker passes the page-owned provider deadline inside its dispatch margin', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.equal(harness.providerCaptureCalls[0].timeoutMs, 30000);
+});
+
+test('provider response classifications cross the worker only as allowlisted recovery data', async t => {
+    const cases = [
+        ['provider-human-check', 'complete the check'],
+        ['provider-rate-limited', 'temporarily limiting requests'],
+        ['provider-forbidden', 'available to your signed-in account'],
+        ['provider-unavailable', 'could not complete the export'],
+        ['provider-response-changed', 'changed its export'],
+        ['invalid-gpx', 'provider response'],
+    ];
+    for (const [code, message] of cases) {
+        await t.test(code, async () => {
+            const retryAt = Date.now() + 60000;
+            const harness = createHarness({
+                ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+                captureResult: {
+                    ok: false,
+                    code,
+                    provider: 'strava',
+                    activityId: '123',
+                    retryAt,
+                    message: 'RAW_PROVIDER_RESPONSE_SENTINEL',
+                },
+            });
+            const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(result.error.code, code);
+            assert.match(result.error.message, new RegExp(message, 'i'));
+            assert.doesNotMatch(JSON.stringify(result), /RAW_PROVIDER_RESPONSE_SENTINEL/);
+            assert.equal('retryAt' in result.error, code === 'provider-rate-limited');
+        });
+    }
 });
 
 test('peak response structure and route-match fanout fail closed at their exact limits', async t => {
@@ -2883,6 +3205,146 @@ test('production-point analysis yields to status and cancellation messages', asy
     assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
 });
 
+test('successful captures are reused but recoverable errors are re-evaluated on the next gesture', async () => {
+    const readyHarness = createHarness();
+    const firstReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const reusedReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(reusedReady.id, firstReady.id);
+    assert.equal(readyHarness.providerCaptureCalls.length, 1);
+
+    const successfulCapture = {
+        ok: true,
+        provider: 'strava',
+        activityId: '123',
+        metadata: { title: 'Recovered hike', localStart: '2026-07-01T08:00:00-07:00' },
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16, 0) },
+        ]],
+    };
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: call => call.number === 1 ? {
+            ok: false,
+            code: 'provider-unavailable',
+            provider: 'strava',
+            activityId: '123',
+        } : successfulCapture,
+    });
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.error.code, 'provider-unavailable');
+    const recovered = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(recovered.phase, 'ready');
+    assert.notEqual(recovered.id, failed.id);
+    assert.equal(harness.providerCaptureCalls.length, 2,
+        'reopening the popup rechecks a recoverable failure without a hidden second click');
+});
+
+test('activity capture publishes truthful monotonic phases and throttled summit progress', async () => {
+    const completionOrder = [];
+    const segment = Array.from({ length: 11 }, (_, index) => ({
+        lat: 0,
+        lon: index * 0.085,
+        ele: 100,
+        time: Date.UTC(2026, 6, 1, 15) + index * 100_000,
+    }));
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Progress hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [segment],
+        },
+        beforePeakFetch: ({ number }) => new Promise(resolve =>
+            setTimeout(resolve, (5 - (number % 5)) * 2)),
+        peakbaggerPagePeakResult: call => {
+            completionOrder.push(call.number);
+            return {
+                kind: 'ok',
+                requestedUrl: call.url,
+                url: call.url,
+                status: 200,
+                redirected: false,
+                text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+            };
+        },
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.ok(completionOrder.length > 4);
+    assert.notDeepEqual(completionOrder, [...completionOrder].sort((left, right) => left - right),
+        'the fixture completes concurrent area reads out of dispatch order');
+
+    const snapshots = harness.sessionSetPatches
+        .map(patch => patch.bpbCaptureJobs?.['1'])
+        .filter(job => job?.id === ready.id);
+    const phases = snapshots.map(job => job.phase)
+        .filter((phase, index, all) => index === 0 || phase !== all[index - 1]);
+    assert.deepEqual(phases, [
+        'validating-activity',
+        'waiting-provider',
+        'verifying-ownership',
+        'checking-peakbagger',
+        'exporting-gpx',
+        'processing-track',
+        'searching-summits',
+        'preparing-results',
+        'ready',
+    ]);
+
+    const progressWrites = snapshots
+        .filter(job => job.phase === 'searching-summits' && job.progress)
+        .map(job => job.progress);
+    assert.deepEqual(progressWrites[0], { completed: 0, total: completionOrder.length });
+    assert.deepEqual(progressWrites.at(-1), {
+        completed: completionOrder.length,
+        total: completionOrder.length,
+    });
+    assert.ok(progressWrites.every((progress, index) => index === 0
+        || progress.completed > progressWrites[index - 1].completed));
+    assert.ok(progressWrites.length <= 11,
+        'coarse deciles cap session writes even when every area completes separately');
+});
+
+test('capture failures retain the exact stage without moving the error policy into UI copy', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: {
+            ok: false,
+            code: 'provider-unavailable',
+            provider: 'strava',
+            activityId: '123',
+        },
+    });
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.phase, 'error');
+    assert.equal(failed.failedStage, 'exporting-gpx');
+    assert.equal('stage' in failed.error, false);
+});
+
+test('a shown rate-limit time cannot be bypassed by a forced retry', async () => {
+    const clock = { now: Date.now() };
+    const retryAt = clock.now + 60_000;
+    const harness = createHarness({
+        clock,
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: {
+            ok: false,
+            code: 'provider-rate-limited',
+            retryAt,
+            provider: 'strava',
+            activityId: '123',
+        },
+    });
+    const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.id, limited.id);
+    assert.equal(blocked.error.retryAt, retryAt);
+    assert.equal(harness.providerCaptureCalls.length, 1);
+});
+
 test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {
     const harness = createHarness({
         ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
@@ -2898,7 +3360,8 @@ test('an activity without a provider GPX ends in a neutral, reusable no-GPS stat
     const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(result.phase, 'no-gps');
     assert.equal(result.error, null);
-    assert.equal(result.message, 'This activity has no recorded route to capture.');
+    assert.equal(result.message,
+        'This activity has no recorded route yet. If provider processing is still underway, wait and check again.');
     assert.equal(result.hasCachedGpx, false);
     assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
