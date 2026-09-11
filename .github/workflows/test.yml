@@ -108,8 +108,11 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Install Chrome for Testing
-        run: npx playwright install --with-deps chromium
+      - name: Install Chrome for Testing and popup fixture Firefox
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Verify toolbar popup sizing and recovery layout
+        run: npm run verify:capture-popup
 
       - name: Verify the real Chrome extension
         run: npm run verify:chrome

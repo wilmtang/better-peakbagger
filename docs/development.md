@@ -167,7 +167,7 @@ script is added or removed without updating it.
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
-| `npm run verify:capture-popup` | Builds and renders every capture recovery family in hidden Chrome for Testing and Firefox at 390×620 in light/dark plus a 200% effective viewport; asserts one policy-owned action and no clipping. This is content layout, not native popup chrome or focus proof. |
+| `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
 | `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
 | `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
@@ -587,11 +587,15 @@ add it to the merge-step condition, for example
   session mode, response redirects, rate limits, and challenge markers in
   native browser DOM/fetch implementations. It proves the checked fixture
   contract only—not current live markup, endpoints, sessions, or challenges.
-- `npm run verify:capture-popup` runs the shipped popup bundle and styles in
-  hidden Chrome and Firefox against every recovery family at a 390×620 physical
-  viewport in light/dark and at a 195×310 CSS viewport rendered at 2x scale to
-  model 200% zoom. It proves action mapping and content containment, not native
-  popup sizing, dismissal, browser focus, or screen-reader speech.
+- `npm run verify:capture-popup` opens the real unpacked Chrome action popup
+  without a viewport override and asserts its 390px width in light/dark over
+  tabs at 100% and 200% zoom. This catches viewport-dependent CSS that collapses
+  browser autosizing. It also runs every recovery family using the shipped
+  bundle and styles in hidden Chrome and Firefox at 390×620 CSS pixels,
+  including 2x pixel density (which is not browser zoom). CI runs both gates.
+  These checks prove sizing, action mapping, and content containment, not visible
+  popup chrome, dismissal, browser focus, or screen-reader speech. Firefox's
+  native toolbar autosizing is not exercised by this verifier.
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe
   equality in source without rewriting it, then checks the built extension
   package. Neither lint stage establishes browser behavior.

@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Hidden browser layout gate for capture failure and recovery states. It uses
-// the shipped popup bundle and styles with a narrow browser-API mock. This
-// verifies content layout, not native popup chrome, dismissal, or focus.
+// real Chrome action popup for intrinsic sizing, then the shipped popup bundle
+// and styles with a narrow browser-API mock for recovery-state layout. Hidden
+// checks do not establish visible popup chrome, dismissal, or focus.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { chromium, firefox } from 'playwright';
+import { createResourceStack } from './resource-stack.mjs';
 
 const popupHtml = await fs.readFile(new URL('../popup/popup.html', import.meta.url), 'utf8');
 const panelCss = await fs.readFile(new URL('../src/theme/panel.css', import.meta.url), 'utf8');
@@ -38,9 +41,100 @@ const CASES = Object.freeze([
 const VARIANTS = Object.freeze([
     { name: 'light', theme: 'light', viewport: { width: 390, height: 620 }, deviceScaleFactor: 1 },
     { name: 'dark', theme: 'dark', viewport: { width: 390, height: 620 }, deviceScaleFactor: 1 },
-    // A 390x620 physical popup at 200% has a 195x310 effective CSS viewport.
-    { name: 'zoom-200', theme: 'light', viewport: { width: 195, height: 310 }, deviceScaleFactor: 2 },
+    // Device scale is pixel density, not browser zoom. Native sizing below
+    // separately checks opening the action popup over a tab at 200% zoom.
+    { name: 'scale-2', theme: 'light', viewport: { width: 390, height: 620 }, deviceScaleFactor: 2 },
 ]);
+
+const verifyNativeSizing = async () => {
+    const resources = createResourceStack();
+    let failure = null;
+    try {
+        const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'bpb-capture-popup-'));
+        resources.defer('popup profile', () => fs.rm(profile, { recursive: true, force: true }));
+        const dist = await fs.realpath(new URL('../dist', import.meta.url));
+        const context = await chromium.launchPersistentContext(profile, {
+            channel: 'chromium',
+            headless: true,
+            // Do not assign a viewport: browser action autosizing is the test.
+            viewport: null,
+            ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
+            args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+        });
+        resources.defer('popup browser', () => context.close());
+        const control = await context.newPage();
+        await control.goto('chrome://extensions-internals/');
+        const record = await control.waitForFunction(() => {
+            try {
+                return JSON.parse(globalThis.document.body.innerText).find(item =>
+                    item.location === 'COMMAND_LINE' && item.name === 'Better Peakbagger') || false;
+            } catch { return false; }
+        }, null, { timeout: 15_000 }).then(handle => handle.jsonValue());
+        if (await fs.realpath(record.path) !== dist) throw new Error('Wrong extension registered');
+        await control.goto(`chrome-extension://${record.id}/options/options.html`);
+
+        const readLayout = () => control.evaluate(() => {
+            const views = globalThis.chrome.extension.getViews({ type: 'popup' });
+            if (views.length !== 1) return { views: views.length };
+            const popup = views[0];
+            const document = popup.document;
+            const card = document.querySelector('.state-card')?.getBoundingClientRect();
+            return {
+                viewportWidth: popup.innerWidth,
+                viewportHeight: popup.innerHeight,
+                bodyWidth: document.body.getBoundingClientRect().width,
+                documentWidth: document.documentElement.scrollWidth,
+                deviceScaleFactor: popup.devicePixelRatio,
+                theme: document.documentElement.dataset.bpbTheme,
+                title: document.querySelector('.state-title')?.textContent,
+                cardBottom: card?.bottom,
+            };
+        });
+        const results = [];
+        for (const theme of ['light', 'dark']) {
+            for (const tabZoom of [1, 2]) {
+                await control.evaluate(async ({ theme, tabZoom }) => {
+                    await globalThis.chrome.storage.sync.set({ bpbSettings: { theme } });
+                    await globalThis.chrome.tabs.setZoom(tabZoom);
+                    if (await globalThis.chrome.tabs.getZoom() !== tabZoom) {
+                        throw new Error('Source tab zoom did not apply');
+                    }
+                    await globalThis.chrome.action.openPopup();
+                }, { theme, tabZoom });
+                try {
+                    await control.waitForFunction(theme => {
+                        const popup = globalThis.chrome.extension.getViews({ type: 'popup' })[0];
+                        return popup?.document.querySelector('.state-title')?.textContent
+                            === 'Open an activity to begin'
+                            && popup.document.documentElement.dataset.bpbTheme === theme
+                            && popup.innerWidth === 390
+                            && popup.document.body.getBoundingClientRect().width === 390;
+                    }, theme, { timeout: 5_000 });
+                } catch (error) {
+                    throw new Error(`Native popup sizing failed (${theme}, tab zoom ${tabZoom}): `
+                        + JSON.stringify(await readLayout()), { cause: error });
+                }
+                const layout = await readLayout();
+                if (layout.documentWidth > 390 || layout.cardBottom > layout.viewportHeight) {
+                    throw new Error(`Native popup clipped: ${JSON.stringify(layout)}`);
+                }
+                results.push({ theme, tabZoom, ...layout });
+                await control.evaluate(() => {
+                    globalThis.chrome.extension.getViews({ type: 'popup' })[0].close();
+                });
+                await control.waitForFunction(() =>
+                    globalThis.chrome.extension.getViews({ type: 'popup' }).length === 0);
+            }
+        }
+        console.log(JSON.stringify({
+            browser: 'chrome-action-popup', version: context.browser().version(),
+            hidden: true, viewportOverride: null, results,
+        }));
+    } catch (error) {
+        failure = error;
+    }
+    await resources.dispose(failure);
+};
 
 const renderCase = async (browser, browserName, item, variant) => {
     const context = await browser.newContext({
@@ -157,8 +251,8 @@ const verifyBrowser = async ({ name, engine, launch }) => {
             browser: name,
             version: browser.version(),
             hidden: true,
-            physicalViewport: '390x620',
-            effectiveZoomViewport: '195x310 CSS pixels at 2x device scale',
+            cssViewport: '390x620',
+            deviceScaleFactors: [1, 2],
             cases: CASES.length,
             variants,
             screenshots: artifactDir || 'disabled',
@@ -168,5 +262,6 @@ const verifyBrowser = async ({ name, engine, launch }) => {
     }
 };
 
+await verifyNativeSizing();
 await verifyBrowser({ name: 'chrome', engine: chromium, launch: { channel: 'chromium' } });
 await verifyBrowser({ name: 'firefox', engine: firefox, launch: {} });
