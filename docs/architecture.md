@@ -424,7 +424,9 @@ allowlist and reduced to Peakbagger's budget. This separation is the privacy
 boundary: the code does not redact the provider document in place.
 
 Raw local-file GPX also remains on `ascentedit.aspx`. A real user file-selection
-event replaces Peakbagger's Preview action with **Process**; the draft filler's
+event offers **Attach GPX** (the native Preview path with the original file)
+and, on new-ascent forms, **Process**. Existing `aid` forms offer attachment
+only; the worker also refuses summit processing on edits. The draft filler's
 synthetic file change is ignored so it cannot recursively process its own
 cleaned upload. The original disk file is never changed.
 

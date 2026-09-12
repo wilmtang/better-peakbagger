@@ -95,6 +95,32 @@ const fileTransfer = files => ({
 const processButton = dom => dom.window.document.querySelector('.bpb-process-button');
 const uploadStatus = dom => dom.window.document.querySelector('.bpb-upload-status');
 
+test('Attach GPX preserves the original file and current ascent without processing or saving', async () => {
+    for (const url of [URL, 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123']) {
+        const dom = await loadEditor({ url, respond: () => ({ ok: true }) });
+        const document = dom.window.document;
+        const input = await chooseGpx(dom, { content: '<gpx>malformed source' });
+        const original = input.files[0];
+        document.getElementById('DateText').value = '2020-02-03';
+        let previews = 0;
+        let saves = 0;
+        document.getElementById('GPXPreview').addEventListener('click', event => {
+            event.preventDefault();
+            previews++;
+        });
+        document.getElementById('SaveButton').addEventListener('click', () => saves++);
+        assert.equal(!!processButton(dom), !url.includes('aid='));
+        document.querySelector('.bpb-attach-gpx-button').click();
+        await waitFor(dom, () => previews === 1);
+        assert.equal(input.files[0], original);
+        assert.equal(document.getElementById('DateText').value, '2020-02-03');
+        assert.equal(dom.window.location.href, url);
+        assert.equal(saves, 0);
+        assert.equal(dom.messages.some(message => ['GPX_PROCESS_START', 'GPX_PROCESS_APPLY'].includes(message.type)), false);
+        dom.window.close();
+    }
+});
+
 const localToday = () => {
     const now = new Date();
     const pad = value => String(value).padStart(2, '0');

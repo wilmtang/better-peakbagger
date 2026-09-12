@@ -114,6 +114,11 @@ coordinates, GPX, page text, response body, cookies, or headers.
 
 ## Processing a GPX file you upload
 
+**Attach GPX** uses Peakbagger's native Preview on the current ascent. It sends
+the original chosen file to Peakbagger without summit processing or the
+extension's privacy reduction. Existing-ascent edits offer this attachment
+path only. Review and Save remain manual.
+
 The optional **Process** action beside Peakbagger's GPS Track field follows the
 same rules as activity capture:
 

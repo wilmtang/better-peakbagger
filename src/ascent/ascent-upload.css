@@ -16,6 +16,8 @@
 
 .bpb-native-preview-hidden { display: none !important; }
 
+.bpb-attach-gpx-button { margin-inline: 8px 0; }
+
 .bpb-process-button {
     position: relative;
     display: inline-flex;

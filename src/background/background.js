@@ -2471,6 +2471,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return {
             tabId: sender.tab.id,
             windowId: sender.tab.windowId,
+            isEdit: url.searchParams.has('aid'),
             pid: Number.isInteger(pid) ? pid : null,
             cid: cid || null
         };
@@ -2560,7 +2561,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const page = uploadPageIdentity(sender);
         const selection = cleanUploadSelection(message);
         const reply = result => ({ ...(result || {}), ...(selection || {}) });
-        if (!page) {
+        if (!page || page.isEdit) {
             return reply({ phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } });
         }
         const tabId = page.tabId;
@@ -2837,7 +2838,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const applyGpxProcess = (message, sender) => {
         const page = uploadPageIdentity(sender);
-        if (!page) {
+        if (!page || page.isEdit) {
             return Promise.resolve({
                 ok: false,
                 error: {

@@ -171,6 +171,7 @@ import tzlookup from 'tz-lookup';
         document.body.append(dropOverlay);
 
         let button = null;
+        let attachButton = null;
         let labelElement = null;
         let status = null;
         let card = null;
@@ -227,6 +228,8 @@ import tzlookup from 'tz-lookup';
 
         const resetNativeUi = () => {
             removeCard();
+            attachButton?.remove();
+            attachButton = null;
             button?.remove();
             button = null;
             labelElement = null;
@@ -238,7 +241,7 @@ import tzlookup from 'tz-lookup';
             const generation = ++selectionGeneration;
             selectedFile = null;
             resetNativeUi();
-            void ext.runtime.sendMessage({
+            return ext.runtime.sendMessage({
                 type: 'GPX_PROCESS_INVALIDATE',
                 ...selectionMessage(generation, newSelectionNonce()),
                 ...(reason ? { reason } : {}),
@@ -279,6 +282,28 @@ import tzlookup from 'tz-lookup';
         const showProcessButton = () => {
             clearStatus();
             removeCard();
+            if (!attachButton) {
+                attachButton = document.createElement('button');
+                attachButton.type = 'button';
+                attachButton.className = 'bpb-attach-gpx-button';
+                attachButton.textContent = 'Attach GPX';
+                attachButton.title = 'Preview this file on the current ascent without finding summits or changing ascent details';
+                attachButton.addEventListener('click', async () => {
+                    const file = nativeGpxFile();
+                    if (!file) return;
+                    const restored = restoreNative();
+                    const token = requestToken;
+                    await restored;
+                    if (token !== requestToken || nativeGpxFile() !== file) return;
+                    clearStatus();
+                    nativePreview.click();
+                });
+                nativePreview.insertAdjacentElement('afterend', attachButton);
+            }
+            nativePreview.classList.add('bpb-native-preview-hidden');
+            // Existing ascents own their aid. Summit processing creates new
+            // drafts and must never navigate an edit into a new-ascent form.
+            if (new URLSearchParams(location.search).has('aid')) return;
             if (!button) {
                 button = document.createElement('button');
                 button.type = 'button';
@@ -294,7 +319,6 @@ import tzlookup from 'tz-lookup';
                 button.addEventListener('click', () => void processFile());
                 nativePreview.parentNode.insertBefore(button, nativePreview);
             }
-            nativePreview.classList.add('bpb-native-preview-hidden');
             setIdle();
         };
 

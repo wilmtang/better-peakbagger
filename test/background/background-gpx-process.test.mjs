@@ -443,6 +443,8 @@ test('non-ascent-form senders are refused outright', async () => {
     for (const url of [
         'https://connect.garmin.com/modern/activity/1',
         'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123',
+        'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123&pid=7&cid=77',
         'https://evil.example/climber/ascentedit.aspx'
     ]) {
         const result = await harness.send({
@@ -450,6 +452,8 @@ test('non-ascent-form senders are refused outright', async () => {
         }, { tab: { id: 5 }, url });
         assert.equal(result.phase, 'error');
         assert.equal(result.error.code, 'forbidden');
+        const applied = await harness.send({ type: 'GPX_PROCESS_APPLY' }, { tab: { id: 5 }, url });
+        assert.equal(applied.ok, false);
     }
     assert.equal(harness.fetchCalls.length, 0, 'a refused sender must trigger no network traffic');
 });
