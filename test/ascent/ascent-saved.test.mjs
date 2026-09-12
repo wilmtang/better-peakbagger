@@ -9,8 +9,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
+import { build } from 'esbuild';
 
-const source = await fs.readFile(new URL('../../src/ascent/ascent-saved.js', import.meta.url), 'utf8');
+const { outputFiles } = await build({ entryPoints: ['src/ascent/ascent-saved.js'], bundle: true, write: false, format: 'iife' });
+const source = outputFiles[0].text;
 const editorFixture = await fs.readFile(
     new URL('../fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');
 

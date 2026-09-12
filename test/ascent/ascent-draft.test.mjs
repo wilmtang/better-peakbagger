@@ -665,3 +665,37 @@ test('privacy guard rejects waypoint data when capture disabled retention', asyn
     assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /privacy check/);
     dom.window.close();
 });
+
+test('later summits select the saved trip id and refuse a stale native trip list', async () => {
+    for (const available of [true, false]) {
+        const html = available ? formHtml.replace('value="existing"', 'value="44"') : formHtml;
+        const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+            action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+            fields: { date: '2026-01-01', fillAscentDetails: false, tripInfo: { id: '44', sequence: 2, name: 'Shared trip', nightsOut: 0 } },
+            gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="2" lon="3"/></trkseg></trk></gpx>',
+        } : { ok: true }, { html });
+        let previews = 0;
+        dom.window.document.getElementById('GPXPreview').addEventListener('click', () => previews++);
+        await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
+        assert.equal(previews, available ? 1 : 0);
+        if (available) {
+            assert.equal(dom.window.document.getElementById('TripDD').value, '44');
+            assert.equal(dom.window.document.getElementById('TripSeqText').value, '2');
+            assert.equal(dom.window.document.getElementById('TripNameText').value, '');
+        } else {
+            assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /shared trip is missing/);
+        }
+        dom.window.close();
+    }
+});
+
+test('empty GPX cannot reach Preview even if it passes the element allowlist', async () => {
+    const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+        fields: { date: '2026-01-01', fillAscentDetails: false }, gpx: '<gpx><trk><trkseg/></trk></gpx>',
+    } : { ok: true });
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
+    assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    dom.window.close();
+});

@@ -21,6 +21,7 @@ import { units as Units } from '../ui/units.js';
         'form-unavailable': 'Peakbagger’s ascent form has changed or did not load completely.',
         'privacy-check': 'The prepared upload failed its privacy check.',
         'preview-conflict': 'Preview was already started or the draft identity changed.',
+        'trip-unavailable': 'The shared trip is missing from this form. Reload this summit tab before continuing.',
     });
     const draftError = code => Object.assign(new Error(DRAFT_FAILURES[code]), { code });
     let draftConnectionGeneration = 0;
@@ -351,10 +352,20 @@ import { units as Units } from '../ui/units.js';
         }
 
         if (fields.tripInfo && (!preserveExistingFields || tripInfoIsEmpty())) {
-            selectNewTrip(transaction);
+            if (fields.tripInfo.id) {
+                const trip = document.getElementById('TripDD');
+                if (![...(trip?.options || [])].some(option => option.value === String(fields.tripInfo.id))) {
+                    throw draftError('trip-unavailable');
+                }
+                setSelectValue('TripDD', fields.tripInfo.id, false, transaction);
+            } else {
+                selectNewTrip(transaction);
+            }
             setTextField('TripSeqText', String(fields.tripInfo.sequence), transaction);
-            setTextField('TripNameText', fields.tripInfo.name, transaction);
-            setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut), transaction);
+            if (!fields.tripInfo.id) {
+                setTextField('TripNameText', fields.tripInfo.name, transaction);
+                setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut), transaction);
+            }
         }
 
         if (fields.wildernessNightsOut !== null && fields.wildernessNightsOut !== undefined) {
@@ -382,7 +393,7 @@ import { units as Units } from '../ui/units.js';
         const elevations = elements.filter(element => element.localName === 'ele');
         const times = elements.filter(element => element.localName === 'time');
         const segments = elements.filter(element => element.localName === 'trkseg');
-        if ((!allowWaypoints && waypoints.length)
+        if (!points.length || (!allowWaypoints && waypoints.length)
             || points.length + waypoints.length > MAX_UPLOAD_POINTS
             || segments.length > MAX_TRACK_SEGMENTS) return false;
         const validCoordinate = point => {

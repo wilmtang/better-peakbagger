@@ -15,6 +15,8 @@
 // the draft-fill pipeline, so every code path is wrapped so a failure here can
 // never disturb draft filling.
 
+import { verifyCaptureSave } from './capture-save-verification.js';
+
 (() => {
     'use strict';
 
@@ -95,6 +97,33 @@
         .find(anchor => /go back to referring page/i.test(anchor.textContent || '')) || null;
 
     let autoRouteStarted = false;
+    let captureCheck = null;
+    const confirmCapture = aid => {
+        if (captureCheck) return captureCheck;
+        captureCheck = verifyCaptureSave({ aid, send: sendBg, origin: location.origin }).then(result => {
+            if (result?.message) showCaptureResult(result.message);
+            return true;
+        }).catch(error => {
+            showCaptureResult(error.message, () => { captureCheck = null; void confirmCapture(aid); });
+            return false;
+        });
+        return captureCheck;
+    };
+    const showCaptureResult = (message, retry = null) => {
+        document.getElementById('bpb-capture-save-status')?.remove();
+        const status = document.createElement('p');
+        status.id = 'bpb-capture-save-status';
+        status.setAttribute('role', retry ? 'alert' : 'status');
+        status.textContent = message;
+        if (retry) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = 'Check saved ascent again';
+            button.addEventListener('click', () => { button.disabled = true; retry(); });
+            status.append(document.createTextNode(' '), button);
+        }
+        document.getElementById('SubTitle')?.parentNode.after(status);
+    };
     const routeAutomaticBackup = (link, aid) => {
         if (autoRouteStarted) return;
         autoRouteStarted = true;
@@ -112,9 +141,14 @@
         const aid = savedAscentId();
         if (!aid) return;
         confirmReportDraft(aid);
+        // Keep the source document alive for the bounded, read-only check
+        // before automatic backup navigates it away from the save result.
+        void confirmCapture(aid).then(ok => {
+            const link = document?.getElementById(LINK_ID);
+            if (ok && link) routeAutomaticBackup(link, aid);
+        });
         const existing = document.getElementById(LINK_ID);
         if (existing) {
-            routeAutomaticBackup(existing, aid);
             return;
         }
         const anchor = referringPageLink();
@@ -127,7 +161,6 @@
         // Reads: "Go Back to Referring Page, View the Saved Ascent, or, add a
         // new ascent on this page."
         anchor.after(document.createTextNode(', '), link);
-        routeAutomaticBackup(link, aid);
     };
 
     const safeTryInsert = () => {

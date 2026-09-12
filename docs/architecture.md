@@ -576,8 +576,9 @@ reference; the immutable reduced GPX lives under its own session key. Payload
 publication precedes the metadata pointer, failed publication rolls back, and
 startup/alarm reconciliation migrates legacy embedded payloads, rejects missing
 generations, and removes orphans. Cancellation, expiry, replacement, source
-closure, selection invalidation, and successful Preview consumption all remove
-the owned payload. Draft delivery requires a matching sender tab, job, peak,
+closure without retained drafts, selection invalidation, and successful consumption remove
+the owned payload. Single-summit consumption ends at Preview; multi-summit
+consumption ends only after all manual saves are checked. Draft delivery requires a matching sender tab, job, peak,
 and climber. Every selected draft is registered before its tab navigates,
 closing the race between content-script startup and worker state.
 
@@ -598,6 +599,16 @@ suffix. Encounter time is analysis metadata and is never written to
 Multi-peak trip names prefer the first GPX track name, then the activity page
 heading, then selected summit names in track order. Every candidate is
 whitespace-normalized and limited to 200 characters.
+
+Multi-summit drafts advance after a confirmed manual Save, not after Preview.
+The save-success content script reads the owned saved ascent, its actual trip
+selection, and its stored GPX. The complete ordered coordinates must match the
+retained upload. A missing/empty/different GPX or ambiguous trip keeps the queue
+pending with an explicit repair and recheck action. The first saved trip ID is
+reused by subsequent ascents; each next form is opened afresh so its native
+Trip dropdown and WebForms validation contain that trip. Closing a previewed
+tab before confirmation stops the remaining queue rather than guessing whether
+it was saved. No Save action is automated.
 
 `src/ascent/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated
 handshake offers recovery instead of clicking Preview again. No extension path

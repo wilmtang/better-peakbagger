@@ -2938,12 +2938,24 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
         type: 'DRAFT_DAY_STATS_APPLIED', jobId: first.jobId, pid: 8, cid: 77
     }, { tab: { id: 100 } }).then(value => value.ok), true);
     assert.equal(harness.values.bpbDraftTabs['100'].dayStatsPending, false);
-    assert.deepEqual(harness.tabMessages, [{ tabId: 101, message: { type: 'DRAFT_PROCEED' } }]);
+    assert.deepEqual(harness.tabMessages, [], 'Preview must not release the next summit before Save');
+    const firstSender = { tab: { id: 100 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' };
+    const saveContext = await harness.send({ type: 'DRAFT_SAVE_CONTEXT', aid: '800' }, firstSender);
+    assert.equal(saveContext.action, 'verify');
+    assert.equal(saveContext.gpx, first.gpx);
+    assert.equal((await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } })).action, 'wait');
+    const saveMessage = { type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: first.jobId, pid: 8, cid: 77, tripId: '44', gpxVerified: true };
+    assert.equal((await harness.send({ ...saveMessage, gpxVerified: false }, firstSender)).ok, false);
+    assert.equal((await harness.send({ ...saveMessage, jobId: 'replacement' }, firstSender)).ok, false);
+    assert.equal((await harness.send(saveMessage, firstSender)).ok, true);
+    assert.equal(harness.tabs.get(101).active, true);
+    assert.equal(harness.tabs.get(101).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
     assert.match(storedCaptureGpx(harness), /<gpx/);
 
     const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
-    assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2 });
+    assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2, id: '44' });
+    assert.equal(second.gpx, first.gpx, 'every summit receives the full identical GPX');
     assert.equal(first.fields.wildernessNightsOut, 2);
     assert.equal(second.fields.wildernessNightsOut, 2);
     assert.equal(first.fields.fillAscentDetails, true);
@@ -2961,6 +2973,10 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.equal(await harness.send({
         type: 'DRAFT_DAY_STATS_APPLIED', jobId: second.jobId, pid: 7, cid: 77
     }, { tab: { id: 101 } }).then(value => value.ok), true);
+    assert.ok(storedCaptureGpx(harness), 'retain the track until the final Save is verified');
+    const secondSender = { tab: { id: 101 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77' };
+    assert.equal((await harness.send({ type: 'DRAFT_SAVE_CONFIRMED', aid: '801', jobId: second.jobId, pid: 7, cid: 77, tripId: '99', gpxVerified: true }, secondSender)).ok, false);
+    assert.equal((await harness.send({ type: 'DRAFT_SAVE_CONFIRMED', aid: '801', jobId: second.jobId, pid: 7, cid: 77, tripId: '44', gpxVerified: true }, secondSender)).ok, true);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
     assert.equal(storedCaptureGpx(harness), undefined);

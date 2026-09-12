@@ -135,6 +135,12 @@ same rules as activity capture:
   and uses the same 30-minute expiry, exactly-once GPS Preview, and manual-Save
   rules as capture.
 
+For multiple summits, the reduced GPX stays in private session storage until
+all selected ascents are saved and checked, or the existing expiry/cleanup
+rules remove it. After each manual Save, the extension reads the saved ascent,
+its Trip selection when needed, and its stored GPX from Peakbagger. It checks
+the complete track before preparing the next summit with the same trip ID.
+
 The extension may also fill an empty Ascent Date on a fresh form with today's
 date. That happens entirely locally.
 

@@ -2086,6 +2086,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             previewStarted: false,
             applyLease: null,
             complete: false,
+            waitForSave: selection.matches.length > 1,
+            saved: false,
             dayStatsPending: false,
             focusOnReady,
             preserveExistingFields,
@@ -2859,7 +2861,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         .filter(candidate => isFresh(candidate) && candidate.jobId === jobId)
         .sort(compareDraftOrder);
     const firstPendingDraft = (drafts, jobId) => orderedDrafts(drafts, jobId)
-        .find(candidate => !candidate.complete) || null;
+        .find(candidate => !candidate.complete || (candidate.waitForSave && !candidate.saved)) || null;
 
     const notifyDraftToProceed = async draft => {
         if (!draft || !ext.tabs.sendMessage) return;
@@ -2893,6 +2895,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         // expires or closes.
         const job = Object.values(jobs).find(candidate => candidate.id === draft.jobId);
         if (!job) return { action: 'error', message: 'The private draft data expired. Capture the activity again.' };
+        if (job.saveRecoveryRequired) {
+            return { action: 'error', message: 'A previous summit tab closed before its saved GPX and trip were checked. Review that ascent before starting a new capture.' };
+        }
         const match = job.matches.find(candidate => candidate.id === draft.pid)
             // An upload job's bound peak may have been drafted through the
             // explicit closest-approach override rather than a visible match.
@@ -2942,8 +2947,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             });
             const currentDrafts = await readMap(DRAFTS_KEY);
             const nextDraft = firstPendingDraft(currentDrafts, draft.jobId);
-            if (nextDraft) await notifyDraftToProceed(nextDraft);
-            else await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, { phase: 'previewed' });
+            if (nextDraft && nextDraft.tabId !== tabId) await notifyDraftToProceed(nextDraft);
+            else if (!nextDraft) await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, { phase: 'previewed' });
             const completedDraft = currentDrafts[tabId];
             return {
                 action: 'banner',
@@ -2962,7 +2967,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
         const currentDraft = firstPendingDraft(drafts, draft.jobId);
         if (!currentDraft || currentDraft.tabId !== tabId) {
-            return { action: 'wait', peakName, message: 'Waiting for the previous GPS Preview to finish.' };
+            return { action: 'wait', peakName, message: 'Save the previous ascent to prepare this summit with its GPX and trip.' };
         }
 
         const uploadGpx = await readCapturePayload(job);
@@ -3018,7 +3023,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 externalUrl: job.capturePreferences?.fillExternalUrl !== false
                     ? providerActivityUrl(job) : null,
                 dayStats: job.dayStats || [],
-                tripInfo: draft.tripInfo || null,
+                tripInfo: draft.tripInfo ? { ...draft.tripInfo, ...(job.savedTripId ? { id: job.savedTripId } : {}) } : null,
                 wildernessNightsOut: draft.wildernessNightsOut ?? null
             },
             allowWaypoints: !!job.capturePreferences?.retainWaypoints,
@@ -3032,6 +3037,63 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const draft = (await readMap(DRAFTS_KEY))[tabId];
         if (!isFresh(draft)) return { action: 'ignore' };
         return serializeLifecycle(draft.sourceTabId, () => draftReadyTransaction(message, sender));
+    };
+
+    // Only the identity-bound content script on Peakbagger's save-success
+    // surface may verify the persisted ascent. Preview alone owns no saved GPX.
+    const savedDraftContext = async (message, sender) => {
+        const draft = (await readMap(DRAFTS_KEY))[sender.tab?.id];
+        const page = uploadPageIdentity(sender);
+        if (!page || !isFresh(draft) || !validateDraftPage(draft, page)
+            || !draft.waitForSave || !draft.complete || draft.saved
+            || !/^[1-9]\d*$/.test(String(message.aid)) || String(message.aid) === '1') return null;
+        const job = (await readMap(JOBS_KEY))[draft.sourceTabId];
+        if (job?.id !== draft.jobId) return null;
+        return { draft, job };
+    };
+    const draftSaveContext = async (message, sender) => {
+        const context = await savedDraftContext(message, sender);
+        if (!context) return { action: 'ignore' };
+        const { draft, job } = context;
+        const gpx = await readCapturePayload(job);
+        if (!gpx) return { action: 'error', message: 'The retained GPX expired. Check the saved ascent before continuing.' };
+        return { action: 'verify', jobId: job.id, pid: draft.pid, cid: draft.cid,
+            tripRequired: !!draft.tripInfo, tripId: job.savedTripId || null, gpx };
+    };
+    const draftSaveConfirmed = async (message, sender) => {
+        const context = await savedDraftContext(message, sender);
+        if (!context) return { ok: false };
+        return serializeLifecycle(context.draft.sourceTabId, async () => {
+            const current = await savedDraftContext(message, sender);
+            if (!current || current.job.id !== message.jobId
+                || !validateDraftPage(current.draft, message) || message.gpxVerified !== true) return { ok: false };
+            const { draft, job } = current;
+            const tripId = /^[1-9]\d*$/.test(String(message.tripId)) ? String(message.tripId) : null;
+            if (draft.tripInfo && (!tripId || (job.savedTripId && job.savedTripId !== tripId))) {
+                return { ok: false, message: 'The saved ascent does not belong to the shared trip. Correct its Trip Info before continuing.' };
+            }
+            await mutateLifecycleMaps((jobs, drafts) => {
+                if (jobs[draft.sourceTabId]?.id !== job.id || !sameDraftIdentity(drafts[draft.tabId], draft)) return;
+                drafts[draft.tabId].saved = true;
+                drafts[draft.tabId].savedAid = String(message.aid);
+                if (draft.tripInfo) jobs[draft.sourceTabId].savedTripId = tripId;
+            });
+            const next = firstPendingDraft(await readMap(DRAFTS_KEY), job.id);
+            if (next) {
+                // The waiting form predates trip creation. Reload its native
+                // options and WebForms event validation before selecting the id.
+                try {
+                    await ext.tabs.update(next.tabId, {
+                        url: `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx?pid=${next.pid}&cid=${next.cid}`,
+                        active: true,
+                    });
+                }
+                catch { return { ok: true, message: 'Ascent checked. Reload the next summit tab to continue.' }; }
+            } else {
+                await updateCaptureJobWithoutPayload(draft.sourceTabId, job.id, { phase: 'previewed' });
+            }
+            return { ok: true, message: next ? 'Ascent and GPX checked. The next summit is ready.' : 'All selected ascents and their GPX tracks have been checked.' };
+        });
     };
 
     const previewStartedTransaction = async (message, sender) => {
@@ -3438,6 +3500,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             case 'DRAFT_READY': return draftReady(message, sender);
             case 'DRAFT_PREVIEW_STARTED': return previewStarted(message, sender);
             case 'DRAFT_DAY_STATS_APPLIED': return dayStatsApplied(message, sender);
+            case 'DRAFT_SAVE_CONTEXT': return draftSaveContext(message, sender);
+            case 'DRAFT_SAVE_CONFIRMED': return draftSaveConfirmed(message, sender);
             case TrustedActions.ISSUE_TYPE: return trustedActions.issue(message, sender);
             case TrustedActions.BEGIN_TYPE: return trustedActions.begin(message, sender);
             case TrustedActions.END_TYPE: return trustedActions.end(message, sender);
@@ -3481,6 +3545,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
             if (removedDraft) {
                 const sourceJob = Object.values(jobs).find(job => job.id === removedDraft.jobId);
+                if (sourceJob && removedDraft.waitForSave && !removedDraft.saved
+                    && (removedDraft.previewStarted || removedDraft.complete)) sourceJob.saveRecoveryRequired = true;
                 const hasSiblingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === removedDraft.jobId);
                 if (sourceJob && !hasSiblingDraft) {
                     if (sourceJob.sourceClosed) {
