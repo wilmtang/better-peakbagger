@@ -211,6 +211,12 @@ The photo editor stores the selected image, thumbnail, source metadata,
 annotation project, title, and alt text in device-local IndexedDB. Pasting into a
 Rich text TR stores metadata-free pixels and a local report image reference.
 Double-clicking opens a separate editable copy; **Save and return** keeps it local.
+Double-clicking a published image opens that image too. The editor reuses its
+local source when available; otherwise it reads the HTTPS image URL without
+credentials or a referrer, subject to the host's CORS policy and bounded size
+and time limits. The host receives the ordinary image request and IP address.
+**Upload and replace** replaces the clicked image with the edited upload; it
+does not alter the original published image.
 Saving the TR uploads its remaining local images before submitting the report. Source image
 bytes can contain camera metadata; they stay local and are never uploaded by
 Better Peakbagger.

@@ -221,6 +221,13 @@ export function createPhotoRoutes({
             };
         }
         const pendingId = message.localPhotoId;
+        const imageEditId = typeof message.imageEditId === 'string'
+            && /^[A-Za-z0-9:_-]{1,100}$/.test(message.imageEditId) ? message.imageEditId : null;
+        const imageUrl = typeof message.imageUrl === 'string' && message.imageUrl.length <= Library.URL_LIMIT
+            ? cleanSourceUrl(message.imageUrl) : null;
+        if ((message.imageEditId && !imageEditId) || (message.imageUrl && (!imageUrl || !imageEditId || pendingId))) {
+            return { ok: false, error: { code: 'invalid-image' } };
+        }
         if (pendingId) {
             try { await reportPhotos.read(reportOwner(sender), pendingId); }
             catch (error) { return { ok: false, error: { message: error.message } }; }
@@ -275,6 +282,7 @@ export function createPhotoRoutes({
                         : null,
                     sourceUrl,
                     localPhotoId: pendingId || null,
+                    ...(imageEditId ? { imageEditId } : {}),
                     editorTabId: null,
                     identity,
                     createdAt,
@@ -287,6 +295,8 @@ export function createPhotoRoutes({
             url.searchParams.set('mode', mode);
             url.searchParams.set('returnToken', token);
             if (pendingId) url.searchParams.set('localPhotoId', pendingId);
+            if (imageUrl) url.searchParams.set('imageUrl', imageUrl);
+            if (imageUrl) url.searchParams.set('imageAlt', String(message.imageAlt || '').slice(0, Library.ALT_LIMIT));
             const tab = await ext.tabs.create({ url: url.toString() });
             if (!Number.isInteger(tab?.id)) throw new Error('Photo editor tab did not open.');
             createdTabId = tab.id;
@@ -354,6 +364,7 @@ export function createPhotoRoutes({
             response = await ext.tabs.sendMessage(context.sourceTabId, {
                 type: context.localPhotoId ? 'PHOTO_LOCAL_RESULT' : 'PHOTO_INSERT_RESULT',
                 ...(context.localPhotoId ? { replacesLocalPhotoId: context.localPhotoId } : {}),
+                ...(context.imageEditId ? { imageEditId: context.imageEditId } : {}),
                 returnToken: token,
                 expectedIdentity: context.identity,
                 expectedUrl: context.sourceUrl,

@@ -565,3 +565,22 @@ test('fails closed for wrong editor tab, invalid public URL, and expired context
     }, photoSender)).error.code, 'expired-context');
     assert.equal(h.sent.length, 0);
 });
+
+test('image edits bind the source URL and exact target to the trusted return context', async () => {
+    const h = harness();
+    const opened = await h.routes.handlers.PHOTO_EDITOR_OPEN({ mode: 'edit', identity: { cid: 22, pid: 33 },
+        imageUrl: 'https://i.ibb.co/example/ridge.png', imageEditId: 'image-edit-1' }, peakSender);
+    assert.equal(opened.ok, true);
+    assert.equal(new URL(h.created[0]).searchParams.get('imageUrl'), 'https://i.ibb.co/example/ridge.png');
+    assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].imageEditId, 'image-edit-1');
+    const result = await h.routes.handlers.PHOTO_INSERT_COMMIT({ returnToken: 'return-token', localPhotoId: 'photo-1',
+        imageEditId: 'forged-target', url: 'https://i.ibb.co/example/edited.png', alt: 'Edited ridge' },
+    { tab: { id: 91 }, url: 'chrome-extension://test-extension/photos/photos.html' });
+    assert.equal(result.ok, true);
+    assert.equal(h.sent[0].message.imageEditId, 'image-edit-1');
+    for (const imageUrl of ['http://images.example/a.png', 'https://user:secret@images.example/a.png', 'javascript:alert(1)']) {
+        const bad = harness();
+        assert.equal((await bad.routes.handlers.PHOTO_EDITOR_OPEN({ identity: { cid: 22 }, imageUrl, imageEditId: 'image-edit-1' }, peakSender)).ok, false);
+        assert.equal(bad.created.length, 0);
+    }
+});

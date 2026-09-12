@@ -11,10 +11,13 @@ import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.j
 import { reportPhoto as PendingPhoto } from '../src/photos/report-photo.js';
 import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.js';
 import { settings as Settings } from '../src/settings/settings.js';
+import { readPhotoSourceUrl } from '../src/photos/photo-source-url.js';
 
 const ext = globalThis.browser || globalThis.chrome;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const LOCAL_PHOTO_ID = new URL(location.href).searchParams.get('localPhotoId') || '';
+const SOURCE_IMAGE_URL = new URL(location.href).searchParams.get('imageUrl') || '';
+const SOURCE_IMAGE_ALT = (new URL(location.href).searchParams.get('imageAlt') || '').slice(0, Library.ALT_LIMIT);
 let localPhotoReturned = false;
 const RETURN_TOKEN = new URL(location.href).searchParams.get('returnToken') || '';
 const START_MODE = new URL(location.href).searchParams.get('mode') === 'library' ? 'library' : 'edit';
@@ -1690,7 +1693,9 @@ const chooseFile = async file => {
         // optional, so the draft is already valid — autosave it rather than
         // waiting for an edit that may never come.
         setSaveStatus('Not saved yet');
-        setEditorStatus('Photo stays local until you choose Upload and insert.');
+        setEditorStatus(SOURCE_IMAGE_URL && RETURN_TOKEN
+            ? 'Photo stays local until you choose Upload and replace.'
+            : 'Photo stays local until you choose Upload and insert.');
         shouldPersist = true;
         ui.alt.focus();
     } catch (error) {
@@ -2978,7 +2983,8 @@ const initialize = async () => {
     await recoverOperations();
     await refreshCredential();
     await refreshPhotoBackupStatus();
-    ui.upload.textContent = LOCAL_PHOTO_ID ? 'Save and return' : RETURN_TOKEN ? 'Upload and insert' : 'Upload to ImgBB';
+    ui.upload.textContent = LOCAL_PHOTO_ID ? 'Save and return'
+        : RETURN_TOKEN ? (SOURCE_IMAGE_URL ? 'Upload and replace' : 'Upload and insert') : 'Upload to ImgBB';
     setView(START_MODE === 'library' ? 'library' : 'editor');
     await renderLibrary();
     if (LOCAL_PHOTO_ID) {
@@ -2986,6 +2992,19 @@ const initialize = async () => {
         if (!bundle?.photo) throw new Error('The local photo is unavailable.');
         await editAsNewVersion(bundle.photo);
         setEditorStatus('Edits stay on this device. Save and return to update the TR.');
+    } else if (SOURCE_IMAGE_URL && RETURN_TOKEN) {
+        try {
+            const existing = (await store.listPhotos()).find(item => !item.deletedAt
+                && [item.remote?.url, item.remote?.displayUrl, item.remote?.mediumUrl].includes(SOURCE_IMAGE_URL));
+            const bundle = existing ? await store.getBundle(existing.localId) : null;
+            if (bundle?.original && bundle?.project) await editAsNewVersion(existing);
+            else await chooseFile(await readPhotoSourceUrl(SOURCE_IMAGE_URL, { maxBytes: MAX_ENCODED_SOURCE_BYTES }));
+            if (project) { ui.alt.value = SOURCE_IMAGE_ALT; schedulePersist(); }
+        } catch {
+            toast('The image could not be opened from its host or local library. Download it and choose the file to continue editing.', {
+                action: 'Choose image', onAction: () => ui.file.click(), duration: 0,
+            });
+        }
     }
     scheduleLibraryMaintenance();
 };

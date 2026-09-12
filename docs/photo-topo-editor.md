@@ -15,6 +15,16 @@ API upload will appear in an ImgBB profile. See the
 
 ## User workflow
 
+Double-click an image in the Rich text report to open Photo Topos on that
+image. Local pasted images keep the existing **Save and return** flow.
+Published images reuse a matching local source/project when available, or
+load the HTTPS image without credentials or a referrer. If the host refuses
+that read, the editor offers **Choose image** so the downloaded source can be
+opened manually. Uploading an edited published image replaces only the clicked
+occurrence and preserves its report dimensions. A removed/replaced image or
+an editor mode change makes the return fail closed instead of inserting an
+unrelated image.
+
 From the report editor's image popover, the user can:
 
 - keep the existing direct-URL workflow; or

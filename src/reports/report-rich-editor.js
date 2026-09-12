@@ -325,7 +325,11 @@ const ReportImage = Image.extend({
             const edit = document.createElement('button');
             edit.type = 'button';
             edit.textContent = 'Edit photo';
-            const open = event => this.options.editLocalImage?.(event, currentNode.attrs.src);
+            const open = event => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.options.editLocalImage?.(event, currentNode.attrs.src, getPos);
+            };
             edit.addEventListener('click', open);
             image.addEventListener('dblclick', open);
             localControls.append(label, edit);

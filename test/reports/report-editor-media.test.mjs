@@ -866,3 +866,52 @@ test('safe aliases and whitespace normalization do not trigger the conversion gu
     assert.equal(ui.dataset.mode, 'rich');
     assert.equal(ui.querySelector('.bpb-re-conversion').hidden, true);
 });
+
+test('double-click opens the exact report image and replaces only that occurrence on return', async () => {
+    const listeners = [];
+    const opened = [];
+    const src = 'https://images.example/ridge.png';
+    const dom = await loadEditor({
+        report: `[img src="${src}" alt="First" width="240"]\n\n[img src="${src}" alt="Second" width="320"]`,
+        prepare: d => {
+            d.chrome.runtime.onMessage.addListener = listener => listeners.push(listener);
+            d.chrome.runtime.sendMessage = async message => {
+                if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'image-activation' };
+                if (message.type === 'PHOTO_EDITOR_OPEN') { opened.push(message); return { ok: true, tabId: 44 }; }
+                return null;
+            };
+        },
+    });
+    const ui = await editorReady(dom);
+    const images = ui.querySelectorAll('.bpb-re-image-resize img');
+    assert.equal(images.length, 2);
+    images[1].dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.equal(opened.length, 0, 'synthetic double-clicks have no authority');
+    fireTrustedEvent(images[1], 'dblclick', { bubbles: true });
+    await waitFor(dom, () => opened.length === 1);
+    assert.equal(opened[0].imageUrl, src);
+    assert.ok(opened[0].imageEditId);
+    const message = { type: 'PHOTO_INSERT_RESULT', ...returnContext(), returnToken: 'image-return',
+        imageEditId: opened[0].imageEditId, localPhotoId: 'edited-photo', url: 'https://images.example/edited.png', alt: 'Annotated ridge' };
+    let result;
+    for (const listener of listeners) listener(message, { id: 'test-extension' }, response => { result = response; });
+    assert.equal(result.ok, true);
+    const current = ui.querySelectorAll('.bpb-re-image-resize img');
+    assert.equal(current.length, 2);
+    assert.equal(current[0].getAttribute('src'), src);
+    assert.equal(current[1].getAttribute('src'), message.url);
+    assert.equal(current[1].style.width, '320px');
+    // A duplicate delivery acknowledges without inserting a third image.
+    for (const listener of listeners) listener(message, { id: 'test-extension' }, response => { result = response; });
+    assert.equal(result.ok, true);
+    assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 2);
+    fireTrustedEvent(current[0], 'dblclick', { bubbles: true });
+    await waitFor(dom, () => opened.length === 2);
+    editors(dom).rich.commands.setContent('<p>The image was removed.</p>', { emitUpdate: true });
+    const stale = { ...message, imageEditId: opened[1].imageEditId, returnToken: 'stale-image-return' };
+    for (const listener of listeners) listener(stale, { id: 'test-extension' }, response => { result = response; });
+    assert.equal(result.ok, false, 'a removed image must not turn an edit result into an insertion');
+    assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 0);
+    dom.window.close();
+});

@@ -1128,12 +1128,15 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     let photoLaunchBusy = false;
-    const launchPhotoEditor = async (event, localPhotoId = null) => {
+    const imageEditTargets = new Map();
+    const launchPhotoEditor = async (event, localPhotoId = null, target = null) => {
         if (photoLaunchBusy) return;
+        photoLaunchBusy = true;
         const generation = nextTrustedActionGeneration('photos');
         const activation = await TrustedAction.issue(ext, event, 'photo-editor', generation);
-        if (!activation) return;
-        photoLaunchBusy = true;
+        if (!activation) { photoLaunchBusy = false; return; }
+        if (imageEditTargets.size >= 50) imageEditTargets.delete(imageEditTargets.keys().next().value);
+        if (target) imageEditTargets.set(generation, target);
         imageLaunchStatus.textContent = '';
         imageEdit.disabled = true;
         imageEdit.setAttribute('aria-busy', 'true');
@@ -1141,6 +1144,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             const response = await RuntimeMessage.send(ext, {
                 type: 'PHOTO_EDITOR_OPEN',
                 ...(localPhotoId ? { localPhotoId } : {}),
+                ...(target ? { imageEditId: generation,
+                    ...(!localPhotoId ? { imageUrl: new URL(target.src, location.href).href, imageAlt: target.alt } : {}) } : {}),
                 mode: 'edit',
                 generation,
                 activationToken: activation.token,
@@ -1151,8 +1156,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 }
             });
             if (!response?.ok) {
+                imageEditTargets.delete(generation);
                 const message = response?.error?.message || 'Couldn’t open the photo editor. Try again.';
-                if (localPhotoId) localPhotos.showError(message);
+                if (localPhotoId || target) localPhotos.showError(message);
                 else imageLaunchStatus.textContent = message;
             }
         } finally {
@@ -1299,7 +1305,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             onStateChange: () => refreshToolbar(),
             shortcuts: { 'Mod-k': openLinkBox },
             resolveLocalImage: src => localPhotos.resolvePreview(src),
-            editLocalImage: (event, src) => localPhotos.edit(event, src)
+            editLocalImage: (event, src, getPos) => {
+                if (localPhotos.busy()) return;
+                const pos = getPos();
+                if (!Number.isInteger(pos)) return;
+                void launchPhotoEditor(event, PendingPhoto.id(src), {
+                    src, getPos, editor: richEditor, alt: richEditor.state.doc.nodeAt(pos)?.attrs.alt || '',
+                });
+            }
         });
     };
 
@@ -1447,6 +1460,23 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         } catch { return false; }
     };
 
+    const replaceEditedImage = (message, src, alt) => {
+        const target = imageEditTargets.get(message.imageEditId);
+        if (!target || target.editor !== richEditor || richEditor?.isDestroyed) return false;
+        let pos;
+        try { pos = target.getPos(); } catch { return false; }
+        if (!Number.isInteger(pos)) return false;
+        const node = richEditor.state.doc.nodeAt(pos);
+        if (node?.type.name !== 'image' || node.attrs.src !== target.src) return false;
+        richEditor.view.dispatch(richEditor.state.tr.setNodeMarkup(pos, null, {
+            ...node.attrs, src, alt: (node.attrs.alt || '') === target.alt ? alt : node.attrs.alt,
+        }));
+        imageEditTargets.delete(message.imageEditId);
+        flushSync();
+        void saveDraftNow();
+        return true;
+    };
+
     const handlePhotoInsertion = (message, sender, sendResponse) => {
         if (message?.type === 'PHOTO_LOCAL_RESULT') {
             if (!samePhotoReturnContext(message) || sender?.id !== ext.runtime.id) {
@@ -1457,7 +1487,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 sendResponse?.({ ok: true });
                 return false;
             }
-            const ok = state.mode === 'rich' && localPhotos.receive(message, sender);
+            const ok = state.mode === 'rich' && (message.imageEditId
+                ? !!PendingPhoto.id(message.url) && replaceEditedImage(message, message.url, message.alt)
+                : localPhotos.receive(message, sender));
             if (ok) rememberPhotoReturnToken(message.returnToken);
             sendResponse?.({ ok });
             return false;
@@ -1484,12 +1516,19 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             sendResponse?.({ ok: false, error: { code: 'editor-unavailable' } });
             return false;
         }
-        richCommands.insertImage(richEditor, insertion);
+        if (message.imageEditId) {
+            if (!replaceEditedImage(message, insertion.src, insertion.alt)) {
+                sendResponse?.({ ok: false, error: { code: 'image-unavailable' } });
+                return false;
+            }
+        } else {
+            richCommands.insertImage(richEditor, insertion);
+        }
         flushSync();
         if (returnToken) rememberPhotoReturnToken(returnToken);
         closeBoxes();
         refreshToolbar();
-        setDraftManagerStatus('Photo inserted');
+        setDraftManagerStatus(message.imageEditId ? 'Photo updated' : 'Photo inserted');
         void saveDraftNow();
         sendResponse?.({ ok: true });
         return false;
