@@ -844,6 +844,13 @@ test('a multi-summit selection fills the current tab and opens grouped sibling d
     assert.equal(apply.fields.suffix, 'a');
     const waiting = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 }, url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' });
     assert.equal(waiting.action, 'wait', 'the sibling waits for the current tab’s Preview');
+    await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77, applyLeaseToken: apply.applyLeaseToken });
+    await harness.send({ type: 'DRAFT_READY', pid: 7, cid: 77, previewResult: { state: 'success', message: 'GPX uploaded.' } });
+    const repair = await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', pageSessionId: 'repair-page-session', selectionGeneration: 2, selectionNonce: 'repair-selection-nonce' });
+    assert.equal(repair.preserved, true);
+    assert.equal(harness.values.bpbCaptureJobs['5'].id, ready.jobId);
+    assert.equal(storedCaptureGpx(harness), apply.gpx);
+    assert.equal(harness.values.bpbDraftTabs['100'].jobId, ready.jobId);
 });
 
 test('a failed sibling open restores the exact current-tab draft and upload job before retry', async () => {

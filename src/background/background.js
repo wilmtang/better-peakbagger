@@ -2527,14 +2527,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             // Once Apply has committed a draft, the old page's pagehide is an
             // ownership transfer, not a new upload selection. The new bound
             // page still needs this job and private payload for DRAFT_READY.
-            // A real file change carries no lifecycle reason and continues to
-            // supersede the generation normally.
-            const preservesCommittedDraft = message.reason === 'page-lifecycle'
-                && current?.provider === 'upload'
+            // After Preview, a replacement file may repair this ascent through
+            // native attachment. Keep the multi-summit payload until Save is
+            // verified; earlier selections still supersede analysis normally.
+            const sourceDraft = drafts[page.tabId];
+            const repairingPreparedAscent = sourceDraft?.jobId === current?.id
+                && sourceDraft?.waitForSave && sourceDraft.complete && !sourceDraft.saved;
+            const preservesCommittedDraft = current?.provider === 'upload'
                 && (current.phase === 'opened' || current.phase === 'previewed')
                 && Object.values(drafts).some(draft => isFresh(draft)
                     && draft.jobId === current.id
-                    && Number(draft.sourceTabId) === page.tabId);
+                    && Number(draft.sourceTabId) === page.tabId
+                    && (message.reason === 'page-lifecycle' || repairingPreparedAscent));
             if (preservesCommittedDraft) {
                 return { ok: true, preserved: true, ...selection };
             }

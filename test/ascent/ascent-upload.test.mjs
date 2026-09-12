@@ -95,6 +95,17 @@ const fileTransfer = files => ({
 const processButton = dom => dom.window.document.querySelector('.bpb-process-button');
 const uploadStatus = dom => dom.window.document.querySelector('.bpb-upload-status');
 
+test('repairing a previewed multi-summit source offers attachment without replacing its capture', async () => {
+    const dom = await loadEditor({ prepare: d => {
+        d.chrome.runtime.sendMessage = async message => message.type === 'GPX_PROCESS_INVALIDATE'
+            ? { ok: true, preserved: true } : { action: 'ignore' };
+    } });
+    await chooseGpx(dom);
+    assert.ok(dom.window.document.querySelector('.bpb-attach-gpx-button'));
+    assert.equal(processButton(dom), null);
+    dom.window.close();
+});
+
 test('Attach GPX preserves the original file and current ascent without processing or saving', async () => {
     for (const url of [URL, 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123']) {
         const dom = await loadEditor({ url, respond: () => ({ ok: true }) });

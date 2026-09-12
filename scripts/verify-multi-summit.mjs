@@ -4,7 +4,7 @@
 // The fixture deliberately shares one temporary upload across ascent forms.
 /* global chrome, document */
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -129,6 +129,16 @@ try {
         assert.equal(previews, before + 1);
         assert.equal(savePosts, before);
         if (process.env.BPB_VERIFY_MULTI_SCREENSHOT) await pages[1].screenshot({ path: process.env.BPB_VERIFY_MULTI_SCREENSHOT });
+        if (provider === 'upload') {
+            const repairFile = path.join(root, 'repair.gpx');
+            await writeFile(repairFile, payload.value.gpx);
+            await pages[0].locator('#GPXUpload').setInputFiles(repairFile);
+            const attach = pages[0].getByRole('button', { name: 'Attach GPX', exact: true });
+            await attach.waitFor();
+            assert.equal(await pages[0].locator('.bpb-process-button').count(), 0);
+            await Promise.all([pages[0].waitForNavigation(), attach.click()]);
+            assert.equal(previews, before + 2);
+        }
         await pages[0].locator('#SaveButton').click();
         await pages[1].waitForFunction(() => document.getElementById('GPXStatusLabel')?.textContent.includes('successfully'));
         assert.equal(await pages[1].locator('#TripDD').inputValue(), '44');

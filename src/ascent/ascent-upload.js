@@ -279,7 +279,7 @@ import tzlookup from 'tz-lookup';
             labelElement.textContent = 'Process';
         };
 
-        const showProcessButton = () => {
+        const showProcessButton = ({ attachmentOnly = false } = {}) => {
             clearStatus();
             removeCard();
             if (!attachButton) {
@@ -303,7 +303,7 @@ import tzlookup from 'tz-lookup';
             nativePreview.classList.add('bpb-native-preview-hidden');
             // Existing ascents own their aid. Summit processing creates new
             // drafts and must never navigate an edit into a new-ascent form.
-            if (new URLSearchParams(location.search).has('aid')) return;
+            if (attachmentOnly || new URLSearchParams(location.search).has('aid')) return;
             if (!button) {
                 button = document.createElement('button');
                 button.type = 'button';
@@ -643,7 +643,7 @@ import tzlookup from 'tz-lookup';
             }
             if (!file || !/\.gpx$/i.test(file.name || '')) return;
             selectedFile = { file, identity, nonce, generation };
-            showProcessButton();
+            showProcessButton({ attachmentOnly: invalidated.preserved === true });
         };
 
         // Keep drop discovery collection-shaped even while this page admits a
