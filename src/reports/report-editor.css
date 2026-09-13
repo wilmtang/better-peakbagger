@@ -600,6 +600,40 @@
     pointer-events: none;
 }
 
+.bpb-re-surface .bpb-re-image-resize {
+    flex-direction: column;
+}
+
+#bpb-report-editor .bpb-re-surface .bpb-re-caption-placeholder {
+    appearance: none;
+    display: block;
+    box-sizing: border-box;
+    width: 0;
+    min-width: 100%;
+    padding: 8px 0 0;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+    color: inherit !important;
+    font: inherit;
+    font-size: 0.9em;
+    line-height: 1.5;
+    text-align: left;
+    overflow-wrap: anywhere;
+    opacity: 0.65;
+    cursor: text;
+}
+
+#bpb-report-editor .bpb-re-surface figure .bpb-re-caption-placeholder {
+    display: none;
+}
+
+#bpb-report-editor .bpb-re-surface .bpb-re-caption-placeholder:focus-visible {
+    outline: 2px solid #3b76c4;
+    outline-offset: 2px;
+}
+
 .bpb-re-surface figure .bpb-re-image-resize-frame {
     padding-bottom: 0;
 }

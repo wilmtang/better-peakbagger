@@ -81,8 +81,26 @@ try {
     assert.equal(uploads, 0);
     await report.locator('.bpb-re-local-photo-actions button').waitFor();
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.naturalWidth === 800);
-    await report.locator('.bpb-re-image-resize img').click();
-    await report.getByRole('button', { name: 'Add caption', exact: true }).click();
+    const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
+    await mkdir(output, { recursive: true });
+    await report.getByRole('button', { name: 'Write a caption', exact: true }).waitFor();
+    await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-placeholder.png') });
+    await report.setViewportSize({ width: 720, height: 900 });
+    await report.locator('#bpb-report-editor').evaluate(element => { element.style.width = '520px'; });
+    await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'dark'; });
+    const placeholderGeometry = await report.locator('.bpb-re-caption-placeholder').evaluate(element => {
+        const placeholder = element.getBoundingClientRect();
+        const photo = element.parentElement.querySelector('img').getBoundingClientRect();
+        return { width: placeholder.width, imageWidth: photo.width, below: placeholder.top >= photo.bottom };
+    });
+    assert.ok(placeholderGeometry.below && Math.abs(placeholderGeometry.width - placeholderGeometry.imageWidth) <= 2,
+        JSON.stringify(placeholderGeometry));
+    await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-placeholder-narrow-dark.png') });
+    await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
+    await report.locator('#bpb-report-editor').evaluate(element => { element.style.removeProperty('width'); });
+    await report.setViewportSize({ width: 1280, height: 900 });
+
+    await report.getByRole('button', { name: 'Write a caption', exact: true }).click();
     await report.keyboard.type('Looking north from the summit ');
     await report.keyboard.insertText('—');
     await report.keyboard.type(' the ridge continues beyond the snowfield.');
@@ -110,28 +128,44 @@ try {
     await report.keyboard.press('Backspace');
     await report.locator('.bpb-re-surface figure').waitFor({ state: 'detached' });
     assert.equal(await report.locator('.bpb-re-surface .bpb-re-image-resize img').count(), 1);
+    await report.getByRole('button', { name: 'Write a caption', exact: true }).waitFor();
     await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
     await report.waitForFunction(() => !!document.querySelector('.bpb-re-surface figcaption')?.textContent);
     await report.locator('.bpb-re-surface figcaption').fill(captionText);
     await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
-    await report.getByRole('button', { name: 'Text before image', exact: true }).click();
+    await report.keyboard.press('ArrowUp');
     await report.keyboard.type('Normal text before the image.');
     await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
-    await report.getByRole('button', { name: 'Text after image', exact: true }).click();
+    await report.keyboard.press('ArrowDown');
     await report.keyboard.type('Normal text after the image.');
     await report.waitForFunction(() => {
         const figure = document.querySelector('.bpb-re-surface figure');
         return figure?.previousElementSibling?.outerHTML === '<p>Normal text before the image.</p>'
             && figure.nextElementSibling?.outerHTML === '<p>Normal text after the image.</p>';
     });
+    // Arrow navigation selects the image as a unit and never enters its caption.
+    const paragraphCount = await report.locator('.bpb-re-surface p').count();
+    for (const [backward, forward] of [['ArrowUp', 'ArrowDown'], ['ArrowLeft', 'ArrowRight']]) {
+        await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
+        await report.keyboard.press(backward);
+        await report.waitForFunction(() => globalThis.getSelection()?.anchorNode?.textContent === 'Normal text before the image.');
+        await report.keyboard.press(forward);
+        await report.locator('.bpb-re-surface figure.ProseMirror-selectednode').waitFor();
+        await report.keyboard.press(forward);
+        await report.waitForFunction(() => globalThis.getSelection()?.anchorNode?.textContent === 'Normal text after the image.');
+        await report.keyboard.press(backward);
+        await report.locator('.bpb-re-surface figure.ProseMirror-selectednode').waitFor();
+        await report.keyboard.press(backward);
+        await report.waitForFunction(() => globalThis.getSelection()?.anchorNode?.textContent === 'Normal text before the image.');
+    }
+    assert.equal(await report.locator('.bpb-re-surface p').count(), paragraphCount);
+    assert.equal(await report.locator('.bpb-re-surface figcaption').textContent(), captionText);
     await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
     await report.keyboard.press('Backspace');
     await report.locator('.bpb-re-surface figure').waitFor({ state: 'detached' });
     assert.equal(await report.locator('.bpb-re-surface figcaption').count(), 0);
     await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
     await report.waitForFunction(expected => document.querySelector('.bpb-re-surface figcaption')?.textContent === expected, captionText);
-    const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
-    await mkdir(output, { recursive: true });
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'pasted-light.png') });
     await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'dark'; });
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'pasted-dark.png') });

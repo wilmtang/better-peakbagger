@@ -400,17 +400,19 @@ add/delete row and column, header-row toggle, and table removal.
 
 ### Image captions
 
-Select an image in Rich text and choose **Add caption**. Type directly beneath
-the photo; captions are plain text, separate from the image's alt description.
+Click **Write a caption…** beneath any image in Rich text to start typing.
+Captions are plain text, separate from the image's alt description.
 Photo Topos also has an optional **Caption** field, which is inserted beneath
 the photo or updates the caption when you save the photo back to the report.
 Existing alt text is retained separately. A photo-editor return preserves a
 caption you changed in the report while the photo editor was open.
 Click the caption to edit it, or select the photo and use **Edit caption**.
 **Remove caption**, or deleting the caption's last character, keeps the image
-and its dimensions and immediately removes the caption field. **Text before
-image** and **Text after image** place the caret in normal report text. Enter
-(or Shift+Enter) from a caption starts an unformatted paragraph after the image.
+and its dimensions and restores the empty placeholder. Arrow keys move between
+normal report text and the image, skipping its caption. From a selected image,
+Left/Up moves before it and Right/Down moves after it; an empty paragraph is
+created when needed. Click the caption to enter it. Enter (or Shift+Enter) from
+a caption starts an unformatted paragraph after the image.
 Backspace at the start selects the whole figure;
 another deletion removes the photo and caption together. Undo restores them.
 Text formatting and insertion controls are disabled while editing a figure.

@@ -13,6 +13,7 @@ const selectImage = (editor, occurrence = 0) => {
     });
     editor.commands.setNodeSelection(positions[occurrence]);
 };
+const pressKey = (dom, editor, key) => editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 const captionButton = (ui, label) => [...ui.querySelectorAll('.bpb-re-captionbar button')]
     .find(button => button.textContent === label);
 const saved = dom => {
@@ -47,20 +48,56 @@ test('clearing caption text unwraps the image immediately and undo restores the 
     } finally { dom.window.close(); }
 });
 
-test('text controls create unformatted paragraphs beside a figure without joining existing prose', async () => {
-    const dom = await loadEditor({ report: `${figure}\n\n[i]Existing text[/i]` });
+test('every uncaptioned image offers a direct placeholder without changing saved text', async () => {
+    const dom = await loadEditor({ report: image });
     try {
         const ui = await editorReady(dom);
+        const placeholder = ui.querySelector('.bpb-re-caption-placeholder');
+        assert.equal(placeholder.getAttribute('aria-label'), 'Write a caption');
+        assert.equal(saved(dom), image);
+        modeButton(dom.window.document, 'Rich text').click();
+        ui.querySelector('.bpb-re-caption-placeholder').click();
         const editor = editors(dom).rich;
-        selectImage(editor);
-        captionButton(ui, 'Text before image').click();
-        editor.commands.insertContent('Before');
-        selectImage(editor);
-        captionButton(ui, 'Text after image').click();
-        editor.commands.insertContent('After');
-        assert.equal(saved(dom), `Before\n\n${figure}\n\nAfter\n\n[i]Existing text[/i]`);
+        assert.equal(editor.state.selection.$from.parent.type.name, 'reportCaption');
+        editor.commands.insertContent('North ridge');
+        assert.equal(saved(dom), figure);
     } finally { dom.window.close(); }
 });
+
+for (const source of [image, figure]) {
+    test(`arrow keys reach ordinary text on both sides of ${source === image ? 'an image' : 'a captioned figure'}`, async () => {
+        const dom = await loadEditor({ report: source });
+        try {
+            const ui = await editorReady(dom);
+            const editor = editors(dom).rich;
+            assert.equal(captionButton(ui, 'Text before image'), undefined);
+            assert.equal(captionButton(ui, 'Text after image'), undefined);
+            selectImage(editor);
+            pressKey(dom, editor, 'ArrowUp');
+            assert.equal(editor.state.selection.$from.parent.type.name, 'paragraph');
+            editor.commands.insertContent('Before');
+            selectImage(editor);
+            pressKey(dom, editor, 'ArrowDown');
+            assert.equal(editor.state.selection.$from.parent.type.name, 'paragraph');
+            editor.commands.insertContent('After');
+            const childCount = editor.state.doc.childCount;
+            selectImage(editor);
+            pressKey(dom, editor, 'ArrowLeft');
+            assert.equal(editor.state.selection.$from.parent.textContent, 'Before');
+            pressKey(dom, editor, 'ArrowRight');
+            assert.equal(editor.state.selection.node?.type.name, source === image ? 'image' : 'reportFigure');
+            pressKey(dom, editor, 'ArrowRight');
+            assert.equal(editor.state.selection.$from.parent.textContent, 'After');
+            assert.equal(editor.state.selection.$from.parentOffset, 0);
+            pressKey(dom, editor, 'ArrowLeft');
+            assert.equal(editor.state.selection.node?.type.name, source === image ? 'image' : 'reportFigure');
+            pressKey(dom, editor, 'ArrowLeft');
+            assert.equal(editor.state.selection.$from.parent.textContent, 'Before');
+            assert.equal(editor.state.doc.childCount, childCount);
+            assert.equal(saved(dom), `Before\n\n${source}\n\nAfter`);
+        } finally { dom.window.close(); }
+    });
+}
 
 test('typing Markdown delimiters in captions preserves literal text', async () => {
     const dom = await loadEditor({ report: image });

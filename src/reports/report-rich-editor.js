@@ -350,8 +350,24 @@ const ReportImage = Image.extend({
             });
             localControls.append(label, edit);
             nodeView.dom.querySelector('[data-resize-wrapper]').append(localControls);
+            // This affordance belongs to the node view, never to report markup.
+            // A real figure already supplies its editable figcaption below it.
+            const captionPlaceholder = document.createElement('button');
+            captionPlaceholder.type = 'button';
+            captionPlaceholder.className = 'bpb-re-caption-placeholder';
+            captionPlaceholder.textContent = 'Write a caption…';
+            captionPlaceholder.setAttribute('aria-label', 'Write a caption');
+            captionPlaceholder.addEventListener('mousedown', event => event.preventDefault());
+            captionPlaceholder.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const pos = getPos();
+                if (Number.isInteger(pos)) changeImageCaption(editor, false, { node: currentNode, pos });
+            });
+            nodeView.dom.append(captionPlaceholder);
             const stopResizeEvent = nodeView.stopEvent;
-            nodeView.stopEvent = event => localControls.contains(event.target) || stopResizeEvent(event);
+            nodeView.stopEvent = event => localControls.contains(event.target)
+                || captionPlaceholder.contains(event.target) || stopResizeEvent(event);
             const destroy = nodeView.destroy;
             nodeView.destroy = () => { previewGeneration++; destroy(); };
             return nodeView;
@@ -382,16 +398,21 @@ const selectedFigure = editor => {
     return null;
 };
 
-const textBesideImage = (editor, before = false) => {
-    const target = selectedReportImage(editor);
+const textBesideImage = (editor, before = false, { reuse = false, target: explicitTarget = null } = {}) => {
+    const target = explicitTarget || selectedReportImage(editor);
     if (!target) return false;
     const { state, view } = editor;
     const transaction = state.tr;
-    let position = target.pos + (before ? 0 : target.node.nodeSize);
-    if (target.node.type.name === 'reportFigure') {
+    const $image = state.doc.resolve(target.pos);
+    const block = target.node.type.name === 'reportFigure' ? target
+        : $image.parent.isTextblock && $image.parent.childCount === 1
+            ? { node: $image.parent, pos: $image.before() } : null;
+    let position = block ? block.pos + (before ? 0 : block.node.nodeSize)
+        : target.pos + (before ? 0 : target.node.nodeSize);
+    if (block) {
         const $position = state.doc.resolve(position);
         const neighbor = before ? $position.nodeBefore : $position.nodeAfter;
-        if (neighbor?.type.name === 'paragraph' && !neighbor.content.size) {
+        if (neighbor?.isTextblock && (reuse || !neighbor.content.size)) {
             position += before ? -1 : 1;
         } else {
             transaction.insert(position, state.schema.nodes.paragraph.create());
@@ -402,6 +423,42 @@ const textBesideImage = (editor, before = false) => {
     transaction.setStoredMarks([]);
     view.dispatch(transaction.scrollIntoView());
     view.focus();
+    return true;
+};
+
+const navigateImageArrow = (editor, key) => {
+    const { state, view } = editor;
+    const { selection } = state;
+    if (selection.$head.parent.type.name === 'reportCaption') return false;
+    const before = key === 'ArrowLeft' || key === 'ArrowUp';
+    const vertical = key === 'ArrowUp' || key === 'ArrowDown';
+    const target = selectedReportImage(editor);
+    if (target) return textBesideImage(editor, before, { reuse: true });
+    if (!selection.empty || !selection.$head.parent.isTextblock) return false;
+    const $head = selection.$head;
+    const inline = before ? $head.nodeBefore : $head.nodeAfter;
+    if (!vertical && inline?.type.name === 'image') {
+        view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc,
+            $head.pos - (before ? inline.nodeSize : 0))));
+        return true;
+    }
+    // Up/down use the rendered first/last line, rather than requiring the caret
+    // to be at character zero or at the end of a wrapped paragraph.
+    const atEdge = vertical ? view.endOfTextblock(before ? 'up' : 'down')
+        : $head.parentOffset === (before ? 0 : $head.parent.content.size);
+    if (!atEdge) return false;
+    if ($head.parent.childCount === 1 && $head.parent.firstChild.type.name === 'image') {
+        return textBesideImage(editor, before, { reuse: true,
+            target: { node: $head.parent.firstChild, pos: $head.start() } });
+    }
+    const boundary = before ? $head.before() : $head.after();
+    const $boundary = state.doc.resolve(boundary);
+    const neighbor = before ? $boundary.nodeBefore : $boundary.nodeAfter;
+    const pos = boundary - (before ? neighbor?.nodeSize || 0 : 0);
+    const imagePos = neighbor?.type.name === 'reportFigure' ? pos
+        : neighbor?.isTextblock && neighbor.childCount === 1 && neighbor.firstChild.type.name === 'image' ? pos + 1 : null;
+    if (imagePos === null) return false;
+    view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, imagePos)));
     return true;
 };
 
@@ -425,15 +482,26 @@ const ReportCaption = Node.create({
         return {
             Enter: leave,
             'Shift-Enter': leave,
+            ArrowLeft: () => {
+                const { $from, empty } = this.editor.state.selection;
+                return empty && $from.parent.type.name === this.name && $from.parentOffset === 0
+                    ? textBesideImage(this.editor, true, { reuse: true }) : false;
+            },
+            ArrowRight: () => {
+                const { $from, empty } = this.editor.state.selection;
+                return empty && $from.parent.type.name === this.name && $from.parentOffset === $from.parent.content.size
+                    ? textBesideImage(this.editor, false, { reuse: true }) : false;
+            },
             ArrowUp: () => {
                 const { $from, empty } = this.editor.state.selection;
                 return empty && $from.parent.type.name === this.name && $from.parentOffset === 0
-                    ? textBesideImage(this.editor, true) : false;
+                    ? textBesideImage(this.editor, true, { reuse: true }) : false;
             },
             ArrowDown: () => {
                 const { $from, empty } = this.editor.state.selection;
                 return empty && $from.parent.type.name === this.name
-                    && $from.parentOffset === $from.parent.content.size ? leave() : false;
+                    && $from.parentOffset === $from.parent.content.size
+                    ? textBesideImage(this.editor, false, { reuse: true }) : false;
             },
             Backspace: () => {
                 const { state, view } = this.editor;
@@ -463,10 +531,10 @@ const ReportFigure = Node.create({
                 .delete(target.pos, target.pos + target.node.nodeSize));
             return true;
         };
-        const beside = before => this.editor.state.selection.node?.type.name === this.name
-            ? textBesideImage(this.editor, before) : false;
         return { Backspace: deleteImage, Delete: deleteImage,
-            ArrowUp: () => beside(true), ArrowDown: () => beside(false), Enter: () => beside(false) };
+            ...Object.fromEntries(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
+                .map(key => [key, () => navigateImageArrow(this.editor, key)])),
+            Enter: () => this.editor.state.selection.node?.type.name === this.name ? textBesideImage(this.editor) : false };
     },
     addProseMirrorPlugins() {
         return [new Plugin({
@@ -855,8 +923,6 @@ export const richCommands = {
     setImageCaption,
     editCaption: editor => changeImageCaption(editor),
     removeCaption: editor => changeImageCaption(editor, true),
-    textBeforeImage: editor => textBesideImage(editor, true),
-    textAfterImage: editor => textBesideImage(editor),
     insertVideo: (editor, src) => editor.chain().focus().insertContent({
         type: 'reportVideo', attrs: { src }
     }).run(),

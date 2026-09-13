@@ -2534,11 +2534,22 @@ async function main() {
       mode('Rich text').click();
     `);
         await waitForScript(driver, 'return document.querySelector(\'.bpb-re-image-resize img\')?.naturalWidth === 640;', 'Firefox caption image');
-        await driver.findElement(By.css('.bpb-re-image-resize img')).click();
-        await driver.findElement(By.css('.bpb-re-captionbar button')).click();
+        await driver.findElement(By.css('.bpb-re-caption-placeholder')).click();
         await driver.actions({ async: true }).sendKeys('North ridge caption').perform();
         await waitForScript(driver, 'return document.querySelector(\'.bpb-re-surface figcaption\')?.textContent === \'North ridge caption\';', 'Firefox caption typing');
         await driver.actions({ async: true }).sendKeys(Key.ENTER).sendKeys('After the photo').perform();
+        await driver.findElement(By.css('.bpb-re-surface figure img')).click();
+        await driver.actions({ async: true }).sendKeys(Key.ARROW_UP).sendKeys('Before the photo').perform();
+        for (const [backward, forward] of [[Key.ARROW_UP, Key.ARROW_DOWN], [Key.ARROW_LEFT, Key.ARROW_RIGHT]]) {
+            await driver.findElement(By.css('.bpb-re-surface figure img')).click();
+            await driver.actions({ async: true }).sendKeys(backward).perform();
+            await waitForScript(driver, "return getSelection()?.anchorNode?.textContent === 'Before the photo';", 'Firefox prose before image');
+            await driver.actions({ async: true }).sendKeys(forward).perform();
+            await waitForScript(driver, "return !!document.querySelector('.bpb-re-surface figure.ProseMirror-selectednode');", 'Firefox selected figure');
+            await driver.actions({ async: true }).sendKeys(forward).perform();
+            await waitForScript(driver, "return getSelection()?.anchorNode?.textContent === 'After the photo';", 'Firefox prose after image');
+        }
+
         await driver.executeScript(`
       [...document.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === 'Markdown').click();
     `);

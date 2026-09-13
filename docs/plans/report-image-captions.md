@@ -74,6 +74,36 @@ until one real report containing a caption is manually saved and reopened, with
 the displayed report also checked without the extension. Record that evidence
 before removing the live-compatibility limitation and archiving this plan.
 
+### Direct caption entry and arrow navigation — 2026-09-13
+
+Every uncaptioned Rich image now shows an editor-only **Write a caption…**
+placeholder. One click creates and focuses the caption; clearing its last
+character restores the placeholder. Untouched images keep their existing saved
+markup. The text-before/after buttons have been removed. Plain arrow keys select
+the image as a unit and reach ordinary text on either side, reusing neighboring
+paragraphs or creating one when needed, without entering the caption. Caption
+editing remains an explicit click or caption-control action.
+
+Fixed and verified: all 1,865 tests passed, including placeholder serialization
+and arrow navigation around both uncaptioned and captioned images. Lint passed
+with the eight existing owned warnings. The hidden Chrome photo workflow passed
+at 1280×900 and 720×900 (also constrained to a 520px editor), including direct
+placeholder entry, clearing/undo, all four arrow keys, paired deletion, and the
+photo replacement/upload fixture. The full real-extension verifiers passed in
+hidden Chrome for Testing 153.0.8010.12 and Firefox 155.0.1 at 1000×760; Firefox
+also exercised direct placeholder entry and arrow navigation. Visually inspected
+light desktop and dark narrow placeholders, long-caption wrapping, and the
+Firefox image with prose on both sides. These are HTML/CSS surfaces with no WebGL
+renderer. Test process and disposable-profile teardown was checked.
+
+Intentionally not changed: the caption toolbar remains an alternative entry
+point, and image resize targets retain their reserved space. A browser check
+caught a spacing change that moved the resize target over an uncaptioned image;
+that change was reverted and the verifier passed afterward.
+
+Changed but not fully proven: real Peakbagger server save/reopen and native
+window/focus behavior retain the limitations recorded above.
+
 ## Outcome and scope
 
 Let users add an optional visible caption beneath a trip-report image in Rich
