@@ -554,3 +554,61 @@ test('editor round-trip: bracket → editor HTML → DOM → bracket is stable',
         '[ul][li]one[/li][li]two[/li][/ul]'
     ].join('\n'));
 });
+
+// Captions are explicitly attached to an image, never inferred from nearby prose.
+test('captioned images preserve text, links and dimensions through every conversion', () => {
+    const image = '[img src="https://example.com/ridge.jpg" alt="Ridge" width="320" height="200"]';
+    const captions = ['Looking north — 北', 'A &amp; B &lt;script&gt; [1] &#91;b&#93; *snow* _ice_ `rock` | "ridge"',
+        'x'.repeat(3000)];
+    for (const caption of captions) {
+        for (const media of [image, `[a href="https://example.com/album" target="_blank"]${image}[/a]`]) {
+            const figure = `[figure]${media}[figcaption]${caption}[/figcaption][/figure]`;
+            for (const source of [figure, `Before\n\n${figure}\n\nAfter`,
+                `[ul][li]Before${figure}After[/li][/ul]`,
+                `[table border="1"][tr][th]Photo[/th][/tr][tr][td]${figure}[/td][/tr][/table]`]) {
+                const canonical = Markup.astToBracket(Markup.parseBracket(source));
+                assert.deepEqual(Markup.parseBracketWithDiagnostics(canonical).diagnostics, []);
+                let roundTrip = canonical;
+                for (let cycle = 0; cycle < 3; cycle++) {
+                    roundTrip = Markup.markdownToBracket(Markup.bracketToMarkdown(roundTrip));
+                    assert.equal(roundTrip, canonical);
+                    const doc = new browserDom.window.DOMParser().parseFromString(Markup.bracketToEditorHtml(roundTrip), 'text/html');
+                    roundTrip = Markup.domToBracket(doc.body);
+                    assert.equal(roundTrip, canonical);
+                    assert.equal(doc.querySelectorAll('figure').length, 1);
+                }
+            }
+        }
+    }
+});
+
+test('empty captions normalize to images and adjacent prose stays independent', () => {
+    const image = '[img src="https://example.com/ridge.jpg"]';
+    assert.equal(Markup.astToBracket(Markup.parseBracket(`[figure]${image}[figcaption]  [/figcaption][/figure]`)), image);
+    const source = `${image}\n\n[i]Ordinary prose[/i]`;
+    assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(source)), source);
+    assert.doesNotMatch(Markup.bracketToEditorHtml(source), /figcaption/);
+});
+
+test('malformed and unsafe figures retain conversion diagnostics and never enable active HTML', () => {
+    for (const source of [
+        '[figure][img src="javascript:alert(1)"][figcaption]Caption[/figcaption][/figure]',
+        '[figure onclick="bad()"][img src="https://example.com/a.jpg"][figcaption]Caption[/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][figcaption][b]Bold[/b][/figcaption][/figure]',
+        '[figure][img src="https://example.com/a.jpg"][img src="https://example.com/b.jpg"][figcaption]Caption[/figcaption][/figure]',
+        '[figcaption]Orphan[/figcaption]',
+        '[figure][figure][img src="https://example.com/a.jpg"][figcaption]Nested[/figcaption][/figure][/figure]',
+    ]) {
+        const parsed = Markup.parseBracketWithDiagnostics(source);
+        assert.ok(parsed.diagnostics.length, source);
+        const html = Markup.astToHtml(parsed.ast);
+        assert.doesNotMatch(html, /onclick=|src="javascript:/);
+    }
+});
+
+test('deleting a Markdown table caption keeps the image and unrelated empty marks normalize as before', () => {
+    const source = '| Photo |\n| --- |\n| <figure><img src="https://example.com/a.jpg"><figcaption></figcaption></figure> |';
+    assert.equal(Markup.markdownToBracket(source),
+        '[table border="1"][tr][th]Photo[/th][/tr][tr][td][img src="https://example.com/a.jpg"][/td][/tr][/table]');
+    assert.equal(Markup.markdownToBracket('Before [b][/b]after'), 'Before after');
+});

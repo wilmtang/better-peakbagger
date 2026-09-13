@@ -327,6 +327,18 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
     tableBar.append(...Object.values(tableButtons));
 
+    const captionBar = el('div', 'bpb-re-box bpb-re-captionbar');
+    captionBar.setAttribute('role', 'toolbar');
+    captionBar.setAttribute('aria-label', 'Image caption controls');
+    captionBar.hidden = true;
+    const editCaption = button('bpb-re-tablebtn', 'Add caption');
+    const removeCaption = button('bpb-re-tablebtn', 'Remove caption');
+    captionBar.append(editCaption, removeCaption);
+    for (const [control, command] of [[editCaption, 'editCaption'], [removeCaption, 'removeCaption']]) {
+        control.addEventListener('mousedown', event => event.preventDefault());
+        control.addEventListener('click', () => richCommands[command](richEditor));
+    }
+
     const linkBox = el('div', 'bpb-re-box bpb-re-linkbox');
     linkBox.hidden = true;
     const linkInput = el('input');
@@ -542,7 +554,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // cover either recovery actions or the writing surface.
     const toolbar = el('div', 'bpb-re-toolbar');
     const contextual = el('div', 'bpb-re-contextual');
-    contextual.append(tableBar, linkBox, imageBox, videoBox, moreBox);
+    contextual.append(tableBar, captionBar, linkBox, imageBox, videoBox, moreBox);
     toolbar.append(conversionBar, draftBar, bar, contextual);
     ui.append(toolbar, richWrap, mdSplit, saveRecovery, foot);
 
@@ -594,7 +606,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         input.addEventListener('input', () => clearFieldError(input));
     });
 
-    const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
+    const boxes = [tableBar, captionBar, linkBox, imageBox, videoBox, moreBox];
     const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
     const closeBoxes = () => {
         for (const box of boxes) box.hidden = true;
@@ -1051,6 +1063,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (state.mode !== 'rich' || !richEditor) return;
         const snapshot = richState(richEditor);
         blockFormat.value = snapshot.block;
+        blockFormat.disabled = snapshot.captionActive;
+        for (const [name, control] of Object.entries(toolButtons)) {
+            if (name !== 'undo' && name !== 'redo') control.disabled = snapshot.captionActive;
+        }
         for (const name of ['bold', 'italic', 'underline', 'strike']) {
             toolButtons[name].setAttribute('aria-pressed', String(snapshot.marks[name]));
         }
@@ -1065,12 +1081,18 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         for (const control of swatchButtons) {
             control.setAttribute('aria-pressed', String(snapshot.color === control.dataset.color));
         }
-        tableBar.hidden = !snapshot.inTable || manualBoxes.some(box => !box.hidden);
+        captionBar.hidden = !snapshot.imageSelected || manualBoxes.some(box => !box.hidden);
+        editCaption.textContent = snapshot.captionActive ? 'Edit caption' : 'Add caption';
+        editCaption.setAttribute('aria-label', editCaption.textContent);
+        editCaption.title = editCaption.textContent;
+        removeCaption.hidden = !snapshot.captionActive;
+        tableBar.hidden = !snapshot.inTable || !captionBar.hidden || manualBoxes.some(box => !box.hidden);
     };
 
     const openLinkBox = () => {
         if (state.mode !== 'rich' || !richEditor) return;
         const snapshot = richState(richEditor);
+        if (snapshot.captionActive) return;
         closeBoxes();
         linkInput.value = snapshot.linkHref;
         linkRemove.hidden = !snapshot.linkActive;

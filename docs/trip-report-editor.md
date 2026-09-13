@@ -398,6 +398,53 @@ inline quote, and a named-color text palette — sit one click away behind the
 "Aa" control. While the caret is inside a table, a contextual row offers
 add/delete row and column, header-row toggle, and table removal.
 
+### Image captions
+
+Select an image in Rich text and choose **Add caption**. Type directly beneath
+the photo; captions are plain text, separate from the image's alt description.
+Click the caption to edit it, or select the photo and use **Edit caption**.
+**Remove caption** keeps the image and its dimensions. Enter (or Shift+Enter)
+continues in report prose. Backspace at the start selects the whole figure;
+another deletion removes the photo and caption together. Undo restores them.
+Text formatting and insertion controls are disabled while editing a figure.
+
+A captioned photo is a block. Adding a caption to an inline photo splits the
+surrounding prose without discarding its text or formatting. Existing image links
+are preserved. Captions also work in list items and table cells. Empty captions
+and their placeholders are not saved: they normalize to ordinary images.
+
+Captions stay with their photo during resizing, local preview resolution, draft
+restoration, Photo Topos replacement, and upload. In the document model a figure
+contains the existing `image` node inside a constrained media block, followed by
+a plain-text caption block. This keeps the established exact-occurrence photo
+replacement and source-rewrite paths unchanged. The serializer removes editor
+wrappers and emits a compact figure without layout newlines inside it:
+
+```text
+[figure][img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320"][figcaption]Looking north from the summit.[/figcaption][/figure]
+```
+
+Markdown preserves the explicit relationship through a narrow HTML form, rather
+than guessing that nearby prose is a caption:
+
+```html
+<figure><img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320"><figcaption>Looking north from the summit.</figcaption></figure>
+```
+
+The caption text can be edited in Markdown; returning to Rich restores the
+attached caption. Markdown delimiters and table pipes inside generated captions
+are entity-escaped to remain literal text. The parser permits one image,
+optionally linked, followed by one text caption. Malformed figures, arbitrary
+attributes/styles, and formatted or nested captions retain conversion diagnostics;
+the figure path does not widen the general HTML allowlist.
+
+Compatibility evidence: Peakbagger's live ascent editor documents bracketed HTML,
+but a real server save/reopen of `figure`/`figcaption` has not been verified. Hidden
+extension fixtures verify the submitted markup, local preview, and restoration;
+they do not prove server acceptance or identical styling without the extension.
+The remaining live check is tracked in
+[the caption plan](plans/report-image-captions.md).
+
 ### Photo topo editor and library handoff
 
 The Rich toolbar's image popover preserves direct URL insertion and adds two

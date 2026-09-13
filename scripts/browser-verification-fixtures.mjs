@@ -722,6 +722,10 @@ export async function createBrowserFixtureServer({
             }
             return send('application/gpx+xml', analyzerGpxByCase[analyzerCase] || analyzerGpx);
         }
+        if (url.pathname === '/caption-photo.svg') {
+            return send('image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">'
+                + '<path fill="#aacddd" d="M0 0h640v400H0z"/><path fill="#647c81" d="M0 400 230 90 390 280 510 150 640 400z"/></svg>');
+        }
         response.writeHead(404);
         response.end('not found');
     };

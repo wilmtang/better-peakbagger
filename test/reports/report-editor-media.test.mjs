@@ -872,7 +872,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
     const opened = [];
     const src = 'https://images.example/ridge.png';
     const dom = await loadEditor({
-        report: `[img src="${src}" alt="First" width="240"]\n\n[img src="${src}" alt="Second" width="320"]`,
+        report: `[img src="${src}" alt="First" width="240"]\n\n[figure][img src="${src}" alt="Second" width="320"][figcaption]Second photo caption[/figcaption][/figure]`,
         prepare: d => {
             d.chrome.runtime.onMessage.addListener = listener => listeners.push(listener);
             d.chrome.runtime.sendMessage = async message => {
@@ -892,6 +892,11 @@ test('double-click opens the exact report image and replaces only that occurrenc
     await waitFor(dom, () => opened.length === 1);
     assert.equal(opened[0].imageUrl, src);
     assert.ok(opened[0].imageEditId);
+    const rich = editors(dom).rich;
+    rich.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'reportCaption') rich.commands.setTextSelection(pos + 1);
+    });
+    rich.commands.insertContent('Updated ');
     const message = { type: 'PHOTO_INSERT_RESULT', ...returnContext(), returnToken: 'image-return',
         imageEditId: opened[0].imageEditId, localPhotoId: 'edited-photo', url: 'https://images.example/edited.png', alt: 'Annotated ridge' };
     let result;
@@ -902,6 +907,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
     assert.equal(current[0].getAttribute('src'), src);
     assert.equal(current[1].getAttribute('src'), message.url);
     assert.equal(current[1].style.width, '320px');
+    assert.equal(ui.querySelector('.bpb-re-surface figcaption').textContent, 'Updated Second photo caption');
     // A duplicate delivery acknowledges without inserting a third image.
     for (const listener of listeners) listener(message, { id: 'test-extension' }, response => { result = response; });
     assert.equal(result.ok, true);

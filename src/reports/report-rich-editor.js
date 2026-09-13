@@ -4,8 +4,9 @@
 // Better Peakbagger — TipTap document model for the rich trip-report surface.
 //
 // The schema is locked to the same allowlist src/reports/report-markup.js serializes:
-// a node or mark exists here only if the converter has a verified Peakbagger
-// bracket equivalent for it. Anything typed, pasted, or dropped is normalized
+// a node or mark exists here only if the converter has a Peakbagger bracket
+// representation for it. Live-server verification gaps are recorded in the
+// editor guide and active plan. Anything typed, pasted, or dropped is normalized
 // by this schema before it can enter the document, and report-editor.js still
 // reads the document back out through domToBracket, so the converter's
 // sanitizers remain the single authority on what reaches the form.
@@ -25,11 +26,14 @@ import Superscript from '@tiptap/extension-superscript';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
+import { Fragment } from '@tiptap/pm/model';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import {
     MAX_REPORT_IMAGE_DIMENSION,
     sanitizeReportDimension,
     sanitizeVideoSrc,
-    sanitizeYouTubeEmbedSrc
+    sanitizeYouTubeEmbedSrc,
+    figureFromElement
 } from './report-markup.js';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
@@ -332,6 +336,17 @@ const ReportImage = Image.extend({
             };
             edit.addEventListener('click', open);
             image.addEventListener('dblclick', open);
+            image.addEventListener('click', () => {
+                const pos = getPos();
+                if (!Number.isInteger(pos)) return;
+                const $pos = editor.state.doc.resolve(pos);
+                for (let depth = $pos.depth; depth > 0; depth--) {
+                    if ($pos.node(depth).type.name === 'reportFigure') {
+                        editor.commands.setNodeSelection($pos.before(depth));
+                        break;
+                    }
+                }
+            });
             localControls.append(label, edit);
             nodeView.dom.querySelector('[data-resize-wrapper]').append(localControls);
             const stopResizeEvent = nodeView.stopEvent;
@@ -342,6 +357,155 @@ const ReportImage = Image.extend({
         };
     }
 });
+
+// Keep the actual image node inside the figure: resize, photo replacement and
+// upload retain the same node type and attributes. The constrained wrapper also
+// prevents paragraph/heading commands from replacing the image with caption text.
+const ReportFigureMedia = Node.create({
+    name: 'reportFigureMedia',
+    content: 'image',
+    marks: 'link',
+    selectable: false,
+    parseHTML: () => [{ tag: 'div[data-bpb-figure-media]' }],
+    renderHTML: () => ['div', { 'data-bpb-figure-media': '' }, 0],
+});
+
+const selectedFigure = editor => {
+    const { selection } = editor.state;
+    if (selection.node?.type.name === 'reportFigure') return { node: selection.node, pos: selection.from };
+    for (let depth = selection.$from.depth; depth > 0; depth--) {
+        if (selection.$from.node(depth).type.name === 'reportFigure') {
+            return { node: selection.$from.node(depth), pos: selection.$from.before(depth) };
+        }
+    }
+    return null;
+};
+
+const ReportCaption = Node.create({
+    name: 'reportCaption',
+    content: 'text*',
+    marks: '',
+    selectable: false,
+    parseHTML: () => [{ tag: 'figcaption' }],
+    renderHTML: () => ['figcaption', { 'data-placeholder': 'Write a caption…', 'aria-label': 'Image caption' }, 0],
+    addKeyboardShortcuts() {
+        const leave = () => {
+            const { state, view } = this.editor;
+            if (state.selection.$from.parent.type.name !== this.name) return false;
+            const target = selectedFigure(this.editor);
+            if (!target) return false;
+            const after = target.pos + target.node.nodeSize;
+            const transaction = state.tr;
+            if (state.doc.nodeAt(after)?.type.name !== 'paragraph') {
+                transaction.insert(after, state.schema.nodes.paragraph.create());
+            }
+            transaction.setSelection(TextSelection.near(transaction.doc.resolve(after + 1)));
+            view.dispatch(transaction.scrollIntoView());
+            return true;
+        };
+        return {
+            Enter: leave,
+            'Shift-Enter': leave,
+            ArrowDown: () => {
+                const { $from, empty } = this.editor.state.selection;
+                return empty && $from.parent.type.name === this.name
+                    && $from.parentOffset === $from.parent.content.size ? leave() : false;
+            },
+            Backspace: () => {
+                const { state, view } = this.editor;
+                const { $from, empty } = state.selection;
+                if (!empty || $from.parent.type.name !== this.name || $from.parentOffset !== 0) return false;
+                const target = selectedFigure(this.editor);
+                view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, target.pos)));
+                return true;
+            },
+        };
+    },
+});
+
+const ReportFigure = Node.create({
+    name: 'reportFigure',
+    group: 'block',
+    content: 'reportFigureMedia reportCaption',
+    defining: true,
+    isolating: true,
+    draggable: true,
+    addKeyboardShortcuts() {
+        const deleteImage = () => {
+            const target = selectedFigure(this.editor);
+            if (!target || this.editor.state.selection.node?.type.name !== 'image') return false;
+            return this.editor.commands.deleteRange({ from: target.pos, to: target.pos + target.node.nodeSize });
+        };
+        return { Backspace: deleteImage, Delete: deleteImage };
+    },
+    parseHTML() {
+        return [{ tag: 'figure', getAttrs: element => figureFromElement(element) ? {} : false,
+            getContent: (element, schema) => {
+                const figure = figureFromElement(element);
+                const media = figure.t === 'figure' ? figure.media : figure;
+                const image = media.t === 'a' ? media.kids[0] : media;
+                const marks = media.t === 'a' ? [schema.marks.link.create({
+                    href: media.href, target: media.blank ? '_blank' : null
+                })] : [];
+                return Fragment.fromArray([
+                    schema.nodes.reportFigureMedia.create(null, schema.nodes.image.create(image, null, marks)),
+                    schema.nodes.reportCaption.create(null, figure.caption ? schema.text(figure.caption) : null),
+                ]);
+            } }];
+    },
+    renderHTML: () => ['figure', {}, 0],
+});
+
+const selectedReportImage = editor => {
+    const figure = selectedFigure(editor);
+    if (figure) return figure;
+    const { selection } = editor.state;
+    return selection instanceof NodeSelection && selection.node.type.name === 'image'
+        ? { node: selection.node, pos: selection.from } : null;
+};
+
+const changeImageCaption = (editor, remove = false) => {
+    const target = selectedReportImage(editor);
+    if (!target) return false;
+    const { node, pos } = target;
+    const { state, view } = editor;
+    const transaction = state.tr;
+    if (node.type.name === 'reportFigure') {
+        if (!remove) {
+            transaction.setSelection(TextSelection.create(state.doc, pos + node.firstChild.nodeSize + 2));
+        } else {
+            const image = node.firstChild.firstChild;
+            transaction.replaceWith(pos, pos + node.nodeSize, state.schema.nodes.paragraph.create(null, image));
+            transaction.setSelection(NodeSelection.create(transaction.doc, pos + 1));
+        }
+    } else {
+        const $pos = state.doc.resolve(pos);
+        if (!$pos.parent.isTextblock || $pos.parent.type.name === 'codeBlock') return false;
+        const parent = $pos.parent;
+        const figure = state.schema.nodes.reportFigure.create(null, [
+            state.schema.nodes.reportFigureMedia.create(null, node.mark(node.marks.filter(mark => mark.type.name === 'link'))),
+            state.schema.nodes.reportCaption.create(),
+        ]);
+        const before = parent.content.cut(0, $pos.parentOffset);
+        const after = parent.content.cut($pos.parentOffset + node.nodeSize);
+        const blocks = [];
+        if (before.size) blocks.push(parent.copy(before));
+        // A list item requires its first child to remain a paragraph.
+        else if ($pos.node(-1).type.name === 'listItem' && $pos.index(-1) === 0) {
+            blocks.push(state.schema.nodes.paragraph.create());
+        }
+        const figurePos = $pos.before() + blocks.reduce((size, block) => size + block.nodeSize, 0);
+        blocks.push(figure);
+        if (after.size) blocks.push(parent.copy(after));
+        const replacement = Fragment.fromArray(blocks);
+        if (!$pos.node(-1).canReplace($pos.index(-1), $pos.index(-1) + 1, replacement)) return false;
+        transaction.replaceWith($pos.before(), $pos.after(), replacement);
+        transaction.setSelection(TextSelection.create(transaction.doc, figurePos + figure.firstChild.nodeSize + 2));
+    }
+    view.dispatch(transaction.scrollIntoView());
+    view.focus();
+    return true;
+};
 
 // Direct media URLs use a native video element. The only embed in the schema
 // is a canonical YouTube player URL produced by report-markup.js; arbitrary
@@ -530,6 +694,7 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
             ReportLink.configure({ openOnClick: false, autolink: true, defaultProtocol: 'https' }),
             Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
             ReportImage.configure({ inline: true, resolveLocalImage, editLocalImage }),
+            ReportFigure, ReportFigureMedia, ReportCaption,
             ReportVideo,
             Subscript, Superscript, Highlight,
             TextStyle, ReportColor,
@@ -585,6 +750,8 @@ export const richCommands = {
     setLink: (editor, href) => editor.chain().focus().extendMarkRange('link').setLink({ href }).run(),
     unsetLink: editor => editor.chain().focus().extendMarkRange('link').unsetLink().run(),
     insertImage: (editor, attrs) => editor.chain().focus().setImage(attrs).run(),
+    editCaption: editor => changeImageCaption(editor),
+    removeCaption: editor => changeImageCaption(editor, true),
     insertVideo: (editor, src) => editor.chain().focus().insertContent({
         type: 'reportVideo', attrs: { src }
     }).run(),
@@ -609,6 +776,8 @@ export const richCommands = {
 export const richState = editor => {
     const headingLevel = [1, 2, 3, 4, 5, 6].find(level => editor.isActive('heading', { level }));
     return {
+        imageSelected: !!selectedReportImage(editor),
+        captionActive: !!selectedFigure(editor),
         block: editor.isActive('codeBlock') ? 'pre'
             : headingLevel ? `h${headingLevel}`
                 : editor.isActive('blockquote') ? 'blockquote' : 'p',

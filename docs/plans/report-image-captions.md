@@ -1,6 +1,35 @@
 # Report image captions
 
-Status: planned; runtime implementation has not started.
+Status: implemented locally; live Peakbagger save/reopen verification remains open.
+
+## Implementation record — 2026-09-12
+
+The Rich editor now offers Add/Edit/Remove caption on selected images. A figure
+contains the existing image node and a separate plain-text caption, preserving
+the current resize, local-photo, upload, and exact-occurrence replacement paths.
+Images inside prose split into blocks without losing surrounding text or marks;
+lists, table cells, and image links are covered. Uncaptioned images keep their
+existing representation.
+
+The selected saved representation is the compact `figure`/`figcaption` form below,
+with no serializer-inserted newlines inside the figure. Markdown emits the same
+explicit relationship as narrow HTML; literal delimiters and pipes are escaped.
+An empty caption normalizes to an ordinary image. The converter recognizes an
+explicit pair only, never an adjacent paragraph inferred to be a caption.
+
+Read-only live evidence: the isolated in-app browser loaded
+[Peakbagger's ascent editor](https://www.peakbagger.com/climber/AscentEdit.aspx)
+and [ascent help](https://www.peakbagger.com/help/helpascentedit.aspx) without
+an anti-bot challenge. The editor documents bracketed HTML generally; it did not
+provide tag-specific figure/caption evidence. The session was logged out and
+showed "Invalid User!!!". No live form was submitted. The user authorized a
+prototype, so local implementation proceeded with this compatibility gate
+explicitly open; fixture acceptance is not a substitute for server evidence.
+
+The implementation and user guide are reviewable locally. Keep this plan active
+until one real report containing a caption is manually saved and reopened, with
+the displayed report also checked without the extension. Record that evidence
+before removing the live-compatibility limitation and archiving this plan.
 
 ## Outcome and scope
 
@@ -161,11 +190,53 @@ Do not ship or commit a half-connected UI that drops caption data.
 ## Completion criteria and evidence
 
 - [ ] Saved format selected and server compatibility evidence recorded.
-- [ ] Caption association survives every supported conversion and lifecycle path.
-- [ ] Existing uncaptioned and inline images retain their behavior.
-- [ ] Keyboard behavior, undo, accessibility, and rendered layout verified.
-- [ ] Conversion, integration, and real-browser checks run with results recorded.
-- [ ] Maintained guide updated and plan archived with remaining limitations.
+- [x] Caption association survives the tested conversions and photo lifecycle paths.
+- [x] Existing uncaptioned and inline images retain their behavior.
+- [x] Keyboard behavior, undo, accessible control names, and rendered layout verified.
+- [x] Conversion, integration, and real-browser checks run with results recorded.
+- [x] Maintained guide updated.
+- [ ] Live compatibility confirmed and plan archived.
+
+### Fixed and verified
+
+- `npm test`: 1,857 tests passed on the implementation. The subsequently added
+  clipboard case also passed in a separate run of all nine caption editor tests.
+- `npm run lint`: passed with the eight existing owned web-ext warnings.
+  ESLint also passed on the final caption test file after adding clipboard coverage.
+- `npm run verify:browsers`: passed with the real unpacked extension in hidden
+  Chrome for Testing 153.0.8010.12 and hidden Firefox 155.0.1, at 1000×760.
+  Firefox specifically exercised caption typing, Enter into prose, Markdown/Rich
+  conversion, serialized text, and image/caption geometry.
+- `node scripts/verify-report-photos.mjs`: passed in hidden Chromium
+  153.0.8010.12 at 1280×900 and 720×900, including a 520px editor-width constraint.
+  Verified actual typing with Unicode, editing by clicking the caption, local
+  draft restore, Photo Topos replacement, long-caption wrapping, and a mocked
+  upload/form POST retaining the caption.
+- Visually inspected Chromium desktop/light and narrow/light/dark captions and
+  the Firefox dark caption screenshot. Long unbroken text remained within the
+  image width. These caption surfaces use normal HTML/CSS and raster/SVG images;
+  no WebGL renderer is involved in the caption layout evidence.
+- Evidence screenshots are managed local artifacts under `tmp/report-photos/`:
+  `pasted-light.png`, `pasted-narrow.png`, `caption-narrow-dark.png`, and
+  `firefox-caption.png`. Test browser process teardown was checked separately.
+
+### Intentionally not changed
+
+- Alt text, upload payloads and timing, host permissions, final Save ownership,
+  ordinary inline-image serialization, and existing image resize/replacement
+  contracts. Captions are report text, not pixels or photo-library metadata.
+- No dedicated Markdown caption button, arbitrary caption formatting, video
+  captions, numbering, or alignment preferences.
+
+### Changed but not fully proven
+
+- Actual Peakbagger acceptance and subsequent edit-field restoration of the new
+  figure markup, and native published styling without the extension. The live
+  session was logged out; no real report was submitted or modified.
+- Hidden browser checks do not establish native browser chrome, window placement,
+  permission prompts, or OS focus behavior. Caption-specific native drag/drop
+  was not separately exercised; clipboard serialization of the selected complete
+  figure was covered.
 
 Planning evidence: inspected the converter, Rich image extension, insertion and
 replacement paths, local-photo integration, existing report tests, browser

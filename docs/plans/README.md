@@ -1,7 +1,7 @@
 # Active plans
 
-- [Report image captions](report-image-captions.md) — planned; Rich caption editing,
-  lossless mode conversion, and Peakbagger save-format verification.
+- [Report image captions](report-image-captions.md) — implemented locally;
+  live Peakbagger save/reopen verification remains open.
 
 Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting

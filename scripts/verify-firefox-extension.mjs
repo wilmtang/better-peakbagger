@@ -2525,6 +2525,44 @@ async function main() {
             && !correctedEditorErrorState.errorRelation && correctedEditorErrorState.errorHidden,
         'Firefox corrected image field retained stale error semantics', correctedEditorErrorState);
         await driver.manage().window().setRect(verificationViewport);
+        await driver.executeScript(`
+      const mode = label => [...document.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === label);
+      mode('Plain').click();
+      const textarea = document.getElementById('JournalText');
+      textarea.value = '[img src="' + location.origin + '/caption-photo.svg" alt="Ridge" width="320" height="200"]';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      mode('Rich text').click();
+    `);
+        await waitForScript(driver, 'return document.querySelector(\'.bpb-re-image-resize img\')?.naturalWidth === 640;', 'Firefox caption image');
+        await driver.findElement(By.css('.bpb-re-image-resize img')).click();
+        await driver.findElement(By.css('.bpb-re-captionbar button')).click();
+        await driver.actions({ async: true }).sendKeys('North ridge caption').perform();
+        await waitForScript(driver, 'return document.querySelector(\'.bpb-re-surface figcaption\')?.textContent === \'North ridge caption\';', 'Firefox caption typing');
+        await driver.actions({ async: true }).sendKeys(Key.ENTER).sendKeys('After the photo').perform();
+        await driver.executeScript(`
+      [...document.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === 'Markdown').click();
+    `);
+        await waitForScript(driver, 'return document.querySelector(\'.bpb-re-preview figcaption\')?.textContent === \'North ridge caption\';', 'Firefox Markdown caption preview');
+        await driver.executeScript(`
+      [...document.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === 'Rich text').click();
+    `);
+        const captionState = await waitForScript(driver, `
+      const figure = document.querySelector('.bpb-re-surface figure');
+      if (!figure) return false;
+      const image = figure.querySelector('img').getBoundingClientRect();
+      const caption = figure.querySelector('figcaption').getBoundingClientRect();
+      return { text: figure.querySelector('figcaption').textContent, width: caption.width,
+        imageWidth: image.width, below: caption.top >= image.bottom,
+        source: document.getElementById('JournalText').value };
+    `, 'Firefox caption round trip');
+        assertState(captionState.text === 'North ridge caption' && captionState.below
+            && Math.abs(captionState.width - captionState.imageWidth) <= 2
+            && captionState.imageWidth >= 319 && /\[figcaption\]North ridge caption/.test(captionState.source)
+            && captionState.source.includes('After the photo'), 'Firefox caption lost text, image association or geometry', captionState);
+        const captionScreenshot = process.env.BPB_VERIFY_FIREFOX_CAPTION_SCREENSHOT
+            || path.join(root, 'tmp/report-photos/firefox-caption.png');
+        await mkdir(path.dirname(captionScreenshot), { recursive: true });
+        await writeElementScreenshot(driver, '#bpb-report-editor', captionScreenshot);
         const mediaResizeState = await driver.executeAsyncScript(done => {
             const mode = label => [...document.querySelectorAll('.bpb-re-mode')]
                 .find(button => button.textContent === label);

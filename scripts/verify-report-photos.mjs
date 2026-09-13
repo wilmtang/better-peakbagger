@@ -81,6 +81,20 @@ try {
     assert.equal(uploads, 0);
     await report.locator('.bpb-re-local-photo-actions button').waitFor();
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.naturalWidth === 800);
+    await report.locator('.bpb-re-image-resize img').click();
+    await report.getByRole('button', { name: 'Add caption', exact: true }).click();
+    await report.keyboard.type('Looking north from the summit ');
+    await report.keyboard.insertText('—');
+    await report.keyboard.type(' the ridge continues beyond the snowfield.');
+    await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
+    // Real typing and Unicode insertion must preserve the earlier characters.
+    // Clicking the caption again must place the caret in document text.
+    await report.locator('.bpb-re-surface figcaption').click();
+    await report.keyboard.press(process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End');
+    await report.keyboard.type(' More.');
+    await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent.endsWith(' More.'));
+    for (let index = 0; index < ' More.'.length; index++) await report.keyboard.press('Backspace');
+    await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
     const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
     await mkdir(output, { recursive: true });
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'pasted-light.png') });
@@ -92,6 +106,7 @@ try {
     await report.reload();
     await report.locator('.bpb-re-draft-restore').click();
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.naturalWidth === 800);
+    assert.match(await report.locator('.bpb-re-surface figcaption').innerText(), /Looking north/);
     const opened = context.waitForEvent('page').catch(error => { console.error('Open editor failed:', error.message); return null; });
     await report.locator('.bpb-re-image-resize img').dblclick();
     const editor = await opened;
@@ -101,10 +116,31 @@ try {
     await editor.locator('#upload-insert').click();
     await editor.getByText('Photo updated in the report. It will upload when you save the TR.', { exact: true }).waitFor();
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.alt === 'Mountain route');
+    assert.match(await report.locator('.bpb-re-surface figcaption').innerText(), /Looking north/);
     assert.equal(uploads, 0);
     await editor.screenshot({ path: path.join(output, 'saved-photo-editor.png') });
     await report.setViewportSize({ width: 720, height: 900 });
+    // The legacy page has a wide minimum layout. Also constrain the editor
+    // itself so this check exercises caption wrapping within a narrow surface.
+    await report.locator('#bpb-report-editor').evaluate(element => { element.style.width = '520px'; });
+    await report.locator('.bpb-re-image-resize img').click();
+    await report.getByRole('button', { name: 'Edit caption', exact: true }).click();
+    const originalCaption = await report.locator('.bpb-re-surface figcaption').innerText();
+    await report.locator('.bpb-re-surface figcaption').fill('North ridge '.repeat(30) + 'x'.repeat(100));
+    const geometry = await report.evaluate(() => {
+        const root = document.querySelector('.bpb-re-surface');
+        const image = root.querySelector('img').getBoundingClientRect();
+        const caption = root.querySelector('figcaption').getBoundingClientRect();
+        return { imageWidth: image.width, captionWidth: caption.width, captionHeight: caption.height,
+            clipped: root.scrollWidth > root.clientWidth + 1, captionBelow: caption.top >= image.bottom };
+    });
+    assert.ok(geometry.imageWidth > 200 && Math.abs(geometry.imageWidth - geometry.captionWidth) <= 2
+        && geometry.captionHeight > 40 && geometry.captionBelow && !geometry.clipped, JSON.stringify(geometry));
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'pasted-narrow.png') });
+    await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'dark'; });
+    await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-narrow-dark.png') });
+    await report.locator('.bpb-re-surface figcaption').fill(originalCaption);
+    await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
     await report.locator('#SaveButton').click();
     await report.waitForURL(url, { waitUntil: 'domcontentloaded' });
     await report.waitForFunction(() => !document.querySelector('.bpb-re-local-photo-status')?.textContent.includes('Uploading'));
@@ -117,6 +153,7 @@ try {
     const reportText = /name="JournalText"\r\n\r\n([\s\S]*?)\r\n--/.exec(posts[0])?.[1]
         ?? new URLSearchParams(posts[0]).get('JournalText');
     assert.match(reportText, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
+    assert.match(reportText, /\[figcaption\]Looking north from the summit/);
     assert.doesNotMatch(reportText, /bpb-photo\.invalid|data:image|blob:/);
     console.log(JSON.stringify({ browser: context.browser().version(), mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
 } catch (error) { console.error('Primary failure:', error); failure = error; }

@@ -35,12 +35,13 @@ const INLINE_TAGS = new Map([
 ]);
 const BLOCK_TAGS = new Set([
     'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote',
-    'ul', 'ol', 'li', 'table', 'tbody', 'thead', 'tfoot', 'tr', 'th', 'td', 'pre'
+    'ul', 'ol', 'li', 'table', 'tbody', 'thead', 'tfoot', 'tr', 'th', 'td', 'pre',
+    'figure', 'figcaption'
 ]);
 const VOID_TAGS = new Set(['br', 'hr', 'img']);
 const DOM_BLOCKS = new Set([
     'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE',
-    'UL', 'OL', 'TABLE', 'PRE', 'HR'
+    'UL', 'OL', 'TABLE', 'PRE', 'HR', 'FIGURE'
 ]);
 const DROP_DOM = new Set([
     'SCRIPT', 'STYLE', 'TEMPLATE', 'AUDIO', 'OBJECT',
@@ -196,7 +197,10 @@ const safeOpening = (name, attrs) => {
     if (INLINE_TAGS.has(sourceName)) {
         return { tag, html: `<${tag}>`, self: false, ast: { t: tag } };
     }
-    if (BLOCK_TAGS.has(sourceName)) return { tag, html: `<${tag}>`, self: false };
+    if (BLOCK_TAGS.has(sourceName)) return {
+        tag, html: `<${tag}>`, self: false,
+        ...(['figure', 'figcaption'].includes(tag) ? { ast: { t: tag } } : {})
+    };
     if (tag === 'br' || tag === 'hr') {
         return { tag, html: `<${tag}>`, self: true, ast: tag === 'br' ? BREAK : null };
     }
@@ -324,6 +328,9 @@ const droppedAttributes = (tag, attrs) => {
 
 const invalidStructuralParent = (tag, ancestors) => {
     const parent = ancestors.at(-1) || null;
+    if (tag === 'figcaption') return parent !== 'figure';
+    if (ancestors.includes('figcaption')) return true;
+    if (tag === 'figure' && ancestors.some(ancestor => ['figure', 'a'].includes(ancestor))) return true;
     if (tag === 'li') return parent !== 'ul' && parent !== 'ol';
     if (tag === 'tr') return !['table', 'thead', 'tbody', 'tfoot'].includes(parent);
     if (tag === 'th' || tag === 'td') return parent !== 'tr';
@@ -525,6 +532,10 @@ const inlineFromNode = node => {
     }
     if (node.nodeType !== 1) return [];
     const tag = node.tagName;
+    if (tag === 'FIGURE') {
+        const figure = figureFromElement(node);
+        return figure ? [figure] : [...node.childNodes].flatMap(inlineFromNode);
+    }
     if (tag === 'BR') return [BREAK];
     if (DROP_DOM.has(tag)) return [];
     if (tag === 'IMG') {
@@ -574,6 +585,30 @@ const inlineFromNode = node => {
 
 const inlinesFrom = element => compactInlines([...element.childNodes].flatMap(inlineFromNode));
 
+// Only explicit figures carry captions. Never infer them from adjacent prose.
+// Caption text follows the same whitespace convention as ordinary report text.
+export const figureFromElement = element => {
+    const children = [...element.childNodes].filter(node =>
+        node.nodeName !== 'BR' && !(node.nodeType === 3 && !node.nodeValue.trim()));
+    if (children.length !== 2 || children[1].nodeName !== 'FIGCAPTION') return null;
+    let media = children[0];
+    const caption = children[1];
+    // Rich HTML has a schema-owned media block. Revalidate its image/link as
+    // usual; the marker never grants access to additional tags or attributes.
+    if (media.nodeName === 'DIV' && media.hasAttribute('data-bpb-figure-media') && media.childNodes.length === 1) {
+        media = media.firstChild;
+    }
+    if ([...caption.childNodes].some(node => node.nodeType !== 3 && node.nodeName !== 'BR')) return null;
+    const linked = media.nodeName === 'A';
+    const image = linked && media.childNodes.length === 1 ? media.firstChild : media;
+    if (image.nodeName !== 'IMG') return null;
+    const kids = inlineFromNode(media);
+    if (kids.length !== 1 || (linked && kids[0].t !== 'a') || (!linked && kids[0].t !== 'img')) return null;
+    const value = [...caption.childNodes].map(node => node.nodeName === 'BR' ? ' ' : node.nodeValue)
+        .join('').replace(/[\t\n\f\r \u00a0]+/g, ' ').trim();
+    return value ? { t: 'figure', media: kids[0], caption: value } : kids[0];
+};
+
 // Two consecutive <br> elements are Peakbagger's paragraph separator. A
 // single <br> stays in the paragraph. Empty editor scaffolding is dropped.
 const looseInlinesToParagraphs = stream => {
@@ -585,7 +620,10 @@ const looseInlinesToParagraphs = stream => {
         current = [];
     };
     for (const node of compactInlines(stream)) {
-        if (node === BREAK) {
+        if (node.t === 'figure') {
+            flush();
+            blocks.push({ type: 'p', kids: [node] });
+        } else if (node === BREAK) {
             if (!current.length) continue;
             if (current[current.length - 1] === BREAK) {
                 current.pop();
@@ -629,6 +667,7 @@ const tableRows = table => {
 
 const blockFromElement = element => {
     const tag = element.tagName;
+    if (tag === 'FIGURE') return looseInlinesToParagraphs(inlineFromNode(element));
     if (tag === 'P' || tag === 'DIV') return looseInlinesToParagraphs(inlinesFrom(element));
     if (/^H[1-6]$/.test(tag)) {
         const kids = trimInlines(inlinesFrom(element));
@@ -705,6 +744,11 @@ const upgradeLegacyLists = blocks => blocks.map(block => {
 const parseBracketWithDiagnostics = source => {
     const diagnostics = [];
     const doc = getParserDocument(bracketSourceToSafeHtml(source, { diagnostics }));
+    for (const element of doc.querySelectorAll('figure')) {
+        if (!figureFromElement(element)) addDiagnostic(diagnostics, {
+            action: 'unwrap', code: 'unsupported-nesting', tag: 'figure'
+        });
+    }
     const ast = upgradeLegacyLists(domToAst(doc.getElementById('bpb-report-root')));
     const unique = new Map();
     for (const diagnostic of diagnostics) {
@@ -814,6 +858,16 @@ const protectMarkdownExtensions = source => {
 const makeMarkdownExtensionNode = (safe, kids = []) => {
     if (safe.ast === BREAK) return BREAK;
     if (safe.ast.t === 'img') return { ...safe.ast };
+    if (safe.ast.t === 'figcaption') return { t: 'figcaption', kids };
+    if (safe.ast.t === 'figure') {
+        const meaningful = kids.filter(kid => kid !== BREAK && !(kid.t === 'text' && !kid.text.trim()));
+        const [media, caption] = meaningful;
+        if (meaningful.length !== 2 || caption.t !== 'figcaption'
+            || !(media.t === 'img' || (media.t === 'a' && media.kids.length === 1 && media.kids[0].t === 'img'))
+            || caption.kids.some(kid => kid.t !== 'text')) return null;
+        const value = caption.kids.map(kid => kid.text).join('').replace(/\s+/g, ' ').trim();
+        return value ? { t: 'figure', media, caption: value } : media;
+    }
     return kids.length ? { ...safe.ast, kids } : null;
 };
 
@@ -872,7 +926,13 @@ const foldMarkdownExtensions = nodes => {
             continue;
         }
         stack.pop();
-        append(makeMarkdownExtensionNode(open.safe, compactInlines(open.kids)));
+        const folded = makeMarkdownExtensionNode(open.safe, compactInlines(open.kids));
+        if (folded) append(folded);
+        else if (open.safe.ast.t === 'figure') {
+            append(text(open.raw));
+            open.kids.forEach(append);
+            append(text(node.raw));
+        }
     }
 
     while (stack.length) {
@@ -991,7 +1051,7 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
     if (token.type === 'paragraph' || token.type === 'text') {
         const kids = trimInlines(markedInlines(
             token.tokens || [{ type: 'text', text: token.text || token.raw }], extensions));
-        return kids.length ? [{ type: 'p', kids }] : [];
+        return looseInlinesToParagraphs(kids);
     }
     if (token.type === 'heading') {
         const kids = trimInlines(markedInlines(token.tokens, extensions));
@@ -1028,7 +1088,16 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
     }
     if (token.type === 'code') return [{ type: 'pre', text: token.text || '' }];
     if (token.type === 'hr') return [{ type: 'hr' }];
-    if (token.type === 'html') return [{ type: 'p', kids: [text(token.raw || token.text || '')] }];
+    if (token.type === 'html') {
+        const raw = token.raw || token.text || '';
+        if (/^\s*<figure[\s>]/i.test(raw) && /<\/figure>\s*$/i.test(raw)) {
+            const parsed = parseBracketWithDiagnostics(raw);
+            if (!parsed.diagnostics.length && parsed.ast.length === 1
+                && parsed.ast[0].kids?.length === 1
+                && ['figure', 'img', 'a'].includes(parsed.ast[0].kids[0].t)) return parsed.ast;
+        }
+        return [{ type: 'p', kids: [text(raw)] }];
+    }
     const fallback = String(token.raw || token.text || '');
     return fallback ? [{ type: 'p', kids: [text(fallback)] }] : [];
 });
@@ -1069,6 +1138,8 @@ const parseMarkdown = source => {
 // ---- AST -> Peakbagger bracket markup ---------------------------------
 
 const inlinesToBracket = kids => (kids || []).map(node => {
+    if (node.t === 'figure') return `[figure]${inlinesToBracket([node.media])}[figcaption]${
+        escapeBracketText(node.caption)}[/figcaption][/figure]`;
     if (node.t === 'text') return escapeBracketText(node.text);
     if (node.t === 'br') return '\n';
     if (node.t === 'img') {
@@ -1122,6 +1193,8 @@ const astToBracket = blocksToBracket;
 // ---- AST -> safe editor/preview HTML ----------------------------------
 
 const inlinesToHtml = kids => (kids || []).map(node => {
+    if (node.t === 'figure') return `<figure>${inlinesToHtml([node.media])}<figcaption>${
+        escapeHtml(node.caption)}</figcaption></figure>`;
     if (node.t === 'text') return escapeHtml(node.text);
     if (node.t === 'br') return '<br>';
     if (node.t === 'img') {
@@ -1145,6 +1218,9 @@ const inlinesToHtml = kids => (kids || []).map(node => {
 }).join('');
 
 const blockToHtml = block => {
+    if (block.type === 'p' && block.kids.length === 1 && block.kids[0].t === 'figure') {
+        return inlinesToHtml(block.kids);
+    }
     if (block.type === 'p') return `<p>${inlinesToHtml(block.kids)}</p>`;
     if (block.type === 'heading') return `<h${block.level}>${inlinesToHtml(block.kids)}</h${block.level}>`;
     if (block.type === 'blockquote') return `<blockquote>${blocksToHtml(block.blocks)}</blockquote>`;
@@ -1190,6 +1266,14 @@ const codeSpan = value => {
 };
 
 const inlinesToMarkdown = kids => (kids || []).map(node => {
+    if (node.t === 'figure') {
+        // Keep HTML as literal caption text, including Markdown delimiters.
+        // Encode pipes so the same representation also survives GFM tables.
+        const media = inlinesToBracket([node.media]).replace(/\[([^\]]+)\]/g, '<$1>');
+        const caption = escapeAttribute(node.caption).replace(/[*_`|]/g,
+            character => `&#${character.charCodeAt(0)};`);
+        return `<figure>${media}<figcaption>${caption}</figcaption></figure>`;
+    }
     if (node.t === 'text') return escapeMarkdownText(node.text);
     if (node.t === 'br') return '\n';
     if (node.t === 'img') {
