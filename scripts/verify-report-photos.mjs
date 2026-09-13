@@ -105,6 +105,31 @@ try {
     await report.waitForFunction(expected => document.querySelector('.bpb-re-surface figcaption')?.textContent === expected, beforeRemoval);
     await report.locator('.bpb-re-surface figcaption').fill(beforeRemoval.slice(0, -literalSuffix.length));
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
+    const captionText = await report.locator('.bpb-re-surface figcaption').textContent();
+    await report.locator('.bpb-re-surface figcaption').fill('x');
+    await report.keyboard.press('Backspace');
+    await report.locator('.bpb-re-surface figure').waitFor({ state: 'detached' });
+    assert.equal(await report.locator('.bpb-re-surface .bpb-re-image-resize img').count(), 1);
+    await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
+    await report.waitForFunction(() => !!document.querySelector('.bpb-re-surface figcaption')?.textContent);
+    await report.locator('.bpb-re-surface figcaption').fill(captionText);
+    await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
+    await report.getByRole('button', { name: 'Text before image', exact: true }).click();
+    await report.keyboard.type('Normal text before the image.');
+    await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
+    await report.getByRole('button', { name: 'Text after image', exact: true }).click();
+    await report.keyboard.type('Normal text after the image.');
+    await report.waitForFunction(() => {
+        const figure = document.querySelector('.bpb-re-surface figure');
+        return figure?.previousElementSibling?.outerHTML === '<p>Normal text before the image.</p>'
+            && figure.nextElementSibling?.outerHTML === '<p>Normal text after the image.</p>';
+    });
+    await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
+    await report.keyboard.press('Backspace');
+    await report.locator('.bpb-re-surface figure').waitFor({ state: 'detached' });
+    assert.equal(await report.locator('.bpb-re-surface figcaption').count(), 0);
+    await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
+    await report.waitForFunction(expected => document.querySelector('.bpb-re-surface figcaption')?.textContent === expected, captionText);
     const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
     await mkdir(output, { recursive: true });
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'pasted-light.png') });

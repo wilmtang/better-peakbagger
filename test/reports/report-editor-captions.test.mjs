@@ -20,6 +20,48 @@ const saved = dom => {
     return dom.window.document.getElementById('JournalText').value;
 };
 
+test('deleting the image through a selection transaction removes its entire captioned figure', async () => {
+    const dom = await loadEditor({ report: `${figure}\n\nAfter` });
+    try {
+        const ui = await editorReady(dom);
+        const editor = editors(dom).rich;
+        selectImage(editor);
+        editor.commands.deleteSelection();
+        assert.equal(ui.querySelector('figure'), null);
+        assert.equal(saved(dom), 'After');
+    } finally { dom.window.close(); }
+});
+
+test('clearing caption text unwraps the image immediately and undo restores the caption', async () => {
+    const dom = await loadEditor({ report: figure });
+    try {
+        const ui = await editorReady(dom);
+        const editor = editors(dom).rich;
+        let start;
+        editor.state.doc.descendants((node, pos) => { if (node.type.name === 'reportCaption') start = pos + 1; });
+        editor.view.dispatch(editor.state.tr.delete(start, start + 'North ridge'.length));
+        assert.equal(ui.querySelector('figure'), null);
+        assert.ok(ui.querySelector('.bpb-re-image-resize img'));
+        editor.commands.undo();
+        assert.equal(ui.querySelector('figcaption')?.textContent, 'North ridge');
+    } finally { dom.window.close(); }
+});
+
+test('text controls create unformatted paragraphs beside a figure without joining existing prose', async () => {
+    const dom = await loadEditor({ report: `${figure}\n\n[i]Existing text[/i]` });
+    try {
+        const ui = await editorReady(dom);
+        const editor = editors(dom).rich;
+        selectImage(editor);
+        captionButton(ui, 'Text before image').click();
+        editor.commands.insertContent('Before');
+        selectImage(editor);
+        captionButton(ui, 'Text after image').click();
+        editor.commands.insertContent('After');
+        assert.equal(saved(dom), `Before\n\n${figure}\n\nAfter\n\n[i]Existing text[/i]`);
+    } finally { dom.window.close(); }
+});
+
 test('typing Markdown delimiters in captions preserves literal text', async () => {
     const dom = await loadEditor({ report: image });
     try {
@@ -161,7 +203,8 @@ test('formatting and deleting caption text cannot discard its image', async () =
         const [pos, size] = positions[0];
         editor.commands.setTextSelection({ from: pos + 1, to: pos + size - 1 });
         editor.commands.deleteSelection();
-        assert.ok(ui.querySelector('.bpb-re-surface figure img'));
+        assert.ok(ui.querySelector('.bpb-re-surface img'));
+        assert.equal(!!ui.querySelector('figure'), false);
         assert.doesNotMatch(saved(dom), /figcaption|Write a caption/);
     } finally { dom.window.close(); }
 });

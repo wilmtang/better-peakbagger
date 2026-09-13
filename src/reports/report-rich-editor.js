@@ -27,7 +27,7 @@ import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
 import { Fragment } from '@tiptap/pm/model';
-import { NodeSelection, TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
 import {
     MAX_REPORT_IMAGE_DIMENSION,
@@ -382,6 +382,29 @@ const selectedFigure = editor => {
     return null;
 };
 
+const textBesideImage = (editor, before = false) => {
+    const target = selectedReportImage(editor);
+    if (!target) return false;
+    const { state, view } = editor;
+    const transaction = state.tr;
+    let position = target.pos + (before ? 0 : target.node.nodeSize);
+    if (target.node.type.name === 'reportFigure') {
+        const $position = state.doc.resolve(position);
+        const neighbor = before ? $position.nodeBefore : $position.nodeAfter;
+        if (neighbor?.type.name === 'paragraph' && !neighbor.content.size) {
+            position += before ? -1 : 1;
+        } else {
+            transaction.insert(position, state.schema.nodes.paragraph.create());
+            position++;
+        }
+    }
+    transaction.setSelection(TextSelection.create(transaction.doc, position));
+    transaction.setStoredMarks([]);
+    view.dispatch(transaction.scrollIntoView());
+    view.focus();
+    return true;
+};
+
 const ReportCaption = Node.create({
     name: 'reportCaption',
     content: 'text*',
@@ -395,22 +418,18 @@ const ReportCaption = Node.create({
     renderHTML: () => ['figcaption', { 'data-placeholder': 'Write a caption…', 'aria-label': 'Image caption' }, 0],
     addKeyboardShortcuts() {
         const leave = () => {
-            const { state, view } = this.editor;
+            const { state } = this.editor;
             if (state.selection.$from.parent.type.name !== this.name) return false;
-            const target = selectedFigure(this.editor);
-            if (!target) return false;
-            const after = target.pos + target.node.nodeSize;
-            const transaction = state.tr;
-            if (state.doc.nodeAt(after)?.type.name !== 'paragraph') {
-                transaction.insert(after, state.schema.nodes.paragraph.create());
-            }
-            transaction.setSelection(TextSelection.near(transaction.doc.resolve(after + 1)));
-            view.dispatch(transaction.scrollIntoView());
-            return true;
+            return textBesideImage(this.editor);
         };
         return {
             Enter: leave,
             'Shift-Enter': leave,
+            ArrowUp: () => {
+                const { $from, empty } = this.editor.state.selection;
+                return empty && $from.parent.type.name === this.name && $from.parentOffset === 0
+                    ? textBesideImage(this.editor, true) : false;
+            },
             ArrowDown: () => {
                 const { $from, empty } = this.editor.state.selection;
                 return empty && $from.parent.type.name === this.name
@@ -430,6 +449,7 @@ const ReportCaption = Node.create({
 
 const ReportFigure = Node.create({
     name: 'reportFigure',
+    priority: 1000,
     group: 'block',
     content: 'reportFigureMedia reportCaption',
     defining: true,
@@ -438,10 +458,58 @@ const ReportFigure = Node.create({
     addKeyboardShortcuts() {
         const deleteImage = () => {
             const target = selectedFigure(this.editor);
-            if (!target || this.editor.state.selection.node?.type.name !== 'image') return false;
-            return this.editor.commands.deleteRange({ from: target.pos, to: target.pos + target.node.nodeSize });
+            if (!target || !['image', 'reportFigure'].includes(this.editor.state.selection.node?.type.name)) return false;
+            this.editor.view.dispatch(closeHistory(this.editor.state.tr)
+                .delete(target.pos, target.pos + target.node.nodeSize));
+            return true;
         };
-        return { Backspace: deleteImage, Delete: deleteImage };
+        const beside = before => this.editor.state.selection.node?.type.name === this.name
+            ? textBesideImage(this.editor, before) : false;
+        return { Backspace: deleteImage, Delete: deleteImage,
+            ArrowUp: () => beside(true), ArrowDown: () => beside(false), Enter: () => beside(false) };
+    },
+    addProseMirrorPlugins() {
+        return [new Plugin({
+            props: {
+                handleClick(view, pos, event) {
+                    const caption = event.target.closest?.('figcaption');
+                    if (!caption || !view.dom.contains(caption)) return false;
+                    const start = view.posAtDOM(caption, 0);
+                    const end = start + view.state.doc.resolve(start).parent.content.size;
+                    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc,
+                        Math.max(start, Math.min(end, pos)))));
+                    view.focus();
+                    return true;
+                },
+            },
+            appendTransaction(transactions, oldState, state) {
+                if (!transactions.some(transaction => transaction.docChanged)) return null;
+                const repairs = [];
+                state.doc.descendants((node, pos) => {
+                    if (node.type.name !== 'reportFigure') return;
+                    const image = node.firstChild.firstChild;
+                    if (!image?.attrs.src) {
+                        repairs.push({ pos, node, replacement: null });
+                    } else if (!node.lastChild.textContent.trim()) {
+                        const oldPos = transactions.reduceRight((position, transaction) =>
+                            transaction.mapping.invert().map(position, -1), pos);
+                        const oldFigure = oldState.doc.nodeAt(oldPos);
+                        // Keep the initial empty field created by Add caption, but
+                        // clearing an existing caption is the same as Remove caption.
+                        if (oldFigure?.type.name === 'reportFigure' && oldFigure.lastChild.textContent) {
+                            repairs.push({ pos, node, replacement: state.schema.nodes.paragraph.create(null, image) });
+                        }
+                    }
+                    return false;
+                });
+                if (!repairs.length) return null;
+                const transaction = state.tr;
+                for (const { pos, node, replacement } of repairs.reverse()) {
+                    transaction.replaceWith(pos, pos + node.nodeSize, replacement || Fragment.empty);
+                }
+                return transaction;
+            },
+        })];
     },
     parseHTML() {
         return [{ tag: 'figure', getAttrs: element => figureFromElement(element) ? {} : false,
@@ -759,6 +827,8 @@ export const richCommands = {
     insertImage: (editor, attrs) => editor.chain().focus().setImage(attrs).run(),
     editCaption: editor => changeImageCaption(editor),
     removeCaption: editor => changeImageCaption(editor, true),
+    textBeforeImage: editor => textBesideImage(editor, true),
+    textAfterImage: editor => textBesideImage(editor),
     insertVideo: (editor, src) => editor.chain().focus().insertContent({
         type: 'reportVideo', attrs: { src }
     }).run(),

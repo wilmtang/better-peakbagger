@@ -334,6 +334,12 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const editCaption = button('bpb-re-tablebtn', 'Add caption');
     const removeCaption = button('bpb-re-tablebtn', 'Remove caption');
     captionBar.append(editCaption, removeCaption);
+    for (const [label, command] of [['Text before image', 'textBeforeImage'], ['Text after image', 'textAfterImage']]) {
+        const control = button('bpb-re-tablebtn', label);
+        control.addEventListener('mousedown', event => event.preventDefault());
+        control.addEventListener('click', () => richCommands[command](richEditor));
+        captionBar.append(control);
+    }
     for (const [control, command] of [[editCaption, 'editCaption'], [removeCaption, 'removeCaption']]) {
         control.addEventListener('mousedown', event => event.preventDefault());
         control.addEventListener('click', () => richCommands[command](richEditor));

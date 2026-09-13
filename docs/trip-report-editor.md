@@ -403,8 +403,11 @@ add/delete row and column, header-row toggle, and table removal.
 Select an image in Rich text and choose **Add caption**. Type directly beneath
 the photo; captions are plain text, separate from the image's alt description.
 Click the caption to edit it, or select the photo and use **Edit caption**.
-**Remove caption** keeps the image and its dimensions. Enter (or Shift+Enter)
-continues in report prose. Backspace at the start selects the whole figure;
+**Remove caption**, or deleting the caption's last character, keeps the image
+and its dimensions and immediately removes the caption field. **Text before
+image** and **Text after image** place the caret in normal report text. Enter
+(or Shift+Enter) from a caption starts an unformatted paragraph after the image.
+Backspace at the start selects the whole figure;
 another deletion removes the photo and caption together. Undo restores them.
 Text formatting and insertion controls are disabled while editing a figure.
 
