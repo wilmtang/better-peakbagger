@@ -28,6 +28,7 @@ import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
 import { Fragment } from '@tiptap/pm/model';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
+import { closeHistory } from '@tiptap/pm/history';
 import {
     MAX_REPORT_IMAGE_DIMENSION,
     sanitizeReportDimension,
@@ -385,6 +386,10 @@ const ReportCaption = Node.create({
     name: 'reportCaption',
     content: 'text*',
     marks: '',
+    // TipTap skips input/paste formatting rules in literal-text nodes. Without
+    // this flag, those rules strip delimiters even though captions reject marks.
+    code: true,
+    whitespace: 'normal',
     selectable: false,
     parseHTML: () => [{ tag: 'figcaption' }],
     renderHTML: () => ['figcaption', { 'data-placeholder': 'Write a caption…', 'aria-label': 'Image caption' }, 0],
@@ -502,6 +507,8 @@ const changeImageCaption = (editor, remove = false) => {
         transaction.replaceWith($pos.before(), $pos.after(), replacement);
         transaction.setSelection(TextSelection.create(transaction.doc, figurePos + figure.firstChild.nodeSize + 2));
     }
+    // Removing a caption is a separate action from the typing just before it.
+    if (remove) closeHistory(transaction);
     view.dispatch(transaction.scrollIntoView());
     view.focus();
     return true;

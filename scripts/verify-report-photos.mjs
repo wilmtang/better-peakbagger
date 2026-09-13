@@ -95,6 +95,16 @@ try {
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent.endsWith(' More.'));
     for (let index = 0; index < ' More.'.length; index++) await report.keyboard.press('Backspace');
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
+    const literalSuffix = ' *literal* **bold** _underscores_ `code` ~~strike~~ [brackets] | pipe';
+    await report.keyboard.type(literalSuffix);
+    await report.waitForFunction(suffix => document.querySelector('.bpb-re-surface figcaption')?.textContent.endsWith(suffix), literalSuffix);
+    const beforeRemoval = await report.locator('.bpb-re-surface figcaption').textContent();
+    await report.getByRole('button', { name: 'Remove caption', exact: true }).click();
+    await report.locator('.bpb-re-surface figcaption').waitFor({ state: 'detached' });
+    await report.getByRole('button', { name: 'Undo (Ctrl/Cmd+Z)', exact: true }).click();
+    await report.waitForFunction(expected => document.querySelector('.bpb-re-surface figcaption')?.textContent === expected, beforeRemoval);
+    await report.locator('.bpb-re-surface figcaption').fill(beforeRemoval.slice(0, -literalSuffix.length));
+    await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
     const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
     await mkdir(output, { recursive: true });
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'pasted-light.png') });

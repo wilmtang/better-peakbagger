@@ -20,6 +20,31 @@ const saved = dom => {
     return dom.window.document.getElementById('JournalText').value;
 };
 
+test('typing Markdown delimiters in captions preserves literal text', async () => {
+    const dom = await loadEditor({ report: image });
+    try {
+        const ui = await editorReady(dom);
+        const editor = editors(dom).rich;
+        selectImage(editor);
+        captionButton(ui, 'Add caption').click();
+        const literal = '*asterisks* **bold** _underscores_ `code` ~~strike~~ [brackets] | pipe';
+        for (const character of literal) {
+            const { from, to } = editor.state.selection;
+            const handled = editor.view.someProp('handleTextInput', handler =>
+                handler(editor.view, from, to, character));
+            if (!handled) editor.view.dispatch(editor.state.tr.insertText(character, from, to));
+        }
+        assert.equal(ui.querySelector('figcaption').textContent, literal);
+        captionButton(ui, 'Remove caption').click();
+        editor.commands.undo();
+        assert.equal(ui.querySelector('figcaption')?.textContent, literal);
+        modeButton(dom.window.document, 'Markdown').click();
+        modeButton(dom.window.document, 'Rich text').click();
+        assert.equal(ui.querySelector('figcaption').textContent, literal);
+        assert.equal(ui.querySelector('img').getAttribute('alt'), 'Rocky ridge');
+    } finally { dom.window.close(); }
+});
+
 test('adding, typing, undoing and removing a caption preserves the photo and surrounding prose', async () => {
     const dom = await loadEditor({ report: `[b]Before[/b] ${image} [i]After[/i]` });
     try {

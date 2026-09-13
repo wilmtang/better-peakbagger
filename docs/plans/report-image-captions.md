@@ -26,6 +26,24 @@ showed "Invalid User!!!". No live form was submitted. The user authorized a
 prototype, so local implementation proceeded with this compatibility gate
 explicitly open; fixture acceptance is not a substitute for server evidence.
 
+Follow-up live Chrome check: the user's normal Chrome session was authenticated.
+After reloading the unpacked extension, an unsaved new-ascent form exercised
+Add/Edit/Remove caption, keyboard resizing, Rich/Markdown/Plain round trips,
+and local draft restoration. A viewport screenshot at 2304×1203 CSS pixels
+showed the caption wrapping below its 450-pixel photo in the site's dark theme.
+The page was controlled in the background; no saved ascent was modified and no
+anti-bot challenge appeared. This does not establish server save/reopen behavior.
+
+Real typing exposed two defects: formatting input rules consumed literal caption
+delimiters, and immediate caption removal could share an undo group with typing.
+The caption node now bypasses formatting rules while retaining normal whitespace,
+and removal starts a separate history event. A regression test reproduced both
+failures before their fixes. All 146 report tests, focused ESLint, the hidden
+Chrome photo workflow (1280×900 and 720×900), and `npm run verify:chrome` passed.
+The photo workflow now types literal delimiters and verifies exact restoration
+after removal and undo. The corrected build still needs the requested extension
+reload to repeat these two checks in the user's authenticated Chrome session.
+
 The implementation and user guide are reviewable locally. Keep this plan active
 until one real report containing a caption is manually saved and reopened, with
 the displayed report also checked without the extension. Record that evidence
@@ -232,7 +250,8 @@ Do not ship or commit a half-connected UI that drops caption data.
 
 - Actual Peakbagger acceptance and subsequent edit-field restoration of the new
   figure markup, and native published styling without the extension. The live
-  session was logged out; no real report was submitted or modified.
+  authenticated Chrome check used an unsaved new-ascent form; no real report was
+  submitted or modified.
 - Hidden browser checks do not establish native browser chrome, window placement,
   permission prompts, or OS focus behavior. Caption-specific native drag/drop
   was not separately exercised; clipboard serialization of the selected complete
