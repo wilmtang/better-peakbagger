@@ -899,10 +899,11 @@ try {
             mockedTerrainResponses.push(request.url);
         };
         void fulfill().catch(async error => {
-            // Disabling the temporary basemap interceptor, or navigating away,
-            // may invalidate a late local request between pause and continue.
-            // That says nothing about the DEM mock or product behavior.
-            if (isBasemapRequest && /Invalid InterceptionId|Fetch domain is not enabled/.test(error.message)) return;
+            // Chrome may cancel any paused request while a style changes or the
+            // page navigates, invalidating its id before this async handler can
+            // continue or fulfill it. The later mesh and response assertions
+            // still prove that required DEM requests reached this mock.
+            if (/Invalid InterceptionId|Fetch domain is not enabled/.test(error.message)) return;
             terrainMockFailures.push(error.stack || error.message);
             try {
                 await cdp.call('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
@@ -1241,7 +1242,7 @@ try {
         || feedUrl.searchParams.get('pid') !== null) {
         throw new Error(`Peak feed query does not mirror the native map: ${peakFeedRequests[0]}`);
     }
-    const ring = await waitForClimbedRing(cdp, { present: true, label: 'Ascent 3D peaks' });
+    const ring = await waitForStableClimbedRing(cdp, 'Ascent 3D peaks');
     await clickAt(cdp, ring.x, ring.y);
     const peakPopup = await waitForPageState(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');

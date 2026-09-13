@@ -104,6 +104,26 @@ test('Chrome solar bearing verification targets exposed settled canvas pixels', 
         'a centered frame coordinate can land on a marker or popup overlay');
 });
 
+test('Chrome terrain verification waits out cancelled requests and moving peak rings', async () => {
+    const verifier = await readFile(
+        new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
+        'utf8',
+    );
+    const requestHandlerStart = verifier.indexOf('cdp.on(\'Fetch.requestPaused\'');
+    const requestHandlerEnd = verifier.indexOf('cdp.on(\'Network.requestWillBeSent\'');
+    assert.ok(requestHandlerStart >= 0 && requestHandlerStart < requestHandlerEnd);
+    const requestHandler = verifier.slice(requestHandlerStart, requestHandlerEnd);
+    assert.ok(requestHandler.includes(
+        'if (/Invalid InterceptionId|Fetch domain is not enabled/.test(error.message)) return;',
+    ), 'a Chrome-cancelled request must not masquerade as a DEM mock failure');
+    assert.doesNotMatch(requestHandler,
+        /isBasemapRequest && \/Invalid InterceptionId/,
+        'the cancellation race applies to DEM requests as well as local basemap requests');
+    assert.match(verifier,
+        /const ring = await waitForStableClimbedRing\(cdp, 'Ascent 3D peaks'\);/,
+        'the initial peak click must target a settled rendered ring');
+});
+
 test('Chrome tilted-peak verification targets the live canvas and proves the pitch', async () => {
     const verifier = await readFile(
         new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url),
