@@ -51,6 +51,7 @@ const payload = values => Backup.buildPayload({
 test('serializes deterministic metadata and annotation projects without local secrets or pixels', async () => {
     const first = bundle({ localId: 'photo-b' });
     const second = bundle({ localId: 'photo-a' });
+    second.photo = Library.cleanPhoto({ ...second.photo, caption: 'The ridge above camp' });
     const document = payload([first, second]);
     const text = Backup.serialize(document);
     const parsed = Backup.parse(text);
@@ -58,6 +59,7 @@ test('serializes deterministic metadata and annotation projects without local se
     assert.equal(parsed.ok, true);
     assert.deepEqual(parsed.payload.photos.map(value => value.localId), ['photo-a', 'photo-b']);
     assert.equal(parsed.payload.photos[0].project.localId, 'photo-a');
+    assert.equal(parsed.payload.photos[0].caption, 'The ridge above camp');
     assert.equal(text.includes('private-key'), false);
     assert.equal(text.includes('private pixels'), false);
     assert.equal(text.includes('/delete/private'), false);

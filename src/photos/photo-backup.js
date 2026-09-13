@@ -43,6 +43,7 @@ const publicPhoto = value => {
         updatedAt: photo.updatedAt,
         title: photo.title,
         alt: photo.alt,
+        ...(photo.caption ? { caption: photo.caption } : {}),
         source: photo.source,
         export: photo.export,
         remote: photo.remote,

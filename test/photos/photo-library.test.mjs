@@ -43,6 +43,17 @@ const draft = () => Library.createDraft({
     now: TIME,
 });
 
+test('captions are bounded metadata without turning legacy alt text into visible captions', () => {
+    const legacy = draft();
+    assert.equal(legacy.caption, undefined);
+    const photo = Library.cleanPhoto({ ...legacy, caption: '  North ridge  ' });
+    assert.equal(photo.caption, 'North ridge');
+    assert.equal(photo.alt, legacy.alt);
+    assert.equal(Library.search([photo], 'North ridge').length, 1);
+    assert.equal(Library.cleanPhoto({ ...photo, caption: 'x'.repeat(600) }).caption.length, Library.ALT_LIMIT);
+    assert.equal(Library.cleanPhoto({ ...photo, caption: '' }).caption, undefined);
+});
+
 test('creates and idempotently cleans a local draft record', () => {
     const photo = draft();
     assert.equal(photo.remote.state, 'draft');

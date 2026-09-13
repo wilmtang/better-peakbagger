@@ -18,6 +18,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const LOCAL_PHOTO_ID = new URL(location.href).searchParams.get('localPhotoId') || '';
 const SOURCE_IMAGE_URL = new URL(location.href).searchParams.get('imageUrl') || '';
 const SOURCE_IMAGE_ALT = (new URL(location.href).searchParams.get('imageAlt') || '').slice(0, Library.ALT_LIMIT);
+const SOURCE_IMAGE_CAPTION = new URL(location.href).searchParams.get('imageCaption');
 let localPhotoReturned = false;
 const RETURN_TOKEN = new URL(location.href).searchParams.get('returnToken') || '';
 const START_MODE = new URL(location.href).searchParams.get('mode') === 'library' ? 'library' : 'edit';
@@ -63,7 +64,7 @@ const ui = {
     editorWorkspace: byId('editor-workspace'),
     file: byId('photo-file'),
     title: byId('photo-title'),
-    alt: byId('photo-alt'),
+    caption: byId('photo-caption'),
     undo: byId('undo'),
     redo: byId('redo'),
     viewport: byId('photo-viewport'),
@@ -380,7 +381,7 @@ const editorMutationLocked = () => localPhotoReturned || busy || PUBLISHED_STATE
 
 const editorMutationControls = () => [
     ui.title,
-    ui.alt,
+    ui.caption,
     ui.finishRoute,
     ui.color,
     ui.opacity,
@@ -744,16 +745,17 @@ const setSourceDisplay = blob => {
     ui.overlay.setAttribute('height', String(project.image.height));
 };
 
-const cleanDraftFromFields = ({ now, project: draftProject, photo: draftPhoto, original, title, alt }) => {
+const cleanDraftFromFields = ({ now, project: draftProject, photo: draftPhoto, original, title, caption }) => {
     if (!draftProject || !original) return null;
     const fields = {
         title,
-        alt,
+        caption,
     };
     if (!draftPhoto) {
         return Library.createDraft({
             localId: draftProject.localId,
             ...fields,
+            alt: SOURCE_IMAGE_ALT,
             source: {
                 fileName: original.name || 'photo',
                 mime: original.type,
@@ -781,7 +783,7 @@ const currentDraftMatches = snapshot => draftRevision === snapshot.revision
     && originalBlob === snapshot.original
     && thumbnailBlob === snapshot.thumbnail
     && ui.title.value === snapshot.title
-    && ui.alt.value === snapshot.alt;
+    && ui.caption.value === snapshot.caption;
 
 const enqueueDraftWrite = write => {
     const operation = draftWriteQueue.then(write, write);
@@ -809,7 +811,7 @@ const persistDraft = async ({ required = false } = {}) => {
         original: originalBlob,
         thumbnail: thumbnailBlob,
         title: ui.title.value,
-        alt: ui.alt.value,
+        caption: ui.caption.value,
     };
     const nextPhoto = cleanDraftFromFields({ now, ...snapshot });
     if (!nextPhoto) {
@@ -1605,7 +1607,7 @@ const loadBundle = async bundle => {
     selectedId = null;
     selectedVertex = null;
     ui.title.value = photo.title;
-    ui.alt.value = photo.alt;
+    ui.caption.value = photo.caption || '';
     setSourceDisplay(originalBlob);
     ui.editorEmpty.hidden = true;
     ui.editorWorkspace.hidden = false;
@@ -1683,13 +1685,13 @@ const chooseFile = async file => {
         history = [];
         future = [];
         ui.title.value = defaultTitle(file.name);
-        ui.alt.value = '';
+        ui.caption.value = '';
         setSourceDisplay(file);
         ui.editorEmpty.hidden = true;
         ui.editorWorkspace.hidden = false;
         initializeUploadSettings();
         renderProject();
-        // The title is filled from the file name and the description is
+        // The title is filled from the file name and the caption is
         // optional, so the draft is already valid — autosave it rather than
         // waiting for an edit that may never come.
         setSaveStatus('Not saved yet');
@@ -1697,7 +1699,7 @@ const chooseFile = async file => {
             ? 'Photo stays local until you choose Upload and replace.'
             : 'Photo stays local until you choose Upload and insert.');
         shouldPersist = true;
-        ui.alt.focus();
+        ui.caption.focus();
     } catch (error) {
         bitmap?.close?.();
         const message = error instanceof PhotoSourcePreparationError || error instanceof RangeError
@@ -1795,7 +1797,7 @@ const saveLocalAndReturn = async () => {
         }
         const response = await send({
             type: 'PHOTO_INSERT_COMMIT', returnToken: RETURN_TOKEN,
-            localPhotoId: photo.localId, url: PendingPhoto.url(photo.localId), alt: photo.alt,
+            localPhotoId: photo.localId, url: PendingPhoto.url(photo.localId), alt: photo.alt, caption: photo.caption || '',
             dataUrl: await PendingPhoto.toDataUrl(exported.blob),
         });
         if (!response?.ok) throw new Error(response?.error?.message || 'The report is no longer available. Your photo is saved on this device.');
@@ -1904,7 +1906,7 @@ const uploadAndInsert = async () => {
         committedPhoto = photo;
         project = structuredClone(uploadSnapshot.project);
         ui.title.value = uploadSnapshot.photo.title;
-        ui.alt.value = uploadSnapshot.photo.alt;
+        ui.caption.value = uploadSnapshot.photo.caption || '';
         selectedId = null;
         selectedVertex = null;
         routeSession = null;
@@ -1924,7 +1926,7 @@ const uploadAndInsert = async () => {
                     returnToken,
                     localPhotoId: inserting.localId,
                     url: inserting.remote.url,
-                    alt: inserting.alt,
+                    alt: inserting.alt, caption: inserting.caption || '',
                     ...(displayWidth === null ? {} : { displayWidth }),
                 });
             },
@@ -1946,7 +1948,7 @@ const uploadAndInsert = async () => {
             if (uploadSnapshot) {
                 project = structuredClone(uploadSnapshot.project);
                 ui.title.value = uploadSnapshot.photo.title;
-                ui.alt.value = uploadSnapshot.photo.alt;
+                ui.caption.value = uploadSnapshot.photo.caption || '';
                 renderProject();
             }
             const message = error instanceof UploadTransaction.CommittedUploadError
@@ -2038,7 +2040,7 @@ const recoverOperations = async () => {
                             returnToken,
                             localPhotoId: inserting.localId,
                             url: inserting.remote.url,
-                            alt: inserting.alt,
+                            alt: inserting.alt, caption: inserting.caption || '',
                             ...(displayWidth === null ? {} : { displayWidth }),
                         });
                     },
@@ -2083,7 +2085,7 @@ const insertFromLibrary = async (item, control = null) => {
         returnToken: RETURN_TOKEN,
         localPhotoId: item.localId,
         url: item.remote.url,
-        alt: item.alt,
+        alt: item.alt, caption: item.caption || '',
         ...(displayWidth === null ? {} : { displayWidth }),
     });
     if (!inserted?.ok) {
@@ -2140,7 +2142,7 @@ const editAsNewVersion = async (item, control = null) => {
         const nextPhoto = Library.createDraft({
             localId,
             title: `${item.title} revision`.slice(0, Library.TITLE_LIMIT),
-            alt: item.alt,
+            alt: item.alt, caption: item.caption || '',
             source: item.source,
             parentLocalId: item.localId,
             now,
@@ -2224,7 +2226,7 @@ const importProject = async file => {
             ? Library.createDraft({
                 localId,
                 title: `${imported.title} (imported)`.slice(0, Library.TITLE_LIMIT),
-                alt: imported.alt,
+                alt: imported.alt, caption: imported.caption || '',
                 source: imported.source,
                 parentLocalId: imported.localId,
                 now,
@@ -2439,7 +2441,7 @@ const cardFor = (item, thumbnail, objectUrls) => {
 
     const body = element('div', 'photo-card-body');
     body.append(element('h3', '', item.title));
-    if (item.alt) body.append(element('p', '', item.alt));
+    if (item.caption) body.append(element('p', '', item.caption));
     body.append(element('p', '', `${item.source.width} × ${item.source.height} · `
         + `${formatBytes(item.export?.bytes || item.source.bytes)} · `
         + new Date(item.updatedAt).toLocaleDateString()));
@@ -2758,7 +2760,7 @@ const bindEvents = () => {
     ui.editorEmpty.addEventListener('drop', onPhotoDrop);
     document.addEventListener('paste', onPhotoPaste);
     ui.title.addEventListener('input', schedulePersist);
-    ui.alt.addEventListener('input', schedulePersist);
+    ui.caption.addEventListener('input', schedulePersist);
     ui.undo.addEventListener('click', undo);
     ui.redo.addEventListener('click', redo);
     document.querySelectorAll('[data-tool]').forEach(button => {
@@ -2991,6 +2993,7 @@ const initialize = async () => {
         const bundle = await store.getBundle(LOCAL_PHOTO_ID);
         if (!bundle?.photo) throw new Error('The local photo is unavailable.');
         await editAsNewVersion(bundle.photo);
+        if (project && SOURCE_IMAGE_CAPTION !== null) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
         setEditorStatus('Edits stay on this device. Save and return to update the TR.');
     } else if (SOURCE_IMAGE_URL && RETURN_TOKEN) {
         try {
@@ -2999,7 +3002,7 @@ const initialize = async () => {
             const bundle = existing ? await store.getBundle(existing.localId) : null;
             if (bundle?.original && bundle?.project) await editAsNewVersion(existing);
             else await chooseFile(await readPhotoSourceUrl(SOURCE_IMAGE_URL, { maxBytes: MAX_ENCODED_SOURCE_BYTES }));
-            if (project) { ui.alt.value = SOURCE_IMAGE_ALT; schedulePersist(); }
+            if (project && SOURCE_IMAGE_CAPTION !== null) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
         } catch {
             toast('The image could not be opened from its host or local library. Download it and choose the file to continue editing.', {
                 action: 'Choose image', onAction: () => ui.file.click(), duration: 0,

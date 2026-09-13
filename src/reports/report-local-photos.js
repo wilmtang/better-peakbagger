@@ -4,6 +4,7 @@
 import { reportPhoto as Pending } from '../photos/report-photo.js';
 import { photoProject as Project } from '../photos/photo-project.js';
 import { trustedAction as Trusted } from '../ui/trusted-action.js';
+import { richCommands } from './report-rich-editor.js';
 
 export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, flush, saveDraft, launchEditor, replaceText }) {
     const status = document.createElement('div');
@@ -27,7 +28,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     window.addEventListener('pagehide', () => { pageGeneration++; });
     let pasteQueue = Promise.resolve();
     const generation = () => `report-photo-${Date.now()}-${++sequence}`;
-    const replaceNode = (from, to, alt) => {
+    const replaceNode = (from, to, alt, caption) => {
         const editor = getEditor();
         if (!editor || editor.isDestroyed) return false;
         let transaction = editor.state.tr;
@@ -39,6 +40,14 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         });
         if (!transaction.docChanged) return false;
         editor.view.dispatch(transaction);
+        if (to && typeof caption === 'string') {
+            const positions = [];
+            editor.state.doc.descendants((node, pos) => {
+                if (node.type.name === 'image' && node.attrs.src === to) positions.push(pos);
+            });
+            for (const pos of positions.reverse()) richCommands.setImageCaption(editor, pos,
+                caption.replace(/\s+/g, ' ').trim().slice(0, 500));
+        }
         return true;
     };
     const resolvePreview = async src => {
@@ -188,7 +197,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
             if (message.type !== 'PHOTO_LOCAL_RESULT' || sender?.id !== ext.runtime.id) return false;
             const from = Pending.url(message.replacesLocalPhotoId);
             if (!from || !Pending.id(message.url)) return false;
-            const replaced = replaceNode(from, message.url, message.alt);
+            const replaced = replaceNode(from, message.url, message.alt, message.caption);
             if (replaced) { flush(); void saveDraft(); say('Photo updated locally. It will upload when you save the TR.'); }
             return replaced;
         },

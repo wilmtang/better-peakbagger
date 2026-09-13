@@ -278,14 +278,14 @@ test('a validated photo result is inserted only while the rich editor is availab
         returnToken: 'return-123',
         localPhotoId: 'photo:123',
         url: 'https://i.ibb.co/example/topo.jpg',
-        alt: 'North ridge route'
+        alt: 'North ridge route', caption: 'Route from the saddle'
     };
     for (const listener of listeners) {
         listener(message, { id: 'test-extension' }, value => { response = value; });
     }
     assert.deepEqual(JSON.parse(JSON.stringify(response)), { ok: true });
     assert.equal(doc.getElementById('JournalText').value,
-        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
+        '[figure][img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"][figcaption]Route from the saddle[/figcaption][/figure]');
     assert.equal(ui.querySelector('.bpb-re-status').textContent, 'Photo inserted');
 
     response = null;
@@ -294,7 +294,7 @@ test('a validated photo result is inserted only while the rich editor is availab
     }
     assert.deepEqual(JSON.parse(JSON.stringify(response)), { ok: true });
     assert.equal(doc.getElementById('JournalText').value,
-        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]',
+        '[figure][img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"][figcaption]Route from the saddle[/figcaption][/figure]',
         'an ambiguous delivery retry must acknowledge without inserting twice');
 
     modeButton(doc, 'Markdown').click();
@@ -306,7 +306,7 @@ test('a validated photo result is inserted only while the rich editor is availab
     assert.deepEqual(JSON.parse(JSON.stringify(response)),
         { ok: false, error: { code: 'editor-unavailable' } });
     assert.equal(doc.getElementById('JournalText').value,
-        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
+        '[figure][img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"][figcaption]Route from the saddle[/figcaption][/figure]');
 });
 
 test('a photo result carries a bounded display width without fixing its height', async () => {
@@ -891,6 +891,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
     fireTrustedEvent(images[1], 'dblclick', { bubbles: true });
     await waitFor(dom, () => opened.length === 1);
     assert.equal(opened[0].imageUrl, src);
+    assert.equal(opened[0].imageCaption, 'Second photo caption');
     assert.ok(opened[0].imageEditId);
     const rich = editors(dom).rich;
     rich.state.doc.descendants((node, pos) => {
@@ -898,7 +899,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
     });
     rich.commands.insertContent('Updated ');
     const message = { type: 'PHOTO_INSERT_RESULT', ...returnContext(), returnToken: 'image-return',
-        imageEditId: opened[0].imageEditId, localPhotoId: 'edited-photo', url: 'https://images.example/edited.png', alt: 'Annotated ridge' };
+        imageEditId: opened[0].imageEditId, localPhotoId: 'edited-photo', url: 'https://images.example/edited.png', alt: 'Annotated ridge', caption: 'Caption from photo editor' };
     let result;
     for (const listener of listeners) listener(message, { id: 'test-extension' }, response => { result = response; });
     assert.equal(result.ok, true);
@@ -912,10 +913,22 @@ test('double-click opens the exact report image and replaces only that occurrenc
     for (const listener of listeners) listener(message, { id: 'test-extension' }, response => { result = response; });
     assert.equal(result.ok, true);
     assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 2);
+    for (const caption of ['Caption revised in Photo Topos', '']) {
+        const count = opened.length;
+        fireTrustedEvent(ui.querySelectorAll('.bpb-re-image-resize img')[1], 'dblclick', { bubbles: true });
+        await waitFor(dom, () => opened.length === count + 1);
+        const returned = { ...message, imageEditId: opened.at(-1).imageEditId,
+            returnToken: `caption-return-${count}`, caption };
+        for (const listener of listeners) listener(returned, { id: 'test-extension' }, response => { result = response; });
+        assert.equal(result.ok, true);
+        assert.equal(ui.querySelector('figcaption')?.textContent || '', caption);
+        assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 2);
+        if (!caption) assert.equal(!!ui.querySelector('figure'), false);
+    }
     fireTrustedEvent(current[0], 'dblclick', { bubbles: true });
-    await waitFor(dom, () => opened.length === 2);
+    await waitFor(dom, () => opened.length === 4);
     editors(dom).rich.commands.setContent('<p>The image was removed.</p>', { emitUpdate: true });
-    const stale = { ...message, imageEditId: opened[1].imageEditId, returnToken: 'stale-image-return' };
+    const stale = { ...message, imageEditId: opened[3].imageEditId, returnToken: 'stale-image-return' };
     for (const listener of listeners) listener(stale, { id: 'test-extension' }, response => { result = response; });
     assert.equal(result.ok, false, 'a removed image must not turn an edit result into an insertion');
     assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 0);

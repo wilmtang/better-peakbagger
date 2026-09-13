@@ -365,7 +365,7 @@ async function main() {
             }, 'image/png');
         });
         await driver.wait(until.elementIsVisible(driver.findElement(By.id('editor-workspace'))), 5_000);
-        await driver.findElement(By.id('photo-alt')).sendKeys('Firefox verification mountain route');
+        await driver.findElement(By.id('photo-caption')).sendKeys('Firefox verification mountain route');
         const firefoxPhotoEditor = await waitForScript(
             driver,
             `const saved = document.getElementById("save-status")?.textContent || "";

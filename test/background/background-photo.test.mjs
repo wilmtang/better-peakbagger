@@ -401,6 +401,7 @@ test('returns one sanitized insertion to the originating tab and rejects replay'
         localPhotoId: 'photo-1',
         url: 'https://i.ibb.co/a/topo.jpg',
         alt: 'North face route',
+        caption: 'Route above camp',
     };
     assert.deepEqual(await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender), {
         ok: true,
@@ -569,9 +570,10 @@ test('fails closed for wrong editor tab, invalid public URL, and expired context
 test('image edits bind the source URL and exact target to the trusted return context', async () => {
     const h = harness();
     const opened = await h.routes.handlers.PHOTO_EDITOR_OPEN({ mode: 'edit', identity: { cid: 22, pid: 33 },
-        imageUrl: 'https://i.ibb.co/example/ridge.png', imageEditId: 'image-edit-1' }, peakSender);
+        imageUrl: 'https://i.ibb.co/example/ridge.png', imageEditId: 'image-edit-1', imageCaption: 'North ridge' }, peakSender);
     assert.equal(opened.ok, true);
     assert.equal(new URL(h.created[0]).searchParams.get('imageUrl'), 'https://i.ibb.co/example/ridge.png');
+    assert.equal(new URL(h.created[0]).searchParams.get('imageCaption'), 'North ridge');
     assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].imageEditId, 'image-edit-1');
     const result = await h.routes.handlers.PHOTO_INSERT_COMMIT({ returnToken: 'return-token', localPhotoId: 'photo-1',
         imageEditId: 'forged-target', url: 'https://i.ibb.co/example/edited.png', alt: 'Edited ridge' },

@@ -1172,7 +1172,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             const response = await RuntimeMessage.send(ext, {
                 type: 'PHOTO_EDITOR_OPEN',
                 ...(localPhotoId ? { localPhotoId } : {}),
-                ...(target ? { imageEditId: generation,
+                ...(target ? { imageEditId: generation, imageCaption: target.caption,
                     ...(!localPhotoId ? { imageUrl: new URL(target.src, location.href).href, imageAlt: target.alt } : {}) } : {}),
                 mode: 'edit',
                 generation,
@@ -1339,6 +1339,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 if (!Number.isInteger(pos)) return;
                 void launchPhotoEditor(event, PendingPhoto.id(src), {
                     src, getPos, editor: richEditor, alt: richEditor.state.doc.nodeAt(pos)?.attrs.alt || '',
+                    caption: richCommands.imageCaption(richEditor, pos),
                 });
             }
         });
@@ -1467,6 +1468,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return localPhotoId && src ? {
             src,
             alt,
+            ...(typeof message.caption === 'string' ? { caption: message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT) } : {}),
             ...(displayWidth ? { width: displayWidth } : {}),
         } : null;
     };
@@ -1499,6 +1501,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         richEditor.view.dispatch(richEditor.state.tr.setNodeMarkup(pos, null, {
             ...node.attrs, src, alt: (node.attrs.alt || '') === target.alt ? alt : node.attrs.alt,
         }));
+        // The report remains editable while Photo Topos is open. Apply the
+        // returned caption only if that exact occurrence still has its old text.
+        if (typeof message.caption === 'string' && richCommands.imageCaption(richEditor, pos) === target.caption) {
+            const caption = message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT);
+            if (caption !== target.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT)) {
+                richCommands.setImageCaption(richEditor, pos, caption);
+            }
+        }
         imageEditTargets.delete(message.imageEditId);
         flushSync();
         void saveDraftNow();

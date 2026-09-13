@@ -71,7 +71,7 @@ export function createReportPhotoService({
         const { exported } = await metadata(message.dataUrl, photo.source);
         await store.putReportImage({ localId: photo.localId, owner, dataUrl: message.dataUrl,
             exported, revision: photo.revision });
-        return { localPhotoId: photo.localId, url: Pending.url(photo.localId), alt: photo.alt };
+        return { localPhotoId: photo.localId, url: Pending.url(photo.localId), alt: photo.alt, caption: photo.caption || '' };
     });
     const uploadOne = async (owner, localId) => {
         if (locks.has(localId)) throw new Error('This photo is already being uploaded. Wait for that save to finish.');
@@ -92,7 +92,7 @@ export function createReportPhotoService({
             if (photo.remote.state !== 'draft' || operation) {
                 throw new Error('An earlier upload may have reached ImgBB. Check the photo library and ImgBB before uploading again.');
             }
-            if (image.content !== JSON.stringify({ project: { ...project, updatedAt: null }, title: photo.title, alt: photo.alt })) {
+            if (image.content !== JSON.stringify({ project: { ...project, updatedAt: null }, title: photo.title, alt: photo.alt, ...(photo.caption ? { caption: photo.caption } : {}) })) {
                 throw new Error('This photo changed in the photo editor. Save it back to the report before saving the TR.');
             }
             if (!await permissionGranted()) throw new Error('Allow ImgBB access in Settings, then save the TR again.');

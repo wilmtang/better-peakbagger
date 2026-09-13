@@ -161,6 +161,7 @@ const recoveryPhotoIdentity = value => {
         updatedAt: photo.updatedAt,
         title: photo.title,
         alt: photo.alt,
+        ...(photo.caption ? { caption: photo.caption } : {}),
         source: photo.source,
         export: photo.export,
         remote: photo.remote,
@@ -281,7 +282,7 @@ const createPhotoStore = async options => {
             const project = await requestResult(transaction.objectStore(STORES.projects).get(localId));
             transaction.objectStore(STORES.metadata).put({
                 key: `report-image:${localId}`, localId, owner, dataUrl, exported, revision,
-                content: JSON.stringify({ project: { ...project, updatedAt: null }, title: photo.title, alt: photo.alt }),
+                content: JSON.stringify({ project: { ...project, updatedAt: null }, title: photo.title, alt: photo.alt, ...(photo.caption ? { caption: photo.caption } : {}) }),
             });
         } catch (error) { return abortAndRethrow(transaction, error); }
         await transactionDone(transaction);

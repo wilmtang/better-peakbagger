@@ -150,6 +150,7 @@ const cleanPhoto = value => {
     const updatedAt = cleanTime(value.updatedAt);
     const title = trim(value.title, TITLE_LIMIT);
     const alt = trim(value.alt, ALT_LIMIT);
+    const caption = trim(value.caption, ALT_LIMIT);
     const source = cleanImageMetadata(value.source, { fileName: true });
     const exported = value.export == null ? null : cleanImageMetadata(value.export);
     const remote = cleanRemote(value.remote);
@@ -177,6 +178,7 @@ const cleanPhoto = value => {
         updatedAt,
         title,
         alt,
+        ...(caption ? { caption } : {}),
         source,
         export: exported,
         remote,
@@ -192,6 +194,7 @@ const createDraft = ({
     localId,
     title,
     alt = '',
+    caption = '',
     source,
     parentLocalId = null,
     now = new Date().toISOString(),
@@ -203,6 +206,7 @@ const createDraft = ({
     updatedAt: now,
     title,
     alt,
+    caption,
     source,
     export: null,
     remote: { provider: 'imgbb', state: 'draft' },
@@ -341,6 +345,7 @@ const updateAssets = (value, assets) => {
 const searchableText = photo => [
     photo.title,
     photo.alt,
+    photo.caption || '',
     photo.source.fileName,
     ...photo.references.flatMap(reference => [reference.aid, reference.pid, reference.cid]),
 ].join(' ').toLocaleLowerCase();

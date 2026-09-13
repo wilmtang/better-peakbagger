@@ -208,7 +208,7 @@ date. That happens entirely locally.
 ## Photo topo editor and ImgBB upload (optional)
 
 The photo editor stores the selected image, thumbnail, source metadata,
-annotation project, title, and alt text in device-local IndexedDB. Pasting into a
+annotation project, title, caption, and retained alt text in device-local IndexedDB. Pasting into a
 Rich text TR stores metadata-free pixels and a local report image reference.
 Double-clicking opens a separate editable copy; **Save and return** keeps it local.
 Double-clicking a published image opens that image too. The editor reuses its
@@ -287,7 +287,7 @@ all are off by default. Backup never blocks or changes Peakbagger Save.
 | Ascent and TR | User-entered ascent fields, Markdown trip report, and Peakbagger's stored, user-approved GPS track | Raw Garmin or Strava GPX |
 | `settings.json` | Validated settings, export time, schema version, and extension version | Credentials, repository choice, favorites, drafts, caches, ascents, activity, and GPS data |
 | `favorite-climbers.json` | Custom climber ids, displayed names, added-at timestamps, provenance, and export time | Buddy cache and credentials |
-| `photo-library.json` | Catalog metadata, public URLs, sanitized source file name, hashes/dimensions, title/alt state, lineage, report references, annotation projects, tombstones, and version/export metadata | Image bytes, ImgBB key and delete URLs, upload journal, transient editor state, and GitHub credentials |
+| `photo-library.json` | Catalog metadata, public URLs, sanitized source file name, hashes/dimensions, title/caption/alt state, lineage, report references, annotation projects, tombstones, and version/export metadata | Image bytes, ImgBB key and delete URLs, upload journal, transient editor state, and GitHub credentials |
 
 ### When a backup happens
 

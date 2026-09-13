@@ -44,6 +44,31 @@ The photo workflow now types literal delimiters and verifies exact restoration
 after removal and undo. The corrected build still needs the requested extension
 reload to repeat these two checks in the user's authenticated Chrome session.
 
+### Editing follow-up — 2026-09-13
+
+Photo Topos now offers Caption instead of Image description. Caption metadata
+survives local drafts, revisions, project/catalog backup, and photo insertion or
+replacement. Legacy alt text remains separate; an old description is not made
+visible automatically. Returning a photo edit preserves a caption changed in the
+report while the helper was open.
+
+Rich editing now repairs figure invariants after document transactions: deleting
+the image removes its caption, and clearing an existing caption immediately
+unwraps the image. The initial Add caption placeholder remains editable. Caption
+clicks place the caret directly. Text before/after image controls and keyboard
+navigation create unformatted prose without joining existing report paragraphs.
+
+Verified: all 1,863 tests and lint passed (eight existing owned web-ext warnings).
+The photo workflow passed in hidden Chrome for Testing 153.0.8010.12 at 1280×900
+and 720×900, including real typing, single-click caption editing, clearing the
+last character, paired deletion/undo, text on both sides, and Photo Topos caption
+round-trip through draft restore and the intercepted upload/Save fixture.
+`npm run verify:browsers` passed in hidden Chrome for Testing 153.0.8010.12 and
+Firefox 155.0.1 (1000×760). The Photo Topos Caption field and Rich layout were
+visually inspected; no WebGL renderer is involved in these caption surfaces.
+Owned test browsers/profiles were checked for teardown. These checks do not
+establish native window/focus behavior or a real Peakbagger server save/reopen.
+
 The implementation and user guide are reviewable locally. Keep this plan active
 until one real report containing a caption is manually saved and reopened, with
 the displayed report also checked without the extension. Record that evidence

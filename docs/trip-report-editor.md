@@ -402,6 +402,10 @@ add/delete row and column, header-row toggle, and table removal.
 
 Select an image in Rich text and choose **Add caption**. Type directly beneath
 the photo; captions are plain text, separate from the image's alt description.
+Photo Topos also has an optional **Caption** field, which is inserted beneath
+the photo or updates the caption when you save the photo back to the report.
+Existing alt text is retained separately. A photo-editor return preserves a
+caption you changed in the report while the photo editor was open.
 Click the caption to edit it, or select the photo and use **Edit caption**.
 **Remove caption**, or deleting the caption's last character, keeps the image
 and its dimensions and immediately removes the caption field. **Text before

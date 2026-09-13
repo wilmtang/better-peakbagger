@@ -537,8 +537,8 @@ const selectedReportImage = editor => {
         ? { node: selection.node, pos: selection.from } : null;
 };
 
-const changeImageCaption = (editor, remove = false) => {
-    const target = selectedReportImage(editor);
+const changeImageCaption = (editor, remove = false, explicitTarget = null, caption = '') => {
+    const target = explicitTarget || selectedReportImage(editor);
     if (!target) return false;
     const { node, pos } = target;
     const { state, view } = editor;
@@ -557,7 +557,7 @@ const changeImageCaption = (editor, remove = false) => {
         const parent = $pos.parent;
         const figure = state.schema.nodes.reportFigure.create(null, [
             state.schema.nodes.reportFigureMedia.create(null, node.mark(node.marks.filter(mark => mark.type.name === 'link'))),
-            state.schema.nodes.reportCaption.create(),
+            state.schema.nodes.reportCaption.create(null, caption ? state.schema.text(caption) : null),
         ]);
         const before = parent.content.cut(0, $pos.parentOffset);
         const after = parent.content.cut($pos.parentOffset + node.nodeSize);
@@ -580,6 +580,27 @@ const changeImageCaption = (editor, remove = false) => {
     view.dispatch(transaction.scrollIntoView());
     view.focus();
     return true;
+};
+
+const figureAtImage = (editor, pos) => {
+    const $pos = editor.state.doc.resolve(pos);
+    for (let depth = $pos.depth; depth > 0; depth--) {
+        if ($pos.node(depth).type.name === 'reportFigure') return { node: $pos.node(depth), pos: $pos.before(depth) };
+    }
+    return null;
+};
+
+const setImageCaption = (editor, pos, caption) => {
+    const target = figureAtImage(editor, pos);
+    if (target) {
+        const start = target.pos + target.node.firstChild.nodeSize + 2;
+        editor.view.dispatch(editor.state.tr.replaceWith(start, start + target.node.lastChild.content.size,
+            caption ? editor.state.schema.text(caption) : Fragment.empty));
+        return true;
+    }
+    const image = editor.state.doc.nodeAt(pos);
+    return image?.type.name === 'image' && !!caption
+        && changeImageCaption(editor, false, { node: image, pos }, caption);
 };
 
 // Direct media URLs use a native video element. The only embed in the schema
@@ -824,7 +845,14 @@ export const richCommands = {
     unsetColor: (editor) => editor.chain().focus().unsetColor().run(),
     setLink: (editor, href) => editor.chain().focus().extendMarkRange('link').setLink({ href }).run(),
     unsetLink: editor => editor.chain().focus().extendMarkRange('link').unsetLink().run(),
-    insertImage: (editor, attrs) => editor.chain().focus().setImage(attrs).run(),
+    insertImage: (editor, { caption, ...attrs }) => caption
+        ? editor.chain().focus().insertContent({ type: 'reportFigure', content: [
+            { type: 'reportFigureMedia', content: [{ type: 'image', attrs }] },
+            { type: 'reportCaption', content: [{ type: 'text', text: caption }] },
+        ] }).run()
+        : editor.chain().focus().setImage(attrs).run(),
+    imageCaption: (editor, pos) => figureAtImage(editor, pos)?.node.lastChild.textContent || '',
+    setImageCaption,
     editCaption: editor => changeImageCaption(editor),
     removeCaption: editor => changeImageCaption(editor, true),
     textBeforeImage: editor => textBesideImage(editor, true),

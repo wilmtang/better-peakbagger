@@ -147,12 +147,13 @@ try {
     const editor = await opened;
     await editor.locator('#upload-insert').filter({ hasText: 'Save and return' }).waitFor();
     await editor.waitForFunction(() => document.querySelector('#editor-workspace')?.hidden === false);
-    await editor.locator('#photo-alt').fill('Mountain route');
+    assert.equal(await editor.locator('#photo-caption').inputValue(), captionText);
+    await editor.locator('#photo-caption').fill('Looking north — caption edited in Photo Topos.');
     await editor.locator('#upload-insert').click();
     await editor.getByText('Photo updated in the report. It will upload when you save the TR.', { exact: true }).waitFor();
-    await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.alt === 'Mountain route');
-    assert.match(await report.locator('.bpb-re-surface figcaption').innerText(), /Looking north/);
+    await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north — caption edited in Photo Topos.');
     assert.equal(uploads, 0);
+    await editor.evaluate(() => globalThis.scrollTo(0, 0));
     await editor.screenshot({ path: path.join(output, 'saved-photo-editor.png') });
     await report.setViewportSize({ width: 720, height: 900 });
     // The legacy page has a wide minimum layout. Also constrain the editor
@@ -188,7 +189,7 @@ try {
     const reportText = /name="JournalText"\r\n\r\n([\s\S]*?)\r\n--/.exec(posts[0])?.[1]
         ?? new URLSearchParams(posts[0]).get('JournalText');
     assert.match(reportText, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
-    assert.match(reportText, /\[figcaption\]Looking north from the summit/);
+    assert.match(reportText, /\[figcaption\]Looking north — caption edited in Photo Topos\./);
     assert.doesNotMatch(reportText, /bpb-photo\.invalid|data:image|blob:/);
     console.log(JSON.stringify({ browser: context.browser().version(), mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
 } catch (error) { console.error('Primary failure:', error); failure = error; }

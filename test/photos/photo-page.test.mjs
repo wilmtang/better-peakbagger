@@ -168,7 +168,7 @@ test('all planned topo tools and accessible editor controls are present', () => 
     for (const id of [
         'photo-file',
         'photo-title',
-        'photo-alt',
+        'photo-caption',
         'photo-viewport',
         'photo-overlay',
         'add-at-center',

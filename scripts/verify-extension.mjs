@@ -498,7 +498,7 @@ try {
         }
         await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
         await photoPage.locator('#photo-title').fill(photoTitle);
-        await photoPage.locator('#photo-alt').fill(photoShowcaseSource
+        await photoPage.locator('#photo-caption').fill(photoShowcaseSource
             ? 'An example climbing route marked over an alpine ridge'
             : 'Browser verification mountain route');
         await photoPage.locator('[data-tool="route"]').click();

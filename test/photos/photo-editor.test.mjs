@@ -1892,15 +1892,15 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     });
     const { doc, win } = page;
     const title = doc.getElementById('photo-title');
-    const alt = doc.getElementById('photo-alt');
+    const alt = doc.getElementById('photo-caption');
     title.value = 'Snapshot title';
-    alt.value = 'Snapshot description';
+    alt.value = 'Snapshot caption';
     page.emit(title, 'input');
     page.emit(alt, 'input');
     page.tool('bolt');
     page.pointer('pointerdown', 100, 100);
     await waitForPhotoStore(win, 'photos', records =>
-        records[0]?.title === 'Snapshot title' && records[0]?.alt === 'Snapshot description');
+        records[0]?.title === 'Snapshot title' && records[0]?.caption === 'Snapshot caption');
     await waitForPhotoStore(win, 'projects', records => records[0]?.objects.length === 1);
 
     page.click(doc.getElementById('upload-insert'));
@@ -1944,7 +1944,7 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     // Dispatch directly as well as clicking disabled controls: the mutation
     // helpers themselves must reject programmatic and already-queued events.
     title.value = 'Late title';
-    alt.value = 'Late description';
+    alt.value = 'Late caption';
     page.emit(title, 'input');
     page.emit(alt, 'input');
     page.emit(doc.getElementById('object-opacity'), 'input');
@@ -1986,14 +1986,14 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     assert.equal(catalog.length, 1);
     assert.equal(catalog[0].remote.state, 'uploaded');
     assert.equal(catalog[0].title, 'Snapshot title');
-    assert.equal(catalog[0].alt, 'Snapshot description');
+    assert.equal(catalog[0].caption, 'Snapshot caption');
     assert.equal(projects[0].objects.length, 1);
     assert.equal(projects[0].export.mime, 'image/jpeg',
         'a programmatic format change cannot replace the frozen upload settings');
     assert.equal(title.value, 'Snapshot title');
-    assert.equal(alt.value, 'Snapshot description');
+    assert.equal(alt.value, 'Snapshot caption');
     assert.equal(insertionMessages.length, 1);
-    assert.equal(insertionMessages[0].alt, 'Snapshot description');
+    assert.equal(insertionMessages[0].caption, 'Snapshot caption');
     assert.ok(mutationControls.every(control => control.disabled),
         'the committed snapshot remains read-only until Edit as new version');
     assert.equal(doc.getElementById('photo-file').disabled, false,
@@ -2368,7 +2368,7 @@ test('native Undo remains available in every editable photo control', async () =
     };
     for (const node of [
         doc.getElementById('photo-title'),
-        doc.getElementById('photo-alt'),
+        doc.getElementById('photo-caption'),
         doc.getElementById('object-text'),
         doc.getElementById('object-color'),
         doc.getElementById('object-opacity'),

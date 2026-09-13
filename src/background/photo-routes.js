@@ -65,6 +65,7 @@ const cleanPublicInsertion = value => {
         localPhotoId,
         url,
         alt,
+        ...(typeof value.caption === 'string' ? { caption: value.caption.replace(/\s+/g, ' ').trim().slice(0, Library.ALT_LIMIT) } : {}),
         ...(displayWidth ? { displayWidth } : {}),
     } : null;
 };
@@ -297,6 +298,9 @@ export function createPhotoRoutes({
             if (pendingId) url.searchParams.set('localPhotoId', pendingId);
             if (imageUrl) url.searchParams.set('imageUrl', imageUrl);
             if (imageUrl) url.searchParams.set('imageAlt', String(message.imageAlt || '').slice(0, Library.ALT_LIMIT));
+            if (imageEditId && typeof message.imageCaption === 'string') {
+                url.searchParams.set('imageCaption', message.imageCaption.slice(0, Library.ALT_LIMIT));
+            }
             const tab = await ext.tabs.create({ url: url.toString() });
             if (!Number.isInteger(tab?.id)) throw new Error('Photo editor tab did not open.');
             createdTabId = tab.id;
