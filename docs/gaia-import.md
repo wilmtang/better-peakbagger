@@ -53,7 +53,7 @@ sequenceDiagram
     Gaia->>Gaia: Select GPX in visible file input
     Gaia-->>Worker: Prepared or actionable failure
     Worker-->>Page: Result and Gaia tab id
-    Page-->>User: Ready in Gaia; review and click Save
+    Page-->>User: Ready in Gaia, review and click Save
 ```
 
 The GPX body exists only in page memory, the runtime message, the injected
