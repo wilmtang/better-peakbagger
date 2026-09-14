@@ -218,16 +218,17 @@ account data.
 | Permission denied | No GPX read; **Send to Gaia** remains enabled | Grant Gaia access and retry |
 | Firefox setup opened | No GPX read; setup instructions remain beside the button | Grant access in the opened tab, return, and retry |
 | Peakbagger GPX rejected | No Gaia handoff; error remains beside the button | Use the native download to inspect the file, then retry if corrected |
-| Gaia sign-in required | No file supplied; Gaia tab id is retained | Sign in in that tab, return, and click **Try again** |
+| Gaia sign-in required | No file supplied; Gaia tab id is retained | Sign in in that tab, return, and click **Send to Gaia** |
 | Importer unavailable or ambiguous | No confirmed file handoff | Import manually or retry in a fresh Gaia map tab |
-| Preview prepared | Button becomes **Ready in Gaia** and is disabled | Review the Gaia tab and click Gaia's **Save** |
-| File supplied but preview unconfirmed | Button becomes **Check Gaia** and is disabled | Inspect the Gaia tab; do not send again blindly |
-| Runtime result lost | Button becomes **Check Gaia** and is disabled | Inspect Gaia before deciding whether manual action is needed |
+| Preview prepared | Button becomes **Send to Gaia again** | Review the Gaia tab and click Gaia's **Save**; use the button only if a fresh handoff is needed |
+| File supplied but preview unconfirmed | Button becomes **Send to Gaia again** | Inspect the Gaia tab, then choose whether to start a fresh handoff |
+| Runtime result lost | Button becomes **Send to Gaia again** | Inspect Gaia, then choose whether to start a fresh handoff |
 
 The distinction between “not supplied” and “possibly supplied” prevents a
-timeout or lost worker response from duplicating an import. Once file
-assignment may have happened, the source page does not offer an automatic
-retry.
+timeout or lost worker response from triggering an automatic duplicate. Once
+file assignment may have happened, only another trusted user click starts a
+repeat, and it opens a fresh destination tab rather than reusing the possibly
+failed document.
 
 ## Verification
 

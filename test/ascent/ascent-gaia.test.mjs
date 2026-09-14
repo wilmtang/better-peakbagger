@@ -120,7 +120,8 @@ for (const provider of [
         assert.equal(transfer.gpx, GPX);
         assert.equal(transfer.grantToken, 'grant');
         assert.equal(h.sent.find(message => message.type === 'TRUSTED_ACTION_ISSUE').action, provider.action);
-        assert.equal(button(h.dom, provider.id).disabled, true);
+        assert.equal(button(h.dom, provider.id).disabled, false);
+        assert.equal(button(h.dom, provider.id).textContent.trim(), `Send to ${provider.id === 'gaia' ? 'Gaia' : 'onX'} again`);
         assert.equal(button(h.dom, provider.id === 'gaia' ? 'onx' : 'gaia').disabled, false);
     });
 }
@@ -149,7 +150,7 @@ test('untrusted page events cannot request permission or read the GPX', async ()
     assert.equal(h.fetches, 0);
 });
 
-test('sign-in failure allows retry while an uncertain handoff disables only that destination', async () => {
+test('sign-in and uncertain handoffs both leave an explicit user-controlled retry', async () => {
     const signedOut = await loadSurface({ results: {
         ONX_IMPORT_PREPARE: {
             ok: false, supplied: false, code: 'sign-in-required', targetTabId: 10, message: 'Sign in to onX.',
@@ -166,7 +167,21 @@ test('sign-in failure allows retry while an uncertain handoff disables only that
     } });
     fireTrustedEvent(button(uncertain.dom, 'onx'), 'click');
     await waitFor(uncertain.dom, () => /Check this onX tab/.test(control(uncertain.dom).textContent));
-    assert.equal(button(uncertain.dom, 'onx').disabled, true);
-    assert.equal(button(uncertain.dom, 'onx').textContent.trim(), 'Check onX');
+    assert.equal(button(uncertain.dom, 'onx').disabled, false);
+    assert.equal(button(uncertain.dom, 'onx').textContent.trim(), 'Send to onX again');
+    assert.equal(button(uncertain.dom, 'onx').getAttribute('aria-label'), 'Send saved GPX to onX Backcountry again');
     assert.equal(button(uncertain.dom, 'gaia').disabled, false);
+});
+
+test('explicit onX repeat fetches again and never reuses the possibly failed importer tab', async () => {
+    const h = await loadSurface();
+    fireTrustedEvent(button(h.dom, 'onx'), 'click');
+    await waitFor(h.dom, () => button(h.dom, 'onx').textContent.includes('again'));
+    fireTrustedEvent(button(h.dom, 'onx'), 'click');
+    await waitFor(h.dom, () => h.sent.filter(message => message.type === 'ONX_IMPORT_PREPARE').length === 2);
+    const transfers = h.sent.filter(message => message.type === 'ONX_IMPORT_PREPARE');
+    assert.equal(h.fetches, 2);
+    assert.equal(transfers[0].targetTabId, undefined);
+    assert.equal(transfers[1].targetTabId, undefined);
+    assert.equal(transfers[1].gpx, GPX);
 });

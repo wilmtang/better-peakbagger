@@ -66,7 +66,7 @@ test('onX adapter sends no file when membership or page identity is wrong', asyn
     assert.equal(wrong.result.supplied, false);
 });
 
-test('onX adapter marks an unconfirmed post-supply state as unsafe to retry', async () => {
+test('onX adapter reports an unconfirmed post-supply state without retrying itself', async () => {
     const { result } = await run({
         ready: false,
         body: [

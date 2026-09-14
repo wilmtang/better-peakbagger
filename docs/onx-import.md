@@ -16,6 +16,9 @@ or KML, must be under 4 MB, and requires a Premium or Elite membership. See
 3. Grant one-time access to `webmap.onxmaps.com`, if the browser asks.
 4. Sign in to onX if prompted, return to Peakbagger, and click the button again.
 5. Review the selected file in onX and click **Import**.
+6. If onX cannot complete the import, return to Peakbagger and click
+   **Send to onX again**. Better Peakbagger opens a fresh importer tab and
+   leaves the failed tab available for inspection.
 
 ## Runtime sequence
 
@@ -59,8 +62,10 @@ sequenceDiagram
   file input. It is never written to extension storage.
 - The adapter dispatches the file input's `change` event and waits until onX
   shows one file and enables its Import button. It never clicks that button.
-- If a file was supplied but readiness cannot be confirmed, the onX button
-  becomes **Check onX** and suppresses a blind retry.
+- After a file may have been supplied, the onX button becomes **Send to onX
+  again**. A click is an explicit new trusted action and always opens a fresh
+  importer tab; Better Peakbagger never automatically retries or reuses the
+  possibly failed document.
 
 ## Maintainer contract
 

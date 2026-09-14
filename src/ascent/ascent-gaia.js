@@ -68,7 +68,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             el('span', { class: 'bpb-map-handoff-icon', 'aria-hidden': 'true' }),
             labelElement,
         ]);
-        return [config.id, { ...config, button, labelElement, targetTabId: null, terminal: false }];
+        return [config.id, { ...config, button, labelElement, targetTabId: null, repeat: false }];
     }));
     const buttons = el('span', { class: 'bpb-map-handoff-buttons' },
         [...providers.values()].map(provider => provider.button));
@@ -84,7 +84,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const updateButtons = () => {
         for (const provider of providers.values()) {
-            provider.button.disabled = !!activeProvider || provider.terminal;
+            provider.button.disabled = !!activeProvider;
             provider.button.setAttribute('aria-busy', String(activeProvider === provider.id));
         }
     };
@@ -92,11 +92,12 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         buttonText = provider.buttonLabel,
         message = '',
         success = false,
-        stop = false,
+        repeat = false,
     }) => {
         provider.labelElement.textContent = buttonText;
         provider.button.classList.toggle('bpb-map-handoff-button-success', success);
-        provider.terminal = stop;
+        provider.button.setAttribute('aria-label', repeat ? `${provider.ariaLabel} again` : provider.ariaLabel);
+        provider.repeat = repeat;
         for (const item of providers.values()) item.button.removeAttribute('aria-describedby');
         if (message) provider.button.setAttribute('aria-describedby', statusId);
         status.textContent = message;
@@ -105,7 +106,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const run = async (provider, event) => {
-        if (event?.isTrusted !== true || activeProvider || provider.terminal) return;
+        if (event?.isTrusted !== true || activeProvider) return;
+        // A possibly used importer is never reused. A deliberate repeat starts
+        // a fresh destination tab, so the old preview remains available for
+        // inspection and cannot receive the same file twice.
+        if (provider.repeat) provider.targetTabId = null;
         activeProvider = provider.id;
         const currentGeneration = ++generation;
         render(provider, { buttonText: 'Preparing…', message: 'Reading the saved GPX…' });
@@ -175,9 +180,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
         if (response.kind !== 'response') {
             render(provider, {
-                buttonText: `Check ${provider.name}`,
+                buttonText: `Send to ${provider.name} again`,
                 message: `The transfer result was lost. Check ${provider.name} before sending again.`,
-                stop: true,
+                repeat: true,
             });
             return;
         }
@@ -185,18 +190,18 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (Number.isInteger(result.targetTabId)) provider.targetTabId = result.targetTabId;
         if (result.ok) {
             render(provider, {
-                buttonText: `Ready in ${provider.name}`,
+                buttonText: `Send to ${provider.name} again`,
                 message: result.message,
                 success: true,
-                stop: true,
+                repeat: true,
             });
             return;
         }
         if (result.supplied) {
             render(provider, {
-                buttonText: `Check ${provider.name}`,
+                buttonText: `Send to ${provider.name} again`,
                 message: result.message,
-                stop: true,
+                repeat: true,
             });
             return;
         }

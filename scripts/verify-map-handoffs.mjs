@@ -143,7 +143,8 @@ try {
     }));
     assert.deepEqual(received, { text: payload.gpx, name: payload.filename, handoffs: 1, saves: 0 });
     assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the items and click Save/);
-    assert.equal(await gaiaButton.isDisabled(), true);
+    assert.equal(await gaiaButton.isDisabled(), false);
+    assert.equal((await gaiaButton.innerText()).trim(), 'Send to Gaia again');
     assert.equal(await onxButton.isDisabled(), false);
 
     await onxButton.click();
@@ -162,7 +163,26 @@ try {
     }));
     assert.deepEqual(onxReceived, { text: payload.gpx, name: payload.filename, handoffs: 1, imports: 0 });
     assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the file and click Import/);
-    assert.equal(await onxButton.isDisabled(), true);
+    assert.equal(await onxButton.isDisabled(), false);
+    assert.equal((await onxButton.innerText()).trim(), 'Send to onX again');
+
+    const onxTabsBeforeRepeat = context.pages().filter(
+        page => page.url().startsWith('https://webmap.onxmaps.com/'),
+    );
+    await onxButton.click();
+    const repeatedOnx = await waitForCondition(async () => {
+        const tabs = context.pages().filter(page => page.url().startsWith('https://webmap.onxmaps.com/'));
+        const fresh = tabs.find(page => !onxTabsBeforeRepeat.includes(page));
+        if (!fresh) return null;
+        return await fresh.evaluate(() => window.handoffs === 1 ? true : null) ? fresh : null;
+    }, { description: 'a fresh onX tab for explicit retry', timeoutMs: 35_000 });
+    const repeatedOnxReceived = await repeatedOnx.evaluate(() => ({
+        text: window.received,
+        name: window.receivedName,
+        imports: window.imports,
+    }));
+    assert.deepEqual(repeatedOnxReceived, { text: payload.gpx, name: payload.filename, imports: 0 });
+    assert.equal(await onx.evaluate(() => window.imports), 0);
 
     await source.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
     await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-buttons-ready-dark.png') });
@@ -248,7 +268,8 @@ try {
             'manual onX Import preserved',
             'onX membership gate',
             'signed-out gate',
-            'uncertain handoff suppresses retry',
+            'explicit retry opens a fresh onX importer tab',
+            'uncertain handoff requires an explicit retry',
             'no GPX in extension storage',
             'light and dark screenshots',
         ],
