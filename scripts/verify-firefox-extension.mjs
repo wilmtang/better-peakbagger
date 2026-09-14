@@ -2562,10 +2562,14 @@ async function main() {
       if (!figure) return false;
       const image = figure.querySelector('img').getBoundingClientRect();
       const caption = figure.querySelector('figcaption').getBoundingClientRect();
-      return { text: figure.querySelector('figcaption').textContent, width: caption.width,
-        imageWidth: image.width, below: caption.top >= image.bottom,
-        source: document.getElementById('JournalText').value };
-    `, 'Firefox caption round trip');
+      const text = figure.querySelector('figcaption').textContent;
+      const source = document.getElementById('JournalText').value;
+      const below = caption.top >= image.bottom;
+      return { ready: text === 'North ridge caption' && below
+          && Math.abs(caption.width - image.width) <= 2 && image.width >= 319
+          && source.includes('[figcaption]North ridge caption') && source.includes('After the photo'),
+        text, width: caption.width, imageWidth: image.width, below, source };
+    `, 'Firefox caption round trip', 15_000, state => state?.ready);
         assertState(captionState.text === 'North ridge caption' && captionState.below
             && Math.abs(captionState.width - captionState.imageWidth) <= 2
             && captionState.imageWidth >= 319 && /\[figcaption\]North ridge caption/.test(captionState.source)

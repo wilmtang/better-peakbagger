@@ -647,6 +647,15 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.match(navigationProbe, /ready: Math\.abs\(state\.distance\) <= 2/);
     assert.match(navigationProbe, /state => state\?\.ready/);
     assert.doesNotMatch(navigationProbe, /requestAnimationFrame/);
+
+    const captionStart = verifier.indexOf('const captionState =');
+    const captionEnd = verifier.indexOf('const captionScreenshot =', captionStart);
+    assert.notEqual(captionStart, -1);
+    assert.notEqual(captionEnd, -1);
+    const captionProbe = verifier.slice(captionStart, captionEnd);
+    assert.match(captionProbe, /ready: text === 'North ridge caption' && below/,
+        'caption verification must wait for Firefox to finish visible layout');
+    assert.match(captionProbe, /state => state\?\.ready/);
 });
 
 test('Firefox topo actions re-center overlay and controls before interaction', async () => {
