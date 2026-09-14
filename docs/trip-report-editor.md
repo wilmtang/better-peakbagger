@@ -402,6 +402,9 @@ add/delete row and column, header-row toggle, and table removal.
 
 Click **Write a caption…** beneath any image in Rich text to start typing.
 Captions are plain text, separate from the image's alt description.
+The placeholder disappears while its empty field has the caret. In Rich text
+and preview, captions use smaller, centered, italic secondary text so they stay
+visually distinct from the surrounding report prose.
 Photo Topos also has an optional **Caption** field, which is inserted beneath
 the photo or updates the caption when you save the photo back to the report.
 Existing alt text is retained separately. A photo-editor return preserves a

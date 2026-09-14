@@ -64,6 +64,24 @@ test('every uncaptioned image offers a direct placeholder without changing saved
     } finally { dom.window.close(); }
 });
 
+test('an active empty caption hides its placeholder and owns repeated clicks', async () => {
+    const dom = await loadEditor({ report: `Before\n\n${image}` });
+    try {
+        const ui = await editorReady(dom);
+        const editor = editors(dom).rich;
+        ui.querySelector('.bpb-re-caption-placeholder').click();
+        const caption = ui.querySelector('figcaption');
+        assert.ok(caption.classList.contains('bpb-re-caption-editing'));
+        editor.commands.setTextSelection(1);
+        assert.equal(editor.state.selection.$from.parent.textContent, 'Before');
+        const event = new dom.window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+        caption.dispatchEvent(event);
+        assert.equal(event.defaultPrevented, true);
+        assert.equal(editor.state.selection.$from.parent.type.name, 'reportCaption');
+        assert.ok(caption.classList.contains('bpb-re-caption-editing'));
+    } finally { dom.window.close(); }
+});
+
 for (const source of [image, figure]) {
     test(`arrow keys reach ordinary text on both sides of ${source === image ? 'an image' : 'a captioned figure'}`, async () => {
         const dom = await loadEditor({ report: source });

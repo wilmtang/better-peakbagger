@@ -29,6 +29,7 @@ import { Placeholder } from '@tiptap/extensions';
 import { Fragment } from '@tiptap/pm/model';
 import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state';
 import { closeHistory } from '@tiptap/pm/history';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import {
     MAX_REPORT_IMAGE_DIMENSION,
     sanitizeReportDimension,
@@ -539,6 +540,27 @@ const ReportFigure = Node.create({
     addProseMirrorPlugins() {
         return [new Plugin({
             props: {
+                decorations(state) {
+                    const { $from } = state.selection;
+                    if ($from.parent.type.name !== 'reportCaption') return DecorationSet.empty;
+                    const from = $from.before();
+                    return DecorationSet.create(state.doc, [Decoration.node(from,
+                        from + $from.parent.nodeSize, { class: 'bpb-re-caption-editing' })]);
+                },
+                handleDOMEvents: {
+                    mousedown(view, event) {
+                        const caption = event.target.closest?.('figcaption');
+                        if (!caption || !view.dom.contains(caption) || caption.textContent) return false;
+                        // The placeholder is generated content, so the browser can
+                        // resolve its click to the nearest real text above the figure.
+                        // Own the empty-caption gesture before native selection runs.
+                        event.preventDefault();
+                        const start = view.posAtDOM(caption, 0);
+                        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, start)));
+                        view.focus();
+                        return true;
+                    },
+                },
                 handleClick(view, pos, event) {
                     const caption = event.target.closest?.('figcaption');
                     if (!caption || !view.dom.contains(caption)) return false;

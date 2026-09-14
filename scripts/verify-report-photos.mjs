@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global chrome, document, ClipboardItem */
+/* global chrome, document, ClipboardItem, getComputedStyle, getSelection */
 // Hidden packaged-extension coverage. ImgBB responses and its optional
 // permission check are fixture-owned; no real upload or permission prompt.
 import assert from 'node:assert/strict';
@@ -101,10 +101,30 @@ try {
     await report.setViewportSize({ width: 1280, height: 900 });
 
     await report.getByRole('button', { name: 'Write a caption', exact: true }).click();
+    await report.locator('.bpb-re-surface figure .bpb-re-image-resize img').click();
+    await report.locator('.bpb-re-surface figcaption').click();
+    const emptyCaptionState = await report.locator('.bpb-re-surface figcaption').evaluate(element => ({
+        active: element.contains(getSelection()?.anchorNode),
+        editing: element.classList.contains('bpb-re-caption-editing'),
+        placeholder: getComputedStyle(element, '::before').content,
+    }));
+    assert.equal(emptyCaptionState.active && emptyCaptionState.editing
+        && ['none', 'normal', '\"\"'].includes(emptyCaptionState.placeholder), true,
+    JSON.stringify(emptyCaptionState));
     await report.keyboard.type('Looking north from the summit ');
     await report.keyboard.insertText('—');
     await report.keyboard.type(' the ridge continues beyond the snowfield.');
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface figcaption')?.textContent === 'Looking north from the summit — the ridge continues beyond the snowfield.');
+    const captionPresentation = await report.locator('.bpb-re-surface figcaption').evaluate(element => {
+        const style = getComputedStyle(element);
+        const surface = getComputedStyle(element.closest('.bpb-re-surface'));
+        return { color: style.color, surfaceColor: surface.color, fontSize: parseFloat(style.fontSize),
+            surfaceFontSize: parseFloat(surface.fontSize), fontStyle: style.fontStyle, textAlign: style.textAlign };
+    });
+    assert.equal(captionPresentation.color !== captionPresentation.surfaceColor
+        && captionPresentation.fontSize < captionPresentation.surfaceFontSize
+        && captionPresentation.fontStyle === 'italic' && captionPresentation.textAlign === 'center', true,
+    JSON.stringify(captionPresentation));
     // Real typing and Unicode insertion must preserve the earlier characters.
     // Clicking the caption again must place the caret in document text.
     await report.locator('.bpb-re-surface figcaption').click();
