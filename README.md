@@ -83,7 +83,8 @@ On a saved ascent, **Send to Gaia** sits beside Peakbagger's GPX download. After
 the one-time Gaia access grant, one click opens Gaia and prepares the exact
 saved GPX in Gaia's import preview. You review the imported items and click
 Gaia's **Save** yourself. Better Peakbagger does not copy Gaia credentials or
-keep the GPX in extension storage.
+keep the GPX in extension storage. See
+[how the Gaia handoff works](docs/gaia-import.md).
 
 ### Plan around the Sun and Moon
 

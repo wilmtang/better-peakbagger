@@ -102,6 +102,7 @@ The diagram encodes six important boundaries:
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
 - [Favorite climbers](#deep-dive-favorite-climbers)
 - [GitHub ascent and TR backup](#deep-dive-github-ascent-and-tr-backup)
+- [Gaia saved-GPX handoff](gaia-import.md)
 - [Site-wide theme startup](#deep-dive-site-wide-theme-startup)
 - [Storage and lifecycle](#deep-dive-storage-and-lifecycle)
 - [Verification boundaries](#deep-dive-verification-boundaries)
