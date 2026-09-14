@@ -167,10 +167,14 @@ selection — and a new object inherits the last style chosen. The route being
 drawn renders its first point and rubber-bands the next segment through a
 preview group that is never part of the project and never exports.
 
-Editor shortcuts yield to native editing controls. Cmd/Ctrl+Z and
+Editor shortcuts are active only while the Editor view is visible and the
+event or current focus belongs to that view. Library navigation, cards, search,
+and page-level focus therefore cannot mutate a hidden annotation project or its
+history. Shortcuts also yield to native editing controls: Cmd/Ctrl+Z and
 Cmd/Ctrl+Shift+Z inside text inputs, textareas, selects, and contenteditable
-regions remain browser Undo/Redo; annotation history handles those shortcuts
-only when focus is outside an editable control.
+regions remain browser Undo/Redo. Annotation deletion, undo/redo, and nudging
+consume the key only when the corresponding editor action is available, and
+leaving the Editor ends any coalesced gesture.
 
 `src/photos/photo-renderer.js` is the export boundary. It serializes a clean SVG
 representation, decodes that into Canvas, and exports a newly encoded image.
@@ -259,6 +263,13 @@ stores:
 | `secrets` | Per-photo ImgBB delete URL | Never |
 | `tombstones` | Stable local id and deletion time | Yes |
 | `metadata` | Catalog generation, last confirmed remote generation, signature, and included revisions | Recovery coordination only |
+
+Database-open ownership is explicit. A blocked or failed open is abandoned;
+if the browser later completes that request, the unreturned connection is
+closed immediately. Every successfully returned connection also closes on
+`versionchange`. The photo page then retires editing and storage actions and
+asks the user to reload, allowing an upgrade in another tab to finish without
+leaving the old page attached to an invalid store.
 
 Creating a draft writes its catalog record, project, original, thumbnail, and
 new catalog generation in one transaction. Every recovery-document mutation

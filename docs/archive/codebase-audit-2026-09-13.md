@@ -1,6 +1,9 @@
 # Codebase audit — 2026-09-13
 
-Status: proposed remediation; audit only. No runtime changes were made.
+Status: **remediation completed and archived on 2026-09-14.** All six findings
+and both investigation tasks have a recorded disposition below. The closure
+ledger separates verified fixes from deliberately unchanged work and remaining
+browser-proof gaps.
 
 Audited baseline: `fff816f2880d6791c5eaf20a5b0bad3f0de22218` (3.7.2), with a
 clean working tree. Line references below describe that revision.
@@ -57,10 +60,10 @@ needed. This audit makes no claims about spacing, clipping, screen-reader
 speech, native focus, or window placement. Temporary probe/log files are not
 required by the plan; reproduction inputs and observed outcomes are below.
 
-The existing [caption plan](report-image-captions.md) already records the open
+The existing [caption plan](../plans/report-image-captions.md) already records the open
 real Peakbagger save/reopen compatibility gate. Preserve it as an independent
 release requirement; local caption tests do not close that gate. The
-[Imgur plan](imgur-media-hosting.md) remains proposed work.
+[Imgur plan](../plans/imgur-media-hosting.md) remains proposed work.
 
 ## F1 — Hand off text ownership when disabling the report editor
 
@@ -319,25 +322,108 @@ and recovery after ambiguous remote outcomes. Update maintained subsystem guides
 only when implementation changes their contracts. Archive this audit only after
 each finding has a disposition; retain the separate caption compatibility gate.
 
-## Closure ledger — initial state
+## Remediation record
 
-All F1–F6 remain **open**. I1/I2 are investigation tasks. Reproducing a defect is
-not fixing it; filling this ledger is part of subsequent remediation.
+The audit was remediated as seven focused implementation commits before this
+archive update:
+
+| Item | Commit | Result |
+| --- | --- | --- |
+| F6 | `39527c4` | Marked the future media directory as proposed instead of creating dummy runtime code. |
+| F1 | `608794c` | Made live disable an explicit native-text handoff, including pending autosave, page-exit draft, GitHub snapshot, restore, and local-photo failure behavior. |
+| F3 | `875e0b2` | Scoped keyboard ownership to the visible photo editor and stopped consuming unavailable actions. |
+| F4 | `8380ea6` | Closed late successful opens after rejection and retired live connections/pages on `versionchange`. |
+| F5 | `8d8a21d` | Added explicit GPX calendar, leap-day, end-of-day, and timezone-offset validation before platform parsing. |
+| F2 | `b752590` | Serialized extension-origin cache mutation with Web Locks, reconciled actual shared state under the lock, failed to network-only when coordination is unavailable, and closed prefetch owners before replacement. |
+| I2 | `bc092da` | Shared candidate, nearest-encounter, and ambiguity-cap policy while preserving separate synchronous/cooperative loop and checkpoint ownership. |
+
+The I1 measurement used the real unpacked extension in hidden Chrome for
+Testing 153.0.8010.12 at 1280×900. At 10 KB/5 images, 100 KB/25 images, and a
+synthetic 500 KB/100 images, respectively:
+
+- Rich open took 14.7/45.0/98.6 ms synchronously and 28.0/70.8/160.0 ms to the
+  next paint.
+- Rich typing took 18.8/15.9/14.5 ms to the next paint; caption editing took
+  6.2/8.5/15.2 ms. None produced a long task.
+- Save dispatch took 5.0/9.2/30.0 ms and 30.2/24.2/45.4 ms to the next paint.
+- Markdown open took 17.8/40.4/150.2 ms synchronously and 31.5/47.8/164.5 ms
+  to the next paint. Preview completed in 162.1/213.2/363.1 ms, including its
+  intentional 150 ms debounce. Only the synthetic 500 KB case produced a long
+  task, with a 164 ms maximum.
+
+These measurements did not justify a normal-report refactor. The 500 KB result
+is a monitoring boundary, not evidence that the existing 100 KB path violates
+an interaction budget.
+
+## Closure ledger
 
 ### Fixed and verified
 
-None. This change adds the audit and its index entry only.
+- **F2 — shared terrain-cache budget:** focused two-owner tests cover distinct
+  and identical tiles, concurrent hits and eviction, close/flush ordering, and
+  lower/zero limit transitions. `terrain:verify:cache-owners` also passed in
+  two same-partition frames in hidden Chrome for Testing 153.0.8010.12 and
+  Firefox 155.0 at 1000×760: both distinct- and identical-tile scenarios
+  settled at one 716,800-byte entry with an exact index. The existing terrain
+  render suites passed on the Apple M3 Pro hardware renderer in both browsers.
+- **F5 — GPX calendar validation:** parser, provider, upload, capture, and
+  analyzer regressions now distinguish impossible dates from missing values
+  while preserving leap days, supported offsets, fractional seconds, and
+  valid `24:00` forms.
+- **F6 — documentation gate:** the future directory is explicitly proposed;
+  the maintained/archived path checker passes without weakening its broken-link
+  checks.
+- **I2 — shared encounter policy:** the extracted pure decisions pass expanded
+  synchronous/cooperative equivalence cases for singleton segments,
+  missing/reversed times, antimeridian/polar coordinates, and transitive
+  ambiguity, plus the full-analysis scale cases and checkpoint assertions.
 
 ### Intentionally not changed
 
-Runtime code, tests, and existing plans remain unchanged during this audit.
-This is the requested review scope, not a decision to accept F1–F6. No broad
-module-size refactor is proposed, and existing sync/async or execution-world
-boundaries are not presumed to be smells merely because they are separate.
+- **I1 — editor restructuring:** no Rich-editor changed-range repair or
+  incremental Markdown preview architecture was introduced. The measured
+  10–100 KB cases stayed responsive in the chosen hidden-browser probe; only
+  the deliberately extreme 500 KB case crossed the long-task threshold.
+  Submission remains synchronously serialized, and there is no report-size
+  truncation.
+- The existing report-image-caption live Peakbagger save/reopen gate remains in
+  `docs/plans/report-image-captions.md`; this audit neither closes nor absorbs
+  that independent release requirement.
+- The unrelated removal of the NOAA snow-depth link in `13779dd` was preserved.
+  Its stale Firefox verifier expectation was not changed as part of this audit.
 
 ### Changed but not fully proven
 
-No runtime changes in this audit. During remediation, list any fixes that lack
-required browser, lifecycle, visual, or live-server evidence here, with the exact
-remaining check. The caption plan's pre-existing live-save gap stays in its own
-ledger and must not disappear when this audit is archived.
+- **F1 — live report disable:** source and DOM tests cover Rich and Markdown
+  handoff, native edits, a cancelled-but-fired autosave callback, Save snapshot,
+  page exit, restore, and local-photo failure placement. The exact live-disable
+  transition was not visually inspected in both packaged browsers, so native
+  focus and rendered handoff remain unproven.
+- **F3 — photo shortcuts:** DOM regressions prove Library navigation/card keys
+  leave the hidden project, history, tool, and persistence unchanged, while
+  intended editor shortcuts still work. The exact rendered Library → Editor
+  keyboard transition and native focus were not inspected in both browsers.
+- **F4 — database lifecycle:** fake-indexeddb regressions cover blocked → reject
+  → late success → close, ordinary error, live `versionchange`, and the page's
+  reload-required state. A real multi-tab browser upgrade with disposable
+  libraries was not run.
+- `npm run verify:browsers` passed the real unpacked extension gate in hidden
+  Chrome, but Firefox stopped earlier at an existing Peak-link assertion:
+  three links are now rendered after `13779dd`, while the verifier still
+  requires at least four. A direct `npm run verify:firefox` rerun reproduced
+  the same unrelated failure. Targeted Firefox terrain/cache verification did
+  pass, but this is not a complete Firefox extension-gate result.
+- No live provider, live Peakbagger Save, screen-reader, physical-device, native
+  window-placement, or remote-CI evidence was produced. Hidden checks do not
+  establish those behaviors.
+
+Final combined-tree checks before archival:
+
+- `npm test`: **1,887 passed, 0 failed**, after rebuilding all 29 shipped
+  bundles in `dist/`.
+- `npm run test:scale`: **14 passed, 0 failed**, including the full 20,000-point
+  analysis/provider paths and the expanded cooperative detection checks.
+- `npm run lint`: passed with the eight existing owner-reviewed web-ext warnings
+  (one manifest, five MapLibre, one ProseMirror, and one TipTap warning).
+- `node --test test/project/documentation.test.mjs`: **3 passed, 0 failed**.
+- `git diff --check`: passed.

@@ -9,7 +9,10 @@ Better Peakbagger keeps Peakbagger's `JournalText` textarea inside the original
 form as the submitted source of truth. Rich text and Markdown are editing views
 over that value; neither replaces the form or submits an ascent. The extension
 flushes the active view synchronously before Preview, Save, an ASP.NET postback,
-or page exit.
+or page exit. If the feature is disabled while the page is open, it performs
+that same flush, destroys its private editors, clears their source ownership,
+and returns the form to the visible native textarea. Later Save, page-exit,
+draft, and GitHub-snapshot work reads that native value.
 
 ## The 30-second model
 
@@ -592,7 +595,7 @@ writer produces this shape:
 ```ts
 type ReportDraftRecord = {
   text: string;
-  mode: "rich" | "markdown";
+  mode: "rich" | "markdown" | "plain";
   savedAt: number;
   source?: string;
   label?: {
@@ -613,7 +616,7 @@ roles and authority boundaries:
 | Field | New-write requirement | Meaning and constraints |
 | --- | --- | --- |
 | `text` | Required | The flushed `JournalText` value: Peakbagger bracket markup plus newlines. This is the recovery copy of the submitted representation. It is never TipTap HTML, a ProseMirror document, preview HTML, or Markdown. |
-| `mode` | Required | The initialized authoring mode at the write: `rich` or `markdown`. Plain and uninitialized or disabled editors cannot write a record. |
+| `mode` | Required | The authoritative authoring mode at the write: `rich`, `markdown`, or `plain`. `plain` is written only after a live feature-disable handoff so later native edits can replace the prior recovery snapshot. Ordinary Plain mode and an editor disabled before initialization do not acquire autosave ownership. |
 | `savedAt` | Required | `Date.now()` in milliseconds at the write. It drives ordering, display, expiry, and pruning; it is not an ascent time or content revision id. |
 | `source` | Markdown only | The exact CodeMirror string, including the user's Markdown spelling and whitespace. It is an authoring-fidelity sidecar; `text` remains the Peakbagger-facing value. Rich writes omit it because a Rich edit invalidates any earlier Markdown spelling. |
 | `label.peak` | Optional | Display-only selected peak name, or the matching prepared-draft peak name when the native picker is not ready. It is trimmed and capped at 200 characters. The key, not this label, is identity. |
@@ -688,9 +691,10 @@ that pause, `saveDraftNow()` runs this sequence:
 
 1. Cancel the pending autosave timer so the same edit does not leave a second
    scheduled write behind this attempt.
-2. Return unless the editor has reached `rich` or `markdown`. This rejects
-   Plain mode, a disabled editor, and page exit racing initialization; those
-   states must not create `mode: null` records.
+2. Return unless the editor has reached `rich` or `markdown`, or has explicitly
+   handed ownership to the native textarea after live disable. This rejects
+   ordinary Plain mode, an editor disabled before initialization, and page exit
+   racing initialization; those states must not create `mode: null` records.
 3. Synchronously flush a dirty editor into `JournalText`. Classification then
    sees the bracket representation a postback would submit, not stale private
    editor state.
@@ -709,7 +713,11 @@ the write resolves.
 Plain mode edits `JournalText` directly and deliberately does not write, update,
 or remove a TR draft. It therefore has the native textarea's recovery risks,
 and a draft previously written in Rich or Markdown mode can remain unchanged
-while the user continues in Plain mode.
+while the user continues in Plain mode. Live feature disable is narrower: it
+cancels the pending editor timer, invalidates any queued callback, records the
+handoff as `plain`, and keeps the existing Save/page-exit recovery path alive so
+native edits and pending local photos remain recoverable without trusting the
+destroyed Rich or Markdown state.
 
 ### What counts as no recoverable report
 
@@ -907,8 +915,10 @@ shows the exact bracket source.
   Plain-first conversion guard, explicit conversion, guarded draft restore, local
   drafts, whitespace-only and runtime-derived credit-only suppression, deletion
   back to credit-only in both editors, disabled-editor write rejection, and
-  pre-postback flushing. They drive the TipTap and CodeMirror instances through
-  the mount's test handle.
+  pre-postback flushing. The draft suite also pins live disable from both rich
+  modes through native editing, pending autosave, Save snapshot, page exit, and
+  restore. They drive the TipTap and CodeMirror instances through the mount's
+  test handle.
 - `test/reports/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
   compatibility record validation, fallback titles, and expiry arithmetic.
 - `test/options/options-github.test.mjs` pins manager ordering, labels, exact Markdown copy

@@ -641,6 +641,9 @@ Opening a richer mode does not rewrite an untouched report. Before Preview,
 Save, implicit ASP.NET submission, or page exit, the active view flushes
 synchronously into the native textarea. Local drafts are keyed by ascent
 identity, bounded, expiring, and restored only after explicit user approval.
+Live feature disable is an explicit handoff: private Rich/Markdown state is
+discarded after its final flush, while later native edits remain authoritative
+for Save, page-exit recovery, and the optional GitHub snapshot.
 `src/reports/report-drafts.js` is the pure shared contract for those identities and
 lifetimes. The draft-manager owner in `options/drafts.js` uses it to list every
 device-local report draft, open the matching ascent form, copy Markdown, and
@@ -687,6 +690,9 @@ rail and the guide paint from, and `src/photos/photo-store.js` owns the
 authoritative IndexedDB catalog, projects, originals, thumbnails, operation
 journal, per-photo delete capabilities, and tombstones. Published edits are new
 lineaged versions, never in-place replacement of an existing remote URL.
+Rejected database opens close any connection that succeeds later; live
+connections close on `versionchange`, and the photo page becomes read-only and
+requests a reload so another tab's upgrade can complete.
 Every catalog record also carries a device-local monotonic revision. Whole
 draft, upload, reference, and deletion writes compare the revision they read
 inside the same IndexedDB transaction; a stale writer reports a conflict
@@ -783,6 +789,12 @@ erases the valid timed runs around it: the chart breaks at that sample,
 coverage is disclosed, and the elapsed value is labelled **Known time span**
 rather than complete duration. Full start/back, summit-duration, and camping
 inferences remain limited to complete timing.
+
+The shared GPX parser accepts only its supported ISO-shaped timestamp forms and
+validates their calendar fields, leap days, `24:00` boundary, and timezone
+offset before calling the platform date parser. A nonexistent date is invalid
+input, not a normalized instant, so analyzer and capture consumers take the
+same degraded-time path.
 
 The native and extension-owned map paths preserve GPX document order and
 explicit `<trkseg>` geometry. Metrics and charts sequence whole segments by
@@ -961,6 +973,13 @@ byte budget is validated by the shared settings schema. Index reconciliation
 tolerates browser eviction and partial storage cleanup, and invalid legacy cache
 entries are purged on read. The extension does not request persistent storage,
 so cache loss simply returns to the network on the next 3D session.
+
+All extension-origin cache owners coordinate mutation with one
+storage-bucket-scoped Web Lock and reconcile current CacheStorage plus the
+persisted index inside that lock before trimming. This makes the configured
+budget shared across terrain frames and worker prefetch. A production context
+without Web Locks uses the network without populating this optional cache; the
+prefetcher also closes its old owner before applying a lower limit or disable.
 
 Only DEM response bytes are owned by this cache. OpenFreeMap and selected
 raster providers follow their own browser cache policies.

@@ -1,8 +1,5 @@
 # Active plans
 
-- [Codebase audit — 2026-09-13](codebase-audit-2026-09-13.md) — proposed;
-  six reproduced correctness, storage, UX, and test-gate findings, plus two
-  performance/maintenance investigations.
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.

@@ -477,6 +477,12 @@ best-effort `storage.local` LRU index. Important properties:
 
 - the shared settings schema determines the megabyte budget;
 - budget zero deletes the owned cache and index;
+- extension frames and the worker serialize cache mutation through one
+  storage-bucket-scoped Web Lock, then reconcile the real CacheStorage contents
+  and persisted index before enforcing the shared budget;
+- if Web Locks are unavailable in a production extension context, terrain stays
+  network-backed instead of enabling an uncoordinated cache that could exceed
+  the advertised limit;
 - reads reconcile the index with actual CacheStorage entries;
 - missing or independently evicted entries become ordinary cache misses;
 - a missing index can be reconstructed from metadata stored on cached
@@ -498,6 +504,11 @@ best-effort `storage.local` LRU index. Important properties:
   fail if the network tile itself is usable;
 - only DEM bytes use this cache. Raster and vector imagery follow normal
   browser/provider caching.
+
+The background prefetcher owns at most one cache instance. A cache-limit change
+or feature disable first closes and flushes the prior owner, then creates its
+replacement or leaves caching disabled; a late operation cannot silently keep
+the retired budget alive.
 
 ### Why prefetch goes through the worker
 
