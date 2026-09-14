@@ -191,6 +191,10 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     return {
         showError: say,
         busy: () => preparing > 0 || saving,
+        // Save interception remains active after the enhanced editor is disabled.
+        // Keep its actionable upload feedback beside the newly revealed native
+        // textarea instead of removing it with the editor chrome.
+        handoffToNative: () => textarea.before(status),
         resolvePreview,
         edit: (event, src) => { const id = Pending.id(src); if (id && !saving && !preparing) void launchEditor(event, id); },
         receive: (message, sender) => {

@@ -64,6 +64,28 @@ test('failed uploads preserve pending images and keep the native form open', asy
     h.dom.window.close();
 });
 
+test('upload failure stays visible beside the native textarea after live disable', async () => {
+    const h = await setup(async () => ({ ok: false, error: { message: 'Check ImgBB before retrying.' } }));
+    const current = h.dom.chrome._store.bpbSettings || {};
+    await h.dom.chrome.storage.sync.set({
+        bpbSettings: { ...current, enableReportEditor: false },
+    });
+    await waitFor(h.dom, () => !h.dom.window.document.getElementById('bpb-report-editor'));
+
+    const doc = h.dom.window.document;
+    const textarea = doc.getElementById('JournalText');
+    const status = doc.querySelector('.bpb-re-local-photo-status');
+    assert.equal(textarea.classList.contains('bpb-re-hidden'), false);
+    assert.equal(status.isConnected, true);
+    assert.equal(status.nextElementSibling, textarea);
+
+    fireTrustedEvent(doc.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+    await waitFor(h.dom, () => /not been submitted/.test(status.textContent));
+    assert.equal(h.submissions(), 0);
+    assert.ok(textarea.value.includes(src));
+    h.dom.window.close();
+});
+
 test('pending references survive Markdown mode and are replaced before Save', async () => {
     const h = await setup(async () => ({ ok: true, url: hosted }));
     modeButton(h.dom.window.document, 'Markdown').click();

@@ -616,6 +616,81 @@ test('disabling the setting live hands the form back to the native textarea', as
     assert.equal(doc.getElementById('JournalText').classList.contains('bpb-re-hidden'), false);
 });
 
+for (const reportEditorMode of ['rich', 'markdown']) {
+    test(`live disable makes native text authoritative after ${reportEditorMode} editing`, async () => {
+        const AUTOSAVE_TIMER_ID = 20260913;
+        const messages = [];
+        let autosaveCallback;
+        let autosaveCancelled = false;
+        const dom = await loadEditor({
+            settings: { reportEditorMode, enableGithubBackup: true },
+            prepare: d => {
+                const originalSetTimeout = d.window.setTimeout.bind(d.window);
+                const originalClearTimeout = d.window.clearTimeout.bind(d.window);
+                d.window.setTimeout = (callback, delay = 0, ...args) => {
+                    if (delay === 800) {
+                        autosaveCallback = () => callback(...args);
+                        return AUTOSAVE_TIMER_ID;
+                    }
+                    return originalSetTimeout(callback, delay, ...args);
+                };
+                d.window.clearTimeout = timer => {
+                    if (timer === AUTOSAVE_TIMER_ID) {
+                        autosaveCancelled = true;
+                        return;
+                    }
+                    originalClearTimeout(timer);
+                };
+                d.chrome.runtime.getManifest = () => ({ version: '1.2.3' });
+                d.chrome.runtime.sendMessage = async message => {
+                    messages.push(structuredClone(message));
+                    return { ok: true };
+                };
+            },
+        });
+        await editorReady(dom);
+        if (reportEditorMode === 'rich') typeRich(dom, '<p><strong>old rich</strong></p>');
+        else typeMarkdown(dom, '**old markdown**');
+        await waitFor(dom, () => autosaveCallback);
+
+        const current = dom.chrome._store.bpbSettings || {};
+        await dom.chrome.storage.sync.set({ bpbSettings: { ...current, enableReportEditor: false } });
+        await waitFor(dom, () => !dom.window.document.getElementById('bpb-report-editor'));
+        assert.equal(autosaveCancelled, true);
+
+        const textarea = dom.window.document.getElementById('JournalText');
+        textarea.value = 'NEW NATIVE [b]TEXT[/b]';
+        textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        autosaveCallback(); // A queued callback after cancellation must also use native ownership.
+        dom.window.document.getElementById('SaveButton').click();
+        dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+        await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === textarea.value
+            && dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
+
+        const stored = structuredClone(dom.chrome._localStore[DRAFT_KEY]);
+        assert.equal(stored.mode, 'plain');
+        assert.equal(stored.source, undefined);
+        assert.equal(stored.text, 'NEW NATIVE [b]TEXT[/b]');
+        assert.equal(messages.find(message => message.type === 'GITHUB_BACKUP_SNAPSHOT')
+            ?.snapshot.report.markdown, 'NEW NATIVE **TEXT**');
+        dom.window.close();
+
+        const restored = await loadEditor({
+            report: 'server copy',
+            drafts: { [DRAFT_KEY]: stored },
+        });
+        const ui = await editorReady(restored);
+        await waitFor(restored, () => !restored.chrome._localStore[DRAFT_KEY]?.pendingSave);
+        const restore = [...restored.window.document.querySelectorAll('.bpb-re-draft button')]
+            .find(button => button.textContent === 'Restore draft');
+        restore.click();
+        assert.equal(ui.dataset.mode, 'plain');
+        assert.equal(restored.window.document.getElementById('JournalText').value,
+            'NEW NATIVE [b]TEXT[/b]');
+        restored.window.close();
+    });
+}
+
 test('draft keys distinguish editing an ascent from adding one', async () => {
     const messages = [];
     const dom = await loadEditor({

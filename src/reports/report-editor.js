@@ -121,7 +121,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         conversionDiagnostics: [],
         conversionAccepted: true,
         conversionTarget: 'rich',
-        terminalSubmission: false
+        terminalSubmission: false,
+        nativeHandoff: false
     };
     let nextSaveAttempt = 0;
 
@@ -805,7 +806,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             state.autosaveTimer = null;
         }
         if (state.terminalSubmission) return;
-        if (!['rich', 'markdown'].includes(state.mode) && !PendingPhoto.ids(textarea.value).length) return;
+        if (!['rich', 'markdown'].includes(state.mode) && !state.nativeHandoff
+            && !PendingPhoto.ids(textarea.value).length) return;
         flushSync();
         const revision = draftEditRevision;
         let removing = false;
@@ -1632,12 +1634,25 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         Settings.subscribe(next => {
             if (!next.enableReportEditor && ui.isConnected) {
                 flushSync();
+                if (state.autosaveTimer !== null) {
+                    globalThis.clearTimeout(state.autosaveTimer);
+                    state.autosaveTimer = null;
+                }
+                draftEditRevision++;
+                state.mode = 'plain';
+                state.mdSource = null;
+                state.mdDirty = false;
+                state.richDirty = false;
+                state.creditScaffold = false;
+                state.nativeHandoff = true;
                 showNative(true);
+                localPhotos.handoffToNative();
                 if (richEditor) richEditor.destroy();
                 mdEditor.destroy();
                 ext.runtime.onMessage.removeListener(handlePhotoInsertion);
                 document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
                 ui.remove();
+                void saveDraftNow();
             }
         });
     };
