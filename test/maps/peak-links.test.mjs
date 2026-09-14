@@ -25,14 +25,14 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             fixture: 'peak-rainier.html',
             lat: '46.851731',
             lon: '-121.760395',
-            // United States: also gains the NOAA snow depth and AirNow links.
-            expectedLinks: 4
+            // United States also gains the AirNow link.
+            expectedLinks: 3
         },
         {
             fixture: 'peak-garibaldi.html',
             lat: '49.850562',
             lon: '-123.004672',
-            // Canada: AirNow covers it, but NOHRSC snow does not.
+            // Canada also gains the AirNow link.
             expectedLinks: 3
         }
     ];
@@ -64,6 +64,7 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
 
         const fireSmoke = linkByText(document, 'AirNow fire & smoke');
         assert.equal(fireSmoke.href, `https://fire.airnow.gov/#9/${lat}/${lon}`);
+        assert.equal(linkByText(document, 'NOAA snow depth'), undefined);
 
         for (const anchor of [windy, copernicus, fireSmoke]) {
             assert.equal(anchor.target, '_blank');
@@ -74,24 +75,6 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             .find(element => element.textContent.trim() === 'Links');
         assert.ok(linksHeading.compareDocumentPosition(panel) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
     }
-});
-
-test('United States peaks gain a NOAA snow depth link with a summit-centered box', async () => {
-    const dom = await loadPeak('peak-rainier.html');
-    const { document } = dom.window;
-
-    const snow = linkByText(document, 'NOAA snow depth');
-    assert.ok(snow, 'Rainier should receive the NOAA snow depth link');
-    assert.equal(
-        snow.href,
-        'https://www.nohrsc.noaa.gov/interactive/html/map.html?var=ssm_depth'
-        + '&bgvar=dem&shdvar=shading'
-        + '&min_x=-122.2304&min_y=46.5877&max_x=-121.2904&max_y=47.1157'
-    );
-
-    // Canada is outside NOHRSC coverage: no snow link.
-    const canada = await loadPeak('peak-garibaldi.html');
-    assert.equal(linkByText(canada.window.document, 'NOAA snow depth'), undefined);
 });
 
 const renderNationPeak = nation => {
@@ -110,22 +93,19 @@ const renderNationPeak = nation => {
     return dom.window.document;
 };
 
-test('country-specific links follow each service coverage area', () => {
+test('AirNow links follow the service coverage area', () => {
     const hasLink = (document, text) => Boolean(linkByText(document, text));
 
     const usa = renderNationPeak('United States');
-    assert.ok(hasLink(usa, 'NOAA snow depth'), 'US peaks show snow depth');
     assert.ok(hasLink(usa, 'AirNow fire & smoke'), 'US peaks show fire & smoke');
 
     for (const nation of ['Canada', 'Mexico']) {
         const document = renderNationPeak(nation);
-        assert.ok(!hasLink(document, 'NOAA snow depth'), `${nation} hides snow depth`);
         assert.ok(hasLink(document, 'AirNow fire & smoke'), `${nation} shows fire & smoke`);
     }
 
-    // Outside North America, and when the Nation row is missing, both hide.
+    // Outside North America, and when the Nation row is missing, AirNow hides.
     for (const document of [renderNationPeak('France'), renderNationPeak(null)]) {
-        assert.ok(!hasLink(document, 'NOAA snow depth'));
         assert.ok(!hasLink(document, 'AirNow fire & smoke'));
         // The universal links are always present.
         assert.ok(hasLink(document, 'Windy summit forecast'));

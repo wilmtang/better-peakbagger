@@ -352,7 +352,7 @@ The user can export and import settings without GitHub:
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
 | GitHub | User-triggered or separately enabled automatic backups to the selected repository; validation reads for an imported connection; explicit restores. |
-| Windy, Copernicus Browser, NOHRSC, and AirNow | Only when the user follows the corresponding summit link. |
+| Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
 
 All extension code and libraries are packaged locally. A YouTube player is
 remote page content isolated in YouTube's cross-origin iframe; it is never

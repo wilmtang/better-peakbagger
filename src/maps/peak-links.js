@@ -95,23 +95,6 @@
         `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
     );
 
-    // NOHRSC models snow only for the coterminous U.S. and Alaska. A degree box
-    // ~70 km wide, in the map's native 16:9 ratio, frames the peak's snowpack;
-    // omitting the date keeps it on the latest analysis. bgvar=dem and
-    // shdvar=shading drape the snow over the shaded-relief base map — without
-    // them the snowpack floats on a blank background.
-    if (nation === 'united states') {
-        const minX = (longitude - 0.47).toFixed(4);
-        const maxX = (longitude + 0.47).toFixed(4);
-        const minY = (latitude - 0.264).toFixed(4);
-        const maxY = (latitude + 0.264).toFixed(4);
-        addLink(
-            'NOAA snow depth',
-            'Modeled snowpack depth around this peak',
-            `https://www.nohrsc.noaa.gov/interactive/html/map.html?var=ssm_depth&bgvar=dem&shdvar=shading&min_x=${minX}&min_y=${minY}&max_x=${maxX}&max_y=${maxY}`
-        );
-    }
-
     // AirNow's Fire and Smoke Map covers the United States, Canada, and Mexico.
     if (nation === 'united states' || nation === 'canada' || nation === 'mexico') {
         addLink(
