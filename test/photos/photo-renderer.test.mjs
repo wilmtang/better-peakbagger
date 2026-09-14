@@ -66,6 +66,56 @@ test('renders cleaned route geometry, symbols, pitch labels, and escaped text as
     assert.match(svg, />P3<\/text>/);
     assert.match(svg, /Crux &lt;roof&gt; &amp; &quot;traverse&quot;/);
     assert.doesNotMatch(svg, /<script/i);
+    assert.doesNotMatch(svg, /data-bpb-hit-target/,
+        'flattened exports must not carry editor-only interaction geometry');
+});
+
+test('the interactive overlay gives every annotation a geometry-sized hit target', () => {
+    const marker = (type, index) => ({
+        id: `${type}-1`,
+        type,
+        z: index,
+        geometry: { x: 200 + index * 100, y: 300, rotation: 0 },
+        style: { color: '#e53935', scale: 1 },
+    });
+    const objects = [
+        {
+            id: 'route-1', type: 'route', z: 0,
+            geometry: { points: [[100, 100], [500, 500]], controls: [] },
+            style: { color: '#e53935', width: 2, stroke: 'solid', end: 'none' },
+        },
+        ...Project.MARKER_TYPES.map((type, index) => marker(type, index + 1)),
+        {
+            id: 'pitch-1', type: 'pitch', z: 6, pitch: 2,
+            geometry: { x: 800, y: 300, rotation: 0 },
+            style: { color: '#e53935', scale: 1, background: true },
+        },
+        {
+            id: 'text-1', type: 'text', z: 7, text: 'Traverse',
+            geometry: { x: 900, y: 300, rotation: 0 },
+            style: { color: '#e53935', scale: 1, align: 'left', background: false },
+        },
+    ];
+    const project = Project.cleanProject({
+        schemaVersion: 1,
+        localId: 'photo-1',
+        image: { width: 1600, height: 1200, sourceSha256: HASH },
+        objects,
+        export: { mime: 'image/jpeg', quality: 0.92 },
+        updatedAt: TIME,
+    });
+    const svg = Renderer.renderOverlaySvg(project, { interactive: true });
+
+    assert.equal((svg.match(/data-bpb-hit-target="true"/g) || []).length, objects.length);
+    assert.match(svg, /data-bpb-object="route-1"[\s\S]*?data-bpb-hit-target="true"[\s\S]*?stroke-width="60"[\s\S]*?pointer-events="stroke"/);
+    for (const type of Project.MARKER_TYPES) {
+        assert.match(svg, new RegExp(`data-bpb-object="${type}-1"[\\s\\S]*?`
+            + 'data-bpb-hit-target="true"[\\s\\S]*?r="1\\.1"[\\s\\S]*?pointer-events="all"'));
+    }
+    for (const type of ['pitch', 'text']) {
+        assert.match(svg, new RegExp(`data-bpb-object="${type}-1"[\\s\\S]*?`
+            + '<rect data-bpb-hit-target="true"[\\s\\S]*?pointer-events="all"'));
+    }
 });
 
 test('every arrowed route keeps its own arrowhead color', () => {

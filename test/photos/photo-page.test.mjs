@@ -210,6 +210,16 @@ test('all planned topo tools and accessible editor controls are present', () => 
     assert.equal(doc.getElementById('library-page-status').getAttribute('aria-live'), 'polite');
 });
 
+test('desktop annotation panels scroll inside a stable editor body', () => {
+    assert.match(styles, /\.editor-body\s*\{[^}]*height:\s*720px;[^}]*min-height:\s*0;/s,
+        'selection-specific inspector controls must not resize and recenter the photo viewport');
+    assert.match(styles,
+        /@media \(max-width:\s*900px\)[\s\S]*?\.editor-body\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*600px;/,
+        'the stacked narrow layout should grow naturally instead of clipping its panels');
+    assert.match(source, /renderOverlaySvg\(project, \{ interactive: true \}\)/,
+        'the editor must request hit targets without adding them to flattened exports');
+});
+
 test('history actions use recognizable mirrored icons with accessible names', () => {
     const undo = doc.getElementById('undo');
     const redo = doc.getElementById('redo');

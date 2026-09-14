@@ -1095,7 +1095,13 @@ const renderRoutePreview = () => {
 const renderProject = () => {
     if (!project) return;
     applyReportWidthPreview();
-    const parsed = new DOMParser().parseFromString(Renderer.renderOverlaySvg(project), 'image/svg+xml');
+    // Export SVG contains pixels only. The editor variant adds transparent,
+    // geometry-aware hit regions so open symbols and thin strokes are selectable
+    // across their visible footprint instead of only on a painted SVG edge.
+    const parsed = new DOMParser().parseFromString(
+        Renderer.renderOverlaySvg(project, { interactive: true }),
+        'image/svg+xml'
+    );
     const root = parsed.documentElement;
     ui.overlay.replaceChildren(...Array.from(root.childNodes, child => document.importNode(child, true)));
     for (const node of ui.overlay.querySelectorAll('[data-bpb-object]')) {

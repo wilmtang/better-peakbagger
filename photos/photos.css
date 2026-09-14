@@ -291,8 +291,9 @@ textarea {
 
 .editor-body {
   display: grid;
+  height: 720px;
   grid-template-columns: 138px minmax(0, 1fr) 236px;
-  min-height: 600px;
+  min-height: 0;
 }
 
 .tool-rail {
@@ -889,7 +890,9 @@ kbd {
   }
 
   .editor-body {
+    height: auto;
     grid-template-columns: 1fr;
+    min-height: 600px;
   }
 
   .tool-rail {

@@ -202,6 +202,54 @@ try {
     await editor.locator('#upload-insert').filter({ hasText: 'Save and return' }).waitFor();
     await editor.waitForFunction(() => document.querySelector('#editor-workspace')?.hidden === false);
     assert.equal(await editor.locator('#photo-caption').inputValue(), captionText);
+
+    // Selection must not let the inspector dictate the canvas row's height.
+    // Belay also exercises the SVG failure mode that motivated explicit hit
+    // targets: a plain circle used to respond only on its thin outline.
+    const editorOverlay = await editor.locator('#photo-overlay').boundingBox();
+    assert.ok(editorOverlay);
+    const placeAnnotation = async (tool, x, y) => {
+        await editor.locator(`[data-tool="${tool}"]`).click();
+        await editor.mouse.click(editorOverlay.x + editorOverlay.width * x,
+            editorOverlay.y + editorOverlay.height * y);
+    };
+    await placeAnnotation('belay', 0.3, 0.35);
+    await placeAnnotation('text', 0.7, 0.65);
+    await editor.locator('#object-text').fill('Aiming here');
+    const belayControl = editor.getByRole('button', { name: /^Belay, layer / });
+    const textControl = editor.getByRole('button', { name: /^Text: Aiming here, layer / });
+    const canvasLayout = () => editor.evaluate(() => {
+        const viewport = document.getElementById('photo-viewport').getBoundingClientRect();
+        const stage = document.getElementById('photo-stage').getBoundingClientRect();
+        const body = document.querySelector('.editor-body').getBoundingClientRect();
+        const rounded = value => Math.round(value * 100) / 100;
+        return {
+            bodyHeight: rounded(body.height),
+            stageTop: rounded(stage.top - viewport.top),
+            stageLeft: rounded(stage.left - viewport.left),
+            stageWidth: rounded(stage.width),
+            stageHeight: rounded(stage.height),
+        };
+    });
+    await belayControl.click();
+    const belayLayout = await canvasLayout();
+    const belayId = await belayControl.getAttribute('data-object-id');
+    await textControl.click();
+    const textLayout = await canvasLayout();
+    assert.deepEqual(textLayout, belayLayout,
+        `annotation selection moved the canvas: ${JSON.stringify({ belayLayout, textLayout })}`);
+    assert.equal(await editor.locator('#photo-overlay [data-bpb-object]').count(),
+        await editor.locator('#photo-overlay [data-bpb-hit-target]').count());
+    const belayHitBox = await editor.locator(
+        `#photo-overlay [data-bpb-object="${belayId}"] [data-bpb-hit-target]`
+    ).boundingBox();
+    assert.ok(belayHitBox?.width >= 20 && belayHitBox?.height >= 20,
+        `Belay hit target was too small: ${JSON.stringify(belayHitBox)}`);
+    await editor.mouse.click(belayHitBox.x + belayHitBox.width / 2,
+        belayHitBox.y + belayHitBox.height / 2);
+    assert.equal(await belayControl.getAttribute('aria-pressed'), 'true',
+        'clicking the open center of Belay must select it');
+
     await editor.locator('#photo-caption').fill('Looking north — caption edited in Photo Topos.');
     await editor.locator('#upload-insert').click();
     await editor.getByText('Photo updated in the report. It will upload when you save the TR.', { exact: true }).waitFor();

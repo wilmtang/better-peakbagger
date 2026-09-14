@@ -64,17 +64,24 @@ const arrowId = color => `bpb-arrow-${color.slice(1)}`;
 // strength, which is exactly the beta-hiding case the control exists for.
 const opacityAttribute = opacity => opacity < 1 ? ` opacity="${number(opacity)}"` : '';
 
-const renderRoute = object => {
+const renderRoute = (object, image, interactive) => {
+    const path = routePath(object);
     const dash = dashArray(object.style.stroke, object.style.width);
     const marker = object.style.end === 'arrow'
         ? ` marker-end="url(#${arrowId(object.style.color)})"`
         : '';
+    const hitTarget = interactive
+        ? `<path data-bpb-hit-target="true" d="${path}" fill="none" stroke="transparent"`
+            + ` stroke-width="${number(Math.max(object.style.width,
+                Math.min(image.width, image.height) * 0.05))}"`
+            + ' stroke-linecap="round" stroke-linejoin="round" pointer-events="stroke"/>'
+        : '';
     return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}>`
-        + `<path d="${routePath(object)}"`
+        + `<path d="${path}"`
         + ` fill="none" stroke="${object.style.color}" stroke-width="${number(object.style.width)}"`
         + ' stroke-linecap="round" stroke-linejoin="round"'
         + (dash ? ` stroke-dasharray="${dash}"` : '')
-        + `${marker}/></g>`;
+        + `${marker}/>${hitTarget}</g>`;
 };
 
 // Climbing-guidebook symbols, drawn in a unit box the marker transform scales.
@@ -127,21 +134,25 @@ const objectSizePixels = (type, image, scale) => {
     return Math.min(image.width, image.height) * ratio * scale;
 };
 
-const renderMarker = (object, image) => {
+const renderMarker = (object, image, interactive) => {
     const unit = objectSizePixels(object.type, image, object.style.scale);
     const strokeWidth = Math.max(2, unit * 0.13);
+    const hitTarget = interactive
+        ? '<circle data-bpb-hit-target="true" cx="0" cy="0" r="1.1"'
+            + ' fill="transparent" stroke="none" pointer-events="all"/>'
+        : '';
     return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}`
         + ` transform="translate(${number(object.geometry.x)} ${number(object.geometry.y)})`
         + ` rotate(${number(object.geometry.rotation)}) scale(${number(unit)})"`
         + ` stroke="${object.style.color}" stroke-width="${number(strokeWidth / unit)}"`
         + ' stroke-linecap="round" stroke-linejoin="round">'
         + markerGeometry(object.type, object.style.color)
-        + '</g>';
+        + `${hitTarget}</g>`;
 };
 
 const textAnchor = align => align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
 
-const renderLabel = (object, image) => {
+const renderLabel = (object, image, interactive) => {
     const isPitch = object.type === 'pitch';
     const text = isPitch ? `P${object.pitch}` : object.text;
     const fontSize = objectSizePixels(object.type, image, object.style.scale);
@@ -156,6 +167,12 @@ const renderLabel = (object, image) => {
             + ` height="${number(fontSize * 1.15)}" rx="${number(fontSize * 0.16)}"`
             + ' fill="#000000" fill-opacity="0.72"/>'
         : '';
+    const hitTarget = interactive
+        ? `<rect data-bpb-hit-target="true" x="${number(xOffset - fontSize * 0.3)}"`
+            + ` y="${number(-fontSize * 1.1)}" width="${number(estimatedWidth + fontSize * 0.6)}"`
+            + ` height="${number(fontSize * 1.6)}" rx="${number(fontSize * 0.16)}"`
+            + ' fill="transparent" stroke="none" pointer-events="all"/>'
+        : '';
     return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}`
         + ` transform="translate(${number(object.geometry.x)} ${number(object.geometry.y)})`
         + ` rotate(${number(object.geometry.rotation)})">`
@@ -165,7 +182,7 @@ const renderLabel = (object, image) => {
         + ` font-weight="${isPitch ? '700' : '600'}" text-anchor="${anchor}"`
         + ' dominant-baseline="alphabetic">'
         + escapeXml(text)
-        + '</text></g>';
+        + `</text>${hitTarget}</g>`;
 };
 
 const arrowDefinition = color => [
@@ -175,16 +192,18 @@ const arrowDefinition = color => [
     '</marker>',
 ].join('');
 
-const renderOverlaySvg = value => {
+const renderOverlaySvg = (value, { interactive = false } = {}) => {
     const project = Project.cleanProject(value);
     if (!project) throw new TypeError('photo renderer requires a clean project');
     const arrowColors = [...new Set(project.objects
         .filter(object => object.type === 'route' && object.style.end === 'arrow')
         .map(object => object.style.color))];
     const children = project.objects.map(object => {
-        if (object.type === 'route') return renderRoute(object);
-        if (Project.MARKER_TYPES.includes(object.type)) return renderMarker(object, project.image);
-        return renderLabel(object, project.image);
+        if (object.type === 'route') return renderRoute(object, project.image, interactive);
+        if (Project.MARKER_TYPES.includes(object.type)) {
+            return renderMarker(object, project.image, interactive);
+        }
+        return renderLabel(object, project.image, interactive);
     }).join('');
     const defs = arrowColors.length
         ? `<defs>${arrowColors.map(arrowDefinition).join('')}</defs>`
