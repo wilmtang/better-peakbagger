@@ -314,9 +314,11 @@ table.gray th, table.gray td { border: 1px solid #b5b7b2; padding: 6px 8px; text
   <tr><td>Round-Trip Distance:</td><td>17.53 miles</td></tr>
 </table>
 <br clear="left"><br clear="right">
-<iframe src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="450" height="450"></iframe>
+<iframe src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="450" height="450"></iframe><br>
+GPS Waypoints - Hover or click to see name and lat/long<br>
+Peaks: climbed and unclimbed by Zihao D<br>
 <a href="/track.gpx">Download this GPS track</a>
-<a href="/map/BigMap.aspx?t=A">Full Screen Map</a>
+<a href="/map/BigMap.aspx?t=A">Click Here for a Full Screen Map</a>
 </body></html>`;
 
 // Keep oversized media out of the analyzer fixture's normal geometry, while

@@ -3173,6 +3173,7 @@ try {
         const mapFrame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
         const resizeHandle = document.getElementById('bpb-map-resize-handle');
         const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
+        const mapDetails = mapColumn?.querySelector('.bpb-route-explorer__map-details');
         const analysis = document.getElementById('bpb-gpx-analysis');
         const canvas = analysis?.querySelector('canvas');
         const units = analysis?.querySelector('#bpb-gpx-units');
@@ -3191,6 +3192,15 @@ try {
             top: mapFrameRect.top + nativeZoomLocalRect.top,
             bottom: mapFrameRect.top + nativeZoomLocalRect.bottom,
         } : null;
+        const textWalker = mapDetails
+            ? document.createTreeWalker(mapDetails, NodeFilter.SHOW_TEXT) : null;
+        let firstDetailsText = null;
+        while (textWalker && (firstDetailsText = textWalker.nextNode())) {
+            if (firstDetailsText.textContent.trim()) break;
+        }
+        const detailsTextRange = firstDetailsText ? document.createRange() : null;
+        detailsTextRange?.selectNodeContents(firstDetailsText);
+        const detailsTextRect = detailsTextRange?.getBoundingClientRect();
         const analysisRect = analysis?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
         const unitsRect = units?.getBoundingClientRect();
@@ -3255,6 +3265,11 @@ try {
                 border: getComputedStyle(resizeHandle).borderWidth,
                 touchAction: getComputedStyle(resizeHandle).touchAction,
             } : null,
+            mapDetails: mapDetails && mapFrameRect && detailsTextRect ? {
+                leadingBreak: mapDetails.firstChild?.nodeName === 'BR',
+                text: firstDetailsText.textContent.trim(),
+                textGap: detailsTextRect.top - mapFrameRect.bottom,
+            } : null,
             chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
             fullScreenWithMap: Boolean(document.querySelector(
                 '.bpb-route-explorer__map-details a[href*="BigMap.aspx"]'
@@ -3287,6 +3302,10 @@ try {
         && routeExplorerLayout.mapResizeTarget?.background === 'rgba(0, 0, 0, 0)'
         && routeExplorerLayout.mapResizeTarget?.border === '0px'
         && routeExplorerLayout.mapResizeTarget?.touchAction === 'none'
+        && routeExplorerLayout.mapDetails?.leadingBreak === false
+        && routeExplorerLayout.mapDetails?.text.startsWith('GPS Waypoints')
+        && routeExplorerLayout.mapDetails?.textGap >= mapResizeGeometry.railHeight - 1
+        && routeExplorerLayout.mapDetails?.textGap <= mapResizeGeometry.railHeight + 8
         && routeExplorerLayout.chartVisible
         && routeExplorerLayout.fullScreenWithMap,
     `the route explorer did not keep the map and active chart together at the MacBook-like viewport: ${JSON.stringify(routeExplorerLayout)}`);

@@ -1796,6 +1796,8 @@ async function main() {
       const mapFrame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
       const mapHandle = document.getElementById('bpb-map-resize-handle');
       const mapGrip = mapHandle?.querySelector('.bpb-map-resize-grip');
+      const mapDetails = map?.parentElement
+        ?.querySelector('.bpb-route-explorer__map-details');
       const mapRect = rect(map);
       const mapFrameRect = rect(mapFrame);
       const mapHandleRect = rect(mapHandle);
@@ -1807,6 +1809,15 @@ async function main() {
         top: mapFrameRect.top + nativeZoomLocalRect.top,
         bottom: mapFrameRect.top + nativeZoomLocalRect.bottom,
       } : null;
+      const textWalker = mapDetails
+        ? document.createTreeWalker(mapDetails, NodeFilter.SHOW_TEXT) : null;
+      let firstDetailsText = null;
+      while (textWalker && (firstDetailsText = textWalker.nextNode())) {
+        if (firstDetailsText.textContent.trim()) break;
+      }
+      const detailsTextRange = firstDetailsText ? document.createRange() : null;
+      detailsTextRange?.selectNodeContents(firstDetailsText);
+      const detailsTextRect = detailsTextRange?.getBoundingClientRect();
       const report = document.getElementById('ascent-report');
       const splitHandle = document.getElementById('bpb-ascent-table-resize-handle');
       const summary = document.getElementById('ascent-summary');
@@ -1829,6 +1840,10 @@ async function main() {
         mapBackground: mapHandle ? getComputedStyle(mapHandle).backgroundColor : null,
         mapBorder: mapHandle ? getComputedStyle(mapHandle).borderWidth : null,
         mapTouchAction: mapHandle ? getComputedStyle(mapHandle).touchAction : null,
+        mapDetailsLeadingBreak: mapDetails?.firstChild?.nodeName === 'BR',
+        mapDetailsText: firstDetailsText?.textContent.trim() || '',
+        mapDetailsTextGap: mapFrameRect && detailsTextRect
+          ? detailsTextRect.top - mapFrameRect.bottom : null,
         report: rect(report),
         splitHandle: rect(splitHandle),
         splitTouchAction: splitHandle ? getComputedStyle(splitHandle).touchAction : null,
@@ -1849,6 +1864,10 @@ async function main() {
         && firefoxResizeTargets.mapBackground === 'rgba(0, 0, 0, 0)'
         && firefoxResizeTargets.mapBorder === '0px'
         && firefoxResizeTargets.mapTouchAction === 'none'
+        && firefoxResizeTargets.mapDetailsLeadingBreak === false
+        && firefoxResizeTargets.mapDetailsText.startsWith('GPS Waypoints')
+        && firefoxResizeTargets.mapDetailsTextGap >= mapResizeGeometry.railHeight - 1
+        && firefoxResizeTargets.mapDetailsTextGap <= mapResizeGeometry.railHeight + 8
         && Math.abs(firefoxResizeTargets.splitHandle?.width - 13) <= 0.5
         && firefoxResizeTargets.splitHandle?.height >= 43.5
         && firefoxResizeTargets.report?.right <= firefoxResizeTargets.splitHandle.left + 1

@@ -128,7 +128,7 @@ export const gpxPanelCss = `
 #bpb-route-explorer .bpb-route-explorer__map-details {
     inline-size: 100%;
     min-inline-size: 0;
-    margin-block-start: 0.4rem;
+    margin-block-start: 0;
     text-align: center;
 }
 #bpb-route-explorer > #bpb-gpx-analysis {

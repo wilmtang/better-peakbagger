@@ -376,6 +376,18 @@ const run = async () => {
                     node = node.nextSibling) {
                     if (node !== container && node !== gpxLink) mapDetailsNodes.push(node);
                 }
+                // Peakbagger follows its inline map iframe with one or more
+                // <br> spacers. The wrapper and resize rail now own that
+                // separation, so retaining the legacy breaks creates a large
+                // empty band between the map and its own legend.
+                while (mapDetailsNodes.length) {
+                    const first = mapDetailsNodes[0];
+                    const redundantSpacer = first.nodeName === 'BR'
+                        || (first.nodeType === Node.TEXT_NODE && !first.textContent.trim());
+                    if (!redundantSpacer) break;
+                    mapDetailsNodes.shift();
+                    first.remove();
+                }
                 routeExplorer = document.createElement('div');
                 routeExplorer.id = 'bpb-route-explorer';
                 routeExplorer.setAttribute('role', 'region');

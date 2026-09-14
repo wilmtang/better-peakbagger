@@ -47,7 +47,7 @@ const gpx = `<?xml version="1.0"?>
 test('GPX analyzer adds a thick, segment-preserving route casing behind native Leaflet layers', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <p>
-        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14&t=A&d=1&c=900001&hj=0"></iframe><br>
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14&t=A&d=1&c=900001&hj=0"></iframe><br><br>
         GPS Waypoints - Hover or click to see name and lat/long<br>
         <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
         <span>Note: GPS Tracks may not be accurate.</span>
@@ -226,6 +226,10 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(fullScreenMapLink.parentElement, mapDetails,
         'the native map details and Full Screen link stay associated with the map');
     assert.match(mapDetails.textContent, /GPS Waypoints.*Full Screen Map/s);
+    assert.notEqual(mapDetails.firstChild?.nodeName, 'BR',
+        'legacy iframe spacer breaks do not become blank lines inside the block details wrapper');
+    assert.match(mapDetails.firstChild?.textContent || '', /^\s*GPS Waypoints/,
+        'the first visible details line follows the compact resize rail directly');
     assert.equal(window.document.querySelector('a[href$="demo.gpx"]').closest('#bpb-route-explorer'), null,
         'the GPX download stays in the page flow rather than being mistaken for map metadata');
 
