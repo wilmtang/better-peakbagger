@@ -1,9 +1,10 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * Compact saved-GPX handoff beside Peakbagger's native download link. */
+ * Compact saved-GPX handoffs beside Peakbagger's native download link. */
 
-.bpb-gaia-control {
+.bpb-map-handoff-control {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin-left: 6px;
@@ -11,18 +12,21 @@
     font: 11px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.bpb-gaia-button {
+.bpb-map-handoff-buttons {
+    display: inline-flex;
+    gap: 5px;
+}
+
+.bpb-map-handoff-button {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     min-height: 26px;
     box-sizing: border-box;
     padding: 4px 10px 4px 8px;
-    border: 1px solid #1d5539;
+    border: 1px solid;
     border-radius: 999px;
     color: #fff;
-    background: linear-gradient(180deg, #347a55 0%, #286544 100%);
-    box-shadow: 0 1px 2px rgba(13, 55, 35, 0.24), inset 0 1px rgba(255, 255, 255, 0.12);
     font: inherit;
     font-weight: 650;
     letter-spacing: 0.01em;
@@ -31,72 +35,116 @@
         box-shadow 120ms ease, transform 120ms ease;
 }
 
-.bpb-gaia-button:hover:not(:disabled) {
-    border-color: #153f2b;
-    background: linear-gradient(180deg, #2e714e 0%, #215b3b 100%);
-    box-shadow: 0 2px 4px rgba(13, 55, 35, 0.28), inset 0 1px rgba(255, 255, 255, 0.12);
+.bpb-map-handoff-button-gaia {
+    border-color: #1d5539;
+    background: linear-gradient(180deg, #347a55 0%, #286544 100%);
+    box-shadow: 0 1px 2px rgba(13, 55, 35, 0.24), inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.bpb-map-handoff-button-onx {
+    border-color: #753500;
+    background: linear-gradient(180deg, #a84e08 0%, #873b00 100%);
+    box-shadow: 0 1px 2px rgba(86, 35, 0, 0.26), inset 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.bpb-map-handoff-button:hover:not(:disabled) {
+    box-shadow: 0 2px 4px rgba(24, 37, 29, 0.28), inset 0 1px rgba(255, 255, 255, 0.12);
     transform: translateY(-1px);
 }
-
-.bpb-gaia-button:active:not(:disabled) {
-    box-shadow: 0 1px 2px rgba(13, 55, 35, 0.18);
+.bpb-map-handoff-button-gaia:hover:not(:disabled) {
+    border-color: #153f2b;
+    background: linear-gradient(180deg, #2e714e 0%, #215b3b 100%);
+}
+.bpb-map-handoff-button-onx:hover:not(:disabled) {
+    border-color: #602b00;
+    background: linear-gradient(180deg, #984400 0%, #773300 100%);
+}
+.bpb-map-handoff-button:active:not(:disabled) {
+    box-shadow: 0 1px 2px rgba(24, 37, 29, 0.18);
     transform: translateY(0);
 }
-
-.bpb-gaia-button:focus-visible {
+.bpb-map-handoff-button:focus-visible {
     outline: 2px solid #2b7bb9;
     outline-offset: 2px;
 }
-
-.bpb-gaia-button:disabled {
+.bpb-map-handoff-button:disabled {
     cursor: default;
     opacity: 0.72;
 }
 
-.bpb-gaia-icon {
+.bpb-map-handoff-icon {
     display: grid;
     place-items: center;
     width: 15px;
     height: 15px;
     border-radius: 50%;
-    color: #245e40;
-    background: rgba(255, 255, 255, 0.92);
+    color: #3f4e45;
+    background: rgba(255, 255, 255, 0.94);
     font: 700 11px/1 Arial, sans-serif;
 }
-
-.bpb-gaia-icon::before { content: "↗"; transform: translateY(-0.5px); }
-.bpb-gaia-button[aria-busy="true"] .bpb-gaia-icon::before { content: "…"; transform: translateY(-2px); }
-.bpb-gaia-button-success {
-    border-color: #83ae91;
-    color: #245e40;
-    background: #eef7f0;
+.bpb-map-handoff-icon::before { content: "↗"; transform: translateY(-0.5px); }
+.bpb-map-handoff-button[aria-busy="true"] .bpb-map-handoff-icon::before {
+    content: "…";
+    transform: translateY(-2px);
+}
+.bpb-map-handoff-button-success {
     box-shadow: none;
     opacity: 1 !important;
 }
-.bpb-gaia-button-success .bpb-gaia-icon { color: #fff; background: #347a55; }
-.bpb-gaia-button-success .bpb-gaia-icon::before { content: "✓"; transform: none; }
+.bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+    border-color: #83ae91;
+    color: #245e40;
+    background: #eef7f0;
+}
+.bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
+    border-color: #d79d72;
+    color: #713100;
+    background: #fff2e8;
+}
+.bpb-map-handoff-button-success .bpb-map-handoff-icon { color: #fff; }
+.bpb-map-handoff-button-gaia.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #347a55; }
+.bpb-map-handoff-button-onx.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #984400; }
+.bpb-map-handoff-button-success .bpb-map-handoff-icon::before { content: "✓"; transform: none; }
 
-.bpb-gaia-status {
+.bpb-map-handoff-status {
     max-width: 310px;
     color: #4d514d;
     font-weight: 500;
 }
-.bpb-gaia-status:empty { display: none; }
+.bpb-map-handoff-status:empty { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-    .bpb-gaia-button { transition: none; }
-    .bpb-gaia-button:hover:not(:disabled) { transform: none; }
+    .bpb-map-handoff-button { transition: none; }
+    .bpb-map-handoff-button:hover:not(:disabled) { transform: none; }
 }
 
 @media (prefers-color-scheme: dark) {
-    .bpb-gaia-button { border-color: #5c9872; }
-    .bpb-gaia-button-success { border-color: #5c9872; color: #9bd3ab; background: #24352c; }
-    .bpb-gaia-status { color: #d0cbc2; }
+    .bpb-map-handoff-button-gaia { border-color: #5c9872; }
+    .bpb-map-handoff-button-onx { border-color: #c06d31; }
+    .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+        border-color: #5c9872; color: #9bd3ab; background: #24352c;
+    }
+    .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
+        border-color: #a96231; color: #f3b887; background: #3c2a20;
+    }
+    .bpb-map-handoff-status { color: #d0cbc2; }
 }
 
-:root[data-bpb-theme="dark"] .bpb-gaia-button { border-color: #5c9872; }
-:root[data-bpb-theme="dark"] .bpb-gaia-button-success { border-color: #5c9872; color: #9bd3ab; background: #24352c; }
-:root[data-bpb-theme="dark"] .bpb-gaia-status { color: #d0cbc2; }
-:root[data-bpb-theme="light"] .bpb-gaia-button { border-color: #1d5539; }
-:root[data-bpb-theme="light"] .bpb-gaia-button-success { border-color: #83ae91; color: #245e40; background: #eef7f0; }
-:root[data-bpb-theme="light"] .bpb-gaia-status { color: #4d514d; }
+:root[data-bpb-theme="dark"] .bpb-map-handoff-button-gaia { border-color: #5c9872; }
+:root[data-bpb-theme="dark"] .bpb-map-handoff-button-onx { border-color: #c06d31; }
+:root[data-bpb-theme="dark"] .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+    border-color: #5c9872; color: #9bd3ab; background: #24352c;
+}
+:root[data-bpb-theme="dark"] .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
+    border-color: #a96231; color: #f3b887; background: #3c2a20;
+}
+:root[data-bpb-theme="dark"] .bpb-map-handoff-status { color: #d0cbc2; }
+:root[data-bpb-theme="light"] .bpb-map-handoff-button-gaia { border-color: #1d5539; }
+:root[data-bpb-theme="light"] .bpb-map-handoff-button-onx { border-color: #753500; }
+:root[data-bpb-theme="light"] .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+    border-color: #83ae91; color: #245e40; background: #eef7f0;
+}
+:root[data-bpb-theme="light"] .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
+    border-color: #d79d72; color: #713100; background: #fff2e8;
+}
+:root[data-bpb-theme="light"] .bpb-map-handoff-status { color: #4d514d; }

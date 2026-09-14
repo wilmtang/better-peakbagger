@@ -9,8 +9,9 @@ import {
     readSourceGpx,
     storedTrackLink,
     validateGpx,
-} from '../../src/gaia/gaia-source.js';
+} from '../../src/gpx/saved-gpx-source.js';
 import { MAX_GAIA_GPX_BYTES } from '../../src/gaia/gaia-import.js';
+import { MAX_ONX_GPX_BYTES } from '../../src/onx/onx-import.js';
 
 const ascent = 'https://www.peakbagger.com/climber/ascent.aspx?aid=42';
 const download = 'https://www.peakbagger.com/climber/GPXFile.aspx?aid=42&sep=1';
@@ -20,7 +21,7 @@ const parseXml = value => new dom.window.DOMParser().parseFromString(value, 'app
 
 test.after(() => dom.window.close());
 
-test('Gaia source accepts only exact saved-ascent and track identities', () => {
+test('map handoff source accepts only exact saved-ascent and track identities', () => {
     const identity = ascentIdentity(ascent);
     assert.equal(identity.id, '42');
     assert.equal(storedTrackLink(download, identity), download);
@@ -78,4 +79,8 @@ test('saved GPX read fails closed on errors, malformed data, DTDs, size and redi
         assert.equal(result.gpx, undefined);
     }
     assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_GAIA_GPX_BYTES)}`, { parseXml }), false);
+    assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_ONX_GPX_BYTES)}`, {
+        maxBytes: MAX_ONX_GPX_BYTES,
+        parseXml,
+    }), false);
 });

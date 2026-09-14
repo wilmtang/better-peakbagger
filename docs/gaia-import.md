@@ -7,14 +7,15 @@ boundaries, failure handling, and verification.
 
 The feature deliberately stops at Gaia's import preview. Better Peakbagger
 does not use a Gaia API token, inspect Gaia credentials, or click Gaia's
-**Save** control. The user reviews the imported items and saves them in Gaia.
+**Save** control. The user reviews the imported items and saves them in Gaia. The
+onX-specific contract is documented in [onX saved-GPX handoff](onx-import.md).
 
 ## User workflow
 
 On a Peakbagger saved-ascent page with a valid GPX download:
 
-1. Better Peakbagger places **Send to Gaia** immediately after Peakbagger's
-   native GPX download link.
+1. Better Peakbagger places a shared **Send to Gaia** and **Send to onX**
+   control immediately after Peakbagger's native GPX download link.
 2. The user clicks **Send to Gaia**.
 3. On first use, the browser asks for access to `www.gaiagps.com`. Firefox may
    open a themed Better Peakbagger access page for this one-time grant.
@@ -63,12 +64,13 @@ storage record, log payload, or analyzer-derived reconstruction.
 ## Saved-ascent surface and placement
 
 `manifest.json` loads `content/ascent-gaia.js` and `css/ascent-gaia.css` as an
-independent isolated-world surface on saved-ascent URLs. Keeping it separate
-from backup and GPX Analyzer bundles prevents a Gaia failure from disabling
-those features.
+independent isolated-world surface on saved-ascent URLs. The same surface owns
+both Gaia and onX buttons so their placement observers cannot compete. Keeping
+it separate from backup and GPX Analyzer bundles prevents a map-service failure
+from disabling those features.
 
 `src/ascent/ascent-page.js` finds Peakbagger's stored-track link. Before
-showing the control, `src/gaia/gaia-source.js` requires:
+showing the control, `src/gpx/saved-gpx-source.js` requires:
 
 - an HTTPS Peakbagger `climber/ascent.aspx` page with exactly one positive
   `aid`;
@@ -79,14 +81,14 @@ showing the control, `src/gaia/gaia-source.js` requires:
 No GPX request occurs while the page loads. A synthetic page event is ignored;
 the read begins only from a trusted button activation.
 
-The GPX Analyzer loads independently and may add its panel after the Gaia
-control. A `MutationObserver` therefore maintains the invariant that the Gaia
-control is the download link's immediate sibling. The observer suspends for a
+The GPX Analyzer loads independently and may add its panel after the map
+handoff control. One `MutationObserver` therefore maintains the invariant that
+the shared control is the download link's immediate sibling. The observer suspends for a
 persisted `pagehide`, resumes and revalidates placement on `pageshow`, and is
 removed on terminal page disposal through `src/ui/page-lifecycle.js`.
 
-The compact green pill uses the site's explicit light/dark theme where present
-and the operating-system scheme otherwise. The Firefox access page uses the
+The compact Gaia and onX pills use the site's explicit light/dark theme where
+present and the operating-system scheme otherwise. The Firefox access page uses the
 shared extension-panel palette and pre-paint theme bootstrap.
 
 ## Optional permission
@@ -143,7 +145,9 @@ Gaia handoff. Analyzer arrays and draft payloads are not inputs either.
 
 ## Worker and tab coordination
 
-`src/background/gaia-routes.js` revalidates the request before opening Gaia:
+`src/background/gaia-routes.js` configures the shared
+`src/background/gpx-handoff-routes.js` transaction, which revalidates the
+request before opening Gaia:
 
 - the sender must be the exact Peakbagger saved-ascent document;
 - `sourceUrl` must equal that document URL;
@@ -235,13 +239,13 @@ handoffs, control placement, BFCache restoration, and access-page behavior:
 test/ascent/ascent-gaia.test.mjs
 test/background/gaia-routes.test.mjs
 test/gaia/gaia-access.test.mjs
-test/gaia/gaia-source.test.mjs
+test/gpx/saved-gpx-source.test.mjs
 test/project/manifest-capture.test.mjs
 ```
 
-`npm run verify:gaia` builds and loads the real unpacked `dist/` in hidden
-Chrome for Testing. It serves masked HTTPS fixtures on real Peakbagger and Gaia
-hostnames and verifies:
+`npm run verify:map-handoffs` (also available as `verify:gaia`) builds and loads
+the real unpacked `dist/` in hidden Chrome for Testing. It serves masked HTTPS
+fixtures on real Peakbagger, Gaia, and onX hostnames and verifies:
 
 - exact placement beside the GPX download;
 - trusted click and worker routing;
@@ -251,7 +255,7 @@ hostnames and verifies:
 - absence of GPX XML from extension session storage; and
 - light and dark rendering at 1000 × 760.
 
-The verifier grants Gaia in a disposable manifest because hidden automation
+The verifier grants Gaia and onX in a disposable manifest because hidden automation
 cannot inspect native permission chrome. It also uses a masked Gaia fixture,
 not the live authenticated service. Before release, manually check the native
 first-run permission experience and one low-volume signed-in Gaia import in a

@@ -11,9 +11,10 @@ import { chromium } from 'playwright';
 import { createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mjs';
 import { closeServer, createResourceStack, listenServer } from './resource-stack.mjs';
 import { prepareGaiaImport } from '../src/gaia/gaia-import.js';
+import { prepareOnxImport } from '../src/onx/onx-import.js';
 
 const root = path.resolve(import.meta.dirname, '..');
-const evidenceDir = path.join(root, 'web-ext-artifacts', 'gaia-import-evidence');
+const evidenceDir = path.join(root, 'web-ext-artifacts', 'map-handoff-evidence');
 const resources = createResourceStack();
 const payload = {
     filename: 'peakbagger-7654321.gpx',
@@ -23,23 +24,27 @@ const payload = {
 let failure;
 try {
     await mkdir(evidenceDir, { recursive: true });
-    const temporary = await mkdtemp(path.join(tmpdir(), 'bpb-gaia-import-'));
-    resources.defer('disposable Gaia verifier', () => rm(temporary, { recursive: true, force: true }));
+    const temporary = await mkdtemp(path.join(tmpdir(), 'bpb-map-handoff-'));
+    resources.defer('disposable map handoff verifier', () => rm(temporary, { recursive: true, force: true }));
     const extensionDir = path.join(temporary, 'dist');
     await cp(path.join(root, 'dist'), extensionDir, { recursive: true });
 
-    // The hidden fixture cannot approve native browser chrome. Grant only Gaia
-    // in this disposable manifest; production still declares it optional.
+    // The hidden fixture cannot approve native browser chrome. Grant only the
+    // two tested map origins here; production still declares both optional.
     const manifestPath = path.join(extensionDir, 'manifest.json');
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const gaiaOrigin = 'https://www.gaiagps.com/*';
-    manifest.host_permissions.push(gaiaOrigin);
-    manifest.optional_host_permissions = manifest.optional_host_permissions.filter(value => value !== gaiaOrigin);
+    const onxOrigin = 'https://webmap.onxmaps.com/*';
+    manifest.host_permissions.push(gaiaOrigin, onxOrigin);
+    manifest.optional_host_permissions = manifest.optional_host_permissions.filter(
+        value => value !== gaiaOrigin && value !== onxOrigin,
+    );
     await writeFile(manifestPath, JSON.stringify(manifest));
 
     const ascentHtml = await readFile(path.join(root, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
     let sourceReads = 0;
     let gaiaMode = 'ready';
+    let onxMode = 'ready';
     const gaiaFixture = () => `<!doctype html><html><meta charset="utf-8"><title>Gaia importer fixture</title><body>
         <button aria-label="Import Data" ${gaiaMode === 'signed-out' ? 'disabled' : ''}>Import</button>
         ${gaiaMode === 'signed-out' ? '<button>Log In</button>' : ''}<main id="preview"></main>
@@ -52,12 +57,28 @@ try {
             };document.body.append(input);
         };
         </script></body></html>`;
-    const certificate = await createFixtureCertificate({ label: 'gaia-import' });
+    const onxFixture = () => `<!doctype html><html><meta charset="utf-8"><title>onX importer fixture</title><body>
+        ${onxMode === 'membership' ? '<button data-test="upgrade-now-button">Upgrade now</button>' : `
+        <input id="add-files-input" type="file" accept=".gpx,.kml">
+        <main id="preview"></main><button data-test="import-card-import-button" disabled>Import</button>`}
+        <script>
+        window.handoffs=0;window.imports=0;
+        const input=document.querySelector('#add-files-input');
+        if(input)input.onchange=async()=>{window.handoffs++;window.receivedName=input.files[0].name;window.received=await input.files[0].text();
+            ${onxMode === 'stalled' ? '' : 'const item=document.createElement(\'p\');item.dataset.test=\'file-item\';item.textContent=\'Saved ascent\';document.querySelector(\'main\').append(item);document.querySelector(\'[data-test="import-card-import-button"]\').disabled=false;'}
+        };
+        const confirm=document.querySelector('[data-test="import-card-import-button"]');
+        if(confirm)confirm.onclick=()=>window.imports++;
+        </script></body></html>`;
+    const certificate = await createFixtureCertificate({ label: 'map-handoff' });
     resources.defer('fixture certificate', () => certificate.remove());
     const server = createServer(certificate, (request, response) => {
         if (request.headers.host === 'www.gaiagps.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(gaiaFixture());
+        } else if (request.headers.host === 'webmap.onxmaps.com') {
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(onxFixture());
         } else if (request.url.startsWith('/climber/GPXFile.aspx')) {
             sourceReads++;
             response.setHeader('Content-Type', 'application/gpx+xml');
@@ -68,7 +89,7 @@ try {
         }
     });
     await listenServer(server, 0, '127.0.0.1');
-    resources.defer('Gaia HTTPS fixture', () => closeServer(server));
+    resources.defer('map handoff HTTPS fixture', () => closeServer(server));
     const port = server.address().port;
 
     const context = await chromium.launchPersistentContext(path.join(temporary, 'browser'), {
@@ -80,7 +101,7 @@ try {
         args: [
             `--disable-extensions-except=${extensionDir}`,
             `--load-extension=${extensionDir}`,
-            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}`,
+            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP webmap.onxmaps.com 127.0.0.1:${port}`,
         ],
     });
     resources.defer('hidden Chrome for Testing', () => context.close());
@@ -89,10 +110,12 @@ try {
 
     const source = await context.newPage();
     await source.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=7654321`);
-    const gaiaButton = source.locator('.bpb-gaia-button');
+    const gaiaButton = source.locator('[data-provider=\"gaia\"]');
+    const onxButton = source.locator('[data-provider=\"onx\"]');
     await gaiaButton.waitFor();
     assert.equal((await gaiaButton.innerText()).trim(), 'Send to Gaia');
-    const placement = await source.locator('.bpb-gaia-control').evaluate(control => ({
+    assert.equal((await onxButton.innerText()).trim(), 'Send to onX');
+    const placement = await source.locator('.bpb-map-handoff-control').evaluate(control => ({
         parentId: control.parentElement?.id,
         previousTag: control.previousElementSibling?.tagName,
         previousHref: control.previousElementSibling?.getAttribute('href'),
@@ -106,7 +129,7 @@ try {
 
     await gaiaButton.click();
     await waitForCondition(async () => {
-        const text = await source.locator('.bpb-gaia-control').innerText();
+        const text = await source.locator('.bpb-map-handoff-control').innerText();
         return /Ready in Gaia/.test(text) ? text : null;
     }, { description: 'the saved ascent to report Gaia ready', timeoutMs: 35_000 });
     const gaia = await waitForCondition(async () => context.pages().find(page => page.url().startsWith('https://www.gaiagps.com/')) || null, {
@@ -119,11 +142,30 @@ try {
         saves: window.saves,
     }));
     assert.deepEqual(received, { text: payload.gpx, name: payload.filename, handoffs: 1, saves: 0 });
-    assert.match(await source.locator('.bpb-gaia-status').innerText(), /Review the items and click Save/);
+    assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the items and click Save/);
     assert.equal(await gaiaButton.isDisabled(), true);
+    assert.equal(await onxButton.isDisabled(), false);
+
+    await onxButton.click();
+    await waitForCondition(async () => {
+        const text = await source.locator('.bpb-map-handoff-control').innerText();
+        return /Ready in onX/.test(text) ? text : null;
+    }, { description: 'the saved ascent to report onX ready', timeoutMs: 35_000 });
+    const onx = await waitForCondition(async () => context.pages().find(
+        page => page.url().startsWith('https://webmap.onxmaps.com/'),
+    ) || null, { description: 'the onX import tab' });
+    const onxReceived = await onx.evaluate(() => ({
+        text: window.received,
+        name: window.receivedName,
+        handoffs: window.handoffs,
+        imports: window.imports,
+    }));
+    assert.deepEqual(onxReceived, { text: payload.gpx, name: payload.filename, handoffs: 1, imports: 0 });
+    assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the file and click Import/);
+    assert.equal(await onxButton.isDisabled(), true);
 
     await source.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
-    await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-button-ready-dark.png') });
+    await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-buttons-ready-dark.png') });
     const access = await context.newPage();
     await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: { theme: 'light' } }));
     await access.goto(`chrome-extension://${extensionId}/gaia/access.html`);
@@ -142,6 +184,10 @@ try {
     }));
     assert.notDeepEqual(darkAccessColors, lightAccessColors);
     await access.screenshot({ path: path.join(evidenceDir, 'access-page-dark.png') });
+    const onxAccess = await context.newPage();
+    await onxAccess.goto(`chrome-extension://${extensionId}/onx/access.html`);
+    await onxAccess.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
+    await onxAccess.screenshot({ path: path.join(evidenceDir, 'onx-access-page-dark.png') });
 
     const session = await worker.evaluate(() => chrome.storage.session.get(null));
     assert.ok(!JSON.stringify(session).includes('<gpx'), 'saved GPX must not enter extension storage');
@@ -165,6 +211,25 @@ try {
     assert.deepEqual(stalled.state, { handoffs: 1, saves: 0 });
     const duplicate = await stalled.page.evaluate(prepareGaiaImport, payload);
     assert.equal(duplicate.code, 'already-started');
+    const onxAdapterCheck = async (mode, timeoutMs = 500) => {
+        onxMode = mode;
+        const page = await context.newPage();
+        await page.goto('https://webmap.onxmaps.com/backcountry/map/content/import');
+        const outcome = await page.evaluate(prepareOnxImport, { ...payload, timeoutMs });
+        return {
+            page,
+            outcome,
+            state: await page.evaluate(() => ({ handoffs: window.handoffs, imports: window.imports })),
+        };
+    };
+    const membership = await onxAdapterCheck('membership');
+    assert.equal(membership.outcome.code, 'membership-required');
+    assert.deepEqual(membership.state, { handoffs: 0, imports: 0 });
+    const onxStalled = await onxAdapterCheck('stalled');
+    assert.equal(onxStalled.outcome.code, 'handoff-unconfirmed');
+    assert.deepEqual(onxStalled.state, { handoffs: 1, imports: 0 });
+    const onxDuplicate = await onxStalled.page.evaluate(prepareOnxImport, payload);
+    assert.equal(onxDuplicate.code, 'already-started');
 
     const report = {
         browser: context.browser().version(),
@@ -172,13 +237,16 @@ try {
         mode: 'hidden masked HTTPS fixtures',
         renderer: 'static HTML; no WebGL',
         sourceReads,
-        nativePermissionPrompt: 'not inspected; Gaia was granted only in the disposable manifest',
+        nativePermissionPrompt: 'not inspected; Gaia and onX were granted only in the disposable manifest',
         checks: [
             'real unpacked dist',
             'ascent-page placement',
             'trusted click and worker route',
             'exact saved GPX handoff',
             'manual Gaia Save preserved',
+            'exact saved GPX handoff to onX',
+            'manual onX Import preserved',
+            'onX membership gate',
             'signed-out gate',
             'uncertain handoff suppresses retry',
             'no GPX in extension storage',

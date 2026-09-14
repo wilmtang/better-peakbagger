@@ -4,7 +4,7 @@
 import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
-import { MAX_GAIA_GPX_BYTES } from './gaia-import.js';
+const DEFAULT_MAX_GPX_BYTES = 15 * 1024 * 1024;
 
 export function ascentIdentity(value) {
     try {
@@ -28,8 +28,11 @@ export function storedTrackLink(value, identity) {
     } catch { return null; }
 }
 
-export function validateGpx(gpx, { parseXml = value => new DOMParser().parseFromString(value, 'application/xml') } = {}) {
-    if (typeof gpx !== 'string' || new Blob([gpx]).size > MAX_GAIA_GPX_BYTES) return false;
+export function validateGpx(gpx, {
+    maxBytes = DEFAULT_MAX_GPX_BYTES,
+    parseXml = value => new DOMParser().parseFromString(value, 'application/xml'),
+} = {}) {
+    if (typeof gpx !== 'string' || new Blob([gpx]).size > maxBytes) return false;
     const xml = parseXml(gpx);
     if (!xml || xml.querySelector('parsererror') || xml.documentElement?.localName !== 'gpx' || xml.doctype) {
         return false;
@@ -44,6 +47,7 @@ export async function readSourceGpx({
     pageUrl,
     gpxUrl,
     fetchResource = fetchPeakbaggerResource,
+    maxBytes = DEFAULT_MAX_GPX_BYTES,
     parseXml,
 } = {}) {
     try {
@@ -54,8 +58,14 @@ export async function readSourceGpx({
         const response = await fetchResource(sourceUrl, { kind: 'gpx' });
         if (response.kind !== 'ok') throw new Error(PeakbaggerError.message(response.error));
         if (new URL(response.url).origin !== identity.origin) throw new Error('The GPX download left Peakbagger.');
-        if (!validateGpx(response.text, { ...(parseXml ? { parseXml } : {}) })) {
-            throw new Error(`Peakbagger did not return a valid GPX file under ${MAX_GAIA_GPX_BYTES / 1024 / 1024} MB.`);
+        if (!validateGpx(response.text, { maxBytes, ...(parseXml ? { parseXml } : {}) })) {
+            const mebibyte = 1024 * 1024;
+            const limit = Number.isInteger(maxBytes)
+                ? maxBytes % mebibyte === 0
+                    ? `${maxBytes / mebibyte} MiB`
+                    : `${Math.floor(maxBytes / 1_000_000)} MB`
+                : 'the destination limit';
+            throw new Error(`Peakbagger did not return a valid GPX file under ${limit}.`);
         }
         return {
             ok: true,
@@ -68,4 +78,4 @@ export async function readSourceGpx({
     }
 }
 
-export const gaiaSource = { ascentIdentity, storedTrackLink, validateGpx, readSourceGpx };
+export const savedGpxSource = { ascentIdentity, storedTrackLink, validateGpx, readSourceGpx };

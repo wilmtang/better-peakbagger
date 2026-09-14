@@ -20,6 +20,7 @@ const ACTIONS = Object.freeze({
     BETA_SETTINGS: 'beta-settings',
     DRAFT_MANAGER: 'draft-manager',
     GAIA_IMPORT: 'gaia-import',
+    ONX_IMPORT: 'onx-import',
     PHOTO_EDITOR: 'photo-editor',
     REPORT_PHOTOS: 'report-photos',
 });
@@ -28,6 +29,7 @@ const WORKFLOW_ACTIONS = new Set([
     ACTIONS.ASCENT_BACKUP,
     ACTIONS.PROFILE_BACKUP,
     ACTIONS.GAIA_IMPORT,
+    ACTIONS.ONX_IMPORT,
     ACTIONS.REPORT_PHOTOS,
 ]);
 
