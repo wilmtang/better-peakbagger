@@ -280,7 +280,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');
     assert.equal(mapViewport.style.width, '450px');
     assert.equal(mapViewport.style.maxWidth, '100%');
-    assert.equal(mapViewport.style.height, '494px');
+    assert.equal(mapViewport.style.height, '466px');
     assert.equal(iframe.style.width, '100%');
     assert.equal(iframe.style.maxWidth, '100%');
     await waitFor(dom, () => map.invalidateCalls > 0);
@@ -502,7 +502,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         ['#2457a7', 7]
     ]);
     assert.equal(mapViewport.style.width, '700px');
-    assert.equal(mapViewport.style.height, '644px');
+    assert.equal(mapViewport.style.height, '616px');
     assert.ok(nativeLayerChanges >= 2, 'the saved layer should be applied through the native change handler');
 
     layerSelect.value = 'L_OS';
@@ -511,9 +511,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(polylineCalls.length, 4, 'changing the native basemap should not rebuild the route overlay');
 
     mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    assert.equal(mapViewport.style.height, '654px');
+    assert.equal(mapViewport.style.height, '626px');
     mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
-    assert.equal(mapViewport.style.height, '664px');
+    assert.equal(mapViewport.style.height, '636px');
     assert.equal(sentPatches.some(patch => 'mapViewportHeight' in patch), false,
         'keyboard resize must not persist on every keystroke');
     await waitFor(dom, () => sentPatches.some(patch => 'mapViewportHeight' in patch));
@@ -532,7 +532,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     dispatchPointer('pointermove', { pointerId: 1, clientX: 800, clientY: 50 });
     dispatchPointer('pointerup', { pointerId: 1 });
     assert.equal(mapViewport.style.width, '800px');
-    assert.equal(mapViewport.style.height, '714px');
+    assert.equal(mapViewport.style.height, '686px');
     assert.equal(sentPatches.at(-1).mapViewportWidth, 800);
     assert.equal(sentPatches.at(-1).mapViewportHeight, 670);
 
@@ -2238,6 +2238,9 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__layout\s*\{\s*grid-template-columns:\s*1fr/);
     assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__summary\s*\{[\s\S]*grid-row:\s*2/);
     assert.match(css, /#bpb-route-explorer\[data-layout="side"\] > \.bpb-route-explorer__map-column\s*\{[\s\S]*position:\s*sticky/);
+    assert.match(css, /#bpb-map-resize-handle\s*\{[\s\S]*background:\s*transparent !important;[\s\S]*outline:\s*none !important/);
+    assert.match(css, /#bpb-map-resize-handle \.bpb-map-resize-grip\s*\{[\s\S]*opacity:\s*0\.58/);
+    assert.match(css, /#bpb-map-resize-handle:focus-visible \.bpb-map-resize-grip\s*\{[\s\S]*outline:\s*2px solid Highlight/);
 
     dom.window.close();
 });

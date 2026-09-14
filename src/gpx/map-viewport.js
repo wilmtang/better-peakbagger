@@ -20,6 +20,7 @@ export const createMapViewport = ({
     size,
     bounds,
     railHeight,
+    targetSize = railHeight,
     persistDelayMs,
     onPersist,
     onInvalidated = () => {},
@@ -158,6 +159,7 @@ export const createMapViewport = ({
                 boxSizing: 'border-box'
             }
         });
+        element.style.setProperty('--bpb-map-resize-rail-height', `${railHeight}px`);
 
         iframe.before(element);
         element.append(iframe);
@@ -177,25 +179,31 @@ export const createMapViewport = ({
                 position: 'absolute',
                 right: '0',
                 bottom: '0',
-                width: '44px',
-                height: `${railHeight}px`,
+                zIndex: '4',
+                width: `${targetSize}px`,
+                height: `${targetSize}px`,
+                minWidth: '0',
+                minHeight: '0',
+                margin: '0',
                 padding: '0',
                 border: '0',
                 background: 'transparent',
+                boxShadow: 'none',
+                outline: 'none',
+                appearance: 'none',
                 color: 'currentColor',
                 cursor: 'nwse-resize',
-                opacity: '0.72',
                 touchAction: 'none'
             }
         }, Dom.element('span', {
-            text: '◢',
+            class: 'bpb-map-resize-grip',
             'aria-hidden': 'true',
             style: {
                 position: 'absolute',
                 right: '3px',
                 bottom: '3px',
-                fontSize: '14px',
-                lineHeight: '14px',
+                width: '16px',
+                height: '16px',
                 pointerEvents: 'none'
             }
         }));

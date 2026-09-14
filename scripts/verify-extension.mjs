@@ -3025,6 +3025,14 @@ try {
         return bpbSettings;
     });
     const effectiveHeightViewport = offPage.viewportSize();
+    const mapResizeGeometry = await offPage.evaluate(() => {
+        const coarse = matchMedia('(pointer: coarse)').matches;
+        return {
+            coarse,
+            railHeight: coarse ? 44 : 16,
+            targetSize: coarse ? 44 : 24,
+        };
+    });
     await offPage.setViewportSize({ width: 1200, height: 600 });
     await offPage.locator('#bpb-map-resize-handle').scrollIntoViewIfNeeded();
     const readEffectiveMapHeight = () => offPage.evaluate(() => {
@@ -3042,20 +3050,20 @@ try {
             inlineHeight: map?.style.height || '',
         } : null;
     });
-    const shortPreferredHeight = await offPage.waitForFunction(() => {
+    const shortPreferredHeight = await offPage.waitForFunction(expectedWrapperHeight => {
         const map = document.getElementById('bpb-map-viewport');
         const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
         const handle = document.getElementById('bpb-map-resize-handle');
         const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
         const labelledHeight = Number(/by (\d+) pixels high/.exec(
             handle?.getAttribute('aria-label') || '')?.[1]);
-        return map?.style.height === '764px' && contentHeight > 0
+        return map?.style.height === `${expectedWrapperHeight}px` && contentHeight > 0
             && labelledHeight === contentHeight ? {
                 viewportHeight: document.documentElement.clientHeight,
                 contentHeight,
                 labelledHeight,
             } : false;
-    }, null, { timeout: 5000 }).then(handle => handle.jsonValue());
+    }, 720 + mapResizeGeometry.railHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
     await offPage.setViewportSize({ width: 1200, height: 1100 });
     const grownUntouchedHeight = await offPage.waitForFunction(() => {
         const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
@@ -3122,7 +3130,8 @@ try {
         return Math.round(frame?.getBoundingClientRect().height || 0) === expected
             ? expected : false;
     }, firstPointerHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
-    check(shortPreferredHeight.contentHeight === shortPreferredHeight.viewportHeight - 16 - 44
+    check(shortPreferredHeight.contentHeight
+        === shortPreferredHeight.viewportHeight - 16 - mapResizeGeometry.railHeight
         && shortPreferredHeight.labelledHeight === shortPreferredHeight.contentHeight
         && grownUntouchedHeight.contentHeight === 720
         && firstUpHeight.contentHeight === shortPreferredHeight.contentHeight - 10
@@ -3140,10 +3149,13 @@ try {
     }, originalHeightSettings);
     await effectiveHeightSettingsPage.close();
     if (effectiveHeightViewport) await offPage.setViewportSize(effectiveHeightViewport);
-    await offPage.waitForFunction(expected => {
+    await offPage.waitForFunction(({ expected, railHeight }) => {
         const map = document.getElementById('bpb-map-viewport');
-        return map?.style.height === `${expected + 44}px`;
-    }, originalHeightSettings.mapViewportHeight || 450, { timeout: 5000 });
+        return map?.style.height === `${expected + railHeight}px`;
+    }, {
+        expected: originalHeightSettings.mapViewportHeight || 450,
+        railHeight: mapResizeGeometry.railHeight,
+    }, { timeout: 5000 });
     const previousExplorerViewport = offPage.viewportSize();
     await offPage.setViewportSize({ width: 900, height: 760 });
     await coordinateCanvas.scrollIntoViewIfNeeded();
@@ -3169,6 +3181,16 @@ try {
         const mapRect = map?.getBoundingClientRect();
         const mapFrameRect = mapFrame?.getBoundingClientRect();
         const resizeHandleRect = resizeHandle?.getBoundingClientRect();
+        const resizeGripRect = resizeHandle?.querySelector('.bpb-map-resize-grip')
+            ?.getBoundingClientRect();
+        const nativeZoomLocalRect = mapFrame?.contentDocument
+            ?.querySelector('.leaflet-control-zoom')?.getBoundingClientRect();
+        const nativeZoomRect = mapFrameRect && nativeZoomLocalRect ? {
+            left: mapFrameRect.left + nativeZoomLocalRect.left,
+            right: mapFrameRect.left + nativeZoomLocalRect.right,
+            top: mapFrameRect.top + nativeZoomLocalRect.top,
+            bottom: mapFrameRect.top + nativeZoomLocalRect.bottom,
+        } : null;
         const analysisRect = analysis?.getBoundingClientRect();
         const canvasRect = canvas?.getBoundingClientRect();
         const unitsRect = units?.getBoundingClientRect();
@@ -3217,7 +3239,20 @@ try {
             mapResizeTarget: resizeHandleRect && mapFrameRect ? {
                 width: resizeHandleRect.width,
                 height: resizeHandleRect.height,
-                belowMapControls: resizeHandleRect.top >= mapFrameRect.bottom - 1,
+                railHeight: mapRect.bottom - mapFrameRect.bottom,
+                overlap: mapFrameRect.bottom - resizeHandleRect.top,
+                rightAligned: Math.abs(resizeHandleRect.right - mapRect.right) <= 1,
+                bottomAligned: Math.abs(resizeHandleRect.bottom - mapRect.bottom) <= 1,
+                gripWidth: resizeGripRect?.width || 0,
+                gripHeight: resizeGripRect?.height || 0,
+                overlapsNativeZoom: nativeZoomRect ? !(
+                    resizeHandleRect.right <= nativeZoomRect.left
+                    || resizeHandleRect.left >= nativeZoomRect.right
+                    || resizeHandleRect.bottom <= nativeZoomRect.top
+                    || resizeHandleRect.top >= nativeZoomRect.bottom
+                ) : null,
+                background: getComputedStyle(resizeHandle).backgroundColor,
+                border: getComputedStyle(resizeHandle).borderWidth,
                 touchAction: getComputedStyle(resizeHandle).touchAction,
             } : null,
             chartVisible: Boolean(canvasRect) && canvasRect.top >= -1 && canvasRect.bottom <= viewportHeight + 1,
@@ -3239,9 +3274,18 @@ try {
         && routeExplorerLayout.explorerInsideViewport
         && routeExplorerLayout.analysisInsideViewport
         && routeExplorerLayout.mapVisible
-        && routeExplorerLayout.mapResizeTarget?.width >= 43.5
-        && routeExplorerLayout.mapResizeTarget?.height >= 43.5
-        && routeExplorerLayout.mapResizeTarget?.belowMapControls
+        && Math.abs(routeExplorerLayout.mapResizeTarget?.width - mapResizeGeometry.targetSize) <= 0.5
+        && Math.abs(routeExplorerLayout.mapResizeTarget?.height - mapResizeGeometry.targetSize) <= 0.5
+        && Math.abs(routeExplorerLayout.mapResizeTarget?.railHeight - mapResizeGeometry.railHeight) <= 0.5
+        && Math.abs(routeExplorerLayout.mapResizeTarget?.overlap
+            - (mapResizeGeometry.targetSize - mapResizeGeometry.railHeight)) <= 0.5
+        && routeExplorerLayout.mapResizeTarget?.rightAligned
+        && routeExplorerLayout.mapResizeTarget?.bottomAligned
+        && routeExplorerLayout.mapResizeTarget?.gripWidth === 16
+        && routeExplorerLayout.mapResizeTarget?.gripHeight === 16
+        && routeExplorerLayout.mapResizeTarget?.overlapsNativeZoom === false
+        && routeExplorerLayout.mapResizeTarget?.background === 'rgba(0, 0, 0, 0)'
+        && routeExplorerLayout.mapResizeTarget?.border === '0px'
         && routeExplorerLayout.mapResizeTarget?.touchAction === 'none'
         && routeExplorerLayout.chartVisible
         && routeExplorerLayout.fullScreenWithMap,
@@ -3379,6 +3423,12 @@ try {
             && darkCoordinateFocus.outlineWidth === '3px'
             && darkCoordinateFocus.outlineColor === 'rgb(121, 184, 255)',
         `the analyzer dark-theme focus ring was not visible: ${JSON.stringify(darkCoordinateFocus)}`);
+        if (process.env.BPB_VERIFY_ROUTE_EXPLORER_DARK_SCREENSHOT) {
+            await offPage.locator('#bpb-map-resize-handle').focus();
+            await offPage.locator('#bpb-route-explorer').screenshot({
+                path: process.env.BPB_VERIFY_ROUTE_EXPLORER_DARK_SCREENSHOT,
+            });
+        }
         if (process.env.BPB_VERIFY_ANALYZER_DARK_SCREENSHOT) {
             await settleAnalyzerChart();
             const sunToggle = offPage.locator('.bpb-sun-calculator__toggle');

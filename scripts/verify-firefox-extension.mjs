@@ -1609,6 +1609,10 @@ async function main() {
         assertState(!originalHeightSettings?.error,
             'Firefox could not stage the maximum route-explorer height', originalHeightSettings);
         await driver.switchTo().window(effectiveHeightAnalyzerHandle);
+        const mapResizeGeometry = await driver.executeScript(`
+      const coarse = matchMedia('(pointer: coarse)').matches;
+      return { coarse, railHeight: coarse ? 44 : 16, targetSize: coarse ? 44 : 24 };
+    `);
         await driver.manage().window().setRect({ width: 1200, height: 600 });
         const shortPreferredHeight = await waitForScript(driver, `
       const map = document.getElementById('bpb-map-viewport');
@@ -1617,7 +1621,7 @@ async function main() {
       const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
       const labelledHeight = Number(/by (\\d+) pixels high/.exec(
         handle?.getAttribute('aria-label') || '')?.[1]);
-      return map?.style.height === '764px' && contentHeight > 0
+      return map?.style.height === '${720 + mapResizeGeometry.railHeight}px' && contentHeight > 0
         && labelledHeight === contentHeight ? {
           viewportHeight: document.documentElement.clientHeight,
           contentHeight,
@@ -1704,7 +1708,8 @@ async function main() {
             }).catch(error => done({ error: String(error) }));
             read();
         }, firstPointerHeight.contentHeight);
-        assertState(shortPreferredHeight.contentHeight === shortPreferredHeight.viewportHeight - 16 - 44
+        assertState(shortPreferredHeight.contentHeight
+            === shortPreferredHeight.viewportHeight - 16 - mapResizeGeometry.railHeight
             && grownUntouchedHeight.contentHeight === 720
             && firstUpHeight.contentHeight === shortPreferredHeight.contentHeight - 10
             && firstDownHeight.contentHeight === shortPreferredHeight.contentHeight
@@ -1727,7 +1732,7 @@ async function main() {
         await driver.manage().window().setRect(effectiveHeightWindowRect);
         await waitForScript(driver, `
       return document.getElementById('bpb-map-viewport')?.style.height
-        === '${(originalHeightSettings.mapViewportHeight || 450) + 44}px';
+        === '${(originalHeightSettings.mapViewportHeight || 450) + mapResizeGeometry.railHeight}px';
     `, 'the restored Firefox preferred map height');
         await driver.executeScript(
             'arguments[0].scrollIntoView({ block: "center", inline: "nearest" });',
@@ -1790,12 +1795,39 @@ async function main() {
       const map = document.getElementById('bpb-map-viewport');
       const mapFrame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
       const mapHandle = document.getElementById('bpb-map-resize-handle');
+      const mapGrip = mapHandle?.querySelector('.bpb-map-resize-grip');
+      const mapRect = rect(map);
+      const mapFrameRect = rect(mapFrame);
+      const mapHandleRect = rect(mapHandle);
+      const nativeZoomLocalRect = mapFrame?.contentDocument
+        ?.querySelector('.leaflet-control-zoom')?.getBoundingClientRect();
+      const nativeZoomRect = mapFrameRect && nativeZoomLocalRect ? {
+        left: mapFrameRect.left + nativeZoomLocalRect.left,
+        right: mapFrameRect.left + nativeZoomLocalRect.right,
+        top: mapFrameRect.top + nativeZoomLocalRect.top,
+        bottom: mapFrameRect.top + nativeZoomLocalRect.bottom,
+      } : null;
       const report = document.getElementById('ascent-report');
       const splitHandle = document.getElementById('bpb-ascent-table-resize-handle');
       const summary = document.getElementById('ascent-summary');
       return {
-        mapFrame: rect(mapFrame),
-        mapHandle: rect(mapHandle),
+        mapFrame: mapFrameRect,
+        mapHandle: mapHandleRect,
+        mapRailHeight: mapRect && mapFrameRect ? mapRect.bottom - mapFrameRect.bottom : null,
+        mapOverlap: mapFrameRect && mapHandleRect ? mapFrameRect.bottom - mapHandleRect.top : null,
+        mapRightAligned: mapRect && mapHandleRect
+          ? Math.abs(mapRect.right - mapHandleRect.right) <= 1 : false,
+        mapBottomAligned: mapRect && mapHandleRect
+          ? Math.abs(mapRect.bottom - mapHandleRect.bottom) <= 1 : false,
+        mapGrip: rect(mapGrip),
+        mapOverlapsNativeZoom: nativeZoomRect && mapHandleRect ? !(
+          mapHandleRect.right <= nativeZoomRect.left
+          || mapHandleRect.left >= nativeZoomRect.right
+          || mapHandleRect.bottom <= nativeZoomRect.top
+          || mapHandleRect.top >= nativeZoomRect.bottom
+        ) : null,
+        mapBackground: mapHandle ? getComputedStyle(mapHandle).backgroundColor : null,
+        mapBorder: mapHandle ? getComputedStyle(mapHandle).borderWidth : null,
         mapTouchAction: mapHandle ? getComputedStyle(mapHandle).touchAction : null,
         report: rect(report),
         splitHandle: rect(splitHandle),
@@ -1804,9 +1836,18 @@ async function main() {
       };
     `);
         assertState(
-            firefoxResizeTargets.mapHandle?.width >= 43.5
-        && firefoxResizeTargets.mapHandle?.height >= 43.5
-        && firefoxResizeTargets.mapHandle.top >= firefoxResizeTargets.mapFrame?.bottom - 1
+            Math.abs(firefoxResizeTargets.mapHandle?.width - mapResizeGeometry.targetSize) <= 0.5
+        && Math.abs(firefoxResizeTargets.mapHandle?.height - mapResizeGeometry.targetSize) <= 0.5
+        && Math.abs(firefoxResizeTargets.mapRailHeight - mapResizeGeometry.railHeight) <= 0.5
+        && Math.abs(firefoxResizeTargets.mapOverlap
+            - (mapResizeGeometry.targetSize - mapResizeGeometry.railHeight)) <= 0.5
+        && firefoxResizeTargets.mapRightAligned
+        && firefoxResizeTargets.mapBottomAligned
+        && Math.abs(firefoxResizeTargets.mapGrip?.width - 16) <= 0.5
+        && Math.abs(firefoxResizeTargets.mapGrip?.height - 16) <= 0.5
+        && firefoxResizeTargets.mapOverlapsNativeZoom === false
+        && firefoxResizeTargets.mapBackground === 'rgba(0, 0, 0, 0)'
+        && firefoxResizeTargets.mapBorder === '0px'
         && firefoxResizeTargets.mapTouchAction === 'none'
         && Math.abs(firefoxResizeTargets.splitHandle?.width - 13) <= 0.5
         && firefoxResizeTargets.splitHandle?.height >= 43.5

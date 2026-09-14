@@ -3,7 +3,7 @@
 
 #bpb-terrain-frame {
     position: absolute;
-    inset: 0 0 44px;
+    inset: 0 0 var(--bpb-map-resize-rail-height, 16px);
     z-index: 2;
     overflow: hidden;
     border: 1px solid #b8b3aa;
@@ -11,7 +11,7 @@
     background: #d9ded2;
     box-sizing: border-box;
     width: 100%;
-    height: calc(100% - 44px);
+    height: calc(100% - var(--bpb-map-resize-rail-height, 16px));
     opacity: 0;
     pointer-events: none;
 }

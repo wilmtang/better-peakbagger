@@ -11,9 +11,15 @@ import { mapViewport as MapViewport } from '../../src/gpx/map-viewport.js';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const BOUNDS = { minWidth: 320, maxWidth: 1400, minHeight: 240, maxHeight: 720 };
-const RESIZE_RAIL_HEIGHT = 44;
+const RESIZE_RAIL_HEIGHT = 16;
+const RESIZE_TARGET_SIZE = 24;
 
-const setup = ({ size = { width: 600, height: 400 }, persistDelayMs = 400 } = {}) => {
+const setup = ({
+    size = { width: 600, height: 400 },
+    railHeight = RESIZE_RAIL_HEIGHT,
+    targetSize = RESIZE_TARGET_SIZE,
+    persistDelayMs = 400,
+} = {}) => {
     const dom = new JSDOM('<!doctype html><body><p><iframe src="MasterMap.aspx"></iframe></p></body>', {
         pretendToBeVisual: true
     });
@@ -32,7 +38,8 @@ const setup = ({ size = { width: 600, height: 400 }, persistDelayMs = 400 } = {}
         iframe,
         size,
         bounds: BOUNDS,
-        railHeight: RESIZE_RAIL_HEIGHT,
+        railHeight,
+        targetSize,
         persistDelayMs,
         onPersist: value => persists.push(value),
         onInvalidated: () => invalidated.push(true),
@@ -69,13 +76,30 @@ test('the viewport wraps the map frame and exposes a resize handle', () => {
         assert.ok(handle, 'a resize affordance exists');
         assert.match(handle.getAttribute('aria-label'), /Use arrow keys for small steps/,
             'the handle is reachable and described for keyboard users');
+        assert.equal(handle.style.width, '24px');
+        assert.equal(handle.style.height, '24px');
+        assert.equal(handle.style.zIndex, '4', 'the overlapping target stays above both map renderers');
+        assert.equal(handle.style.touchAction, 'none');
+        assert.ok(handle.querySelector('.bpb-map-resize-grip'),
+            'the visible affordance is separate from the interaction target');
+        assert.equal(handle.textContent, '', 'the grip uses quiet lines rather than a filled glyph');
+        assert.equal(iframe.style.height, 'calc(100% - 16px)',
+            'fine pointers use a compact rail below the map controls');
+        assert.equal(viewport.element.style.width, '600px');
+        assert.equal(viewport.element.style.height, '416px', 'height includes only the compact rail');
+        assert.equal(viewport.element.style.getPropertyValue('--bpb-map-resize-rail-height'), '16px');
+    } finally { restore(); }
+});
+
+test('a coarse-pointer configuration keeps a full touch target below the map', () => {
+    const { dom, viewport, iframe, restore } = setup({ railHeight: 44, targetSize: 44 });
+    try {
+        const handle = dom.window.document.getElementById('bpb-map-resize-handle');
         assert.equal(handle.style.width, '44px');
         assert.equal(handle.style.height, '44px');
-        assert.equal(handle.style.touchAction, 'none');
-        assert.equal(iframe.style.height, 'calc(100% - 44px)',
-            'the hit target owns a dedicated rail instead of covering map controls');
-        assert.equal(viewport.element.style.width, '600px');
-        assert.equal(viewport.element.style.height, '444px', 'height includes the resize rail');
+        assert.equal(iframe.style.height, 'calc(100% - 44px)');
+        assert.equal(viewport.element.style.height, '444px');
+        assert.equal(viewport.element.style.getPropertyValue('--bpb-map-resize-rail-height'), '44px');
     } finally { restore(); }
 });
 
@@ -91,8 +115,8 @@ test('sizes are clamped to the schema bounds the caller supplies', () => {
 
 for (const [name, preferredHeight, wrapperHeightCap, effectiveHeight] of [
     ['minimum preference in a tall window', BOUNDS.minHeight, 1200, BOUNDS.minHeight],
-    ['default preference in a short window', 450, 394, 350],
-    ['maximum preference in a short window', BOUNDS.maxHeight, 584, 540],
+    ['default preference in a short window', 450, 394, 378],
+    ['maximum preference in a short window', BOUNDS.maxHeight, 584, 568],
     ['maximum preference in a tall window', BOUNDS.maxHeight, 1200, BOUNDS.maxHeight],
 ]) {
     test(`${name} reports measured map content, not the resize rail or hidden preference`, async () => {
@@ -119,17 +143,17 @@ test('the first keyboard and pointer deltas start from visible short-window heig
         viewport.scheduleInvalidate();
         await new Promise(resolve => setTimeout(resolve, 30));
         const handle = dom.window.document.getElementById('bpb-map-resize-handle');
-        assert.equal(viewport.effectiveSize.height, 540);
+        assert.equal(viewport.effectiveSize.height, 568);
 
         handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
             key: 'ArrowUp', bubbles: true, cancelable: true,
         }));
-        assert.equal(viewport.effectiveSize.height, 530,
+        assert.equal(viewport.effectiveSize.height, 558,
             'the first key changes rendered map content by one step');
-        assert.equal(viewport.size.height, 530,
+        assert.equal(viewport.size.height, 558,
             'direct interaction deliberately replaces the hidden preference');
         await new Promise(resolve => setTimeout(resolve, 80));
-        assert.deepEqual(persists, [{ width: 600, height: 530 }]);
+        assert.deepEqual(persists, [{ width: 600, height: 558 }]);
 
         viewport.element.parentElement.getBoundingClientRect = () => ({
             left: 0, right: 600, width: 600,
@@ -140,12 +164,12 @@ test('the first keyboard and pointer deltas start from visible short-window heig
         handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
             pointerId: 5, pointerType: 'touch', buttons: 1, clientX: 600, clientY: 529,
         }));
-        assert.equal(viewport.effectiveSize.height, 529,
+        assert.equal(viewport.effectiveSize.height, 557,
             'the first pointer pixel changes rendered map content by one pixel');
         handle.dispatchEvent(pointerEvent(dom, 'pointerup', {
             pointerId: 5, pointerType: 'touch', clientX: 600, clientY: 529,
         }));
-        assert.deepEqual(persists.at(-1), { width: 600, height: 529 });
+        assert.deepEqual(persists.at(-1), { width: 600, height: 557 });
     } finally { restore(); }
 });
 
@@ -161,7 +185,7 @@ test('window growth restores only an untouched preferred height', async () => {
         });
         viewport.scheduleInvalidate();
         await new Promise(resolve => setTimeout(resolve, 30));
-        assert.equal(viewport.effectiveSize.height, 540);
+        assert.equal(viewport.effectiveSize.height, 568);
 
         wrapperHeightCap = 1200;
         dom.window.dispatchEvent(new dom.window.Event('resize'));
@@ -175,11 +199,11 @@ test('window growth restores only an untouched preferred height', async () => {
         await new Promise(resolve => setTimeout(resolve, 30));
         const handle = dom.window.document.getElementById('bpb-map-resize-handle');
         handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
-        assert.equal(viewport.size.height, 530);
+        assert.equal(viewport.size.height, 558);
         wrapperHeightCap = 1200;
         dom.window.dispatchEvent(new dom.window.Event('resize'));
         await new Promise(resolve => setTimeout(resolve, 30));
-        assert.equal(viewport.effectiveSize.height, 530,
+        assert.equal(viewport.effectiveSize.height, 558,
             'window growth does not resurrect a preference replaced by direct interaction');
     } finally { restore(); }
 });

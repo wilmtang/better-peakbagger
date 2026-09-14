@@ -80,6 +80,51 @@ export const gpxPanelCss = `
 #bpb-route-explorer[data-layout="side"] > .bpb-route-explorer__map-column > #bpb-map-viewport {
     max-block-size: calc(100vh - 16px) !important;
 }
+#bpb-map-resize-handle {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    appearance: none !important;
+}
+#bpb-map-resize-handle .bpb-map-resize-grip {
+    box-sizing: border-box;
+    border-radius: 2px;
+    opacity: 0.58;
+}
+#bpb-map-resize-handle .bpb-map-resize-grip::before,
+#bpb-map-resize-handle .bpb-map-resize-grip::after {
+    content: "";
+    position: absolute;
+    right: 1px;
+    bottom: 2px;
+    height: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    transform: rotate(45deg);
+    transform-origin: right center;
+}
+#bpb-map-resize-handle .bpb-map-resize-grip::before {
+    width: 14px;
+}
+#bpb-map-resize-handle .bpb-map-resize-grip::after {
+    right: 7px;
+    width: 7px;
+}
+#bpb-map-resize-handle:hover .bpb-map-resize-grip,
+#bpb-map-resize-handle:active .bpb-map-resize-grip,
+#bpb-map-resize-handle:focus-visible .bpb-map-resize-grip {
+    opacity: 1;
+}
+#bpb-map-resize-handle:focus-visible .bpb-map-resize-grip {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+}
 #bpb-route-explorer .bpb-route-explorer__map-details {
     inline-size: 100%;
     min-inline-size: 0;
