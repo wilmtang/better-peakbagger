@@ -2066,7 +2066,8 @@ async function main() {
       const mount = document.getElementById("bpb-map-viewport");
       const sun = document.querySelector(".bpb-sun-calculator");
       return button && mount && sun && !button.disabled ? {
-        links: document.querySelectorAll("#bpb-peak-links a").length,
+        links: Array.from(document.querySelectorAll("#bpb-peak-links a"),
+          link => link.textContent.trim()),
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         framePreserved: document.getElementById("Gmap")?.parentElement === mount,
         sunAfterMap: mount.nextElementSibling === sun,
@@ -2086,7 +2087,11 @@ async function main() {
     `, 'the Firefox Peak surface', 10_000, state =>
             /^rotate\(/.test(state?.moonMarker || '') && state?.moonBand === true);
         assertState(
-            peakState.links >= 4 && peakState.theme !== null && peakState.framePreserved
+            peakState.links?.length === 3
+        && peakState.links[0] === 'Windy summit forecast'
+        && peakState.links[1] === 'Copernicus satellite imagery'
+        && peakState.links[2] === 'AirNow fire & smoke'
+        && peakState.theme !== null && peakState.framePreserved
         && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
         && /Moon phase/i.test(peakState.moon)

@@ -337,6 +337,11 @@ archive update:
 | F2 | `b752590` | Serialized extension-origin cache mutation with Web Locks, reconciled actual shared state under the lock, failed to network-only when coordination is unavailable, and closed prefetch owners before replacement. |
 | I2 | `bc092da` | Shared candidate, nearest-encounter, and ambiguity-cap policy while preserving separate synchronous/cooperative loop and checkpoint ownership. |
 
+A post-archive verifier follow-up replaced Firefox's stale four-link count with
+the exact current Peak-link contract: Windy, Copernicus, and AirNow, with NOAA
+absent. The direct Firefox gate and the combined Chrome/Firefox gate then both
+passed.
+
 The I1 measurement used the real unpacked extension in hidden Chrome for
 Testing 153.0.8010.12 at 1280×900. At 10 KB/5 images, 100 KB/25 images, and a
 synthetic 500 KB/100 images, respectively:
@@ -377,6 +382,10 @@ an interaction budget.
   synchronous/cooperative equivalence cases for singleton segments,
   missing/reversed times, antimeridian/polar coordinates, and transitive
   ambiguity, plus the full-analysis scale cases and checkpoint assertions.
+- **Firefox verifier drift:** the end-to-end assertion now checks the three
+  current link identities instead of accepting any four links. The focused
+  peak-link tests, scoped ESLint, direct Firefox verification, and combined
+  browser verification all passed.
 
 ### Intentionally not changed
 
@@ -389,8 +398,9 @@ an interaction budget.
 - The existing report-image-caption live Peakbagger save/reopen gate remains in
   `docs/plans/report-image-captions.md`; this audit neither closes nor absorbs
   that independent release requirement.
-- The unrelated removal of the NOAA snow-depth link in `13779dd` was preserved.
-  Its stale Firefox verifier expectation was not changed as part of this audit.
+- The NOAA snow-depth link remains intentionally removed as established by
+  `13779dd`; the verifier now tests that product contract rather than restoring
+  the removed link to satisfy a count.
 
 ### Changed but not fully proven
 
@@ -407,12 +417,6 @@ an interaction budget.
   → late success → close, ordinary error, live `versionchange`, and the page's
   reload-required state. A real multi-tab browser upgrade with disposable
   libraries was not run.
-- `npm run verify:browsers` passed the real unpacked extension gate in hidden
-  Chrome, but Firefox stopped earlier at an existing Peak-link assertion:
-  three links are now rendered after `13779dd`, while the verifier still
-  requires at least four. A direct `npm run verify:firefox` rerun reproduced
-  the same unrelated failure. Targeted Firefox terrain/cache verification did
-  pass, but this is not a complete Firefox extension-gate result.
 - No live provider, live Peakbagger Save, screen-reader, physical-device, native
   window-placement, or remote-CI evidence was produced. Hidden checks do not
   establish those behaviors.
@@ -426,4 +430,7 @@ Final combined-tree checks before archival:
 - `npm run lint`: passed with the eight existing owner-reviewed web-ext warnings
   (one manifest, five MapLibre, one ProseMirror, and one TipTap warning).
 - `node --test test/project/documentation.test.mjs`: **3 passed, 0 failed**.
+- `npm run verify:browsers`: passed with the real unpacked extension in hidden
+  Chrome for Testing 153.0.8010.12 new-headless and hidden Firefox 155.0.1 at
+  1000×760. The Firefox runner also passed directly before the combined run.
 - `git diff --check`: passed.
