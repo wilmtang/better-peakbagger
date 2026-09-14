@@ -451,51 +451,47 @@ const interpolateNullable = (start, end, fraction) => {
     return start + (end - start) * fraction;
 };
 
-const findEncounters = (segments, peak, trackIndex) => {
-    const candidates = [];
-    for (const record of candidateEdges(trackIndex, peak)) {
-        const { segmentIndex, edgeIndex } = record;
-        const segment = segments[segmentIndex];
-        const cumulative = trackIndex.cumulativeBySegment[segmentIndex];
-        const offset = trackIndex.segmentOffsets[segmentIndex];
-        if (record.singleton) {
-            const candidateDistanceM = distanceM(segment[0], peak);
-            if (candidateDistanceM <= QUERY_PADDING_M) {
-                candidates.push({
-                    segmentIndex,
-                    edgeIndex: 0,
-                    fraction: 0,
-                    distanceM: candidateDistanceM,
-                    segmentDistanceM: 0,
-                    globalDistanceM: offset,
-                    lat: segment[0].lat,
-                    lon: segment[0].lon,
-                    ele: segment[0].ele,
-                    time: segment[0].time
-                });
-            }
-            continue;
-        }
-        const start = segment[edgeIndex];
-        const end = segment[edgeIndex + 1];
-        const projected = projectPointToSegment(peak, start, end);
-        if (projected.distanceM > QUERY_PADDING_M) continue;
-        const edgeLengthM = cumulative[edgeIndex + 1] - cumulative[edgeIndex];
-        const segmentDistanceM = cumulative[edgeIndex] + edgeLengthM * projected.fraction;
-        candidates.push({
+const encounterCandidate = (segments, peak, trackIndex, record) => {
+    const { segmentIndex, edgeIndex } = record;
+    const segment = segments[segmentIndex];
+    const cumulative = trackIndex.cumulativeBySegment[segmentIndex];
+    const offset = trackIndex.segmentOffsets[segmentIndex];
+    if (record.singleton) {
+        const candidateDistanceM = distanceM(segment[0], peak);
+        return candidateDistanceM <= QUERY_PADDING_M ? {
             segmentIndex,
-            edgeIndex,
-            fraction: projected.fraction,
-            distanceM: projected.distanceM,
-            segmentDistanceM,
-            globalDistanceM: offset + segmentDistanceM,
-            lat: projected.lat,
-            lon: projected.lon,
-            ele: interpolateNullable(start.ele, end.ele, projected.fraction),
-            time: interpolateNullable(start.time, end.time, projected.fraction)
-        });
+            edgeIndex: 0,
+            fraction: 0,
+            distanceM: candidateDistanceM,
+            segmentDistanceM: 0,
+            globalDistanceM: offset,
+            lat: segment[0].lat,
+            lon: segment[0].lon,
+            ele: segment[0].ele,
+            time: segment[0].time
+        } : null;
     }
+    const start = segment[edgeIndex];
+    const end = segment[edgeIndex + 1];
+    const projected = projectPointToSegment(peak, start, end);
+    if (projected.distanceM > QUERY_PADDING_M) return null;
+    const edgeLengthM = cumulative[edgeIndex + 1] - cumulative[edgeIndex];
+    const segmentDistanceM = cumulative[edgeIndex] + edgeLengthM * projected.fraction;
+    return {
+        segmentIndex,
+        edgeIndex,
+        fraction: projected.fraction,
+        distanceM: projected.distanceM,
+        segmentDistanceM,
+        globalDistanceM: offset + segmentDistanceM,
+        lat: projected.lat,
+        lon: projected.lon,
+        ele: interpolateNullable(start.ele, end.ele, projected.fraction),
+        time: interpolateNullable(start.time, end.time, projected.fraction)
+    };
+};
 
+const nearestEncounters = candidates => {
     candidates.sort((a, b) => a.globalDistanceM - b.globalDistanceM);
     const groups = [];
     for (const candidate of candidates) {
@@ -515,71 +511,24 @@ const findEncounters = (segments, peak, trackIndex) => {
         candidate.distanceM < best.distanceM ? candidate : best));
 };
 
+const findEncounters = (segments, peak, trackIndex) => {
+    const candidates = [];
+    for (const record of candidateEdges(trackIndex, peak)) {
+        const candidate = encounterCandidate(segments, peak, trackIndex, record);
+        if (candidate) candidates.push(candidate);
+    }
+    return nearestEncounters(candidates);
+};
+
 const findEncountersAsync = async (segments, peak, trackIndex, checkpoint) => {
     const candidates = [];
     let visited = 0;
     for (const record of candidateEdges(trackIndex, peak)) {
         if (++visited % 256 === 0) await checkpoint();
-        const { segmentIndex, edgeIndex } = record;
-        const segment = segments[segmentIndex];
-        const cumulative = trackIndex.cumulativeBySegment[segmentIndex];
-        const offset = trackIndex.segmentOffsets[segmentIndex];
-        if (record.singleton) {
-            const candidateDistanceM = distanceM(segment[0], peak);
-            if (candidateDistanceM <= QUERY_PADDING_M) {
-                candidates.push({
-                    segmentIndex,
-                    edgeIndex: 0,
-                    fraction: 0,
-                    distanceM: candidateDistanceM,
-                    segmentDistanceM: 0,
-                    globalDistanceM: offset,
-                    lat: segment[0].lat,
-                    lon: segment[0].lon,
-                    ele: segment[0].ele,
-                    time: segment[0].time,
-                });
-            }
-            continue;
-        }
-        const start = segment[edgeIndex];
-        const end = segment[edgeIndex + 1];
-        const projected = projectPointToSegment(peak, start, end);
-        if (projected.distanceM > QUERY_PADDING_M) continue;
-        const edgeLengthM = cumulative[edgeIndex + 1] - cumulative[edgeIndex];
-        const segmentDistanceM = cumulative[edgeIndex] + edgeLengthM * projected.fraction;
-        candidates.push({
-            segmentIndex,
-            edgeIndex,
-            fraction: projected.fraction,
-            distanceM: projected.distanceM,
-            segmentDistanceM,
-            globalDistanceM: offset + segmentDistanceM,
-            lat: projected.lat,
-            lon: projected.lon,
-            ele: interpolateNullable(start.ele, end.ele, projected.fraction),
-            time: interpolateNullable(start.time, end.time, projected.fraction),
-        });
+        const candidate = encounterCandidate(segments, peak, trackIndex, record);
+        if (candidate) candidates.push(candidate);
     }
-
-    candidates.sort((a, b) => a.globalDistanceM - b.globalDistanceM);
-    const groups = [];
-    for (const candidate of candidates) {
-        const group = groups[groups.length - 1];
-        if (!group) {
-            groups.push([candidate]);
-            continue;
-        }
-        const previous = group[group.length - 1];
-        const closeByDistance = candidate.globalDistanceM - previous.globalDistanceM <= ENCOUNTER_WINDOW_M;
-        const closeByTime = candidate.time === null || previous.time === null
-            || candidate.time - previous.time <= ENCOUNTER_WINDOW_MS;
-        if (candidate.segmentIndex === previous.segmentIndex && closeByDistance && closeByTime) {
-            group.push(candidate);
-        } else groups.push([candidate]);
-    }
-    return groups.map(group => group.reduce((best, candidate) =>
-        candidate.distanceM < best.distanceM ? candidate : best));
+    return nearestEncounters(candidates);
 };
 
 const cubicDecay = (value, fullAt, zeroAt) => {
@@ -666,6 +615,21 @@ const sharesEncounterWindow = (left, right) => {
     return closeDistance && closeTime;
 };
 
+const capAmbiguousGroup = (matches, group) => {
+    if (group.length < 2) return;
+    group.sort((a, b) => matches[b].confidence - matches[a].confidence);
+    const winnerHasLead = matches[group[0]].confidence - matches[group[1]].confidence >= 10;
+    group.forEach((matchIndex, position) => {
+        if (position === 0 && winnerHasLead) return;
+        const match = matches[matchIndex];
+        match.confidence = Math.min(match.confidence, 79);
+        if (match.confidence >= 60) match.classification = 'probable';
+        else if (match.confidence >= 35) match.classification = 'possible';
+        else match.classification = 'weak';
+        match.evidence.ambiguous = true;
+    });
+};
+
 const applyAmbiguityCaps = matches => {
     const remaining = new Set(matches.map((_match, index) => index));
     while (remaining.size) {
@@ -685,18 +649,7 @@ const applyAmbiguityCaps = matches => {
                 remaining.delete(index);
             }
         }
-        if (group.length < 2) continue;
-        group.sort((a, b) => matches[b].confidence - matches[a].confidence);
-        const winnerHasLead = matches[group[0]].confidence - matches[group[1]].confidence >= 10;
-        group.forEach((matchIndex, position) => {
-            if (position === 0 && winnerHasLead) return;
-            const match = matches[matchIndex];
-            match.confidence = Math.min(match.confidence, 79);
-            if (match.confidence >= 60) match.classification = 'probable';
-            else if (match.confidence >= 35) match.classification = 'possible';
-            else match.classification = 'weak';
-            match.evidence.ambiguous = true;
-        });
+        capAmbiguousGroup(matches, group);
     }
     return matches;
 };
@@ -716,18 +669,7 @@ const applyAmbiguityCapsAsync = async (matches, checkpoint) => {
                 remaining.delete(index);
             }
         }
-        if (group.length < 2) continue;
-        group.sort((a, b) => matches[b].confidence - matches[a].confidence);
-        const winnerHasLead = matches[group[0]].confidence - matches[group[1]].confidence >= 10;
-        group.forEach((matchIndex, position) => {
-            if (position === 0 && winnerHasLead) return;
-            const match = matches[matchIndex];
-            match.confidence = Math.min(match.confidence, 79);
-            if (match.confidence >= 60) match.classification = 'probable';
-            else if (match.confidence >= 35) match.classification = 'possible';
-            else match.classification = 'weak';
-            match.evidence.ambiguous = true;
-        });
+        capAmbiguousGroup(matches, group);
     }
     return matches;
 };

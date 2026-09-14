@@ -252,6 +252,94 @@ test('cooperative peak detection is result-equivalent to the indexed synchronous
     assert.ok(checkpoints >= peaks.length, 'every peak offers cancellation a checkpoint');
 });
 
+test('cooperative peak detection stays equivalent at encounter-policy boundaries', async () => {
+    const start = Date.UTC(2026, 6, 1);
+    const cases = [];
+
+    cases.push({
+        label: 'singleton segments',
+        segments: [
+            [point(47, -121, 900, start)],
+            [point(47.001, -121.001, 950, start + 60_000)]
+        ],
+        expectedMatches: 2,
+        peaks: [
+            { id: 1, name: 'First singleton', location: '', lat: 47, lon: -121, elevationM: 900 },
+            { id: 2, name: 'Second singleton', location: '', lat: 47.001, lon: -121.001, elevationM: 950 }
+        ]
+    });
+
+    const sanitized = Core.sanitizeTrack([[
+        point(40, -105, 2_000, start),
+        point(40, -104.9999, 2_010, null),
+        point(40, -104.9998, 2_020, start + 20_000),
+        point(40, -104.9997, 2_015, start + 10_000),
+        point(40, -104.9996, 2_000, start + 30_000)
+    ]]);
+    cases.push({
+        label: 'missing and reversed times after sanitization',
+        segments: sanitized.segments,
+        qualityScore: sanitized.quality.score,
+        expectedMatches: 2,
+        peaks: [
+            { id: 3, name: 'Untimed', location: '', lat: 40, lon: -104.9999, elevationM: 2_010 },
+            { id: 4, name: 'After reversal', location: '', lat: 40, lon: -104.9996, elevationM: 2_000 }
+        ]
+    });
+
+    cases.push({
+        label: 'antimeridian and polar edges',
+        segments: [
+            [point(10, 179.999, 500, start), point(10, -179.999, 510, start + 60_000)],
+            [point(89.999, 30, 700, start), point(89.999, -150, 710, start + 60_000)]
+        ],
+        expectedMatches: 2,
+        peaks: [
+            { id: 5, name: 'Dateline', location: '', lat: 10, lon: 180, elevationM: 505 },
+            { id: 6, name: 'Pole', location: '', lat: 89.999, lon: 120, elevationM: 705 }
+        ]
+    });
+
+    const bump = (index, centre) => Math.max(0, 60 - Math.abs(index - centre));
+    const ambiguitySegment = Array.from({ length: 801 }, (_value, index) => point(
+        47 + index * 0.000009,
+        -121,
+        1_000 + bump(index, 140) + bump(index, 420) + bump(index, 700),
+        start + index * 1_000
+    ));
+    const ambiguityPeak = (id, name, index) => ({
+        id, name, location: '',
+        lat: ambiguitySegment[index].lat,
+        lon: ambiguitySegment[index].lon,
+        elevationM: ambiguitySegment[index].ele
+    });
+    cases.push({
+        label: 'transitive ambiguity',
+        segments: [ambiguitySegment],
+        expectedMatches: 3,
+        peaks: [
+            ambiguityPeak(7, 'A', 140),
+            ambiguityPeak(8, 'B', 420),
+            ambiguityPeak(9, 'C', 700)
+        ]
+    });
+
+    for (const scenario of cases) {
+        const qualityScore = scenario.qualityScore ?? 1;
+        const synchronous = Core.detectPeaks(scenario.segments, scenario.peaks, qualityScore);
+        assert.equal(synchronous.length, scenario.expectedMatches, `${scenario.label} fixture coverage`);
+        let checkpoints = 0;
+        const cooperative = await Core.detectPeaksAsync(
+            scenario.segments,
+            scenario.peaks,
+            qualityScore,
+            { checkpoint: async () => { checkpoints++; } }
+        );
+        assert.deepEqual(cooperative, synchronous, scenario.label);
+        assert.ok(checkpoints >= scenario.peaks.length, `${scenario.label} must remain cancellable`);
+    }
+});
+
 test('query boxes stay short, padded, and split at the antimeridian', () => {
     const many = Array.from({ length: 220 }, (_value, index) => point(0, index * 0.0005));
     assert.ok(Core.buildQueryBoxes([many]).length > 1);
