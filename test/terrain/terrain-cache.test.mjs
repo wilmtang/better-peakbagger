@@ -301,6 +301,173 @@ test('DEM cache evicts least-recently-used tiles above its limit', async () => {
     dom.window.close();
 });
 
+test('two DEM cache owners enforce one budget and persist the retained entry', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeStorageArea();
+    const first = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => 100,
+        fetchFn: async () => webpResponse(makeWebp(700 * 1024, 1))
+    });
+    const second = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => 200,
+        fetchFn: async () => webpResponse(makeWebp(700 * 1024, 2))
+    });
+
+    await Promise.all([
+        first.load({ url: 'bpb-dem://1/0/0.webp' }),
+        second.load({ url: 'bpb-dem://1/1/0.webp' })
+    ]);
+    assert.deepEqual(await Promise.all([first.close(), second.flush()]), [true, true]);
+
+    const usage = await module.getUsage({ cacheStorage, storageArea });
+    assert.deepEqual(usage, { bytes: 700 * 1024, entries: 1, unmeasuredEntries: 0 });
+    const cache = await cacheStorage.open(module.CACHE_NAME);
+    assert.deepEqual(Object.keys(storageArea.values[module.INDEX_KEY]), [...cache.entries.keys()],
+        'the shared index must describe the one retained CacheStorage entry');
+    await second.close();
+    dom.window.close();
+});
+
+test('two owners storing the same DEM tile retain one indexed copy', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeStorageArea();
+    let fetches = 0;
+    let releaseFetches;
+    const fetchGate = new Promise(resolve => { releaseFetches = resolve; });
+    const makeOwner = marker => module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        fetchFn: async () => {
+            fetches++;
+            await fetchGate;
+            return webpResponse(makeWebp(700 * 1024, marker));
+        }
+    });
+    const first = makeOwner(3);
+    const second = makeOwner(4);
+    const request = { url: 'bpb-dem://1/1/0.webp' };
+    const pending = Promise.all([first.load(request), second.load(request)]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(fetches, 2, 'network ownership remains local to each context');
+    releaseFetches();
+    await pending;
+    await Promise.all([first.flush(), second.flush()]);
+
+    assert.deepEqual(await module.getUsage({ cacheStorage, storageArea }), {
+        bytes: 700 * 1024, entries: 1, unmeasuredEntries: 0
+    });
+    assert.deepEqual(Object.keys(storageArea.values[module.INDEX_KEY]), [
+        'https://tiles.mapterhorn.com/1/1/0.webp'
+    ]);
+    await Promise.all([first.close(), second.close()]);
+    dom.window.close();
+});
+
+test('concurrent cross-owner cache hits guide later shared eviction', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeStorageArea();
+    let seedClock = 0;
+    const seed = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => ++seedClock,
+        fetchFn: async url => webpResponse(makeWebp(400 * 1024, url.includes('/0/0.webp') ? 1 : 2))
+    });
+    await seed.load({ url: 'bpb-dem://2/0/0.webp' });
+    await seed.load({ url: 'bpb-dem://2/1/0.webp' });
+    await seed.close();
+
+    const hitOwner = (used, url) => {
+        const owner = module.create({
+            limitMb: 1,
+            cacheStorage,
+            storageArea,
+            ResponseCtor: Response,
+            now: () => used,
+            fetchFn: async () => { throw new Error(`expected ${url} to be cached`); }
+        });
+        return { owner, pending: owner.load({ url }) };
+    };
+    const firstHit = hitOwner(100, 'bpb-dem://2/0/0.webp');
+    const secondHit = hitOwner(200, 'bpb-dem://2/1/0.webp');
+    await Promise.all([firstHit.pending, secondHit.pending]);
+
+    const writer = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => 300,
+        fetchFn: async () => webpResponse(makeWebp(400 * 1024, 3))
+    });
+    await writer.load({ url: 'bpb-dem://2/2/0.webp' });
+    await writer.flush();
+
+    const cache = await cacheStorage.open(module.CACHE_NAME);
+    assert.deepEqual([...cache.entries.keys()], [
+        'https://tiles.mapterhorn.com/2/1/0.webp',
+        'https://tiles.mapterhorn.com/2/2/0.webp'
+    ], 'the least-recent cross-owner hit must be the tile evicted');
+    assert.deepEqual(Object.keys(storageArea.values[module.INDEX_KEY]), [...cache.entries.keys()]);
+    await Promise.all([firstHit.owner.close(), secondHit.owner.close(), writer.close()]);
+    dom.window.close();
+});
+
+test('a replacement DEM owner applies a lower or zero cache limit', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeStorageArea();
+    let clock = 0;
+    const larger = module.create({
+        limitMb: 2,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        now: () => ++clock,
+        fetchFn: async () => webpResponse(makeWebp(700 * 1024, clock + 1))
+    });
+    await larger.load({ url: 'bpb-dem://1/0/0.webp' });
+    await larger.load({ url: 'bpb-dem://1/1/0.webp' });
+    await larger.close();
+    assert.equal((await module.getUsage({ cacheStorage, storageArea })).entries, 2);
+
+    const smaller = module.create({
+        limitMb: 1, cacheStorage, storageArea, ResponseCtor: Response,
+        fetchFn: async () => { throw new Error('limit reconciliation needs no network'); }
+    });
+    assert.equal(await smaller.flush(), true);
+    assert.deepEqual(await module.getUsage({ cacheStorage, storageArea }), {
+        bytes: 700 * 1024, entries: 1, unmeasuredEntries: 0
+    });
+    await smaller.close();
+
+    const disabled = module.create({
+        limitMb: 0, cacheStorage, storageArea, ResponseCtor: Response,
+        fetchFn: async () => webpResponse(makeWebp())
+    });
+    assert.equal(await disabled.flush(), true);
+    assert.deepEqual(await module.getUsage({ cacheStorage, storageArea }), {
+        bytes: 0, entries: 0, unmeasuredEntries: 0
+    });
+    assert.equal(storageArea.values[module.INDEX_KEY], undefined);
+    dom.window.close();
+});
+
 test('a zero DEM cache limit clears owned best-effort storage', async () => {
     const { dom, module } = loadCacheModule();
     const cacheStorage = new MemoryCacheStorage();

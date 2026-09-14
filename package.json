@@ -30,6 +30,7 @@
     "verify:packages": "node scripts/verify-packaged-extensions.mjs",
     "terrain:verify": "npm run build && node scripts/verify-terrain-visual.mjs",
     "terrain:verify:firefox": "npm run build && node scripts/verify-firefox-terrain.mjs",
+    "terrain:verify:cache-owners": "npm run build && node scripts/verify-terrain-cache-owners.mjs",
     "terrain:lod": "npm run build && node scripts/verify-terrain-lod.mjs",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",
     "package": "npm run build:release && web-ext build --source-dir dist --overwrite-dest",

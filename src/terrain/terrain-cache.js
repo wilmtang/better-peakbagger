@@ -28,6 +28,7 @@ const TILE_TIMEOUT_MS = 20000;
 // applies before MapLibre or the cache receives any one response.
 const MAX_TILE_BYTES = 1024 * 1024;
 const INDEX_KEY = 'bpbMapterhornDemIndexV1';
+const COORDINATION_LOCK = 'bpb-mapterhorn-dem-cache-v1';
 const PROTOCOL = 'bpb-dem';
 const REMOTE_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
 const MAX_ZOOM = 18;
@@ -201,15 +202,36 @@ const parseTileUrl = value => {
     return `${REMOTE_TILE_ORIGIN}/${z}/${x}/${y}.webp`;
 };
 
+// Production owners coordinate through Web Locks, whose storage-bucket scope
+// spans extension windows and workers. Unit tests inject CacheStorage adapters
+// into one JavaScript realm, so give those adapters the same serialization
+// semantics without pretending this fallback coordinates browser contexts.
+let adapterLockTail = Promise.resolve();
+const adapterLockManager = {
+    request(_name, callback) {
+        const result = adapterLockTail.then(() => callback());
+        adapterLockTail = result.catch(() => {});
+        return result;
+    }
+};
+
+const resolveLockManager = (lockManager, cacheStorage) => {
+    if (lockManager !== undefined) return lockManager;
+    const browserLocks = globalThis.navigator?.locks;
+    if (browserLocks && typeof browserLocks.request === 'function') return browserLocks;
+    return cacheStorage ? adapterLockManager : null;
+};
+
 const create = ({
     limitMb, cacheStorage, storageArea, fetchFn, ResponseCtor,
-    now = Date.now, tileTimeoutMs = TILE_TIMEOUT_MS,
+    now = Date.now, tileTimeoutMs = TILE_TIMEOUT_MS, lockManager,
 }) => {
     const limitBytes = Math.max(0, Math.floor(limitMb)) * 1024 * 1024;
     const cacheApi = cacheStorage || globalThis.caches;
     const local = resolveStorageArea(storageArea);
     const request = fetchFn || globalThis.fetch.bind(globalThis);
     const CachedResponse = ResponseCtor || globalThis.Response;
+    const locks = resolveLockManager(lockManager, cacheStorage);
     let statePromise = null;
     let writeQueue = Promise.resolve();
     let persistenceQueue = Promise.resolve();
@@ -218,26 +240,12 @@ const create = ({
     let dirtyGeneration = 0;
     let persistedGeneration = 0;
     let closePromise = null;
+    let storeDrainActive = false;
     const inFlight = new Map();
     const activeLoads = new Set();
+    const pendingStores = [];
 
-    const saveIndex = async state => {
-        if (!local || typeof local.set !== 'function' || !state) return false;
-        const generation = dirtyGeneration;
-        if (generation <= persistedGeneration) return true;
-        const snapshot = Object.fromEntries(Object.entries(state.index)
-            .map(([url, entry]) => [url, { size: entry.size, used: entry.used }]));
-        let saved = false;
-        persistenceQueue = persistenceQueue.then(async () => {
-            try {
-                await local.set({ [INDEX_KEY]: snapshot });
-                persistedGeneration = Math.max(persistedGeneration, generation);
-                saved = true;
-            } catch (error) { /* Cache data remains usable without its LRU index. */ }
-        }).catch(() => {});
-        await persistenceQueue;
-        return saved;
-    };
+    const withCacheLock = callback => locks.request(COORDINATION_LOCK, callback);
 
     const removeStoredIndex = async () => {
         if (!local || typeof local.remove !== 'function') return;
@@ -274,6 +282,86 @@ const create = ({
         return changed;
     };
 
+    const snapshotIndex = state => Object.fromEntries(Object.entries(state.index)
+        .map(([url, entry]) => [url, { size: entry.size, used: entry.used }]));
+
+    const sameIndex = (left, right) => {
+        const leftEntries = Object.entries(left);
+        const rightEntries = Object.entries(right);
+        if (leftEntries.length !== rightEntries.length) return false;
+        return leftEntries.every(([url, entry]) => right[url]
+            && right[url].size === entry.size && right[url].used === entry.used);
+    };
+
+    const reconcile = async state => {
+        const [requests, storedIndex] = await Promise.all([
+            state.cache.keys(),
+            readStoredIndex(local)
+        ]);
+        const index = {};
+
+        for (const item of requests) {
+            const url = typeof item === 'string' ? item : item.url;
+            if (!url?.startsWith(`${REMOTE_TILE_ORIGIN}/`)) {
+                await state.cache.delete(item);
+                continue;
+            }
+            const response = await state.cache.match(item);
+            if (!response) continue;
+            const cachedSize = Number(responseHeader(response, 'x-bpb-size'));
+            const cachedUsed = Number(responseHeader(response, 'x-bpb-used'));
+            const candidates = [state.index[url], storedIndex[url]].filter(Boolean);
+            const fallbackSize = candidates.find(entry => Number.isFinite(entry.size))?.size;
+            const size = Number.isFinite(cachedSize) ? cachedSize : fallbackSize;
+            const used = Math.max(
+                Number.isFinite(cachedUsed) && cachedUsed > 0 ? cachedUsed : 0,
+                ...candidates.map(entry => entry.used)
+            );
+            if (!Number.isFinite(size) || size <= 0 || size > MAX_TILE_BYTES || used <= 0) {
+                await state.cache.delete(item);
+                continue;
+            }
+            index[url] = { size: Math.floor(size), used: Math.floor(used) };
+        }
+
+        const orderedEntries = Object.entries(index).sort((a, b) => a[1].used - b[1].used);
+        state.index = index;
+        state.lru = new Map(orderedEntries);
+        state.totalBytes = orderedEntries.reduce((sum, [, entry]) => sum + entry.size, 0);
+        return { storedIndex, metadataChanged: !sameIndex(index, storedIndex) };
+    };
+
+    const persistSnapshot = async (state, storedIndex) => {
+        if (!local || typeof local.set !== 'function') return false;
+        const snapshot = snapshotIndex(state);
+        const generation = dirtyGeneration;
+        if (!sameIndex(snapshot, storedIndex)) await local.set({ [INDEX_KEY]: snapshot });
+        persistedGeneration = Math.max(persistedGeneration, generation);
+        return true;
+    };
+
+    const saveIndex = async (state, { force = false } = {}) => {
+        if (!local || typeof local.set !== 'function' || !state) return false;
+        if (!force && dirtyGeneration <= persistedGeneration) return true;
+        let saved = false;
+        persistenceQueue = persistenceQueue.then(async () => {
+            if (!force && dirtyGeneration <= persistedGeneration) {
+                saved = true;
+                return;
+            }
+            try {
+                await withCacheLock(async () => {
+                    const { storedIndex, metadataChanged } = await reconcile(state);
+                    const trimmed = await trim(state);
+                    if (metadataChanged || trimmed) dirtyGeneration++;
+                    saved = await persistSnapshot(state, storedIndex);
+                });
+            } catch (error) { /* Cache data remains usable without its LRU index. */ }
+        }).catch(() => {});
+        await persistenceQueue;
+        return saved;
+    };
+
     const scheduleSave = state => {
         if (saveTimer !== null || !state || closed) return;
         saveTimer = setTimeout(() => {
@@ -288,54 +376,32 @@ const create = ({
         }, 1000);
     };
 
-    const markDirty = state => {
+    const persistMutation = async (state, storedIndex) => {
         dirtyGeneration++;
+        try {
+            if (await persistSnapshot(state, storedIndex)) return true;
+        } catch (error) { /* Cache data remains usable without its LRU index. */ }
         scheduleSave(state);
+        return false;
     };
 
     const initialize = async () => {
-        if (!cacheApi || typeof cacheApi.open !== 'function') return null;
-        if (limitBytes === 0) {
-            try { await cacheApi.delete(CACHE_NAME); } catch (error) { /* Best-effort cleanup. */ }
-            await removeStoredIndex();
-            return null;
-        }
-
-        const [cache, storedIndex] = await Promise.all([cacheApi.open(CACHE_NAME), readStoredIndex(local)]);
-        const requests = await cache.keys();
-        const actualUrls = new Set(requests.map(item => item.url));
-        const index = Object.fromEntries(Object.entries(storedIndex).filter(([url]) => actualUrls.has(url)));
-        let metadataChanged = Object.keys(index).length !== Object.keys(storedIndex).length;
-
-        // Rebuild metadata if the browser kept CacheStorage but purged the
-        // small local index independently.
-        for (const item of requests) {
-            if (index[item.url]) continue;
-            const response = await cache.match(item);
-            const size = Number(response && response.headers.get('x-bpb-size'));
-            const used = Number(response && response.headers.get('x-bpb-used'));
-            if (Number.isFinite(size) && size > 0 && size <= MAX_TILE_BYTES) {
-                index[item.url] = {
-                    size: Math.floor(size),
-                    used: Number.isFinite(used) && used > 0 ? Math.floor(used) : now()
-                };
-                metadataChanged = true;
-            } else {
-                await cache.delete(item);
-                metadataChanged = true;
+        if (!cacheApi || typeof cacheApi.open !== 'function' || !locks) return null;
+        return withCacheLock(async () => {
+            if (limitBytes === 0) {
+                try { await cacheApi.delete(CACHE_NAME); } catch (error) { /* Best-effort cleanup. */ }
+                await removeStoredIndex();
+                return null;
             }
-        }
 
-        const orderedEntries = Object.entries(index).sort((a, b) => a[1].used - b[1].used);
-        const state = {
-            cache,
-            index,
-            lru: new Map(orderedEntries),
-            totalBytes: orderedEntries.reduce((sum, [, entry]) => sum + entry.size, 0),
-        };
-        if (await trim(state)) metadataChanged = true;
-        if (metadataChanged) markDirty(state);
-        return state;
+            const cache = await cacheApi.open(CACHE_NAME);
+            const state = { cache, index: {}, lru: new Map(), totalBytes: 0 };
+            const { storedIndex, metadataChanged } = await reconcile(state);
+            const trimmed = await trim(state);
+            const changed = metadataChanged || trimmed;
+            if (changed) await persistMutation(state, storedIndex);
+            return state;
+        });
     };
 
     const getState = () => {
@@ -346,46 +412,94 @@ const create = ({
     const read = async remoteUrl => {
         const state = await getState();
         if (!state) return null;
+        let data;
         try {
             const response = await state.cache.match(remoteUrl);
-            if (!response) {
-                if (removeIndexEntry(state, remoteUrl)) markDirty(state);
-                return null;
-            }
-            const data = await readBoundedWebp(response);
-            setIndexEntry(state, remoteUrl, { size: data.byteLength, used: now() });
-            markDirty(state);
-            return data;
+            if (!response) return null;
+            data = await readBoundedWebp(response);
         } catch (error) {
-            try { await state.cache.delete(remoteUrl); } catch (deleteError) { /* Best-effort corrupt-entry cleanup. */ }
-            if (removeIndexEntry(state, remoteUrl)) markDirty(state);
+            try {
+                await withCacheLock(async () => {
+                    const { storedIndex, metadataChanged } = await reconcile(state);
+                    let changed = metadataChanged;
+                    try { changed = await state.cache.delete(remoteUrl) || changed; } catch (deleteError) { /* Best effort. */ }
+                    changed = removeIndexEntry(state, remoteUrl) || changed;
+                    if (changed) await persistMutation(state, storedIndex);
+                });
+            } catch (deleteError) { /* A corrupt cache entry remains a network miss. */ }
             return null;
         }
+
+        try {
+            await withCacheLock(async () => {
+                const { storedIndex, metadataChanged } = await reconcile(state);
+                let changed = metadataChanged;
+                // Another owner may have evicted the response after this read
+                // cloned it. Return that safe clone, but do not resurrect an
+                // index row for a tile no longer present in CacheStorage.
+                if (state.index[remoteUrl]) {
+                    setIndexEntry(state, remoteUrl, { size: data.byteLength, used: now() });
+                    changed = true;
+                }
+                if (changed) await persistMutation(state, storedIndex);
+            });
+        } catch (error) { /* LRU metadata is best effort after a valid hit. */ }
+        return data;
+    };
+
+    const drainStores = () => {
+        if (storeDrainActive) return;
+        storeDrainActive = true;
+        writeQueue = (async () => {
+            // Let already-settled tile reads join one cross-context commit.
+            await Promise.resolve();
+            const state = await getState();
+            if (!state) {
+                pendingStores.length = 0;
+                return;
+            }
+            while (pendingStores.length) {
+                await withCacheLock(async () => {
+                    const batch = pendingStores.splice(0);
+                    const { storedIndex, metadataChanged } = await reconcile(state);
+                    let changed = metadataChanged;
+                    for (const { remoteUrl, data, contentType } of batch) {
+                        if (data.byteLength > limitBytes || data.byteLength > MAX_TILE_BYTES) continue;
+                        const used = now();
+                        const response = new CachedResponse(data.slice(0), {
+                            status: 200,
+                            headers: {
+                                'content-type': contentType || 'image/webp',
+                                'x-bpb-size': String(data.byteLength),
+                                'x-bpb-used': String(used)
+                            }
+                        });
+                        try {
+                            await state.cache.put(remoteUrl, response);
+                            setIndexEntry(state, remoteUrl, { size: data.byteLength, used });
+                            changed = true;
+                        } catch (error) {
+                            // Quota pressure or browser eviction is a normal
+                            // miss, never a reason to fail terrain rendering.
+                        }
+                    }
+                    changed = await trim(state) || changed;
+                    if (changed) await persistMutation(state, storedIndex);
+                });
+            }
+        })().catch(() => {
+            // Cache coordination/storage is best effort; tile consumers have
+            // already received validated network bytes.
+            pendingStores.length = 0;
+        }).finally(() => {
+            storeDrainActive = false;
+            if (pendingStores.length) drainStores();
+        });
     };
 
     const enqueueStore = (remoteUrl, data, contentType) => {
-        writeQueue = writeQueue.then(async () => {
-            const state = await getState();
-            if (!state || data.byteLength > limitBytes || data.byteLength > MAX_TILE_BYTES) return;
-            const used = now();
-            const response = new CachedResponse(data.slice(0), {
-                status: 200,
-                headers: {
-                    'content-type': contentType || 'image/webp',
-                    'x-bpb-size': String(data.byteLength),
-                    'x-bpb-used': String(used)
-                }
-            });
-            try {
-                await state.cache.put(remoteUrl, response);
-                setIndexEntry(state, remoteUrl, { size: data.byteLength, used });
-                await trim(state);
-                markDirty(state);
-            } catch (error) {
-            // Quota pressure or browser eviction is a normal cache miss,
-            // never a reason to fail terrain rendering.
-            }
-        }).catch(() => {});
+        pendingStores.push({ remoteUrl, data, contentType });
+        drainStores();
     };
 
     const startNetworkLoad = remoteUrl => {
@@ -498,9 +612,9 @@ const create = ({
             saveTimer = null;
         }
         await persistenceQueue;
-        if (!state || dirtyGeneration <= persistedGeneration) return true;
+        if (!state) return true;
         for (let attempt = 0; attempt < attempts; attempt++) {
-            if (await saveIndex(state)) {
+            if (await saveIndex(state, { force: true })) {
                 await persistenceQueue;
                 if (dirtyGeneration <= persistedGeneration) return true;
             }
@@ -522,7 +636,7 @@ const create = ({
             // A transient storage failure gets one final retry. Persistent
             // quota/privacy failures remain best effort, but the false return
             // makes the unpersisted generation observable to the owner.
-            return flush({ attempts: 2 });
+            return flush({ attempts: 1 });
         })();
         return closePromise;
     };

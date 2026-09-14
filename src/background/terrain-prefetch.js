@@ -10,10 +10,26 @@ const PREFETCH_TILE_CAP = 32;
 const PREFETCH_CONCURRENCY = 4;
 const PREFETCH_DEDUPE_TTL_MS = 10 * 60 * 1000;
 
-export function createTerrainPrefetch({ isPeakbaggerSender, consumeActivation, mapWithConcurrency, now }) {
+export function createTerrainPrefetch({
+    isPeakbaggerSender, consumeActivation, mapWithConcurrency, now,
+    getSettings = () => Settings.get(),
+    createCache = limitMb => TerrainCache.create({ limitMb })
+}) {
     const lastByTab = new Map();
     const recentTiles = new Map();
     let cacheState = null;
+    let cacheTransition = Promise.resolve();
+
+    const cacheForLimit = limitMb => {
+        const transition = cacheTransition.then(async () => {
+            if (cacheState?.limitMb === limitMb) return cacheState.cache;
+            if (cacheState) await cacheState.cache.close();
+            cacheState = limitMb === null ? null : { limitMb, cache: createCache(limitMb) };
+            return cacheState?.cache || null;
+        });
+        cacheTransition = transition.then(() => {}, () => {});
+        return transition;
+    };
 
     const validViewport = viewport => !!viewport
         && Number.isFinite(viewport.width) && viewport.width >= 100 && viewport.width <= 8192
@@ -51,10 +67,11 @@ export function createTerrainPrefetch({ isPeakbaggerSender, consumeActivation, m
             || !consumeActivation(message?.activation, sender)) {
             return { ok: false, reason: 'activation' };
         }
-        const settings = await Settings.get();
+        const settings = await getSettings();
         // 3D enablement is the consent gate for contacting Mapterhorn; a zero
         // cache budget means there is nothing to warm.
         if (settings.enable3dMap !== true || !(settings.terrainCacheLimitMb > 0)) {
+            await cacheForLimit(null);
             return { ok: false, reason: 'disabled' };
         }
         if (!validViewport(message && message.viewport)) return { ok: false, reason: 'invalid' };
@@ -73,9 +90,7 @@ export function createTerrainPrefetch({ isPeakbaggerSender, consumeActivation, m
         lastByTab.set(tabId, nowMs);
 
         const limitMb = settings.terrainCacheLimitMb;
-        if (!cacheState || cacheState.limitMb !== limitMb) {
-            cacheState = { limitMb, cache: TerrainCache.create({ limitMb }) };
-        }
+        const cache = await cacheForLimit(limitMb);
 
         for (const [key, expiry] of recentTiles) {
             if (expiry <= nowMs) recentTiles.delete(key);
@@ -90,7 +105,7 @@ export function createTerrainPrefetch({ isPeakbaggerSender, consumeActivation, m
 
         const warmed = await mapWithConcurrency(fresh, PREFETCH_CONCURRENCY, async ({ tile, key }) => {
             try {
-                await cacheState.cache.load({ url: `bpb-dem://${tile.z}/${tile.x}/${tile.y}.webp` });
+                await cache.load({ url: `bpb-dem://${tile.z}/${tile.x}/${tile.y}.webp` });
                 return true;
             } catch (error) {
                 // Failed tiles remain retryable on a later prefetch — but a tile

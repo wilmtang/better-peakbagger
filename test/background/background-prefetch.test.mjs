@@ -7,6 +7,8 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 
+import { createTerrainPrefetch } from '../../src/background/terrain-prefetch.js';
+
 // The worker ships as one bundle; Unit 7 folds terrain-tiles + terrain-cache in
 // so the DEM prefetch runs entirely inside the extension-origin worker. Boot the
 // built bundle in a worker-like vm context, exactly as the service worker runs.
@@ -235,4 +237,49 @@ test('DEM prefetch stops re-asking for tiles the provider says do not exist', as
     assert.ok(tried > 0);
     await failing.prefetch(ROUTE, failing.peakbaggerSender(9));
     assert.ok(failing.fetchCalls.length > tried, 'a provider that is merely failing stays retryable');
+});
+
+test('DEM prefetch retires the previous cache owner before changing its budget', async () => {
+    let currentSettings = { enable3dMap: true, terrainCacheLimitMb: 512 };
+    const events = [];
+    const owners = [];
+    const prefetch = createTerrainPrefetch({
+        isPeakbaggerSender: sender => sender?.trusted === true,
+        consumeActivation: () => true,
+        mapWithConcurrency: async (items, _limit, operation) => Promise.all(items.map(operation)),
+        now: () => 100,
+        getSettings: async () => currentSettings,
+        createCache: limitMb => {
+            const owner = {
+                limitMb,
+                async load() { events.push(`load:${limitMb}`); },
+                async close() { events.push(`close:${limitMb}`); return true; }
+            };
+            events.push(`create:${limitMb}`);
+            owners.push(owner);
+            return owner;
+        }
+    });
+    const sender = id => ({ trusted: true, tab: { id } });
+    const view = (center, zoom) => ({
+        type: 'TERRAIN_PREFETCH', center, zoom,
+        viewport: { width: 1000, height: 700 }, activation: 'accepted'
+    });
+
+    assert.equal((await prefetch.handle(view([48.8, -121.6], 13), sender(1))).ok, true);
+    currentSettings = { enable3dMap: true, terrainCacheLimitMb: 256 };
+    assert.equal((await prefetch.handle(view([46.8, 8.2], 13), sender(2))).ok, true);
+
+    const closeFirst = events.indexOf('close:512');
+    const createSecond = events.indexOf('create:256');
+    const loadSecond = events.indexOf('load:256');
+    assert.ok(closeFirst >= 0 && closeFirst < createSecond && createSecond < loadSecond,
+        `expected close:512 → create:256 → load:256, observed ${events.join(', ')}`);
+    assert.equal(owners.length, 2);
+
+    currentSettings = { enable3dMap: false, terrainCacheLimitMb: 256 };
+    assert.deepEqual(await prefetch.handle(view([35.3, -120.7], 12), sender(3)), {
+        ok: false, reason: 'disabled'
+    });
+    assert.equal(events.at(-1), 'close:256', 'disabling 3D must retire the remaining cache owner');
 });

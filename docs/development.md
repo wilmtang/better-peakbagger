@@ -178,6 +178,7 @@ script is added or removed without updating it.
 | `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
 | `npm run terrain:verify` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
 | `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Same HTTPS showcase host. |
+| `npm run terrain:verify:cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
 | `npm run terrain:lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `terrain:verify`. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
