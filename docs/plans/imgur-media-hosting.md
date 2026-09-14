@@ -273,7 +273,8 @@ automatic POST retries to either example.
 
 ### Provider contracts and data migration
 
-Add a small provider registry under `src/media/` and a separate Imgur client.
+Add a small provider registry under the proposed **src/media/** directory and a
+separate Imgur client.
 Keep provider-specific endpoint, authorization, capability, response validation,
 and error mapping in each adapter. Callers select a fixed provider identifier;
 messages cannot supply arbitrary upload URLs or authentication headers.
