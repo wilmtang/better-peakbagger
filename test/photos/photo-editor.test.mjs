@@ -2233,6 +2233,72 @@ test('a held arrow key is one nudge, and releasing it starts the next', async ()
     assert.deepEqual(page.errors, []);
 });
 
+test('Library keyboard input cannot mutate the hidden editor project', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.tool('select');
+    await waitForPhotoStore(win, 'projects', records => records[0]?.objects.length === 1);
+    const before = JSON.parse(JSON.stringify((await readPhotoStore(win, 'projects'))[0]));
+
+    page.click(doc.getElementById('show-library'));
+    await waitFor(page.dom, () => doc.getElementById('library-view').hidden === false
+        && doc.querySelector('.photo-card button'));
+    const targets = [doc.getElementById('show-library'), doc.querySelector('.photo-card button')];
+    const keys = [
+        { key: 'Delete' },
+        { key: 'Backspace' },
+        { key: 'ArrowRight' },
+        { key: 'a' },
+        { key: 'z', ctrlKey: true },
+        { key: 'z', ctrlKey: true, shiftKey: true },
+    ];
+    for (const target of targets) {
+        target.focus();
+        for (const init of keys) {
+            const event = new win.KeyboardEvent('keydown', {
+                bubbles: true,
+                cancelable: true,
+                ...init,
+            });
+            target.dispatchEvent(event);
+            assert.equal(event.defaultPrevented, false,
+                `${init.key} should remain available to the visible Library`);
+        }
+    }
+    await page.settle();
+
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.armedTool(), 'select');
+    assert.deepEqual(JSON.parse(JSON.stringify((await readPhotoStore(win, 'projects'))[0])), before);
+    page.click(doc.getElementById('show-editor'));
+    page.click(doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0, 'hidden input must not add to or consume editor history');
+    assert.deepEqual(page.errors, []);
+});
+
+test('leaving the editor ends the current coalesced keyboard or control gesture', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.tool('select');
+    const opacity = doc.getElementById('object-opacity');
+
+    opacity.value = '80';
+    page.emit(opacity, 'input');
+    page.click(doc.getElementById('show-library'));
+    await waitFor(page.dom, () => doc.getElementById('library-view').hidden === false);
+    page.click(doc.getElementById('show-editor'));
+    opacity.value = '60';
+    page.emit(opacity, 'input');
+    page.click(doc.getElementById('undo'));
+
+    assert.equal(opacity.value, '80', 'the edit after returning must have its own Undo step');
+    assert.deepEqual(page.errors, []);
+});
+
 test('keyboard controls add, select, reorder, duplicate, nudge, delete, and undo marks', async () => {
     const page = await loadEditor();
     const { doc, win } = page;

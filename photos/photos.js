@@ -370,6 +370,7 @@ const showUrlRecovery = (message, url) => {
 const setView = view => {
     if (busy) return;
     const editor = view === 'editor';
+    if (!editor) endCoalescing();
     ui.editorView.hidden = !editor;
     ui.libraryView.hidden = editor;
     ui.showEditor.setAttribute('aria-current', editor ? 'page' : 'false');
@@ -2869,15 +2870,24 @@ const bindEvents = () => {
         const path = typeof event.composedPath === 'function'
             ? event.composedPath()
             : [event.target];
-        const editing = path.some(node => {
+        const active = document.activeElement;
+        const editing = [...path, active].some(node => {
             if (!node || node.nodeType !== 1) return false;
             if (['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)) return true;
             return node.isContentEditable === true
                 || node.closest?.('[contenteditable]:not([contenteditable="false"])');
         });
-        if (busy) return;
-        if (editing) return;
+        const target = event.target;
+        const editorScoped = !ui.editorView.hidden && (
+            (target instanceof Node && ui.editorView.contains(target))
+            || ([document, document.body, document.documentElement].includes(target)
+                && (!active || active === document.body || active === document.documentElement
+                    || ui.editorView.contains(active)))
+        );
+        if (busy || !editorScoped || editing) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+            const available = event.shiftKey ? future.length : history.length;
+            if (!available || editorMutationLocked() || !project) return;
             event.preventDefault();
             if (event.shiftKey) redo();
             else undo();
@@ -2900,12 +2910,14 @@ const bindEvents = () => {
                 renderProject();
             }
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
+            if (!selectedId || editorMutationLocked()) return;
             event.preventDefault();
             deleteSelected();
-        } else if (toolShortcuts.has(event.key.toLowerCase())) {
+        } else if (project && toolShortcuts.has(event.key.toLowerCase())) {
             setTool(toolShortcuts.get(event.key.toLowerCase()));
         } else if (event.key === 'Enter' && routeSession) finishRoute(false);
         else if (event.key.startsWith('Arrow')) {
+            if (!selectedObject() || editorMutationLocked()) return;
             const step = event.shiftKey ? 10 : 1;
             const directions = {
                 ArrowLeft: [-step, 0],
