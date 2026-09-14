@@ -570,7 +570,7 @@ try {
         await secondRoutePoint.focus();
         await photoPage.keyboard.press('Enter');
         const selectedRoutePath = photoPage.locator(
-            '#photo-overlay [data-bpb-object].selected > path'
+            '#photo-overlay [data-bpb-object].selected > path:not([data-bpb-hit-target])'
         );
         const routeBeforeKeyboardNudge = await selectedRoutePath.getAttribute('d');
         await photoPage.keyboard.press('ArrowDown');
@@ -584,7 +584,7 @@ try {
             focusedVertex: document.activeElement?.dataset?.vertex ?? null,
             selectedVertex: document.activeElement?.getAttribute?.('aria-pressed') ?? null,
             restoredRoute: document.querySelector(
-                '#photo-overlay [data-bpb-object].selected > path'
+                '#photo-overlay [data-bpb-object].selected > path:not([data-bpb-hit-target])'
             )?.getAttribute('d'),
         }));
         const semanticRoleState = {
