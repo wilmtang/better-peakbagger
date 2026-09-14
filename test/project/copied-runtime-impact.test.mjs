@@ -60,7 +60,7 @@ test('GPU gates cover browser upgrades and source or fixture changes before the 
     assert.equal(terrainVerificationRequired(lock(), lock({ 'maplibre-gl': '2.0.0' })), true);
 });
 
-test('Firefox GPU bearing checks settle before the separate pitch gesture', async () => {
+test('Firefox GPU gestures target exposed canvas pixels and settle between drags', async () => {
     const verifier = await readFile(
         new URL('../../scripts/verify-firefox-terrain.mjs', import.meta.url),
         'utf8',
@@ -71,6 +71,11 @@ test('Firefox GPU bearing checks settle before the separate pitch gesture', asyn
         'the horizontal drag must not follow the vertical drag at the iframe boundary');
     assert.equal(verifier.match(/mouse\.down\(\{ button: 'right' \}\)/g)?.length, 3,
         'Analyzer bearing, Analyzer pitch, and Peak bearing each own one right drag');
+    assert.match(verifier,
+        /document\.elementFromPoint\(x, y\) !== element/,
+        'each gesture must start on exposed canvas instead of a marker or popup');
+    assert.doesNotMatch(verifier, /box\.width \/ 2|peakBox\.width \/ 2/,
+        'centered canvas coordinates can land on a marker or popup overlay');
     assert.doesNotMatch(verifier, /\.setBearing\(/,
         'the GPU verifier must exercise camera interaction instead of mutating MapLibre directly');
     assert.match(verifier,

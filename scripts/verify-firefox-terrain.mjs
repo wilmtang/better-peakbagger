@@ -108,6 +108,30 @@ const waitForTerrainCameraSettled = async (page, label) => {
     }
 };
 
+const getExposedCanvasDragTarget = async (canvas, label) => {
+    const box = await canvas.boundingBox();
+    if (!box || box.width <= 200 || box.height <= 200) {
+        throw new Error(`${label}: Firefox terrain canvas had no drag target`);
+    }
+    const target = await canvas.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        const candidates = [[0.25, 0.7], [0.25, 0.3], [0.4, 0.75], [0.4, 0.25]];
+        for (const [xRatio, yRatio] of candidates) {
+            const x = rect.left + rect.width * xRatio;
+            const y = rect.top + rect.height * yRatio;
+            if (rect.right - x < 170 || y - rect.top < 190 || rect.bottom - y < 110) continue;
+            if (document.elementFromPoint(x, y) !== element) continue;
+            return { xRatio, yRatio };
+        }
+        return null;
+    });
+    if (!target) throw new Error(`${label}: Firefox terrain canvas had no exposed drag target`);
+    return {
+        x: box.x + box.width * target.xRatio,
+        y: box.y + box.height * target.yRatio,
+    };
+};
+
 async function main() {
     const resources = createResourceStack();
     let primaryError = null;
@@ -338,10 +362,8 @@ async function main() {
         }
 
         const canvas = frame.locator('canvas.maplibregl-canvas');
-        const box = await canvas.boundingBox();
-        if (!box) throw new Error('Firefox terrain canvas had no pointer target');
-        const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-        await page.mouse.move(center.x, center.y);
+        let dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer zoom');
+        await page.mouse.move(dragTarget.x, dragTarget.y);
         await page.mouse.wheel(0, -360);
         await page.waitForFunction(previous => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
@@ -354,9 +376,10 @@ async function main() {
         // horizontal secondary drag at the iframe boundary immediately after a
         // vertical one; separating the gestures by a settled camera makes each
         // postcondition own exactly one input.
-        await page.mouse.move(center.x, center.y);
+        dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer bearing');
+        await page.mouse.move(dragTarget.x, dragTarget.y);
         await page.mouse.down({ button: 'right' });
-        await page.mouse.move(center.x + 150, center.y, { steps: 8 });
+        await page.mouse.move(dragTarget.x + 150, dragTarget.y, { steps: 8 });
         await page.mouse.up({ button: 'right' });
         await page.waitForFunction(previous => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
@@ -391,9 +414,10 @@ async function main() {
 
         await waitForTerrainCameraSettled(page, 'Analyzer bearing');
         const pitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
-        await page.mouse.move(center.x, center.y);
+        dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer pitch');
+        await page.mouse.move(dragTarget.x, dragTarget.y);
         await page.mouse.down({ button: 'right' });
-        await page.mouse.move(center.x, center.y - 180, { steps: 8 });
+        await page.mouse.move(dragTarget.x, dragTarget.y - 180, { steps: 8 });
         await page.mouse.up({ button: 'right' });
         await page.waitForFunction(previous => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
@@ -403,10 +427,11 @@ async function main() {
         // Firefox on macOS rewrites Ctrl+primary into a secondary-button gesture.
         // Exercise that production alternative separately from the normal right drag.
         const ctrlPitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
+        dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer Control-drag');
         await page.keyboard.down('Control');
-        await page.mouse.move(center.x, center.y);
+        await page.mouse.move(dragTarget.x, dragTarget.y);
         await page.mouse.down({ button: 'left' });
-        await page.mouse.move(center.x, center.y + 100, { steps: 6 });
+        await page.mouse.move(dragTarget.x, dragTarget.y + 100, { steps: 6 });
         await page.mouse.up({ button: 'left' });
         await page.keyboard.up('Control');
         await page.waitForFunction(previous => {
@@ -498,12 +523,10 @@ async function main() {
         const peakCanvas = page.frameLocator('#bpb-terrain-frame').locator('canvas.maplibregl-canvas');
         await waitForTerrainCameraSettled(page, 'Peak startup');
         const peakBearingBefore = await peakCanvas.evaluate(() => globalThis.__bpbTerrainTestMap.getBearing());
-        const peakBox = await peakCanvas.boundingBox();
-        if (!peakBox) throw new Error('Firefox Peak terrain canvas had no bearing-drag target');
-        const peakCenter = { x: peakBox.x + peakBox.width / 2, y: peakBox.y + peakBox.height / 2 };
-        await page.mouse.move(peakCenter.x, peakCenter.y);
+        const peakDragTarget = await getExposedCanvasDragTarget(peakCanvas, 'Peak bearing');
+        await page.mouse.move(peakDragTarget.x, peakDragTarget.y);
         await page.mouse.down({ button: 'right' });
-        await page.mouse.move(peakCenter.x + 150, peakCenter.y, { steps: 8 });
+        await page.mouse.move(peakDragTarget.x + 150, peakDragTarget.y, { steps: 8 });
         await page.mouse.up({ button: 'right' });
         await page.waitForFunction(previous => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
