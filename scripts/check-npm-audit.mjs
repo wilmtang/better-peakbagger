@@ -15,24 +15,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // images; it is never shipped. Keep the exception exact and short-lived so a
 // changed advisory, install path, tool version, severity, or expiry fails
 // closed instead of becoming a blanket release bypass.
-// Reviewed 2026-09-08: adm-zip 0.6.0 is also latest and has no symlink fix.
-// web-ext's own installExtension copies an XPI or writes a proxy; it does not
-// call firefox-profile's vulnerable extraction API. The installed-tool boundary
-// is exercised in test/project/web-ext-installation.test.mjs. Keep this separate
-// from the image parser acceptance and use the same short expiry.
 export const AUDIT_ACCEPTANCE = Object.freeze({
     advisories: Object.freeze({
         'GHSA-w3rx-r6r6-pgpr': 1138808,
         'GHSA-5p2g-fcmc-qvqq': 1138809,
     }),
-    admZipAdvisories: Object.freeze({
-        'GHSA-vwc7-r8mq-g2x9': 1193734,
-    }),
     expires: '2026-09-21',
     vulnerablePackages: Object.freeze([
         'addons-linter',
-        'adm-zip',
-        'firefox-profile',
         'image-size',
         'web-ext',
     ]),
@@ -40,8 +30,6 @@ export const AUDIT_ACCEPTANCE = Object.freeze({
         'node_modules/web-ext': '10.6.0',
         'node_modules/addons-linter': '10.10.0',
         'node_modules/image-size': '2.0.2',
-        'node_modules/firefox-profile': '4.7.1',
-        'node_modules/adm-zip': '0.6.0',
     }),
 });
 
@@ -78,13 +66,12 @@ export function evaluateAudit(audit, lockfile, today = new Date().toISOString().
         || counts.critical !== 0
         || counts.info !== 0
         || counts.low !== 0
-        || counts.moderate !== 2) {
+        || counts.moderate !== 0) {
         throw new Error('npm audit severity/counts changed outside the accepted findings');
     }
 
     for (const [name, acceptedAdvisories, severity] of [
         ['image-size', AUDIT_ACCEPTANCE.advisories, 'high'],
-        ['adm-zip', AUDIT_ACCEPTANCE.admZipAdvisories, 'moderate'],
     ]) {
         const rootFinding = audit.vulnerabilities[name];
         const advisories = (rootFinding?.via || [])
@@ -107,8 +94,7 @@ export function evaluateAudit(audit, lockfile, today = new Date().toISOString().
 
     const expectedPaths = {
         'addons-linter': { via: ['image-size'], nodes: ['node_modules/addons-linter'], severity: 'high' },
-        'firefox-profile': { via: ['adm-zip'], nodes: ['node_modules/firefox-profile'], severity: 'moderate' },
-        'web-ext': { via: ['addons-linter', 'firefox-profile'], nodes: ['node_modules/web-ext'], severity: 'high' },
+        'web-ext': { via: ['addons-linter'], nodes: ['node_modules/web-ext'], severity: 'high' },
     };
     for (const [name, expected] of Object.entries(expectedPaths)) {
         const finding = audit.vulnerabilities[name];
@@ -122,7 +108,7 @@ export function evaluateAudit(audit, lockfile, today = new Date().toISOString().
     requireKnownLock(lockfile);
     return {
         status: 'accepted',
-        message: `Accepted two image-size lint advisories and one unused adm-zip extraction advisory only in the pinned dev-only web-ext paths through ${AUDIT_ACCEPTANCE.expires}.`,
+        message: `Accepted two image-size advisories only in the dev-only web-ext lint path through ${AUDIT_ACCEPTANCE.expires}.`,
     };
 }
 
