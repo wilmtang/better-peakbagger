@@ -149,6 +149,29 @@ test('one-use workflow grants cannot be replayed and tab cleanup revokes authori
     }, sender, TrustedActions.ACTIONS.ASCENT_BACKUP), false);
 });
 
+test('Gaia import can exchange a trusted click for one bounded workflow grant', async () => {
+    const { actions } = create();
+    const sender = peakbagger();
+    const issued = actions.issue({
+        action: TrustedActions.ACTIONS.GAIA_IMPORT,
+        generation: 'gaia-1',
+    }, sender);
+    const begun = await actions.begin({
+        action: TrustedActions.ACTIONS.GAIA_IMPORT,
+        generation: 'gaia-1',
+        activationToken: issued.token,
+    }, sender);
+    assert.equal(begun.ok, true);
+    assert.equal(await actions.consumeGrant({
+        grantToken: begun.grantToken,
+        generation: 'gaia-1',
+    }, sender, TrustedActions.ACTIONS.GAIA_IMPORT, { oneUse: true }), true);
+    assert.equal(await actions.consumeGrant({
+        grantToken: begun.grantToken,
+        generation: 'gaia-1',
+    }, sender, TrustedActions.ACTIONS.GAIA_IMPORT, { oneUse: true }), false);
+});
+
 test('unknown actions and malformed generations cannot mint authority', async () => {
     const { actions } = create();
     assert.deepEqual(actions.issue({ action: 'other', generation: '1' }, peakbagger()),

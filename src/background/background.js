@@ -19,6 +19,7 @@ import {
 } from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
+import { createGaiaRoutes } from './gaia-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
 import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
@@ -3269,6 +3270,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         mutateMap,
         trustedActions,
     });
+    const gaiaRoutes = createGaiaRoutes({
+        ext,
+        isPeakbaggerSender,
+        trustedActions,
+        action: TrustedActions.ACTIONS.GAIA_IMPORT,
+    });
     const photoRoutes = createPhotoRoutes({
         ext,
         storage,
@@ -3456,6 +3463,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (reportDraftHandler) return reportDraftHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
+            const gaiaHandler = gaiaRoutes.handlers[type];
+            if (gaiaHandler) return gaiaHandler(message, sender);
             switch (type) {
             case 'SETTINGS_PATCH':
                 // Settings and favorites share one sender gate: extension pages

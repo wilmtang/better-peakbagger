@@ -17,6 +17,8 @@ Data leaves the browser only when a feature requires it:
 - **GitHub** receives only the data types the user explicitly or automatically
   backs up to their selected repository.
 - **ImgBB** receives a flattened image only when the user uploads it.
+- **Gaia GPS** receives the saved Peakbagger GPX only when the user clicks
+  **Send to Gaia**.
 - **Media hosts** receive ordinary browser requests when remote report media is
   displayed.
 
@@ -29,21 +31,23 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | --- | --- |
 | `storage` | Stores preferences, credentials, caches, drafts, and other extension data as detailed below. |
 | `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. There is no persistent provider host access. |
-| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, and into a Peakbagger tab for the login and summit requests described below. It never downloads or executes remote code. |
+| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia after **Send to Gaia** to use Gaia's visible importer. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules the one-minute debounce and bounded retries for user-enabled automatic backups. |
 | Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
+| Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
 
 Firefox's `locationInfo` declaration is a data-handling disclosure, not
 permission to read device location. It covers:
 
 - activity coordinates sent to Peakbagger for summit lookup and GPS Preview;
 - viewed-area tile coordinates sent to Mapterhorn, OpenFreeMap, or a selected
-  compatible map provider when 3D is used; and
+  compatible map provider when 3D is used;
 - a Peakbagger-stored GPS track written to the user's GitHub repository when
-  the user backs up an ascent.
+  the user backs up an ascent; and
+- a Peakbagger-stored GPS track sent to Gaia when the user clicks **Send to Gaia**.
 
 ### Where browser data is stored
 
@@ -152,6 +156,21 @@ date. That happens entirely locally.
   ascent and processes it locally.
 - Cross-page preferences use `storage.sync`; page-specific filter state and the
   early theme mirror use Peakbagger's `localStorage`.
+
+### Send to Gaia GPS
+
+- The button appears only beside a valid saved-track download on a saved
+  Peakbagger ascent. A trusted click requests optional Gaia host access, reads
+  that exact Peakbagger GPX in the page's signed-in session, and passes it
+  through the background worker to a newly opened or validated Gaia map tab.
+- Gaia receives the original saved GPX, including any track, route, waypoint,
+  elevation, time, and name data Peakbagger's export contains. Better
+  Peakbagger does not persist that GPX, inspect Gaia credentials, or send raw
+  Garmin or Strava capture GPX through this feature.
+- The packaged Gaia adapter uses the visible file importer and waits for a
+  non-empty import preview. It never clicks Gaia's **Save** control. If the file
+  may have been supplied but the result is uncertain, the extension directs
+  the user to inspect Gaia and does not offer a blind retry.
 
 ### Sun and Moon calculator
 
@@ -350,6 +369,7 @@ The user can export and import settings without GitHub:
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
+| Gaia GPS | The saved Peakbagger GPX after the user clicks **Send to Gaia**; Gaia's review and Save remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
 | GitHub | User-triggered or separately enabled automatic backups to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |

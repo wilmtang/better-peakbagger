@@ -51,6 +51,7 @@ from several directories when a shipped surface crosses those boundaries.
 | `src/capture/` | Provider adapters, ownership checks, and pure capture analysis |
 | `src/favorites/` | Favorite-climber data and climber-page controls |
 | `src/github/` | GitHub authentication, API transport, repository writes, and backup payloads |
+| `src/gaia/` | Saved-Peakbagger-GPX validation and Gaia's visible import adapter |
 | `src/gpx/` | Shared GPX parsing, metrics, and ascent-page analysis |
 | `src/maps/` | BigMap and Peak map coordinators, bridges, links, and peak markers |
 | `src/peakbagger/` | Authenticated Peakbagger request and response policy |
@@ -170,6 +171,7 @@ script is added or removed without updating it.
 | `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
 | `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
 | `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
+| `npm run verify:gaia` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger and Gaia HTTPS fixtures; verifies exact saved-GPX handoff, placement, manual Save, signed-out and uncertain states, and light/dark rendering. The disposable manifest grants Gaia because hidden automation cannot inspect the native permission prompt. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. Accepts two exact high `image-size` advisories through development-only `web-ext`/`addons-linter`. Versions, paths, advisory IDs, and a 2026-09-21 expiry are pinned; every other or expired finding fails. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |

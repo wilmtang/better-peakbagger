@@ -25,7 +25,8 @@
   "optional_host_permissions": [
     "https://github.com/*",
     "https://api.github.com/*",
-    "https://api.imgbb.com/*"
+    "https://api.imgbb.com/*",
+    "https://www.gaiagps.com/*"
   ],
   "action": {
     "default_title": "Capture activity for Peakbagger",
@@ -129,6 +130,22 @@
       ],
       "js": [
         "content/ascent-backup.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "css": [
+        "css/ascent-gaia.css"
+      ],
+      "js": [
+        "content/ascent-gaia.js"
       ],
       "run_at": "document_end",
       "all_frames": false

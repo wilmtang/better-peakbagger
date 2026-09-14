@@ -61,7 +61,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.js', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.js', 'background/settings-file-routes.js', 'background/terrain-activation.js', 'background/trusted-actions.js', 'background/terrain-prefetch.js', 'background/background.js']);
+        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.js', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'gaia/gaia-import.js', 'gaia/gaia-source.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.js', 'background/settings-file-routes.js', 'background/terrain-activation.js', 'background/trusted-actions.js', 'background/gaia-routes.js', 'background/terrain-prefetch.js', 'background/background.js']);
     assert.deepEqual(bundleSources('provider-page.js'), [
         'capture/provider-url.js',
         'capture/provider-response.js',
@@ -88,6 +88,11 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
 test('ImgBB upload access is optional and scoped to its API origin', () => {
     assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
     assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));
+});
+
+test('Gaia import access is optional and scoped to the Gaia web app', () => {
+    assert.ok(manifest.optional_host_permissions.includes('https://www.gaiagps.com/*'));
+    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('gaiagps.com')));
 });
 
 test('the canonical unpacked extension opens Chrome settings in a full tab', () => {
@@ -359,6 +364,30 @@ test('individual and profile backups bundle the same Peakbagger source reader', 
     assert.deepEqual(bundleSources('content/ascent-backup.js'),
         ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'reports/report-markup.js', 'ascent/ascent-snapshot.js', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ascent/ascent-backup.js']);
     assert.ok(bundleSources('content/profile-backup.js').includes('ascent/ascent-backup-source.js'));
+});
+
+test('saved Gaia handoff has an independent isolated-world surface', () => {
+    const entry = contentEntry('content/ascent-gaia.js');
+    assert.ok(entry);
+    assert.equal(entry.world, undefined);
+    assert.equal(entry.run_at, 'document_end');
+    assert.deepEqual(entry.css, ['css/ascent-gaia.css']);
+    assert.ok(entry.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
+    assert.deepEqual(bundleSources('content/ascent-gaia.js'), [
+        'peakbagger/peakbagger-origin.js',
+        'peakbagger/peakbagger-cloudflare.js',
+        'peakbagger/peakbagger-response.js',
+        'peakbagger/peakbagger-error.js',
+        'peakbagger/peakbagger-request.js',
+        'ascent/ascent-page.js',
+        'gaia/gaia-import.js',
+        'gaia/gaia-source.js',
+        'ui/dom.js',
+        'ui/page-lifecycle.js',
+        'ui/runtime-message.js',
+        'ui/trusted-action.js',
+        'ascent/ascent-gaia.js',
+    ]);
 });
 
 test('saved ascent table resizing has an independent isolated-world surface', () => {

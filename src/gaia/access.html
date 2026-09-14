@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Allow Gaia access — Better Peakbagger</title>
+  <script src="access-head.js"></script>
+  <link rel="stylesheet" href="../css/panel.css">
+  <link rel="stylesheet" href="../css/gaia-access.css">
+</head>
+<body>
+  <main class="access-card">
+    <img src="../icons/icon-48.png" width="48" height="48" alt="">
+    <p class="eyebrow">BETTER PEAKBAGGER</p>
+    <h1>Send saved tracks to Gaia</h1>
+    <p class="explanation">Allow access to <strong>www.gaiagps.com</strong> so Better Peakbagger can place a saved ascent GPX in Gaia’s import preview.</p>
+    <p class="boundary">You review the items and click Save in Gaia. The extension does not read your Gaia password or keep the GPX.</p>
+    <button id="allow-gaia" type="button">Allow Gaia access</button>
+    <button id="close-gaia" class="secondary" type="button" hidden>Close this tab</button>
+    <p id="gaia-access-status" class="status" role="status" aria-live="polite"></p>
+  </main>
+  <script src="access.js"></script>
+</body>
+</html>

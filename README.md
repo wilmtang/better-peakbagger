@@ -6,8 +6,9 @@ Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 have—into review-ready ascent drafts. It also adds free 3D terrain, richer GPX
 analysis, filters and favorite climbers for finding useful beta, rich-text and
 Markdown trip reports with reusable photo topos, optional GitHub backup,
-offline Sun and Moon planning, location-aware planning links, and a polished
-dark theme to [Peakbagger](https://www.peakbagger.com/).
+one-click saved-track handoff to Gaia GPS, offline Sun and Moon planning,
+location-aware planning links, and a polished dark theme to
+[Peakbagger](https://www.peakbagger.com/).
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kndjohodnpdoejmjkiiakejfehoodedn?style=for-the-badge&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
 [![Firefox Add-ons](https://img.shields.io/amo/v/better-peakbagger?style=for-the-badge&logo=firefoxbrowser&logoColor=white&label=Firefox%20Add-ons&color=FF7139)](https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/)
@@ -75,6 +76,14 @@ useful without invented measurements: partial data produces visible gaps,
 timed coordinate-only tracks show distance over time, and untimed
 coordinate-only tracks get a compact route scrubber. See the
 [missing-data result table](docs/gpx-data-quality.md#resulting-chart).
+
+### Send a saved track to Gaia GPS
+
+On a saved ascent, **Send to Gaia** sits beside Peakbagger's GPX download. After
+the one-time Gaia access grant, one click opens Gaia and prepares the exact
+saved GPX in Gaia's import preview. You review the imported items and click
+Gaia's **Save** yourself. Better Peakbagger does not copy Gaia credentials or
+keep the GPX in extension storage.
 
 ### Plan around the Sun and Moon
 
@@ -168,9 +177,10 @@ map tiles only after you enable it; once enabled, hovering or focusing its
 toggle may prefetch a small bounded elevation tile set before the view opens.
 Sun and Moon calculations use only packaged code and remain in the Peakbagger
 tab; they add no storage, permission, or provider request.
-GitHub
-backup is off until you enable it, sends an ascent only to the repository you
-choose, and keeps its access token in local extension storage, never synced.
+Gaia receives a saved Peakbagger GPX only when you click **Send to Gaia** and
+still leaves final review and Save to you.
+GitHub backup is off until you enable it, sends an ascent only to the repository
+you choose, and keeps its access token in local extension storage, never synced.
 The token enters a manual settings download only when you explicitly choose
 **Include GitHub connection**; that file is not encrypted.
 
@@ -276,7 +286,8 @@ Optional services are contacted only for the feature you use. Map tiles are
 requested from Mapterhorn and your selected map provider after you enable 3D.
 GitHub receives only the backups you authorize for your chosen repository.
 ImgBB receives a flattened image only when you provide an API key and choose
-**Upload & insert**. Remote report media contacts its host when displayed. See
+**Upload & insert**. Gaia receives the saved ascent GPX only when you click
+**Send to Gaia**. Remote report media contacts its host when displayed. See
 [Privacy and data handling](PRIVACY.md) for the complete field-level list.
 
 ### Will Better Peakbagger add a developer-run server or telemetry in the future?

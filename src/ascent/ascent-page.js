@@ -3,7 +3,7 @@
 //
 // Better Peakbagger — saved ascent page reader (ascent.aspx).
 //
-// Reads the fields the GitHub backup surface needs from a saved ascent page:
+// Reads the stable fields saved-ascent features share from ascent.aspx:
 // the ascent id (the definitive identity, and the only source of it for a newly
 // created ascent), whether the signed-in climber owns the ascent (an edit link
 // to this aid — the ownership gate fails closed), the peak the ascent belongs
@@ -12,9 +12,9 @@
 // is intentionally not a backup data source.
 //
 // The reliable fields (aid, ownership, peak id/name, GPX link) come from stable
-// URL shapes; the date is best-effort and used only as a fallback when the
-// persisted form omits it. Selectors here are validated against a masked
-// ascent.aspx fixture and confirmed on live Peakbagger before release.
+// URL shapes; the date is best-effort and used only by backup as a fallback
+// when the persisted form omits it. Selectors here are validated against a
+// masked ascent.aspx fixture and confirmed on live Peakbagger before release.
 
 import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
 
@@ -59,11 +59,11 @@ const readPeak = doc => {
 // this GPS track…") has been the stable signal, but match the href
 // (GPXFile.aspx, plus the legacy GetAscentGPX.aspx) as a fallback so a future
 // rewording of the link text does not silently drop the track.
-const gpxUrl = doc => {
+const gpxLink = doc => {
     for (const a of doc.querySelectorAll('a[href]')) {
         const href = a.getAttribute('href') || '';
         if (/Download this GPS track/i.test(a.textContent || '') || /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(href)) {
-            return a.href || href;
+            return a;
         }
     }
     return null;
@@ -107,16 +107,17 @@ const read = ({ doc = document, search = '' } = {}) => {
     const ascentId = aidRaw && Number.isFinite(Number(aidRaw)) ? Number(aidRaw) : null;
     const peak = readPeak(doc);
     const editLink = ascentEditLink(doc, ascentId);
+    const trackLink = gpxLink(doc);
     return {
         ascentId,
         isOwner: editLink != null,
         editUrl: editLink ? (editLink.href || editLink.getAttribute('href')) : null,
         peak,
         date: parseDate(doc),
-        gpxUrl: gpxUrl(doc),
+        gpxUrl: trackLink ? (trackLink.href || trackLink.getAttribute('href')) : null,
     };
 };
 
-const API = { read, ownsAscent, ascentEditLink, parseDate };
+const API = { read, ownsAscent, ascentEditLink, gpxLink, parseDate };
 
 export const ascentPage = API;
