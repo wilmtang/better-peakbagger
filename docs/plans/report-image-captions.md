@@ -104,6 +104,22 @@ that change was reverted and the verifier passed afterward.
 Changed but not fully proven: real Peakbagger server save/reopen and native
 window/focus behavior retain the limitations recorded above.
 
+### Image-link caption field — 2026-09-14
+
+The Rich editor's image-link panel now asks for an optional Caption instead of
+an image description. A non-empty value creates the same explicit
+figure/figcaption structure as every other caption entry path; it is not copied
+into alt text, where a screen reader would repeat the visible caption. Empty
+caption input continues to create an ordinary uncaptioned image.
+
+Verified: 42 focused report media/caption tests passed, including non-empty and
+empty image-link captions. The full test suite and lint passed (the latter with
+the eight existing owned web-ext warnings). The packaged workflow passed in
+hidden Chrome for Testing 153.0.8010.12 at 1280×900 and 720×900, and the full
+real-extension Chrome verifier passed. The rendered image-link panel was
+visually inspected at 1280×900. These checks do not establish the open live
+Peakbagger save/reopen item above.
+
 ## Outcome and scope
 
 Let users add an optional visible caption beneath a trip-report image in Rich

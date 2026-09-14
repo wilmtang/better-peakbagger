@@ -19,7 +19,7 @@ const returnContext = (url = EDITOR_URL) => {
     return { expectedIdentity: identity, expectedUrl: parsed.toString() };
 };
 
-test('the image popover validates the source and inserts alt text', async () => {
+test('the image popover validates the source and inserts an optional caption', async () => {
     const dom = await loadEditor();
     const ui = await editorReady(dom);
     const doc = dom.window.document;
@@ -27,7 +27,7 @@ test('the image popover validates the source and inserts alt text', async () => 
     ui.querySelector('[aria-label="Insert image"]').click();
     assert.equal(ui.querySelector('.bpb-re-imagebox').hidden, false);
     const src = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
-    const alt = ui.querySelector('[aria-label="Image description"]');
+    const caption = ui.querySelector('[aria-label="Image caption"]');
     const hostingHint = ui.querySelectorAll('.bpb-re-image-hosting')[1];
     // One way in. Two buttons read as two features when they are one page with
     // two tabs, and neither name said the library is this browser's own record.
@@ -43,6 +43,9 @@ test('the image popover validates the source and inserts alt text', async () => 
     assert.match(hostingHint.textContent, /Google Photos, Drive, iCloud, and Dropbox links do not/);
     assert.match(hostingHint.textContent,
         /To resize, select the image and drag its lower-right handle\./);
+    assert.equal(caption.placeholder, 'Caption (optional)');
+    assert.equal(caption.maxLength, Library.ALT_LIMIT);
+    assert.equal(ui.querySelector('[aria-label="Image description"]'), null);
     assert.deepEqual([...hostingHint.querySelectorAll('a')].map(link => ({
         label: link.textContent,
         href: link.href,
@@ -72,11 +75,26 @@ test('the image popover validates the source and inserts alt text', async () => 
     assert.equal(doc.getElementById('JournalText').value, '');
 
     src.value = 'https://example.com/topo.jpg';
-    alt.value = 'Topo';
+    caption.value = 'Topo';
     ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[img'));
     assert.equal(doc.getElementById('JournalText').value,
-        '[img src="https://example.com/topo.jpg" alt="Topo"]');
+        '[figure][img src="https://example.com/topo.jpg"][figcaption]Topo[/figcaption][/figure]');
+});
+
+test('the image popover keeps an empty caption as an ordinary image', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+
+    ui.querySelector('[aria-label="Insert image"]').click();
+    ui.querySelector('[aria-label="Image URL (HTTPS)"]').value = 'https://example.com/topo.jpg';
+    ui.querySelector('[aria-label="Image caption"]').value = '   ';
+    ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[img'));
+
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://example.com/topo.jpg"]');
 });
 
 test('popover URL errors are specific, announced, repeatable, and cleared on recovery', async () => {

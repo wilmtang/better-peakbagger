@@ -407,6 +407,9 @@ and preview, captions use smaller, centered, italic secondary text so they stay
 visually distinct from the surrounding report prose.
 Photo Topos also has an optional **Caption** field, which is inserted beneath
 the photo or updates the caption when you save the photo back to the report.
+The Rich editor's image-link panel uses the same optional **Caption** field;
+adding a linked image there no longer presents caption text as an accessibility
+description.
 Existing alt text is retained separately. A photo-editor return preserves a
 caption you changed in the report while the photo editor was open.
 Click the caption to edit it, or select the photo and use **Edit caption**.

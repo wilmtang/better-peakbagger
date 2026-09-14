@@ -63,6 +63,17 @@ try {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(url).origin });
     await report.goto(url);
     await report.locator('.bpb-re-surface').waitFor();
+    const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
+    await mkdir(output, { recursive: true });
+    await report.getByRole('button', { name: 'Insert image', exact: true }).click();
+    const linkedImageCaption = report.getByRole('textbox', { name: 'Image caption', exact: true });
+    await linkedImageCaption.waitFor();
+    assert.equal(await linkedImageCaption.getAttribute('placeholder'), 'Caption (optional)');
+    assert.equal(await report.getByRole('textbox', { name: 'Image description', exact: true }).count(), 0);
+    await report.locator('.bpb-re-imagebox').screenshot({
+        path: path.join(output, 'image-link-caption-field.png'),
+    });
+    await report.keyboard.press('Escape');
     await report.evaluate(async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 800; canvas.height = 500;
@@ -81,8 +92,6 @@ try {
     assert.equal(uploads, 0);
     await report.locator('.bpb-re-local-photo-actions button').waitFor();
     await report.waitForFunction(() => document.querySelector('.bpb-re-surface img')?.naturalWidth === 800);
-    const output = process.env.BPB_REPORT_PHOTOS_OUTPUT || path.join(root, 'tmp/report-photos');
-    await mkdir(output, { recursive: true });
     await report.getByRole('button', { name: 'Write a caption', exact: true }).waitFor();
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-placeholder.png') });
     await report.setViewportSize({ width: 720, height: 900 });

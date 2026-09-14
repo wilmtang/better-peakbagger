@@ -50,6 +50,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
     const DRAFT_MANAGER_FEEDBACK_MS = 6000;
+    // Matches the photo library's bound for captions and retained legacy alt text.
+    const PHOTO_TEXT_LIMIT = 500;
     const MODES = Schema.REPORT_EDITOR_MODES;
     const SAVE_BUTTON_IDS = new Set(['SaveButton', 'SaveButton2']);
     const STORE_URL = ext.runtime?.getURL?.('').startsWith('moz-extension://')
@@ -359,10 +361,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     imageSrcInput.type = 'text';
     imageSrcInput.placeholder = 'https://example.com/photo.jpg';
     imageSrcInput.setAttribute('aria-label', 'Image URL (HTTPS)');
-    const imageAltInput = el('input');
-    imageAltInput.type = 'text';
-    imageAltInput.placeholder = 'Description (alt text)';
-    imageAltInput.setAttribute('aria-label', 'Image description');
+    const imageCaptionInput = el('input');
+    imageCaptionInput.type = 'text';
+    imageCaptionInput.maxLength = PHOTO_TEXT_LIMIT;
+    imageCaptionInput.placeholder = 'Caption (optional)';
+    imageCaptionInput.setAttribute('aria-label', 'Image caption');
     const imageApply = button('bpb-re-linkapply', 'Add image');
     const imageError = el('div', 'bpb-re-field-error');
     imageError.id = 'bpb-re-image-error';
@@ -410,7 +413,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         imageLaunchStatus,
         imageDivider,
         imageSrcInput,
-        imageAltInput,
+        imageCaptionInput,
         imageApply,
         imageError,
         imageHostingHint
@@ -1143,7 +1146,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const openImageBox = () => {
         closeBoxes();
         imageSrcInput.value = '';
-        imageAltInput.value = '';
+        imageCaptionInput.value = '';
         imageLaunchStatus.textContent = '';
         imageBox.hidden = false;
         imageEdit.focus();
@@ -1203,7 +1206,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             return;
         }
         clearFieldError(imageSrcInput);
-        richCommands.insertImage(richEditor, { src, alt: imageAltInput.value.trim() });
+        richCommands.insertImage(richEditor, { src, caption: imageCaptionInput.value.trim() });
         closeBoxes();
         refreshToolbar();
     };
@@ -1276,7 +1279,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     });
     imageEdit.addEventListener('click', event => { void launchPhotoEditor(event); });
     imageApply.addEventListener('click', applyImage);
-    for (const input of [imageSrcInput, imageAltInput]) {
+    for (const input of [imageSrcInput, imageCaptionInput]) {
         input.addEventListener('keydown', event => {
             if (event.key === 'Enter') { event.preventDefault(); applyImage(); }
             if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
@@ -1429,11 +1432,6 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         setMode(state.conversionTarget);
     });
 
-    // Same bound the photo library and its page input enforce
-    // (photoLibrary.ALT_LIMIT). The catalog model itself stays out of this
-    // Peakbagger content script, so the number is repeated here and pinned by
-    // "an inserted photo keeps the full description the library allows".
-    const PHOTO_ALT_LIMIT = 500;
     const handledPhotoReturnTokens = new Set();
     const rememberPhotoReturnToken = token => {
         handledPhotoReturnTokens.add(token);
@@ -1448,7 +1446,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(message.localPhotoId)
             ? message.localPhotoId
             : null;
-        const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT);
+        const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT);
         let src = null;
         try {
             const candidate = new URL(message.url);
@@ -1457,12 +1455,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             }
         } catch { /* malformed result */ }
         const displayWidth = Markup.sanitizeReportDimension(message.displayWidth);
-        // Matches the popover's own image path, which has always accepted an
-        // empty description; only the id and sanitized source are required.
+        // Retained alt text is optional; only the id and sanitized source are required.
         return localPhotoId && src ? {
             src,
             alt,
-            ...(typeof message.caption === 'string' ? { caption: message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT) } : {}),
+            ...(typeof message.caption === 'string' ? { caption: message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT) } : {}),
             ...(displayWidth ? { width: displayWidth } : {}),
         } : null;
     };
@@ -1498,8 +1495,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         // The report remains editable while Photo Topos is open. Apply the
         // returned caption only if that exact occurrence still has its old text.
         if (typeof message.caption === 'string' && richCommands.imageCaption(richEditor, pos) === target.caption) {
-            const caption = message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT);
-            if (caption !== target.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT)) {
+            const caption = message.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT);
+            if (caption !== target.caption.replace(/\s+/g, ' ').trim().slice(0, PHOTO_TEXT_LIMIT)) {
                 richCommands.setImageCaption(richEditor, pos, caption);
             }
         }
