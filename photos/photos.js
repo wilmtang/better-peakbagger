@@ -168,6 +168,7 @@ let sessionKey = '';
 let configuredKey = false;
 let permissionGranted = false;
 let busy = false;
+let storeReloadRequired = false;
 let toastTimer = null;
 let toastGeneration = 0;
 let toastBaseMessage = '';
@@ -378,7 +379,8 @@ const setView = view => {
     if (!editor) void renderLibrary();
 };
 
-const editorMutationLocked = () => localPhotoReturned || busy || PUBLISHED_STATES.includes(photo?.remote.state);
+const editorMutationLocked = () => storeReloadRequired || localPhotoReturned || busy
+    || PUBLISHED_STATES.includes(photo?.remote.state);
 
 const editorMutationControls = () => [
     ui.title,
@@ -413,11 +415,12 @@ const updateEditorControls = () => {
     ui.addAtCenter.disabled = locked || activeTool === 'select' || !project;
     for (const control of ui.annotationList.querySelectorAll('button')) control.disabled = locked;
     for (const control of ui.routePointList.querySelectorAll('button')) control.disabled = locked;
-    ui.upload.disabled = busy || localPhotoReturned || !project || PUBLISHED_STATES.includes(photo?.remote.state);
-    ui.showEditor.disabled = busy;
-    ui.showLibrary.disabled = busy;
-    ui.file.disabled = busy;
-    ui.importProject.disabled = busy;
+    ui.upload.disabled = storeReloadRequired || busy || localPhotoReturned || !project
+        || PUBLISHED_STATES.includes(photo?.remote.state);
+    ui.showEditor.disabled = storeReloadRequired || busy;
+    ui.showLibrary.disabled = storeReloadRequired || busy;
+    ui.file.disabled = storeReloadRequired || busy;
+    ui.importProject.disabled = storeReloadRequired || busy;
     ui.saveKey.disabled = busy;
     for (const select of ui.reportWidthSelects) select.disabled = busy;
     ui.viewport.setAttribute('aria-busy', String(busy));
@@ -2999,7 +3002,26 @@ const initialize = async () => {
     applyPhotoSettings(settings);
     unsubscribeSettings = Settings.subscribe(applyPhotoSettings);
     bindEvents();
-    store = await Store.createPhotoStore();
+    store = await Store.createPhotoStore({
+        onVersionChange: () => {
+            storeReloadRequired = true;
+            suspendLibraryMaintenance();
+            endCoalescing();
+            updateEditorControls();
+            for (const control of [
+                ui.search,
+                ui.filter,
+                ui.libraryPrevious,
+                ui.libraryNext,
+                ui.backupNow,
+                ...ui.libraryList.querySelectorAll('button'),
+            ]) control.disabled = true;
+            setEditorStatus('Photo library updated in another tab. Reload to continue.');
+            toast('The photo library was updated in another tab. Reload this page to continue.', {
+                duration: 0,
+            });
+        },
+    });
     await recoverOperations();
     await refreshCredential();
     await refreshPhotoBackupStatus();

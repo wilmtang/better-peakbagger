@@ -752,6 +752,29 @@ test('a committed new version stays recoverable when its editor load fails', asy
     assert.deepEqual(page.errors, []);
 });
 
+test('a photo-store version change retires the editor and asks for a reload', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    t.after(() => page.dom.window.close());
+
+    const upgraded = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(Store.DATABASE_NAME, Store.DATABASE_VERSION + 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('photo editor kept its old database open'));
+    });
+    t.after(() => upgraded.close());
+
+    await waitFor(page.dom, () => /updated in another tab.*Reload/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(page.doc.getElementById('photo-title').disabled, true);
+    assert.equal(page.doc.getElementById('photo-file').disabled, true);
+    assert.equal(page.doc.getElementById('show-library').disabled, true);
+    assert.equal(page.doc.getElementById('photo-overlay').getAttribute('aria-disabled'), 'true');
+    assert.match(page.status(), /Reload to continue/);
+    assert.deepEqual(page.errors, []);
+});
+
 const imgbbSuccess = {
     data: {
         id: 'provider-1',

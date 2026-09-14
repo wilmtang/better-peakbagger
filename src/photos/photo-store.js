@@ -48,10 +48,17 @@ const transactionDone = transaction => new Promise((resolve, reject) => {
 const openDatabase = ({
     indexedDB = globalThis.indexedDB,
     name = DATABASE_NAME,
+    onVersionChange = null,
 } = {}) => {
     if (!indexedDB?.open) return Promise.reject(new Error('IndexedDB is unavailable.'));
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(name, DATABASE_VERSION);
+        let settled = false;
+        const fail = error => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        };
         request.onupgradeneeded = event => {
             const database = request.result;
             for (const storeName of STORE_NAMES) {
@@ -82,9 +89,21 @@ const openDatabase = ({
                 photos.createIndex(DELETED_AT_INDEX, 'deletedAt', { unique: false });
             }
         };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error('Could not open the photo library.'));
-        request.onblocked = () => reject(new Error('Photo library upgrade is blocked by another tab.'));
+        request.onsuccess = () => {
+            const database = request.result;
+            if (settled) {
+                database.close();
+                return;
+            }
+            settled = true;
+            database.onversionchange = event => {
+                database.close();
+                try { onVersionChange?.(event); } catch {}
+            };
+            resolve(database);
+        };
+        request.onerror = () => fail(request.error || new Error('Could not open the photo library.'));
+        request.onblocked = () => fail(new Error('Photo library upgrade is blocked by another tab.'));
     });
 };
 

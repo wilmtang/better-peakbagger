@@ -97,6 +97,68 @@ test('upgrading a pre-generation catalog starts dirty instead of inventing confi
     upgraded.close();
 });
 
+test('a blocked open closes a late connection after its caller has been rejected', async () => {
+    const indexedDB = new IDBFactory();
+    const name = 'photo-store-blocked-late-success';
+    const blocker = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, Store.DATABASE_VERSION - 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+
+    const opening = Store.openDatabase({ indexedDB, name });
+    await assert.rejects(opening, /upgrade is blocked by another tab/);
+    blocker.close();
+
+    await new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(name);
+        request.onsuccess = resolve;
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('late connection still owns the database'));
+    });
+});
+
+test('ordinary open errors reject with the IndexedDB request error', async () => {
+    const failure = new Error('injected open failure');
+    const indexedDB = {
+        open: () => {
+            const request = {};
+            queueMicrotask(() => {
+                request.error = failure;
+                request.onerror();
+            });
+            return request;
+        },
+    };
+    await assert.rejects(Store.openDatabase({ indexedDB }), failure);
+});
+
+test('a live connection closes and notifies its owner before a later version opens', async () => {
+    const indexedDB = new IDBFactory();
+    const name = 'photo-store-version-change';
+    let observed = null;
+    const store = await Store.createPhotoStore({
+        indexedDB,
+        name,
+        onVersionChange: event => {
+            observed = { oldVersion: event.oldVersion, newVersion: event.newVersion };
+        },
+    });
+
+    const upgraded = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, Store.DATABASE_VERSION + 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('the live store did not retire'));
+    });
+    assert.deepEqual(observed, {
+        oldVersion: Store.DATABASE_VERSION,
+        newVersion: Store.DATABASE_VERSION + 1,
+    });
+    upgraded.close();
+    store.close();
+});
+
 test('persists and retrieves a matching photo, project, original, and thumbnail atomically', async () => {
     const store = await Store.createPhotoStore({
         indexedDB: new IDBFactory(),
