@@ -700,7 +700,7 @@ test('Process parses on the page without disclosing local-file metadata and auto
 test('timezone resolution ignores route-invalid coordinates and untrustworthy timestamps', async () => {
     const content = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
       <trkpt lat="49.5" lon="999"><time>2026-01-01T12:00:00Z</time></trkpt>
-      <trkpt lat="49.5" lon="-123.1"><time>not-a-time</time></trkpt>
+      <trkpt lat="49.5" lon="-123.1"><time>2026-02-30T12:00:00Z</time></trkpt>
       <trkpt lat="49.5" lon="-123.099"><time>2026-07-01T15:00:00Z</time></trkpt>
       <trkpt lat="49.5" lon="-999"><time>2026-01-01T12:00:00Z</time></trkpt>
     </trkseg></trk></gpx>`;
@@ -715,7 +715,9 @@ test('timezone resolution ignores route-invalid coordinates and untrustworthy ti
 
     const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
     assert.equal(start.utcOffsetMinutes, -420,
-        'the valid July point, not rejected January coordinates or an invalid time, controls DST');
+        'the valid July point, not rejected January coordinates or a nonexistent date, controls DST');
+    assert.equal(start.segments[0][1].time, null);
+    assert.equal(start.segments[0][1].invalidTime, true);
 });
 
 test('timezone resolution observes DST and stays unknown for an all-invalid route', async () => {

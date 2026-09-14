@@ -43,10 +43,28 @@ const parseOptionalNumber = text => {
 // GPX 1.1 uses XML Schema dateTime. Date.parse also admits locale-like strings
 // such as "July 10", which makes the ascent-page analyzer disagree with the
 // stricter provider/upload path and can turn malformed input into a plausible
-// chart. Accept the ISO-shaped forms GPX writers emit, then let Date.parse
-// validate their calendar and offset semantics.
+// chart. Accept the ISO-shaped forms GPX writers emit, validate their calendar
+// fields explicitly, then let Date.parse produce the instant.
 const GPX_TIME_PATTERN =
-    /^-?\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i;
+    /^(-?\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:Z|([+-])(\d{2}):(\d{2}))$/i;
+
+const validCalendarTime = match => {
+    if (!match) return false;
+    const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+    if (![year, month, day, hour, minute, second].every(Number.isSafeInteger)
+        || month < 1 || month > 12 || day < 1 || minute > 59 || second > 59
+        || hour > 24) return false;
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if (day > daysInMonth[month - 1]) return false;
+    if (hour === 24 && (minute !== 0 || second !== 0 || /[1-9]/.test(match[7] || ''))) return false;
+    if (match[8]) {
+        const offsetHour = Number(match[9]);
+        const offsetMinute = Number(match[10]);
+        if (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0)) return false;
+    }
+    return true;
+};
 
 const parseOptionalTime = (text, hasElement = false) => {
     if (text === null) {
@@ -56,7 +74,8 @@ const parseOptionalTime = (text, hasElement = false) => {
     if (!normalized) {
         return { value: null, state: hasElement ? 'invalid' : 'missing' };
     }
-    const value = GPX_TIME_PATTERN.test(normalized) ? Date.parse(normalized) : Number.NaN;
+    const match = GPX_TIME_PATTERN.exec(normalized);
+    const value = validCalendarTime(match) ? Date.parse(normalized) : Number.NaN;
     return Number.isFinite(value)
         ? { value, state: 'valid' }
         : { value: null, state: 'invalid' };

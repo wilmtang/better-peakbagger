@@ -141,6 +141,41 @@ test('track-point parsing rejects partial numbers and non-ISO dates consistently
     assert.equal(parsed.timeState, 'invalid');
 });
 
+test('timestamp parsing rejects nonexistent calendar dates without narrowing valid GPX forms', () => {
+    const parseTime = value => {
+        const xml = new DOMParser().parseFromString(
+            `<trkpt lat="47" lon="-121"><time>${value}</time></trkpt>`,
+            'application/xml',
+        );
+        return parseTrackPoint(xml.documentElement, { includeQuality: true });
+    };
+    for (const value of [
+        '2026-02-30T12:00:00Z',
+        '2026-02-29T12:00:00Z',
+        '2026-04-31T12:00:00Z',
+        '2026-12-31T24:00:00.001Z',
+        '2026-01-01T12:00:00+14:01',
+    ]) {
+        const parsed = parseTime(value);
+        assert.equal(parsed.time, null, value);
+        assert.equal(parsed.invalidTime, true, value);
+        assert.equal(parsed.timeState, 'invalid', value);
+    }
+
+    const valid = [
+        ['2024-02-29T12:34:56Z', '2024-02-29T12:34:56.000Z'],
+        ['2026-07-10T12:34:56.789-07:30', '2026-07-10T20:04:56.789Z'],
+        ['2026-12-31T24:00:00Z', '2027-01-01T00:00:00.000Z'],
+        ['2026-01-01T12:00:00+14:00', '2025-12-31T22:00:00.000Z'],
+    ];
+    for (const [value, expected] of valid) {
+        const parsed = parseTime(value);
+        assert.equal(new Date(parsed.time).toISOString(), expected, value);
+        assert.equal(parsed.invalidTime, false, value);
+        assert.equal(parsed.timeState, 'valid', value);
+    }
+});
+
 test('quality metadata is opt-in and distinguishes absent from malformed samples', () => {
     const source = `<gpx><trk><trkseg>
       <trkpt lat="47" lon="-121"/>

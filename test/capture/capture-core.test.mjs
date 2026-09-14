@@ -38,6 +38,34 @@ test('sanitization breaks, rather than bridges, invalid and impossible edges', (
     assert.equal(result.quality.retainedPoints, 6);
 });
 
+test('a nonexistent GPX date cannot become a capture date or duration', () => {
+    const document = new JSDOM(`<gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"><ele>100</ele><time>2026-02-28T12:00:00Z</time></trkpt>
+      <trkpt lat="47.0001" lon="-121"><ele>110</ele><time>2026-02-30T12:01:00Z</time></trkpt>
+      <trkpt lat="47.0002" lon="-121"><ele>100</ele><time>2026-02-28T12:02:00Z</time></trkpt>
+    </trkseg></trk></gpx>`, { contentType: 'text/xml' }).window.document;
+    const raw = [[...document.querySelectorAll('trkpt')].map(pointNode =>
+        Parse.parseTrackPoint(pointNode))];
+    const { segments, quality } = Core.sanitizeTrack(raw);
+
+    assert.equal(quality.invalidTimes, 1);
+    assert.equal(segments.flat()[1].time, null);
+    assert.deepEqual(Core.calculateDayStats(segments, { utcOffsetMinutes: 0 }), []);
+    const fields = Core.calculateDraftFields(segments, {
+        encounter: {
+            segmentIndex: 1,
+            edgeIndex: 0,
+            fraction: 1,
+            lat: 47.0002,
+            lon: -121,
+            ele: 100,
+            time: Date.UTC(2026, 1, 28, 12, 2),
+        },
+    });
+    assert.equal(fields.upDuration, null);
+    assert.equal(fields.downDuration, null);
+});
+
 test('sanitization excludes impossible elevations from matching and serialized GPX', () => {
     const { segments, quality } = Core.sanitizeTrack([[
         point(0, -0.001, 100),

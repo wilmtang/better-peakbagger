@@ -1681,6 +1681,7 @@ test('GPX analyzer shows partial time runs without drawing through an invalid ti
     const cases = [
         { name: 'missing time element', middleTime: '' },
         { name: 'invalid time element', middleTime: '<time>not-a-date</time>' },
+        { name: 'nonexistent calendar date', middleTime: '<time>2026-02-30T12:00:00Z</time>' },
     ];
 
     for (const { name, middleTime } of cases) {

@@ -251,6 +251,27 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.equal('diagnostics' in capture, false, 'production capture output stays narrow by default');
 });
 
+test('provider capture preserves a nonexistent GPX date as invalid', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    dom.window.fetch = async () => ({
+        ok: true,
+        text: async () => `<gpx><trk><trkseg>
+          <trkpt lat="1" lon="2"><time>2026-02-30T12:00:00Z</time></trkpt>
+          <trkpt lat="1.1" lon="2.1"><time>2026-03-02T12:01:00Z</time></trkpt>
+        </trkseg></trk></gpx>`,
+    });
+
+    const capture = await dom.window.BPBProviderPage.capture();
+    assert.equal(capture.ok, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(capture.segments[0].map(point => ({
+        time: point.time,
+        invalidTime: point.invalidTime,
+    })))), [
+        { time: null, invalidTime: true },
+        { time: Date.UTC(2026, 2, 2, 12, 1), invalidTime: false },
+    ]);
+});
+
 test('opt-in provider diagnostics contain only local durations and aggregate counts', async () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     dom.window.fetch = async () => ({
