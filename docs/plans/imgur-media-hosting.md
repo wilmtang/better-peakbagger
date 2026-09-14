@@ -10,16 +10,41 @@ through Imgur in a dedicated video path. Reuse the report editor's existing
 direct-video node and serializers. Do not send videos through Photo Topos'
 image decoder, canvas export, or pasted-photo message transport.
 
-The easiest eventual setup is **Connect Imgur** inside Settings, using a
-maintainer-registered public Client ID and Imgur's browser authorization screen.
-Keep **Use my own Client ID** as the bootstrap/advanced path. Postman must not be
-a prerequisite. A cURL example can validate an existing Client ID, upload a file,
-or refresh an account token; it cannot replace application registration.
+Each user registers their own Imgur application and supplies its **Client ID**.
+Settings guides registration, supplies the exact callback to copy, and then
+handles account authorization through **Connect Imgur**. This is the default
+setup, not an advanced fallback. Do not bundle a maintainer-owned Client ID or
+route uploads through a shared application or relay.
+
+User-owned applications keep unrelated users from depending on one application
+quota. Files still travel directly from each user's browser to Imgur. Postman
+must not be a prerequisite. A cURL example can validate an existing Client ID,
+upload a file, or refresh an account token; it cannot replace registration.
 
 Before enabling Imgur for release, resolve registration availability and the
 provider's external-hosting restriction, then verify real photo/video uploads.
 These are outstanding evidence requirements, not findings that the feature is
 impossible. The provider-neutral work remains useful independently.
+
+### Application quota decision
+
+Imgur documents approximately **1,250 uploads per day per application**, with
+additional user/IP limits. It also documents an application block for the rest
+of the month after reaching its daily limit five times. Read actual allowances
+and reset information from response headers or `/3/credits`; the published
+figures are not a guarantee of live capacity. See
+[the official API rate-limit documentation](https://apidocs.imgur.com/).
+
+Separate user logins under one Client ID still consume that application's
+shared quota. With this plan, each user's uploads consume the quota of the
+application they registered. Their other tools using that same Client ID also
+share it, and user/IP limits continue to apply. The extension must not rotate
+Client IDs or fall back to a maintainer application when a limit is reached.
+
+The tradeoff is a one-time application-registration step for every user. Accept
+that setup cost to avoid a shared quota and application-wide outage affecting
+all extension users. Successful registration is therefore a release prerequisite
+for the standard setup, not merely an advanced configuration check.
 
 ## Findings in the current repository
 
@@ -94,10 +119,13 @@ Default upload host   [ ImgBB ▾ ]
 ImgBB                 API key       [ Save key ]
 ```
 
-Selecting Imgur reveals **Connect Imgur** and a small **Use my own Client ID**
-disclosure. A connection status identifies the account, or explicitly says
-**Anonymous uploads** for Client-ID-only configuration. Keep service setup
-instructions in the guide behind **How to connect**.
+Selecting Imgur reveals **Register application**, the exact callback with a
+**Copy** action, a **Client ID** field, and **Connect Imgur**. The primary setup
+uses the user's own application and account. Keep detailed form instructions in
+the guide behind **How to connect**. A small **Anonymous uploads** disclosure
+offers Client-ID-only setup as an explicit alternative; it uses the same
+user-owned application. Connection status identifies the account or explicitly
+says **Anonymous uploads**. Saving a Client ID alone must not say **Connected**.
 
 Every upload surface shows **Upload to [host ▾]** before bytes leave the device:
 
@@ -116,9 +144,10 @@ settings schema. Unknown/missing values default to ImgBB. Credentials stay
 device-local; a synced host preference does not imply that another device is
 connected. Never fall back to another host after an error or permission denial.
 
-Once an upload starts, freeze provider, account/credential generation, file
-snapshot, and destination report. A host/account change elsewhere cannot retarget
-an in-flight operation. Existing uploaded items retain their provider and URL.
+Once an upload starts, freeze provider, Client ID, account/credential generation,
+file snapshot, and destination report. A host/client/account change elsewhere
+cannot retarget an in-flight operation. Existing uploaded items retain their
+provider and URL.
 
 ### MP4 entry
 
@@ -143,49 +172,55 @@ promise. Do not claim that Imgur will preserve audio until tested.
 
 ## Credential setup without Postman
 
-### Preferred: connect inside the extension
+### Default: register your application, then connect in Settings
 
-1. Maintainer registers the extension with Imgur once. Register the exact
-   callback for each supported browser/distribution; separate clients may be
-   necessary. Package only the public Client ID. Never ship a shared secret.
-2. A trusted **Connect Imgur** click obtains the necessary permission and starts
-   browser authorization with `response_type=token`, a cryptographically random
-   one-use `state`, and the registered callback.
+1. Settings supplies a **Register application** link and the exact callback for
+   this installed extension, with **Copy**. The user signs in to Imgur, registers
+   their application, and copies the returned Client ID. Verify and document the
+   current form choices. The extension cannot issue a Client ID or register on
+   the user's behalf. If registration is unavailable, explain that limitation
+   and preserve ImgBB and existing direct-URL insertion.
+2. The user pastes the Client ID and selects **Connect Imgur**. Obtain necessary
+   permission and start browser authorization with that user's Client ID,
+   `response_type=token`, a cryptographically random one-use `state`, and the
+   registered callback. No Client Secret field is required for this flow.
 3. Use `identity.getRedirectURL()` and `identity.launchWebAuthFlow()` where
-   supported. Add the identity permission only with this flow. Verify Chrome,
-   Firefox, installed builds, and development extension IDs separately; callback
-   support is not established by a mocked response. See
+   supported. Add the identity permission only with this flow. Register the exact
+   callback for each supported browser/distribution; a user may need separate
+   applications for different callbacks. Verify Chrome, Firefox, installed
+   builds, and development extension IDs separately; callback support is not
+   established by a mocked response. See
    [the browser identity API](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/identity/launchWebAuthFlow).
 4. Check exact callback origin/path, matching state, expiry, denial, replay, and
-   the current connection generation. Parse tokens only in extension-owned code.
-   Drop the full callback URL immediately; never log, sync, or display it.
-5. Store the access token and expiry locally, validate account identity with a
-   read-only request, and show **Connected as …**. Keep old credentials if a
-   replacement connection fails; disconnect must invalidate late callbacks.
-6. For a shared public-client setup, reconnect on expiry. The documented refresh
-   exchange requires a secret, so do not promise unattended refresh or add a
-   credential relay. Retain a refresh token only for an explicitly supported
-   user-owned-client refresh flow. Never fall back to anonymous on expiry.
+   the Client ID and connection generation captured when authorization started.
+   Parse tokens only in extension-owned code. Drop the full callback URL
+   immediately; never log, sync, or display it.
+5. Validate account identity with a read-only request, then atomically store the
+   Client ID, access token, account identity, and expiry locally. Show **Connected
+   as …**. Stage a replacement Client ID separately until its authorization
+   succeeds; never pair it with the old token. Keep the previous connection if
+   replacement fails, and let disconnect invalidate late callbacks.
+6. Reconnect on expiry in v1. The documented refresh exchange requires a secret;
+   collecting client secrets and implementing unattended refresh are outside
+   this version. Discard any unused refresh token returned by authorization.
+   Never switch to anonymous uploads or another application on expiry.
 
-This removes end-user key management once the maintainer registration exists.
-If that prerequisite is unavailable, the first usable setup is the manual path
-below; do not ship a Connect button that cannot finish.
+The extension assists registration and handles tokens after browser consent;
+users need neither Postman nor manual access-token copying. It does not remove
+the requirement for their own registered application.
 
-### Bootstrap: use your own Client ID
+### Optional: anonymous uploads with your own Client ID
 
-1. Sign in to Imgur, follow **Register application**, and copy the returned
-   Client ID. The guide must include the exact currently verified form choices;
-   do not invent a callback value for the user to guess.
-2. Paste the Client ID in Settings and choose **Save Client ID**. For anonymous
-   use, no client secret or access token is needed for the documented image flow.
+1. After registering their application, the user opens **Anonymous uploads**,
+   enters its Client ID, and chooses **Save and use anonymous uploads**. No client
+   secret or access token is needed for the documented anonymous-image flow.
    A read-only credential check proves only that check, not upload permission.
-3. Explain that anonymous uploads are not added to the user's account. Preserve
+2. Explain that anonymous uploads are not added to the user's account. Preserve
    deletion capability locally; after a response-lost upload, account-gallery
    inspection may not recover it. This is why account connection is preferred.
-4. To associate uploads with an account, the advanced UI supplies the exact
-   extension callback to register, then runs the same browser Connect flow.
-   If live probes show anonymous MP4 is unavailable, require account connection
-   for MP4 and say so in the dropdown's setup state.
+3. If live probes show anonymous MP4 is unavailable, require account connection
+   for MP4 and say so in the dropdown's setup state. Moving between anonymous
+   and account uploads is an explicit connection change, never an error fallback.
 
 Postman's collection is an optional API testing workspace. It still requires
 registered client credentials; importing it is not a way to obtain one's own
@@ -216,7 +251,9 @@ curl --fail-with-body --silent --show-error \
   https://api.imgur.com/3/image
 ```
 
-For a user-owned registered client with an existing refresh token:
+For advanced manual use outside the extension, a user-owned registered client
+with an existing refresh token can run the following. This does not imply that
+the v1 extension retains refresh tokens or offers automatic refresh:
 
 ```sh
 curl --fail-with-body --silent --show-error \
@@ -327,11 +364,12 @@ origin only if a verified extension fetch requires it; ordinary report playback
 does not justify broad API permissions. Fixed API requests omit browser cookies
 and referrers and do not forward tokens across redirects.
 
-Store Imgur credentials separately in device-local storage. The worker owns
-connection management. Only the exact packaged uploader may obtain an access
-token needed for direct upload, bound to the operation and current connection;
-it must never receive a shared client secret or refresh token. Neither Peakbagger
-world, general status replies, URLs, logs, nor GitHub backups receive credentials.
+Store the user-owned Client ID and account credentials together in a separate
+device-local connection record. The worker owns connection management. Only the
+exact packaged uploader may obtain the Client ID or access token needed for the
+chosen upload mode, bound to the operation and current connection. V1 neither
+collects client secrets nor retains refresh tokens. Neither Peakbagger world,
+general status replies, URLs, logs, nor GitHub backups receive credentials.
 Removing credentials prevents subsequent uploads without erasing library items.
 
 For v1, settings export continues its existing ImgBB/GitHub credential behavior
@@ -357,20 +395,24 @@ account-wide media import, or automatic remote deletion.
 
 Each numbered implementation unit gets a focused commit after its checks pass.
 
-1. **Provider feasibility.** Verify signed-in registration/retrieval, exact
-   callback behavior, permitted hosting use, and one user-authorized image/MP4
-   upload per required auth mode. Capture sanitized response fixtures, final
-   MIME/playback/audio behavior, limits, and processing behavior. Prove the
-   intended hidden fixture can load the real extension before UI implementation.
+1. **Provider feasibility.** Verify a new user's signed-in application
+   registration/retrieval, exact callback behavior, permitted hosting use, and
+   one user-authorized image/MP4 upload per required auth mode. Read that
+   application's quota/reset data without deliberately exhausting its limits.
+   Capture sanitized response fixtures, final MIME/playback/audio behavior,
+   limits, and processing behavior. Prove the intended hidden fixture can load
+   the real extension before UI implementation.
 2. **Provider-neutral image upload.** Introduce adapters, pinned host selection,
    versioned catalog/journal/secrets, and migrations while preserving all current
    ImgBB behavior. Cover source/export formats, captions, archives, backups,
    interrupted requests, multiple tabs, and return-after-commit behavior.
 3. **Imgur connection and photo upload.** Add the adapter, optional permission,
    Settings setup, dropdown, and both standalone/pasted-photo routing. Implement
-   the usable bootstrap path; enable maintained-client Connect only with verified
-   registration. Test expired/revoked tokens, denied permission, state/replay,
-   disconnect/reconnect races, and secret exclusion.
+   user-owned Client ID setup and in-extension account authorization as the
+   standard flow. Test expired/revoked tokens, denied permission, state/replay,
+   Client ID replacement, disconnect/reconnect races, and secret exclusion.
+   Verify that requests use the selected user's application, quota failure never
+   changes it, and the build contains no default or fallback Imgur Client ID.
 4. **MP4 uploader and library.** Add video metadata, preview, blob retention,
    streaming/bounded preparation, processing recovery, and typed insertion.
    Cover over-limit/empty/corrupt files, unsupported decoding, cancellation,
@@ -404,8 +446,8 @@ Verify owned browser/process/profile teardown and retain only deliberate evidenc
 | Category | Current state |
 | --- | --- |
 | Fixed and verified | No runtime changes. Current code boundaries inspected; current official collection read; this plan and examples reviewed statically. |
-| Intentionally not changed | Existing default and credentials; image format/export behavior; photo metadata stripping; native Save authority; arbitrary embeds; video editing/transcoding; video paste; automatic gallery publication/deletion; existing caption plan. |
-| Changed but not fully proven | No implementation yet. Registration UI, maintained-client enrollment, hosting suitability, anonymous MP4 behavior, live limits/response/processing/audio, OAuth browser callbacks, and server save/reopen remain open. |
+| Intentionally not changed | Existing default and credentials; image format/export behavior; photo metadata stripping; native Save authority; arbitrary embeds; video editing/transcoding; video paste; automatic gallery publication/deletion; existing caption plan. Shared maintainer application, quota fallback, client-secret collection, and unattended token refresh are outside scope. |
+| Changed but not fully proven | No implementation yet. New-user application registration, hosting suitability, anonymous MP4 behavior, live quotas/limits/response/processing/audio, OAuth browser callbacks, and server save/reopen remain open. |
 
 Keep this plan active until implementation evidence and remaining limitations are
 recorded. Archive it only with this ledger preserved and maintained guides updated.
