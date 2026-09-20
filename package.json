@@ -71,7 +71,7 @@
     "maplibre-gl": "^6.7.0",
     "marked": "^18.0.12",
     "playwright": "^1.63.0",
-    "selenium-webdriver": "^4.48.0",
+    "selenium-webdriver": "^4.49.0",
     "tz-lookup": "^6.1.25",
     "web-ext": "^10.6.0"
   },
