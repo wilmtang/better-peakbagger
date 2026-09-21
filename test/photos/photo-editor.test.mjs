@@ -2475,6 +2475,23 @@ test('a finished route can insert and remove points without deleting the route',
     assert.deepEqual(page.errors, []);
 });
 
+test('a text label accepts a space between words without losing the input caret', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    page.tool('text');
+    page.click(doc.getElementById('add-at-center'));
+    const input = doc.getElementById('object-text');
+    input.value = 'North ';
+    page.emit(input, 'input');
+    assert.equal(input.value, 'North ');
+    input.value += 'ridge';
+    page.emit(input, 'input');
+    assert.equal(input.value, 'North ridge');
+    assert.equal(page.overlay.querySelector('text').textContent, 'North ridge');
+    assert.equal(doc.querySelector('#annotation-list button').textContent, 'Text: North ridge');
+    assert.deepEqual(page.errors, []);
+});
+
 // Reaching for a browser command used to arm a topo tool behind the dialog, so
 // the user's next click on the photo dropped a mark they never asked for.
 test('browser shortcuts do not arm a topo tool', async () => {

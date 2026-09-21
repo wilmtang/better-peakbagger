@@ -152,24 +152,27 @@ const renderMarker = (object, image, interactive) => {
 
 const textAnchor = align => align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
 
-const renderLabel = (object, image, interactive) => {
+const renderLabel = (object, image, interactive, measureText) => {
     const isPitch = object.type === 'pitch';
-    const text = isPitch ? `P${object.pitch}` : object.text;
+    const text = isPitch ? `P${object.pitch}` : object.text.trim();
     const fontSize = objectSizePixels(object.type, image, object.style.scale);
     const align = isPitch ? 'center' : object.style.align;
     const anchor = textAnchor(align);
-    const estimatedWidth = Math.max(fontSize * 1.15, text.length * fontSize * 0.61);
-    const xOffset = align === 'center' ? -estimatedWidth / 2
-        : align === 'right' ? -estimatedWidth : 0;
+    const weight = isPitch ? 700 : 600;
+    const measuredWidth = measureText?.(text, fontSize, weight);
+    const textWidth = Number.isFinite(measuredWidth) && measuredWidth > 0
+        ? measuredWidth : Math.max(fontSize * 0.2, text.length * fontSize * 0.61);
+    const xOffset = align === 'center' ? -textWidth / 2
+        : align === 'right' ? -textWidth : 0;
     const background = object.style.background
         ? `<rect x="${number(xOffset - fontSize * 0.22)}" y="${number(-fontSize * 0.88)}"`
-            + ` width="${number(estimatedWidth + fontSize * 0.44)}"`
+            + ` width="${number(textWidth + fontSize * 0.44)}"`
             + ` height="${number(fontSize * 1.15)}" rx="${number(fontSize * 0.16)}"`
             + ' fill="#000000" fill-opacity="0.72"/>'
         : '';
     const hitTarget = interactive
         ? `<rect data-bpb-hit-target="true" x="${number(xOffset - fontSize * 0.3)}"`
-            + ` y="${number(-fontSize * 1.1)}" width="${number(estimatedWidth + fontSize * 0.6)}"`
+            + ` y="${number(-fontSize * 1.1)}" width="${number(textWidth + fontSize * 0.6)}"`
             + ` height="${number(fontSize * 1.6)}" rx="${number(fontSize * 0.16)}"`
             + ' fill="transparent" stroke="none" pointer-events="all"/>'
         : '';
@@ -179,8 +182,8 @@ const renderLabel = (object, image, interactive) => {
         + background
         + `<text x="0" y="0" fill="${object.style.color}"`
         + ` font-family="${escapeXml(FONT_FAMILY)}" font-size="${number(fontSize)}"`
-        + ` font-weight="${isPitch ? '700' : '600'}" text-anchor="${anchor}"`
-        + ' dominant-baseline="alphabetic">'
+        + ` font-weight="${weight}" text-anchor="${anchor}"`
+        + ' dominant-baseline="alphabetic" xml:space="preserve">'
         + escapeXml(text)
         + `</text>${hitTarget}</g>`;
 };
@@ -192,9 +195,20 @@ const arrowDefinition = color => [
     '</marker>',
 ].join('');
 
-const renderOverlaySvg = (value, { interactive = false } = {}) => {
+const renderOverlaySvg = (value, { interactive = false, document: documentImpl = globalThis.document } = {}) => {
     const project = Project.cleanProject(value);
     if (!project) throw new TypeError('photo renderer requires a clean project');
+    let measureContext;
+    if (project.objects.some(object => object.type === 'text' || object.type === 'pitch')) {
+        try { measureContext = documentImpl?.createElement?.('canvas')?.getContext?.('2d'); }
+        catch { /* The deterministic estimate remains available without canvas text metrics. */ }
+    }
+    const measureText = typeof measureContext?.measureText === 'function'
+        ? (text, size, weight) => {
+            measureContext.font = `${weight} ${number(size)}px ${FONT_FAMILY}`;
+            return measureContext.measureText(text).width;
+        }
+        : null;
     const arrowColors = [...new Set(project.objects
         .filter(object => object.type === 'route' && object.style.end === 'arrow')
         .map(object => object.style.color))];
@@ -203,7 +217,7 @@ const renderOverlaySvg = (value, { interactive = false } = {}) => {
         if (Project.MARKER_TYPES.includes(object.type)) {
             return renderMarker(object, project.image, interactive);
         }
-        return renderLabel(object, project.image, interactive);
+        return renderLabel(object, project.image, interactive, measureText);
     }).join('');
     const defs = arrowColors.length
         ? `<defs>${arrowColors.map(arrowDefinition).join('')}</defs>`
@@ -262,7 +276,7 @@ const estimateProject = async ({
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Canvas rendering is unavailable in this browser.');
     context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    const overlay = await loadSvgImage(renderOverlaySvg(project), imageDependencies);
+    const overlay = await loadSvgImage(renderOverlaySvg(project, { document: documentImpl }), imageDependencies);
     context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
     const blob = await canvasBlob(canvas, project.export.mime, project.export.quality);
     return {

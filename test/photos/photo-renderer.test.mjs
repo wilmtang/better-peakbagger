@@ -70,6 +70,27 @@ test('renders cleaned route geometry, symbols, pitch labels, and escaped text as
         'flattened exports must not carry editor-only interaction geometry');
 });
 
+test('label background follows measured glyph width rather than character count', () => {
+    const original = projectWithObjects();
+    const text = original.objects.find(object => object.id === 'text-1');
+    const project = Project.updateObject(original, text.id, {
+        text: 'i i', style: { ...text.style, background: true },
+    });
+    const fonts = [];
+    const measureContext = {
+        set font(value) { fonts.push(value); },
+        measureText() { return { width: 24 }; },
+    };
+    const svg = Renderer.renderOverlaySvg(project, {
+        document: { createElement: () => ({ getContext: () => measureContext }) },
+    });
+    const label = svg.match(/<g data-bpb-object="text-1"[\s\S]*?<\/g>/)?.[0];
+    assert.ok(label);
+    assert.match(label, /<rect[^>]*width="38\.784"/);
+    assert.match(label, /xml:space="preserve">i i<\/text>/);
+    assert.ok(fonts.some(font => font.includes('600 33.6px')));
+});
+
 test('the interactive overlay gives every annotation a geometry-sized hit target', () => {
     const marker = (type, index) => ({
         id: `${type}-1`,

@@ -1002,7 +1002,11 @@ const renderInspector = () => {
     }
     if (pitch) ui.pitch.value = String(object.pitch);
     if (text) {
-        ui.text.value = object.text;
+        // Keep the uncommitted trailing space in the focused field until the
+        // next word makes it part of the normalized project text.
+        if (document.activeElement !== ui.text || ui.text.value.trim() !== object.text) {
+            ui.text.value = object.text;
+        }
         ui.align.value = object.style.align;
     }
     if (label) ui.background.checked = object.style.background;
@@ -2784,7 +2788,8 @@ const bindInspector = () => {
     });
     ui.text.addEventListener('input', () => {
         const object = selectedObject();
-        if (object?.type === 'text' && ui.text.value.trim()) {
+        if (object?.type === 'text' && ui.text.value.trim()
+            && ui.text.value.trim() !== object.text) {
             updateSelected({ text: ui.text.value }, { coalesce: 'text' });
         }
     });
