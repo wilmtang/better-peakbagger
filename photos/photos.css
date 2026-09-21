@@ -345,6 +345,7 @@ kbd {
 .viewport-column {
   display: grid;
   min-width: 0;
+  min-height: 0;
   grid-template-rows: minmax(0, 1fr) auto;
   background: var(--dark-bg);
 }
@@ -352,7 +353,7 @@ kbd {
 .photo-viewport {
   display: grid;
   overflow: auto;
-  min-height: 540px;
+  min-height: 0;
   place-items: center;
   padding: 24px;
   touch-action: none;
@@ -907,7 +908,7 @@ kbd {
   }
 
   .photo-viewport {
-    min-height: 420px;
+    height: clamp(420px, 65vh, 600px);
   }
 
   .upload-options {

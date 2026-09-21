@@ -186,18 +186,25 @@ let exportEstimatePending = false;
 let photoDragDepth = 0;
 
 const applyReportWidthPreview = () => {
-    if (!RETURN_TOKEN || !project) {
+    if (!project) {
         ui.stage.style.removeProperty('width');
         ui.stage.style.removeProperty('max-width');
         return;
     }
-    // "Original" means no width attribute in the report, but the editing
-    // surface still has to fit inside its viewport. Cap the preview at the
-    // source's natural width so neither Original nor a preset upscales it.
-    const width = ReportSize.displayWidth(project.image.width, reportImageWidth)
-        ?? project.image.width;
+    // Fit both dimensions inside the editing viewport. Width-only sizing made
+    // portrait photos taller than the canvas and hid most of the image below
+    // the fold. A report-width choice remains an additional upper bound.
+    const reportWidth = RETURN_TOKEN
+        ? ReportSize.displayWidth(project.image.width, reportImageWidth) ?? project.image.width
+        : 1100;
+    const style = getComputedStyle(ui.viewport);
+    const availableHeight = ui.viewport.clientHeight
+        - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+    const fitWidth = availableHeight > 0
+        ? availableHeight * project.image.width / project.image.height
+        : 1100;
     ui.stage.style.width = '100%';
-    ui.stage.style.maxWidth = `${width}px`;
+    ui.stage.style.maxWidth = `${Math.min(1100, reportWidth, fitWidth)}px`;
 };
 
 const setReportImageWidth = width => {
@@ -2752,6 +2759,10 @@ const bindInspector = () => {
 };
 
 const bindEvents = () => {
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(applyReportWidthPreview).observe(ui.viewport);
+    }
+    window.addEventListener('resize', applyReportWidthPreview);
     ui.showEditor.addEventListener('click', () => setView('editor'));
     ui.showLibrary.addEventListener('click', () => setView('library'));
     ui.saveKey.addEventListener('click', () => void saveCredential());

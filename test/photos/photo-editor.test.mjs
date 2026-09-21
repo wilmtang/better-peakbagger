@@ -53,6 +53,7 @@ const loadEditor = async ({
     clipboard = undefined,
     storageEstimate = undefined,
     subtle = globalThis.crypto.subtle,
+    imageSize = IMAGE,
 } = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
@@ -103,7 +104,7 @@ const loadEditor = async ({
     const decodedBitmaps = [];
     win.createImageBitmap = async () => {
         const bitmap = {
-            ...IMAGE,
+            ...imageSize,
             closed: false,
             close() { this.closed = true; },
         };
@@ -117,7 +118,7 @@ const loadEditor = async ({
         mime = 'image/png',
         quality,
     ) {
-        const fullResolution = this.width === IMAGE.width && this.height === IMAGE.height;
+        const fullResolution = this.width === imageSize.width && this.height === imageSize.height;
         const bytes = mime === 'image/png'
             ? 6 * 1024 * 1024
             : Math.round(2 * 1024 * 1024 * (quality ?? 0.92));
@@ -979,9 +980,26 @@ test('a report size resizes only the stage preview and is remembered across both
     await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === null);
     assert.deepEqual(selects.map(select => select.value), ['original', 'original']);
     assert.equal(stage.style.width, '100%');
-    assert.equal(stage.style.maxWidth, '1600px',
-        'Original stays natural-size but remains contained by the editor viewport');
+    assert.equal(stage.style.maxWidth, '1100px',
+        'Original remains contained by the editor canvas');
     assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a portrait photo fits the viewport height without changing its source dimensions', async () => {
+    const page = await loadEditor({ imageSize: { width: 900, height: 1600 } });
+    const { doc, win } = page;
+    const stage = doc.getElementById('photo-stage');
+    const viewport = doc.getElementById('photo-viewport');
+    Object.defineProperty(viewport, 'clientHeight', { value: 600, configurable: true });
+    viewport.style.paddingTop = '24px';
+    viewport.style.paddingBottom = '24px';
+    // The editor uses the project's dimensions, not a CSS guess about the
+    // rendered image, when a resize changes the available canvas height.
+    page.win.dispatchEvent(new win.Event('resize'));
+    assert.equal(stage.style.maxWidth, '310.5px');
+    assert.equal(stage.style.aspectRatio, '900 / 1600');
+    assert.match(doc.getElementById('export-summary').textContent, /900 × 1600/);
     assert.deepEqual(page.errors, []);
 });
 
