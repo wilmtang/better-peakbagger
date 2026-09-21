@@ -526,6 +526,19 @@ kbd {
   font-size: 13px;
 }
 
+.route-point-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.route-point-actions button {
+  flex: 1;
+  min-width: 0;
+  padding: 6px;
+  font-size: 11px;
+}
+
 .inspector {
   border-top: 1px solid var(--border);
 }

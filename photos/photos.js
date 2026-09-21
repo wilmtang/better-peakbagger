@@ -78,6 +78,8 @@ const ui = {
     annotationList: byId('annotation-list'),
     routePoints: byId('route-points'),
     routePointList: byId('route-point-list'),
+    insertRoutePoint: byId('insert-route-point'),
+    removeRoutePoint: byId('remove-route-point'),
     inspector: byId('inspector'),
     inspectorHeading: byId('inspector-heading'),
     objectActions: byId('object-actions'),
@@ -393,6 +395,8 @@ const editorMutationControls = () => [
     ui.title,
     ui.caption,
     ui.finishRoute,
+    ui.insertRoutePoint,
+    ui.removeRoutePoint,
     ui.color,
     ui.opacity,
     ui.routeWidth,
@@ -422,6 +426,10 @@ const updateEditorControls = () => {
     ui.addAtCenter.disabled = locked || activeTool === 'select' || !project;
     for (const control of ui.annotationList.querySelectorAll('button')) control.disabled = locked;
     for (const control of ui.routePointList.querySelectorAll('button')) control.disabled = locked;
+    const route = selectedObject();
+    ui.insertRoutePoint.disabled = locked || route?.type !== 'route';
+    ui.removeRoutePoint.disabled = locked || route?.type !== 'route'
+        || selectedVertex == null || route.geometry.points.length <= 2;
     ui.upload.disabled = storeReloadRequired || busy || localPhotoReturned || !project
         || PUBLISHED_STATES.includes(photo?.remote.state);
     ui.showEditor.disabled = storeReloadRequired || busy;
@@ -1559,6 +1567,48 @@ const duplicateSelected = () => {
     selectedId = copy.id;
     selectedVertex = null;
     setProject(next);
+};
+
+const insertRoutePoint = () => {
+    const route = selectedObject();
+    if (editorMutationLocked() || route?.type !== 'route') return;
+    const points = route.geometry.points;
+    const index = selectedVertex == null ? points.length - 2
+        : Math.min(selectedVertex, points.length - 2);
+    const midpoint = points[index].map((value, axis) => (value + points[index + 1][axis]) / 2);
+    const nextPoints = [...points];
+    nextPoints.splice(index + 1, 0, midpoint);
+    const next = Project.updateObject(project, route.id, {
+        geometry: { points: nextPoints, controls: [] },
+    });
+    if (!next) { setEditorStatus('This route cannot hold another point.'); return; }
+    selectedVertex = index + 1;
+    setProject(next);
+    setEditorStatus(`Point ${selectedVertex + 1} inserted. Drag it or use the arrow keys to move it.`);
+};
+
+const removeRoutePoint = () => {
+    const route = selectedObject();
+    if (editorMutationLocked() || route?.type !== 'route' || selectedVertex == null) return;
+    const points = route.geometry.points;
+    if (points.length <= 2) {
+        setEditorStatus('A route needs at least two points.');
+        return;
+    }
+    const focusedPoint = ui.routePointList.contains(document.activeElement);
+    const removed = selectedVertex;
+    const nextPoints = [...points];
+    nextPoints.splice(removed, 1);
+    const next = Project.updateObject(project, route.id, {
+        geometry: { points: nextPoints, controls: [] },
+    });
+    if (!next) return;
+    selectedVertex = Math.min(removed, points.length - 2);
+    setProject(next);
+    if (focusedPoint) {
+        ui.routePointList.querySelector(`[data-vertex="${selectedVertex}"]`)?.focus();
+    }
+    setEditorStatus(`Point ${removed + 1} removed. The route has ${points.length - 1} points.`);
 };
 
 const deleteSelected = () => {
@@ -2796,6 +2846,8 @@ const bindEvents = () => {
         const button = event.target.closest?.('[data-vertex]');
         if (button) selectAnnotation(button.dataset.objectId, Number(button.dataset.vertex));
     });
+    ui.insertRoutePoint.addEventListener('click', insertRoutePoint);
+    ui.removeRoutePoint.addEventListener('click', removeRoutePoint);
     ui.finishRoute.addEventListener('click', () => finishRoute(false));
     ui.overlay.addEventListener('pointerdown', onPointerDown);
     ui.overlay.addEventListener('pointermove', moveDrag);
@@ -2926,7 +2978,8 @@ const bindEvents = () => {
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
             if (!selectedId || editorMutationLocked()) return;
             event.preventDefault();
-            deleteSelected();
+            if (selectedObject()?.type === 'route' && selectedVertex != null) removeRoutePoint();
+            else deleteSelected();
         } else if (project && toolShortcuts.has(event.key.toLowerCase())) {
             setTool(toolShortcuts.get(event.key.toLowerCase()));
         } else if (event.key === 'Enter' && routeSession) finishRoute(false);

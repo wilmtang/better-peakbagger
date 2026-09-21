@@ -1954,6 +1954,8 @@ test('export and upload hold one immutable snapshot behind every editor mutation
         doc.getElementById('undo'),
         doc.getElementById('redo'),
         doc.getElementById('finish-route'),
+        doc.getElementById('insert-route-point'),
+        doc.getElementById('remove-route-point'),
         doc.getElementById('object-color'),
         doc.getElementById('object-opacity'),
         doc.getElementById('route-width'),
@@ -2425,6 +2427,51 @@ test('keyboard controls add a centered route and edit one focusable vertex', asy
     assert.equal(page.routePath(), before);
     assert.equal(doc.activeElement.dataset.vertex, '1',
         'Undo preserves focus on the route point it rerenders');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a finished route can insert and remove points without deleting the route', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    page.tool('route');
+    page.click(doc.getElementById('add-at-center'));
+    page.click(doc.querySelector('#annotation-list button'));
+    const points = () => [...doc.querySelectorAll('#route-point-list [data-vertex]')];
+    const insert = doc.getElementById('insert-route-point');
+    const remove = doc.getElementById('remove-route-point');
+    assert.equal(points().length, 2);
+    assert.equal(remove.disabled, true);
+
+    page.click(points()[0]);
+    const originalPath = page.routePath();
+    page.click(insert);
+    assert.equal(points().length, 3);
+    assert.equal(points()[1].getAttribute('aria-pressed'), 'true');
+    assert.equal(doc.querySelector('#annotation-list button').textContent, 'Route, 3 points');
+    assert.notEqual(page.routePath(), originalPath);
+
+    points()[1].focus();
+    const deletion = new win.KeyboardEvent('keydown', {
+        key: 'Delete', bubbles: true, cancelable: true,
+    });
+    points()[1].dispatchEvent(deletion);
+    assert.equal(deletion.defaultPrevented, true);
+    assert.equal(points().length, 2);
+    assert.equal(page.markCount(), 1, 'Delete on a selected vertex preserves the route');
+    assert.equal(page.routePath(), originalPath);
+    assert.equal(doc.activeElement.dataset.vertex, '1');
+    assert.equal(remove.disabled, true, 'two points is the route minimum');
+
+    const minimumDeletion = new win.KeyboardEvent('keydown', {
+        key: 'Backspace', bubbles: true, cancelable: true,
+    });
+    doc.activeElement.dispatchEvent(minimumDeletion);
+    assert.equal(points().length, 2);
+    assert.equal(page.markCount(), 1);
+    page.click(doc.getElementById('undo'));
+    assert.equal(points().length, 3);
+    page.click(remove);
+    assert.equal(points().length, 2);
     assert.deepEqual(page.errors, []);
 });
 
