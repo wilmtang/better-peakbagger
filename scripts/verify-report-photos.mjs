@@ -43,8 +43,15 @@ try {
     await worker.evaluate(() => { chrome.permissions.contains = async () => true; });
     let uploads = 0;
     const posts = [];
-    await context.route('https://api.imgbb.com/**', route => {
+    let markUploadStarted;
+    let releaseUpload;
+    const uploadStarted = new Promise(resolve => { markUploadStarted = resolve; });
+    const uploadReleased = new Promise(resolve => { releaseUpload = resolve; });
+    resources.defer('report photo upload gate', () => releaseUpload());
+    await context.route('https://api.imgbb.com/**', async route => {
         uploads++;
+        markUploadStarted();
+        await uploadReleased;
         return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
             body: JSON.stringify({ success: true, status: 200, data: {
                 id: `fixture-${uploads}`, url_viewer: 'https://ibb.co/fixture', url: 'https://i.ibb.co/fixture/photo.png',
@@ -289,6 +296,29 @@ try {
     await report.locator('.bpb-re-surface figcaption').fill(originalCaption);
     await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
     await report.locator('#SaveButton').click();
+    await uploadStarted;
+    const uploadStatus = report.locator('.bpb-re-local-photo-status');
+    await uploadStatus.filter({ hasText: 'Uploading photo 1 of 1 to ImgBB' }).waitFor();
+    const uploadPresentation = await uploadStatus.evaluate(element => {
+        const style = getComputedStyle(element);
+        return {
+            state: element.dataset.state,
+            background: style.backgroundColor,
+            border: style.borderTopColor,
+            animation: getComputedStyle(element, '::before').animationName,
+        };
+    });
+    assert.equal(uploadPresentation.state, 'busy');
+    assert.notEqual(uploadPresentation.background, 'rgba(0, 0, 0, 0)');
+    assert.notEqual(uploadPresentation.border, 'rgba(0, 0, 0, 0)');
+    assert.equal(uploadPresentation.animation, 'bpb-re-photo-spin');
+    for (const saveId of ['SaveButton', 'SaveButton2']) {
+        const saveControl = report.locator(`#${saveId}`);
+        assert.equal(await saveControl.inputValue(), 'Uploading 1/1…');
+        assert.equal(await saveControl.getAttribute('aria-busy'), 'true');
+    }
+    await report.screenshot({ path: path.join(output, 'save-upload-progress.png') });
+    releaseUpload();
     await report.waitForURL(url, { waitUntil: 'domcontentloaded' });
     await report.waitForFunction(() => !document.querySelector('.bpb-re-local-photo-status')?.textContent.includes('Uploading'));
     // Request dispatch is the native form's observable boundary; fixture POST

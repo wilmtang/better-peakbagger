@@ -11,9 +11,15 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     status.className = 'bpb-re-local-photo-status';
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
+    status.setAttribute('aria-atomic', 'true');
     status.hidden = true;
-    ui.append(status);
-    const say = message => { status.textContent = message; status.hidden = !message; };
+    ui.prepend(status);
+    const say = (message, state = '') => {
+        status.textContent = message;
+        status.hidden = !message;
+        if (state) status.dataset.state = state;
+        else delete status.dataset.state;
+    };
     const send = async message => {
         const result = await ext.runtime.sendMessage(message);
         if (!result?.ok) throw new Error(result?.error?.message || 'The photo could not be saved. Your report is still open.');
@@ -94,7 +100,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
             previews.set(provisional, Pending.toDataUrl(file));
             editor.chain().insertContent({ type: 'image', attrs: { src: provisional, alt: 'Pasted photo', width: 640 } }).run();
             preparing++;
-            say('Saving photo on this device…');
+            say('Saving photo on this device…', 'busy');
             pasteQueue = pasteQueue.then(async () => {
                 try {
                     await send({ type: 'PHOTO_REPORT_STATUS' }).then(result => {
@@ -115,7 +121,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                     pasteFailures++;
                     previews.delete(provisional);
                     replaceNode(provisional, null);
-                    say(error.message);
+                    say(error.message, 'error');
                 } finally {
                     preparing--;
                 }
@@ -138,6 +144,30 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         const failuresBeforeSave = pasteFailures;
         saving = true;
         const wasInert = form.inert;
+        const wasBusy = form.getAttribute('aria-busy');
+        const saveControls = [...form.querySelectorAll('#SaveButton, #SaveButton2')].map(saveControl => ({
+            control: saveControl,
+            value: saveControl.value,
+            ariaBusy: saveControl.getAttribute('aria-busy'),
+        }));
+        const showSaveProgress = (message, label) => {
+            say(message, 'busy');
+            form.setAttribute('aria-busy', 'true');
+            for (const { control: saveControl } of saveControls) {
+                saveControl.value = label;
+                saveControl.setAttribute('aria-busy', 'true');
+            }
+        };
+        const restoreSaveControls = () => {
+            if (wasBusy === null) form.removeAttribute('aria-busy');
+            else form.setAttribute('aria-busy', wasBusy);
+            for (const { control: saveControl, value, ariaBusy } of saveControls) {
+                saveControl.value = value;
+                if (ariaBusy === null) saveControl.removeAttribute('aria-busy');
+                else saveControl.setAttribute('aria-busy', ariaBusy);
+            }
+        };
+        showSaveProgress('Preparing photos for upload… Keep this page open.', 'Preparing photos…');
         form.inert = true;
         const actionGeneration = generation();
         const grantPromise = Trusted.begin(ext, event, 'report-photos', actionGeneration);
@@ -154,7 +184,10 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                 const original = textarea.value;
                 const replacements = new Map();
                 for (let index = 0; index < ids.length; index++) {
-                    say(`Uploading photo ${index + 1} of ${ids.length}…`);
+                    showSaveProgress(
+                        `Uploading photo ${index + 1} of ${ids.length} to ImgBB… Keep this page open.`,
+                        `Uploading ${index + 1}/${ids.length}…`
+                    );
                     const result = await send({ type: 'PHOTO_REPORT_UPLOAD', localPhotoId: ids[index],
                         generation: actionGeneration, grantToken: workflow.grantToken });
                     if (pageGeneration !== savePageGeneration) throw new Error('You left this report during upload. Review it and save again.');
@@ -167,14 +200,15 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                 flush();
                 if (Pending.ids(textarea.value).length) throw new Error('Some photos are still local. Review the report and save again.');
                 await saveDraft();
-                say('Photos uploaded. Saving report…');
+                showSaveProgress('Photos uploaded. Saving ascent…', 'Saving ascent…');
                 ready = true;
             } catch (error) {
-                say(`${error.message} The report has not been submitted.`);
+                say(`${error.message} The report has not been submitted.`, 'error');
             } finally {
                 await Trusted.end(ext, workflow, actionGeneration);
                 saving = false;
                 form.inert = wasInert;
+                restoreSaveControls();
             }
             if (ready && form.isConnected && pageGeneration === savePageGeneration) {
                 // Resume the user's original submission through native validation;

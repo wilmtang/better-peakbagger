@@ -41,9 +41,18 @@ test('pending images show local state; synthetic Save cannot upload or submit', 
 test('Save waits for hosted URLs, blocks double submission, and retains dimensions', async () => {
     let finish;
     const h = await setup(() => new Promise(resolve => { finish = resolve; }));
+    const form = h.dom.window.document.getElementById('JournalText').form;
+    const status = h.ui.querySelector('.bpb-re-local-photo-status');
     const button = h.dom.window.document.getElementById('SaveButton');
     fireTrustedEvent(button, 'click', { bubbles: true, cancelable: true });
+    assert.equal(status.textContent, 'Preparing photos for upload… Keep this page open.');
+    assert.equal(status.dataset.state, 'busy');
+    assert.equal(button.value, 'Preparing photos…');
+    assert.equal(button.getAttribute('aria-busy'), 'true');
+    assert.equal(form.getAttribute('aria-busy'), 'true');
     await waitFor(h.dom, () => finish);
+    assert.equal(status.textContent, 'Uploading photo 1 of 1 to ImgBB… Keep this page open.');
+    assert.equal(button.value, 'Uploading 1/1…');
     fireTrustedEvent(button, 'click', { bubbles: true, cancelable: true });
     assert.equal(h.submissions(), 0);
     assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_UPLOAD').length, 1);
@@ -51,6 +60,9 @@ test('Save waits for hosted URLs, blocks double submission, and retains dimensio
     await waitFor(h.dom, () => h.submissions() === 1);
     assert.match(h.dom.window.document.getElementById('JournalText').value, /https:\/\/i\.ibb\.co/);
     assert.doesNotMatch(h.dom.window.document.getElementById('JournalText').value, /bpb-photo\.invalid/);
+    assert.equal(button.value, 'Save Ascent');
+    assert.equal(button.hasAttribute('aria-busy'), false);
+    assert.equal(form.hasAttribute('aria-busy'), false);
     h.dom.window.close();
 });
 
@@ -61,6 +73,9 @@ test('failed uploads preserve pending images and keep the native form open', asy
     assert.equal(h.submissions(), 0);
     assert.ok(h.dom.window.document.getElementById('JournalText').value.includes(src));
     assert.equal(h.dom.window.document.getElementById('JournalText').form.inert, undefined);
+    assert.equal(h.ui.querySelector('.bpb-re-local-photo-status').dataset.state, 'error');
+    assert.equal(h.dom.window.document.getElementById('SaveButton2').value, 'Save Ascent');
+    assert.equal(h.dom.window.document.getElementById('SaveButton2').hasAttribute('aria-busy'), false);
     h.dom.window.close();
 });
 
