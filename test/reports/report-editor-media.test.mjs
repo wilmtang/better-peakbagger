@@ -782,7 +782,7 @@ test('keyboard image resizing stops at the serialized dimension ceiling', async 
         '[img src="https://example.com/panorama.jpg" alt="Panorama" width="1600" height="960"]');
 });
 
-test('plain mode is the untouched native textarea, hints restored', async () => {
+test('plain mode uses the native textarea and restores Peakbagger hints', async () => {
     const dom = await loadEditor({ report: 'raw [b]supported[/b] text' });
     const ui = await editorReady(dom);
     const doc = dom.window.document;
@@ -804,6 +804,37 @@ test('plain mode is the untouched native textarea, hints restored', async () => 
 
     modeButton(doc, 'Rich text').click();
     assert.equal(plainHint.hidden, true);
+});
+
+test('plain mode presents server break tags as newlines without changing rich or Markdown structure', async () => {
+    const dom = await loadEditor({
+        settings: { reportEditorMode: 'plain' },
+        report: 'First[br/]line[br /][br/]Second paragraph.'
+    });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const textarea = doc.getElementById('JournalText');
+
+    assert.equal(ui.dataset.mode, 'plain');
+    assert.equal(textarea.value, 'First\nline\n\nSecond paragraph.');
+
+    modeButton(doc, 'Rich text').click();
+    assert.equal(editors(dom).rich.getHTML(), '<p>First<br>line</p><p>Second paragraph.</p>');
+
+    modeButton(doc, 'Markdown').click();
+    assert.equal(editors(dom).markdown.getValue(), 'First\nline\n\nSecond paragraph.');
+    assert.equal(textarea.value, 'First\nline\n\nSecond paragraph.');
+});
+
+test('plain mode leaves attributed break-shaped markup verbatim for the conversion guard', async () => {
+    const report = 'Before[br class="legacy"]after';
+    const dom = await loadEditor({ settings: { reportEditorMode: 'plain' }, report });
+    const ui = await editorReady(dom);
+    const textarea = dom.window.document.getElementById('JournalText');
+
+    assert.equal(ui.dataset.mode, 'plain');
+    assert.equal(textarea.value, report);
+    assert.match(ui.querySelector('.bpb-re-conversion-text').textContent, /class on \[br\]/);
 });
 
 test('editing Plain invalidates the exact Markdown sidecar', async () => {

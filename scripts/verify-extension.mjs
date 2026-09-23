@@ -4938,6 +4938,21 @@ try {
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Plain', exact: true
             }).click();
+            await editorPage.locator('#JournalText').fill(
+                'First[br/]line[br/][br/]Second paragraph.');
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+            const naturalBreakRichHtml = await editorPage.locator(
+                '#bpb-report-editor .bpb-re-surface').innerHTML();
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            const naturalBreakSource = await editorPage.locator('#JournalText').inputValue();
+            check(naturalBreakSource === 'First\nline\n\nSecond paragraph.'
+                && /<p>First<br>line<\/p><p>Second paragraph\.<\/p>/.test(naturalBreakRichHtml),
+            `Plain did not naturalize server break tags without changing Rich structure: ${
+                JSON.stringify({ naturalBreakSource, naturalBreakRichHtml })}`);
             const plainBarLayout = await editorPage.evaluate(() => {
                 const bar = document.querySelector('#bpb-report-editor .bpb-re-bar');
                 const hint = document.querySelector('#bpb-report-editor .bpb-re-plain-hint');
@@ -5813,6 +5828,7 @@ console.log('  - the opt-in report credit renders and serializes the Chrome Web 
 console.log('  - the report editor opens the standalone report-drafts manager page, which renders');
 console.log('    a seeded draft with no settings sidebar');
 console.log('  - the dark trip-report palette retains seven distinct text-color swatches');
+console.log('  - Plain report source naturalizes server break tags while Rich preserves line/paragraph structure');
 console.log('  - lossy report markup starts in Plain with an unclipped wide/narrow guard, and only');
 console.log('    the explicit Convert anyway action enters the requested Rich or Markdown mode');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');

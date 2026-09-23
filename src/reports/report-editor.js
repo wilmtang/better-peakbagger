@@ -11,8 +11,9 @@
 // submitted source of truth, kept in sync on every edit and flushed
 // synchronously before any submit or postback, so Save, Cancel, GPS Preview,
 // and ASP.NET autopostbacks always post exactly what the editor shows.
-// 'Plain' mode is the untouched native textarea — the escape hatch, and where
-// unsupported markup can be edited verbatim.
+// 'Plain' mode is the native textarea — the escape hatch where unsupported
+// markup can be edited verbatim. Peakbagger-returned break tags are the one
+// narrow normalization: they become equivalent newlines for readable source.
 //
 // Drafts autosave to extension-local storage keyed by climber/ascent identity.
 // They never leave the device, expire after two weeks, and are offered back —
@@ -1364,6 +1365,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         markdownHint.hidden = !markdown;
         foot.hidden = mode === 'plain';
         plainHint.hidden = mode !== 'plain';
+        if (mode === 'plain') {
+            textarea.value = Markup.breakTagsToNewlines(textarea.value);
+        }
         if (mode === 'plain' && state.creditScaffold && !textarea.value.startsWith('\n\n')) {
             textarea.value = `\n\n${textarea.value}`;
             textarea.setSelectionRange(0, 0);

@@ -1354,6 +1354,28 @@ function blocksToMarkdown(blocks) {
 
 const astToMarkdown = blocksToMarkdown;
 
+// Peakbagger may return rendered line breaks to its edit form as explicit
+// bracket/HTML break tags. In the native textarea those tags are semantically
+// identical to newlines but make the report appear as one long source line.
+// Keep this deliberately narrower than the AST normalizer: Plain mode must
+// preserve every other spelling, including break-shaped tags with attributes.
+const breakTagsToNewlines = source => {
+    const input = String(source ?? '');
+    let output = '';
+    let at = 0;
+    TAG_TOKEN.lastIndex = 0;
+    for (let hit = TAG_TOKEN.exec(input); hit; hit = TAG_TOKEN.exec(input)) {
+        const bracket = hit[1] !== undefined;
+        const closing = (bracket ? hit[1] : hit[4]) === '/';
+        const name = (bracket ? hit[2] : hit[5]).toLowerCase();
+        const attrs = bracket ? hit[3] : hit[6];
+        if (closing || name !== 'br' || !/^\s*\/?\s*$/.test(attrs)) continue;
+        output += input.slice(at, hit.index) + '\n';
+        at = hit.index + hit[0].length;
+    }
+    return output + input.slice(at);
+};
+
 // ---- Public surface ---------------------------------------------------
 
 const API = {
@@ -1370,6 +1392,7 @@ const API = {
     astToBracket,
     astToHtml,
     astToMarkdown,
+    breakTagsToNewlines,
     bracketToEditorHtml: source => astToHtml(parseBracket(source), { editor: true }),
     bracketToPreviewHtml: source => astToHtml(parseBracket(source)),
     bracketToMarkdown: source => astToMarkdown(parseBracket(source)),

@@ -63,6 +63,17 @@ test('the output never contains [p] or [br], the tags Peakbagger warns against',
     assert.equal(bracket, 'one\n\ntwo\nthree\n\nfour');
 });
 
+test('plain source can show explicit break tags as natural newlines without broader normalization', () => {
+    const source = 'one[br/]two[BR /]three<br>four<br />five '
+        + '[br class="legacy"]six<br data-x="legacy">seven &#91;br/&#93; '
+        + '[a title="attribute <br>"]link[/a] <span title="attribute [br/]">text</span>';
+
+    assert.equal(Markup.breakTagsToNewlines(source),
+        'one\ntwo\nthree\nfour\nfive '
+        + '[br class="legacy"]six<br data-x="legacy">seven &#91;br/&#93; '
+        + '[a title="attribute <br>"]link[/a] <span title="attribute [br/]">text</span>');
+});
+
 test('markdown link targets are sanitized, with https assumed for bare domains', () => {
     assert.equal(Markup.markdownToBracket('[x](example.com/a)'),
         '[a href="https://example.com/a"]x[/a]');

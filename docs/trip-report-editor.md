@@ -193,19 +193,25 @@ nodes.
 
 ### Plain mode
 
-Plain mode exposes the original `JournalText` textarea. There is no AST,
-detached DOM, TipTap, Marked, CodeMirror conversion, sanitization, or
-normalization:
+Plain mode exposes the original `JournalText` textarea. It does not pass the
+source through the AST, detached DOM, TipTap, Marked, CodeMirror, or a
+sanitizer. On entry, it performs one narrow presentation normalization:
+zero-attribute `[br]`, `[br/]`, `<br>`, and `<br/>` spellings become newline
+characters. Peakbagger renders those spellings identically, while newlines keep
+the native textarea readable instead of presenting the report as one long line.
 
 ```text
+explicit break tags → newlines
+                         ↓
 user keystrokes ↔ JournalText bracket string → Peakbagger form submission
 ```
 
-That makes Plain mode the verbatim escape hatch, including for markup the Rich
-and Markdown converters do not support. It also means Plain mode provides none
-of their safety filtering. Editing the native textarea invalidates the exact
-Markdown-source sidecar, so a later switch to Markdown regenerates its source
-from the current `JournalText` value.
+Apart from that equivalent break spelling, Plain mode remains the verbatim
+escape hatch, including for markup the Rich and Markdown converters do not
+support. Break-shaped tags with attributes are not rewritten. Plain mode also
+provides none of the semantic editors' safety filtering. Editing the native
+textarea invalidates the exact Markdown-source sidecar, so a later switch to
+Markdown regenerates its source from the current `JournalText` value.
 
 ## What sanitizes, and what only normalizes
 
@@ -225,7 +231,7 @@ canonical spelling or structure. Several components do only one of those jobs:
 | AST-to-HTML printer | No new validation | Yes | Serializes the already-validated AST into allowlisted preview/editor elements with escaped text and attributes |
 | AST-to-Markdown printer | No new validation | Yes | Serializes the already-validated AST into canonical Markdown plus safe HTML for features with no standard Markdown form |
 | Preview `<div>` | No | No | Receives only AST-generated safe HTML and is never read back into source data |
-| Plain mode | No | No | Edits the submitted string verbatim |
+| Plain mode | No | Break tags only | Presents zero-attribute break tags as equivalent newlines, then edits the submitted string directly |
 
 Important normalization examples include:
 
@@ -273,7 +279,7 @@ final declaration removes the color rather than falling back to CSSOM or an
 earlier declaration. Four- and eight-digit alpha hex, five- and seven-digit
 malformed hex, `rgb()`/`rgba()`, HSL, variables, URLs, quotes, and arbitrary CSS
 remain inert or unstyled. Plain mode continues to preserve every spelling
-verbatim because it performs no conversion.
+verbatim except for its equivalent break-tag-to-newline presentation cleanup.
 
 ## Lossy import guard
 
