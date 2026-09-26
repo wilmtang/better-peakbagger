@@ -67,6 +67,33 @@ export function diagnoseGpxSegments(segments) {
             segment.reason = 'constant-time';
         }
     }
+    // Only one remaining multi-point recording may own an automatic decision.
+    // Multiple singleton breadcrumbs could be a connecting recording: review
+    // those too, rather than cascading exclusions through a multi-trip file.
+    const remaining = inventory.filter(s => s.disposition !== 'excluded');
+    const routes = remaining.filter(s => s.pointCount > 1);
+    const coherent = routes.filter(s => s.substantial && s.progressingTime);
+    const singletons = remaining.filter(s => s.pointCount === 1);
+    for (const candidate of singletons) {
+        if (!candidate.validCoordinates || !validTime(candidate.points[0]) || !coherent.length) continue;
+        const comparisons = coherent.map(route => ({
+            donorSegmentId: route.sourceSegmentId,
+            timeGapMs: Math.max(route.evidence.startMs - candidate.points[0].time,
+                candidate.points[0].time - route.evidence.endMs),
+            pathDistanceM: M.distanceToPathM(candidate.points[0], route.points),
+        }));
+        if (!comparisons.every(c => c.timeGapMs >= SEGMENT_POLICY.isolatedTimeGapMs
+            && Number.isFinite(c.pathDistanceM) && c.pathDistanceM >= SEGMENT_POLICY.isolatedDistanceM)) continue;
+        candidate.evidence = { ...candidate.evidence, comparisons };
+        if (routes.length === 1 && coherent.length === 1 && singletons.length === 1) {
+            candidate.disposition = 'excluded';
+            candidate.reason = 'isolated-distant-point';
+            candidate.donorSegmentId = coherent[0].sourceSegmentId;
+        } else {
+            candidate.disposition = 'warning';
+            candidate.reason = 'ambiguous-activity';
+        }
+    }
     const excluded = inventory.filter(s => s.disposition === 'excluded');
     return { inventory, sourcePointCount, excludedSegmentCount: excluded.length,
         excludedPointCount: excluded.reduce((sum, s) => sum + s.pointCount, 0),
