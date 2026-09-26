@@ -35,7 +35,11 @@ const clean = (type, value) => {
             if (result) style[key] = result.objects[0].style[key];
         }
     }
-    return { style, rotation };
+    const width = value?.width;
+    return { style, rotation,
+        ...(type === 'text' && (width === null || (Number.isFinite(width)
+            && width >= 1 && width <= Project.MAX_DIMENSION)) ? { width } : {}),
+    };
 };
 
 export const photoToolPreferences = { defaults, clean };

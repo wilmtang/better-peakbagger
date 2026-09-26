@@ -340,24 +340,34 @@ let libraryMaintenanceSuspended = false;
 let libraryMaintenanceFailure = null;
 let photoBackupBusy = false;
 let newVersionTransaction = null;
-// Each tool owns its preferences; project history never rewinds these choices.
+// Color and opacity are shared; other preferences belong to their tool.
+// Project history never rewinds these choices.
 const toolPreferences = Object.fromEntries(Project.OBJECT_TYPES.map(type =>
     [type, ToolPreferences.clean(type)]));
 const preferenceKey = type => `bpbPhotoTool:${type}`;
+const SHARED_STYLE_KEY = 'bpbPhotoSharedStyle';
 let preferenceWrites = Promise.resolve();
 const rememberTool = (type, patch) => {
     toolPreferences[type] = ToolPreferences.clean(type, {
         ...toolPreferences[type], ...patch,
         style: { ...toolPreferences[type].style, ...patch.style },
     });
-    const saved = structuredClone(toolPreferences[type]);
-    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set({
-        [preferenceKey(type)]: saved,
-    })).catch(() => toast('Tool settings apply now, but could not be saved on this device.'));
+    const shared = {};
+    for (const key of ['color', 'opacity']) {
+        if (Object.hasOwn(patch.style || {}, key)) shared[key] = toolPreferences[type].style[key];
+    }
+    for (const preferences of Object.values(toolPreferences)) Object.assign(preferences.style, shared);
+    const { color, opacity } = toolPreferences[type].style;
+    const saved = structuredClone({
+        [preferenceKey(type)]: toolPreferences[type],
+        ...(Object.keys(shared).length ? { [SHARED_STYLE_KEY]: { color, opacity } } : {}),
+    });
+    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set(saved))
+        .catch(() => toast('Tool settings apply now, but could not be saved on this device.'));
 };
 const loadToolPreferences = async () => {
     try {
-        const stored = await ext.storage.local.get([...Project.OBJECT_TYPES.map(preferenceKey), VIEWPORT_KEY]);
+        const stored = await ext.storage.local.get([...Project.OBJECT_TYPES.map(preferenceKey), VIEWPORT_KEY, SHARED_STYLE_KEY]);
         viewportSize = {
             width: cleanViewportDimension(stored[VIEWPORT_KEY]?.width, 280, 2400),
             height: cleanViewportDimension(stored[VIEWPORT_KEY]?.height, 240, 1400),
@@ -365,6 +375,10 @@ const loadToolPreferences = async () => {
         applyViewportSize();
         for (const type of Project.OBJECT_TYPES) {
             toolPreferences[type] = ToolPreferences.clean(type, stored[preferenceKey(type)]);
+            if (stored[SHARED_STYLE_KEY]) {
+                const shared = ToolPreferences.clean(type, { style: stored[SHARED_STYLE_KEY] }).style;
+                Object.assign(toolPreferences[type].style, { color: shared.color, opacity: shared.opacity });
+            }
         }
     } catch { /* Defaults remain usable when local storage is unavailable. */ }
 };
@@ -1536,7 +1550,8 @@ const addPointObject = (type, point) => {
         object = {
             ...base,
             text: 'Label',
-            geometry: { ...base.geometry, width: Math.max(1, Math.round(project.image.width * 0.28)) },
+            geometry: { ...base.geometry, width: Object.hasOwn(toolPreferences.text, 'width')
+                ? toolPreferences.text.width : Math.max(1, Math.round(project.image.width * 0.28)) },
             style: base.style,
         };
     }
@@ -1756,7 +1771,9 @@ const endDrag = () => {
     if (dragSession.resize) {
         const session = dragSession;
         dragSession = null;
-        if (session.moved && session.preview) setProject(session.preview);
+        if (session.moved && session.preview) {
+            if (setProject(session.preview)) rememberTool('text', { width: selectedObject().geometry.width });
+        }
         else renderProject();
         if (ui.overlay.hasPointerCapture?.(session.pointerId)) ui.overlay.releasePointerCapture(session.pointerId);
         return;
@@ -1821,13 +1838,19 @@ const updateSelected = (patch, { coalesce = null } = {}) => {
     if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
-    if (patch.style || patch.geometry?.rotation != null) {
+    const next = Project.updateObject(project, object.id, patch);
+    if (!next) return;
+    const styleChanges = Object.fromEntries(Object.entries(patch.style || {})
+        .filter(([key, value]) => value !== object.style[key]));
+    if (patch.style || patch.geometry?.rotation != null || (object.type === 'text' && patch.geometry)) {
         rememberTool(object.type, {
-            ...(patch.style ? { style: patch.style } : {}),
+            ...(patch.style ? { style: styleChanges } : {}),
             ...(patch.geometry?.rotation != null ? { rotation: patch.geometry.rotation } : {}),
+            ...(object.type === 'text' && Object.hasOwn(patch.geometry || {}, 'width')
+                ? { width: patch.geometry.width } : {}),
         });
     }
-    setProject(Project.updateObject(project, object.id, patch), {
+    setProject(next, {
         coalesce: coalesce && `${coalesce}:${object.id}`,
     });
 };

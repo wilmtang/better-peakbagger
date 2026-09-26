@@ -2776,7 +2776,7 @@ test('dragging one route vertex moves only that vertex', async () => {
 });
 
 
-test('tool preferences are independent and survive reopening the editor', async () => {
+test('tools share color and opacity but keep their other preferences after reopening', async () => {
     const page = await loadEditor();
     const change = (id, value, event = 'input') => {
         const control = page.doc.getElementById(id);
@@ -2786,11 +2786,13 @@ test('tool preferences are independent and survive reopening the editor', async 
     };
     page.tool('route');
     change('object-opacity', 40);
+    change('object-color', '#1e88e5', 'change');
     change('route-width', 27);
     change('route-arrow', true, 'change');
     change('route-smooth', true, 'change');
     page.tool('bolt');
-    assert.equal(page.doc.getElementById('object-opacity').value, '100');
+    assert.equal(page.doc.getElementById('object-opacity').value, '40');
+    assert.equal(page.doc.getElementById('object-color').value, '#1e88e5');
     change('object-scale', 2);
     change('object-rotation', 45);
     page.tool('text');
@@ -2799,6 +2801,7 @@ test('tool preferences are independent and survive reopening the editor', async 
     await page.settle();
     const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
     reopened.tool('route');
+    assert.equal(reopened.doc.getElementById('object-color').value, '#1e88e5');
     assert.equal(reopened.doc.getElementById('object-opacity').value, '40');
     assert.equal(reopened.doc.getElementById('route-width').value, '27');
     assert.equal(reopened.doc.getElementById('route-arrow').checked, true);
@@ -3093,4 +3096,49 @@ test('autosave excludes text resize previews and persists the released width', a
     assert.equal(saved.objects[0].geometry.width, 248);
     assert.equal(saved.objects[0].text, text.value);
     assert.deepEqual(page.errors, []);
+});
+
+test('text labels remember explicit and Auto width across placements and reopening', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('text');
+    page.pointer('pointerdown', 100, 100);
+    const width = page.doc.getElementById('text-width');
+    width.value = '275'; page.emit(width, 'change');
+    page.pointer('pointerdown', 300, 300);
+    assert.equal(width.value, '275');
+    await page.settle();
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
+    t.after(() => reopened.win.close());
+    reopened.tool('text'); reopened.pointer('pointerdown', 100, 100);
+    assert.equal(reopened.doc.getElementById('text-width').value, '275');
+    page.click(page.doc.getElementById('text-width-auto'));
+    page.pointer('pointerdown', 400, 400);
+    assert.equal(width.value, '');
+    await page.settle();
+    const auto = await loadEditor({ localPreferences: page.chrome._localStore });
+    t.after(() => auto.win.close());
+    auto.tool('text'); auto.pointer('pointerdown', 100, 100);
+    assert.equal(auto.doc.getElementById('text-width').value, '');
+});
+
+test('editing an old mark size does not replace the latest shared color or opacity', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    const old = page.overlay.querySelector('[data-bpb-object]');
+    const id = old.getAttribute('data-bpb-object');
+    page.tool('text');
+    const color = page.doc.getElementById('object-color');
+    color.value = '#1e88e5'; page.emit(color, 'change');
+    const opacity = page.doc.getElementById('object-opacity');
+    opacity.value = '40'; page.emit(opacity, 'input');
+    page.tool('select');
+    page.pointer('pointerdown', 100, 100, page.overlay.querySelector(`[data-bpb-object="${id}"]`));
+    page.pointer('pointerup', 100, 100);
+    const scale = page.doc.getElementById('object-scale');
+    scale.value = '2'; page.emit(scale, 'input');
+    page.tool('drawing');
+    assert.equal(color.value, '#1e88e5');
+    assert.equal(opacity.value, '40');
 });

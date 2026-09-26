@@ -15,8 +15,10 @@ API upload will appear in an ImgBB profile. See the
 
 ## Tool preferences and freehand drawing
 
-Each tool keeps its own appearance preferences in extension local storage under
-`bpbPhotoTool:<type>`. The project model validates the saved style; annotation
+All tools share the last chosen color and opacity, saved on this device under
+`bpbPhotoSharedStyle`. Other appearance preferences stay per tool under
+`bpbPhotoTool:<type>`. New text labels reuse the last label width, including Auto;
+the initial width is 28% of the photo. The project model validates the saved style; annotation
 text, pitch content, and coordinates are never stored as tool preferences.
 
 Draw (`D`) captures one pointer gesture as a `drawing` object. It shares the

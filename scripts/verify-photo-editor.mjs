@@ -218,6 +218,19 @@ try {
     assert.equal(await savedEditor.locator('#text-width').inputValue(), '300');
     assert.equal(await savedEditor.locator('#object-text').inputValue(), labelText);
     assert.ok(await savedEditor.locator('#photo-overlay g.selected text tspan').count() >= 4);
+    await savedEditor.locator('#text-width').fill('275');
+    await savedEditor.locator('#text-width').press('Tab');
+    await savedEditor.locator('#object-color').selectOption('#1e88e5');
+    await savedEditor.locator('#object-opacity').fill('45');
+    await savedEditor.locator('[data-tool="route"]').click();
+    assert.equal(await savedEditor.locator('#object-color').inputValue(), '#1e88e5');
+    assert.equal(await savedEditor.locator('#object-opacity').inputValue(), '45');
+    await savedEditor.locator('[data-tool="text"]').click();
+    await savedEditor.locator('#add-at-center').click();
+    assert.equal(await savedEditor.locator('#text-width').inputValue(), '275');
+    await savedEditor.locator('#text-width-auto').click();
+    await savedEditor.locator('#add-at-center').click();
+    assert.equal(await savedEditor.locator('#text-width').inputValue(), '');
     await savedEditor.close();
     const renderer = await page.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl');

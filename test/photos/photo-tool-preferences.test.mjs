@@ -15,3 +15,12 @@ test('stored tool preferences reject corrupt fields and ignore annotation conten
     assert.equal(Preferences.clean('unknown'), null);
     assert.equal(Preferences.clean('text', { style: { align: 'right', background: false } }).style.background, false);
 });
+
+test('text width preferences distinguish Auto from an unset or invalid width', () => {
+    assert.equal(Preferences.clean('text', { width: 275 }).width, 275);
+    assert.equal(Preferences.clean('text', { width: null }).width, null);
+    for (const width of [undefined, 0, -1, Infinity, '275', 999999]) {
+        assert.equal(Object.hasOwn(Preferences.clean('text', { width }), 'width'), false);
+    }
+    assert.equal(Object.hasOwn(Preferences.clean('route', { width: 275 }), 'width'), false);
+});
