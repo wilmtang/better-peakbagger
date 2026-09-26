@@ -1,7 +1,8 @@
 # Codebase audit — 2026-09-25
 
-Status: **audit complete; F7 resolved locally, F1–F6 open.** Seven findings have local
-reproductions. This document changes no runtime behavior.
+Status: **all seven findings remediated and verified locally.** Archived after
+focused implementation commits. The closure ledger below distinguishes local
+proof from live-service and platform evidence that was not collected.
 
 Baseline: `3f7c6bb5df69a4e4f0c668e01e17a9c32b48b9c0`, version 3.7.2,
 plus the pre-existing, uncommitted AllTrails integration. That working tree
@@ -39,7 +40,7 @@ configuration, and packaging checks received targeted inspection. Large UI
 modules and every branch of capture/terrain orchestration were not exhaustively
 reviewed line by line.
 
-The prior [September audit](../archive/codebase-audit-2026-09-13.md) was checked
+The prior [September audit](codebase-audit-2026-09-13.md) was checked
 before reopening issues. Its fixes are not relisted merely because their
 subsystems are complex.
 
@@ -289,9 +290,9 @@ speech, packaging, and remote CI.
   across tabs; see `docs/trip-report-editor.md` (lines 572–594). This is an
   existing product limitation, distinct from F3's unconditional consumption of
   a newer backup snapshot. A multi-draft design requires a separate decision.
-- The [report caption plan](report-image-captions.md) still requires live
+- The [report caption plan](../plans/report-image-captions.md) still requires live
   Peakbagger save/reopen proof. Passing local conversion tests does not close it.
-- The [Imgur plan](imgur-media-hosting.md) remains proposed feature work.
+- The [Imgur plan](../plans/imgur-media-hosting.md) remains proposed feature work.
 - The uncommitted AllTrails adapter and the Gaia/onX adapters depend on provider
   UI contracts. This audit inspected their failure/identity boundaries and ran
   the repository baseline; it did not establish current authenticated provider
@@ -303,24 +304,75 @@ speech, packaging, and remote CI.
 
 ### Fixed and verified
 
-F7: `web-ext` 10.7.0 resolves patched `addons-linter` 10.13.0 and `image-size`
-2.0.4, so the expired acceptance was removed and the gate now requires zero
-advisories. `npm run audit:ci`, the focused dependency-audit tests, `npm run lint`,
-and `npm run package` passed locally. The full suite's initial run found a stale
-`fast-uri` 3.1.7 test expectation after the lockfile advanced to 3.1.8; the
-expectation was corrected and its focused test passed.
+| Finding | Focused commits | Result and regression evidence |
+| --- | --- | --- |
+| F1 | `68a57ea`, `fe15563` | Malformed 2xx shapes and unrepresentable timestamps retain uncertainty. The report-photo service preserves the journal across restart. Photo Topos blocks another upload, and the storage transaction cannot replace an unresolved journal. Explicit provider refusals remain retryable. Client/service/store/editor regressions passed. |
+| F2 | `7fa29ad` | Save handoffs carry an attempt identity and submitted `JournalText`. Only a matching persisted representation can authorize automatic backup or exact Markdown reuse. Line endings alone are normalized. Rejected Save, changed/cleared reports, both Save buttons, legacy snapshots, and equivalent-sidecar cases passed. |
+| F3 | `2ac37c3` | Unique snapshot generations are compared inside the storage mutation. Reconciliation captures its candidate before remote reads and compares its complete intended payload. Deferred write/read replacements and same-clock-tick saves preserve the newer generation. |
+| F4 | `b123791` | Root-file batches carry the accepted repository/branch and authorization epoch, coalesce only compatible scopes, and revalidate before GitHub access. Queued settings/favorites replacement tests and queue ordering/coalescing tests passed. Prerequisite settings errors retain their original actionable classification. |
+| F5 | `5be9684` | Success signatures are scoped to destination and authorization lifetime. Connection changes schedule enabled backups. Late old writes cannot stamp a replacement connection; local bookkeeping is serialized. Repository replacement, reconnect, same-destination skip, and late-completion tests passed. |
+| F6 | `0606d09` | The shared lifecycle suspends stale UI work and resumes a fresh read-only check. Existing worker writes are awaited and reconciled, never duplicated by history traversal. 23 surface tests passed. The new real-extension Chromium verifier restored the exact BFCache document with one control and zero writes. |
+| F7 | `6be6ab8` | Updated to web-ext 10.7.0, addons-linter 10.13.0, and image-size 2.0.4. Removed the expired exception; the dependency gate now requires zero advisories. Dependency/documentation tests, audit, lint, and extension packaging passed. |
+
+Final local verification:
+
+- `npm test`: 1,971 passed before the additional F1 photo-page/store regressions.
+  After those changes and a fresh build, `node --test 'test/**/*.test.mjs'`:
+  **1,973 passed, zero failed**.
+- `node --test 'test/scale/**/*.scale.mjs'` against the current build:
+  **14 passed, zero failed**, including the 20,000-point provider track.
+- `npm run lint`: passed with eight existing owned web-ext warnings; no new
+  warning acceptance. `npm run audit:ci`: zero vulnerabilities.
+- `npm run package`: passed for the patched dependency toolchain. No package
+  was published, signed, tagged, or uploaded.
+- `node scripts/verify-extension.mjs`: passed with the real unpacked extension
+  in hidden Chrome for Testing **153.0.8010.12**, base viewport **1000×760**
+  plus the verifier's narrow states.
+- `node scripts/verify-firefox-extension.mjs`: passed in hidden Firefox
+  **156.0.1**, base viewport **1000×760**. The first WebDriver startup exited
+  cleanly; the existing bounded startup-recovery path cleaned up and succeeded
+  on its second attempt. This is a tooling qualification, not evidence that a
+  product failure disappeared on rerun.
+- `BPB_BACKUP_SCREENSHOT=/tmp/bp-backup-lifecycle node scripts/verify-ascent-backup-lifecycle.mjs`:
+  passed on the exact restored Chromium BFCache document. Screenshots were
+  inspected at **1000×760** and **390×760**; the restored control was visible
+  and usable. This check did not exercise WebGL; no renderer claim is made.
+- Browser process command lines and disposable profile paths were inspected
+  after teardown: no verifier browsers or matching disposable profiles remained.
+- Documentation links and `git diff --check` passed after archival.
 
 ### Intentionally not changed
 
-F1–F6, the documented draft-sharing policy, and the independent caption/Imgur
-plans were not changed by the F7 dependency repair. The AllTrails feature is a
-separate unit of work.
+- The documented same-target local report draft policy remains last-writer-wins
+  across tabs; a multi-draft product design remains separate from F3.
+- The independent report-caption and Imgur plans retain their own scope and
+  proof requirements.
+- Concurrent AllTrails, freehand drawing, and photo viewport work was preserved.
+  Those changes were not bundled into the audit-fix commits. The Photo Topos
+  guard and regression were staged separately from concurrent edits to the same
+  files.
+- No push, merge, release, live provider upload, or live GitHub mutation was
+  performed.
 
 ### Changed but not fully proven
 
-No runtime audit fixes have been made. F1–F6 remain open. Remote CI is unproven
-until an authorized push and a completed workflow. Future remediation must put
-each remaining item here or in “Fixed and verified” with its commit and actual
-evidence.
-Archive this plan only after every finding has an explicit disposition, keeping
-the verification gaps and owner decisions intact.
+All seven source fixes have local regression evidence; these release-level
+proof gaps remain explicit:
+
+- **F1:** no live ImgBB upload was made. Provider refusal/success contracts were
+  exercised with controlled replies. Recovery wording was asserted in the
+  bundled photo-page test, but the malformed-response toast was not separately
+  inspected in a real-browser screenshot.
+- **F2:** no live Peakbagger Save/reopen was performed. The implementation
+  deliberately fails closed if Peakbagger changes report markup beyond line
+  endings, retaining the attempt and using the persisted report for manual
+  backup rather than guessing equivalence.
+- **F3–F5:** deferred GitHub operations and connection races used the real built
+  worker with a scripted backend. Live repository permissions, network failure,
+  and actual remote commit outcomes were not exercised.
+- **F6:** exact ascent-backup BFCache restoration was proven in Chromium.
+  Firefox passed its general real-extension verifier; the new dedicated
+  ascent-backup BFCache case was not run in Firefox. Hidden checks do not prove
+  native focus, browser chrome, permission prompts, or screen-reader speech.
+- Remote CI, store validation/signing/publication, and dedicated GPU/terrain
+  verification were not run. Local green checks do not establish those results.

@@ -260,7 +260,13 @@ Save click or implicit form submission it:
 4. sends `GITHUB_BACKUP_SNAPSHOT` without delaying or changing the Peakbagger
    submission.
 
-The snapshot is best-effort. Failure to capture it never blocks Save.
+The snapshot is a best-effort Save attempt, not proof that Peakbagger accepted
+it. It carries the attempt identity and submitted `JournalText`. Exact Markdown
+reuse and automatic backup require that representation to match the complete
+persisted form, normalizing only CRLF/CR line endings to LF. Tags, whitespace,
+and blank reports remain significant. A mismatch uses persisted content for
+manual backup, declines automatic backup, and retains the attempt for recovery.
+Failure to capture a snapshot never blocks Save.
 
 The worker stores at most ten pending records in `storage.session`, each with a
 30-minute expiry. New ascents have no `aid` before Peakbagger accepts them, so a
@@ -271,10 +277,12 @@ therefore:
 climberId | peakId | normalizedDate | source tab id
 ```
 
-Matching prefers records from the saved page's tab, then falls back to the
-newest precise identity match. It matches known `aid` first, then peak + date
-for a newly assigned ascent. This prevents two same-day, same-peak Add forms in
-different tabs from overwriting or consuming each other's exact report.
+Matching prefers the same tab for a known `aid`, permitting cross-tab fallback
+only for one unique positive `aid` match. New ascents require the original tab
+plus peak and date. Each stored replacement has a unique generation; completed
+writes consume only that generation. Reconciliation captures its candidate
+before reading GitHub and compares the complete intended payload, including a
+confirmed Markdown sidecar, before conditionally consuming it.
 
 ### After Peakbagger Save
 
@@ -355,15 +363,21 @@ If GitHub already holds the payload, the worker consumes the pending save
 snapshot and reports success; otherwise the snapshot remains available and the
 page exposes the typed timeout with Retry.
 
+A BFCache suspension invalidates UI operations and clears their timers. On
+restoration the surface rechecks ownership and connection, waits for any worker
+write already in flight, then performs a fresh read-only comparison. It reuses
+one control and never starts another automatic write merely because the user
+traversed browser history.
+
 ### Merge precedence at the worker
 
-When a pending snapshot exists:
+When a pending snapshot has matching submission proof:
 
 - the complete persisted form replaces ascent fields, including explicit
   blanks;
 - nonblank persisted peak fields replace save-time peak fields;
-- the nonblank exact save-time Markdown sidecar wins over the converted
-  persisted report; and
+- the confirmed exact save-time Markdown sidecar is retained, including an
+  explicit empty report; and
 - the worker stamps current extension version and `syncedAt`.
 
 Without a pending snapshot, a manual backup remains safe because the content
@@ -684,9 +698,12 @@ fires after one minute, which gives a durable trailing-edge debounce across MV3
 worker shutdowns. The alarm rechecks the toggle and device-local GitHub
 connection, builds a cleaned payload, and compares a content-only signature
 against `bpbSettingsBackupState` or `bpbFavoritesBackupState` in
-`storage.local`. An unchanged signature skips the write; timestamps do not
-defeat that check. Manual backup records the same signature, so it also prevents
-an immediately redundant automatic commit.
+`storage.local`. An unchanged signature skips the write only within the same
+repository, branch, and authorization epoch. Legacy unscoped stamps cannot skip
+a write. Connection changes schedule enabled backups, and late completions from
+an old connection cannot stamp the replacement as backed up. Manual backup
+records the same scoped signature; timestamps do not defeat the content check.
+Local success/retry updates are serialized to preserve newer bookkeeping.
 
 A failed automatic write records its attempt count and re-arms the same alarm
 after ten minutes, with at most two retry alarms for that change. A new change
@@ -905,6 +922,10 @@ still race externally.
 Root-file writes additionally coalesce. A batch stays open for a short window
 (250 ms) and for however long an earlier operation is still running, then
 commits every collected file as one tree, one commit, and one ref update.
+Each batch carries the token-free repository/branch and authorization scope
+accepted at submission. Different scopes never coalesce, and the worker
+revalidates the scope before the first GitHub request; a changed connection
+returns `superseded` instead of redirecting the action to another repository.
 Repeated writes to one path keep only the newest content; the writers it
 replaced still resolve with that commit and are told `superseded: true`, which
 is what stops an automatic backup from recording a signature the commit did not
