@@ -1329,6 +1329,7 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
     assert.match(analysisText(), /Route Progress: 0\.15 km/);
+    assert.match(dom.window.document.querySelector('.bpb-gpx-stats').textContent, / · 3 points$/);
     assert.match(analysisText(), /Time: 2h 0m/);
     assert.match(analysisText(), /Possible Camping: Day 1 \(47\.00000, -121\.00000\)/);
     assert.match(analysisText(), /Times in the mountain’s local time/);
@@ -1376,6 +1377,7 @@ test('GPX analyzer renders an untimed coordinate-only route as a distance scrubb
 
     await waitFor(dom, () => chartConfig() !== null);
     assert.match(analysisText(), /Route: 0\.15 km/);
+    assert.match(dom.window.document.querySelector('.bpb-gpx-stats').textContent, / · 3 points$/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.match(analysisText(), /Time data is unavailable in this GPX/);
     assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
@@ -1601,6 +1603,8 @@ test('shipped GPX analyzer renders the full Capitol regression without artificia
     assert.match(analysisText(),
         /Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/);
     assert.match(analysisText(), /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/);
+    const sourceCount = (capitolRegressionGpx.match(/<trkpt\b/g) || []).length;
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${sourceCount.toLocaleString()} points`);
     assert.ok(distanceSeries.data.length <= 640 && distanceSeries.data.length >= 256,
         `the distance series must honor the fallback canvas budget, got ${distanceSeries.data.length}`);
     assert.ok(timeSeries.data.length <= 640 && timeSeries.data.length >= 256,
@@ -2248,4 +2252,29 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /#bpb-map-resize-handle:focus-visible \.bpb-map-resize-grip\s*\{[\s\S]*outline:\s*2px solid Highlight/);
 
     dom.window.close();
+});
+
+
+test('healthy GPX includes the source point count on the existing metrics note', async () => {
+    const { dom, chartConfig } = await loadElevationAnalyzer(gpx);
+    await waitFor(dom, () => chartConfig() !== null);
+    const note = dom.window.document.querySelector('.bpb-gpx-metric-note');
+    assert.match(note.textContent, /^Adjusted GPX metrics.* · 4 points$/);
+    assert.equal(note.querySelector('.bpb-gpx-point-count').title, 'Track points in the source GPX');
+    assert.equal(note.querySelector('br'), null);
+    assert.equal(note.querySelector('.bpb-gpx-metric-note-text').title,
+        note.querySelector('.bpb-gpx-metric-note-text').textContent);
+    dom.window.close();
+});
+
+test('source point count includes excluded coordinates and uses singular for one point', async () => {
+    for (const [points, expected] of [
+        ['<trkpt lat="47" lon="-121"><ele>100</ele></trkpt>', '1 point'],
+        ['<trkpt lat="47" lon="-121"><ele>100</ele></trkpt><trkpt lat="bad" lon="-121"><ele>110</ele></trkpt>', '2 points'],
+    ]) {
+        const { dom, chartConfig } = await loadElevationAnalyzer(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`);
+        await waitFor(dom, () => chartConfig() !== null);
+        assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${expected}`);
+        dom.window.close();
+    }
 });

@@ -160,6 +160,7 @@ const run = async () => {
         });
 
         const statsContainer = document.createElement('div');
+        Object.assign(statsContainer.style, { minWidth: '0', maxWidth: '100%' });
         const stats = document.createElement('div');
         stats.className = 'bpb-gpx-stats';
         stats.setAttribute('role', 'status');
@@ -1211,8 +1212,21 @@ const run = async () => {
                     : `Route: ${formatDistanceM(metrics.distanceM)}`;
             const subLines = [];
             const metricNote = buildMetricNote();
+            const sourcePointCount = metrics.coordinateQuality.totalPoints;
+            const pointCountText = `${sourcePointCount.toLocaleString()} ${sourcePointCount === 1 ? 'point' : 'points'}`;
             if (metricNote) {
-                subLines.push(subLine(metricNote, { color: TONE.muted, fontSize: '0.95em', marginBottom: '2px' }));
+                const line = subLine('', { color: TONE.muted, fontSize: '0.95em', marginBottom: '2px' });
+                line.className = 'bpb-gpx-metric-note';
+                const note = document.createElement('span');
+                note.className = 'bpb-gpx-metric-note-text';
+                note.textContent = metricNote;
+                note.title = metricNote;
+                const count = document.createElement('span');
+                count.className = 'bpb-gpx-point-count';
+                count.textContent = ` · ${pointCountText}`;
+                count.title = 'Track points in the source GPX';
+                line.append(note, count);
+                subLines.push(line);
             }
             if (hasTime) {
                 const completeTime = metrics.timeQuality.status === 'complete';
@@ -1251,6 +1265,7 @@ const run = async () => {
                     fontStyle: 'normal'
                 }));
             });
+            if (!metricNote) txt += ` · ${pointCountText}`;
             stats.textContent = txt;
             subStats.replaceChildren(...subLines);
 

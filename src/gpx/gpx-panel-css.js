@@ -194,6 +194,9 @@ export const gpxPanelCss = `
 #bpb-gpx-analysis .bpb-gpx-stats { color: var(--bpb-gpx-text); }
 #bpb-gpx-analysis .bpb-gpx-stats[data-state="error"] { color: var(--bpb-gpx-error); }
 #bpb-gpx-analysis .bpb-gpx-substats { color: var(--bpb-gpx-sub); }
+#bpb-gpx-analysis .bpb-gpx-metric-note { display: inline-flex; max-width: 100%; vertical-align: top; white-space: nowrap; }
+#bpb-gpx-analysis .bpb-gpx-metric-note-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#bpb-gpx-analysis .bpb-gpx-point-count { flex: 0 0 auto; white-space: pre; }
 #bpb-gpx-analysis .bpb-gpx-hint { color: var(--bpb-gpx-faint); }
 #bpb-gpx-analysis .bpb-gpx-hint[data-state="success"] {
     color: var(--bpb-gpx-success);

@@ -2594,6 +2594,39 @@ try {
     check(/Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/.test(off.stats)
         && /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/.test(off.stats),
     `the packaged analyzer did not produce the Capitol regression metrics: ${off.stats.slice(0, 160)}`);
+    const metricSource = await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+    const sourcePointCount = (metricSource.match(/<trkpt\b/g) || []).length;
+    check(await offPage.locator('.bpb-gpx-point-count').textContent() === ` · ${sourcePointCount.toLocaleString()} points`,
+        'the GPX note must show the source count, not the sampled chart count');
+    const metricViewport = offPage.viewportSize();
+    try {
+        for (const width of [1000, 430]) {
+            await offPage.setViewportSize({ width, height: 760 });
+            const geometry = await offPage.locator('.bpb-gpx-metric-note').evaluate(note => {
+                const count = note.querySelector('.bpb-gpx-point-count');
+                const header = note.closest('.bpb-gpx-header');
+                const full = note.getBoundingClientRect();
+                const countBox = count.getBoundingClientRect();
+                const headerHeight = header.getBoundingClientRect().height;
+                count.hidden = true;
+                const without = note.getBoundingClientRect();
+                const withoutHeaderHeight = header.getBoundingClientRect().height;
+                count.hidden = false;
+                return { height: full.height, previousHeight: without.height, headerHeight, withoutHeaderHeight,
+                    countFits: countBox.right <= full.right + 1 && full.right <= innerWidth,
+                    oneLine: Math.abs(full.height - countBox.height) < 1 };
+            });
+            check(geometry.countFits && geometry.oneLine
+                && geometry.height === geometry.previousHeight
+                && geometry.headerHeight === geometry.withoutHeaderHeight,
+            `GPX point count increased the header height or clipped at ${width}px: ${JSON.stringify(geometry)}`);
+            if (process.env.BPB_VERIFY_GPX_METRICS_SCREENSHOT) {
+                await offPage.locator('.bpb-gpx-header').screenshot({ path: `${process.env.BPB_VERIFY_GPX_METRICS_SCREENSHOT}.${width}.png` });
+            }
+        }
+    } finally {
+        await offPage.setViewportSize(metricViewport);
+    }
     const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
     const capitolChartState = await offPage.evaluate(readAnalyzerChartState);
     check(capitolChartState?.labels?.join('|') === 'Elevation by Distance|Elevation by Time'
