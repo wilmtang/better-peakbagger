@@ -1,5 +1,9 @@
 # Active plans
 
+- [Suspect GPX segments](gpx-suspect-segments.md) — proposed; source-grounded
+  diagnosis of duplicate geometry and an isolated early point, with conservative
+  detection rules, reversible analysis, compact disclosure, and verification gates.
+
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.
