@@ -13,6 +13,21 @@ treats its own local catalog as the upload history and never promises that an
 API upload will appear in an ImgBB profile. See the
 [ImgBB API v1 documentation](https://api.imgbb.com/).
 
+## Tool preferences and freehand drawing
+
+Each tool keeps its own appearance preferences in extension local storage under
+`bpbPhotoTool:<type>`. The project model validates the saved style; annotation
+text, pitch content, and coordinates are never stored as tool preferences.
+
+Draw (`D`) captures one pointer gesture as a `drawing` object. It shares the
+route validator and renderer, including opacity, width, line style, smoothing,
+and arrowheads. Its geometry uses the existing route/project point budgets;
+long strokes are sampled down while preserving their start and final endpoint.
+The pending stroke is transient until pointer release, when it becomes one
+Undo step. Escape or pointer cancellation discards it. Completed strokes can
+be selected, translated, restyled, duplicated, saved, and exported. Dense stroke
+vertices are deliberately not exposed as the route-point editing list.
+
 ## User workflow
 
 Double-click an image in the Rich text report to open Photo Topos on that

@@ -3,7 +3,7 @@
 
 import { photoProject as Project } from './photo-project.js';
 
-const defaults = type => type === 'route' ? {
+const defaults = type => ['route', 'drawing'].includes(type) ? {
     color: Project.DEFAULT_COLOR, opacity: 1, width: 12,
     stroke: 'solid', end: 'none', smooth: false,
 } : {
@@ -24,7 +24,7 @@ const clean = (type, value) => {
     });
     const candidate = patch => Project.addObject(base, {
         id: 'preference', type,
-        geometry: type === 'route' ? { points: [[0, 0], [1, 1]], controls: [] }
+        geometry: ['route', 'drawing'].includes(type) ? { points: [[0, 0], [1, 1]], controls: [] }
             : { x: 0, y: 0, rotation },
         style: { ...style, ...patch }, pitch: 1, text: 'Label',
     });

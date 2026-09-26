@@ -307,3 +307,16 @@ test('a smooth route re-derives its curve from its own points', () => {
     assert.equal(legacy.objects[0].style.smooth, true);
     assert.deepEqual(legacy.objects[0].geometry.controls, route().geometry.controls);
 });
+
+test('freehand strokes share route validation and survive project serialization', () => {
+    const drawing = route({ type: 'drawing' });
+    const project = Project.addObject(emptyProject(), drawing);
+    assert.ok(project);
+    assert.deepEqual(Project.cleanProject(JSON.parse(JSON.stringify(project))), project);
+    assert.equal(Project.addObject(emptyProject(), {
+        ...drawing, geometry: { points: [[1, 1]], controls: [] },
+    }), null);
+    assert.equal(Project.addObject(emptyProject(), {
+        ...drawing, geometry: { points: Array.from({ length: Project.MAX_ROUTE_POINTS + 1 }, () => [1, 1]), controls: [] },
+    }), null);
+});

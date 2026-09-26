@@ -41,6 +41,7 @@ const PALETTE = Object.freeze([
 ]);
 const OBJECT_TYPES = Object.freeze([
     'route',
+    'drawing',
     'bolt',
     'anchor',
     'piton',
@@ -262,7 +263,7 @@ const cleanObject = (value, image) => {
     if (!id || !type || z == null) return null;
 
     let specific;
-    if (type === 'route') specific = cleanRoute(value, image);
+    if (type === 'route' || type === 'drawing') specific = cleanRoute(value, image);
     else if (MARKER_TYPES.includes(type)) specific = cleanMarker(value, image);
     else if (type === 'pitch') specific = cleanPitch(value, image);
     else specific = cleanText(value, image);

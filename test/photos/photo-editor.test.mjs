@@ -2773,3 +2773,60 @@ test('tool preferences are independent and survive reopening the editor', async 
     page.dom.window.close();
     reopened.dom.window.close();
 });
+
+test('freehand drawing commits one editable stroke and one Undo step', async () => {
+    const page = await loadEditor();
+    page.tool('drawing');
+    assert.equal(page.doc.getElementById('add-at-center').disabled, true);
+    page.pointer('pointerdown', 100, 100);
+    page.pointer('pointermove', 125, 150);
+    page.pointer('pointermove', 175, 200);
+    assert.equal(page.markCount(), 0, 'an unfinished gesture is not persisted');
+    page.pointer('pointerup', 200, 220);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.doc.getElementById('annotation-list').textContent, /Freehand stroke/);
+    assert.match(page.routePath(), /400 440/);
+    const before = page.routePath();
+    page.tool('select');
+    page.key('keydown', { key: 'ArrowRight' });
+    page.key('keyup', { key: 'ArrowRight' });
+    assert.notEqual(page.routePath(), before);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.routePath(), before);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0);
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(page.routePath(), before);
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('cancelled freehand gestures never enter the project or history', async () => {
+    const page = await loadEditor();
+    page.tool('drawing');
+    for (const cancel of ['pointercancel', 'lostpointercapture', 'Escape']) {
+        page.pointer('pointerdown', 100, 100);
+        page.pointer('pointermove', 140, 160);
+        if (cancel === 'Escape') page.key('keydown', { key: 'Escape' });
+        else page.pointer(cancel, 140, 160);
+        page.pointer('pointerup', 140, 160);
+        assert.equal(page.markCount(), 0);
+        assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+        assert.equal(page.doc.getElementById('undo').disabled, true);
+    }
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('long freehand gestures stay bounded and preserve the release endpoint', async () => {
+    const page = await loadEditor();
+    page.tool('drawing');
+    page.pointer('pointerdown', 100, 100);
+    for (let i = 0; i < 2100; i++) page.pointer('pointermove', 100 + i % 600, 100 + (i % 2) * 10);
+    page.pointer('pointerup', 750, 550);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.routePath(), /1500 1100$/);
+    assert.ok((page.routePath().match(/L/g) || []).length < Project.MAX_ROUTE_POINTS);
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});

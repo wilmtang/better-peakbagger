@@ -210,10 +210,10 @@ const renderOverlaySvg = (value, { interactive = false, document: documentImpl =
         }
         : null;
     const arrowColors = [...new Set(project.objects
-        .filter(object => object.type === 'route' && object.style.end === 'arrow')
+        .filter(object => ['route', 'drawing'].includes(object.type) && object.style.end === 'arrow')
         .map(object => object.style.color))];
     const children = project.objects.map(object => {
-        if (object.type === 'route') return renderRoute(object, project.image, interactive);
+        if (['route', 'drawing'].includes(object.type)) return renderRoute(object, project.image, interactive);
         if (Project.MARKER_TYPES.includes(object.type)) {
             return renderMarker(object, project.image, interactive);
         }

@@ -160,6 +160,7 @@ let selectedVertex = null;
 let activeTool = 'select';
 let routeSession = null;
 let dragSession = null;
+let drawingSession = null;
 let history = [];
 let future = [];
 let autosaveTimer = null;
@@ -435,7 +436,7 @@ const editorMutationControls = () => [
 const updateEditorControls = () => {
     const locked = editorMutationLocked();
     for (const control of editorMutationControls()) control.disabled = locked;
-    ui.addAtCenter.disabled = locked || activeTool === 'select' || !project;
+    ui.addAtCenter.disabled = locked || ['select', 'drawing'].includes(activeTool) || !project;
     for (const control of ui.annotationList.querySelectorAll('button')) control.disabled = locked;
     for (const control of ui.routePointList.querySelectorAll('button')) control.disabled = locked;
     const route = selectedObject();
@@ -977,7 +978,7 @@ const renderInspector = () => {
     const type = inspectorType();
     ui.inspector.hidden = !type;
     if (!type) return;
-    const route = type === 'route';
+    const route = ['route', 'drawing'].includes(type);
     const label = type === 'pitch' || type === 'text';
     const text = type === 'text';
     const pitch = type === 'pitch';
@@ -1029,6 +1030,7 @@ const renderInspector = () => {
 };
 
 const annotationName = object => {
+    if (object.type === 'drawing') return 'Freehand stroke';
     if (object.type === 'route') {
         return `Route, ${object.geometry.points.length} points`;
     }
@@ -1201,6 +1203,7 @@ const setProject = (next, { pushHistory = true, persist = true, coalesce = null 
 
 const undo = () => {
     if (editorMutationLocked() || !history.length || !project) return;
+    cancelDrawing();
     endCoalescing();
     future.push(structuredClone(project));
     project = history.pop();
@@ -1233,6 +1236,7 @@ const toolName = tool => document.querySelector(`[data-tool="${tool}"] .tool-nam
 // Esc and V are the way out, and the status line says so.
 const setTool = tool => {
     if (editorMutationLocked()) return;
+    cancelDrawing();
     activeTool = tool;
     document.querySelectorAll('[data-tool]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
@@ -1251,9 +1255,11 @@ const setTool = tool => {
     else if (project) renderProject();
     setEditorStatus(tool === 'select'
         ? 'Select a mark to move or restyle it.'
-        : tool === 'route'
-            ? 'Click along the route, or add one at center. Double-click, right-click, or press Enter to finish.'
-            : `${toolName(tool)}: click the photo or add one at center. Esc returns to Select.`);
+        : tool === 'drawing'
+            ? 'Drag to draw. Each stroke is one Undo step. Esc cancels a stroke.'
+            : tool === 'route'
+                ? 'Click along the route, or add one at center. Double-click, right-click, or press Enter to finish.'
+                : `${toolName(tool)}: click the photo or add one at center. Esc returns to Select.`);
 };
 
 const pointerPoint = event => {
@@ -1387,7 +1393,7 @@ const addPointObject = (type, point) => {
 };
 
 const addAtCenter = () => {
-    if (!project || editorMutationLocked() || activeTool === 'select' || routeSession) return;
+    if (!project || editorMutationLocked() || ['select', 'drawing'].includes(activeTool) || routeSession) return;
     const center = [project.image.width / 2, project.image.height / 2];
     if (activeTool !== 'route') {
         addPointObject(activeTool, center);
@@ -1425,7 +1431,7 @@ const selectAnnotation = (objectId, vertex = null) => {
 };
 
 const translatedGeometry = (object, dx, dy) => {
-    if (object.type !== 'route') {
+    if (!['route', 'drawing'].includes(object.type)) {
         return { ...object.geometry, x: object.geometry.x + dx, y: object.geometry.y + dy };
     }
     return {
@@ -1435,6 +1441,76 @@ const translatedGeometry = (object, dx, dy) => {
             out: control.out ? [control.out[0] + dx, control.out[1] + dy] : null,
         } : null),
     };
+};
+
+// Freehand stays transient until release: one stroke, one model validation,
+// one Undo step. Cancellation cannot leave a partial stroke in autosave.
+const cancelDrawing = () => {
+    if (!drawingSession) return;
+    const { pointerId } = drawingSession;
+    drawingSession = null;
+    ui.overlay.querySelector('.drawing-preview')?.remove();
+    if (ui.overlay.hasPointerCapture?.(pointerId)) ui.overlay.releasePointerCapture(pointerId);
+};
+const drawingPoint = event => pointerPoint(event).map((value, axis) =>
+    Math.max(0, Math.min(axis ? project.image.height : project.image.width, value)));
+const moveDrawing = event => {
+    const session = drawingSession;
+    if (!session || event.pointerId !== session.pointerId) return;
+    const point = drawingPoint(event);
+    const last = session.points.at(-1);
+    const rect = ui.overlay.getBoundingClientRect();
+    if (Math.hypot(point[0] - last[0], point[1] - last[1]) * rect.width / project.image.width < 1.5) return;
+    // Preserve the whole gesture under the shared route/project point budgets.
+    if (session.points.length >= session.limit) {
+        session.points = session.points.filter((_, index) => index % 2 === 0);
+    }
+    session.points.push(point);
+    session.preview.setAttribute('points', session.points.map(p => p.join(',')).join(' '));
+};
+const beginDrawing = event => {
+    if (drawingSession) return;
+    const used = project.objects.reduce((sum, object) => sum + (object.geometry.points?.length || 1), 0);
+    const limit = Math.min(Project.MAX_ROUTE_POINTS, Project.MAX_PROJECT_POINTS - used);
+    if (limit < 2 || project.objects.length >= Project.MAX_OBJECTS) {
+        setEditorStatus('This photo has reached its annotation limit. Remove a mark before drawing.');
+        return;
+    }
+    selectedId = null;
+    selectedVertex = null;
+    renderProject();
+    const style = defaultStyle('drawing');
+    const point = drawingPoint(event);
+    const preview = document.createElementNS(SVG_NS, 'polyline');
+    preview.classList.add('drawing-preview');
+    preview.setAttribute('fill', 'none');
+    preview.setAttribute('stroke', style.color);
+    preview.setAttribute('stroke-width', style.width);
+    preview.setAttribute('stroke-opacity', style.opacity);
+    preview.setAttribute('stroke-linecap', 'round');
+    preview.setAttribute('stroke-linejoin', 'round');
+    preview.setAttribute('pointer-events', 'none');
+    preview.setAttribute('points', `${point.join(',')} ${point.join(',')}`);
+    ui.overlay.append(preview);
+    drawingSession = { pointerId: event.pointerId, points: [point], style, preview, limit };
+    ui.overlay.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+};
+const finishDrawing = event => {
+    if (!drawingSession || event.pointerId !== drawingSession.pointerId) return;
+    moveDrawing(event);
+    const { points, style } = drawingSession;
+    if (points.length === 1) points.push([...points[0]]);
+    const object = {
+        id: crypto.randomUUID(), type: 'drawing',
+        geometry: { points, controls: [] }, style,
+    };
+    cancelDrawing();
+    const next = Project.addObject(project, object);
+    if (!next) { setEditorStatus('The stroke could not be added. Remove a mark and try again.'); return; }
+    selectedId = object.id;
+    setProject(next);
+    setEditorStatus('Stroke added. Drag to draw another, or press V to select.');
 };
 
 const beginDrag = (event, objectId, vertex = null) => {
@@ -1457,6 +1533,7 @@ const beginDrag = (event, objectId, vertex = null) => {
 
 const moveDrag = event => {
     if (editorMutationLocked()) return;
+    if (drawingSession) { moveDrawing(event); return; }
     if (routeSession) {
         routeSession.cursor = pointerPoint(event);
         renderRoutePreview();
@@ -1502,6 +1579,7 @@ const endDrag = () => {
 
 const onPointerDown = event => {
     if (!project || editorMutationLocked() || event.button !== 0) return;
+    if (activeTool === 'drawing') { beginDrawing(event); return; }
     const vertexNode = activeTool === 'select' ? event.target.closest?.('[data-vertex]') : null;
     if (vertexNode) {
         selectedId = vertexNode.dataset.objectId;
@@ -1857,6 +1935,7 @@ const onPhotoPaste = event => {
 
 const saveLocalAndReturn = async () => {
     if (busy || localPhotoReturned || !project || !sourceBitmap) return;
+    cancelDrawing();
     if (dragSession) endDrag();
     if (routeSession) finishRoute(false);
     setBusy(true, 'Saving photo locally…');
@@ -1887,6 +1966,7 @@ const uploadAndInsert = async () => {
         toast('This photo is already on ImgBB. Use “Edit as new version” in the library to change it.');
         return;
     }
+    cancelDrawing();
     if (dragSession) endDrag();
     if (routeSession) finishRoute(false);
     setBusy(true, 'Saving upload snapshot…');
@@ -2740,22 +2820,22 @@ const backupPhotoLibrary = async () => {
 const bindInspector = () => {
     ui.color.addEventListener('change', () => applyStyle({ color: ui.color.value }));
     ui.routeWidth.addEventListener('input', () => {
-        if (inspectorType() === 'route') {
+        if (['route', 'drawing'].includes(inspectorType())) {
             const width = Number(ui.routeWidth.value);
             ui.routeWidthValue.textContent = pixels(width);
             applyStyle({ width }, { coalesce: 'width' });
         }
     });
     ui.routeStroke.addEventListener('change', () => {
-        if (inspectorType() === 'route') applyStyle({ stroke: ui.routeStroke.value });
+        if (['route', 'drawing'].includes(inspectorType())) applyStyle({ stroke: ui.routeStroke.value });
     });
     ui.routeArrow.addEventListener('change', () => {
-        if (inspectorType() === 'route') {
+        if (['route', 'drawing'].includes(inspectorType())) {
             applyStyle({ end: ui.routeArrow.checked ? 'arrow' : 'none' });
         }
     });
     ui.routeSmooth.addEventListener('change', () => {
-        if (inspectorType() === 'route') {
+        if (['route', 'drawing'].includes(inspectorType())) {
             // Clearing the controls hands the curve back to the model, which
             // re-derives it from the points on every clean.
             applyStyle({ smooth: ui.routeSmooth.checked }, { geometry: { controls: [] } });
@@ -2768,7 +2848,7 @@ const bindInspector = () => {
     });
     ui.scale.addEventListener('input', () => {
         const type = inspectorType();
-        if (type && type !== 'route') {
+        if (type && !['route', 'drawing'].includes(type)) {
             const scale = Number(ui.scale.value);
             ui.scaleValue.textContent = pixels(Renderer.objectSizePixels(type, project.image, scale));
             applyStyle({ scale }, { coalesce: 'scale' });
@@ -2778,9 +2858,9 @@ const bindInspector = () => {
         const object = selectedObject();
         const rotation = Number(ui.rotation.value);
         ui.rotationValue.textContent = `${rotation}°`;
-        if (object && object.type !== 'route') {
+        if (object && !['route', 'drawing'].includes(object.type)) {
             updateSelected({ geometry: { ...object.geometry, rotation } }, { coalesce: 'rotation' });
-        } else if (inspectorType() && inspectorType() !== 'route') {
+        } else if (inspectorType() && !['route', 'drawing'].includes(inspectorType())) {
             rememberTool(inspectorType(), { rotation });
         }
     });
@@ -2854,8 +2934,9 @@ const bindEvents = () => {
     ui.finishRoute.addEventListener('click', () => finishRoute(false));
     ui.overlay.addEventListener('pointerdown', onPointerDown);
     ui.overlay.addEventListener('pointermove', moveDrag);
-    ui.overlay.addEventListener('pointerup', endDrag);
-    ui.overlay.addEventListener('pointercancel', endDrag);
+    ui.overlay.addEventListener('pointerup', event => { finishDrawing(event); endDrag(); });
+    ui.overlay.addEventListener('pointercancel', () => { cancelDrawing(); endDrag(); });
+    ui.overlay.addEventListener('lostpointercapture', cancelDrawing);
     ui.overlay.addEventListener('pointerleave', () => {
         if (!routeSession) return;
         routeSession.cursor = null;
@@ -2971,7 +3052,8 @@ const bindEvents = () => {
         if (event.key === 'Escape') {
             // One predictable ladder out of whatever the user is in the middle
             // of: abandon the route, then disarm the tool, then deselect.
-            if (routeSession) finishRoute(true);
+            if (drawingSession) cancelDrawing();
+            else if (routeSession) finishRoute(true);
             else if (activeTool !== 'select') setTool('select');
             else {
                 selectedId = null;

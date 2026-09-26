@@ -437,3 +437,14 @@ test('exports a legitimate panorama at the exact pixel budget', async () => {
         { width: 16_000, height: 4_000 },
     );
 });
+
+test('freehand strokes use the same visible geometry in the editor and export', () => {
+    const project = projectWithObjects();
+    project.objects = [{ ...project.objects[0], type: 'drawing' }];
+    const svg = Renderer.renderOverlaySvg(project);
+    const editor = Renderer.renderOverlaySvg(project, { interactive: true });
+    assert.match(svg, /marker-end=/);
+    assert.match(svg, /stroke-dasharray=/);
+    assert.match(editor, /data-bpb-hit-target/);
+    assert.equal(svg.match(/<path d="([^"]+)"/)[1], editor.match(/<path d="([^"]+)"/)[1]);
+});

@@ -163,7 +163,7 @@ test('report sizing is contextual, synchronized, and explicit about full-resolut
 test('all planned topo tools and accessible editor controls are present', () => {
     assert.deepEqual(
         [...doc.querySelectorAll('[data-tool]')].map(button => button.dataset.tool),
-        ['select', 'route', 'bolt', 'anchor', 'piton', 'rappel', 'belay', 'pitch', 'text'],
+        ['select', 'route', 'drawing', 'bolt', 'anchor', 'piton', 'rappel', 'belay', 'pitch', 'text'],
     );
     for (const id of [
         'photo-file',
@@ -273,7 +273,7 @@ test('placing a symbol leaves its tool armed and the route shows its first point
     assert.match(source, /activeTool === 'select' \? event\.target\.closest\?\.\('\[data-vertex\]'\) : null/);
     // The curve is an intent on the style, not handles the editor has to
     // rebuild, so adding a point cannot silently drop it.
-    assert.match(source, /const style = object \? object\.style : styleDefaults/);
+    assert.match(source, /const style = object \? object\.style : toolPreferences\[type\]\.style/);
     assert.match(source, /ui\.routeSmooth\.checked = style\.smooth/);
     assert.doesNotMatch(source, /routeHasCurves/);
 });
