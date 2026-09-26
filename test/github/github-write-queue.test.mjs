@@ -131,3 +131,19 @@ test('a failed commit rejects every writer in its batch', async () => {
 test('the queue refuses to be built without a commit function', () => {
     assert.throws(() => Queue.createGithubWriteQueue({}), TypeError);
 });
+
+
+test('different connection scopes never coalesce or supersede each other', async () => {
+    const commits = [];
+    const queue = Queue.createGithubWriteQueue({ delay: async () => {},
+        commitFiles: async (files, message, scope) => { commits.push({ files, scope }); return { sha: scope }; } });
+    const first = queue.putFile({ path: 'settings.json', content: 'first', scope: 'epoch-1' });
+    const second = queue.putFile({ path: 'settings.json', content: 'second', scope: 'epoch-2' });
+    const third = queue.putFile({ path: 'favorites.json', content: 'third', scope: 'epoch-2' });
+    const results = await Promise.all([first, second, third]);
+    assert.deepEqual(commits, [
+        { scope: 'epoch-1', files: [{ path: 'settings.json', content: 'first' }] },
+        { scope: 'epoch-2', files: [{ path: 'settings.json', content: 'second' }, { path: 'favorites.json', content: 'third' }] },
+    ]);
+    assert.deepEqual(results.map(result => result.superseded), [false, false, false]);
+});

@@ -773,9 +773,8 @@ export function createGithubRoutes({
     // as one tree spends one round trip instead of two and leaves one commit
     // in the user's repository instead of two seconds apart.
     //
-    // The batch resolves the connection once, at commit time rather than at
-    // submission, so a disconnect during the short collecting window fails as
-    // the same route error a fail-fast check would have produced.
+    // Root-file batches retain the connection accepted at submission. The queue
+    // may merge only compatible scopes and rechecks that scope before writing.
     class GithubAccessError extends Error {
         constructor(error) {
             super((error && error.message) || 'No GitHub repository is connected.');
@@ -787,11 +786,22 @@ export function createGithubRoutes({
         ? error.access
         : GithubErrors.publicError(error, fallback);
 
+    const connectionScope = access => JSON.stringify([
+        access?.authorizationEpoch ?? null,
+        access?.repo?.owner ?? null,
+        access?.repo?.name ?? null,
+        access?.repo?.branch ?? null,
+    ]);
+
     const queuedGithubAccess = async (expected, options = {}) => {
         const current = await connectedGithubClient(options);
-        if (Number.isSafeInteger(expected?.authorizationEpoch)
-            && Number.isSafeInteger(current?.authorizationEpoch)
-            && current.authorizationEpoch !== expected.authorizationEpoch) {
+        // A prerequisite failure can happen before the connection is read.
+        // Preserve that actionable error instead of inventing a scope change.
+        if (current.error && !Number.isSafeInteger(current.authorizationEpoch)) {
+            throw new GithubAccessError(current.error);
+        }
+        const expectedScope = typeof expected === 'string' ? expected : connectionScope(expected);
+        if (connectionScope(current) !== expectedScope) {
             throw new GithubAccessError({
                 code: 'superseded',
                 message: 'The GitHub connection changed before this action started. Review it and try again.',
@@ -802,9 +812,8 @@ export function createGithubRoutes({
     };
 
     const writeQueue = GithubWriteQueue.createGithubWriteQueue({
-        commitFiles: async (files, message) => {
-            const access = await connectedGithubClient();
-            if (access.error) throw new GithubAccessError(access.error);
+        commitFiles: async (files, message, scope) => {
+            const access = await queuedGithubAccess(scope);
             return access.client.putRootFiles(files, message);
         },
     });
@@ -1139,7 +1148,7 @@ export function createGithubRoutes({
             try {
                 const { text, signature } = await build();
                 if (state && state.signature === signature) return;
-                const result = await writeQueue.putFile({ path, content: text, message: commitMessage });
+                const result = await writeQueue.putFile({ path, content: text, message: commitMessage, scope: connectionScope(access) });
                 // A newer write to this path won the batch, so this signature
                 // does not describe what the repository now holds.
                 if (!result.superseded) await markSynced(signature);
@@ -1209,7 +1218,7 @@ export function createGithubRoutes({
         try {
             const { text, signature } = await buildSettingsBackup();
             const result = await writeQueue.putFile({
-                path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings',
+                path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings', scope: connectionScope(access),
             });
             if (!result.superseded) await settingsAutoBackup.markSynced(signature);
             return { ok: true, result };
@@ -1243,7 +1252,7 @@ export function createGithubRoutes({
             // which replies in the unrelated { phase: 'error' } shape.
             const { text, signature } = await buildFavoritesBackup();
             const result = await writeQueue.putFile({
-                path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers',
+                path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers', scope: connectionScope(access),
             });
             if (!result.superseded) await favoritesAutoBackup.markSynced(signature);
             return { ok: true, result };

@@ -2444,3 +2444,21 @@ test('an older successful write preserves a same-key replacement made in the sam
     assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()].generation, replacement.generation);
     assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()].snapshot.report.markdown, 'NEWER SAVE');
 });
+
+
+for (const type of ['GITHUB_SETTINGS_BACKUP', 'GITHUB_FAVORITES_BACKUP']) {
+    test(`${type} cannot switch repositories while its root-file batch waits`, async () => {
+        const backend = gitDataBackend();
+        let reads = 0;
+        const worker = createWorker({ auth: AUTH, github: backend.handler,
+            localGetHook: keys => { if ([keys].flat().includes('bpbGithubAuth')) reads++; } });
+        const pending = worker.send({ type }, EXTENSION_SENDER);
+        await waitFor(() => reads >= 1);
+        worker.local.bpbGithubAuth = { ...AUTH, repo: { ...AUTH.repo, name: 'replacement' } };
+        worker.local.bpbGithubAuthEpoch = 1;
+        const result = await pending;
+        assert.equal(result.ok, false);
+        assert.equal(result.error.code, 'superseded');
+        assert.equal(worker.githubCalls.length, 0, 'no root-file write may be rebound to the new connection');
+    });
+}
