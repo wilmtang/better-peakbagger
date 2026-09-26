@@ -401,14 +401,14 @@ test('provider and filter order controls save independently and reflect remote c
     const ids = list => [...list.children].map(row => row.dataset.orderItem);
     const gaia = providers.querySelector('[data-order-item="gaia"]');
     assert.equal(providers.querySelectorAll('input:checked').length, 4);
-    gaia.querySelector('[data-move="down"]').click();
+    gaia.querySelector('.order-grip').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
     assert.deepEqual(ids(providers), ['onx', 'gaia', 'alltrails', 'caltopo']);
     await waitFor(dom, () => !gaia.querySelector('input').disabled);
     gaia.querySelector('input').click();
-    await waitFor(dom, () => !dom.chrome._store.bpbSettings.mapProvidersEnabled.includes('gaia'));
+    await waitFor(dom, () => Array.isArray(dom.chrome._store.bpbSettings.mapProvidersEnabled) && !dom.chrome._store.bpbSettings.mapProvidersEnabled.includes('gaia'));
     const peak = el(dom, 'beta-peak-order');
-    peak.querySelector('[data-order-item="beta"] [data-move="up"]').click();
+    peak.querySelector('[data-order-item="beta"] .order-grip').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');
     assert.deepEqual(ids(el(dom, 'beta-personal-order')), ['gps', 'tr', 'link', 'beta']);
     await dom.chrome.storage.sync.set({ bpbSettings: settingsSchema.clean({ mapProviderOrder: ['caltopo'], mapProvidersEnabled: [] }) });
@@ -416,12 +416,92 @@ test('provider and filter order controls save independently and reflect remote c
     assert.equal(providers.querySelectorAll('input:checked').length, 0);
 });
 
-test('moving an order item to the first position keeps keyboard focus on its available move control', async () => {
+test('keyboard reordering keeps focus on the grip at the first position', async () => {
     const dom = await loadOptions({});
-    const up = el(dom, 'map-provider-order').querySelector('[data-order-item="onx"] [data-move="up"]');
-    up.focus();
-    up.click();
+    const grip = el(dom, 'map-provider-order').querySelector('[data-order-item="onx"] .order-grip');
+    grip.focus();
+    grip.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
-    await waitFor(dom, () => !up.parentElement.querySelector('[data-move="down"]').disabled);
-    assert.equal(dom.window.document.activeElement, up.parentElement.querySelector('[data-move="down"]'));
+    await waitFor(dom, () => !grip.disabled);
+    assert.equal(dom.window.document.activeElement, grip);
+    assert.match(grip.getAttribute('aria-label'), /Reorder onX/);
+    assert.match(dom.window.document.getElementById(grip.getAttribute('aria-describedby')).textContent, /Up and Down/);
+});
+
+const orderDragFixture = async () => {
+    const dom = await loadOptions({}, { prepareWindow: win => {
+        win.requestAnimationFrame = callback => win.setTimeout(() => callback(0), 16);
+        win.cancelAnimationFrame = id => win.clearTimeout(id);
+    } });
+    const list = el(dom, 'map-provider-order');
+    list.getBoundingClientRect = () => ({ top: 0, bottom: 192 });
+    for (const row of list.children) {
+        Object.defineProperty(row, 'offsetTop', { get: () => [...list.children].indexOf(row) * 48 });
+        Object.defineProperty(row, 'offsetHeight', { get: () => 44 });
+        row.getBoundingClientRect = () => ({ top: row.offsetTop, bottom: row.offsetTop + 44 });
+    }
+    const pointer = (target, type, y) => target.dispatchEvent(new dom.window.MouseEvent(type, {
+        bubbles: true, cancelable: true, button: 0, clientY: y,
+    }));
+    const ids = () => [...list.children].map(row => row.dataset.orderItem);
+    return { dom, list, pointer, ids };
+};
+
+test('grip drag previews order and only saves on release without toggling providers', async () => {
+    const { dom, list, pointer, ids } = await orderDragFixture();
+    const grip = list.querySelector('[data-order-item="caltopo"] .order-grip');
+    pointer(grip, 'pointerdown', 166);
+    pointer(dom.window, 'pointermove', 162);
+    assert.equal(list.hasAttribute('data-reordering'), false, 'a small movement is still a click');
+    pointer(dom.window, 'pointermove', 18);
+    assert.equal(list.hasAttribute('data-reordering'), true);
+    assert.deepEqual(ids(), ['caltopo', 'gaia', 'onx', 'alltrails']);
+    assert.equal(dom.chrome._store.bpbSettings.mapProviderOrder, undefined, 'preview does not write settings');
+    await dom.chrome.storage.sync.set({ bpbSettings: settingsSchema.clean({ theme: 'dark' }) });
+    assert.equal(list.hasAttribute('data-reordering'), true, 'unrelated settings updates preserve the drag');
+    pointer(dom.window, 'pointerup', 18);
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'caltopo');
+    assert.equal(list.hasAttribute('data-reordering'), false);
+    assert.equal(list.querySelectorAll('input:checked').length, 4);
+});
+
+test('Escape, pointer cancellation, and remote order changes discard drag previews', async () => {
+    for (const cancel of ['escape', 'pointercancel', 'remote']) {
+        const { dom, list, pointer, ids } = await orderDragFixture();
+        pointer(list.querySelector('[data-order-item="caltopo"] .order-grip'), 'pointerdown', 166);
+        pointer(dom.window, 'pointermove', 18);
+        if (cancel === 'escape') dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' }));
+        else if (cancel === 'remote') await dom.chrome.storage.sync.set({ bpbSettings: settingsSchema.clean({ mapProviderOrder: ['onx'] }) });
+        else pointer(dom.window, 'pointercancel', 18);
+        assert.equal(list.hasAttribute('data-reordering'), false);
+        assert.deepEqual(ids(), cancel === 'remote' ? ['onx', 'gaia', 'alltrails', 'caltopo'] : ['gaia', 'onx', 'alltrails', 'caltopo']);
+        if (cancel !== 'remote') assert.equal(dom.chrome._store.bpbSettings.mapProviderOrder, undefined);
+    }
+});
+
+test('dragging from a checkbox never starts a reorder', async () => {
+    const { dom, list, pointer, ids } = await orderDragFixture();
+    const check = list.querySelector('input');
+    pointer(check, 'pointerdown', 20);
+    pointer(dom.window, 'pointermove', 180);
+    pointer(dom.window, 'pointerup', 180);
+    assert.deepEqual(ids(), ['gaia', 'onx', 'alltrails', 'caltopo']);
+    assert.equal(list.hasAttribute('data-reordering'), false);
+    check.click();
+    await waitFor(dom, () => Array.isArray(dom.chrome._store.bpbSettings.mapProvidersEnabled) && !dom.chrome._store.bpbSettings.mapProvidersEnabled.includes('gaia'));
+    assert.deepEqual(ids(), ['gaia', 'onx', 'alltrails', 'caltopo']);
+});
+
+test('a failed drag save restores the confirmed order and reports the failure', async () => {
+    const { dom, list, pointer, ids } = await orderDragFixture();
+    dom.chrome.storage.sync.set = async () => { throw new Error('storage write failed'); };
+    const grip = list.querySelector('[data-order-item="caltopo"] .order-grip');
+    pointer(grip, 'pointerdown', 166);
+    pointer(dom.window, 'pointermove', 18);
+    pointer(dom.window, 'pointerup', 18);
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent.includes('couldn’t be saved'));
+    await waitFor(dom, () => !grip.disabled);
+    assert.deepEqual(ids(), ['gaia', 'onx', 'alltrails', 'caltopo']);
+    assert.equal(list.querySelectorAll('input:checked').length, 4);
+    assert.equal(dom.window.document.activeElement, grip);
 });

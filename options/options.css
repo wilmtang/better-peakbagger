@@ -615,9 +615,17 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorite-item { align-items: flex-start; }
 }
 
-/* Lists stack beneath their explanation so long labels fit narrow panels. */
+/* The grip moves the row; the checkbox controls provider visibility. */
 .order-setting-row { flex-direction: column; align-items: stretch; gap: 12px; }
-.order-settings { list-style: none; margin: 0; padding: 0; }
-.order-settings li { display: flex; align-items: center; gap: 6px; padding: 6px 0; }
-.order-setting-label { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; font-size: 13px; }
-.order-settings button.secondary { margin: 0; min-width: 32px; min-height: 32px; padding: 4px 8px; }
+.order-settings { position: relative; display: flex; flex-direction: column; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.order-settings li { position: relative; display: flex; align-items: center; gap: 6px; min-height: 44px; box-sizing: border-box; padding: 2px 8px 2px 0; border: 1px solid transparent; border-radius: 8px; background: var(--card); }
+.order-setting-label { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 40px; font-size: 13px; }
+.order-setting-label input { flex: 0 0 auto; }
+.order-settings label { cursor: pointer; }
+.order-grip { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--sub); cursor: grab; touch-action: none; user-select: none; }
+.order-grip:hover, .order-grip:focus-visible { color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.order-grip-dots { width: 12px; height: 20px; background: radial-gradient(circle, currentColor 1.4px, transparent 1.6px) 0 1px / 6px 6px; }
+.order-settings li[data-dragging] { z-index: 1; border-color: var(--accent); box-shadow: 0 6px 18px #0003; }
+.order-settings[data-reordering] { user-select: none; }
+.order-settings[data-reordering] .order-grip { cursor: grabbing; }
+.order-settings-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

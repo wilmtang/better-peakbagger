@@ -200,12 +200,21 @@ try {
     const providerList = options.locator('#map-provider-order');
     await providerList.locator('input:checked').first().waitFor();
     assert.equal(await providerList.locator('input:checked').count(), 4);
-    await providerList.getByRole('button', { name: 'Move onX Backcountry up', exact: true }).click();
-    await waitForCondition(async () => options.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Move onX Backcountry down'), { description: 'keyboard focus preserved at the first position' });
-    await providerList.getByRole('button', { name: 'Move onX Backcountry down', exact: true }).click();
+    await providerList.getByRole('button', { name: 'Reorder onX Backcountry', exact: true }).press('ArrowUp');
+    await waitForCondition(async () => options.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Reorder onX Backcountry' && !document.activeElement.disabled), { description: 'keyboard focus preserved at the first position' });
+    await providerList.getByRole('button', { name: 'Reorder onX Backcountry', exact: true }).press('ArrowDown');
     await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'gaia,onx,alltrails,caltopo', { description: 'provider order restored before the transfer check' });
 
-    await providerList.getByRole('button', { name: 'Move CalTopo up', exact: true }).click();
+    const caltopoGrip = providerList.getByRole('button', { name: 'Reorder CalTopo', exact: true });
+    await caltopoGrip.scrollIntoViewIfNeeded();
+    const gripBox = await caltopoGrip.boundingBox();
+    const targetBox = await providerList.locator('[data-order-item="alltrails"]').boundingBox();
+    await options.mouse.move(gripBox.x + gripBox.width / 2, gripBox.y + gripBox.height / 2);
+    await options.mouse.down();
+    await options.mouse.move(gripBox.x + gripBox.width / 2, targetBox.y + targetBox.height / 2 - 8, { steps: 8 });
+    assert.equal(await providerList.getAttribute('data-reordering'), '');
+    await providerList.screenshot({ path: path.join(evidenceDir, 'provider-settings-dragging.png') });
+    await options.mouse.up();
     await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'gaia,onx,caltopo,alltrails', { description: 'provider order applied to the open ascent' });
     await providerList.getByLabel('Gaia GPS', { exact: true }).uncheck();
     await gaiaButton.waitFor({ state: 'hidden' });
@@ -215,7 +224,7 @@ try {
     await beta.goto(`https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`);
     await beta.locator('#pbaf-bar').waitFor();
     const betaKeys = () => beta.locator('.pbaf-filter-item').evaluateAll(items => items.map(item => item.dataset.filterKey));
-    await options.locator('#beta-peak-order').getByRole('button', { name: 'Move Has beta up', exact: true }).click();
+    await options.locator('#beta-peak-order').getByRole('button', { name: 'Reorder Has beta', exact: true }).press('ArrowUp');
     await waitForCondition(async () => (await betaKeys()).join() === 'fav,gps,tr,beta,link', { description: 'settings filter order applied to the open list' });
     await beta.locator('[data-filter-key="beta"] .pbaf-chip').press('Alt+ArrowLeft');
     await waitForCondition(async () => (await options.locator('#beta-peak-order > li').evaluateAll(items => items.map(item => item.dataset.orderItem))).join() === 'fav,gps,beta,tr,link', { description: 'page keyboard order reflected in Settings' });
@@ -248,6 +257,27 @@ try {
         });
     });
     assert.ok(fits, 'provider settings fit at 430px');
+    // Touch uses the same grip, with reduced motion and no checkbox side effect.
+    await options.emulateMedia({ reducedMotion: 'reduce' });
+    await providerList.scrollIntoViewIfNeeded();
+    const touchGrip = await providerList.getByRole('button', { name: 'Reorder CalTopo', exact: true }).boundingBox();
+    const firstRow = await providerList.locator('[data-order-item="gaia"]').boundingBox();
+    const touchSession = await context.newCDPSession(options);
+    try {
+        await touchSession.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+        const touchX = touchGrip.x + touchGrip.width / 2;
+        await touchSession.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: touchX, y: touchGrip.y + touchGrip.height / 2 }] });
+        await touchSession.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: touchX, y: firstRow.y + firstRow.height / 2 - 8 }] });
+        assert.equal(await providerList.getAttribute('data-reordering'), '');
+        assert.equal(await providerList.evaluate(list => list.getAnimations({ subtree: true }).length), 0, 'reduced motion disables reorder animations');
+        await touchSession.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'caltopo,gaia,onx,alltrails', { description: 'touch grip reorder persisted to the open ascent' });
+        assert.equal(await providerList.locator('input:checked').count(), 4, 'touch reordering never toggles a provider');
+    } finally {
+        await touchSession.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+        await touchSession.detach();
+    }
+
     await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: {} }));
     await gaiaButton.waitFor();
     await options.close();
@@ -475,6 +505,7 @@ try {
         checks: [
             'real unpacked dist',
             'ascent-page placement below GPX download',
+            'provider and beta grip controls: mouse drag, touch drag, keyboard, and reduced motion',
             'provider and beta order controls, live sync, all-off, settings file export/import',
             'trusted click and worker route',
             'exact saved GPX handoff',
