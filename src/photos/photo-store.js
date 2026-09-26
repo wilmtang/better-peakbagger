@@ -586,6 +586,10 @@ const createPhotoStore = async options => {
                 || !['draft', 'outcome-unknown'].includes(current.remote.state)) {
                 throw new PhotoStoreConflictError(cleaned.localId);
             }
+            if (previousOperationIds.length || current.remote.state === 'outcome-unknown') {
+                throw new PhotoStoreConflictError(cleaned.localId,
+                    'An earlier upload may have reached ImgBB. Check your ImgBB account before uploading again.');
+            }
             storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
             storedOperation = structuredClone({
                 ...operation,

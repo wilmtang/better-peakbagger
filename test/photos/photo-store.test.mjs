@@ -951,3 +951,20 @@ test('metadata restore rejects a local edit made after its revision snapshot', a
     first.close();
     second.close();
 });
+
+test('an uncertain upload cannot replace the existing durable operation', async () => {
+    const indexedDB = new IDBFactory();
+    const store = await Store.createPhotoStore({ indexedDB });
+    const input = fixture();
+    const draft = await store.putDraft(input);
+    const operation = uploadOperation(draft.localId);
+    const begun = await store.beginUploadOperation({ photo: Library.beginUpload(draft, operation.export, TIME), operation });
+    const uncertain = await store.putPhoto(Library.markOutcomeUnknown(begun.photo, LATER));
+    await assert.rejects(store.beginUploadOperation({
+        photo: Library.beginUpload(uncertain, operation.export, LATER),
+        operation: uploadOperation(draft.localId, 'replacement'),
+    }), /earlier upload may have reached ImgBB/);
+    assert.deepEqual(await store.getOperations(), [begun.operation]);
+    assert.equal((await store.getBundle(draft.localId)).photo.remote.state, 'outcome-unknown');
+    store.close();
+});

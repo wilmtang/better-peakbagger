@@ -1962,6 +1962,10 @@ const saveLocalAndReturn = async () => {
 const uploadAndInsert = async () => {
     if (LOCAL_PHOTO_ID) return saveLocalAndReturn();
     if (busy || !project || !sourceBitmap) return;
+    if (['uploading', 'outcome-unknown'].includes(photo?.remote.state)) {
+        toast('An earlier upload may have reached ImgBB. Check your ImgBB account before uploading again.', { duration: 0 });
+        return;
+    }
     if (PUBLISHED_STATES.includes(photo?.remote.state)) {
         toast('This photo is already on ImgBB. Use “Edit as new version” in the library to change it.');
         return;

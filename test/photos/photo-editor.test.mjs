@@ -2830,3 +2830,22 @@ test('long freehand gestures stay bounded and preserve the release endpoint', as
     assert.deepEqual(page.errors, []);
     page.dom.window.close();
 });
+
+
+test('malformed ImgBB success keeps the photo-page recovery journal and blocks another upload', async t => {
+    const indexedDB = new IDBFactory();
+    let posts = 0;
+    const page = await loadEditor({ indexedDB,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        fetchImpl: async () => { posts++; return { ok: true, status: 200, text: async () => 'null' }; } });
+    t.after(() => page.dom.window.close());
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(page.doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /Check your ImgBB account/i.test(page.doc.getElementById('toast-message').textContent));
+    assert.equal((await readPhotoStore(page.win, 'operations'))[0].state, 'request-started');
+    page.click(page.doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /earlier upload may have reached/.test(page.doc.getElementById('toast-message').textContent));
+    assert.equal(posts, 1);
+    assert.equal((await readPhotoStore(page.win, 'operations')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
