@@ -380,3 +380,58 @@ test('a visitor viewing someone else’s ascent gets no affordance', async () =>
     // Fails closed before even asking the background about status.
     assert.equal(statusAsked, false);
 });
+
+
+const pageTransition = (dom, type) => dom.window.dispatchEvent(new dom.window.PageTransitionEvent(type, { persisted: true }));
+
+test('cached restoration restarts a discarded check once without duplicating controls or writes', async () => {
+    let resolveOld;
+    let checks = 0;
+    const oldCheck = new Promise(resolve => { resolveOld = resolve; });
+    const { dom, sent } = await loadSurface({ status: { enabled: true, connected: true, auto: true },
+        onCheck: () => ++checks === 1 ? oldCheck : { ok: true, current: true } });
+    await waitFor(dom, () => checks === 1);
+    pageTransition(dom, 'pagehide');
+    resolveOld({ ok: true, current: false });
+    pageTransition(dom, 'pageshow');
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+    pageTransition(dom, 'pagehide');
+    pageTransition(dom, 'pageshow');
+    await waitFor(dom, () => checks === 3 && /Backed up/.test(control(dom).textContent));
+    assert.equal(dom.window.document.querySelectorAll('.bpb-gh-control').length, 1);
+    assert.equal(sent.filter(message => message.type === 'GITHUB_BACKUP_ASCENT').length, 0);
+    assert.equal(sent.filter(message => message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT').length, 1,
+        'restoration is read-only even when automatic backup is enabled');
+    dom.window.close();
+});
+
+for (const timeout of [false, true]) {
+    test(`cached restoration waits for a pending ${timeout ? 'timed-out' : 'successful'} write before reconciliation`, async () => {
+        let finish;
+        const write = new Promise(resolve => { finish = resolve; });
+        const { dom, sent } = await loadSurface({ status: { enabled: true, connected: true, auto: true },
+            onPreflight: () => ({ ok: true, fresh: true }), onBackup: () => write,
+            onCheck: () => ({ ok: true, current: true }) });
+        await waitFor(dom, () => sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'));
+        pageTransition(dom, 'pagehide');
+        pageTransition(dom, 'pageshow');
+        await waitFor(dom, () => sent.filter(message => message.type === 'GITHUB_BACKUP_STATUS').length === 2);
+        assert.equal(sent.filter(message => message.type === 'GITHUB_CHECK_ASCENT_BACKUP').length, 0);
+        finish(timeout ? { ok: false, error: { code: 'timeout' } } : { ok: true, result: {} });
+        await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+        assert.equal(sent.filter(message => message.type === 'GITHUB_BACKUP_ASCENT').length, 1);
+        assert.equal(sent.find(message => message.type === 'GITHUB_CHECK_ASCENT_BACKUP').reconcile, true);
+        dom.window.close();
+    });
+}
+
+test('restoration rechecks connection status and removes an obsolete control', async () => {
+    const status = { enabled: true, connected: true };
+    const { dom } = await loadSurface({ status });
+    await waitFor(dom, () => control(dom)?.querySelector('button'));
+    pageTransition(dom, 'pagehide');
+    status.connected = false;
+    pageTransition(dom, 'pageshow');
+    await waitFor(dom, () => !control(dom));
+    dom.window.close();
+});

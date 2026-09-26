@@ -17,6 +17,7 @@ import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-err
 import { dom as Dom } from '../ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
+import { createPageLifecycle } from '../ui/page-lifecycle.js';
 
 (() => {
     'use strict';
@@ -37,6 +38,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     let control = null;
     let operationGeneration = 0;
     let operationTimer = null;
+    let pendingWrite = null;
+    let reconcileOnResume = false;
     const setBody = (...nodes) => { if (control) control.querySelector('.bpb-gh-body').replaceChildren(...nodes.filter(Boolean)); };
 
     const clearOperationTimer = () => {
@@ -57,7 +60,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return generation;
     };
 
-    const ownsOperation = generation => generation === operationGeneration;
+    const ownsOperation = generation => lifecycle.state === 'active' && generation === operationGeneration;
 
     const finishOperation = generation => {
         if (!ownsOperation(generation)) return false;
@@ -177,7 +180,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const runBackup = async (info, { auto = false, current = null, event = null } = {}) => {
         // The host page can synthesize DOM events but cannot mint isTrusted.
         // Refuse before reading owner-only data or changing the control.
-        if (!auto && event?.isTrusted !== true) return;
+        if (lifecycle.state !== 'active' || (!auto && event?.isTrusted !== true)) return;
         const intendedGeneration = operationGeneration + 1;
         const workflow = auto ? null : await TrustedAction.begin(
             ext,
@@ -185,6 +188,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             'ascent-backup',
             intendedGeneration,
         );
+        if (lifecycle.state !== 'active' || intendedGeneration !== operationGeneration + 1) {
+            if (workflow) void TrustedAction.end(ext, workflow, intendedGeneration);
+            return;
+        }
         if (!auto && !workflow) {
             renderError(info, { code: 'activation-required' });
             return;
@@ -204,7 +211,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             return;
         }
         if (!ownsOperation(generation)) return;
-        const response = await sendBg({
+        const request = sendBg({
             type: 'GITHUB_BACKUP_ASCENT',
             page: current.page,
             pageComplete: true,
@@ -212,8 +219,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             auto,
             ...(workflow ? { grantToken: workflow.grantToken, generation: String(generation) } : {}),
         });
+        pendingWrite = request;
+        const response = await request;
         if (workflow) void TrustedAction.end(ext, workflow, generation);
         if (!ownsOperation(generation)) return;
+        if (pendingWrite === request) pendingWrite = null;
         if (response && response.ok) {
             if (finishOperation(generation)) renderSuccess(response.result);
             return;
@@ -259,34 +269,63 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         await checkBackup(info, current, { generation });
     };
 
-    const mountControl = (info, { auto = false } = {}) => {
-        const editLink = AscentPage.ascentEditLink(document, info.ascentId);
-        const actions = editLink && editLink.parentElement;
-        if (!actions) return;
-        control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'Ascent and TR backup' }, [
-            el('span', { class: 'bpb-gh-body', 'aria-live': 'polite' }),
-        ]);
-        actions.append(document.createTextNode(' '), control);
-        // Automatic mode first reads the authoritative persisted form and asks
-        // the worker whether a matching save snapshot is still pending. Only a
-        // proven fresh save may claim that backup work is underway.
-        if (auto) void checkAutomaticBackup(info);
+    const resumeBackup = async info => {
+        const request = pendingWrite;
+        const generation = beginOperation({ slow: !!request });
+        if (request) renderWorking();
+        else renderChecking();
+        const response = request ? await request : null;
+        if (!ownsOperation(generation)) return;
+        if (pendingWrite === request) pendingWrite = null;
+        // The worker owns the write. Wait for its answer, then read the current
+        // saved ascent and reconcile; history traversal never submits it again.
+        await checkBackup(info, null, {
+            generation,
+            reconcile: reconcileOnResume,
+            failure: response?.error?.code === 'timeout' ? response.error : null,
+        });
+        if (ownsOperation(generation)) reconcileOnResume = false;
+    };
+
+    const mountControl = (info, { auto = false, resumed = false } = {}) => {
+        if (!control) {
+            const editLink = AscentPage.ascentEditLink(document, info.ascentId);
+            const actions = editLink && editLink.parentElement;
+            if (!actions) return;
+            control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'Ascent and TR backup' }, [
+                el('span', { class: 'bpb-gh-body', 'aria-live': 'polite' }),
+            ]);
+            actions.append(document.createTextNode(' '), control);
+        }
+        if (resumed) void resumeBackup(info);
+        else if (auto) void checkAutomaticBackup(info);
         else void checkBackup(info);
     };
 
-    const start = async () => {
+    const start = async ({ resumed = false } = {}) => {
+        const generation = operationGeneration;
         const info = AscentPage.read({ doc: document, search: location.search });
-        // Fail closed: only the owner of a real ascent sees the affordance.
-        if (info.ascentId == null || !info.isOwner) return;
-        const status = await sendBg({ type: 'GITHUB_BACKUP_STATUS' });
-        if (!status || !status.enabled || !status.connected) return;
-        mountControl(info, { auto: !!status.auto });
+        const status = info.ascentId != null && info.isOwner
+            ? await sendBg({ type: 'GITHUB_BACKUP_STATUS' }) : null;
+        if (!ownsOperation(generation)) return;
+        if (!status || !status.enabled || !status.connected) {
+            control?.remove();
+            control = null;
+            return;
+        }
+        mountControl(info, { auto: !!status.auto, resumed });
     };
 
-    window.addEventListener('pagehide', () => {
+    const invalidate = () => {
+        if (pendingWrite) reconcileOnResume = true;
         operationGeneration++;
         clearOperationTimer();
-    }, { once: true });
+    };
+    const lifecycle = createPageLifecycle({
+        onSuspend: invalidate,
+        onResume: () => { void start({ resumed: true }); },
+        onDispose: invalidate,
+    });
 
     void start();
 })();
