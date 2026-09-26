@@ -1,5 +1,8 @@
 # Active plans
 
+- [Codebase audit — 2026-09-25](codebase-audit-2026-09-25.md) — seven reproduced
+  findings; prioritized fixes for upload recovery, backup correctness,
+  repository ownership, cached navigation, and the expired dependency gate.
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.
