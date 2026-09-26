@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { photoToolPreferences as ToolPreferences } from '../src/photos/photo-tool-preferences.js';
 import { photoProject as Project } from '../src/photos/photo-project.js';
 import { photoRenderer as Renderer } from '../src/photos/photo-renderer.js';
 import { photoLibrary as Library } from '../src/photos/photo-library.js';
@@ -253,17 +254,28 @@ let libraryMaintenanceSuspended = false;
 let libraryMaintenanceFailure = null;
 let photoBackupBusy = false;
 let newVersionTransaction = null;
-// A new mark inherits the last style the user chose, the way every drawing tool
-// behaves: dial the opacity back once and the rest of the topo matches instead
-// of needing the same three adjustments on every symbol.
-let styleDefaults = {
-    color: Project.DEFAULT_COLOR,
-    opacity: 1,
-    scale: 1,
-    width: 12,
-    stroke: 'solid',
-    end: 'none',
-    smooth: false,
+// Each tool owns its preferences; project history never rewinds these choices.
+const toolPreferences = Object.fromEntries(Project.OBJECT_TYPES.map(type =>
+    [type, ToolPreferences.clean(type)]));
+const preferenceKey = type => `bpbPhotoTool:${type}`;
+let preferenceWrites = Promise.resolve();
+const rememberTool = (type, patch) => {
+    toolPreferences[type] = ToolPreferences.clean(type, {
+        ...toolPreferences[type], ...patch,
+        style: { ...toolPreferences[type].style, ...patch.style },
+    });
+    const saved = structuredClone(toolPreferences[type]);
+    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set({
+        [preferenceKey(type)]: saved,
+    })).catch(() => toast('Tool settings apply now, but could not be saved on this device.'));
+};
+const loadToolPreferences = async () => {
+    try {
+        const stored = await ext.storage.local.get(Project.OBJECT_TYPES.map(preferenceKey));
+        for (const type of Project.OBJECT_TYPES) {
+            toolPreferences[type] = ToolPreferences.clean(type, stored[preferenceKey(type)]);
+        }
+    } catch { /* Defaults remain usable when local storage is unavailable. */ }
 };
 
 const setEditorStatus = message => { ui.editorStatus.textContent = message; };
@@ -972,16 +984,14 @@ const renderInspector = () => {
     ui.inspectorHeading.textContent = object ? 'Selection' : `${toolName(type)} style`;
     document.querySelectorAll('.route-only').forEach(node => { node.hidden = !route; });
     document.querySelectorAll('.scale-only').forEach(node => { node.hidden = route; });
-    // Rotation, the pitch number, the text and its alignment, the contrast
-    // background, and the layer and delete actions all describe one placed
-    // mark. They are not carried to the next one, so before a mark exists there
-    // is nothing for them to show or act on.
-    document.querySelectorAll('.point-only').forEach(node => { node.hidden = route || !object; });
+    // Content belongs to the placed mark; appearance can be preset per tool.
+    document.querySelectorAll('.point-only').forEach(node => { node.hidden = route; });
     document.querySelectorAll('.pitch-only').forEach(node => { node.hidden = !pitch || !object; });
     document.querySelectorAll('.text-only').forEach(node => { node.hidden = !text || !object; });
-    document.querySelectorAll('.label-only').forEach(node => { node.hidden = !label || !object; });
+    document.querySelectorAll('.label-only').forEach(node => { node.hidden = !label; });
+    ui.align.closest('label').hidden = !text;
     ui.objectActions.hidden = !object;
-    const style = object ? object.style : styleDefaults;
+    const style = object ? object.style : toolPreferences[type].style;
     ui.color.value = style.color;
     ui.opacity.value = String(Math.round(style.opacity * 100));
     ui.opacityValue.textContent = percent(style.opacity);
@@ -995,7 +1005,13 @@ const renderInspector = () => {
         ui.scale.value = String(style.scale);
         ui.scaleValue.textContent = pixels(Renderer.objectSizePixels(type, project.image, style.scale));
     }
-    if (!object) return;
+    if (!object) {
+        ui.rotation.value = String(toolPreferences[type].rotation);
+        ui.rotationValue.textContent = `${toolPreferences[type].rotation}°`;
+        if (text) ui.align.value = style.align;
+        if (label) ui.background.checked = style.background;
+        return;
+    }
     if (!route) {
         ui.rotation.value = String(Math.round(object.geometry.rotation));
         ui.rotationValue.textContent = `${Math.round(object.geometry.rotation)}°`;
@@ -1248,20 +1264,8 @@ const pointerPoint = event => {
     ];
 };
 
-const defaultStyle = () => ({
-    color: styleDefaults.color,
-    scale: styleDefaults.scale,
-    opacity: styleDefaults.opacity,
-});
-
-const defaultRouteStyle = () => ({
-    color: styleDefaults.color,
-    width: styleDefaults.width,
-    stroke: styleDefaults.stroke,
-    end: styleDefaults.end,
-    opacity: styleDefaults.opacity,
-    smooth: styleDefaults.smooth,
-});
+const defaultStyle = (type = activeTool) => ({ ...toolPreferences[type].style });
+const defaultRouteStyle = () => defaultStyle('route');
 
 // Finishing on a double-click cannot be left to the browser's `dblclick`.
 // Every press repaints the overlay, so the second release lands on a node that
@@ -1352,22 +1356,22 @@ const addPointObject = (type, point) => {
     const base = {
         id: crypto.randomUUID(),
         type,
-        geometry: { x: point[0], y: point[1], rotation: 0 },
-        style: defaultStyle(),
+        geometry: { x: point[0], y: point[1], rotation: toolPreferences[type].rotation },
+        style: defaultStyle(type),
     };
     let object = base;
     if (type === 'pitch') {
         object = {
             ...base,
             pitch: Number(ui.pitch.value || 1),
-            style: { ...base.style, background: true },
+            style: base.style,
         };
     }
     if (type === 'text') {
         object = {
             ...base,
             text: 'Label',
-            style: { ...base.style, align: 'left', background: true },
+            style: base.style,
         };
     }
     const next = Project.addObject(project, object);
@@ -1527,12 +1531,11 @@ const updateSelected = (patch, { coalesce = null } = {}) => {
     if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
-    if (patch.style) {
-        styleDefaults = {
-            ...styleDefaults,
-            ...Object.fromEntries(Object.entries(patch.style)
-                .filter(([key]) => key in styleDefaults)),
-        };
+    if (patch.style || patch.geometry?.rotation != null) {
+        rememberTool(object.type, {
+            ...(patch.style ? { style: patch.style } : {}),
+            ...(patch.geometry?.rotation != null ? { rotation: patch.geometry.rotation } : {}),
+        });
     }
     setProject(Project.updateObject(project, object.id, patch), {
         coalesce: coalesce && `${coalesce}:${object.id}`,
@@ -1553,10 +1556,7 @@ const applyStyle = (patch, { coalesce = null, geometry = null } = {}) => {
         }, { coalesce });
         return;
     }
-    styleDefaults = {
-        ...styleDefaults,
-        ...Object.fromEntries(Object.entries(patch).filter(([key]) => key in styleDefaults)),
-    };
+    rememberTool(inspectorType(), { style: patch });
 };
 
 const duplicateSelected = () => {
@@ -2780,6 +2780,8 @@ const bindInspector = () => {
         ui.rotationValue.textContent = `${rotation}°`;
         if (object && object.type !== 'route') {
             updateSelected({ geometry: { ...object.geometry, rotation } }, { coalesce: 'rotation' });
+        } else if (inspectorType() && inspectorType() !== 'route') {
+            rememberTool(inspectorType(), { rotation });
         }
     });
     ui.pitch.addEventListener('change', () => {
@@ -2800,15 +2802,11 @@ const bindInspector = () => {
         control.addEventListener('change', endCoalescing);
     }
     ui.align.addEventListener('change', () => {
-        const object = selectedObject();
-        if (object?.type === 'text') {
-            updateSelected({ style: { ...object.style, align: ui.align.value } });
-        }
+        if (inspectorType() === 'text') applyStyle({ align: ui.align.value });
     });
     ui.background.addEventListener('change', () => {
-        const object = selectedObject();
-        if (object && ['pitch', 'text'].includes(object.type)) {
-            updateSelected({ style: { ...object.style, background: ui.background.checked } });
+        if (['pitch', 'text'].includes(inspectorType())) {
+            applyStyle({ background: ui.background.checked });
         }
     });
 };
@@ -3064,6 +3062,7 @@ const initialize = async () => {
         option.value = String(number);
         ui.pitch.append(option);
     }
+    await loadToolPreferences();
     paintToolRail();
     paintReportWidthControls();
     syncUploadControls();

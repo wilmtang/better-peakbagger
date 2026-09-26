@@ -54,6 +54,7 @@ const loadEditor = async ({
     storageEstimate = undefined,
     subtle = globalThis.crypto.subtle,
     imageSize = IMAGE,
+    localPreferences = {},
 } = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
@@ -140,7 +141,7 @@ const loadEditor = async ({
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
     if (fetchImpl) win.fetch = fetchImpl;
-    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640 } });
+    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640 } }, localPreferences);
     chrome.runtime.sendMessage = async message => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
         if (message?.type === 'PHOTO_IMGBB_LEASE_KEY') return { ok: true, key: 'test-imgbb-key' };
@@ -2131,8 +2132,8 @@ test('arming a placement tool shows its style before anything is placed', async 
     assert.equal(heading(), 'Bolt style');
     assert.equal(doc.getElementById('object-actions').hidden, true,
         'there is no mark yet to reorder, duplicate, or delete');
-    assert.equal(doc.querySelector('.point-only').hidden, true,
-        'rotation describes a placed mark, not the tool');
+    assert.equal(doc.querySelector('.point-only').hidden, false,
+        'rotation can be preset before placing a mark');
     assert.equal(doc.querySelector('.scale-only').hidden, false);
     assert.equal(doc.querySelector('.route-only').hidden, true);
     assert.equal(doc.getElementById('object-scale-value').textContent, '32 px',
@@ -2157,8 +2158,8 @@ test('arming a placement tool shows its style before anything is placed', async 
 
     page.tool('text');
     await page.settle();
-    assert.equal(doc.getElementById('object-scale-value').textContent, '84 px',
-        'text reports the renderer font size for its preserved 2× scale default');
+    assert.equal(doc.getElementById('object-scale-value').textContent, '42 px',
+        'text owns its scale independently of the bolt tool');
 
     page.tool('select');
     await page.settle();
@@ -2730,4 +2731,45 @@ test('dragging one route vertex moves only that vertex', async () => {
         `every vertex ended at the same height, so the drag moved all of them: ${after}`);
 
     assert.deepEqual(page.errors, []);
+});
+
+
+test('tool preferences are independent and survive reopening the editor', async () => {
+    const page = await loadEditor();
+    const change = (id, value, event = 'input') => {
+        const control = page.doc.getElementById(id);
+        if (typeof value === 'boolean') control.checked = value;
+        else control.value = String(value);
+        page.emit(control, event);
+    };
+    page.tool('route');
+    change('object-opacity', 40);
+    change('route-width', 27);
+    change('route-arrow', true, 'change');
+    change('route-smooth', true, 'change');
+    page.tool('bolt');
+    assert.equal(page.doc.getElementById('object-opacity').value, '100');
+    change('object-scale', 2);
+    change('object-rotation', 45);
+    page.tool('text');
+    change('label-background', false, 'change');
+    change('text-align', 'right', 'change');
+    await page.settle();
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
+    reopened.tool('route');
+    assert.equal(reopened.doc.getElementById('object-opacity').value, '40');
+    assert.equal(reopened.doc.getElementById('route-width').value, '27');
+    assert.equal(reopened.doc.getElementById('route-arrow').checked, true);
+    assert.equal(reopened.doc.getElementById('route-smooth').checked, true);
+    reopened.tool('bolt');
+    reopened.pointer('pointerdown', 100, 100);
+    assert.equal(reopened.doc.getElementById('object-scale').value, '2');
+    assert.equal(reopened.doc.getElementById('object-rotation').value, '45');
+    reopened.tool('text');
+    reopened.pointer('pointerdown', 200, 200);
+    assert.equal(reopened.doc.getElementById('label-background').checked, false);
+    assert.equal(reopened.doc.getElementById('text-align').value, 'right');
+    assert.deepEqual(reopened.errors, []);
+    page.dom.window.close();
+    reopened.dom.window.close();
 });
