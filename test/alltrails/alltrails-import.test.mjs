@@ -17,6 +17,10 @@ const run = async ({
     ready = true,
     before = '',
     gpx = GPX,
+    inputLabel = 'hidden file upload',
+    delayedInput = false,
+    duplicateInput = false,
+    accept = '.gpx,.GPX,.fit',
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>${before}<button id="open">Upload a route</button></body>`, {
         url,
@@ -33,16 +37,20 @@ const run = async ({
         }
     };
     let uploadClicks = 0;
+    let handoffs = 0;
+    let received;
     win.document.getElementById('open').addEventListener('click', () => {
         const dialog = win.document.createElement('div');
         dialog.setAttribute('role', 'dialog');
-        dialog.innerHTML = [
-            '<h2>Upload a route</h2>',
-            '<input type="file" aria-label="hidden file upload" accept=".gpx,.GPX,.fit">',
-        ].join('');
-        const input = dialog.querySelector('input');
+        dialog.innerHTML = '<h2>Upload a route</h2>';
+        const input = win.document.createElement('input');
+        input.type = 'file';
+        input.accept = accept;
+        if (inputLabel) input.setAttribute('aria-label', inputLabel);
         Object.defineProperty(input, 'files', { value: [], writable: true });
         input.addEventListener('change', () => {
+            handoffs++;
+            received = input.files[0];
             if (!ready) return;
             input.remove();
             dialog.insertAdjacentHTML('beforeend', [
@@ -52,12 +60,23 @@ const run = async ({
             dialog.querySelector('#upload').addEventListener('click', () => { uploadClicks++; });
         });
         win.document.body.append(dialog);
+        const mount = () => {
+            dialog.append(input);
+            if (duplicateInput) dialog.append(input.cloneNode());
+        };
+        if (delayedInput) win.setTimeout(mount, 25);
+        else mount();
     });
     const result = await win.eval(
         `(${prepareAlltrailsImport.toString()})({gpx:${JSON.stringify(gpx)},filename:"peakbagger-42.gpx",timeoutMs:150})`,
     );
+    const receivedText = received ? await new Promise(resolve => {
+        const reader = new win.FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsText(received);
+    }) : null;
     dom.window.close();
-    return { result: structuredClone(result), uploadClicks };
+    return { result: structuredClone(result), uploadClicks, handoffs, receivedText };
 };
 
 test('AllTrails adapter supplies the exact GPX and leaves final Upload untouched', async () => {
@@ -69,6 +88,32 @@ test('AllTrails adapter supplies the exact GPX and leaves final Upload untouched
         message: 'Ready in AllTrails. Review the route and click Upload.',
     });
     assert.equal(uploadClicks, 0);
+});
+
+for (const options of [
+    { inputLabel: 'hidden file upload', delayedInput: true },
+    { inputLabel: null, delayedInput: false },
+    { inputLabel: 'Browse files', delayedInput: false },
+]) {
+    test(`AllTrails accepts its scoped GPX control: ${JSON.stringify(options)}`, async () => {
+        const { result, handoffs, receivedText, uploadClicks } = await run({
+            ...options,
+        });
+        assert.equal(result.code, 'prepared');
+        assert.equal(handoffs, 1);
+        assert.equal(receivedText, GPX);
+        assert.equal(uploadClicks, 0);
+    });
+}
+
+test('AllTrails does not supply an ambiguous or non-GPX file control', async () => {
+    for (const options of [{ duplicateInput: true }, { accept: 'image/*' }]) {
+        const { result, handoffs, uploadClicks } = await run(options);
+        assert.equal(result.code, 'ambiguous-input');
+        assert.equal(result.supplied, false);
+        assert.equal(handoffs, 0);
+        assert.equal(uploadClicks, 0);
+    }
 });
 
 test('AllTrails adapter sends no file when page identity or importer state is ambiguous', async () => {

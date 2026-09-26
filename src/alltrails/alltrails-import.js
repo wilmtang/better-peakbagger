@@ -65,11 +65,15 @@ export async function prepareAlltrailsImport({ gpx, filename, timeoutMs = 20_000
         }
         openers[0].click();
 
-        const dialog = await wait(() => {
+        const inputs = await wait(() => {
             const candidates = uploadDialogs();
-            return candidates.length === 1 ? candidates[0] : null;
-        }, 'its route upload dialog');
-        const inputs = [...dialog.querySelectorAll('input[type="file"][aria-label="hidden file upload"]')];
+            if (candidates.length !== 1) return null;
+            // The dialog can mount before its file control. Its accessibility
+            // label is presentation copy, not an importer identifier; scope to
+            // the route dialog and validate the GPX input below instead.
+            const files = [...candidates[0].querySelectorAll('input[type="file"]')];
+            return files.length ? files : null;
+        }, 'its route upload file control');
         const accepts = inputs[0]?.accept.toLowerCase().split(',').map(value => value.trim()) || [];
         if (inputs.length !== 1 || inputs[0].files.length || inputs[0].disabled || !accepts.includes('.gpx')) {
             return fail('ambiguous-input', 'AllTrails’ file uploader changed or already contains a file.');

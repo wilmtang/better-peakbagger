@@ -79,11 +79,14 @@ try {
         window.handoffs=0;window.uploads=0;
         document.querySelector('#open').onclick=()=>{
             const dialog=document.createElement('div');dialog.setAttribute('role','dialog');
-            dialog.innerHTML='<h2>Upload a route</h2><input type="file" aria-label="hidden file upload" accept=".gpx,.fit">';
-            const input=dialog.querySelector('input');
+            dialog.innerHTML='<h2>Upload a route</h2>';
+            const input=document.createElement('input');input.type='file';input.accept='.gpx,.fit';
             input.onchange=async()=>{window.handoffs++;window.receivedName=input.files[0].name;window.received=await input.files[0].text();
                 ${alltrailsMode === 'stalled' ? '' : 'const label=document.createElement(\'div\');label.title=input.files[0].name;label.textContent=input.files[0].name;dialog.append(label);const upload=document.createElement(\'button\');upload.textContent=\'Upload\';upload.onclick=()=>window.uploads++;dialog.append(upload);'}
             };document.body.append(dialog);
+            // Model a separately mounted upload control, without depending on
+            // the provider's accessibility copy to identify that control.
+            setTimeout(()=>dialog.append(input),0);
         };
         </script></body></html>`;
     const certificate = await createFixtureCertificate({ label: 'map-handoff' });
@@ -204,12 +207,26 @@ try {
     }));
     assert.deepEqual(repeatedOnxReceived, { text: payload.gpx, name: payload.filename, imports: 0 });
     assert.equal(await onx.evaluate(() => window.imports), 0);
+    // File receipt precedes the worker's tab focus and source-page response.
+    // Do not begin another trusted click while that workflow is still ending.
+    await waitForCondition(async () => await onxButton.isEnabled()
+        && /Ready in onX/.test(await source.locator('.bpb-map-handoff-status').innerText()), {
+        description: 'the repeated onX handoff to finish on the source page', timeoutMs: 35_000,
+    });
 
     await alltrailsButton.click();
     await waitForCondition(async () => {
         const text = await source.locator('.bpb-map-handoff-control').innerText();
         return /Ready in AllTrails/.test(text) ? text : null;
-    }, { description: 'the saved ascent to report AllTrails ready', timeoutMs: 35_000 });
+    }, { description: 'the saved ascent to report AllTrails ready', timeoutMs: 35_000 }).catch(async error => {
+        error.message += `\nSource: ${await source.locator('.bpb-map-handoff-control').innerText()}`;
+        for (const page of context.pages()) {
+            if (page.url().startsWith('https://www.alltrails.com/')) {
+                error.message += `\nAllTrails: ${await page.locator('body').innerText()}`;
+            }
+        }
+        throw error;
+    });
     const alltrails = await waitForCondition(async () => context.pages().find(
         page => page.url().startsWith('https://www.alltrails.com/'),
     ) || null, { description: 'the AllTrails upload tab' });
