@@ -128,6 +128,7 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     assert.equal(received.page.peak.id, 2296);
     assert.equal(received.page.peak.name, 'Mount Rainier');
     assert.match(received.page.report.markdown, /\*\*Great climb\*\*/);
+    assert.match(received.page.report.submitted, /\[b\]Great climb\[\/b\]/);
     assert.match(received.gpx, /<gpx>/);           // fetched in the page session
     assert.equal(received.grantToken, 'grant-1');
     assert.equal(received.generation, '2');

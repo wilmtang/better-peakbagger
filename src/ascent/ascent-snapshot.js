@@ -222,7 +222,12 @@ const build = ({ form, params, report = {}, extensionVersion = '' } = {}) => {
     const snapshot = {
         ascent,
         peak: { id: peak.id, name: peak.name },
-        report: { markdown: typeof report.markdown === 'string' ? report.markdown : '' },
+        report: {
+            markdown: typeof report.markdown === 'string' ? report.markdown : '',
+            // Only transport line endings are normalized. Whitespace, tags, and
+            // blank reports remain significant evidence of what was submitted.
+            submitted: String(field(form, 'JournalText')?.value || '').replace(/\r\n?/g, '\n'),
+        },
         backup: { extensionVersion: trim(extensionVersion), syncedAt: null },
     };
 

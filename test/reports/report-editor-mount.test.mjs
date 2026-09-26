@@ -371,6 +371,8 @@ test('Add and Edit saves capture the identities used by the backup handoff even 
         climberId: 900001, ascentId: null, peakId: 2296, date: '2026-07-12',
     });
     assert.equal(added.snapshot.report.markdown, '**Saved report**');
+    assert.equal(added.snapshot.report.submitted, '[b]Saved report[/b]');
+    assert.ok(added.attemptId);
 
     const edited = await capture({
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&aid=7654321',
@@ -382,4 +384,31 @@ test('Add and Edit saves capture the identities used by the backup handoff even 
     });
     assert.equal(edited.snapshot.ascent.id, 7654321);
     assert.equal(edited.snapshot.report.markdown, '**Saved report**');
+    assert.equal(edited.snapshot.report.submitted, '[b]Saved report[/b]');
+    assert.ok(edited.attemptId);
+});
+
+
+test('a rejected Save records only an attempt with the exact submitted representation', async () => {
+    for (const saveId of ['SaveButton', 'SaveButton2']) {
+        const messages = [];
+        const dom = await loadEditor({ settings: { enableGithubBackup: true },
+            prepare: d => { d.chrome.runtime.sendMessage = async message => { messages.push(message); }; } });
+        await editorReady(dom);
+        const doc = dom.window.document;
+        typeRich(dom, 'UNSAVED attempted report');
+        const date = doc.getElementById('DateText');
+        date.required = true;
+        date.value = '';
+        let submits = 0;
+        date.form.addEventListener('submit', event => { submits++; event.preventDefault(); });
+        doc.getElementById(saveId).click();
+        assert.equal(date.form.checkValidity(), false);
+        assert.equal(submits, 0);
+        const attempt = messages.find(message => message.type === 'GITHUB_BACKUP_SNAPSHOT');
+        assert.ok(attempt.attemptId);
+        assert.equal(attempt.snapshot.report.submitted, doc.getElementById('JournalText').value);
+        assert.match(attempt.snapshot.report.submitted, /UNSAVED attempted report/);
+        dom.window.close();
+    }
 });

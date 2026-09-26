@@ -220,13 +220,15 @@ const EDIT_SENDER = { tab: { id: 4 }, url: 'https://www.peakbagger.com/climber/a
 const LIST_SENDER = { tab: { id: 6 }, url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999' };
 const EXTENSION_SENDER = { url: 'chrome-extension://test/options/options.html' };
 
+const SUBMITTED_REPORT = '[b]Great climb[/b] under blue skies.';
 const editSnapshot = () => ({
+    attemptId: 'save-attempt-1',
     key: '900001|2296|2026-07-12',
     identity: { climberId: 900001, ascentId: null, peakId: 2296, date: '2026-07-12' },
     snapshot: {
         ascent: { id: null, date: '2026-07-12', suffix: '', gainFt: '9000', route: 'Disappointment Cleaver', gear: ['Ice Axe'] },
         peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: '**Great climb** under blue skies.' },
+        report: { submitted: SUBMITTED_REPORT, markdown: '**Great climb** under blue skies.' },
         backup: { extensionVersion: '2.2.0', syncedAt: null },
     },
 });
@@ -296,7 +298,7 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
                 gear: ['Ice Axe'],
             },
             peak: { id: 2296, name: 'Mount Rainier', elevationFt: 14411, location: 'Washington, USA' },
-            report: { markdown: '' },
+            report: { submitted: SUBMITTED_REPORT, markdown: '' },
         },
         gpx: '<gpx><trk></trk></gpx>',
     }, PEAK_SENDER);
@@ -347,7 +349,7 @@ test('the worker compares a complete owner page with GitHub without writing', as
             route: 'Disappointment Cleaver',
         },
         peak: { id: 2296, name: 'Mount Rainier', elevationFt: 14411, location: 'Washington, USA' },
-        report: { markdown: '**Great climb** under blue skies.' },
+        report: { submitted: SUBMITTED_REPORT, markdown: '**Great climb** under blue skies.' },
     };
     const gpx = '<gpx><metadata><author><name><![CDATA[Zihao Deng]]></name></author></metadata><trk></trk></gpx>';
     const pushed = await writer.send({
@@ -494,7 +496,7 @@ test('profile backfill validates and commits multiple ascents as one batch', asy
         snapshot: {
             ascent: { id: aid, date: `2026-07-${12 + index}`, suffix: '' },
             peak: { id: 2296 + index, name: `Peak ${index + 1}` },
-            report: { markdown: `Report ${index + 1}` },
+            report: { submitted: SUBMITTED_REPORT, markdown: `Report ${index + 1}` },
             backup: { extensionVersion: '', syncedAt: null },
         },
         gpx: null,
@@ -514,7 +516,7 @@ test('profile batches reject duplicate identities and more than ten entries befo
     const worker = createWorker({ auth: AUTH, github: backend.handler });
     const entry = {
         aid: 7,
-        snapshot: { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { markdown: '' } },
+        snapshot: { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { submitted: SUBMITTED_REPORT, markdown: '' } },
     };
     const duplicate = await worker.send({
         type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [structuredClone(entry), structuredClone(entry)],
@@ -579,7 +581,7 @@ test('the worker serializes competing profile batches before either reads the br
         type: 'GITHUB_BACKUP_PROFILE_BATCH',
         entries: [{
             aid,
-            snapshot: { ascent: { id: aid }, peak: { id: aid + 100, name: `Peak ${aid}` }, report: { markdown: '' } },
+            snapshot: { ascent: { id: aid }, peak: { id: aid + 100, name: `Peak ${aid}` }, report: { submitted: SUBMITTED_REPORT, markdown: '' } },
         }],
     });
 
@@ -1110,7 +1112,7 @@ test('settings backup reports disconnected and missing-repository states', async
 test('profile messages require ClimbListC and matching ascent identity', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({ auth: AUTH, github: backend.handler });
-    const snapshot = { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { markdown: '' } };
+    const snapshot = { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { submitted: SUBMITTED_REPORT, markdown: '' } };
     const wrongSurface = await worker.send({
         type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [{ aid: 7, snapshot }],
     }, PEAK_SENDER);
@@ -1450,7 +1452,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     const page = {
         ascent: { id: 7654321, date: '2026-07-12' },
         peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: '' },
+        report: { submitted: SUBMITTED_REPORT, markdown: '' },
     };
 
     // No snapshot stored yet: preflight identifies a revisit, and a defensive
@@ -1459,7 +1461,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
         type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page, pageComplete: true,
     }, PEAK_SENDER);
     assert.deepEqual(structuredClone(revisitStatus), { ok: true, fresh: false });
-    const revisit = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, auto: true }, PEAK_SENDER);
+    const revisit = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
     assert.equal(revisit.ok, false);
     assert.equal(revisit.error.code, 'no-fresh-save');
 
@@ -1469,7 +1471,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
         type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page, pageComplete: true,
     }, PEAK_SENDER);
     assert.deepEqual(structuredClone(freshStatus), { ok: true, fresh: true });
-    const pushed = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, auto: true }, PEAK_SENDER);
+    const pushed = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
     assert.equal(pushed.ok, true);
     assert.equal(pushed.result.commitUrl, 'https://github.com/me/backup/commit/C1');
 
@@ -1495,7 +1497,7 @@ test('an individual ascent and TR backup has an overall deadline and retains its
         page: {
             ascent: { id: 7654321, date: '2026-07-12' },
             peak: { id: 2296, name: 'Mount Rainier' },
-            report: { markdown: '**Great climb** under blue skies.' },
+            report: { submitted: SUBMITTED_REPORT, markdown: '**Great climb** under blue skies.' },
         },
         gpx: null,
     }, PEAK_SENDER);
@@ -1538,7 +1540,7 @@ test('a queued ascent write is superseded by repository replacement before it st
         page: {
             ascent: { id: 7654321, date: '2026-07-12' },
             peak: { id: 2296, name: 'Mount Rainier' },
-            report: { markdown: 'Queued report.' },
+            report: { submitted: SUBMITTED_REPORT, markdown: 'Queued report.' },
         },
     }, PEAK_SENDER);
     await waitFor(() => authReads > readsBeforeQueuedAction);
@@ -1568,7 +1570,7 @@ test('a queued ascent write is superseded by repository replacement before it st
         page: {
             ascent: { id: 7654321, date: '2026-07-12' },
             peak: { id: 2296, name: 'Mount Rainier' },
-            report: { markdown: 'Explicit retry.' },
+            report: { submitted: SUBMITTED_REPORT, markdown: 'Explicit retry.' },
         },
     }, PEAK_SENDER);
     assert.equal(retried.ok, true);
@@ -1590,7 +1592,7 @@ test('an edited ascent matches its save snapshot by aid after peak and date chan
         gainFt: '4200',
     };
     pending.snapshot.peak = { id: 875, name: 'Mount Garibaldi' };
-    pending.snapshot.report = { markdown: 'Exact **edited** Markdown.' };
+    pending.snapshot.report = { submitted: SUBMITTED_REPORT, markdown: 'Exact **edited** Markdown.' };
 
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, {
         tab: { id: 4 },
@@ -1609,7 +1611,7 @@ test('an edited ascent matches its save snapshot by aid after peak and date chan
                 gainFt: '4200',
             },
             peak: { id: 875, name: 'Mount Garibaldi', elevationFt: 8786 },
-            report: { markdown: 'Converted edited Markdown.' },
+            report: { submitted: SUBMITTED_REPORT, markdown: 'Converted edited Markdown.' },
         },
     }, PEAK_SENDER);
 
@@ -1643,7 +1645,7 @@ test('identical new ascents in separate tabs retain and consume their own save s
     const page = aid => ({
         ascent: { id: aid, date: '2026-07-12' },
         peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: 'Persisted fallback.' },
+        report: { submitted: SUBMITTED_REPORT, markdown: 'Persisted fallback.' },
     });
     const savedSender = (tabId, aid) => ({
         tab: { id: tabId },
@@ -1705,7 +1707,7 @@ test('cross-tab snapshot lookup requires one unique positive ascent id', async (
     const page = {
         ascent: { id: 7654321, date: '2026-07-12' },
         peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: 'Persisted report.' },
+        report: { submitted: SUBMITTED_REPORT, markdown: 'Persisted report.' },
     };
     const crossTabSender = { ...PEAK_SENDER, tab: { id: 5 } };
     const unique = await worker.send({
@@ -1737,7 +1739,7 @@ test('individual backup never uses a different same-peak snapshot or accepts a s
     const pageWithoutDate = {
         ascent: { id: 7654321 },
         peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: '' },
+        report: { submitted: SUBMITTED_REPORT, markdown: '' },
     };
 
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
@@ -1765,7 +1767,7 @@ test('individual backup never uses a different same-peak snapshot or accepts a s
             quality: '0',
         },
         peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: '' },
+        report: { submitted: SUBMITTED_REPORT, markdown: '' },
     };
     const manual = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT', page: persistedPage, pageComplete: true,
@@ -2354,4 +2356,38 @@ test('a restarted worker resumes a pending device flow from session storage', as
     assert.equal(local.bpbGithubAuth.repo, null, 'a new authorization must require a fresh inspected repository choice');
     assert.equal(local.bpbGithubAuth.installationId, null);
     assert.equal(session.bpbGithubAuthPending, undefined);
+});
+
+
+test('rejected saves and changed or cleared persisted reports never publish an unconfirmed sidecar', async () => {
+    for (const persisted of ['Saved server report', '', 'Changed later']) {
+        const backend = gitDataBackend();
+        const worker = createWorker({ settings: { enableGithubBackup: true, autoGithubBackup: true }, auth: AUTH, github: backend.handler });
+        const pending = editSnapshot();
+        pending.identity.ascentId = 7654321;
+        pending.snapshot.report = { markdown: 'UNSAVED attempted report', submitted: 'UNSAVED attempted report' };
+        await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, EDIT_SENDER);
+        const page = { ascent: { id: 7654321, date: '2026-07-12' }, peak: { id: 2296, name: 'Mount Rainier' },
+            report: { markdown: persisted, submitted: persisted } };
+        const preflight = await worker.send({ type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page, pageComplete: true }, PEAK_SENDER);
+        assert.equal(preflight.fresh, false);
+        const automatic = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
+        assert.equal(automatic.error.code, 'no-fresh-save');
+        assert.equal(worker.githubCalls.length, 0);
+        const manual = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true }, PEAK_SENDER);
+        assert.equal(manual.ok, true);
+        assert.doesNotMatch(JSON.stringify(backend.state.contents), /UNSAVED attempted report/);
+        assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)], 'unconfirmed attempt remains recoverable');
+    }
+});
+
+test('legacy snapshots without submission proof are not fresh saves', async () => {
+    const worker = createWorker({ auth: AUTH, github: () => { throw new Error('must not write'); } });
+    const pending = editSnapshot();
+    delete pending.attemptId;
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, EDIT_SENDER);
+    const result = await worker.send({ type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page: {
+        ...pending.snapshot, ascent: { ...pending.snapshot.ascent, id: 7654321 },
+    }, pageComplete: true }, PEAK_SENDER);
+    assert.equal(result.fresh, false);
 });

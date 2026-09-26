@@ -103,7 +103,7 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     // Peak falls back to the URL pid when no peak is selected in the list box.
     assert.equal(snapshot.peak.id, 2296);
     // The resolved Markdown body passes through.
-    assert.deepEqual(snapshot.report, { markdown: '**Great**' });
+    assert.deepEqual(snapshot.report, { markdown: '**Great**', submitted: '' });
     assert.equal(snapshot.backup.extensionVersion, '2.2.0');
 
     assert.deepEqual(identity, { climberId: 900001, ascentId: null, peakId: 2296, date: '2026-07-12' });
@@ -218,7 +218,7 @@ test('an edited ascent carries its aid and an empty report yields an empty body'
     const { snapshot, identity } = Snapshot.build({ form, params, report: {} });
     assert.equal(snapshot.ascent.id, 555);
     assert.equal(identity.ascentId, 555);
-    assert.deepEqual(snapshot.report, { markdown: '' });
+    assert.deepEqual(snapshot.report, { markdown: '', submitted: '' });
 });
 
 test('the zero-valued weather placeholders are omitted from snapshots', async () => {

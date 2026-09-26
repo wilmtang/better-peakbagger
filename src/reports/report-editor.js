@@ -921,7 +921,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 report: { markdown: reportMarkdownBody() },
                 extensionVersion: version,
             });
-            ext.runtime.sendMessage({ type: 'GITHUB_BACKUP_SNAPSHOT', key, identity, snapshot });
+            ext.runtime.sendMessage({ type: 'GITHUB_BACKUP_SNAPSHOT', key, identity, snapshot,
+                attemptId: state.pendingSave?.attemptId });
         } catch (error) { /* backup is best-effort; never disrupt the save */ }
     };
 

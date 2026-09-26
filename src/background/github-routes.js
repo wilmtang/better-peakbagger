@@ -486,6 +486,7 @@ export function createGithubRoutes({
         await mutateMap(SNAPSHOTS_KEY, snapshots => {
             snapshots[storageKey] = {
                 identity: message.identity || null,
+                attemptId: typeof message.attemptId === 'string' ? message.attemptId : null,
                 snapshot: message.snapshot,
                 sourceTabId,
                 savedAt: now(),
@@ -868,7 +869,7 @@ export function createGithubRoutes({
         }
         const snapMarkdown = base && base.report && typeof base.report.markdown === 'string' ? base.report.markdown : '';
         const pageMarkdown = p.report && typeof p.report.markdown === 'string' ? p.report.markdown : '';
-        const report = { markdown: snapMarkdown || pageMarkdown };
+        const report = { markdown: base ? snapMarkdown : pageMarkdown };
         return { ascent, peak, report, backup: { ...(base ? base.backup : {}) } };
     };
 
@@ -904,6 +905,16 @@ export function createGithubRoutes({
             && idOf(entry).date === date) || null;
     };
 
+    const confirmedSnapshotForPage = async (page, sender) => {
+        const found = await findSnapshotForPage(page, sender);
+        const submitted = found?.record.snapshot?.report?.submitted;
+        const persisted = page?.report?.submitted;
+        return found?.record.attemptId && typeof submitted === 'string'
+            && typeof persisted === 'string'
+            && submitted.replace(/\r\n?/g, '\n') === persisted.replace(/\r\n?/g, '\n')
+            ? found : null;
+    };
+
     // Token-free, read-only freshness preflight for the individual ascent
     // surface. The content script supplies the complete persisted edit-form
     // identity, avoiding the display page's best-effort date. No snapshot data
@@ -916,7 +927,7 @@ export function createGithubRoutes({
         if (!message || !message.pageComplete || !message.page) {
             return { ok: false, fresh: false, error: { code: 'no-data' } };
         }
-        return { ok: true, fresh: !!(await findSnapshotForPage(message.page, sender)) };
+        return { ok: true, fresh: !!(await confirmedSnapshotForPage(message.page, sender)) };
     };
 
     // Push one saved ascent to the connected repository as a single commit. The
@@ -937,7 +948,8 @@ export function createGithubRoutes({
                 const expectedAccess = await connectedGithubClient({ requireEnabled: true, signal });
                 if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
 
-                const found = await findSnapshotForPage(message.page, sender);
+                const found = message.pageComplete
+                    ? await confirmedSnapshotForPage(message.page, sender) : null;
                 // Automatic backup fires on every saved-ascent page load, so it must push
                 // only right after a save — i.e. when a matching pending snapshot exists.
                 // Without one (an old ascent merely being viewed) it declines quietly so
@@ -1001,7 +1013,8 @@ export function createGithubRoutes({
                 // reconciliation path may consume its save-time snapshot, and
                 // only after GitHub proves that the complete payload landed.
                 if (current && message.reconcile === true) {
-                    const found = await findSnapshotForPage(message.page, sender);
+                    const found = message.pageComplete
+                        ? await confirmedSnapshotForPage(message.page, sender) : null;
                     if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
                 }
                 return { ok: true, current };
