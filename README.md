@@ -77,9 +77,9 @@ timed coordinate-only tracks show distance over time, and untimed
 coordinate-only tracks get a compact route scrubber. See the
 [missing-data result table](docs/gpx-data-quality.md#resulting-chart).
 
-### Send a saved track to Gaia GPS or onX Backcountry
+### Send a saved track to another mapping app
 
-On a saved ascent, **Send to Gaia**, **Send to onX**, and **Send to AllTrails** sit beside Peakbagger's
+On a saved ascent, **Send to Gaia**, **Send to onX**, **Send to AllTrails**, and **Send to CalTopo** sit beside Peakbagger's
 GPX download. After the destination's one-time access grant, each button opens
 its map and supplies the exact saved GPX to the visible import preview. You
 review and confirm in the mapping app; Better Peakbagger does not copy account
@@ -88,7 +88,8 @@ or Elite membership and a GPX under 4 MB; AllTrails limits uploads to 20 MB. If 
 **Send to onX again** opens a fresh importer while leaving the failed tab
 available to inspect. See
 [how the Gaia handoff works](docs/gaia-import.md) and
-[how the onX handoff works](docs/onx-import.md).
+[how the onX handoff works](docs/onx-import.md), and
+[how the CalTopo handoff works](docs/caltopo-import.md).
 
 ### Plan around the Sun and Moon
 

@@ -19,6 +19,7 @@ import {
 } from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
+import { createCaltopoRoutes } from './caltopo-routes.js';
 import { createAlltrailsRoutes } from './alltrails-routes.js';
 import { createGaiaRoutes } from './gaia-routes.js';
 import { createOnxRoutes } from './onx-routes.js';
@@ -3277,6 +3278,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         mutateMap,
         trustedActions,
     });
+    const caltopoRoutes = createCaltopoRoutes({
+        ext, isPeakbaggerSender, trustedActions, action: TrustedActions.ACTIONS.CALTOPO_IMPORT,
+    });
     const alltrailsRoutes = createAlltrailsRoutes({
         ext,
         isPeakbaggerSender,
@@ -3482,6 +3486,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (reportDraftHandler) return reportDraftHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
+            const caltopoHandler = caltopoRoutes.handlers[type];
+            if (caltopoHandler) return caltopoHandler(message, sender);
             const alltrailsHandler = alltrailsRoutes.handlers[type];
             if (alltrailsHandler) return alltrailsHandler(message, sender);
             const gaiaHandler = gaiaRoutes.handlers[type];

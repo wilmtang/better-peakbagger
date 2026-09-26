@@ -7,6 +7,7 @@
 
 import { ascentPage as AscentPage } from './ascent-page.js';
 import { savedGpxSource as GpxSource } from '../gpx/saved-gpx-source.js';
+import { MAX_CALTOPO_GPX_BYTES } from '../caltopo/caltopo-import.js';
 import { MAX_ALLTRAILS_GPX_BYTES } from '../alltrails/alltrails-import.js';
 import { MAX_GAIA_GPX_BYTES } from '../gaia/gaia-import.js';
 import { MAX_ONX_GPX_BYTES } from '../onx/onx-import.js';
@@ -66,6 +67,16 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             prepareType: 'ALLTRAILS_IMPORT_PREPARE',
             action: 'alltrails-import',
             maxBytes: MAX_ALLTRAILS_GPX_BYTES,
+        },
+        {
+            id: 'caltopo',
+            name: 'CalTopo',
+            buttonLabel: 'Send to CalTopo',
+            ariaLabel: 'Send saved GPX to CalTopo',
+            permissionType: 'CALTOPO_PERMISSION_REQUEST',
+            prepareType: 'CALTOPO_IMPORT_PREPARE',
+            action: 'caltopo-import',
+            maxBytes: MAX_CALTOPO_GPX_BYTES,
         },
     ];
     const providers = new Map(providerConfig.map(config => {

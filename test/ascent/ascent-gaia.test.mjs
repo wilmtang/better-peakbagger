@@ -38,7 +38,7 @@ const loadSurface = async ({
                 if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
                 if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
                 if (message.type.endsWith('_IMPORT_PREPARE')) {
-                    const name = message.type.startsWith('ALLTRAILS_')
+                    const name = message.type.startsWith('CALTOPO_') ? 'CalTopo' : message.type.startsWith('ALLTRAILS_')
                         ? 'AllTrails'
                         : message.type.startsWith('ONX_') ? 'onX' : 'Gaia';
                     return results[message.type] || {
@@ -71,7 +71,7 @@ const loadSurface = async ({
 const control = dom => dom.window.document.querySelector('.bpb-map-handoff-control');
 const button = (dom, provider) => control(dom).querySelector(`[data-provider="${provider}"]`);
 
-test('Gaia, onX, and AllTrails controls mount together directly after the saved GPX download', async () => {
+test('Gaia, onX, AllTrails, and CalTopo controls mount together directly after the saved GPX download', async () => {
     const h = await loadSurface();
     const download = h.dom.window.document.querySelector('#gpxlinks a');
     assert.equal(control(h.dom).previousElementSibling, download);
@@ -79,6 +79,7 @@ test('Gaia, onX, and AllTrails controls mount together directly after the saved 
         'Send to Gaia',
         'Send to onX',
         'Send to AllTrails',
+        'Send to CalTopo',
     ]);
     assert.equal(button(h.dom, 'gaia').getAttribute('aria-label'), 'Send saved GPX to Gaia GPS');
     assert.equal(button(h.dom, 'onx').getAttribute('aria-label'), 'Send saved GPX to onX Backcountry');
@@ -111,6 +112,7 @@ test('a persisted history restore re-establishes placement observation', async (
 for (const provider of [
     { id: 'gaia', permission: 'GAIA_PERMISSION_REQUEST', prepare: 'GAIA_IMPORT_PREPARE', action: 'gaia-import' },
     { id: 'onx', permission: 'ONX_PERMISSION_REQUEST', prepare: 'ONX_IMPORT_PREPARE', action: 'onx-import' },
+    { id: 'caltopo', permission: 'CALTOPO_PERMISSION_REQUEST', prepare: 'CALTOPO_IMPORT_PREPARE', action: 'caltopo-import' },
     { id: 'alltrails', permission: 'ALLTRAILS_PERMISSION_REQUEST', prepare: 'ALLTRAILS_IMPORT_PREPARE', action: 'alltrails-import' },
 ]) {
     test(`trusted ${provider.id} click reads and transfers the exact saved GPX`, async () => {
@@ -126,9 +128,9 @@ for (const provider of [
         assert.equal(transfer.grantToken, 'grant');
         assert.equal(h.sent.find(message => message.type === 'TRUSTED_ACTION_ISSUE').action, provider.action);
         assert.equal(button(h.dom, provider.id).disabled, false);
-        const name = { gaia: 'Gaia', onx: 'onX', alltrails: 'AllTrails' }[provider.id];
+        const name = { gaia: 'Gaia', onx: 'onX', alltrails: 'AllTrails', caltopo: 'CalTopo' }[provider.id];
         assert.equal(button(h.dom, provider.id).textContent.trim(), `Send to ${name} again`);
-        for (const other of ['gaia', 'onx', 'alltrails'].filter(id => id !== provider.id)) {
+        for (const other of ['gaia', 'onx', 'alltrails', 'caltopo'].filter(id => id !== provider.id)) {
             assert.equal(button(h.dom, other).disabled, false);
         }
     });

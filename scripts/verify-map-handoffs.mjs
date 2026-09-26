@@ -12,6 +12,7 @@ import { createFixtureCertificate, waitForCondition } from './browser-verificati
 import { closeServer, createResourceStack, listenServer } from './resource-stack.mjs';
 import { prepareGaiaImport } from '../src/gaia/gaia-import.js';
 import { prepareOnxImport } from '../src/onx/onx-import.js';
+import { prepareCaltopoImport } from '../src/caltopo/caltopo-import.js';
 import { prepareAlltrailsImport } from '../src/alltrails/alltrails-import.js';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -36,10 +37,11 @@ try {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const gaiaOrigin = 'https://www.gaiagps.com/*';
     const onxOrigin = 'https://backcountry.onxmaps.com/*';
+    const caltopoOrigin = 'https://caltopo.com/*';
     const alltrailsOrigin = 'https://www.alltrails.com/*';
-    manifest.host_permissions.push(gaiaOrigin, onxOrigin, alltrailsOrigin);
+    manifest.host_permissions.push(gaiaOrigin, onxOrigin, alltrailsOrigin, caltopoOrigin);
     manifest.optional_host_permissions = manifest.optional_host_permissions.filter(
-        value => value !== gaiaOrigin && value !== onxOrigin && value !== alltrailsOrigin,
+        value => value !== gaiaOrigin && value !== onxOrigin && value !== alltrailsOrigin && value !== caltopoOrigin,
     );
     await writeFile(manifestPath, JSON.stringify(manifest));
 
@@ -48,6 +50,7 @@ try {
     let gaiaMode = 'ready';
     let onxMode = 'ready';
     let alltrailsMode = 'ready';
+    let caltopoMode = 'ready';
     const gaiaFixture = () => `<!doctype html><html><meta charset="utf-8"><title>Gaia importer fixture</title><body>
         <button aria-label="Import Data" ${gaiaMode === 'signed-out' ? 'disabled' : ''}>Import</button>
         ${gaiaMode === 'signed-out' ? '<button>Log In</button>' : ''}<main id="preview"></main>
@@ -89,10 +92,30 @@ try {
             setTimeout(()=>document.body.append(input),0);
         };
         </script></body></html>`;
+    const caltopoFixture = () => `<!doctype html><html><meta charset="utf-8"><title>CalTopo importer fixture</title><body>
+        <div id="page_left"><div class="action-button-js"><img src="/static/images/import.svg">Import</div></div>
+        <script>
+        window.handoffs=0;window.imports=0;
+        document.querySelector('.action-button-js').onclick=()=>{
+            const dialog=document.createElement('div');dialog.className='yui-panel';
+            dialog.innerHTML='<div class="hd">Importer</div><input id="file" type="file"><button>Import</button>';
+            const input=dialog.querySelector('input');
+            input.onchange=async()=>{window.handoffs++;window.receivedName=input.files[0].name;window.received=await input.files[0].text();
+                if('${caltopoMode}'==='stalled')return;
+                dialog.style.display='none';
+                const review=document.createElement('div');review.className='yui-panel';
+                review.innerHTML='<div class="hd">Import Data</div><table><tbody><tr><td><input type="checkbox" checked><input type="text" value="Saved ascent"></td></tr></tbody></table><button>Import</button>';
+                review.querySelector('button').onclick=()=>window.imports++;document.body.append(review);
+            };document.body.append(dialog);
+        };
+        </script></body></html>`;
     const certificate = await createFixtureCertificate({ label: 'map-handoff' });
     resources.defer('fixture certificate', () => certificate.remove());
     const server = createServer(certificate, (request, response) => {
-        if (request.headers.host === 'www.gaiagps.com') {
+        if (request.headers.host === 'caltopo.com') {
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(caltopoFixture());
+        } else if (request.headers.host === 'www.gaiagps.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(gaiaFixture());
         } else if (request.headers.host === 'backcountry.onxmaps.com') {
@@ -123,7 +146,7 @@ try {
         args: [
             `--disable-extensions-except=${extensionDir}`,
             `--load-extension=${extensionDir}`,
-            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP backcountry.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}`,
+            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP backcountry.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}, MAP caltopo.com 127.0.0.1:${port}`,
         ],
     });
     resources.defer('hidden Chrome for Testing', () => context.close());
@@ -135,7 +158,9 @@ try {
     const gaiaButton = source.locator('[data-provider=\"gaia\"]');
     const onxButton = source.locator('[data-provider=\"onx\"]');
     const alltrailsButton = source.locator('[data-provider=\"alltrails\"]');
+    const caltopoButton = source.locator('[data-provider="caltopo"]');
     await gaiaButton.waitFor();
+    assert.equal((await caltopoButton.innerText()).trim(), 'Send to CalTopo');
     assert.equal((await gaiaButton.innerText()).trim(), 'Send to Gaia');
     assert.equal((await onxButton.innerText()).trim(), 'Send to onX');
     assert.equal((await alltrailsButton.innerText()).trim(), 'Send to AllTrails');
@@ -252,6 +277,19 @@ try {
     assert.equal((await alltrailsButton.innerText()).trim(), 'Send to AllTrails again');
     assert.equal(await alltrails.evaluate(() => window.uploads), 0);
 
+    await caltopoButton.click();
+    await waitForCondition(async () => /Ready in CalTopo/.test(
+        await source.locator('.bpb-map-handoff-status').innerText()) && await caltopoButton.isEnabled(), {
+        description: 'the saved ascent to report CalTopo ready', timeoutMs: 35_000,
+    });
+    const caltopo = context.pages().find(page => page.url().startsWith('https://caltopo.com/map.html'));
+    assert.ok(caltopo);
+    assert.deepEqual(await caltopo.evaluate(() => ({
+        text: window.received, name: window.receivedName, handoffs: window.handoffs, imports: window.imports,
+    })), { text: payload.gpx, name: payload.filename, handoffs: 1, imports: 0 });
+    await caltopo.locator('.yui-panel').filter({ hasText: 'Import Data' }).screenshot({
+        path: path.join(evidenceDir, 'caltopo-review.png'),
+    });
     await source.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
     await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-buttons-ready-dark.png') });
     await source.setViewportSize({ width: 430, height: 760 });
@@ -283,6 +321,10 @@ try {
     await alltrailsAccess.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
     await alltrailsAccess.screenshot({ path: path.join(evidenceDir, 'alltrails-access-page-dark.png') });
 
+    const caltopoAccess = await context.newPage();
+    await caltopoAccess.goto(`chrome-extension://${extensionId}/caltopo/access.html`);
+    await caltopoAccess.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
+    await caltopoAccess.screenshot({ path: path.join(evidenceDir, 'caltopo-access-page-dark.png') });
     const session = await worker.evaluate(() => chrome.storage.session.get(null));
     assert.ok(!JSON.stringify(session).includes('<gpx'), 'saved GPX must not enter extension storage');
 
@@ -336,6 +378,13 @@ try {
     const alltrailsDuplicate = await stalledAlltrailsPage.evaluate(prepareAlltrailsImport, payload);
     assert.equal(alltrailsDuplicate.code, 'existing-preview');
 
+    caltopoMode = 'stalled';
+    const stalledCaltopoPage = await context.newPage();
+    await stalledCaltopoPage.goto('https://caltopo.com/map.html');
+    const stalledCaltopo = await stalledCaltopoPage.evaluate(prepareCaltopoImport, { ...payload, timeoutMs: 500 });
+    assert.equal(stalledCaltopo.code, 'handoff-unconfirmed');
+    assert.deepEqual(await stalledCaltopoPage.evaluate(() => ({ handoffs: window.handoffs, imports: window.imports })),
+        { handoffs: 1, imports: 0 });
     const report = {
         browser: context.browser().version(),
         viewport: { width: 1000, height: 760 },
@@ -343,7 +392,7 @@ try {
         mode: 'hidden masked HTTPS fixtures',
         renderer: 'static HTML; no WebGL',
         sourceReads,
-        nativePermissionPrompt: 'not inspected; Gaia, onX, and AllTrails were granted only in the disposable manifest',
+        nativePermissionPrompt: 'not inspected; Gaia, onX, AllTrails, and CalTopo were granted only in the disposable manifest',
         checks: [
             'real unpacked dist',
             'ascent-page placement',
@@ -354,6 +403,8 @@ try {
             'manual onX Import preserved',
             'exact saved GPX handoff to AllTrails',
             'manual AllTrails Upload preserved',
+            'exact saved GPX handoff to CalTopo',
+            'manual CalTopo Import preserved',
             'onX membership gate',
             'signed-out gate',
             'explicit retry opens a fresh onX importer tab',

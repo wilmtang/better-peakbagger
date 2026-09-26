@@ -19,6 +19,7 @@ const ACTIONS = Object.freeze({
     PROFILE_BACKUP: 'profile-backup',
     BETA_SETTINGS: 'beta-settings',
     DRAFT_MANAGER: 'draft-manager',
+    CALTOPO_IMPORT: 'caltopo-import',
     ALLTRAILS_IMPORT: 'alltrails-import',
     GAIA_IMPORT: 'gaia-import',
     ONX_IMPORT: 'onx-import',
@@ -29,6 +30,7 @@ const ACTION_SET = new Set(Object.values(ACTIONS));
 const WORKFLOW_ACTIONS = new Set([
     ACTIONS.ASCENT_BACKUP,
     ACTIONS.PROFILE_BACKUP,
+    ACTIONS.CALTOPO_IMPORT,
     ACTIONS.ALLTRAILS_IMPORT,
     ACTIONS.GAIA_IMPORT,
     ACTIONS.ONX_IMPORT,
