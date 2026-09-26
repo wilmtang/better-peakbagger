@@ -1113,20 +1113,26 @@ export function createGithubRoutes({
     // spurious alarms are harmless.
     const createAutoBackup = ({ alarmName, stateKey, path, commitMessage, enabled, build }) => {
         const readState = async () => (await ext.storage.local.get(stateKey))[stateKey] || null;
-        const markSynced = signature => ext.storage.local.set({
-            [stateKey]: { signature, syncedAt: new Date().toISOString() }
+        let stateTail = Promise.resolve();
+        const updateState = change => {
+            const operation = stateTail.then(async () => {
+                const next = await change(await readState());
+                if (next) await ext.storage.local.set({ [stateKey]: next });
+            });
+            stateTail = operation.catch(() => {});
+            return operation;
+        };
+        const markSynced = (signature, access) => updateState(async () => {
+            const current = await connectedGithubClient();
+            if (current.error || connectionScope(current) !== connectionScope(access)) return null;
+            return { signature, scope: connectionScope(access), syncedAt: new Date().toISOString() };
         });
 
         const schedule = () => {
             if (!ext.alarms) return;
             ext.alarms.create(alarmName, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
             // A fresh change grants a fresh retry budget.
-            void readState().then(state => {
-                if (state && state.attempts) {
-                    return ext.storage.local.set({ [stateKey]: { ...state, attempts: 0 } });
-                }
-                return undefined;
-            });
+            void updateState(state => state?.attempts ? { ...state, attempts: 0 } : null).catch(() => {});
         };
 
         const fire = async () => {
@@ -1147,16 +1153,22 @@ export function createGithubRoutes({
             }
             try {
                 const { text, signature } = await build();
-                if (state && state.signature === signature) return;
+                if (state?.scope === connectionScope(access) && state.signature === signature) return;
                 const result = await writeQueue.putFile({ path, content: text, message: commitMessage, scope: connectionScope(access) });
                 // A newer write to this path won the batch, so this signature
                 // does not describe what the repository now holds.
-                if (!result.superseded) await markSynced(signature);
+                if (!result.superseded) await markSynced(signature, access);
             } catch {
                 // Silent bounded retry; the manual buttons remain the loud path.
-                const attempts = ((state && state.attempts) || 0) + 1;
-                await ext.storage.local.set({ [stateKey]: { ...(state || {}), attempts } });
-                if (attempts <= AUTO_BACKUP_MAX_RETRIES) {
+                let attempts = null;
+                await updateState(async latest => {
+                    const current = await connectedGithubClient();
+                    const scope = connectionScope(access);
+                    if (current.error || connectionScope(current) !== scope) return null;
+                    attempts = (latest?.attemptScope === scope ? latest.attempts || 0 : 0) + 1;
+                    return { ...(latest || state || {}), attempts, attemptScope: scope };
+                });
+                if (attempts != null && attempts <= AUTO_BACKUP_MAX_RETRIES) {
                     ext.alarms.create(alarmName, { delayInMinutes: AUTO_BACKUP_RETRY_MINUTES });
                 }
             }
@@ -1220,7 +1232,7 @@ export function createGithubRoutes({
             const result = await writeQueue.putFile({
                 path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings', scope: connectionScope(access),
             });
-            if (!result.superseded) await settingsAutoBackup.markSynced(signature);
+            if (!result.superseded) await settingsAutoBackup.markSynced(signature, access);
             return { ok: true, result };
         } catch (error) {
             if (PublicErrors.isPublic(error)) {
@@ -1254,7 +1266,7 @@ export function createGithubRoutes({
             const result = await writeQueue.putFile({
                 path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers', scope: connectionScope(access),
             });
-            if (!result.superseded) await favoritesAutoBackup.markSynced(signature);
+            if (!result.superseded) await favoritesAutoBackup.markSynced(signature, access);
             return { ok: true, result };
         } catch (error) {
             return { ok: false, error: writeError(error, 'The favorites backup failed.') };
@@ -1868,8 +1880,11 @@ export function createGithubRoutes({
     };
 
     const onStorageChanged = (changes, area) => {
-        if (area !== 'local' || !changes[Favorites.FAVORITES_KEY]) return;
+        if (area !== 'local') return;
+        const connectionChanged = !!(changes[GithubAuth.STORAGE_KEY] || changes[GithubAuth.EPOCH_KEY]);
+        if (!connectionChanged && !changes[Favorites.FAVORITES_KEY]) return;
         void Settings.get().then(settings => {
+            if (connectionChanged && settings.autoSettingsBackup) settingsAutoBackup.schedule();
             if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
         });
     };

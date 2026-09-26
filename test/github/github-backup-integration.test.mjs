@@ -2462,3 +2462,52 @@ for (const type of ['GITHUB_SETTINGS_BACKUP', 'GITHUB_FAVORITES_BACKUP']) {
         assert.equal(worker.githubCalls.length, 0, 'no root-file write may be rebound to the new connection');
     });
 }
+
+
+for (const kind of ['Settings', 'Favorites']) {
+    test(`${kind} success signatures are scoped to the repository and authorization lifetime`, async () => {
+        const alarm = `bpb-${kind.toLowerCase()}-backup`;
+        const stateKey = `bpb${kind}BackupState`;
+        const backend = gitDataBackend();
+        const settings = { [`auto${kind}Backup`]: true };
+        const worker = createWorker({ settings, auth: AUTH, github: (method, path, body) =>
+            backend.handler(method, path.replace('/repos/me/replacement', '/repos/me/backup'), body) });
+        worker.fireAlarm(alarm);
+        await waitFor(() => worker.local[stateKey]?.scope);
+        const firstScope = worker.local[stateKey].scope;
+        assert.equal(backend.state.commits, 1);
+        worker.local.bpbGithubAuth = { ...AUTH, repo: { ...AUTH.repo, name: 'replacement' } };
+        worker.local.bpbGithubAuthEpoch = 1;
+        worker.fireStorageChange({ bpbGithubAuth: { newValue: worker.local.bpbGithubAuth } }, 'local');
+        await waitFor(() => worker.alarms.created.some(entry => entry.name === alarm));
+        worker.fireAlarm(alarm);
+        await waitFor(() => worker.local[stateKey]?.scope !== firstScope);
+        assert.equal(backend.state.commits, 2, 'unchanged content must reach a newly selected repository');
+        const replacementScope = worker.local[stateKey].scope;
+        worker.local.bpbGithubAuthEpoch = 2;
+        worker.fireAlarm(alarm);
+        await waitFor(() => worker.local[stateKey]?.scope !== replacementScope);
+        assert.equal(backend.state.commits, 3, 'reconnecting creates a new authorization lifetime');
+        worker.fireAlarm(alarm);
+        await settleQuietly();
+        assert.equal(backend.state.commits, 3, 'unchanged content in the same destination still skips');
+    });
+}
+
+test('an old in-flight root backup cannot stamp success for a replacement connection', async () => {
+    const backend = gitDataBackend();
+    const held = deferred();
+    let patchStarted = false;
+    const worker = createWorker({ settings: { autoSettingsBackup: true }, auth: AUTH,
+        github: (method, path, body) => {
+            if (method === 'PATCH') { patchStarted = true; return held.promise; }
+            return backend.handler(method, path, body);
+        } });
+    const writing = worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    await waitFor(() => patchStarted);
+    worker.local.bpbGithubAuth = { ...AUTH, repo: { ...AUTH.repo, name: 'replacement' } };
+    worker.local.bpbGithubAuthEpoch = 1;
+    held.resolve(respond(200, { object: { sha: 'C1' } }));
+    assert.equal((await writing).ok, true);
+    assert.equal(worker.local.bpbSettingsBackupState, undefined);
+});
