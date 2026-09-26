@@ -101,7 +101,7 @@ test('AllTrails import access is optional and scoped to its web app', () => {
 });
 
 test('onX import access is optional and excludes its identity service', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://webmap.onxmaps.com/*'));
+    assert.ok(manifest.optional_host_permissions.includes('https://backcountry.onxmaps.com/*'));
     assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('onxmaps.com')));
     assert.ok(!manifest.optional_host_permissions.some(pattern => pattern.includes('identity.onxmaps.com')));
 });

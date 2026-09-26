@@ -3,7 +3,7 @@
 
 /* global DataTransfer */
 
-export const ONX_ORIGIN = 'https://webmap.onxmaps.com';
+export const ONX_ORIGIN = 'https://backcountry.onxmaps.com';
 export const ONX_IMPORT_URL = `${ONX_ORIGIN}/backcountry/map/content/import`;
 export const ONX_PERMISSION = Object.freeze({ origins: [`${ONX_ORIGIN}/*`] });
 // onX documents a 4 MB limit and currently enforces 4,096,000 bytes.
@@ -18,7 +18,7 @@ export async function prepareOnxImport({ gpx, filename, timeoutMs = 20_000 }) {
     let supplied = false;
     const fail = (code, message) => ({ ok: false, code, supplied, message });
 
-    if (view.location.origin !== 'https://webmap.onxmaps.com'
+    if (view.location.origin !== 'https://backcountry.onxmaps.com'
         || view.location.pathname.toLowerCase() !== '/backcountry/map/content/import') {
         return fail('wrong-page', 'onX did not stay on its Backcountry import page. Import this GPX manually.');
     }

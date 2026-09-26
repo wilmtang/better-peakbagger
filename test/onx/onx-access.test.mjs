@@ -22,7 +22,7 @@ test('trusted onX access-page click grants only the Web Map host', async () => {
     await waitFor(dom, () => /Return to the Peakbagger ascent/.test(
         dom.window.document.getElementById('onx-access-status').textContent,
     ));
-    assert.deepEqual(requests, [{ origins: ['https://webmap.onxmaps.com/*'] }]);
+    assert.deepEqual(requests, [{ origins: ['https://backcountry.onxmaps.com/*'] }]);
     assert.equal(dom.window.document.getElementById('close-onx').hidden, false);
     assert.deepEqual(ENTRIES.find(entry => entry.out === 'onx/access.js')?.sources,
         ['onx/onx-import.js', 'onx/access.js']);

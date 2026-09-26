@@ -66,6 +66,8 @@ test('onX route opens the exact Backcountry importer and consumes one-use author
     const h = harness();
     const result = await h.routes.handlers.ONX_IMPORT_PREPARE(message, sender);
     assert.deepEqual(result, { ok: true, supplied: true, code: 'prepared', message: 'Ready.', targetTabId: 20 });
+    assert.equal(ONX_IMPORT_URL, 'https://backcountry.onxmaps.com/backcountry/map/content/import');
+    assert.deepEqual(ONX_PERMISSION, { origins: ['https://backcountry.onxmaps.com/*'] });
     assert.deepEqual(h.created, [{ url: ONX_IMPORT_URL, active: false, windowId: 9 }]);
     assert.equal(h.injections.length, 1);
     assert.deepEqual(h.injections[0].args, [{ gpx: message.gpx, filename: message.filename }]);

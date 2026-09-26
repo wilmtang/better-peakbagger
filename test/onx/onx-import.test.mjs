@@ -8,7 +8,7 @@ import { prepareOnxImport } from '../../src/onx/onx-import.js';
 
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
 
-const run = async ({ url = 'https://webmap.onxmaps.com/backcountry/map/content/import', body = '', ready = true } = {}) => {
+const run = async ({ url = 'https://backcountry.onxmaps.com/backcountry/map/content/import', body = '', ready = true } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>${body}</body>`, { url, runScripts: 'outside-only' });
     const win = dom.window;
     win.DataTransfer = class {
@@ -59,7 +59,7 @@ test('onX adapter sends no file when membership or page identity is wrong', asyn
     assert.equal(membership.result.supplied, false);
 
     const wrong = await run({
-        url: 'https://webmap.onxmaps.com/hunt/map/content/import',
+        url: 'https://backcountry.onxmaps.com/hunt/map/content/import',
         body: '<input id="add-files-input" type="file" accept=".gpx">',
     });
     assert.equal(wrong.result.code, 'wrong-page');

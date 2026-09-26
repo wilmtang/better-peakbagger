@@ -35,7 +35,7 @@ try {
     const manifestPath = path.join(extensionDir, 'manifest.json');
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const gaiaOrigin = 'https://www.gaiagps.com/*';
-    const onxOrigin = 'https://webmap.onxmaps.com/*';
+    const onxOrigin = 'https://backcountry.onxmaps.com/*';
     const alltrailsOrigin = 'https://www.alltrails.com/*';
     manifest.host_permissions.push(gaiaOrigin, onxOrigin, alltrailsOrigin);
     manifest.optional_host_permissions = manifest.optional_host_permissions.filter(
@@ -92,7 +92,7 @@ try {
         if (request.headers.host === 'www.gaiagps.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(gaiaFixture());
-        } else if (request.headers.host === 'webmap.onxmaps.com') {
+        } else if (request.headers.host === 'backcountry.onxmaps.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(onxFixture());
         } else if (request.headers.host === 'www.alltrails.com') {
@@ -120,7 +120,7 @@ try {
         args: [
             `--disable-extensions-except=${extensionDir}`,
             `--load-extension=${extensionDir}`,
-            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP webmap.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}`,
+            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP backcountry.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}`,
         ],
     });
     resources.defer('hidden Chrome for Testing', () => context.close());
@@ -174,7 +174,7 @@ try {
         return /Ready in onX/.test(text) ? text : null;
     }, { description: 'the saved ascent to report onX ready', timeoutMs: 35_000 });
     const onx = await waitForCondition(async () => context.pages().find(
-        page => page.url().startsWith('https://webmap.onxmaps.com/'),
+        page => page.url().startsWith('https://backcountry.onxmaps.com/'),
     ) || null, { description: 'the onX import tab' });
     const onxReceived = await onx.evaluate(() => ({
         text: window.received,
@@ -188,11 +188,11 @@ try {
     assert.equal((await onxButton.innerText()).trim(), 'Send to onX again');
 
     const onxTabsBeforeRepeat = context.pages().filter(
-        page => page.url().startsWith('https://webmap.onxmaps.com/'),
+        page => page.url().startsWith('https://backcountry.onxmaps.com/'),
     );
     await onxButton.click();
     const repeatedOnx = await waitForCondition(async () => {
-        const tabs = context.pages().filter(page => page.url().startsWith('https://webmap.onxmaps.com/'));
+        const tabs = context.pages().filter(page => page.url().startsWith('https://backcountry.onxmaps.com/'));
         const fresh = tabs.find(page => !onxTabsBeforeRepeat.includes(page));
         if (!fresh) return null;
         return await fresh.evaluate(() => window.handoffs === 1 ? true : null) ? fresh : null;
@@ -283,7 +283,7 @@ try {
     const onxAdapterCheck = async (mode, timeoutMs = 500) => {
         onxMode = mode;
         const page = await context.newPage();
-        await page.goto('https://webmap.onxmaps.com/backcountry/map/content/import');
+        await page.goto('https://backcountry.onxmaps.com/backcountry/map/content/import');
         const outcome = await page.evaluate(prepareOnxImport, { ...payload, timeoutMs });
         return {
             page,
