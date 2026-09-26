@@ -2496,6 +2496,30 @@ try {
             path: process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT,
         });
     }
+    const detailsPage = await context.newPage();
+    try {
+        await detailsPage.setViewportSize({ width: 1200, height: 800 });
+        await detailsPage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?layout=details`);
+        const detailsHandle = detailsPage.locator('#bpb-ascent-table-resize-handle');
+        await detailsHandle.waitFor();
+        await detailsHandle.press('End');
+        check(await detailsHandle.getAttribute('aria-valuenow') === '75',
+            'the details-only ascent split did not mount or resize');
+        if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+            await detailsPage.locator('#bpb-ascent-table-split').screenshot({
+                path: `${process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT}.details.png`,
+            });
+        }
+        await detailsPage.setViewportSize({ width: 600, height: 800 });
+        check(!await detailsHandle.isVisible(), 'the details-only ascent did not stack on narrow screens');
+        if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+            await detailsPage.locator('#bpb-ascent-table-split').screenshot({
+                path: `${process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT}.details-stacked.png`,
+            });
+        }
+    } finally {
+        await detailsPage.close();
+    }
     const imagePage = await context.newPage();
     try {
         await imagePage.setViewportSize({ width: 1200, height: 800 });

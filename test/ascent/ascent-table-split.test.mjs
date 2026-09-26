@@ -17,6 +17,15 @@ const legacyHtml = ({ between = '' } = {}) => `<!doctype html><html><body><form>
   </table>
 </form></body></html>`;
 
+// The heading is absent on saved ascents with no trip-report prose.
+const detailsHtml = ({ between = '' } = {}) => legacyHtml({ between }).replace(
+    '<tr><th>Ascent Trip Report</th></tr><tr><td>A long report.</td></tr>',
+    `<tr><td><b>Other People:</b></td><td>Solo Ascent</td></tr>
+    <tr><td><b>Date:</b></td><td>Saturday, August 26, 2023</td></tr>
+    <tr><td><b>Ascent Type:</b></td><td>Successful Summit Attained</td></tr>
+    <tr><td><b>Peak:</b></td><td><a href="/peak.aspx?pid=1">Fixture Peak</a></td></tr>`,
+);
+
 const setup = ({ html = legacyHtml(), saved = null, storage = null } = {}) => {
     const dom = new JSDOM(html, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
@@ -58,6 +67,33 @@ test('the exact legacy report / summary pair becomes one accessible split', () =
             storage: dom.window.localStorage,
         }), null, 'mounting is idempotent');
     } finally { restore(); }
+});
+
+test('an ascent without trip-report prose still gets the adjacent table split', () => {
+    const { dom, split, restore } = setup({ html: detailsHtml() });
+    try {
+        assert.ok(split);
+        assert.equal(split.left.id, 'report');
+        assert.equal(split.right.id, 'summary');
+        assert.equal(split.handle.getAttribute('role'), 'separator');
+        assert.equal(dom.window.document.querySelectorAll('#bpb-ascent-table-resize-handle').length, 1);
+    } finally { restore(); }
+});
+
+test('details-only detection requires all metadata labels and an adjacent summary', () => {
+    const invalid = [
+        ...['Date:', 'Ascent Type:', 'Peak:'].map(label => detailsHtml().replace(label, 'Other:')),
+        detailsHtml({ between: '<p>Native content</p>' }),
+        detailsHtml().replace('Summary Total Data', 'Unrelated data'),
+        legacyHtml().replace('Ascent Trip Report', 'Date: Ascent Type: Peak:'),
+        legacyHtml().replace('Ascent Trip Report', 'Unrelated').replace('A long report.',
+            '<table><tr><td>Date:</td></tr><tr><td>Ascent Type:</td></tr><tr><td>Peak:</td></tr></table>'),
+    ];
+    for (const html of invalid) {
+        const { split, restore } = setup({ html });
+        try { assert.equal(split, null); }
+        finally { restore(); }
+    }
 });
 
 test('unrelated or separated gray tables are left untouched', () => {

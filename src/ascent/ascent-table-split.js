@@ -58,7 +58,14 @@ const findTablePair = doc => {
     // HTML table text joins adjacent cells without whitespace (for example,
     // "Ascent Trip ReportDate:"). Search the normalized phrase without a
     // trailing word boundary so the real legacy markup remains detectable.
-    const left = tables.find(table => /ascent trip report/i.test(normalize(table.textContent)));
+    const left = tables.find(table => {
+        if (/ascent trip report/i.test(normalize(table.textContent))) return true;
+        // Ascents without report prose omit that heading. Recognize their
+        // own metadata rows, not matching words inside prose or nested tables.
+        const labels = new Set(Array.from(table.rows, row =>
+            normalize(row.cells[0]?.textContent).toLowerCase()));
+        return ['date:', 'ascent type:', 'peak:'].every(label => labels.has(label));
+    });
     if (!left) return null;
     const right = left.nextElementSibling;
     if (!right?.matches('table.gray')
