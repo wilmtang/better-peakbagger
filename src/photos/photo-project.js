@@ -241,6 +241,11 @@ const cleanPitch = (value, image) => {
 
 const cleanText = (value, image) => {
     const geometry = cleanPosition(value.geometry, image);
+    // Missing width is the legacy, automatically sized label. Width is in
+    // source-image pixels and is independent of the label's font size.
+    const width = value.geometry?.width == null ? null
+        : boundedNumber(value.geometry.width, 1, MAX_DIMENSION);
+    if (value.geometry?.width != null && width == null) return null;
     const style = cleanBaseStyle(value.style);
     const text = typeof value.text === 'string' ? value.text.trim().slice(0, MAX_TEXT_LENGTH) : '';
     const align = ALIGNS.has(value.style?.align) ? value.style.align : null;
@@ -248,7 +253,7 @@ const cleanText = (value, image) => {
         ? value.style.background
         : null;
     return geometry && style && text && align && background != null ? {
-        geometry,
+        geometry: width == null ? geometry : { ...geometry, width },
         style: { ...style, align, background },
         text,
         pointCount: 1,

@@ -2972,3 +2972,125 @@ test('malformed ImgBB success keeps the photo-page recovery journal and blocks a
     assert.equal((await readPhotoStore(page.win, 'operations')).length, 1);
     assert.deepEqual(page.errors, []);
 });
+
+test('text width reflows without editing the source and Auto keeps manual line breaks', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    page.tool('text');
+    page.click(page.doc.getElementById('add-at-center'));
+    const input = page.doc.getElementById('object-text');
+    const width = page.doc.getElementById('text-width');
+    assert.equal(width.value, '448');
+    input.value = 'North ridge traverse\nKeep left';
+    page.emit(input, 'input');
+    const fontSize = page.overlay.querySelector('text').getAttribute('font-size');
+    width.value = '160'; page.emit(width, 'change');
+    assert.ok(page.overlay.querySelectorAll('text tspan').length > 2);
+    assert.equal(input.value, 'North ridge traverse\nKeep left');
+    assert.equal(page.overlay.querySelector('text').getAttribute('font-size'), fontSize);
+    page.click(page.doc.getElementById('text-width-auto'));
+    assert.equal(width.value, '');
+    assert.deepEqual([...page.overlay.querySelectorAll('text tspan')].map(node => node.textContent),
+        ['North ridge traverse', 'Keep left']);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(width.value, '160');
+    page.click(page.doc.getElementById('duplicate-object'));
+    assert.equal(width.value, '160', 'duplicates retain wrap width');
+    assert.deepEqual(page.errors, []);
+});
+
+test('text resize fixes the opposite edge at every alignment and rotation and is one Undo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    page.tool('text'); page.click(page.doc.getElementById('add-at-center'));
+    const { doc, overlay } = page;
+    page.tool('select');
+    page.click(doc.querySelector('#annotation-list button'));
+    const textGeometry = () => {
+        const transform = overlay.querySelector('[data-bpb-object]').getAttribute('transform');
+        return transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    };
+    for (const align of ['left', 'center', 'right']) {
+        doc.getElementById('text-align').value = align; page.emit(doc.getElementById('text-align'), 'change');
+        for (const rotation of [0, 45, 90, -135]) {
+            doc.getElementById('object-rotation').value = rotation;
+            page.emit(doc.getElementById('object-rotation'), 'input');
+            page.emit(doc.getElementById('object-rotation'), 'change');
+            for (const side of ['left', 'right']) {
+                const baseline = textGeometry();
+                const width = Number(doc.getElementById('text-width').value);
+                const radians = rotation * Math.PI / 180;
+                const sign = side === 'right' ? 1 : -1;
+                page.pointer('pointerdown', 200, 200, overlay.querySelector(`[data-text-resize="${side}"]`));
+                for (const delta of [10, 20, 30]) {
+                    page.pointer('pointermove', 200 + sign * delta * Math.cos(radians),
+                        200 + sign * delta * Math.sin(radians));
+                }
+                page.pointer('pointerup', 0, 0);
+                assert.equal(Number(doc.getElementById('text-width').value), width + 60);
+                const current = textGeometry();
+                const factor = (align === 'center' ? 0.5 : align === 'right' ? 1 : 0) - (side === 'left' ? 1 : 0);
+                assert.ok(Math.abs(current[0] - baseline[0] - factor * 60 * Math.cos(radians)) < 0.002);
+                assert.ok(Math.abs(current[1] - baseline[1] - factor * 60 * Math.sin(radians)) < 0.002);
+                page.click(doc.getElementById('undo'));
+                assert.equal(Number(doc.getElementById('text-width').value), width);
+                assert.deepEqual(textGeometry(), baseline);
+                page.click(doc.getElementById('redo'));
+                assert.equal(Number(doc.getElementById('text-width').value), width + 60);
+                page.click(doc.getElementById('undo'));
+            }
+        }
+    }
+    assert.deepEqual(page.errors, []);
+});
+
+test('cancelled and no-op text resizes preserve the label and redo history', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    const { doc, overlay } = page;
+    page.tool('text'); page.click(doc.getElementById('add-at-center'));
+    page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
+    const width = doc.getElementById('text-width');
+    width.value = '300'; page.emit(width, 'change');
+    page.click(doc.getElementById('undo'));
+    const before = overlay.innerHTML;
+    for (const cancellation of ['Escape', 'pointercancel', 'lostpointercapture', 'return-to-start']) {
+        page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
+        page.pointer('pointermove', 240, 200);
+        assert.equal(width.value, '528');
+        if (cancellation === 'Escape') page.key('keydown', { key: 'Escape' });
+        else if (cancellation === 'return-to-start') {
+            page.pointer('pointermove', 200, 200); page.pointer('pointerup', 200, 200);
+        } else page.pointer(cancellation, 240, 200);
+        assert.equal(width.value, '448');
+        assert.equal(overlay.innerHTML, before);
+        assert.equal(doc.getElementById('redo').disabled, false);
+    }
+    page.click(doc.getElementById('redo'));
+    assert.equal(width.value, '300');
+    assert.deepEqual(page.errors, []);
+});
+
+test('autosave excludes text resize previews and persists the released width', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    t.after(() => page.dom.window.close());
+    const { doc, overlay, win } = page;
+    page.tool('text'); page.click(doc.getElementById('add-at-center'));
+    const text = doc.getElementById('object-text');
+    text.value = 'North ridge traverse\nKeep left'; page.emit(text, 'input');
+    page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
+    page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
+    page.pointer('pointermove', 100, 200);
+    assert.equal(doc.getElementById('text-width').value, '248');
+    win.dispatchEvent(new win.Event('pagehide'));
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    assert.equal((await readPhotoStore(win, 'projects'))[0].objects[0].geometry.width, 448);
+    page.pointer('pointerup', 100, 200);
+    win.dispatchEvent(new win.Event('pagehide'));
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const [saved] = await readPhotoStore(win, 'projects');
+    assert.equal(saved.objects[0].geometry.width, 248);
+    assert.equal(saved.objects[0].text, text.value);
+    assert.deepEqual(page.errors, []);
+});

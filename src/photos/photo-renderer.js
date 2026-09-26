@@ -152,30 +152,76 @@ const renderMarker = (object, image, interactive) => {
 
 const textAnchor = align => align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
 
-const renderLabel = (object, image, interactive, measureText) => {
+// Layout is shared by the editor, its interaction bounds, and flattened exports.
+// Soft wraps are derived only; explicit newlines remain in the stored text.
+const wrapText = (text, width, measure) => text.replace(/\r\n?/g, '\n').split('\n').flatMap(paragraph => {
+    if (width == null) return [paragraph];
+    const lines = [];
+    let line = '';
+    let gap = '';
+    for (const token of paragraph.match(/\s+|\S+/gu) || []) {
+        if (/^\s+$/u.test(token)) { gap += token; continue; }
+        if (measure(line + gap + token) <= width) {
+            line += gap + token;
+        } else {
+            if (line) lines.push(line);
+            line = '';
+            // Break an overlong word without splitting emoji or combining marks.
+            const graphemes = typeof Intl.Segmenter === 'function'
+                ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(token),
+                    entry => entry.segment)
+                : Array.from(token);
+            for (const glyph of graphemes) {
+                if (line && measure(line + glyph) > width) { lines.push(line); line = ''; }
+                line += glyph;
+            }
+        }
+        gap = '';
+    }
+    lines.push(line);
+    return lines;
+});
+
+const labelLayout = (object, image, measureText) => {
     const isPitch = object.type === 'pitch';
-    const text = isPitch ? `P${object.pitch}` : object.text.trim();
     const fontSize = objectSizePixels(object.type, image, object.style.scale);
-    const align = isPitch ? 'center' : object.style.align;
-    const anchor = textAnchor(align);
     const weight = isPitch ? 700 : 600;
-    const measuredWidth = measureText?.(text, fontSize, weight);
-    const textWidth = Number.isFinite(measuredWidth) && measuredWidth > 0
-        ? measuredWidth : Math.max(fontSize * 0.2, text.length * fontSize * 0.61);
-    const xOffset = align === 'center' ? -textWidth / 2
-        : align === 'right' ? -textWidth : 0;
+    const measure = text => {
+        const width = measureText?.(text, fontSize, weight);
+        return Number.isFinite(width) && width >= 0 ? width : Array.from(text).length * fontSize * 0.61;
+    };
+    const lines = isPitch ? [`P${object.pitch}`]
+        : wrapText(object.text.trim(), object.geometry.width, measure);
+    const width = (!isPitch && object.geometry.width) || Math.max(fontSize * 0.2, ...lines.map(measure));
+    const align = isPitch ? 'center' : object.style.align;
+    const x = align === 'center' ? -width / 2 : align === 'right' ? -width : 0;
+    const lineHeight = fontSize * 1.25;
+    return { lines, width, x, y: -fontSize * 0.88,
+        height: fontSize * 1.15 + (lines.length - 1) * lineHeight,
+        lineHeight, fontSize, weight, anchor: textAnchor(align) };
+};
+
+const renderLabel = (object, image, interactive, measureText) => {
+    const { lines, width, x, y, height, lineHeight, fontSize, weight, anchor }
+        = labelLayout(object, image, measureText);
     const background = object.style.background
-        ? `<rect x="${number(xOffset - fontSize * 0.22)}" y="${number(-fontSize * 0.88)}"`
-            + ` width="${number(textWidth + fontSize * 0.44)}"`
-            + ` height="${number(fontSize * 1.15)}" rx="${number(fontSize * 0.16)}"`
+        ? `<rect x="${number(x - fontSize * 0.22)}" y="${number(y)}"`
+            + ` width="${number(width + fontSize * 0.44)}"`
+            + ` height="${number(height)}" rx="${number(fontSize * 0.16)}"`
             + ' fill="#000000" fill-opacity="0.72"/>'
         : '';
     const hitTarget = interactive
-        ? `<rect data-bpb-hit-target="true" x="${number(xOffset - fontSize * 0.3)}"`
-            + ` y="${number(-fontSize * 1.1)}" width="${number(textWidth + fontSize * 0.6)}"`
-            + ` height="${number(fontSize * 1.6)}" rx="${number(fontSize * 0.16)}"`
+        ? `<rect data-bpb-hit-target="true" x="${number(x - fontSize * 0.3)}"`
+            + ` y="${number(-fontSize * 1.1)}" width="${number(width + fontSize * 0.6)}"`
+            + ` height="${number(height + fontSize * 0.45)}" rx="${number(fontSize * 0.16)}"`
             + ' fill="transparent" stroke="none" pointer-events="all"/>'
         : '';
+    const box = interactive && object.type === 'text'
+        ? `<rect data-bpb-text-box="true" x="${number(x)}" y="${number(y)}"`
+            + ` width="${number(width)}" height="${number(height)}" fill="none" pointer-events="none"/>`
+        : '';
+    const content = lines.length === 1 ? escapeXml(lines[0]) : lines.map((line, index) =>
+        `<tspan x="0" y="${number(index * lineHeight)}">${escapeXml(line)}</tspan>`).join('');
     return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}`
         + ` transform="translate(${number(object.geometry.x)} ${number(object.geometry.y)})`
         + ` rotate(${number(object.geometry.rotation)})">`
@@ -184,8 +230,8 @@ const renderLabel = (object, image, interactive, measureText) => {
         + ` font-family="${escapeXml(FONT_FAMILY)}" font-size="${number(fontSize)}"`
         + ` font-weight="${weight}" text-anchor="${anchor}"`
         + ' dominant-baseline="alphabetic" xml:space="preserve">'
-        + escapeXml(text)
-        + `</text>${hitTarget}</g>`;
+        + content
+        + `</text>${hitTarget}${box}</g>`;
 };
 
 const arrowDefinition = color => [
@@ -301,6 +347,7 @@ const exportProject = async ({
 
 export const photoRenderer = {
     renderOverlaySvg,
+    labelLayout,
     markerSymbolSvg,
     objectSizePixels,
     estimateProject,

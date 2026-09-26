@@ -107,6 +107,8 @@ const ui = {
     rotationValue: byId('object-rotation-value'),
     pitch: byId('pitch-number'),
     text: byId('object-text'),
+    textWidth: byId('text-width'),
+    textWidthAuto: byId('text-width-auto'),
     align: byId('text-align'),
     background: byId('label-background'),
     sendBack: byId('send-back'),
@@ -244,6 +246,9 @@ const applyReportWidthPreview = () => {
     ui.zoom.value = camera.fit ? 'fit' : exact ? token : 'custom';
     ui.zoomIn.disabled = camera.scale >= 8;
     ui.zoomOut.disabled = camera.scale <= 0.01;
+    ui.overlay.querySelectorAll('.text-width-handle').forEach(handle => {
+        handle.setAttribute('r', String(6 / camera.scale));
+    });
 };
 const zoomPhoto = (scale, anchor = null) => {
     if (!project || drawingSession || dragSession || panSession) return;
@@ -505,6 +510,8 @@ const editorMutationControls = () => [
     ui.rotation,
     ui.pitch,
     ui.text,
+    ui.textWidth,
+    ui.textWidthAuto,
     ui.align,
     ui.background,
     ui.addAtCenter,
@@ -1135,6 +1142,11 @@ const renderInspector = () => {
         if (document.activeElement !== ui.text || ui.text.value.trim() !== object.text) {
             ui.text.value = object.text;
         }
+        ui.textWidth.max = String(Project.MAX_DIMENSION);
+        if (document.activeElement !== ui.textWidth) {
+            ui.textWidth.value = object.geometry.width == null ? '' : String(Math.round(object.geometry.width));
+        }
+        ui.textWidthAuto.setAttribute('aria-pressed', String(object.geometry.width == null));
         ui.align.value = object.style.align;
     }
     if (label) ui.background.checked = object.style.background;
@@ -1244,6 +1256,39 @@ const renderRoutePreview = () => {
     ui.overlay.append(group);
 };
 
+const renderTextBoxControls = object => {
+    const group = [...ui.overlay.querySelectorAll('[data-bpb-object]')]
+        .find(node => node.getAttribute('data-bpb-object') === object.id);
+    const box = group?.querySelector('[data-bpb-text-box]');
+    if (!box) return;
+    const controls = document.createElementNS(SVG_NS, 'g');
+    controls.setAttribute('transform', group.getAttribute('transform'));
+    const outline = box.cloneNode();
+    outline.removeAttribute('data-bpb-text-box');
+    outline.classList.add('text-box-outline');
+    controls.append(outline);
+    const x = Number(box.getAttribute('x'));
+    const width = Number(box.getAttribute('width'));
+    const middle = Number(box.getAttribute('y')) + Number(box.getAttribute('height')) / 2;
+    const screenScale = ui.overlay.getBoundingClientRect().width / project.image.width;
+    const radius = 6 / (screenScale || 1);
+    const cursor = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][
+        ((Math.round(object.geometry.rotation / 45) % 4) + 4) % 4];
+    for (const side of ['left', 'right']) {
+        const handle = document.createElementNS(SVG_NS, 'circle');
+        handle.classList.add('text-width-handle');
+        handle.dataset.textResize = side;
+        handle.dataset.objectId = object.id;
+        handle.dataset.width = String(width);
+        handle.setAttribute('cx', String(x + (side === 'right' ? width : 0)));
+        handle.setAttribute('cy', String(middle));
+        handle.setAttribute('r', String(radius));
+        handle.style.cursor = cursor;
+        controls.append(handle);
+    }
+    ui.overlay.append(controls);
+};
+
 const renderProject = () => {
     if (!project) return;
     applyReportWidthPreview();
@@ -1277,6 +1322,7 @@ const renderProject = () => {
             ui.overlay.append(handle);
         });
     }
+    if (activeTool === 'select' && selected?.type === 'text') renderTextBoxControls(selected);
     renderAnnotationBrowser();
     renderRoutePreview();
     ui.exportSummary.textContent = `${project.objects.length} annotation${project.objects.length === 1 ? '' : 's'}`
@@ -1490,6 +1536,7 @@ const addPointObject = (type, point) => {
         object = {
             ...base,
             text: 'Label',
+            geometry: { ...base.geometry, width: Math.max(1, Math.round(project.image.width * 0.28)) },
             style: base.style,
         };
     }
@@ -1626,26 +1673,31 @@ const finishDrawing = event => {
     setEditorStatus('Stroke added. Drag to draw another, or press V to select.');
 };
 
-const beginDrag = (event, objectId, vertex = null) => {
+const beginDrag = (event, objectId, vertex = null, resize = null) => {
     if (editorMutationLocked()) return;
     const object = project.objects.find(candidate => candidate.id === objectId);
     if (!object) return;
     endCoalescing();
     dragSession = {
         start: pointerPoint(event),
-        baseline: structuredClone(project),
+        baseline: resize ? project : structuredClone(project),
         object: structuredClone(object),
         vertex,
+        resize,
+        pointerId: event.pointerId,
         moved: false,
     };
-    history.push(structuredClone(project));
-    if (history.length > HISTORY_LIMIT) history.shift();
-    future = [];
+    if (!resize) {
+        history.push(structuredClone(project));
+        if (history.length > HISTORY_LIMIT) history.shift();
+        future = [];
+    }
     ui.overlay.setPointerCapture?.(event.pointerId);
 };
 
 const moveDrag = event => {
     if (editorMutationLocked()) return;
+    if (dragSession?.resize && event.pointerId !== dragSession.pointerId) return;
     if (drawingSession) { moveDrawing(event); return; }
     if (routeSession) {
         routeSession.cursor = pointerPoint(event);
@@ -1655,10 +1707,23 @@ const moveDrag = event => {
     const point = pointerPoint(event);
     const dx = point[0] - dragSession.start[0];
     const dy = point[1] - dragSession.start[1];
-    if (Math.abs(dx) + Math.abs(dy) < 0.01) return;
+    if (!dragSession.resize && Math.abs(dx) + Math.abs(dy) < 0.01) return;
     dragSession.moved = true;
     let geometry;
-    if (dragSession.object.type === 'route' && dragSession.vertex != null) {
+    if (dragSession.resize) {
+        const object = dragSession.object;
+        const angle = object.geometry.rotation * Math.PI / 180;
+        const localDx = dx * Math.cos(angle) + dy * Math.sin(angle);
+        const { side, width: previousWidth } = dragSession.resize;
+        const width = Math.max(1, Math.min(Project.MAX_DIMENSION,
+            previousWidth + (side === 'right' ? localDx : -localDx)));
+        const align = object.style.align === 'center' ? 0.5 : object.style.align === 'right' ? 1 : 0;
+        const shift = (width - previousWidth) * (align - (side === 'left' ? 1 : 0));
+        geometry = { ...object.geometry, width,
+            x: object.geometry.x + shift * Math.cos(angle),
+            y: object.geometry.y + shift * Math.sin(angle) };
+        dragSession.moved = Math.abs(width - previousWidth) > 0.01;
+    } else if (dragSession.object.type === 'route' && dragSession.vertex != null) {
         const index = dragSession.vertex;
         // `existing` is this vertex's own stored position. It was named
         // `point` and shadowed the pointer position above, so the untouched
@@ -1675,12 +1740,27 @@ const moveDrag = event => {
     } else {
         geometry = translatedGeometry(dragSession.object, dx, dy);
     }
-    project = Project.updateObject(dragSession.baseline, dragSession.object.id, { geometry });
+    const next = Project.updateObject(dragSession.baseline, dragSession.object.id, { geometry });
+    if (!next) return;
+    project = next;
     renderProject();
+    if (dragSession.resize) {
+        // The preview must not leak into a pending autosave or export estimate.
+        dragSession.preview = next;
+        project = dragSession.baseline;
+    }
 };
 
 const endDrag = () => {
     if (!dragSession) return;
+    if (dragSession.resize) {
+        const session = dragSession;
+        dragSession = null;
+        if (session.moved && session.preview) setProject(session.preview);
+        else renderProject();
+        if (ui.overlay.hasPointerCapture?.(session.pointerId)) ui.overlay.releasePointerCapture(session.pointerId);
+        return;
+    }
     if (!dragSession.moved) history.pop();
     else {
         invalidateExportEstimate();
@@ -1690,8 +1770,27 @@ const endDrag = () => {
     updateHistoryButtons();
 };
 
+const cancelTextResize = () => {
+    if (!dragSession?.resize) return false;
+    const session = dragSession;
+    dragSession = null;
+    project = session.baseline;
+    if (ui.overlay.hasPointerCapture?.(session.pointerId)) ui.overlay.releasePointerCapture(session.pointerId);
+    renderProject();
+    return true;
+};
+
 const onPointerDown = event => {
     if (!project || editorMutationLocked() || event.button !== 0) return;
+    const resizeNode = activeTool === 'select' ? event.target.closest?.('[data-text-resize]') : null;
+    if (resizeNode) {
+        event.preventDefault();
+        ui.viewport.focus({ preventScroll: true });
+        beginDrag(event, resizeNode.dataset.objectId, null, {
+            side: resizeNode.dataset.textResize, width: Number(resizeNode.dataset.width),
+        });
+        return;
+    }
     if (activeTool === 'drawing') { beginDrawing(event); return; }
     const vertexNode = activeTool === 'select' ? event.target.closest?.('[data-vertex]') : null;
     if (vertexNode) {
@@ -2983,6 +3082,23 @@ const bindInspector = () => {
             rememberTool(inspectorType(), { rotation });
         }
     });
+    ui.textWidth.addEventListener('change', () => {
+        const object = selectedObject();
+        if (object?.type !== 'text') return;
+        const width = ui.textWidth.value === '' ? null : Number(ui.textWidth.value);
+        if (ui.textWidth.validity.valid) {
+            if (width === (object.geometry.width ?? null)) return;
+            updateSelected({ geometry: { ...object.geometry, width } });
+        } else {
+            ui.textWidth.value = object.geometry.width == null ? '' : String(Math.round(object.geometry.width));
+        }
+    });
+    ui.textWidthAuto.addEventListener('click', () => {
+        const object = selectedObject();
+        if (object?.type === 'text' && object.geometry.width != null) {
+            updateSelected({ geometry: { ...object.geometry, width: null } });
+        }
+    });
     ui.pitch.addEventListener('change', () => {
         const object = selectedObject();
         if (object?.type === 'pitch') updateSelected({ pitch: Number(ui.pitch.value) });
@@ -3115,8 +3231,12 @@ const bindEvents = () => {
     ui.finishRoute.addEventListener('click', () => finishRoute(false));
     ui.overlay.addEventListener('pointerdown', onPointerDown);
     ui.overlay.addEventListener('pointermove', moveDrag);
-    ui.overlay.addEventListener('pointerup', event => { finishDrawing(event); endDrag(); });
-    ui.overlay.addEventListener('pointercancel', () => { cancelDrawing(); endDrag(); });
+    ui.overlay.addEventListener('pointerup', event => {
+        if (dragSession?.resize && event.pointerId !== dragSession.pointerId) return;
+        finishDrawing(event); endDrag();
+    });
+    ui.overlay.addEventListener('pointercancel', () => { cancelDrawing(); if (!cancelTextResize()) endDrag(); });
+    ui.overlay.addEventListener('lostpointercapture', cancelTextResize);
     ui.overlay.addEventListener('lostpointercapture', cancelDrawing);
     ui.overlay.addEventListener('pointerleave', () => {
         if (!routeSession) return;
@@ -3224,7 +3344,9 @@ const bindEvents = () => {
                 && (!active || active === document.body || active === document.documentElement
                     || ui.editorView.contains(active)))
         );
-        if (busy || !editorScoped || editing) return;
+        if (busy || !editorScoped) return;
+        if (event.key === 'Escape' && cancelTextResize()) { event.preventDefault(); return; }
+        if (dragSession?.resize || editing) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
             const available = event.shiftKey ? future.length : history.length;
             if (!available || editorMutationLocked() || !project) return;

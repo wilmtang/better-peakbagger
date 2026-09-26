@@ -448,3 +448,47 @@ test('freehand strokes use the same visible geometry in the editor and export', 
     assert.match(editor, /data-bpb-hit-target/);
     assert.equal(svg.match(/<path d="([^"]+)"/)[1], editor.match(/<path d="([^"]+)"/)[1]);
 });
+
+test('text layout wraps words, keeps explicit empty lines, and preserves grapheme clusters', () => {
+    const project = projectWithObjects();
+    const original = project.objects.find(object => object.type === 'text');
+    const layout = (text, width) => Renderer.labelLayout({ ...original, text,
+        geometry: { ...original.geometry, width } }, project.image, value => Array.from(value).length * 10);
+    assert.deepEqual(layout('North ridge traverse', 110).lines, ['North ridge', 'traverse']);
+    assert.deepEqual(layout('North\n\nridge', 110).lines, ['North', '', 'ridge']);
+    assert.deepEqual(layout('North\r\nridge', undefined).lines, ['North', 'ridge']);
+    assert.deepEqual(layout('North  ridge', undefined).lines, ['North  ridge']);
+    assert.deepEqual(layout('abcdefgh', 30).lines, ['abc', 'def', 'gh']);
+    assert.deepEqual(layout('山頂まで', 20).lines, ['山頂', 'まで']);
+    assert.deepEqual(layout('e\u0301e\u0301', 20).lines, ['e\u0301', 'e\u0301']);
+    assert.deepEqual(layout('👩‍👩‍👧‍👦x', 10).lines, ['👩‍👩‍👧‍👦', 'x']);
+    assert.ok(layout('North ridge traverse', 110).height > layout('North ridge traverse').height);
+});
+
+test('multiline SVG uses identical line layout and plate bounds in editor and export', () => {
+    const original = projectWithObjects();
+    const label = original.objects.find(object => object.type === 'text');
+    for (const [align, anchor, x] of [['left', 'start', 0], ['center', 'middle', -55], ['right', 'end', -110]]) {
+        const project = Project.updateObject(original, label.id, {
+            text: 'North ridge\n\n<roof>',
+            geometry: { ...label.geometry, width: 110 },
+            style: { ...label.style, align, background: true },
+        });
+        const document = { createElement: () => ({ getContext: () => ({
+            measureText: text => ({ width: text.length * 10 }),
+        }) }) };
+        const exported = Renderer.renderOverlaySvg(project, { document });
+        const editor = Renderer.renderOverlaySvg(project, { document, interactive: true });
+        const group = svg => svg.match(/<g data-bpb-object="text-1"[\s\S]*?<\/g>/)[0];
+        const output = group(exported);
+        const live = group(editor);
+        assert.equal(live.slice(0, live.indexOf('<rect data-bpb-hit-target')), output.replace('</g>', ''));
+        assert.match(output, new RegExp(`text-anchor="${anchor}"`));
+        assert.match(live, new RegExp(`data-bpb-text-box="true" x="${x}"`));
+        assert.match(output, /<tspan x="0" y="0">North ridge<\/tspan>/);
+        assert.match(output, /<tspan x="0" y="42"><\/tspan>/);
+        assert.match(output, /<tspan x="0" y="84">&lt;roof&gt;<\/tspan>/);
+        assert.match(output, /height="122.64"/);
+        assert.doesNotMatch(output, /data-bpb-text-box|data-bpb-hit-target/);
+    }
+});

@@ -320,3 +320,24 @@ test('freehand strokes share route validation and survive project serialization'
         ...drawing, geometry: { points: Array.from({ length: Project.MAX_ROUTE_POINTS + 1 }, () => [1, 1]), controls: [] },
     }), null);
 });
+
+test('text widths are optional, bounded source-image geometry and survive cleaning', () => {
+    const label = {
+        id: 'label', type: 'text', text: 'North\n\nridge',
+        geometry: { x: 40, y: 80, rotation: 30 },
+        style: { color: '#ffffff', scale: 1, align: 'left', background: true },
+    };
+    const legacy = Project.addObject(emptyProject(), label, TIME);
+    assert.deepEqual(legacy.objects[0].geometry, label.geometry);
+    assert.equal(legacy.objects[0].text, label.text);
+    for (const width of [1, 300.5, Project.MAX_DIMENSION]) {
+        const next = Project.updateObject(legacy, 'label', { geometry: { ...label.geometry, width } }, TIME);
+        assert.equal(next.objects[0].geometry.width, width);
+        assert.deepEqual(Project.cleanProject(JSON.parse(JSON.stringify(next))), next);
+        const auto = Project.updateObject(next, 'label', { geometry: { ...label.geometry, width: null } }, TIME);
+        assert.deepEqual(auto, legacy);
+    }
+    for (const width of [0, -1, NaN, Infinity, '300', Project.MAX_DIMENSION + 1]) {
+        assert.equal(Project.updateObject(legacy, 'label', { geometry: { ...label.geometry, width } }), null);
+    }
+});
