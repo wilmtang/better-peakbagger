@@ -38,7 +38,9 @@ const loadSurface = async ({
                 if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
                 if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
                 if (message.type.endsWith('_IMPORT_PREPARE')) {
-                    const name = message.type.startsWith('ONX_') ? 'onX' : 'Gaia';
+                    const name = message.type.startsWith('ALLTRAILS_')
+                        ? 'AllTrails'
+                        : message.type.startsWith('ONX_') ? 'onX' : 'Gaia';
                     return results[message.type] || {
                         ok: true,
                         supplied: true,
@@ -69,16 +71,18 @@ const loadSurface = async ({
 const control = dom => dom.window.document.querySelector('.bpb-map-handoff-control');
 const button = (dom, provider) => control(dom).querySelector(`[data-provider="${provider}"]`);
 
-test('Gaia and onX controls mount together directly after the saved GPX download', async () => {
+test('Gaia, onX, and AllTrails controls mount together directly after the saved GPX download', async () => {
     const h = await loadSurface();
     const download = h.dom.window.document.querySelector('#gpxlinks a');
     assert.equal(control(h.dom).previousElementSibling, download);
     assert.deepEqual([...control(h.dom).querySelectorAll('button')].map(item => item.textContent.trim()), [
         'Send to Gaia',
         'Send to onX',
+        'Send to AllTrails',
     ]);
     assert.equal(button(h.dom, 'gaia').getAttribute('aria-label'), 'Send saved GPX to Gaia GPS');
     assert.equal(button(h.dom, 'onx').getAttribute('aria-label'), 'Send saved GPX to onX Backcountry');
+    assert.equal(button(h.dom, 'alltrails').getAttribute('aria-label'), 'Send saved GPX to AllTrails');
     assert.equal(control(h.dom).getAttribute('aria-label'), 'Send saved GPX to a map');
     assert.equal(h.fetches, 0);
 });
@@ -107,6 +111,7 @@ test('a persisted history restore re-establishes placement observation', async (
 for (const provider of [
     { id: 'gaia', permission: 'GAIA_PERMISSION_REQUEST', prepare: 'GAIA_IMPORT_PREPARE', action: 'gaia-import' },
     { id: 'onx', permission: 'ONX_PERMISSION_REQUEST', prepare: 'ONX_IMPORT_PREPARE', action: 'onx-import' },
+    { id: 'alltrails', permission: 'ALLTRAILS_PERMISSION_REQUEST', prepare: 'ALLTRAILS_IMPORT_PREPARE', action: 'alltrails-import' },
 ]) {
     test(`trusted ${provider.id} click reads and transfers the exact saved GPX`, async () => {
         const h = await loadSurface();
@@ -121,12 +126,15 @@ for (const provider of [
         assert.equal(transfer.grantToken, 'grant');
         assert.equal(h.sent.find(message => message.type === 'TRUSTED_ACTION_ISSUE').action, provider.action);
         assert.equal(button(h.dom, provider.id).disabled, false);
-        assert.equal(button(h.dom, provider.id).textContent.trim(), `Send to ${provider.id === 'gaia' ? 'Gaia' : 'onX'} again`);
-        assert.equal(button(h.dom, provider.id === 'gaia' ? 'onx' : 'gaia').disabled, false);
+        const name = { gaia: 'Gaia', onx: 'onX', alltrails: 'AllTrails' }[provider.id];
+        assert.equal(button(h.dom, provider.id).textContent.trim(), `Send to ${name} again`);
+        for (const other of ['gaia', 'onx', 'alltrails'].filter(id => id !== provider.id)) {
+            assert.equal(button(h.dom, other).disabled, false);
+        }
     });
 }
 
-test('permission denial sends no GPX and leaves both destinations retryable', async () => {
+test('permission denial sends no GPX and leaves every destination retryable', async () => {
     const h = await loadSurface({ permissions: {
         ONX_PERMISSION_REQUEST: {
             ok: false,
@@ -140,6 +148,7 @@ test('permission denial sends no GPX and leaves both destinations retryable', as
     assert.equal(h.sent.some(message => message.type === 'ONX_IMPORT_PREPARE'), false);
     assert.equal(button(h.dom, 'gaia').disabled, false);
     assert.equal(button(h.dom, 'onx').disabled, false);
+    assert.equal(button(h.dom, 'alltrails').disabled, false);
 });
 
 test('untrusted page events cannot request permission or read the GPX', async () => {

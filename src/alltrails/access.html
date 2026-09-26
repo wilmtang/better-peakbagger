@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Allow AllTrails access — Better Peakbagger</title>
+  <script src="access-head.js"></script>
+  <link rel="stylesheet" href="../css/panel.css">
+  <link rel="stylesheet" href="../css/gaia-access.css">
+</head>
+<body>
+  <main class="access-card">
+    <img src="../icons/icon-48.png" width="48" height="48" alt="">
+    <p class="eyebrow">BETTER PEAKBAGGER</p>
+    <h1>Send saved tracks to AllTrails</h1>
+    <p class="explanation">Allow access to <strong>www.alltrails.com</strong> so Better Peakbagger can place a saved ascent GPX in AllTrails’ route upload preview.</p>
+    <p class="boundary">You review the route and click Upload in AllTrails. The extension does not read your AllTrails password or keep the GPX.</p>
+    <button id="allow-alltrails" type="button">Allow AllTrails access</button>
+    <button id="close-alltrails" class="secondary" type="button" hidden>Close this tab</button>
+    <p id="alltrails-access-status" class="status" role="status" aria-live="polite"></p>
+  </main>
+  <script src="access.js"></script>
+</body>
+</html>

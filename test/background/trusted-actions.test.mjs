@@ -150,6 +150,7 @@ test('one-use workflow grants cannot be replayed and tab cleanup revokes authori
 });
 
 for (const [name, action] of [
+    ['AllTrails', TrustedActions.ACTIONS.ALLTRAILS_IMPORT],
     ['Gaia', TrustedActions.ACTIONS.GAIA_IMPORT],
     ['onX', TrustedActions.ACTIONS.ONX_IMPORT],
 ]) {

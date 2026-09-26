@@ -7,6 +7,7 @@
 
 import { ascentPage as AscentPage } from './ascent-page.js';
 import { savedGpxSource as GpxSource } from '../gpx/saved-gpx-source.js';
+import { MAX_ALLTRAILS_GPX_BYTES } from '../alltrails/alltrails-import.js';
 import { MAX_GAIA_GPX_BYTES } from '../gaia/gaia-import.js';
 import { MAX_ONX_GPX_BYTES } from '../onx/onx-import.js';
 import { dom as Dom } from '../ui/dom.js';
@@ -55,6 +56,16 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             prepareType: 'ONX_IMPORT_PREPARE',
             action: 'onx-import',
             maxBytes: MAX_ONX_GPX_BYTES,
+        },
+        {
+            id: 'alltrails',
+            name: 'AllTrails',
+            buttonLabel: 'Send to AllTrails',
+            ariaLabel: 'Send saved GPX to AllTrails',
+            permissionType: 'ALLTRAILS_PERMISSION_REQUEST',
+            prepareType: 'ALLTRAILS_IMPORT_PREPARE',
+            action: 'alltrails-import',
+            maxBytes: MAX_ALLTRAILS_GPX_BYTES,
         },
     ];
     const providers = new Map(providerConfig.map(config => {

@@ -53,6 +53,7 @@ from several directories when a shipped surface crosses those boundaries.
 | `src/github/` | GitHub authentication, API transport, repository writes, and backup payloads |
 | `src/gaia/` | Gaia's visible import adapter and optional-access fallback page |
 | `src/onx/` | onX Backcountry import adapter and optional-access fallback page |
+| `src/alltrails/` | AllTrails custom-route upload adapter and optional-access fallback page |
 | `src/gpx/` | Shared GPX parsing, saved-track validation, metrics, and ascent-page analysis |
 | `src/maps/` | BigMap and Peak map coordinators, bridges, links, and peak markers |
 | `src/peakbagger/` | Authenticated Peakbagger request and response policy |
@@ -172,7 +173,7 @@ script is added or removed without updating it.
 | `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
 | `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
 | `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
-| `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, and onX HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants both map hosts because hidden automation cannot inspect native permission prompts. |
+| `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, and AllTrails HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the three map hosts because hidden automation cannot inspect native permission prompts. |
 | `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |

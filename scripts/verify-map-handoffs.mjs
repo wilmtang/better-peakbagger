@@ -12,6 +12,7 @@ import { createFixtureCertificate, waitForCondition } from './browser-verificati
 import { closeServer, createResourceStack, listenServer } from './resource-stack.mjs';
 import { prepareGaiaImport } from '../src/gaia/gaia-import.js';
 import { prepareOnxImport } from '../src/onx/onx-import.js';
+import { prepareAlltrailsImport } from '../src/alltrails/alltrails-import.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 const evidenceDir = path.join(root, 'web-ext-artifacts', 'map-handoff-evidence');
@@ -30,14 +31,15 @@ try {
     await cp(path.join(root, 'dist'), extensionDir, { recursive: true });
 
     // The hidden fixture cannot approve native browser chrome. Grant only the
-    // two tested map origins here; production still declares both optional.
+    // tested map origins here; production still declares them optional.
     const manifestPath = path.join(extensionDir, 'manifest.json');
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
     const gaiaOrigin = 'https://www.gaiagps.com/*';
     const onxOrigin = 'https://webmap.onxmaps.com/*';
-    manifest.host_permissions.push(gaiaOrigin, onxOrigin);
+    const alltrailsOrigin = 'https://www.alltrails.com/*';
+    manifest.host_permissions.push(gaiaOrigin, onxOrigin, alltrailsOrigin);
     manifest.optional_host_permissions = manifest.optional_host_permissions.filter(
-        value => value !== gaiaOrigin && value !== onxOrigin,
+        value => value !== gaiaOrigin && value !== onxOrigin && value !== alltrailsOrigin,
     );
     await writeFile(manifestPath, JSON.stringify(manifest));
 
@@ -45,6 +47,7 @@ try {
     let sourceReads = 0;
     let gaiaMode = 'ready';
     let onxMode = 'ready';
+    let alltrailsMode = 'ready';
     const gaiaFixture = () => `<!doctype html><html><meta charset="utf-8"><title>Gaia importer fixture</title><body>
         <button aria-label="Import Data" ${gaiaMode === 'signed-out' ? 'disabled' : ''}>Import</button>
         ${gaiaMode === 'signed-out' ? '<button>Log In</button>' : ''}<main id="preview"></main>
@@ -70,6 +73,19 @@ try {
         const confirm=document.querySelector('[data-test="import-card-import-button"]');
         if(confirm)confirm.onclick=()=>window.imports++;
         </script></body></html>`;
+    const alltrailsFixture = () => `<!doctype html><html><meta charset="utf-8"><title>AllTrails uploader fixture</title><body>
+        <button id="open">Upload a route</button>
+        <script>
+        window.handoffs=0;window.uploads=0;
+        document.querySelector('#open').onclick=()=>{
+            const dialog=document.createElement('div');dialog.setAttribute('role','dialog');
+            dialog.innerHTML='<h2>Upload a route</h2><input type="file" aria-label="hidden file upload" accept=".gpx,.fit">';
+            const input=dialog.querySelector('input');
+            input.onchange=async()=>{window.handoffs++;window.receivedName=input.files[0].name;window.received=await input.files[0].text();
+                ${alltrailsMode === 'stalled' ? '' : 'const label=document.createElement(\'div\');label.title=input.files[0].name;label.textContent=input.files[0].name;dialog.append(label);const upload=document.createElement(\'button\');upload.textContent=\'Upload\';upload.onclick=()=>window.uploads++;dialog.append(upload);'}
+            };document.body.append(dialog);
+        };
+        </script></body></html>`;
     const certificate = await createFixtureCertificate({ label: 'map-handoff' });
     resources.defer('fixture certificate', () => certificate.remove());
     const server = createServer(certificate, (request, response) => {
@@ -79,6 +95,9 @@ try {
         } else if (request.headers.host === 'webmap.onxmaps.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(onxFixture());
+        } else if (request.headers.host === 'www.alltrails.com') {
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(alltrailsFixture());
         } else if (request.url.startsWith('/climber/GPXFile.aspx')) {
             sourceReads++;
             response.setHeader('Content-Type', 'application/gpx+xml');
@@ -101,7 +120,7 @@ try {
         args: [
             `--disable-extensions-except=${extensionDir}`,
             `--load-extension=${extensionDir}`,
-            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP webmap.onxmaps.com 127.0.0.1:${port}`,
+            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP webmap.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}`,
         ],
     });
     resources.defer('hidden Chrome for Testing', () => context.close());
@@ -112,9 +131,11 @@ try {
     await source.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=7654321`);
     const gaiaButton = source.locator('[data-provider=\"gaia\"]');
     const onxButton = source.locator('[data-provider=\"onx\"]');
+    const alltrailsButton = source.locator('[data-provider=\"alltrails\"]');
     await gaiaButton.waitFor();
     assert.equal((await gaiaButton.innerText()).trim(), 'Send to Gaia');
     assert.equal((await onxButton.innerText()).trim(), 'Send to onX');
+    assert.equal((await alltrailsButton.innerText()).trim(), 'Send to AllTrails');
     const placement = await source.locator('.bpb-map-handoff-control').evaluate(control => ({
         parentId: control.parentElement?.id,
         previousTag: control.previousElementSibling?.tagName,
@@ -184,8 +205,32 @@ try {
     assert.deepEqual(repeatedOnxReceived, { text: payload.gpx, name: payload.filename, imports: 0 });
     assert.equal(await onx.evaluate(() => window.imports), 0);
 
+    await alltrailsButton.click();
+    await waitForCondition(async () => {
+        const text = await source.locator('.bpb-map-handoff-control').innerText();
+        return /Ready in AllTrails/.test(text) ? text : null;
+    }, { description: 'the saved ascent to report AllTrails ready', timeoutMs: 35_000 });
+    const alltrails = await waitForCondition(async () => context.pages().find(
+        page => page.url().startsWith('https://www.alltrails.com/'),
+    ) || null, { description: 'the AllTrails upload tab' });
+    const alltrailsReceived = await alltrails.evaluate(() => ({
+        text: window.received,
+        name: window.receivedName,
+        handoffs: window.handoffs,
+        uploads: window.uploads,
+    }));
+    assert.deepEqual(alltrailsReceived, {
+        text: payload.gpx, name: payload.filename, handoffs: 1, uploads: 0,
+    });
+    assert.match(await source.locator('.bpb-map-handoff-status').innerText(), /Review the route and click Upload/);
+    assert.equal(await alltrailsButton.isDisabled(), false);
+    assert.equal((await alltrailsButton.innerText()).trim(), 'Send to AllTrails again');
+    assert.equal(await alltrails.evaluate(() => window.uploads), 0);
+
     await source.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
     await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-buttons-ready-dark.png') });
+    await source.setViewportSize({ width: 430, height: 760 });
+    await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-buttons-ready-dark-narrow.png') });
     const access = await context.newPage();
     await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: { theme: 'light' } }));
     await access.goto(`chrome-extension://${extensionId}/gaia/access.html`);
@@ -208,6 +253,10 @@ try {
     await onxAccess.goto(`chrome-extension://${extensionId}/onx/access.html`);
     await onxAccess.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
     await onxAccess.screenshot({ path: path.join(evidenceDir, 'onx-access-page-dark.png') });
+    const alltrailsAccess = await context.newPage();
+    await alltrailsAccess.goto(`chrome-extension://${extensionId}/alltrails/access.html`);
+    await alltrailsAccess.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'dark');
+    await alltrailsAccess.screenshot({ path: path.join(evidenceDir, 'alltrails-access-page-dark.png') });
 
     const session = await worker.evaluate(() => chrome.storage.session.get(null));
     assert.ok(!JSON.stringify(session).includes('<gpx'), 'saved GPX must not enter extension storage');
@@ -250,14 +299,26 @@ try {
     assert.deepEqual(onxStalled.state, { handoffs: 1, imports: 0 });
     const onxDuplicate = await onxStalled.page.evaluate(prepareOnxImport, payload);
     assert.equal(onxDuplicate.code, 'already-started');
+    alltrailsMode = 'stalled';
+    const stalledAlltrailsPage = await context.newPage();
+    await stalledAlltrailsPage.goto('https://www.alltrails.com/explore/custom-routes/new');
+    const stalledAlltrails = await stalledAlltrailsPage.evaluate(prepareAlltrailsImport,
+        { ...payload, timeoutMs: 500 });
+    assert.equal(stalledAlltrails.code, 'handoff-unconfirmed');
+    assert.deepEqual(await stalledAlltrailsPage.evaluate(() => ({
+        handoffs: window.handoffs, uploads: window.uploads,
+    })), { handoffs: 1, uploads: 0 });
+    const alltrailsDuplicate = await stalledAlltrailsPage.evaluate(prepareAlltrailsImport, payload);
+    assert.equal(alltrailsDuplicate.code, 'existing-preview');
 
     const report = {
         browser: context.browser().version(),
         viewport: { width: 1000, height: 760 },
+        narrowViewport: { width: 430, height: 760 },
         mode: 'hidden masked HTTPS fixtures',
         renderer: 'static HTML; no WebGL',
         sourceReads,
-        nativePermissionPrompt: 'not inspected; Gaia and onX were granted only in the disposable manifest',
+        nativePermissionPrompt: 'not inspected; Gaia, onX, and AllTrails were granted only in the disposable manifest',
         checks: [
             'real unpacked dist',
             'ascent-page placement',
@@ -266,12 +327,14 @@ try {
             'manual Gaia Save preserved',
             'exact saved GPX handoff to onX',
             'manual onX Import preserved',
+            'exact saved GPX handoff to AllTrails',
+            'manual AllTrails Upload preserved',
             'onX membership gate',
             'signed-out gate',
             'explicit retry opens a fresh onX importer tab',
             'uncertain handoff requires an explicit retry',
             'no GPX in extension storage',
-            'light and dark screenshots',
+            'light and dark screenshots at standard and narrow widths',
         ],
     };
     await writeFile(path.join(evidenceDir, 'report.json'), JSON.stringify(report, null, 2));

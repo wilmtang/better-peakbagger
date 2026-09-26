@@ -11,6 +11,7 @@ import {
     validateGpx,
 } from '../../src/gpx/saved-gpx-source.js';
 import { MAX_GAIA_GPX_BYTES } from '../../src/gaia/gaia-import.js';
+import { MAX_ALLTRAILS_GPX_BYTES } from '../../src/alltrails/alltrails-import.js';
 import { MAX_ONX_GPX_BYTES } from '../../src/onx/onx-import.js';
 
 const ascent = 'https://www.peakbagger.com/climber/ascent.aspx?aid=42';
@@ -79,6 +80,10 @@ test('saved GPX read fails closed on errors, malformed data, DTDs, size and redi
         assert.equal(result.gpx, undefined);
     }
     assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_GAIA_GPX_BYTES)}`, { parseXml }), false);
+    assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_ALLTRAILS_GPX_BYTES)}`, {
+        maxBytes: MAX_ALLTRAILS_GPX_BYTES,
+        parseXml,
+    }), false);
     assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_ONX_GPX_BYTES)}`, {
         maxBytes: MAX_ONX_GPX_BYTES,
         parseXml,

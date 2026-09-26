@@ -79,12 +79,12 @@ coordinate-only tracks get a compact route scrubber. See the
 
 ### Send a saved track to Gaia GPS or onX Backcountry
 
-On a saved ascent, **Send to Gaia** and **Send to onX** sit beside Peakbagger's
-GPX download. After the destination's one-time access grant, either button opens
+On a saved ascent, **Send to Gaia**, **Send to onX**, and **Send to AllTrails** sit beside Peakbagger's
+GPX download. After the destination's one-time access grant, each button opens
 its map and supplies the exact saved GPX to the visible import preview. You
 review and confirm in the mapping app; Better Peakbagger does not copy account
 credentials or keep the GPX in extension storage. onX import requires a Premium
-or Elite membership and a GPX under 4 MB. If an import fails after handoff,
+or Elite membership and a GPX under 4 MB; AllTrails limits uploads to 20 MB. If an import fails after handoff,
 **Send to onX again** opens a fresh importer while leaving the failed tab
 available to inspect. See
 [how the Gaia handoff works](docs/gaia-import.md) and

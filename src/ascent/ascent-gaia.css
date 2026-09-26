@@ -14,6 +14,7 @@
 
 .bpb-map-handoff-buttons {
     display: inline-flex;
+    flex-wrap: wrap;
     gap: 5px;
 }
 
@@ -41,6 +42,12 @@
     box-shadow: 0 1px 2px rgba(13, 55, 35, 0.24), inset 0 1px rgba(255, 255, 255, 0.12);
 }
 
+.bpb-map-handoff-button-alltrails {
+    border-color: #294d13;
+    background: linear-gradient(180deg, #557f34 0%, #3f6822 100%);
+    box-shadow: 0 1px 2px rgba(35, 73, 17, 0.25), inset 0 1px rgba(255, 255, 255, 0.14);
+}
+
 .bpb-map-handoff-button-onx {
     border-color: #753500;
     background: linear-gradient(180deg, #a84e08 0%, #873b00 100%);
@@ -54,6 +61,10 @@
 .bpb-map-handoff-button-gaia:hover:not(:disabled) {
     border-color: #153f2b;
     background: linear-gradient(180deg, #2e714e 0%, #215b3b 100%);
+}
+.bpb-map-handoff-button-alltrails:hover:not(:disabled) {
+    border-color: #203d0e;
+    background: linear-gradient(180deg, #4b742c 0%, #355c1b 100%);
 }
 .bpb-map-handoff-button-onx:hover:not(:disabled) {
     border-color: #602b00;
@@ -96,6 +107,11 @@
     color: #245e40;
     background: #eef7f0;
 }
+.bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
+    border-color: #9ab67f;
+    color: #355c1b;
+    background: #f1f7eb;
+}
 .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
     border-color: #d79d72;
     color: #713100;
@@ -103,6 +119,7 @@
 }
 .bpb-map-handoff-button-success .bpb-map-handoff-icon { color: #fff; }
 .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #347a55; }
+.bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #4b742c; }
 .bpb-map-handoff-button-onx.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #984400; }
 .bpb-map-handoff-button-success .bpb-map-handoff-icon::before { content: "✓"; transform: none; }
 
@@ -119,10 +136,14 @@
 }
 
 @media (prefers-color-scheme: dark) {
+    .bpb-map-handoff-button-alltrails { border-color: #86a967; }
     .bpb-map-handoff-button-gaia { border-color: #5c9872; }
     .bpb-map-handoff-button-onx { border-color: #c06d31; }
     .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
         border-color: #5c9872; color: #9bd3ab; background: #24352c;
+    }
+    .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
+        border-color: #789a5a; color: #b5d59a; background: #29351f;
     }
     .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
         border-color: #a96231; color: #f3b887; background: #3c2a20;
@@ -130,19 +151,27 @@
     .bpb-map-handoff-status { color: #d0cbc2; }
 }
 
+:root[data-bpb-theme="dark"] .bpb-map-handoff-button-alltrails { border-color: #86a967; }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-gaia { border-color: #5c9872; }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-onx { border-color: #c06d31; }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
     border-color: #5c9872; color: #9bd3ab; background: #24352c;
 }
+:root[data-bpb-theme="dark"] .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
+    border-color: #789a5a; color: #b5d59a; background: #29351f;
+}
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
     border-color: #a96231; color: #f3b887; background: #3c2a20;
 }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-status { color: #d0cbc2; }
+:root[data-bpb-theme="light"] .bpb-map-handoff-button-alltrails { border-color: #294d13; }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-gaia { border-color: #1d5539; }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-onx { border-color: #753500; }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
     border-color: #83ae91; color: #245e40; background: #eef7f0;
+}
+:root[data-bpb-theme="light"] .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
+    border-color: #9ab67f; color: #355c1b; background: #f1f7eb;
 }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-onx.bpb-map-handoff-button-success {
     border-color: #d79d72; color: #713100; background: #fff2e8;

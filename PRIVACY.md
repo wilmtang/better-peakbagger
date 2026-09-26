@@ -33,7 +33,7 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | --- | --- |
 | `storage` | Stores preferences, credentials, caches, drafts, and other extension data as detailed below. |
 | `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. There is no persistent provider host access. |
-| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia or onX after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
+| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia, onX, or AllTrails after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules the one-minute debounce and bounded retries for user-enabled automatic backups. |
 | Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
@@ -41,6 +41,7 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
 | Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
 | Optional onX host access | Access to `webmap.onxmaps.com` is requested only when the user clicks **Send to onX**. It lets the extension open onX Backcountry's import page and supply the saved GPX to its visible preview; the extension does not click onX's **Import** control and has no access to `identity.onxmaps.com`. |
+| Optional AllTrails host access | Access to `www.alltrails.com` is requested only when the user clicks **Send to AllTrails**. It lets the extension open the custom route builder and supply the saved GPX to its visible upload preview; the extension does not click AllTrails' **Upload** control. |
 
 Firefox's `locationInfo` declaration is a data-handling disclosure, not
 permission to read device location. It covers:

@@ -19,6 +19,7 @@ import {
 } from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
+import { createAlltrailsRoutes } from './alltrails-routes.js';
 import { createGaiaRoutes } from './gaia-routes.js';
 import { createOnxRoutes } from './onx-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
@@ -3276,6 +3277,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         mutateMap,
         trustedActions,
     });
+    const alltrailsRoutes = createAlltrailsRoutes({
+        ext,
+        isPeakbaggerSender,
+        trustedActions,
+        action: TrustedActions.ACTIONS.ALLTRAILS_IMPORT,
+    });
     const gaiaRoutes = createGaiaRoutes({
         ext,
         isPeakbaggerSender,
@@ -3475,6 +3482,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (reportDraftHandler) return reportDraftHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
+            const alltrailsHandler = alltrailsRoutes.handlers[type];
+            if (alltrailsHandler) return alltrailsHandler(message, sender);
             const gaiaHandler = gaiaRoutes.handlers[type];
             if (gaiaHandler) return gaiaHandler(message, sender);
             const onxHandler = onxRoutes.handlers[type];
