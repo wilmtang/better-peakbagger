@@ -53,9 +53,67 @@ never allowed to connect a line across an unknown run.
 
 The analyzer labels complete timing as **Time** and incomplete timing as
 **Known time span**. Start/back, summit-duration, and camping inferences require
-complete timing; partial timing shows only the first and last known clock
+complete timing and continuous time-coordinate groups; partial timing shows only the first and last known clock
 values. Every displayed clock still uses the mountain-local timezone behavior
 documented in [mountain-local-time.md](mountain-local-time.md).
+
+## Suspect segments on saved ascents
+
+Field validity alone does not prove that every segment describes the same
+activity. The saved-ascent analyzer runs the pure
+`src/gpx/gpx-segment-diagnostics.js` policy before chart sampling. It preserves
+the original parsed segments and source point identities, then calculates
+separate source and interpreted metric views. Activity capture, local-file
+processing, and prepared drafts do **not** apply this additional policy.
+
+Automatic exclusion from the interpreted view requires narrow evidence:
+
+- **Degenerate duplicate:** at least eight valid points and 100 metres of path,
+  with exactly the same ordered numeric coordinates as one unambiguous donor.
+  Every candidate elevation is explicitly zero; every timestamp is identical
+  and equals the donor's start. The donor must have complete plausible
+  elevations, including a nonzero value, and complete nondecreasing timestamps
+  with positive duration. A repeated lap with its own progressing time, a
+  reversed route, missing elevations, or approximate similarity is insufficient.
+- **Isolated distant point:** after duplicate exclusion, exactly one multi-point
+  recording and one singleton remain. The recording meets the point/distance
+  floors and has complete progressing time. The singleton is at least 24 hours
+  outside that recording's time range and at least 50 kilometres from its
+  entire path. Distance includes great-circle edge interiors, including polar
+  and antimeridian crossings; ambiguous antipodal geometry cannot establish
+  exclusion. Additional recordings or singleton breadcrumbs prevent this
+  automatic choice. This rule is an inference of unrelated data, not proof of
+  how or why the point was recorded.
+
+Ambiguous duplicates, moving constant-time segments, and qualifying distant
+singletons in ambiguous recordings remain included with review diagnostics.
+Ordinary multi-day recordings, nearby early points, and legitimate repeated
+routes remain included. There is no longest-route heuristic, approximate
+matching, or reconstruction of missing measurements. Resource limits remain
+20,000 track points and 50 segments, and classification runs once per load,
+not on hover, resize, unit changes, or theme changes.
+
+The existing metrics row always shows the **source** point count. When relevant,
+an inline disclosure explains each segment decision, retained/excluded point
+counts, and source-versus-interpreted distance and elapsed time. Its closed
+state adds no header line; metric text truncates before the count and disclosure
+at narrow widths. **Show all source segments** and **Use interpreted view**
+switch views for this loaded GPX only. Source view still uses the normal metric
+adjustments; it is not an unsmoothed or raw-data mode.
+
+Changing views updates statistics, clock domains, summit timing, timezone,
+chart sampling, extension route geometry and terrain input together. A selected
+point is preserved by source identity if it survives, otherwise its map, Sun,
+and coordinate-copy selection clears. Camping inference never bridges
+separate time-coordinate groups. Interpreted terrain fits its selected route
+instead of inheriting the native map's potentially contaminated source camera.
+The native Peakbagger map layers remain untouched and may still show the source.
+
+The saved GPX, download link, and files sent to Gaia, onX, AllTrails, and CalTopo
+remain original. Interpretation changes no provider payload, stored setting,
+permission, source timestamp/elevation, or saved ascent. No cleaned export is
+created. The motivating source diagnosis and verification record are in the
+[archived segment plan](archive/gpx-suspect-segments.md).
 
 ## Prepared ascent fields
 

@@ -158,7 +158,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
-| Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
+| Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -801,7 +801,7 @@ before any time view is shown. A missing or malformed timestamp no longer
 erases the valid timed runs around it: the chart breaks at that sample,
 coverage is disclosed, and the elapsed value is labelled **Known time span**
 rather than complete duration. Full start/back, summit-duration, and camping
-inferences remain limited to complete timing.
+inferences remain limited to complete timing, and camping also requires continuity between timed groups.
 
 The shared GPX parser accepts only its supported ISO-shaped timestamp forms and
 validates their calendar fields, leap days, `24:00` boundary, and timezone
@@ -809,8 +809,17 @@ offset before calling the platform date parser. A nonexistent date is invalid
 input, not a normalized instant, so analyzer and capture consumers take the
 same degraded-time path.
 
-The native and extension-owned map paths preserve GPX document order and
-explicit `<trkseg>` geometry. Metrics and charts sequence whole segments by
+Saved-ascent analysis first diagnoses suspect segments with the pure
+`gpx-segment-diagnostics.js` policy. Exact degenerate duplicates and a narrowly
+qualified distant singleton may be excluded in an explainable, reversible
+interpreted view. Source identities/counts and separate metric results are
+retained; the shared `computeMetrics` API does not filter segments implicitly,
+so capture and draft calculations keep their existing input contract. See the
+[segment policy](gpx-data-quality.md#suspect-segments-on-saved-ascents) for exact
+criteria and fallback behavior.
+
+The native map keeps its source geometry. Extension-owned map paths preserve
+GPX document order and explicit `<trkseg>` geometry within the chosen view. Metrics and charts sequence whole segments by
 time only when every segment is internally chronological and the segment
 ranges do not overlap; otherwise they preserve source order. Individual
 trackpoints are never reordered. After that safe sequencing, a segment boundary

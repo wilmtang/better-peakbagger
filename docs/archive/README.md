@@ -8,6 +8,9 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [Suspect GPX segments](gpx-suspect-segments.md) — completed conservative
+  interpretation of exact degenerate duplicates and isolated distant points,
+  reversible source view, compact disclosure, and local verification ledger.
 - [Codebase audit — 2026-09-25](codebase-audit-2026-09-25.md) — seven findings
   remediated in focused commits, with local regression evidence and explicit
   live-service/browser/CI proof limits in the closure ledger.

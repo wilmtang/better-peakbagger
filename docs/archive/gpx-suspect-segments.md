@@ -1,6 +1,9 @@
 # Suspect GPX segments: cause analysis and remedy plan
 
-Status: proposed; source diagnosis reproduced, runtime remedy not implemented.
+Status: implemented locally; see the closure ledger for verification and limits.
+
+The analysis and proposed rules below preserve the pre-implementation record.
+Current maintained behavior lives in [GPX data quality](../gpx-data-quality.md).
 
 Date: 2026-09-26. Source review baseline: `7587054`.
 
@@ -19,8 +22,8 @@ show exactly what the analyzer excluded. Do not try to make the distance and
 time curves overlap: they represent different horizontal scales even on a
 healthy track.
 
-This document records evidence and an implementation plan. It does not authorize
-editing the saved ascent, uploading a replacement GPX, or implementing the plan.
+The user subsequently authorized implementation. That authorization does not
+include editing the saved ascent or uploading a replacement GPX.
 
 ## 2. Evidence and reproduction
 
@@ -233,8 +236,9 @@ For the initial implementation, propose exclusion only when:
 This case comfortably passes the point-count and temporal conditions. The
 143.18 km measurement above is distance to the nearest recorded vertex; the
 implementation must also measure distance to the path before claiming the
-50 km path-distance rule is verified. The path-distance acceptance check is
-still open, although the observed coordinates strongly suggest a remote point.
+50 km path-distance rule is verified. The path-distance acceptance check was open when planned. Implementation has
+since measured the full great-circle path at 143.177673 km from the singleton,
+confirming the threshold for the cached source (see closure).
 
 Twenty-four hours and 50 km are conservative proposed thresholds, not universal
 hiking limits. Do not exclude a whole multi-day segment, a nearby early trailhead
@@ -434,31 +438,87 @@ Verification gates for implementation:
 - Record browser/renderer/viewport and teardown evidence. Hidden checks do not
   prove physical-device gestures, native prompts, or screen-reader speech.
 
-## 10. Closure ledger and current proof limits
+## 10. Closure ledger
+
+Implementation date: 2026-09-26. Focused runtime sequence:
+
+- `3dd301b`: synthetic 1/56/56 reproduction, separating distance and clock faults.
+- `a1200c0`: pure exact-degenerate-duplicate policy and stable source identities.
+- `e490740`: complete-path geometry and conservative isolated-point policy.
+- `610fda0`: analyzer view lifecycle, compact disclosure, selection/map/terrain
+  updates, and browser regression coverage.
 
 ### Fixed and verified
 
-No runtime defect described here is fixed by this document. The separate source
-point-count display in `7587054` is already implemented and verified; it makes
-source size visible but does not remove either artifact.
+- Rule A requires every conjunct above and one unambiguous donor. Legitimate
+  laps, reversed/near-matching geometry, missing fields, invalid coordinates,
+  all-zero donors, short/tiny tracks and ambiguous donors are preserved.
+- Rule B uses distance to minor great-circle path edges, not merely vertices.
+  Antimeridian, poles, sparse-edge interiors, endpoints, threshold floors and
+  ambiguous antipodal edges have focused coverage. Automatic exclusion requires
+  exactly one remaining multi-point recording and **one singleton**, a stricter
+  safeguard than the original minimum proposal; multiple singleton breadcrumbs
+  remain review-only because they could describe a connecting recording.
+- Cached source SHA-256 above: segment 1 path distance 143.177673 km; segments 1
+  and 3 excluded; 56 used/57 excluded out of 113 source points. Existing metrics
+  produce 10.158068 miles and 12h 32m. No additional live fetch was needed.
+- Source and interpreted metric results are cached per file. The 113-point
+  source count survives filtering/sampling. Repeat toggles do not accumulate
+  changes. Source IDs preserve surviving selection, and excluded selection
+  clears Sun, coordinate copying and highlights.
+- Clock, summit, timezone and map inputs share the selected view. Camping no
+  longer crosses disconnected time-coordinate groups. Extension overlays
+  rebuild and open terrain restarts with the selected route. Interpreted terrain
+  initialization omits the native source camera, letting its route own fitting.
+- Inline disclosure is keyboard accessible; open state and source-toggle focus
+  survive updates. Warning-only cases retain their source data and offer no
+  spurious exclusion toggle. Count/disclosure fit without closed-header growth
+  at 430, 1000 and 1600 px. Light/dark rendered Chrome screenshots were inspected;
+  both browser verifiers exercise the disclosure and selection transition.
+
+Validation completed before closure:
+
+- Pure detector/metrics: 63 tests passed; bounded 20,000-point/50-segment case.
+- Bundled analyzer, coordinator and manifest contracts: 90 tests passed.
+- Hidden Chrome for Testing 153.0.8010.12, full new-headless unpacked extension:
+  passed, including segment interactions and existing extension checks.
+- Hidden Firefox 156.0.1, disposable derived extension: passed, including the
+  same segment interaction and header-geometry contract.
+- Chart rendering uses Canvas2D. No WebGL software-rendering flags were added.
+  Browser runs used HTTPS Peakbagger fixtures and disposable profiles/certificates;
+  teardown inspection found no remaining verifier browser processes.
+- `npm test`: 2,054 passed, zero failed/skipped (including capture, draft,
+  transfer, schema and parser ownership regressions); approximately 102 seconds.
+- `npm run lint`: passed, with the existing eight allowlisted cross-browser /
+  upstream dependency warnings; no new warning exemption.
+- `node scripts/verify-map-handoffs.mjs`: passed hidden Chrome HTTPS fixtures
+  at 1000×760 and 430×760. Exact original saved GPX reached all four provider
+  adapters; manual Save/Import/Upload remained required, and GPX was not stored
+  in extension storage. These are fixture results, not live provider proof.
+- `node --test test/project/documentation.test.mjs`: three passed; all relative
+  maintained/archive links resolve.
 
 ### Intentionally not changed
 
-- Original GPX bytes, saved ascent, download, and provider handoffs.
-- Numerical distance/gain smoothing and unrelated chart appearance.
-- Runtime behavior: this change is documentation only.
+- Original GPX bytes, saved ascent, download and Gaia/onX/AllTrails/CalTopo files.
+- Shared distance/gain smoothing, capture/draft algorithms and source point order.
+- Native Peakbagger map layers. They can still display source geometry.
+- Missing measurements, approximate duplicates, reversed routes, ordinary
+  multi-day recordings, and ambiguous membership. No repair is invented.
+- No new settings, persistence, permissions, external APIs, or cleaned export.
 
 ### Changed but not fully proven
 
-No remediation code has been changed. The automatic-classification policy,
-false-positive performance, path-distance threshold for segment 1, map/terrain
-integration, and proposed disclosure are unimplemented and unverified.
-
-The fresh source parse and existing-metrics subset experiment establish the
-specific data shape and numeric consequences above. They do not establish an
-exporting application's culpability, universal detector thresholds, or the
-safety of automatically excluding similar-looking segments in other activities.
-
-Documentation checks and the final commit record should state what was actually
-run; future implementation must replace this section with its own results and
-remaining proof gaps rather than inheriting a claim of completion.
+- The isolated-point rule infers activity membership. Even at these conservative
+  thresholds, the source author might have intentionally included contextual
+  data; the explanation and source toggle remain necessary. Thresholds are
+  product policy, not universal evidence of corruption.
+- Terrain route payload, camera omission and restart behavior are covered by
+  contract tests. The new view-toggle transition was not visually inspected in
+  a fully rendered 3D terrain scene; existing browser startup tests do not
+  establish its WebGL appearance or external tile-service availability.
+- Hidden browser evidence does not prove physical-device trackpad gestures,
+  native browser prompts/focus, screen-reader speech, or live third-party
+  import workflows. No publication, remote CI run, or store release occurred.
+- The source diagnosis does not identify the exporting application's fault or
+  certify the remaining hike as a surveyed/ground-truth record.

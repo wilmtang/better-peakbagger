@@ -74,7 +74,9 @@ Custom route colors, width, and outline carry through to Full Screen GPS maps
 without covering Peakbagger's native route or markers. Degraded tracks remain
 useful without invented measurements: partial data produces visible gaps,
 timed coordinate-only tracks show distance over time, and untimed
-coordinate-only tracks get a compact route scrubber. See the
+coordinate-only tracks get a compact route scrubber. Narrowly identified suspect
+segments get a reversible interpretation with an inline explanation; the
+original download and provider transfers stay unchanged. See the
 [missing-data result table](docs/gpx-data-quality.md#resulting-chart).
 
 ### Send a saved track to another mapping app
