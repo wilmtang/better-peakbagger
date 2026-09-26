@@ -84,9 +84,9 @@ try {
             input.onchange=async()=>{window.handoffs++;window.receivedName=input.files[0].name;window.received=await input.files[0].text();
                 ${alltrailsMode === 'stalled' ? '' : 'const label=document.createElement(\'div\');label.title=input.files[0].name;label.textContent=input.files[0].name;dialog.append(label);const upload=document.createElement(\'button\');upload.textContent=\'Upload\';upload.onclick=()=>window.uploads++;dialog.append(upload);'}
             };document.body.append(dialog);
-            // Model a separately mounted upload control, without depending on
-            // the provider's accessibility copy to identify that control.
-            setTimeout(()=>dialog.append(input),0);
+            // Live AllTrails uses a Dropzone input portaled under body.
+            input.className='dz-hidden-input';
+            setTimeout(()=>document.body.append(input),0);
         };
         </script></body></html>`;
     const certificate = await createFixtureCertificate({ label: 'map-handoff' });
@@ -175,7 +175,15 @@ try {
     await waitForCondition(async () => {
         const text = await source.locator('.bpb-map-handoff-control').innerText();
         return /Ready in onX/.test(text) ? text : null;
-    }, { description: 'the saved ascent to report onX ready', timeoutMs: 35_000 });
+    }, { description: 'the saved ascent to report onX ready', timeoutMs: 35_000 }).catch(async error => {
+        error.message += `\nSource: ${await source.locator('.bpb-map-handoff-control').innerText()}`;
+        for (const page of context.pages()) {
+            if (page.url().startsWith('https://backcountry.onxmaps.com/')) {
+                error.message += `\nonX: ${page.url()} ${await page.locator('body').innerText()}`;
+            }
+        }
+        throw error;
+    });
     const onx = await waitForCondition(async () => context.pages().find(
         page => page.url().startsWith('https://backcountry.onxmaps.com/'),
     ) || null, { description: 'the onX import tab' });

@@ -20,6 +20,8 @@ const run = async ({
     inputLabel = 'hidden file upload',
     delayedInput = false,
     duplicateInput = false,
+    portal = false,
+    portalClass = 'dz-hidden-input',
     accept = '.gpx,.GPX,.fit',
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>${before}<button id="open">Upload a route</button></body>`, {
@@ -61,8 +63,10 @@ const run = async ({
         });
         win.document.body.append(dialog);
         const mount = () => {
-            dialog.append(input);
-            if (duplicateInput) dialog.append(input.cloneNode());
+            const parent = portal ? win.document.body : dialog;
+            if (portal) input.className = portalClass;
+            parent.append(input);
+            if (duplicateInput) parent.append(input.cloneNode());
         };
         if (delayedInput) win.setTimeout(mount, 25);
         else mount();
@@ -94,6 +98,8 @@ for (const options of [
     { inputLabel: 'hidden file upload', delayedInput: true },
     { inputLabel: null, delayedInput: false },
     { inputLabel: 'Browse files', delayedInput: false },
+    { portal: true, delayedInput: true },
+    { portal: true, before: '<input type="file" class="dz-hidden-input" accept=".gpx">' },
 ]) {
     test(`AllTrails accepts its scoped GPX control: ${JSON.stringify(options)}`, async () => {
         const { result, handoffs, receivedText, uploadClicks } = await run({
@@ -107,13 +113,22 @@ for (const options of [
 }
 
 test('AllTrails does not supply an ambiguous or non-GPX file control', async () => {
-    for (const options of [{ duplicateInput: true }, { accept: 'image/*' }]) {
+    for (const options of [{ duplicateInput: true }, { accept: 'image/*' },
+        { portal: true, duplicateInput: true }, { portal: true, accept: 'image/*' }]) {
         const { result, handoffs, uploadClicks } = await run(options);
         assert.equal(result.code, 'ambiguous-input');
         assert.equal(result.supplied, false);
         assert.equal(handoffs, 0);
         assert.equal(uploadClicks, 0);
     }
+});
+
+test('AllTrails never borrows an unrelated body-level file input', async () => {
+    const { result, handoffs } = await run({ portal: true, portalClass: 'unrelated',
+        before: '<input type="file" class="dz-hidden-input" accept=".gpx">' });
+    assert.equal(result.code, 'importer-unavailable');
+    assert.equal(result.supplied, false);
+    assert.equal(handoffs, 0);
 });
 
 test('AllTrails adapter sends no file when page identity or importer state is ambiguous', async () => {
