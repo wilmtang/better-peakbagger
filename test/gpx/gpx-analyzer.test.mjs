@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
+import { suspectSegments, segmentsGpx } from '../helpers/suspect-gpx.mjs';
 import { waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -1549,8 +1550,8 @@ test('GPX analyzer safely sequences reversed multi-day segments without reorderi
     assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
     assert.match(analysisText(), /Times in the mountain’s local time \(PDT\)/,
         'mountain time must come from the earliest route point, not the first appended segment');
-    assert.match(analysisText(), /Possible Camping: Day 1 \(47\.10000, -121\.10000\)/,
-        'camping inference must use the last chronological point before the local day boundary');
+    assert.doesNotMatch(analysisText(), /Possible Camping/,
+        'disconnected recordings do not establish a campsite between them');
     assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
         [[40, -105], [40.1, -105.1]],
         [[47, -121], [47.1, -121.1]]
@@ -2277,4 +2278,77 @@ test('source point count includes excluded coordinates and uses singular for one
         assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${expected}`);
         dom.window.close();
     }
+});
+
+test('suspect segments are reversible across metrics, source identities, overlays and terrain', async () => {
+    const source = segmentsGpx(suspectSegments());
+    const { dom, chartConfig, setActiveElements, polylineCalls, postedMessages } =
+        await loadElevationAnalyzer(source, { withMap: true, settings: { enable3dMap: true } });
+    const { window } = dom;
+    const doc = window.document;
+    try {
+        await waitFor(dom, () => chartConfig() !== null && polylineCalls.length > 0);
+        const panel = doc.querySelector('#bpb-gpx-analysis');
+        const stats = panel.querySelector('.bpb-gpx-stats');
+        const disclosure = panel.querySelector('.bpb-gpx-segment-disclosure');
+        const details = panel.querySelector('#bpb-gpx-segment-details');
+        const toggle = details.querySelector('button');
+        const canvas = panel.querySelector('canvas');
+        assert.match(stats.textContent, /Time: 12h 32m/);
+        assert.equal(disclosure.textContent, '2 segments excluded ▾');
+        assert.match(panel.querySelector('.bpb-gpx-point-count').textContent, /113 points/);
+        assert.equal(details.hidden, true);
+        disclosure.click();
+        assert.equal(disclosure.getAttribute('aria-expanded'), 'true');
+        assert.equal(details.hidden, false);
+        assert.match(details.textContent, /56 points used; 57 points excluded/);
+        assert.match(details.textContent, /GPX download and files sent to map providers are unchanged/);
+        assert.equal(polylineCalls.at(-1).latLngs.length, 56);
+        doc.querySelector('#bpb-terrain-toggle').click();
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
+        const selectId = id => {
+            const index = chartConfig().data.datasets[0].data.findIndex(p => p._raw?.sourcePointId === id);
+            assert.ok(index >= 0, `missing source point ${id}`);
+            setActiveElements([{ datasetIndex: 0, index }]);
+            canvas.dispatchEvent(new window.MouseEvent('click'));
+        };
+        selectId('1:20');
+        toggle.click();
+        assert.match(stats.textContent, /Time: 68h 28m/);
+        assert.match(canvas.getAttribute('aria-label'), /46.01000/);
+        assert.match(details.textContent, /113 points used; 0 points excluded/);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 2);
+        assert.doesNotMatch(panel.querySelector('.bpb-gpx-substats').textContent, /Possible Camping/);
+        assert.equal(toggle.textContent, 'Use interpreted view');
+        selectId('2:20');
+        toggle.click();
+        assert.match(stats.textContent, /Time: 12h 32m/);
+        assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls button').disabled, true);
+        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
+        assert.match(panel.querySelector('.bpb-sun-calculator').textContent, /Select a chart point/);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
+        for (let i = 0; i < 4; i++) toggle.click();
+        assert.match(details.textContent, /56 points used; 57 points excluded/);
+        assert.equal(doc.querySelectorAll('.bpb-gpx-segment-disclosure').length, 1);
+        assert.equal(doc.querySelector('a').href, 'https://www.peakbagger.com/demo.gpx');
+        assert.equal(source, segmentsGpx(suspectSegments()));
+        window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
+            data: bridgeSnapshot(window, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
+        await waitFor(dom, () => /miles/.test(stats.textContent));
+        assert.match(stats.textContent, /Time: 12h 32m/);
+        assert.match(panel.querySelector('.bpb-gpx-point-count').textContent, /113 points/);
+    } finally { dom.window.close(); }
+});
+
+test('warning-only segment disclosure never claims to exclude source points', async () => {
+    const segments = suspectSegments().slice(1);
+    segments.push(structuredClone(segments[0]));
+    const { dom, chartConfig } = await loadElevationAnalyzer(segmentsGpx(segments));
+    try {
+        await waitFor(dom, () => chartConfig() !== null);
+        const doc = dom.window.document;
+        assert.match(doc.querySelector('.bpb-gpx-segment-disclosure').textContent, /1 segment to review/);
+        assert.match(doc.querySelector('#bpb-gpx-segment-details').textContent, /168 points used/);
+        assert.equal(doc.querySelector('.bpb-gpx-segment-view').hidden, true);
+    } finally { dom.window.close(); }
 });

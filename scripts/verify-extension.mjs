@@ -42,6 +42,8 @@ import {
     verificationViewport,
     waitForCondition
 } from './browser-verification-fixtures.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
@@ -80,7 +82,7 @@ try {
     fixture = await createBrowserFixtureServer({
         temporaryRoot: profile,
         analyzerGpx: capitolRegressionGpx,
-        analyzerGpxByCase: { scale: createScaleAnalyzerGpx() },
+        analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
         analyzerDelayMs: Math.max(0, Number(process.env.BPB_VERIFY_ANALYZER_DELAY_MS) || 0),
     });
     resources.defer('Chrome browser fixture', () => fixture.close());
@@ -2626,6 +2628,37 @@ try {
         }
     } finally {
         await offPage.setViewportSize(metricViewport);
+    }
+    const segmentPage = await context.newPage();
+    const segmentSettings = await context.newPage();
+    await segmentSettings.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const savedSegmentTheme = await segmentSettings.evaluate(async () =>
+        (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.theme || 'system');
+    try {
+        for (const theme of ['light', 'dark']) {
+            await segmentSettings.evaluate(async value => {
+                const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+            }, theme);
+            await verifyGpxSegments({
+                navigate: () => segmentPage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-suspect`),
+                evaluate: fn => segmentPage.evaluate(fn),
+                resize: (width, height) => segmentPage.setViewportSize({ width, height }),
+                click: selector => segmentPage.locator(selector).click(),
+                press: (selector, key) => segmentPage.locator(selector).press(key),
+                wait: fn => segmentPage.waitForFunction(fn),
+                screenshot: process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT ? name => segmentPage.locator('#bpb-gpx-analysis').screenshot({
+                    path: `${process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT}.${theme}.${name}.png`,
+                }) : null,
+            });
+        }
+    } finally {
+        await segmentSettings.evaluate(async theme => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme } });
+        }, savedSegmentTheme);
+        await segmentSettings.close();
+        await segmentPage.close();
     }
     const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
     const capitolChartState = await offPage.evaluate(readAnalyzerChartState);

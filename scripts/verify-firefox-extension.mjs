@@ -40,6 +40,8 @@ import {
     quitFirefoxDriver,
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
@@ -168,7 +170,7 @@ async function main() {
         const fixture = await createBrowserFixtureServer({
             temporaryRoot,
             analyzerGpx: capitolRegressionGpx,
-            analyzerGpxByCase: { scale: createScaleAnalyzerGpx() },
+            analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
         });
         resources.defer('Firefox browser fixture', () => fixture.close());
         const buddyListFixture = await readFile(
@@ -1293,6 +1295,29 @@ async function main() {
         assertState(unitFocusState.focused && unitFocusState.outlineStyle === 'solid'
             && unitFocusState.outlineWidth === '3px' && unitFocusState.outlineOffset === '2px',
         'Firefox unit selector lacks a non-color focus indicator', unitFocusState);
+        const segmentReturnHandle = await driver.getWindowHandle();
+        await driver.switchTo().newWindow('tab');
+        try {
+            await verifyGpxSegments({
+                navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-suspect`),
+                evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                resize: (width, height) => driver.manage().window().setRect({ width, height }),
+                click: selector => driver.findElement(By.css(selector)).click(),
+                press: async (selector, key) => {
+                    const element = await driver.findElement(By.css(selector));
+                    await driver.executeScript('arguments[0].focus()', element);
+                    await element.sendKeys(key === 'Enter' ? Key.ENTER : Key.ARROW_RIGHT);
+                },
+                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox segment interpretation'),
+                screenshot: process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT ? name => writeElementScreenshot(
+                    driver, '#bpb-gpx-analysis', `${process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT}.${name}.png`,
+                ) : null,
+            });
+        } finally {
+            await driver.close();
+            await driver.switchTo().window(segmentReturnHandle);
+            await driver.manage().window().setRect(verificationViewport);
+        }
         const analyzerHandle = await driver.getWindowHandle();
         await driver.switchTo().newWindow('tab');
         await driver.manage().window().setRect({ width: 520, height: 760 });
