@@ -48,6 +48,21 @@ test('the shared edit-form reader builds one complete raw snapshot with safe lis
     });
 });
 
+test('the shared edit-form reader retains provisional negative peak identities', () => {
+    const result = Source.snapshotFromEditDocument({
+        doc: editDocument(),
+        editUrl: 'https://www.peakbagger.com/climber/AscentEdit.aspx?aid=7654321',
+        ascentId: 7654321,
+        peakId: -33614,
+        climberId: 900001,
+        fallbackPeakName: "Devil's Thumb",
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.snapshot.peak, { id: -33614, name: "Devil's Thumb" });
+    assert.equal(result.identity.peakId, -33614);
+});
+
 test('the shared edit-form reader rejects incomplete forms and identity mismatches', () => {
     const incomplete = Source.snapshotFromEditDocument({
         doc: new JSDOM('<form id="Form1"></form>').window.document,

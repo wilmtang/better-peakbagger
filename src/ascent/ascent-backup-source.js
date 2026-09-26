@@ -43,7 +43,9 @@ export const snapshotFromEditDocument = ({
     catch { return { ok: false, code: 'identity', reason: 'The ascent edit URL was invalid.' }; }
 
     if (Number.isInteger(ascentId) && ascentId > 0) params.set('aid', String(ascentId));
-    if (Number.isInteger(peakId) && peakId > 0) params.set('pid', String(peakId));
+    // Peakbagger assigns negative ids to provisional peaks; zero is the only
+    // integer sentinel that cannot identify a real peak.
+    if (Number.isInteger(peakId) && peakId !== 0) params.set('pid', String(peakId));
     if (Number.isInteger(climberId) && climberId > 0) params.set('cid', String(climberId));
 
     const built = Snapshot.build({
