@@ -117,6 +117,7 @@ const ui = {
     upload: byId('upload-insert'),
     exportSummary: byId('export-summary'),
     saveStatus: byId('save-status'),
+    saveConflictedDraft: byId('save-conflicted-draft'),
     uploadFormat: byId('upload-format'),
     originalFormat: byId('upload-format-original'),
     jpegQualityControl: byId('jpeg-quality-control'),
@@ -176,6 +177,7 @@ let autosaveTimer = null;
 let draftRevision = 0;
 let draftDirty = false;
 let draftWriteQueue = Promise.resolve(true);
+let replacingOtherTab = false;
 let teardownStarted = false;
 let sessionKey = '';
 let configuredKey = false;
@@ -528,6 +530,8 @@ const updateEditorControls = () => {
         || selectedVertex == null || route.geometry.points.length <= 2;
     ui.upload.disabled = storeReloadRequired || busy || localPhotoReturned || !project
         || PUBLISHED_STATES.includes(photo?.remote.state);
+    ui.saveConflictedDraft.disabled = storeReloadRequired || busy || localPhotoReturned
+        || replacingOtherTab;
     ui.showEditor.disabled = storeReloadRequired || busy;
     ui.showLibrary.disabled = storeReloadRequired || busy;
     ui.file.disabled = storeReloadRequired || busy;
@@ -909,7 +913,7 @@ const enqueueDraftWrite = write => {
     return operation;
 };
 
-const persistDraft = async ({ required = false } = {}) => {
+const persistDraft = async ({ required = false, replaceOtherTab = false } = {}) => {
     clearTimeout(autosaveTimer);
     autosaveTimer = null;
     // Upload freezes editor mutations before taking its required snapshot. Let
@@ -942,10 +946,27 @@ const persistDraft = async ({ required = false } = {}) => {
     setSaveStatus('Saving locally…');
     return enqueueDraftWrite(async () => {
         try {
-            const writePhoto = photo?.localId === nextPhoto.localId
+            let writePhoto = photo?.localId === nextPhoto.localId
                 && photo.revision > nextPhoto.revision
                 ? Library.cleanPhoto({ ...nextPhoto, revision: photo.revision })
                 : nextPhoto;
+            if (replaceOtherTab) {
+                const latest = await store.getBundle(nextPhoto.localId);
+                if (!latest.photo || latest.photo.deletedAt || latest.photo.remote.state !== 'draft'
+                    || !latest.photo.assets.originalRetained || !latest.photo.assets.projectRetained
+                    || !latest.project
+                    || latest.photo.source.sha256 !== nextPhoto.source.sha256
+                    || !Project.matchingImageDimensions(latest.project.image, nextPhoto.source)) {
+                    throw new Store.PhotoStoreConflictError(nextPhoto.localId,
+                        'This photo can no longer be replaced. Your edits are still open in this tab.');
+                }
+                // Keep references and backup state added by the other tab;
+                // replace only the editor-owned title, caption, and project.
+                writePhoto = cleanDraftFromFields({
+                    now, project: snapshot.project, photo: latest.photo,
+                    original: snapshot.original, title: snapshot.title, caption: snapshot.caption,
+                });
+            }
             const storedPhoto = await store.putDraft({
                 photo: writePhoto,
                 project: nextProject,
@@ -956,6 +977,7 @@ const persistDraft = async ({ required = false } = {}) => {
             if (stillCurrent) {
                 photo = storedPhoto;
                 project = nextProject;
+                ui.saveConflictedDraft.hidden = true;
                 setSaveStatus('Saved on this device');
             } else if (!photo && project?.localId === storedPhoto.localId) {
                 // The first save may finish after the user has already edited
@@ -976,8 +998,10 @@ const persistDraft = async ({ required = false } = {}) => {
             const quotaExceeded = error?.name === 'QuotaExceededError';
             if (stillCurrent) {
                 draftDirty = true;
+                ui.saveConflictedDraft.hidden = !(error instanceof Store.PhotoStoreConflictError)
+                    || storeReloadRequired;
                 setSaveStatus(error instanceof Store.PhotoStoreConflictError
-                    ? 'Changed in another tab'
+                    ? 'Not saved · changed in another tab. Your edits are still here.'
                     : quotaExceeded
                         ? 'Not saved · browser storage is full'
                         : 'Could not save locally');
@@ -989,6 +1013,7 @@ const persistDraft = async ({ required = false } = {}) => {
                 }
             }
             if (error instanceof Store.PhotoStoreConflictError) {
+                if (replaceOtherTab) toast(error.message, { duration: 9000 });
                 if (required) toast(error.message, { duration: 9000 });
                 return false;
             }
@@ -1839,6 +1864,7 @@ const loadBundle = async bundle => {
     // this editor state or replace this status with its own result.
     draftRevision += 1;
     draftDirty = false;
+    ui.saveConflictedDraft.hidden = true;
     history = [];
     future = [];
     selectedId = null;
@@ -1917,6 +1943,7 @@ const chooseFile = async file => {
         thumbnailBlob = nextThumbnail;
         project = nextProject;
         photo = null;
+        ui.saveConflictedDraft.hidden = true;
         selectedId = null;
         selectedVertex = null;
         history = [];
@@ -3133,6 +3160,15 @@ const bindEvents = () => {
         });
     });
     ui.upload.addEventListener('click', () => void uploadAndInsert());
+    ui.saveConflictedDraft.addEventListener('click', () => {
+        if (editorMutationLocked() || replacingOtherTab) return;
+        replacingOtherTab = true;
+        updateEditorControls();
+        void persistDraft({ replaceOtherTab: true }).finally(() => {
+            replacingOtherTab = false;
+            updateEditorControls();
+        });
+    });
     ui.uploadFormat.addEventListener('change', () => {
         uploadFormat = ui.uploadFormat.value;
         applyUploadSettings();

@@ -259,6 +259,11 @@ const createPhotoStore = async options => {
                 throw new PhotoStoreConflictError(cleanPhoto.localId,
                     'This photo was deleted in another tab. Restore it before editing.');
             }
+            if (editableOnly && current && (!EDITABLE_STATES.has(current.remote.state)
+                || current.source.sha256 !== cleanPhoto.source.sha256)) {
+                throw new PhotoStoreConflictError(cleanPhoto.localId,
+                    'This photo can no longer be edited in place.');
+            }
             storedPhoto = Library.cleanPhoto({
                 ...cleanPhoto,
                 revision: nextRevision(current, tombstone),

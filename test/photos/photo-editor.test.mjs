@@ -915,6 +915,48 @@ test('a late autosave completion cannot replace a newer editor revision', async 
     assert.deepEqual(page.errors, []);
 });
 
+test('a conflicting autosave keeps local edits and replaces the newer draft only on request', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    const otherTab = await Store.createPhotoStore({ indexedDB });
+    t.after(() => otherTab.close());
+    const [initial] = await otherTab.listPhotos();
+    const referenced = await otherTab.putPhoto(Library.addReference(initial, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: new Date().toISOString(),
+    }));
+    await otherTab.putPhoto(Library.cleanPhoto({
+        ...referenced, title: 'Other tab title', updatedAt: new Date().toISOString(),
+    }));
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await waitFor(page.dom, () => page.doc.getElementById('save-conflicted-draft').hidden === false);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.doc.getElementById('save-status').textContent, /Not saved.*another tab/i);
+    assert.equal((await otherTab.getBundle(initial.localId)).project.objects.length, 0,
+        'autosave does not silently overwrite the other tab');
+
+    const title = page.doc.getElementById('photo-title');
+    title.value = 'My unsaved title';
+    title.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+    page.click(page.doc.getElementById('save-conflicted-draft'));
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device').catch(error => {
+        throw new Error(`${error.message}; status=${page.doc.getElementById('save-status').textContent}; `
+            + `toast=${page.doc.getElementById('toast-message').textContent}; `
+            + `errors=${page.errors.join(' | ')}`);
+    });
+    const saved = await otherTab.getBundle(initial.localId);
+    assert.equal(saved.project.objects.length, 1);
+    assert.equal(saved.photo.title, 'My unsaved title');
+    assert.deepEqual(saved.photo.references, referenced.references,
+        'the override preserves metadata written by the other tab');
+    assert.equal(page.doc.getElementById('save-conflicted-draft').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
 test('pagehide flushes an edit before its autosave debounce expires', async t => {
     const page = await loadEditor();
     const { doc, win } = page;

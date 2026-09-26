@@ -833,6 +833,32 @@ test('a stale autosave cannot resurrect a photo deleted in another tab', async (
     second.close();
 });
 
+test('a draft write cannot replace a published photo even with its current revision', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(), name: 'photo-store-published-draft-guard',
+    });
+    const input = fixture();
+    const draft = await store.putDraft(input);
+    const published = await store.putPhoto(Library.completeUpload(draft, {
+        mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH,
+    }, {
+        providerId: 'abc',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/abc',
+        thumbnailUrl: 'https://i.ibb.co/a/thumb.jpg',
+        mediumUrl: null, uploadedAt: LATER, expiresAt: null,
+    }, LATER));
+    await assert.rejects(store.putDraft({
+        ...input,
+        photo: Library.cleanPhoto({ ...draft, revision: published.revision, title: 'Stale edit' }),
+    }), error => error instanceof Store.PhotoStoreConflictError);
+    const current = await store.getBundle(draft.localId);
+    assert.equal(current.photo.remote.state, 'uploaded');
+    assert.equal(current.photo.title, draft.title);
+    store.close();
+});
+
 test('a backup stamp conflict preserves a newer report reference and succeeds after reload', async () => {
     const indexedDB = new IDBFactory();
     const first = await Store.createPhotoStore({ indexedDB, name: 'photo-store-metadata-race' });
