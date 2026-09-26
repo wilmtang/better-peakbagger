@@ -291,7 +291,7 @@ textarea {
 
 .editor-body {
   display: grid;
-  height: 720px;
+  height: calc(var(--photo-viewport-height, clamp(360px, 60vh, 640px)) + 110px);
   grid-template-columns: 138px minmax(0, 1fr) 236px;
   min-height: 0;
 }
@@ -346,21 +346,23 @@ kbd {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: 44px minmax(0, 1fr) 66px;
   background: var(--dark-bg);
 }
 
 .photo-viewport {
-  display: grid;
-  overflow: auto;
+  position: relative;
+  overflow: hidden;
   min-height: 0;
-  place-items: center;
   padding: 24px;
   touch-action: none;
+  overscroll-behavior: contain;
 }
 
 .photo-stage {
-  position: relative;
+  position: absolute;
+  left: 0;
+  top: 0;
   width: min(100%, 1100px);
   overflow: hidden;
   border-radius: 4px;
@@ -429,7 +431,8 @@ kbd {
 
 .viewport-actions {
   display: flex;
-  min-height: 50px;
+  height: 66px;
+  overflow: auto;
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
@@ -921,7 +924,7 @@ kbd {
   }
 
   .photo-viewport {
-    height: clamp(420px, 65vh, 600px);
+    height: var(--photo-viewport-height, clamp(360px, 60vh, 640px));
   }
 
   .upload-options {
@@ -1206,4 +1209,92 @@ kbd {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+
+/* The camera clips inside this frame. Zoom never participates in grid sizing. */
+.editor-workspace { max-width: 100%; }
+.tool-rail { overflow: auto; }
+.photo-viewport.can-pan,
+.photo-viewport.can-pan #photo-overlay [data-bpb-object] { cursor: grab; }
+.photo-viewport.is-panning,
+.photo-viewport.is-panning #photo-overlay [data-bpb-object] { cursor: grabbing; }
+.view-controls {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--dark-border);
+  background: var(--card);
+}
+.view-controls button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+}
+.view-controls button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.view-controls button:focus-visible, .view-controls summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.view-controls button, .view-controls summary {
+  padding: 4px 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.view-controls button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--link);
+}
+.zoom-control { width: 82px; }
+.zoom-control select { padding: 4px; font-size: 12px; }
+.viewport-size-control { margin-left: auto; }
+.viewport-size-control summary { cursor: pointer; }
+.viewport-size-panel {
+  position: absolute;
+  right: 6px;
+  top: 42px;
+  display: grid;
+  gap: 10px;
+  width: 220px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 560px) {
+  .view-controls { gap: 2px; padding-inline: 6px; }
+  .view-controls #fit-photo { display: none; }
+  .zoom-control { width: 74px; }
+}
+
+/* User-chosen widths can be narrower than the browser's media breakpoint. */
+.editor-workspace { container-type: inline-size; container-name: photo-editor; }
+.viewport-column { container-type: inline-size; container-name: photo-canvas; }
+@container photo-canvas (max-width: 360px) {
+  .view-controls { gap: 2px; padding-inline: 6px; }
+  .view-controls #fit-photo { display: none; }
+  .zoom-control { width: 70px; }
+  .view-controls button, .view-controls summary { padding-inline: 5px; }
+}
+@container photo-editor (max-width: 1050px) {
+  .editor-footer { grid-template-columns: 1fr; }
+  .editor-summary { grid-row: auto; }
+}
+@container photo-editor (max-width: 900px) {
+  .upload-options { grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1.2fr); }
+  .upload-estimate { grid-column: 1 / -1; }
+}
+@container photo-editor (max-width: 560px) {
+  .upload-options { grid-template-columns: 1fr; }
+  .upload-options > .upload-option:first-child, #jpeg-quality-control, .upload-estimate { grid-column: auto; }
+  .footer-actions { grid-template-columns: 1fr 1fr; }
+  .editor-footer .report-width-control { grid-column: 1 / -1; }
+  #clear-annotations { grid-column: 1; justify-self: stretch; }
+  #upload-insert { grid-column: 2; justify-self: stretch; }
 }

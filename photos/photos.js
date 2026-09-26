@@ -69,6 +69,15 @@ const ui = {
     undo: byId('undo'),
     redo: byId('redo'),
     viewport: byId('photo-viewport'),
+    zoom: byId('photo-zoom'),
+    zoomCustom: byId('zoom-custom'),
+    zoomIn: byId('zoom-in'),
+    zoomOut: byId('zoom-out'),
+    fit: byId('fit-photo'),
+    pan: byId('pan-photo'),
+    viewportWidth: byId('viewport-width'),
+    viewportHeight: byId('viewport-height'),
+    resetViewport: byId('reset-viewport'),
     stage: byId('photo-stage'),
     sourceImage: byId('source-image'),
     overlay: byId('photo-overlay'),
@@ -189,26 +198,95 @@ let exportEstimateJob = null;
 let exportEstimatePending = false;
 let photoDragDepth = 0;
 
+let camera = { fit: true, scale: 1, x: 0, y: 0 };
+let handMode = false;
+let spacePan = false;
+let panSession = null;
+let viewportSize = { width: null, height: null };
+const VIEWPORT_KEY = 'bpbPhotoViewport';
+const viewportBounds = () => ({
+    width: ui.viewport.clientWidth || 1148,
+    height: ui.viewport.clientHeight || 873,
+});
 const applyReportWidthPreview = () => {
-    if (!project) {
-        ui.stage.style.removeProperty('width');
-        ui.stage.style.removeProperty('max-width');
-        return;
-    }
-    // Fit both dimensions inside the editing viewport. Width-only sizing made
-    // portrait photos taller than the canvas and hid most of the image below
-    // the fold. A report-width choice remains an additional upper bound.
-    const reportWidth = RETURN_TOKEN
-        ? ReportSize.displayWidth(project.image.width, reportImageWidth) ?? project.image.width
-        : 1100;
+    if (!project) return;
+    const bounds = viewportBounds();
     const style = getComputedStyle(ui.viewport);
-    const availableHeight = ui.viewport.clientHeight
+    const availableWidth = bounds.width
+        - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const availableHeight = bounds.height
         - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
-    const fitWidth = availableHeight > 0
-        ? availableHeight * project.image.width / project.image.height
-        : 1100;
-    ui.stage.style.width = '100%';
-    ui.stage.style.maxWidth = `${Math.min(1100, reportWidth, fitWidth)}px`;
+    if (camera.fit) {
+        const reportWidth = RETURN_TOKEN
+            ? ReportSize.displayWidth(project.image.width, reportImageWidth) ?? project.image.width
+            : 1100;
+        camera.scale = Math.min(availableWidth, 1100, reportWidth,
+            availableHeight * project.image.width / project.image.height) / project.image.width;
+        camera.x = 0;
+        camera.y = 0;
+    }
+    const width = project.image.width * camera.scale;
+    const height = project.image.height * camera.scale;
+    // Keep at least a portion of the photo reachable after panning or resizing.
+    const maxX = Math.max(0, (width + bounds.width) / 2 - 48);
+    const maxY = Math.max(0, (height + bounds.height) / 2 - 48);
+    camera.x = Math.max(-maxX, Math.min(maxX, camera.x));
+    camera.y = Math.max(-maxY, Math.min(maxY, camera.y));
+    ui.stage.style.width = `${width}px`;
+    ui.stage.style.maxWidth = `${width}px`;
+    ui.stage.style.transform = `translate(${(bounds.width - width) / 2 + camera.x}px, ${(bounds.height - height) / 2 + camera.y}px)`;
+    const token = String(camera.scale);
+    const exact = [...ui.zoom.options].some(option => option.value === token);
+    ui.zoomCustom.textContent = `${Math.round(camera.scale * 100)}%`;
+    ui.zoomCustom.hidden = camera.fit || exact;
+    ui.zoom.value = camera.fit ? 'fit' : exact ? token : 'custom';
+    ui.zoomIn.disabled = camera.scale >= 8;
+    ui.zoomOut.disabled = camera.scale <= 0.01;
+};
+const zoomPhoto = (scale, anchor = null) => {
+    if (!project || drawingSession || dragSession || panSession) return;
+    const next = Math.min(8, Math.max(0.01, scale));
+    const bounds = viewportBounds();
+    const at = anchor || { x: bounds.width / 2, y: bounds.height / 2 };
+    const ratio = next / camera.scale;
+    camera.x = at.x - bounds.width / 2 - (at.x - bounds.width / 2 - camera.x) * ratio;
+    camera.y = at.y - bounds.height / 2 - (at.y - bounds.height / 2 - camera.y) * ratio;
+    camera.fit = false;
+    camera.scale = next;
+    applyReportWidthPreview();
+};
+const fitPhoto = () => {
+    if (drawingSession || dragSession || panSession) return;
+    camera.fit = true;
+    applyReportWidthPreview();
+};
+const updatePanCursor = () => {
+    ui.pan.setAttribute('aria-pressed', String(handMode));
+    ui.viewport.classList.toggle('can-pan', handMode || spacePan);
+    ui.viewport.classList.toggle('is-panning', !!panSession);
+};
+const endPan = () => {
+    const pointerId = panSession?.pointerId;
+    panSession = null;
+    if (ui.viewport.hasPointerCapture?.(pointerId)) ui.viewport.releasePointerCapture(pointerId);
+    updatePanCursor();
+};
+const applyViewportSize = () => {
+    const sidebars = window.innerWidth > 900 ? 374 : 0;
+    ui.editorWorkspace.style.width = viewportSize.width ? `${viewportSize.width + sidebars + 2}px` : '';
+    if (viewportSize.height) ui.editorWorkspace.style.setProperty('--photo-viewport-height', `${viewportSize.height}px`);
+    else ui.editorWorkspace.style.removeProperty('--photo-viewport-height');
+    ui.viewportWidth.value = viewportSize.width ?? '';
+    ui.viewportHeight.value = viewportSize.height ?? '';
+    applyReportWidthPreview();
+};
+const cleanViewportDimension = (value, min, max) =>
+    Number.isFinite(value) && value >= min && value <= max ? Math.round(value) : null;
+const saveViewportSize = () => {
+    applyViewportSize();
+    const saved = { ...viewportSize };
+    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set({ [VIEWPORT_KEY]: saved }))
+        .catch(() => toast('Viewport size applies now, but could not be saved on this device.'));
 };
 
 const setReportImageWidth = width => {
@@ -272,7 +350,12 @@ const rememberTool = (type, patch) => {
 };
 const loadToolPreferences = async () => {
     try {
-        const stored = await ext.storage.local.get(Project.OBJECT_TYPES.map(preferenceKey));
+        const stored = await ext.storage.local.get([...Project.OBJECT_TYPES.map(preferenceKey), VIEWPORT_KEY]);
+        viewportSize = {
+            width: cleanViewportDimension(stored[VIEWPORT_KEY]?.width, 280, 2400),
+            height: cleanViewportDimension(stored[VIEWPORT_KEY]?.height, 240, 1400),
+        };
+        applyViewportSize();
         for (const type of Project.OBJECT_TYPES) {
             toolPreferences[type] = ToolPreferences.clean(type, stored[preferenceKey(type)]);
         }
@@ -767,6 +850,9 @@ const defaultTitle = name => String(name || 'Photo')
     .slice(0, Library.TITLE_LIMIT) || 'Photo';
 
 const setSourceDisplay = blob => {
+    camera = { fit: true, scale: 1, x: 0, y: 0 };
+    endPan();
+    cancelDrawing();
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     sourceUrl = URL.createObjectURL(blob);
     ui.sourceImage.src = sourceUrl;
@@ -1237,6 +1323,8 @@ const toolName = tool => document.querySelector(`[data-tool="${tool}"] .tool-nam
 const setTool = tool => {
     if (editorMutationLocked()) return;
     cancelDrawing();
+    handMode = false;
+    updatePanCursor();
     activeTool = tool;
     document.querySelectorAll('[data-tool]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
@@ -2899,7 +2987,69 @@ const bindEvents = () => {
     if (typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(applyReportWidthPreview).observe(ui.viewport);
     }
-    window.addEventListener('resize', applyReportWidthPreview);
+    window.addEventListener('resize', applyViewportSize);
+    ui.zoomIn.addEventListener('click', () => zoomPhoto(camera.scale * 1.25));
+    ui.zoomOut.addEventListener('click', () => zoomPhoto(camera.scale / 1.25));
+    ui.fit.addEventListener('click', fitPhoto);
+    ui.zoom.addEventListener('change', () => {
+        if (ui.zoom.value === 'fit') fitPhoto();
+        else if (ui.zoom.value !== 'custom') zoomPhoto(Number(ui.zoom.value));
+    });
+    ui.pan.addEventListener('click', () => {
+        cancelDrawing();
+        if (routeSession) finishRoute(false);
+        handMode = !handMode;
+        updatePanCursor();
+    });
+    ui.viewportWidth.addEventListener('change', () => {
+        viewportSize.width = cleanViewportDimension(Number(ui.viewportWidth.value), 280, 2400);
+        saveViewportSize();
+    });
+    ui.viewportHeight.addEventListener('change', () => {
+        viewportSize.height = cleanViewportDimension(Number(ui.viewportHeight.value), 240, 1400);
+        saveViewportSize();
+    });
+    ui.resetViewport.addEventListener('click', () => {
+        viewportSize = { width: null, height: null };
+        saveViewportSize();
+    });
+    ui.viewport.addEventListener('pointerdown', event => {
+        if (!project || drawingSession || dragSession || panSession
+            || !(event.button === 1 || (event.button === 0 && (handMode || spacePan)))) return;
+        event.preventDefault();
+        event.stopPropagation();
+        camera.fit = false;
+        panSession = { pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+            startX: camera.x, startY: camera.y };
+        ui.viewport.setPointerCapture?.(event.pointerId);
+        updatePanCursor();
+    }, true);
+    ui.viewport.addEventListener('pointermove', event => {
+        if (!panSession || event.pointerId !== panSession.pointerId) return;
+        camera.x = panSession.startX + event.clientX - panSession.x;
+        camera.y = panSession.startY + event.clientY - panSession.y;
+        applyReportWidthPreview();
+    });
+    ui.viewport.addEventListener('pointerup', endPan);
+    ui.viewport.addEventListener('pointercancel', endPan);
+    ui.viewport.addEventListener('lostpointercapture', endPan);
+    ui.viewport.addEventListener('wheel', event => {
+        if (!project) return;
+        event.preventDefault();
+        if (drawingSession || dragSession || panSession) return;
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? ui.viewport.clientHeight : 1;
+        if (event.ctrlKey || event.metaKey || event.altKey) {
+            const rect = ui.viewport.getBoundingClientRect();
+            zoomPhoto(camera.scale * Math.exp(-Math.max(-200, Math.min(200, event.deltaY * unit)) * 0.01),
+                { x: event.clientX - rect.left, y: event.clientY - rect.top });
+        } else {
+            camera.fit = false;
+            camera.x -= event.deltaX * unit;
+            camera.y -= event.deltaY * unit;
+            applyReportWidthPreview();
+        }
+    }, { passive: false });
+    window.addEventListener('blur', () => { spacePan = false; endPan(); cancelDrawing(); });
     ui.showEditor.addEventListener('click', () => setView('editor'));
     ui.showLibrary.addEventListener('click', () => setView('library'));
     ui.saveKey.addEventListener('click', () => void saveCredential());
@@ -3053,7 +3203,19 @@ const bindEvents = () => {
         // next click on the photo dropped a mark they never asked for. Shift is
         // not excluded: it is this page's own "nudge further" modifier.
         if (event.metaKey || event.ctrlKey || event.altKey) return;
+        if (project && ['+', '=', '-', '0', ' ', 'h', 'H'].includes(event.key)) {
+            if (event.key === ' ') {
+                if (event.target.closest?.('button, summary, a')) return;
+                event.preventDefault(); spacePan = true; updatePanCursor();
+            } else if (event.key.toLowerCase() === 'h') {
+                if (!event.repeat) ui.pan.click();
+            }
+            else if (event.key === '0') fitPhoto();
+            else zoomPhoto(camera.scale * (event.key === '-' ? 0.8 : 1.25));
+            return;
+        }
         if (event.key === 'Escape') {
+            if (handMode || panSession) { handMode = false; endPan(); return; }
             // One predictable ladder out of whatever the user is in the middle
             // of: abandon the route, then disarm the tool, then deselect.
             if (drawingSession) cancelDrawing();
@@ -3088,6 +3250,7 @@ const bindEvents = () => {
     // Releasing the key ends the nudge, so a held arrow is one Undo and the
     // next press is another.
     document.addEventListener('keyup', event => {
+        if (event.key === ' ') { spacePan = false; updatePanCursor(); }
         if (event.key.startsWith('Arrow')) endCoalescing();
     });
     document.addEventListener('visibilitychange', () => {

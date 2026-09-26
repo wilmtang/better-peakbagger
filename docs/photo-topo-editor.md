@@ -28,6 +28,26 @@ Undo step. Escape or pointer cancellation discards it. Completed strokes can
 be selected, translated, restyled, duplicated, saved, and exported. Dense stroke
 vertices are deliberately not exposed as the route-point editing list.
 
+## Editor viewport
+
+The view starts in Fit and keeps the image within both available dimensions.
+Percentage zoom uses source pixels (100% is one image pixel per CSS pixel).
+The image stage is absolutely positioned inside a clipped viewport; zoom and
+pan never contribute to editor grid size, project history, or export dimensions.
+Pinch/modifier-wheel zoom anchors the image coordinate beneath the pointer.
+Hand, Space-drag, middle-button drag, and ordinary scrolling pan the view.
+
+Viewport width and height are optional device-local preferences under
+`bpbPhotoViewport`. Automatic width fills the available editor and automatic
+height is 60vh bounded to 360–640 CSS pixels. Explicit widths are capped by the
+available window; container queries keep controls usable at user-chosen sizes.
+
+Focused hidden packaged-browser verification: build, then run
+`node scripts/verify-photo-editor.mjs`. Optional screenshots are written only
+when `BPB_PHOTO_SCREENSHOTS` names an output directory. This check exercises
+real extension storage, zoom/pan/drawing coordinates, stable control geometry,
+resizing, and desktop/narrow layouts without navigating to a live site.
+
 ## User workflow
 
 Double-click an image in the Rich text report to open Photo Topos on that

@@ -963,7 +963,7 @@ test('a report size resizes only the stage preview and is remembered across both
 
     assert.ok(controls.every(control => control.hidden === false));
     assert.deepEqual(selects.map(select => select.value), ['640', '640']);
-    assert.equal(stage.style.width, '100%');
+    assert.equal(stage.style.width, '640px');
     assert.equal(stage.style.maxWidth, '640px');
     assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/,
         'the project and future raster export retain their source dimensions');
@@ -972,7 +972,7 @@ test('a report size resizes only the stage preview and is remembered across both
     selects[0].dispatchEvent(new win.Event('change', { bubbles: true }));
     await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === 320);
     assert.deepEqual(selects.map(select => select.value), ['320', '320']);
-    assert.equal(stage.style.width, '100%');
+    assert.equal(stage.style.width, '320px');
     assert.equal(stage.style.maxWidth, '320px');
     assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
 
@@ -980,7 +980,7 @@ test('a report size resizes only the stage preview and is remembered across both
     selects[1].dispatchEvent(new win.Event('change', { bubbles: true }));
     await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === null);
     assert.deepEqual(selects.map(select => select.value), ['original', 'original']);
-    assert.equal(stage.style.width, '100%');
+    assert.equal(stage.style.width, '1100px');
     assert.equal(stage.style.maxWidth, '1100px',
         'Original remains contained by the editor canvas');
     assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
@@ -2831,6 +2831,87 @@ test('long freehand gestures stay bounded and preserve the release endpoint', as
     page.dom.window.close();
 });
 
+test('zoom and pan are view-only and drawing uses zoomed image coordinates', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    const viewport = doc.getElementById('photo-viewport');
+    const stage = doc.getElementById('photo-stage');
+    Object.defineProperties(viewport, {
+        clientWidth: { value: 800 }, clientHeight: { value: 600 },
+    });
+    win.dispatchEvent(new win.Event('resize'));
+    const zoom = doc.getElementById('photo-zoom');
+    zoom.value = '2'; page.emit(zoom, 'change');
+    assert.equal(stage.style.width, '3200px');
+    assert.equal(doc.getElementById('undo').disabled, true);
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    const original = stage.style.transform;
+    page.click(doc.getElementById('pan-photo'));
+    page.pointer('pointerdown', 200, 200);
+    page.pointer('pointermove', 280, 240);
+    page.pointer('pointerup', 280, 240);
+    assert.notEqual(stage.style.transform, original);
+    assert.equal(page.markCount(), 0, 'Hand must never draw a mark');
+    page.overlay.getBoundingClientRect = () => ({ left: -1120, top: -860, width: 3200, height: 2400 });
+    page.tool('drawing');
+    page.pointer('pointerdown', 80, 140);
+    page.pointer('pointermove', 180, 240);
+    page.pointer('pointerup', 280, 340);
+    assert.match(page.routePath(), /^M 600 500 L 650 550 L 700 600$/);
+    page.click(doc.getElementById('fit-photo'));
+    assert.equal(zoom.value, 'fit');
+    assert.equal(stage.style.width, '800px');
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('viewport dimensions persist independently of image zoom and reject invalid sizes', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    for (const [id, value] of [['viewport-width', '600'], ['viewport-height', '480']]) {
+        doc.getElementById(id).value = value;
+        page.emit(doc.getElementById(id), 'change');
+    }
+    page.click(doc.getElementById('zoom-in'));
+    await page.settle();
+    const next = await loadEditor({ localPreferences: page.chrome._localStore });
+    assert.equal(next.doc.getElementById('viewport-width').value, '600');
+    assert.equal(next.doc.getElementById('viewport-height').value, '480');
+    assert.equal(next.doc.getElementById('photo-zoom').value, 'fit');
+    assert.equal(next.doc.getElementById('editor-workspace').style.getPropertyValue('--photo-viewport-height'), '480px');
+    next.click(next.doc.getElementById('reset-viewport'));
+    assert.equal(next.doc.getElementById('editor-workspace').style.width, '');
+    const corrupt = await loadEditor({ localPreferences: { bpbPhotoViewport: { width: -100, height: 999999 } } });
+    assert.equal(corrupt.doc.getElementById('viewport-width').value, '');
+    assert.equal(corrupt.doc.getElementById('viewport-height').value, '');
+    for (const editor of [page, next, corrupt]) editor.dom.window.close();
+});
+
+test('zoom is anchored under the wheel pointer and blocked during a drawing gesture', async () => {
+    const page = await loadEditor();
+    const viewport = page.doc.getElementById('photo-viewport');
+    Object.defineProperties(viewport, { clientWidth: { value: 800 }, clientHeight: { value: 600 } });
+    const zoom = page.doc.getElementById('photo-zoom');
+    zoom.value = '1'; page.emit(zoom, 'change');
+    viewport.dispatchEvent(new page.win.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, ctrlKey: true, deltaY: -Math.log(2) * 100,
+        clientX: 200, clientY: 150,
+    }));
+    const stage = page.doc.getElementById('photo-stage');
+    assert.equal(stage.style.width, '3200px');
+    assert.equal(stage.style.transform, 'translate(-1000px, -750px)');
+    page.tool('drawing'); page.pointer('pointerdown', 100, 100);
+    page.click(page.doc.getElementById('zoom-in'));
+    assert.equal(stage.style.width, '3200px');
+    page.pointer('pointercancel', 100, 100);
+    page.key('keydown', { key: ' ' });
+    page.pointer('pointerdown', 100, 100); page.pointer('pointermove', 150, 150); page.pointer('pointerup', 150, 150);
+    page.key('keyup', { key: ' ' });
+    assert.equal(page.markCount(), 0, 'temporary Space pan preserves the drawing tool without drawing');
+    assert.equal(page.armedTool(), 'drawing');
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
 
 test('malformed ImgBB success keeps the photo-page recovery journal and blocks another upload', async t => {
     const indexedDB = new IDBFactory();

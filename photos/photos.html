@@ -171,14 +171,38 @@
           </div>
 
           <div class="viewport-column">
+            <div class="view-controls" aria-label="Photo view controls">
+              <button id="zoom-out" type="button" aria-label="Zoom out" title="Zoom out (−)">−</button>
+              <label class="zoom-control"><span class="sr-only">Zoom</span>
+                <select id="photo-zoom">
+                  <option value="fit">Fit</option>
+                  <option value="0.25">25%</option><option value="0.5">50%</option>
+                  <option value="1">100%</option><option value="2">200%</option>
+                  <option value="4">400%</option><option value="8">800%</option>
+                  <option id="zoom-custom" value="custom" hidden></option>
+                </select>
+              </label>
+              <button id="zoom-in" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+              <button id="fit-photo" type="button" title="Fit photo (0)">Fit</button>
+              <button id="pan-photo" type="button" aria-pressed="false" title="Pan photo (H); hold Space to pan">Hand</button>
+              <details class="viewport-size-control">
+                <summary>Viewport</summary>
+                <div class="viewport-size-panel">
+                  <label class="field">Width (px)<input id="viewport-width" type="number" min="280" max="2400" step="10" placeholder="Auto"></label>
+                  <label class="field">Height (px)<input id="viewport-height" type="number" min="240" max="1400" step="10" placeholder="Auto"></label>
+                  <button id="reset-viewport" type="button">Use automatic size</button>
+                </div>
+              </details>
+            </div>
             <div id="photo-viewport" class="photo-viewport" tabindex="0"
-                 aria-label="Topo preview" aria-describedby="annotation-help">
+                 aria-label="Topo preview" aria-describedby="annotation-help view-help">
               <div id="photo-stage" class="photo-stage">
                 <img id="source-image" alt="">
                 <svg id="photo-overlay" xmlns="http://www.w3.org/2000/svg"
                      aria-hidden="true" focusable="false"></svg>
               </div>
             </div>
+            <p id="view-help" class="sr-only">Use plus and minus to zoom, 0 to fit. Hold Space and drag to pan, or choose Hand. Pinch or hold Ctrl, Command, or Alt while scrolling to zoom.</p>
             <div class="viewport-actions">
               <button id="finish-route" type="button" class="secondary-button" hidden>Done drawing</button>
               <span id="editor-status" class="status-line" role="status" aria-live="polite"></span>

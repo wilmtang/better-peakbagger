@@ -211,7 +211,7 @@ test('all planned topo tools and accessible editor controls are present', () => 
 });
 
 test('desktop annotation panels scroll inside a stable editor body', () => {
-    assert.match(styles, /\.editor-body\s*\{[^}]*height:\s*720px;[^}]*min-height:\s*0;/s,
+    assert.match(styles, /\.editor-body\s*\{[^}]*height:\s*calc\(var\(--photo-viewport-height,[^;]+;[^}]*min-height:\s*0;/s,
         'selection-specific inspector controls must not resize and recenter the photo viewport');
     assert.match(styles,
         /@media \(max-width:\s*900px\)[\s\S]*?\.editor-body\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*600px;/,
