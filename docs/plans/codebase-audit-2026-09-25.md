@@ -1,6 +1,6 @@
 # Codebase audit — 2026-09-25
 
-Status: **audit complete; remediation not started.** Seven findings have local
+Status: **audit complete; F7 resolved locally, F1–F6 open.** Seven findings have local
 reproductions. This document changes no runtime behavior.
 
 Baseline: `3f7c6bb5df69a4e4f0c668e01e17a9c32b48b9c0`, version 3.7.2,
@@ -303,16 +303,24 @@ speech, packaging, and remote CI.
 
 ### Fixed and verified
 
-None. This change records the audit and plan only.
+F7: `web-ext` 10.7.0 resolves patched `addons-linter` 10.13.0 and `image-size`
+2.0.4, so the expired acceptance was removed and the gate now requires zero
+advisories. `npm run audit:ci`, the focused dependency-audit tests, `npm run lint`,
+and `npm run package` passed locally. The full suite's initial run found a stale
+`fast-uri` 3.1.7 test expectation after the lockfile advanced to 3.1.8; the
+expectation was corrected and its focused test passed.
 
 ### Intentionally not changed
 
-Runtime files, user-owned AllTrails work, the documented draft-sharing policy,
-and the independent caption/Imgur plans were preserved.
+F1–F6, the documented draft-sharing policy, and the independent caption/Imgur
+plans were not changed by the F7 dependency repair. The AllTrails feature is a
+separate unit of work.
 
 ### Changed but not fully proven
 
-No runtime fixes have been made. F1–F7 remain open; future remediation must put
-each item here or in “Fixed and verified” with its commit and actual evidence.
+No runtime audit fixes have been made. F1–F6 remain open. Remote CI is unproven
+until an authorized push and a completed workflow. Future remediation must put
+each remaining item here or in “Fixed and verified” with its commit and actual
+evidence.
 Archive this plan only after every finding has an explicit disposition, keeping
 the verification gaps and owner decisions intact.

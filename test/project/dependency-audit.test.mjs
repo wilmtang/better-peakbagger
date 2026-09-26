@@ -6,7 +6,6 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
-    AUDIT_ACCEPTANCE,
     evaluateAudit,
 } from '../../scripts/check-npm-audit.mjs';
 
@@ -29,99 +28,19 @@ test('the npm audit gate passes a clean tree', () => {
     assert.deepEqual(evaluateAudit(auditWith({})), { status: 'clean' });
 });
 
-const acceptedAudit = () => auditWith({
-    'addons-linter': {
-        severity: 'high',
-        via: ['image-size'],
-        nodes: ['node_modules/addons-linter'],
-    },
-    'image-size': {
-        severity: 'high',
-        via: [
-            { source: 1138808, url: 'https://github.com/advisories/GHSA-w3rx-r6r6-pgpr' },
-            { source: 1138809, url: 'https://github.com/advisories/GHSA-5p2g-fcmc-qvqq' },
-        ],
-        nodes: ['node_modules/image-size'],
-    },
-    'web-ext': {
-        severity: 'high',
-        via: ['addons-linter'],
-        nodes: ['node_modules/web-ext'],
-    },
+test('the npm audit gate rejects every finding, including the former exception', () => {
+    for (const name of ['image-size', 'some-dev-tool']) {
+        assert.throws(() => evaluateAudit(auditWith({ [name]: { severity: 'high' } })),
+            /Unowned npm audit findings/);
+    }
+    assert.throws(() => evaluateAudit(auditWith({}, { total: 3 })), /missing vulnerability detail/);
+    assert.throws(() => evaluateAudit(auditWith({ unexpected: {} }, { total: 0 })), /unexpected/);
 });
 
-const acceptedLock = () => ({
-    packages: Object.fromEntries(Object.entries(AUDIT_ACCEPTANCE.lockedPackages)
-        .map(([packagePath, version]) => [packagePath, { version, dev: true }])),
-});
-
-test('the npm audit gate accepts only the reviewed development paths before expiry', () => {
-    assert.deepEqual(
-        evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-22'),
-        {
-            status: 'accepted',
-            message: 'Accepted two image-size advisories only in the dev-only web-ext lint path through 2026-09-21.',
-        },
-    );
-
-    assert.throws(
-        () => evaluateAudit(acceptedAudit(), acceptedLock(), '2026-09-22'),
-        /expired on 2026-09-21/,
-    );
-});
-
-test('the npm audit gate rejects advisory, path, package, severity, and lock drift', () => {
-    const unknownAdvisory = acceptedAudit();
-    unknownAdvisory.vulnerabilities['image-size'].via[0] = {
-        source: 9999999,
-        url: 'https://github.com/advisories/GHSA-unknown',
-    };
-    assert.throws(
-        () => evaluateAudit(unknownAdvisory, acceptedLock(), '2026-08-07'),
-        /advisories or vulnerable install path changed/,
-    );
-
-    const pathDrift = acceptedAudit();
-    pathDrift.vulnerabilities['addons-linter'].via = ['some-other-package'];
-    assert.throws(
-        () => evaluateAudit(pathDrift, acceptedLock(), '2026-08-07'),
-        /Audit path for addons-linter changed/,
-    );
-
-    assert.throws(() => evaluateAudit(auditWith({
-        'some-dev-tool': {
-            severity: 'high',
-            via: [{ source: 9999999, url: 'https://github.com/advisories/GHSA-unknown' }],
-            nodes: ['node_modules/some-dev-tool'],
-        },
-    }), acceptedLock(), '2026-08-07'), /Unowned npm audit findings: some-dev-tool/);
-
-    const severityDrift = acceptedAudit();
-    severityDrift.metadata.vulnerabilities.moderate = 1;
-    severityDrift.metadata.vulnerabilities.high = 2;
-    assert.throws(
-        () => evaluateAudit(severityDrift, acceptedLock(), '2026-08-07'),
-        /severity\/counts changed/,
-    );
-
-    const lockDrift = acceptedLock();
-    lockDrift.packages['node_modules/image-size'].version = '2.0.3';
-    assert.throws(
-        () => evaluateAudit(acceptedAudit(), lockDrift, '2026-08-07'),
-        /Audit acceptance lock changed at node_modules\/image-size/,
-    );
-
-    // A count with no detail is still a failure, not a pass with a blank list.
-    assert.throws(
-        () => evaluateAudit({ metadata: { vulnerabilities: { total: 3 } }, vulnerabilities: {} }),
-        /missing vulnerability detail/
-    );
-});
-
-// npm changing its report shape must not read as "nothing found".
 test('the npm audit gate fails closed on unusable audit output', () => {
-    for (const audit of [{}, { metadata: {} }, { metadata: { vulnerabilities: {} } }]) {
-        assert.throws(() => evaluateAudit(audit), /no vulnerability metadata/);
+    for (const audit of [null, {}, { metadata: {} }, { metadata: { vulnerabilities: {} } },
+        auditWith({}, { total: -1 }), auditWith({}, { total: NaN })]) {
+        assert.throws(() => evaluateAudit(audit), /no usable vulnerability metadata/);
     }
 });
 
@@ -147,15 +66,15 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
     }
 });
 
-test('the accepted image-size path and patched transitive packages stay dev-only and pinned', async () => {
+test('patched lint dependencies stay dev-only and pinned', async () => {
     const [packageJson, lockfile] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
         readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
     ]);
-    assert.equal(packageJson.devDependencies['web-ext'], '^10.6.0');
+    assert.equal(packageJson.devDependencies['web-ext'], '^10.7.0');
     assert.equal(packageJson.overrides['firefox-profile'], undefined,
         'firefox-profile must resolve patched adm-zip releases through its maintained range');
-    for (const [packagePath, version] of Object.entries(AUDIT_ACCEPTANCE.lockedPackages)) {
+    for (const [packagePath, version] of Object.entries({ 'node_modules/web-ext': '10.7.0', 'node_modules/addons-linter': '10.13.0', 'node_modules/image-size': '2.0.4' })) {
         const entry = lockfile.packages[packagePath];
         assert.equal(entry.version, version);
         assert.equal(entry.dev, true, `${packagePath} must stay development-only`);
@@ -167,28 +86,15 @@ test('the accepted image-size path and patched transitive packages stay dev-only
     assert.equal(jsYaml.version, '4.3.2', 'empty merge sources must use the patched CPU limit');
     assert.equal(jsYaml.dev, true, 'js-yaml must stay development-only');
     const fastUri = lockfile.packages['node_modules/fast-uri'];
-    assert.equal(fastUri.version, '3.1.7');
+    assert.equal(fastUri.version, '3.1.8');
     assert.equal(fastUri.dev, true, 'fast-uri must stay development-only');
 });
 
-test('maintained release guidance names the live expiring audit acceptance', async () => {
-    const maintainedSources = await Promise.all([
-        '../../.github/workflows/release.yml',
-        '../../docs/architecture.md',
-        '../../docs/development.md',
-        '../../docs/releasing.md',
-    ].map(async relative => ({
-        relative,
-        source: await readFile(new URL(relative, import.meta.url), 'utf8'),
-    })));
-
-    assert.equal(Object.keys(AUDIT_ACCEPTANCE.advisories).length, 2);
-    for (const { relative, source } of maintainedSources) {
-        assert.match(source, /two exact high\s+[`]?image-size[`]?\s+advisories/i,
-            `${relative} must name the bounded acceptance count and package`);
-        assert.match(source, /web-ext/);
-        assert.match(source, /addons-linter/);
-        assert.match(source, new RegExp(AUDIT_ACCEPTANCE.expires));
-        assert.doesNotMatch(source, /accepts no advisories|no accepted exceptions|accepts no finding/i);
+test('maintained release guidance requires zero advisories', async () => {
+    for (const relative of ['../../.github/workflows/release.yml', '../../docs/architecture.md',
+        '../../docs/development.md', '../../docs/releasing.md']) {
+        const source = await readFile(new URL(relative, import.meta.url), 'utf8');
+        assert.match(source, /zero advisories/i, relative);
+        assert.doesNotMatch(source, /2026-09-21|permits two exact high|accepts two exact high/i);
     }
 });

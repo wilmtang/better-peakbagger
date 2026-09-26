@@ -176,7 +176,7 @@ script is added or removed without updating it.
 | `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
-| `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. Accepts two exact high `image-size` advisories through development-only `web-ext`/`addons-linter`. Versions, paths, advisory IDs, and a 2026-09-21 expiry are pinned; every other or expired finding fails. |
+| `npm run audit:ci` | Requires zero advisories, including development dependencies. The former image-size exception was removed after updating the patched web-ext/addons-linter toolchain. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
 | `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |

@@ -77,7 +77,7 @@
     "playwright": "^1.63.0",
     "selenium-webdriver": "^4.48.0",
     "tz-lookup": "^6.1.25",
-    "web-ext": "^10.6.0"
+    "web-ext": "^10.7.0"
   },
   "overrides": {
     "fx-runner": {
