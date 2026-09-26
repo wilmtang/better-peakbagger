@@ -3142,3 +3142,106 @@ test('editing an old mark size does not replace the latest shared color or opaci
     assert.equal(color.value, '#1e88e5');
     assert.equal(opacity.value, '40');
 });
+
+test('Cmd and Ctrl Undo remove route points before touching earlier annotations', async t => {
+    for (const modifier of ['metaKey', 'ctrlKey']) {
+        const page = await loadEditor();
+        t.after(() => page.win.close());
+        page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+        page.tool('route');
+        page.pointer('pointerdown', 100, 100);
+        assert.equal(page.doc.getElementById('undo').disabled, false);
+        page.pointer('pointerdown', 200, 200);
+        page.pointer('pointerdown', 300, 300);
+        const routeId = page.overlay.querySelector('g.selected').getAttribute('data-bpb-object');
+        const routePath = () => page.overlay.querySelector(`[data-bpb-object="${routeId}"] > path`)?.getAttribute('d');
+        const full = routePath();
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.notEqual(routePath(), full);
+        assert.equal(page.markCount(), 2, 'the unfinished two-point route and bolt survive');
+        assert.equal(page.drawing(), true);
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1);
+        assert.ok(page.overlay.querySelector('.route-preview-dot'));
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1, 'undoing the first point must preserve the bolt');
+        assert.equal(page.overlay.querySelector('.route-preview'), null);
+        for (let i = 0; i < 3; i++) page.key('keydown', { key: 'z', [modifier]: true, shiftKey: true });
+        assert.equal(routePath(), full);
+        page.key('keydown', { key: 'Enter' });
+        assert.equal(page.drawing(), false);
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1, 'the finished route is one project Undo');
+        page.key('keydown', { key: 'z', [modifier]: true, shiftKey: true });
+        assert.equal(routePath(), full);
+        assert.deepEqual(page.errors, []);
+    }
+});
+
+test('route Undo works from the first point and a new point discards point Redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('route'); page.pointer('pointerdown', 100, 100);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.doc.getElementById('undo').disabled, true);
+    assert.equal(page.doc.getElementById('redo').disabled, false);
+    page.click(page.doc.getElementById('redo'));
+    assert.ok(page.overlay.querySelector('.route-preview-dot'));
+    page.pointer('pointerdown', 200, 200);
+    page.pointer('pointerdown', 300, 300);
+    page.click(page.doc.getElementById('undo'));
+    page.pointer('pointerdown', 400, 350);
+    assert.equal(page.doc.getElementById('redo').disabled, true);
+    assert.match(page.routePath(), /800 700$/);
+    assert.doesNotMatch(page.routePath(), /600 600/);
+    page.key('keydown', { key: 'Escape' });
+    assert.equal(page.markCount(), 0);
+    assert.equal(page.doc.getElementById('undo').disabled, true);
+});
+
+test('route restyling stays in its transaction while point Undo retains the style', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.tool('route'); page.pointer('pointerdown', 100, 100); page.pointer('pointerdown', 200, 200);
+    const smooth = page.doc.getElementById('route-smooth');
+    smooth.checked = true; page.emit(smooth, 'change');
+    const width = page.doc.getElementById('route-width');
+    width.value = '27'; page.emit(width, 'input');
+    page.click(page.doc.getElementById('undo'));
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(width.value, '27');
+    assert.equal(smooth.checked, true);
+    page.key('keydown', { key: 'Enter' });
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0);
+});
+
+test('Undo during an unfinished freehand gesture leaves previous marks intact', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.tool('drawing'); page.pointer('pointerdown', 100, 100); page.pointer('pointermove', 200, 200);
+    page.key('keydown', { key: 'z', ctrlKey: true });
+    assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+    assert.equal(page.markCount(), 1);
+    page.pointer('pointerup', 200, 200);
+    assert.equal(page.markCount(), 1);
+});
+
+test('undoing every pending route point preserves the previous project Redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.click(page.doc.getElementById('undo'));
+    page.tool('route'); page.pointer('pointerdown', 100, 100); page.pointer('pointerdown', 200, 200);
+    page.click(page.doc.getElementById('undo'));
+    page.click(page.doc.getElementById('undo'));
+    page.key('keydown', { key: 'Escape' });
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.drawing(), false);
+    assert.match(page.doc.getElementById('annotation-list').textContent, /Bolt/);
+});

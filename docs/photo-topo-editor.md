@@ -21,6 +21,11 @@ All tools share the last chosen color and opacity, saved on this device under
 the initial width is 28% of the photo. The project model validates the saved style; annotation
 text, pitch content, and coordinates are never stored as tool preferences.
 
+While placing a route, Cmd/Ctrl+Z removes only its last point, including the
+first point. Shift+Cmd/Ctrl+Z restores points until a new point is placed.
+Finishing the route makes it one project Undo step. Undo during a held freehand
+gesture cancels that stroke without touching earlier marks.
+
 Draw (`D`) captures one pointer gesture as a `drawing` object. It shares the
 route validator and renderer, including opacity, width, line style, smoothing,
 and arrowheads. Its geometry uses the existing route/project point budgets;

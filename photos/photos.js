@@ -1087,8 +1087,9 @@ const flushDraftPersistence = () => {
 };
 
 const updateHistoryButtons = () => {
-    ui.undo.disabled = history.length === 0 || busy;
-    ui.redo.disabled = future.length === 0 || busy;
+    ui.undo.disabled = !(drawingSession || routeSession?.points.length || history.length) || busy;
+    ui.redo.disabled = (routeSession ? !routeSession.removedPoints.length : !future.length)
+        || !!drawingSession || busy;
 };
 
 const selectedObject = () => project?.objects.find(object => object.id === selectedId) || null;
@@ -1242,7 +1243,7 @@ const renderAnnotationBrowser = () => {
 // the pending point, and rubber-band the segment the next click would commit.
 const renderRoutePreview = () => {
     ui.overlay.querySelector('.route-preview')?.remove();
-    if (!routeSession || !project) return;
+    if (!routeSession?.points.length || !project) return;
     const group = document.createElementNS(SVG_NS, 'g');
     group.classList.add('route-preview');
     const unit = Math.min(project.image.width, project.image.height);
@@ -1373,8 +1374,18 @@ const setProject = (next, { pushHistory = true, persist = true, coalesce = null 
 };
 
 const undo = () => {
-    if (editorMutationLocked() || !history.length || !project) return;
-    cancelDrawing();
+    if (editorMutationLocked() || !project) return;
+    if (drawingSession) { cancelDrawing(); return; }
+    if (routeSession?.points.length) {
+        routeSession.removedPoints.push(routeSession.points.pop());
+        routeSession.lastPress = null;
+        renderPendingRoute();
+        schedulePersist();
+        setEditorStatus('Last route point removed. Click to continue, or Redo to restore it.');
+        return;
+    }
+    if (routeSession) finishRoute(true);
+    if (!history.length) return;
     endCoalescing();
     future.push(structuredClone(project));
     project = history.pop();
@@ -1388,7 +1399,17 @@ const undo = () => {
 };
 
 const redo = () => {
-    if (editorMutationLocked() || !future.length || !project) return;
+    if (editorMutationLocked() || !project || drawingSession) return;
+    if (routeSession) {
+        if (!routeSession.removedPoints.length) return;
+        routeSession.points.push(routeSession.removedPoints.pop());
+        routeSession.lastPress = null;
+        renderPendingRoute();
+        schedulePersist();
+        setEditorStatus('Route point restored. Click to continue, or Enter to finish.');
+        return;
+    }
+    if (!future.length) return;
     endCoalescing();
     history.push(structuredClone(project));
     project = future.pop();
@@ -1460,9 +1481,45 @@ const DOUBLE_PRESS_SLOP = 8;
 const pressOf = event => ({ x: event.clientX, y: event.clientY, at: event.timeStamp });
 
 const isDoublePress = (previous, press) => !!previous
+    && !!press
     && press.at - previous.at <= DOUBLE_PRESS_MS
     && Math.abs(press.x - previous.x) <= DOUBLE_PRESS_SLOP
     && Math.abs(press.y - previous.y) <= DOUBLE_PRESS_SLOP;
+
+// Route points have their own in-progress Undo/Redo. The finished route still
+// occupies one project-history entry, including style changes made while drawing.
+const renderPendingRoute = () => {
+    const session = routeSession;
+    const existing = project.objects.find(object => object.id === session.id);
+    if (session.points.length < 2) {
+        project = session.baseline;
+        history = session.historyBefore.slice();
+        future = session.futureBefore.slice();
+        session.historyPushed = false;
+        selectedId = null;
+    } else {
+        const object = {
+            id: session.id, type: 'route',
+            geometry: { points: session.points, controls: [] },
+            style: defaultRouteStyle(),
+        };
+        const next = existing ? Project.updateObject(project, session.id, { geometry: object.geometry })
+            : Project.addObject(session.baseline, object);
+        if (!next) return false;
+        if (!session.historyPushed) {
+            history.push(structuredClone(session.baseline));
+            if (history.length > HISTORY_LIMIT) history.shift();
+            future = [];
+            session.historyPushed = true;
+        }
+        project = next;
+        selectedId = session.id;
+    }
+    selectedVertex = null;
+    invalidateExportEstimate();
+    renderProject();
+    return true;
+};
 
 const addRoutePoint = (point, press) => {
     if (editorMutationLocked()) return;
@@ -1477,36 +1534,26 @@ const addRoutePoint = (point, press) => {
             points: [point],
             cursor: null,
             historyPushed: false,
+            historyBefore: history.slice(),
+            futureBefore: future.slice(),
+            removedPoints: [],
             lastPress: press,
         };
         ui.finishRoute.hidden = false;
         setEditorStatus('Route started. Click the next point; double-click, right-click, or Enter finishes.');
         renderRoutePreview();
+        updateHistoryButtons();
         return;
     }
     routeSession.lastPress = press;
     routeSession.points.push(point);
-    const object = {
-        id: routeSession.id,
-        type: 'route',
-        // Controls stay empty on purpose: a smooth route derives them from its
-        // own points, so the curve survives every point added after it.
-        geometry: { points: routeSession.points, controls: [] },
-        style: defaultRouteStyle(),
-    };
-    if (routeSession.points.length === 2) {
-        history.push(structuredClone(routeSession.baseline));
-        if (history.length > HISTORY_LIMIT) history.shift();
-        future = [];
-        routeSession.historyPushed = true;
-        project = Project.addObject(routeSession.baseline, object);
-    } else {
-        project = Project.updateObject(project, routeSession.id, { geometry: object.geometry });
+    if (!renderPendingRoute()) {
+        routeSession.points.pop();
+        routeSession.lastPress = null;
+        return;
     }
-    selectedId = routeSession.id;
-    selectedVertex = null;
-    invalidateExportEstimate();
-    renderProject();
+    routeSession.removedPoints = [];
+    updateHistoryButtons();
 };
 
 const finishRoute = cancel => {
@@ -1514,7 +1561,8 @@ const finishRoute = cancel => {
     const changed = routeSession.historyPushed;
     if (cancel) {
         project = routeSession.baseline;
-        if (routeSession.historyPushed) history.pop();
+        history = routeSession.historyBefore;
+        future = routeSession.futureBefore;
         selectedId = null;
         selectedVertex = null;
         setEditorStatus('Route cancelled.');
@@ -1528,6 +1576,7 @@ const finishRoute = cancel => {
     ui.finishRoute.hidden = true;
     if (changed) invalidateExportEstimate();
     renderProject();
+    if (cancel && changed) schedulePersist();
 };
 
 const addPointObject = (type, point) => {
@@ -1626,6 +1675,7 @@ const cancelDrawing = () => {
     drawingSession = null;
     ui.overlay.querySelector('.drawing-preview')?.remove();
     if (ui.overlay.hasPointerCapture?.(pointerId)) ui.overlay.releasePointerCapture(pointerId);
+    updateHistoryButtons();
 };
 const drawingPoint = event => pointerPoint(event).map((value, axis) =>
     Math.max(0, Math.min(axis ? project.image.height : project.image.width, value)));
@@ -1668,6 +1718,7 @@ const beginDrawing = event => {
     preview.setAttribute('points', `${point.join(',')} ${point.join(',')}`);
     ui.overlay.append(preview);
     drawingSession = { pointerId: event.pointerId, points: [point], style, preview, limit };
+    updateHistoryButtons();
     ui.overlay.setPointerCapture?.(event.pointerId);
     event.preventDefault();
 };
@@ -1851,6 +1902,7 @@ const updateSelected = (patch, { coalesce = null } = {}) => {
         });
     }
     setProject(next, {
+        pushHistory: object.id !== routeSession?.id,
         coalesce: coalesce && `${coalesce}:${object.id}`,
     });
 };
@@ -3371,7 +3423,9 @@ const bindEvents = () => {
         if (event.key === 'Escape' && cancelTextResize()) { event.preventDefault(); return; }
         if (dragSession?.resize || editing) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
-            const available = event.shiftKey ? future.length : history.length;
+            const available = event.shiftKey
+                ? !drawingSession && (routeSession ? routeSession.removedPoints.length : future.length)
+                : drawingSession || routeSession?.points.length || history.length;
             if (!available || editorMutationLocked() || !project) return;
             event.preventDefault();
             if (event.shiftKey) redo();

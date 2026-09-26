@@ -231,6 +231,29 @@ try {
     await savedEditor.locator('#text-width-auto').click();
     await savedEditor.locator('#add-at-center').click();
     assert.equal(await savedEditor.locator('#text-width').inputValue(), '');
+    await savedEditor.locator('[data-tool="route"]').click();
+    const routeBox = await savedEditor.locator('#photo-overlay').boundingBox();
+    const markCount = await savedEditor.locator('#annotation-list button').count();
+    for (const offset of [100, 180, 260]) {
+        await savedEditor.mouse.click(routeBox.x + offset, routeBox.y + offset);
+    }
+    const routePath = () => savedEditor.locator('#photo-overlay g.selected path').first().getAttribute('d');
+    const fullRoute = await routePath();
+    await savedEditor.keyboard.press('Control+z');
+    assert.notEqual(await routePath(), fullRoute);
+    assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount + 1);
+    await savedEditor.keyboard.press('Meta+z');
+    assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount);
+    assert.equal(await savedEditor.locator('.route-preview-dot').count(), 1);
+    await savedEditor.keyboard.press('Control+Shift+z');
+    await savedEditor.keyboard.press('Meta+Shift+z');
+    assert.equal(await routePath(), fullRoute);
+    if (screenshots) await savedEditor.locator('#editor-workspace').screenshot({
+        path: path.join(screenshots, 'route-point-redo.png'),
+    });
+    await savedEditor.keyboard.press('Enter');
+    await savedEditor.keyboard.press('Control+z');
+    assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount);
     await savedEditor.close();
     const renderer = await page.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl');
