@@ -146,6 +146,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const sameProviderActivity = (left, right) => !!left && !!right
         && left.provider === right.provider
         && String(left.activityId) === String(right.activityId);
+    // A successful single-summit Preview and a verified multi-summit Save no
+    // longer depend on the worker cache. Removing their bookkeeping must not
+    // overwrite the page's success state with a false recapture instruction.
+    const draftNeedsDisconnectNotice = draft => !draft?.complete
+        || (draft.waitForSave === true && draft.saved !== true);
     const hasProviderActivity = value => !!value
         && typeof value.provider === 'string'
         && value.activityId != null;
@@ -1934,22 +1939,20 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             delete map[tabId];
         });
         await removePayloadKeys(removedPayloadKey);
-        const removedDraftTabIds = await mutateMap(DRAFTS_KEY, drafts => {
-            const tabIds = Object.values(drafts)
-                .filter(draft => draft.jobId === job.id)
-                .map(draft => draft.tabId);
-            tabIds.forEach(draftTabId => { delete drafts[draftTabId]; });
-            return tabIds;
+        const removedDrafts = await mutateMap(DRAFTS_KEY, drafts => {
+            const records = Object.values(drafts).filter(draft => draft.jobId === job.id);
+            records.forEach(draft => { delete drafts[draft.tabId]; });
+            return records;
         });
-        await Promise.all(removedDraftTabIds.map(async draftTabId => {
+        await Promise.all(removedDrafts.filter(draftNeedsDisconnectNotice).map(async draft => {
             try {
-                await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
+                await ext.tabs.sendMessage?.(draft.tabId, { type: 'DRAFT_CLEARED' });
             } catch (_error) {
                 // Closed or still-loading draft tabs need no further cleanup.
             }
         }));
         await setBadge(tabId, '');
-        return { ok: true, removedGpx, removedDraftCount: removedDraftTabIds.length };
+        return { ok: true, removedGpx, removedDraftCount: removedDrafts.length };
     };
 
     const clearCapture = message => {
@@ -2114,19 +2117,21 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
             const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
             const replacedPayloadKey = referencedPayloadKey(jobs[job.sourceTabId]);
-            const removedDraftTabIds = [];
+            const disconnectedDraftTabIds = [];
+            let draftsChanged = false;
             Object.entries(drafts).forEach(([draftTabId, draft]) => {
                 if (Number(draft.sourceTabId) === Number(job.sourceTabId) && draft.jobId !== job.id) {
                     delete drafts[draftTabId];
-                    removedDraftTabIds.push(Number(draftTabId));
+                    draftsChanged = true;
+                    if (draftNeedsDisconnectNotice(draft)) disconnectedDraftTabIds.push(Number(draftTabId));
                 }
             });
             jobs[job.sourceTabId] = job;
             const patch = { [JOBS_KEY]: jobs };
-            if (removedDraftTabIds.length) patch[DRAFTS_KEY] = drafts;
+            if (draftsChanged) patch[DRAFTS_KEY] = drafts;
             await storage().set(patch);
             await removePayloadKeys(replacedPayloadKey);
-            await Promise.all(removedDraftTabIds.map(async draftTabId => {
+            await Promise.all(disconnectedDraftTabIds.map(async draftTabId => {
                 try {
                     await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
                 } catch (_error) {
@@ -3148,14 +3153,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const cleanupSource = async (sourceTabId, cutoff) => {
         const result = await mutateMap(DRAFTS_KEY, map => {
-            const removedDraftTabIds = [];
+            const disconnectedDraftTabIds = [];
             Object.entries(map).forEach(([tabId, draft]) => {
                 if (Number(draft.sourceTabId) === Number(sourceTabId) && draft.expiresAt <= cutoff) {
                     delete map[tabId];
-                    removedDraftTabIds.push(Number(tabId));
+                    if (draftNeedsDisconnectNotice(draft)) disconnectedDraftTabIds.push(Number(tabId));
                 }
             });
-            return { drafts: { ...map }, removedDraftTabIds };
+            return { drafts: { ...map }, disconnectedDraftTabIds };
         });
         const activeJobIds = new Set(Object.values(result.drafts).map(draft => draft.jobId));
         let removedPayloadKey = null;
@@ -3167,7 +3172,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
         });
         await removePayloadKeys(removedPayloadKey);
-        await Promise.all(result.removedDraftTabIds.map(async draftTabId => {
+        await Promise.all(result.disconnectedDraftTabIds.map(async draftTabId => {
             try {
                 await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
             } catch (_error) {

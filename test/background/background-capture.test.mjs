@@ -509,6 +509,26 @@ const storedCaptureGpx = (harness, tabId = 1) => {
     return job?.payloadKey ? harness.values[job.payloadKey]?.gpx : undefined;
 };
 
+const completeSingleDraft = async harness => {
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const draftTabId = opened.tabIds[0];
+    const sender = { tab: { id: draftTabId } };
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, sender);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, sender).then(value => value.ok), true);
+    const banner = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+    }, sender);
+    assert.equal(banner.action, 'banner');
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].complete, true);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].waitForSave, false);
+    return { draftTabId, jobId: apply.jobId };
+};
+
 let betaSettingsGeneration = 0;
 const openBetaSettings = async (harness, sender, disposition = 'foreground-tab') => {
     const generation = `test-beta-${++betaSettingsGeneration}`;
@@ -1785,6 +1805,71 @@ test('discarding a cached capture removes its GPX and draft identities before re
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstJobId);
 });
 
+test('completed single drafts detach silently when their capture is discarded', async () => {
+    const harness = createHarness();
+    const { draftTabId } = await completeSingleDraft(harness);
+
+    const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+
+    assert.equal(cleared.removedDraftCount, 1);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)], undefined);
+    assert.deepEqual(harness.tabMessages, [],
+        'cache disposal must not replace a completed draft success banner with a disconnect error');
+});
+
+test('completed single drafts detach silently when a newer capture replaces them', async () => {
+    const harness = createHarness();
+    const { draftTabId, jobId } = await completeSingleDraft(harness);
+
+    const replacement = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+
+    assert.notEqual(replacement.id, jobId);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)], undefined);
+    assert.deepEqual(harness.tabMessages, [],
+        'replacement must not report a settled draft as disconnected');
+});
+
+test('completed single drafts detach silently when their cache expires', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({ clock });
+    const { draftTabId } = await completeSingleDraft(harness);
+
+    clock.now += 30 * 60 * 1000 + 1;
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+    await waitForCondition(() => !harness.values.bpbDraftTabs?.[String(draftTabId)]);
+
+    assert.deepEqual(harness.tabMessages, [],
+        'routine expiry must not replace a completed draft success banner with a disconnect error');
+});
+
+test('completed multi-summit drafts still report disconnection until Save is verified', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const draftTabId = opened.tabIds[0];
+    const draft = harness.values.bpbDraftTabs[String(draftTabId)];
+    const sender = { tab: { id: draftTabId } };
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: String(draft.pid), cid: '77' }, sender);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: draft.pid, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, sender).then(value => value.ok), true);
+    assert.equal((await harness.send({
+        type: 'DRAFT_READY', pid: String(draft.pid), cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+    }, sender)).action, 'banner');
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].complete, true);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].saved, false);
+
+    await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+
+    assert.deepEqual(harness.tabMessages.map(({ tabId, message }) => [Number(tabId), String(message.type)]),
+        [...opened.tabIds].map(tabId => [Number(tabId), 'DRAFT_CLEARED']),
+        'the completed tab and its waiting sibling both still depend on the shared Save workflow');
+});
+
 test('status reads hide expired jobs without running global cleanup', async () => {
     const harness = createHarness();
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -2980,6 +3065,9 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
     assert.equal(storedCaptureGpx(harness), undefined);
+    assert.equal((await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 })).removedDraftCount, 2);
+    assert.equal(harness.tabMessages.some(({ message }) => message.type === 'DRAFT_CLEARED'), false,
+        'Save-verified drafts no longer depend on the shared capture and detach silently');
 });
 
 test('waypoints cannot crowd a usable track out of Peakbagger’s total-point limit', async () => {
