@@ -47,7 +47,7 @@ const settleQuietly = () =>
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
     local: sharedLocal = null, failLocalGetAfterClear = false, localGetHook = null,
     localSetHook = null, syncReadFailures = [],
-    fastAscentOperationTimeout = false,
+    fastAscentOperationTimeout = false, clockNow = null,
     peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
@@ -141,7 +141,9 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         return setTimeout(callback, delay, ...args);
     };
     const context = vm.createContext({
-        browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController,
+        browser, fetch, URL, URLSearchParams, Math,
+        Date: clockNow == null ? Date : class extends Date { static now() { return clockNow; } },
+        console, structuredClone, AbortController,
         TextEncoder, TextDecoder, atob, btoa, crypto: globalThis.crypto,
         setTimeout: workerSetTimeout, clearTimeout,
     });
@@ -361,6 +363,9 @@ test('the worker compares a complete owner page with GitHub without writing', as
     const owned = Object.entries(backend.state.contents)
         .filter(([filePath]) => filePath.startsWith(`${folder}/`));
     let writes = 0;
+    let holdComparison = false;
+    let comparisonHeld = false;
+    const releaseComparison = deferred();
     const reader = createWorker({ auth: AUTH, github: (method, requestPath) => {
         if (method !== 'GET') writes += 1;
         if (method === 'GET' && requestPath === '/repos/me/backup') {
@@ -393,6 +398,13 @@ test('the worker compares a complete owner page with GitHub without writing', as
         }
         const blobMatch = requestPath.match(/\/git\/blobs\/owned(\d+)$/);
         if (method === 'GET' && blobMatch) {
+            if (holdComparison) {
+                holdComparison = false;
+                comparisonHeld = true;
+                return releaseComparison.promise.then(() => respond(200, {
+                    encoding: 'base64', content: Buffer.from(owned[Number(blobMatch[1])][1]).toString('base64'),
+                }));
+            }
             return respond(200, {
                 encoding: 'base64', content: Buffer.from(owned[Number(blobMatch[1])][1]).toString('base64'),
             });
@@ -416,6 +428,20 @@ test('the worker compares a complete owner page with GitHub without writing', as
     }, PEAK_SENDER);
     assert.deepEqual(structuredClone(renamedAccount), { ok: true, current: true },
         'a generated GPX author rename must not re-offer backup for an unchanged ascent');
+
+    holdComparison = true;
+    const olderComparison = reader.send({
+        type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx, reconcile: true,
+    }, PEAK_SENDER);
+    await waitFor(() => comparisonHeld);
+    const previousGeneration = reader.session.bpbGithubSnapshots[storedSnapshotKey()].generation;
+    await reader.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
+    const replacementGeneration = reader.session.bpbGithubSnapshots[storedSnapshotKey()].generation;
+    assert.notEqual(replacementGeneration, previousGeneration);
+    releaseComparison.resolve();
+    assert.equal((await olderComparison).current, true);
+    assert.equal(reader.session.bpbGithubSnapshots[storedSnapshotKey()].generation, replacementGeneration,
+        'a comparison must not consume a snapshot captured while its read was pending');
 
     const reconciled = await reader.send({
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx, reconcile: true,
@@ -2390,4 +2416,31 @@ test('legacy snapshots without submission proof are not fresh saves', async () =
         ...pending.snapshot, ascent: { ...pending.snapshot.ascent, id: 7654321 },
     }, pageComplete: true }, PEAK_SENDER);
     assert.equal(result.fresh, false);
+});
+
+
+test('an older successful write preserves a same-key replacement made in the same clock tick', async () => {
+    const backend = gitDataBackend();
+    const release = deferred();
+    let writing = false;
+    const worker = createWorker({ auth: AUTH, clockNow: Date.now(), github: (method, path, body) => {
+        if (method === 'PATCH') { writing = true; return release.promise; }
+        return backend.handler(method, path, body);
+    } });
+    const pending = editSnapshot();
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, EDIT_SENDER);
+    const original = structuredClone(worker.session.bpbGithubSnapshots[storedSnapshotKey()]);
+    const page = { ...pending.snapshot, ascent: { ...pending.snapshot.ascent, id: 7654321 } };
+    const write = worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
+    await waitFor(() => writing);
+    const newer = editSnapshot();
+    newer.snapshot.report = { markdown: 'NEWER SAVE', submitted: 'NEWER SAVE' };
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...newer }, EDIT_SENDER);
+    const replacement = worker.session.bpbGithubSnapshots[storedSnapshotKey()];
+    assert.equal(replacement.savedAt, original.savedAt);
+    assert.notEqual(replacement.generation, original.generation);
+    release.resolve(respond(200, { object: { sha: 'C1' } }));
+    assert.equal((await write).ok, true);
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()].generation, replacement.generation);
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()].snapshot.report.markdown, 'NEWER SAVE');
 });

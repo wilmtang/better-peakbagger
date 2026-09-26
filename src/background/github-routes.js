@@ -489,6 +489,7 @@ export function createGithubRoutes({
                 attemptId: typeof message.attemptId === 'string' ? message.attemptId : null,
                 snapshot: message.snapshot,
                 sourceTabId,
+                generation: crypto.randomUUID(),
                 savedAt: now(),
                 expiresAt: now() + SNAPSHOT_TTL_MS,
             };
@@ -849,7 +850,7 @@ export function createGithubRoutes({
         const p = page && typeof page === 'object' ? page : {};
         const base = snap && typeof snap === 'object' ? snap : null;
         if (!base && !p.ascent && !p.peak) return null;
-        const ascent = { ...(base ? base.ascent : {}) };
+        const ascent = { ...(!pageComplete && base ? base.ascent : {}) };
         const pAscent = p.ascent || {};
         if (pageComplete) {
             // A parsed edit form is the complete persisted record. Copy explicit
@@ -914,6 +915,12 @@ export function createGithubRoutes({
             && submitted.replace(/\r\n?/g, '\n') === persisted.replace(/\r\n?/g, '\n')
             ? found : null;
     };
+
+    const consumeSnapshot = found => mutateMap(SNAPSHOTS_KEY, snapshots => {
+        if (found?.record.generation && snapshots[found.key]?.generation === found.record.generation) {
+            delete snapshots[found.key];
+        }
+    });
 
     // Token-free, read-only freshness preflight for the individual ascent
     // surface. The content script supplies the complete persisted edit-form
@@ -988,7 +995,7 @@ export function createGithubRoutes({
                 });
                 // The snapshot has served its purpose; drop it so a later view of the
                 // same page does not re-push from stale data.
-                if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
+                if (found) await consumeSnapshot(found);
                 return { ok: true, result };
             });
         } catch (error) {
@@ -1006,16 +1013,15 @@ export function createGithubRoutes({
             return await runAscentGithubOperation(async signal => {
                 const access = await connectedGithubClient({ requireEnabled: true, signal });
                 if (access.error) return { ok: false, error: access.error };
-                const snapshot = mergeBackupSnapshot(null, message.page, { pageComplete: true });
+                const found = await confirmedSnapshotForPage(message.page, sender);
+                const snapshot = mergeBackupSnapshot(found?.record.snapshot, message.page, { pageComplete: true });
                 if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
                 const current = await access.client.isAscentBackupCurrent(snapshot, { gpx: message.gpx });
                 // A timed-out write has an unknown outcome. Only this explicit
                 // reconciliation path may consume its save-time snapshot, and
                 // only after GitHub proves that the complete payload landed.
                 if (current && message.reconcile === true) {
-                    const found = message.pageComplete
-                        ? await confirmedSnapshotForPage(message.page, sender) : null;
-                    if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
+                    if (found) await consumeSnapshot(found);
                 }
                 return { ok: true, current };
             });
