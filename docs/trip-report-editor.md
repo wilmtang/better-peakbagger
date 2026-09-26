@@ -462,12 +462,14 @@ optionally linked, followed by one text caption. Malformed figures, arbitrary
 attributes/styles, and formatted or nested captions retain conversion diagnostics;
 the figure path does not widen the general HTML allowlist.
 
-Compatibility evidence: Peakbagger's live ascent editor documents bracketed HTML,
-but a real server save/reopen of `figure`/`figcaption` has not been verified. Hidden
-extension fixtures verify the submitted markup, local preview, and restoration;
-they do not prove server acceptance or identical styling without the extension.
-The remaining live check is tracked in
-[the caption plan](plans/report-image-captions.md).
+Live compatibility evidence: a saved
+[Mount Niblock ascent](https://www.peakbagger.com/climber/ascent.aspx?aid=3358087)
+reopened with two compact `figure`/`figcaption` pairs in Peakbagger's Trip Report
+field. The public report renders both image/caption pairs in a separate logged-out
+browser without the extension. Peakbagger's native page shows captions as plain,
+left-aligned text; the centered italic styling described above applies to Rich
+editing and preview. The original Save action was not observed during this check.
+See the [archived verification record](archive/report-image-captions.md).
 
 ### Photo topo editor and library handoff
 

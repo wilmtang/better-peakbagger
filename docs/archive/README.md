@@ -11,6 +11,9 @@ living docs in [`docs/`](../).
 - [Codebase audit — 2026-09-25](codebase-audit-2026-09-25.md) — seven findings
   remediated in focused commits, with local regression evidence and explicit
   live-service/browser/CI proof limits in the closure ledger.
+- [Report image captions](report-image-captions.md) — completed Rich editing,
+  conversion, and photo lifecycle plan with saved Peakbagger markup and public
+  rendering verified against a real captioned report.
 - [3D map: the layer drape usually fails to load](3d-map-basemap-drape-cors.md) —
   why a draped 2D layer often falls back to terrain-only in 3D (cross-origin tile
   restrictions).

@@ -1,6 +1,6 @@
 # Report image captions
 
-Status: implemented locally; live Peakbagger save/reopen verification remains open.
+Status: complete; archived 2026-09-26 after live saved-report verification.
 
 ## Implementation record — 2026-09-12
 
@@ -278,13 +278,16 @@ Do not ship or commit a half-connected UI that drops caption data.
 
 ## Completion criteria and evidence
 
-- [ ] Saved format selected and server compatibility evidence recorded.
+- [x] Saved format selected and server compatibility evidence recorded.
 - [x] Caption association survives the tested conversions and photo lifecycle paths.
 - [x] Existing uncaptioned and inline images retain their behavior.
 - [x] Keyboard behavior, undo, accessible control names, and rendered layout verified.
 - [x] Conversion, integration, and real-browser checks run with results recorded.
 - [x] Maintained guide updated.
-- [ ] Live compatibility confirmed and plan archived.
+- [x] Live compatibility confirmed and plan archived.
+
+The following ledger records the local implementation state before the live
+check. The final closure below supersedes its live-compatibility gap.
 
 ### Fixed and verified
 
@@ -333,3 +336,41 @@ replacement paths, local-photo integration, existing report tests, browser
 fixture script, and maintained editor guide. No runtime changes or test/browser
 runs were performed to prepare this plan. Live figure/caption support remains
 unverified. Implementation authorization is outside this planning task.
+
+## Final closure — 2026-09-26
+
+### Fixed and verified
+
+- A previously saved, public [Mount Niblock ascent](https://www.peakbagger.com/climber/ascent.aspx?aid=3358087)
+  contains two captioned images. In the authenticated edit form, the server-loaded
+  `JournalText` field had two compact `[figure][img ...][figcaption]...` pairs;
+  its `value` and `defaultValue` matched on load. The images, dimensions, and
+  caption text remained attached in the reopened editor.
+- A fresh reload of the published ascent rendered two `<figure>` elements with
+  visible `<figcaption>` children. A separate, logged-out Codex in-app browser
+  loaded the same public page with no Better Peakbagger nodes and rendered both
+  captions below their images. The caption text there matched the saved edit
+  field. The independent browser's viewport was 1280×720 CSS pixels; the
+  authenticated Chrome tab's viewport was 1728×958. Both checks were background,
+  read-only browser visits. No live form was submitted or modified for this
+  closure. The browser initially showed a transient Cloudflare verification
+  page, which cleared without interaction.
+- The earlier conversion, lifecycle, keyboard, and hidden Chrome/Firefox checks
+  remain recorded above. This closure changed documentation only; those tests
+  were not rerun on 2026-09-26.
+
+### Intentionally not changed
+
+- No runtime code or saved ascent data changed. Peakbagger's native published
+  page displays captions as ordinary left-aligned text; the extension's Rich
+  editor and preview use centered italic styling. The native page's stylesheet
+  is outside this extension's caption editing contract.
+
+### Changed but not fully proven
+
+- The original Save click for this already persisted ascent was not witnessed in
+  this verification. The server-loaded edit field and independent public render
+  establish that Peakbagger stored and returned these two captioned figures;
+  they do not prove every possible figure variant or future server behavior.
+- Background browser checks do not establish native focus, window placement, or
+  browser chrome behavior. These were not caption compatibility gates.
