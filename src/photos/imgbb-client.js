@@ -71,7 +71,8 @@ const unixTime = value => {
     const seconds = positiveInteger(value);
     if (seconds == null) return null;
     const milliseconds = seconds * 1000;
-    return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : null;
+    const date = new Date(milliseconds);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 };
 
 const nullableExpiration = value => value == null || value === 0 || value === '0'
@@ -85,7 +86,10 @@ const parseJson = text => {
 
 // ImgBB's own `{ success: false, error: {...} }` envelope: proof the service
 // itself answered, rather than something in front of it.
-const hasProviderEnvelope = payload => !!payload && typeof payload === 'object' && !!payload.error;
+const hasProviderEnvelope = payload => !!payload && payload.success !== true
+    && payload.error && typeof payload.error === 'object' && !Array.isArray(payload.error)
+    && Number.isInteger(payload.error.code)
+    && typeof payload.error.message === 'string' && !!payload.error.message.trim();
 
 const providerMessage = payload => {
     const message = payload?.error?.message;
@@ -124,13 +128,14 @@ const UNREADABLE_SUCCESS = 'ImgBB accepted the upload but sent a reply Better Pe
     + ' Check your ImgBB account before uploading it again.';
 
 const cleanUploadResponse = (payload, responseStatus) => {
-    if (payload === undefined) {
+    if (payload?.success === false && hasProviderEnvelope(payload)) {
+        throw providerFailure(payload, responseStatus, 'rejected', 'ImgBB rejected the image upload.');
+    }
+    if (!payload || payload.success !== true || !payload.data
+        || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
         throw new ImgbbError('invalid-response', UNREADABLE_SUCCESS, {
             status: responseStatus, ambiguous: true,
         });
-    }
-    if (!payload || payload.success !== true || !payload.data || typeof payload.data !== 'object') {
-        throw providerFailure(payload, responseStatus, 'rejected', 'ImgBB rejected the image upload.');
     }
     const data = payload.data;
     const providerId = typeof data.id === 'string' ? data.id.trim().slice(0, 200) : '';
@@ -180,7 +185,7 @@ const publicError = (error, fallback = 'The ImgBB upload failed.') => {
             ...(error.status == null ? {} : { status: error.status }),
         };
     }
-    return { code: 'unknown', message: fallback, ambiguous: false };
+    return { code: 'unknown', message: fallback, ambiguous: true };
 };
 
 // The statuses where ImgBB rejected the request itself, so nothing was stored

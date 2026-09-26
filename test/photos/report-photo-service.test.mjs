@@ -108,3 +108,24 @@ test('only ascent editing URLs have report owners', () => {
     assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/ascentedit.aspx?cid=1&pid=2'), owner);
     assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/climber.aspx?cid=1'), null);
 });
+
+
+test('a malformed real client success retains its journal across service restart', async () => {
+    const indexedDB = new IDBFactory();
+    const openStore = () => Store.createPhotoStore({ indexedDB });
+    let posts = 0;
+    const createService = () => createReportPhotoService({ openStore,
+        permissionGranted: async () => true, keyStore: { getKey: async () => 'private-key' },
+        upload: options => Client.upload({ ...options, fetch: async () => {
+            posts++;
+            return { ok: true, status: 200, text: async () => 'null' };
+        } }) });
+    const service = createService();
+    const created = await service.create(owner, image);
+    await assert.rejects(service.uploadOne(owner, created.localPhotoId), /could not read/);
+    await assert.rejects(createService().uploadOne(owner, created.localPhotoId), /earlier upload may have reached/);
+    const store = await openStore();
+    assert.equal(posts, 1);
+    assert.equal((await store.getOperations())[0].state, 'request-started');
+    store.close();
+});

@@ -310,3 +310,23 @@ test('rejects non-HTTPS response URLs', () => {
         thumb: { url: 'http://i.ibb.co/a/thumb.jpg' },
     }), 200), error => error.code === 'invalid-response');
 });
+
+
+test('malformed success shapes and out-of-range timestamps retain upload uncertainty', async () => {
+    for (const payload of [null, [], {}, false, 'null', { success: true },
+        { success: false }, { success: true, data: [] },
+        successPayload({ time: Number.MAX_SAFE_INTEGER }),
+        successPayload({ expiration: Number.MAX_SAFE_INTEGER })]) {
+        await assert.rejects(Client.upload({ fetch: async () => response(200, payload),
+            key: KEY, blob: new Blob(['image'], { type: 'image/png' }) }),
+        error => error.code === 'invalid-response' && Client.publicError(error).ambiguous === true);
+    }
+    assert.equal(Client.publicError(new RangeError('unexpected validation failure')).ambiguous, true);
+});
+
+test('only an explicit structured refusal makes a malformed success safe to retry', async () => {
+    await assert.rejects(Client.upload({ fetch: async () => response(200,
+        { success: false, error: { code: 415, message: 'Invalid image' } }),
+    key: KEY, blob: new Blob(['image'], { type: 'image/png' }) }),
+    error => error.code === 'invalid-image' && error.ambiguous === false);
+});
