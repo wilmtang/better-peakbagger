@@ -3509,7 +3509,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         },
                     };
                 }
-                return { ok: true, settings: await Settings.applyPatch(message.patch) };
+                return { ok: true, settings: await Settings.applyPatch(message.patch, { onlyIfUnset: message.onlyIfUnset === true }) };
             case FavoritesStore.MESSAGE_TYPE:
                 if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
                     return {

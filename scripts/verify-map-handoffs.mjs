@@ -46,6 +46,7 @@ try {
     await writeFile(manifestPath, JSON.stringify(manifest));
 
     const ascentHtml = await readFile(path.join(root, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
+    const betaHtml = await readFile(path.join(root, 'test/fixtures/peakascents/1039-default-full-columns.html'), 'utf8');
     let sourceReads = 0;
     let gaiaMode = 'ready';
     let onxMode = 'ready';
@@ -124,6 +125,9 @@ try {
         } else if (request.headers.host === 'www.alltrails.com') {
             response.setHeader('Content-Type', 'text/html; charset=utf-8');
             response.end(alltrailsFixture());
+        } else if (request.url.startsWith('/climber/PeakAscents.aspx')) {
+            response.setHeader('Content-Type', 'text/html; charset=utf-8');
+            response.end(betaHtml);
         } else if (request.url.startsWith('/climber/GPXFile.aspx')) {
             sourceReads++;
             response.setHeader('Content-Type', 'application/gpx+xml');
@@ -152,6 +156,18 @@ try {
     resources.defer('hidden Chrome for Testing', () => context.close());
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const extensionId = new URL(worker.url()).host;
+    // Capture injection failures in this disposable worker, without recording GPX.
+    await worker.evaluate(() => {
+        globalThis.handoffInjectionErrors = [];
+        const execute = chrome.scripting.executeScript.bind(chrome.scripting);
+        chrome.scripting.executeScript = async details => {
+            try { return await execute(details); }
+            catch (error) {
+                globalThis.handoffInjectionErrors.push({ tabId: details.target?.tabId, message: error.message });
+                throw error;
+            }
+        };
+    });
 
     const source = await context.newPage();
     await source.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=7654321`);
@@ -175,6 +191,68 @@ try {
         previousHref: '/climber/GPXFile.aspx?aid=7654321&sep=1',
     });
     await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-button-light.png') });
+    const linkBox = await source.locator('#gpxlinks > a').first().boundingBox();
+    const controlsBox = await source.locator('.bpb-map-handoff-control').boundingBox();
+    assert.ok(controlsBox.y >= linkBox.y + linkBox.height, 'send controls occupy a row below the download');
+
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options/options.html#map-handoffs`);
+    const providerList = options.locator('#map-provider-order');
+    await providerList.locator('input:checked').first().waitFor();
+    assert.equal(await providerList.locator('input:checked').count(), 4);
+    await providerList.getByRole('button', { name: 'Move onX Backcountry up', exact: true }).click();
+    await waitForCondition(async () => options.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Move onX Backcountry down'), { description: 'keyboard focus preserved at the first position' });
+    await providerList.getByRole('button', { name: 'Move onX Backcountry down', exact: true }).click();
+    await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'gaia,onx,alltrails,caltopo', { description: 'provider order restored before the transfer check' });
+
+    await providerList.getByRole('button', { name: 'Move CalTopo up', exact: true }).click();
+    await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'gaia,onx,caltopo,alltrails', { description: 'provider order applied to the open ascent' });
+    await providerList.getByLabel('Gaia GPS', { exact: true }).uncheck();
+    await gaiaButton.waitFor({ state: 'hidden' });
+    await options.locator('#map-handoffs').screenshot({ path: path.join(evidenceDir, 'provider-settings-light.png') });
+
+    const beta = await context.newPage();
+    await beta.goto(`https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`);
+    await beta.locator('#pbaf-bar').waitFor();
+    const betaKeys = () => beta.locator('.pbaf-filter-item').evaluateAll(items => items.map(item => item.dataset.filterKey));
+    await options.locator('#beta-peak-order').getByRole('button', { name: 'Move Has beta up', exact: true }).click();
+    await waitForCondition(async () => (await betaKeys()).join() === 'fav,gps,tr,beta,link', { description: 'settings filter order applied to the open list' });
+    await beta.locator('[data-filter-key="beta"] .pbaf-chip').press('Alt+ArrowLeft');
+    await waitForCondition(async () => (await options.locator('#beta-peak-order > li').evaluateAll(items => items.map(item => item.dataset.orderItem))).join() === 'fav,gps,beta,tr,link', { description: 'page keyboard order reflected in Settings' });
+    await options.locator('#beta-peak-order').screenshot({ path: path.join(evidenceDir, 'beta-order-settings-light.png') });
+
+    const downloadEvent = options.waitForEvent('download');
+    await options.locator('#settings-backup-export').click();
+    const settingsDownload = await downloadEvent;
+    const exportedPath = path.join(temporary, 'settings.json');
+    await settingsDownload.saveAs(exportedPath);
+    const exported = JSON.parse(await readFile(exportedPath, 'utf8'));
+    assert.deepEqual(exported.settings.mapProviderOrder, ['gaia', 'onx', 'caltopo', 'alltrails']);
+    assert.deepEqual(exported.settings.mapProvidersEnabled, ['onx', 'alltrails', 'caltopo']);
+    assert.deepEqual(exported.settings.betaPeakFilterOrder, ['fav', 'gps', 'beta', 'tr', 'link']);
+    await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: [], theme: 'dark' } }));
+    await source.locator('.bpb-map-handoff-control').waitFor({ state: 'hidden' });
+    await options.locator('#settings-backup-file').setInputFiles(exportedPath);
+    await options.locator('#settings-backup-confirm').click();
+    await waitForCondition(async () => (await source.locator('.bpb-map-handoff-button:visible').evaluateAll(items => items.map(item => item.dataset.provider))).join() === 'onx,caltopo,alltrails', { description: 'imported settings restore provider visibility and order' });
+    await waitForCondition(async () => (await betaKeys()).join() === 'fav,gps,beta,tr,link', { description: 'imported settings restore filter order' });
+    await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } }));
+    await options.setViewportSize({ width: 430, height: 760 });
+    await options.locator('#map-handoffs').screenshot({ path: path.join(evidenceDir, 'provider-settings-dark-narrow.png') });
+    await options.locator('#beta-peak-order').screenshot({ path: path.join(evidenceDir, 'beta-order-settings-dark-narrow.png') });
+    const fits = await options.locator('#map-provider-order').evaluate(list => {
+        const bounds = list.getBoundingClientRect();
+        return [...list.querySelectorAll('li, button')].every(item => {
+            const rect = item.getBoundingClientRect();
+            return rect.left >= bounds.left && rect.right <= bounds.right + 1;
+        });
+    });
+    assert.ok(fits, 'provider settings fit at 430px');
+    await worker.evaluate(() => chrome.storage.sync.set({ bpbSettings: {} }));
+    await gaiaButton.waitFor();
+    await options.close();
+    await beta.close();
+
 
     await gaiaButton.click();
     await waitForCondition(async () => {
@@ -202,6 +280,7 @@ try {
         return /Ready in onX/.test(text) ? text : null;
     }, { description: 'the saved ascent to report onX ready', timeoutMs: 35_000 }).catch(async error => {
         error.message += `\nSource: ${await source.locator('.bpb-map-handoff-control').innerText()}`;
+        error.message += `\nTabs and injections: ${JSON.stringify(await worker.evaluate(async () => ({ tabs: await chrome.tabs.query({}), errors: globalThis.handoffInjectionErrors })))}`;
         for (const page of context.pages()) {
             if (page.url().startsWith('https://backcountry.onxmaps.com/')) {
                 error.message += `\nonX: ${page.url()} ${await page.locator('body').innerText()}`;
@@ -395,7 +474,8 @@ try {
         nativePermissionPrompt: 'not inspected; Gaia, onX, AllTrails, and CalTopo were granted only in the disposable manifest',
         checks: [
             'real unpacked dist',
-            'ascent-page placement',
+            'ascent-page placement below GPX download',
+            'provider and beta order controls, live sync, all-off, settings file export/import',
             'trusted click and worker route',
             'exact saved GPX handoff',
             'manual Gaia Save preserved',

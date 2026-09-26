@@ -26,6 +26,10 @@ const pick = settings => {
     const cleaned = Schema.clean(settings);
     const picked = {};
     for (const key of Object.keys(Schema.DEFAULTS)) picked[key] = cleaned[key];
+    // Exports are explicit: importing onto a device with legacy local order
+    // must not reinterpret an unconfigured source preference as that old order.
+    picked.betaPeakFilterOrder ??= [...Schema.PEAK_FILTER_ORDER];
+    picked.betaPersonalFilterOrder ??= [...Schema.PERSONAL_FILTER_ORDER];
     return picked;
 };
 

@@ -17,7 +17,7 @@ const FAIL_SOFT = Object.freeze({
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
-    'src/ascent/ascent-filter.js': [{ count: 1, kind: 'display', reason: 'render filter preferences' }],
+    'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
     'src/background/github-routes.js': [
         { count: 9, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
         { count: 1, kind: 'display', reason: 'render the default-off photo-recovery status' },
@@ -33,6 +33,7 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'src/ascent/ascent-filter.js': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
     'src/ascent/ascent-upload.js': [{ count: 1, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
     'src/background/background.js': [{ count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' }],

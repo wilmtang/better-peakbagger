@@ -60,13 +60,13 @@ export const createSettingsStore = ({
     // SETTINGS_PATCH messages, serializing patches from every extension
     // context in one queue. Keeping this public also gives non-browser tests a
     // strict mutation path without pretending a worker exists.
-    const applyPatch = patch => {
+    const applyPatch = (patch, { onlyIfUnset = false } = {}) => {
         const operation = mutationQueue.then(async () => {
             const current = await read();
-            const next = clean({
-                ...current,
-                ...(patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {}),
-            });
+            const proposed = patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {};
+            const updates = Object.fromEntries(Object.entries(proposed).filter(([key]) => !onlyIfUnset || current[key] == null));
+            if (onlyIfUnset && !Object.keys(updates).length) return current;
+            const next = clean({ ...current, ...updates });
             await area.set({ [STORAGE_KEY]: next });
             return next;
         });
@@ -91,11 +91,11 @@ export const createSettingsStore = ({
         return operation;
     };
 
-    const set = async patch => {
+    const set = async (patch, { onlyIfUnset = false } = {}) => {
         if (typeof sendMessage !== 'function') {
             throw new Error('The settings worker route is unavailable.');
         }
-        const response = await sendMessage({ type: 'SETTINGS_PATCH', patch });
+        const response = await sendMessage({ type: 'SETTINGS_PATCH', patch, ...(onlyIfUnset ? { onlyIfUnset: true } : {}) });
         if (response?.ok && response.settings) return clean(response.settings);
         const message = response?.error?.message || 'The setting could not be saved.';
         throw new Error(message);

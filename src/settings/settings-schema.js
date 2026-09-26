@@ -17,6 +17,10 @@
 const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
 const CHART_DEFAULT_SERIES = Object.freeze(['both', 'distance', 'time']);
 const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
+const MAP_PROVIDERS = Object.freeze(['gaia', 'onx', 'alltrails', 'caltopo']);
+const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
+const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
+
 const REPORT_EDITOR_MODES = Object.freeze(['rich', 'markdown', 'plain']);
 
 // The one definition of the extension's route look. Every surface that
@@ -78,6 +82,11 @@ const DEFAULTS = {
     mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
     terrainCacheLimitMb: 512,
     rememberMapLayer: false, mapLastLayer: '',
+    mapProviderOrder: MAP_PROVIDERS,
+    mapProvidersEnabled: MAP_PROVIDERS,
+    // null preserves legacy site-local ordering until the first list visit.
+    betaPeakFilterOrder: null,
+    betaPersonalFilterOrder: null,
     favoritesSource: 'buddies',
     // Custom favorites always absorb a newly added Buddy. Removing the
     // corresponding favorite is destructive, so it remains opt-in.
@@ -89,6 +98,11 @@ const DEFAULTS = {
     // chosen by clicking a column, or a non-default sort carried in the URL,
     // always wins; sort=ascentdate is the default order, not a chosen sort.
     betaSortDateDesc: false
+};
+
+const orderedIds = (value, allowed) => {
+    const unique = Array.isArray(value) ? [...new Set(value.filter(id => allowed.includes(id)))] : [];
+    return [...unique, ...allowed.filter(id => !unique.includes(id))];
 };
 
 const clampWords = value => {
@@ -198,6 +212,11 @@ const clean = raw => {
         s.autoGithubBackup = false;
         s.removeGithubBackupOnDelete = false;
     }
+    s.mapProviderOrder = orderedIds(s.mapProviderOrder, MAP_PROVIDERS);
+    s.mapProvidersEnabled = Array.isArray(s.mapProvidersEnabled)
+        ? [...new Set(s.mapProvidersEnabled.filter(id => MAP_PROVIDERS.includes(id)))] : [...MAP_PROVIDERS];
+    s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);
+    s.betaPersonalFilterOrder = s.betaPersonalFilterOrder == null ? null : orderedIds(s.betaPersonalFilterOrder, PERSONAL_FILTER_ORDER);
     s.chartDefaultSeries = chartDefaultSeries(s.chartDefaultSeries);
     s.favoritesSource = favoritesSource(s.favoritesSource);
     s.reportEditorMode = reportEditorMode(s.reportEditorMode);
@@ -221,6 +240,9 @@ const clean = raw => {
 
 const API = {
     MAP_LAYERS,
+    MAP_PROVIDERS,
+    PEAK_FILTER_ORDER,
+    PERSONAL_FILTER_ORDER,
     CHART_DEFAULT_SERIES,
     FAVORITES_SOURCES,
     REPORT_EDITOR_MODES,

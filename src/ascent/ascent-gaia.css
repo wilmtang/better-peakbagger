@@ -1,14 +1,14 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * Compact saved-GPX handoffs beside Peakbagger's native download link. */
+ * Compact saved-GPX handoffs below Peakbagger's native download link. */
 
 .bpb-map-handoff-control {
-    display: inline-flex;
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    margin-left: 6px;
-    vertical-align: middle;
+    margin: 6px 0 0;
+    max-width: 100%;
     font: 11px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -177,3 +177,6 @@
     border-color: #d79d72; color: #713100; background: #fff2e8;
 }
 :root[data-bpb-theme="light"] .bpb-map-handoff-status { color: #4d514d; }
+
+.bpb-map-handoff-control[hidden],
+.bpb-map-handoff-button[hidden] { display: none; }

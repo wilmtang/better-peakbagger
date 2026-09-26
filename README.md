@@ -79,7 +79,9 @@ coordinate-only tracks get a compact route scrubber. See the
 
 ### Send a saved track to another mapping app
 
-On a saved ascent, **Send to Gaia**, **Send to onX**, **Send to AllTrails**, and **Send to CalTopo** sit beside Peakbagger's
+In **Settings → Send GPX**, enable or hide providers and move them into your preferred order. All providers are enabled by default. **Settings → Ascent beta filter** controls the separate peak and personal filter orders; dragging filters on the page updates the same settings. These preferences travel with the existing **Settings backup** export/import file. Existing site-local filter orders migrate when an ascent list is next opened.
+
+On a saved ascent, **Send to Gaia**, **Send to onX**, **Send to AllTrails**, and **Send to CalTopo** sit below Peakbagger's
 GPX download. After the destination's one-time access grant, each button opens
 its map and supplies the exact saved GPX to the visible import preview. You
 review and confirm in the mapping app; Better Peakbagger does not copy account

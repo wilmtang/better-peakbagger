@@ -248,3 +248,14 @@ test('settings signature depends only on cleaned known settings in schema order'
     });
     assert.equal(Transfer.signature(oldPayload.settings), Transfer.signature(newPayload.settings));
 });
+
+test('provider visibility and both filter orders survive settings transfer', () => {
+    const settings = { mapProviderOrder: ['caltopo', 'onx', 'gaia', 'alltrails'], mapProvidersEnabled: [],
+        betaPeakFilterOrder: ['beta', 'link', 'tr', 'gps', 'fav'], betaPersonalFilterOrder: ['link', 'beta', 'gps', 'tr'] };
+    const result = Transfer.parse(Transfer.serialize(Transfer.buildPayload(settings)));
+    assert.equal(result.ok, true);
+    for (const [key, value] of Object.entries(settings)) assert.deepEqual(result.settings[key], value);
+    const defaults = Transfer.buildPayload({}).settings;
+    assert.deepEqual(defaults.betaPeakFilterOrder, Schema.PEAK_FILTER_ORDER);
+    assert.deepEqual(defaults.betaPersonalFilterOrder, Schema.PERSONAL_FILTER_ORDER);
+});

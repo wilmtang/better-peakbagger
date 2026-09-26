@@ -390,6 +390,8 @@ test('saved map handoffs share one independent isolated-world surface', () => {
     assert.deepEqual(entry.css, ['css/ascent-gaia.css']);
     assert.ok(entry.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/ascent-gaia.js'), [
+        'settings/settings-schema.js',
+        'settings/settings.js',
         'peakbagger/peakbagger-origin.js',
         'peakbagger/peakbagger-cloudflare.js',
         'peakbagger/peakbagger-response.js',

@@ -3,8 +3,9 @@
 //
 // Better Peakbagger — ascent-list filter and instant table-sort content script.
 // Runs in the default isolated content-script world: it only reads list-table
-// DOM, reorders existing rows, and persists PeakAscents chip preferences in the
-// page's (same-origin) localStorage, so no page-global access is needed. Buddy
+// DOM and reorders existing rows. Chip toggles stay in page localStorage;
+// filter order is shared through extension settings. No page-global access is
+// needed. Buddy
 // and peak-list pages reuse only the sorter; they have no beta filter surface.
 
 import { settings as S } from '../settings/settings.js';
@@ -30,19 +31,18 @@ const isSorterOnlyPage = isBuddyListPage || isPeakListPage;
 // path. Sorter-only pages do not need ascent settings. Resolves to the
 // cleaned settings, or null on any read failure.
 const settingsPromise = S && isAscentListPage
-    ? S.get().catch(() => null)
+    ? S.requireCurrent().catch(() => null)
     : Promise.resolve(null);
 const favoritesPromise = isPeakAscentsPage
     ? chrome.storage.local.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]).catch(() => ({}))
     : Promise.resolve({});
 
-// Chip on/off states, filter order, and the Trip report word-count threshold
-// are per-page UI state kept in page localStorage (below). The shared extension
-// settings (chrome.storage) own only the cross-cutting "has beta" definition.
+// Chip toggles and the word threshold remain page-local. Order is synced;
+// existing page-local orders seed the settings on the first list visit.
 
 const STORAGE_KEY = 'pbAscentBetaFilter.v1';
-const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
-const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
+const PEAK_FILTER_ORDER = Schema.PEAK_FILTER_ORDER;
+const PERSONAL_FILTER_ORDER = Schema.PERSONAL_FILTER_ORDER;
 const defaultState = () => ({
     beta: false,
     tr: false,
@@ -845,6 +845,14 @@ const init = async () => {
             }
         } catch (e) { /* fall back to defaults */ }
     }
+    const orderSetting = isPeakAscentsPage ? 'betaPeakFilterOrder' : 'betaPersonalFilterOrder';
+    const localOrderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
+    if (currentSettings?.[orderSetting]) state[localOrderKey] = [...currentSettings[orderSetting]];
+    // Migrate both lists together so exports also preserve the unvisited list.
+    const migrateOrders = {};
+    if (currentSettings && !currentSettings.betaPeakFilterOrder) migrateOrders.betaPeakFilterOrder = [...state.peakOrder];
+    if (currentSettings && !currentSettings.betaPersonalFilterOrder) migrateOrders.betaPersonalFilterOrder = [...state.personalOrder];
+    if (Object.keys(migrateOrders).length) void S.set(migrateOrders, { onlyIfUnset: true }).catch(() => {});
     const initialFavorites = await favoritesPromise;
     const ownCid = ownerClimberId(document);
     const cacheForOwner = value => {
@@ -863,6 +871,7 @@ const init = async () => {
     const chips = {};
     const filterItems = {};
     const orderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
+    let confirmedOrder = [...state[orderKey]];
     let suppressChipClick = null;
     let moveFilterByKeyboard = null;
 
@@ -1155,6 +1164,12 @@ const init = async () => {
         const label = chips[key]?.querySelector('.pbaf-chip-label')?.textContent || 'Filter';
         orderStatusEl.textContent = `${label} moved to position ${order.indexOf(key) + 1} of ${order.length}.`;
     };
+    const persistFilterOrder = () => {
+        saveState(state);
+        void S.set({ [orderSetting]: [...state[orderKey]] }).catch(() => {
+            orderStatusEl.textContent = 'Order could not be saved to Settings. Try moving a filter again.';
+        });
+    };
     const setFilterOrder = (order, {
         persist = true,
         announce = null,
@@ -1165,7 +1180,7 @@ const init = async () => {
                 || order.some((key, index) => state[orderKey][index] !== key)) {
             state[orderKey] = [...order];
             applyFilterOrder({ animate, draggedItem });
-            if (persist) saveState(state);
+            if (persist) persistFilterOrder();
             if (announce) announceFilterPosition(announce);
             return true;
         }
@@ -1250,7 +1265,7 @@ const init = async () => {
             return;
         }
         settleDraggedItem(drag);
-        saveState(state);
+        persistFilterOrder();
         announceFilterPosition(drag.key);
     };
     bar.addEventListener('pointerdown', event => {
@@ -1427,6 +1442,13 @@ const init = async () => {
     // another tab. (The Trip report word threshold is local UI state.)
     if (S && S.subscribe) {
         S.subscribe(settings => {
+            const nextOrder = settings[orderSetting] || (isPeakAscentsPage ? PEAK_FILTER_ORDER : PERSONAL_FILTER_ORDER);
+            if (nextOrder.some((key, index) => confirmedOrder[index] !== key)) {
+                confirmedOrder = [...nextOrder];
+                finishPointerReorder(true);
+                setFilterOrder(nextOrder, { persist: false });
+                saveState(state);
+            }
             const nextBeta = betaCfgFrom(settings);
             const nextSource = Schema.favoritesSource(settings.favoritesSource);
             let changed = false;

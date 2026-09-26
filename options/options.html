@@ -37,6 +37,7 @@
                     <li><a class="nav-subitem" href="#map-chart-map">Map</a></li>
                 </ul>
             </li>
+            <li><a class="nav-item" href="#map-handoffs">Send GPX</a></li>
             <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
             <li><a class="nav-item" href="#favorites">Favorite climbers</a></li>
             <li>
@@ -364,6 +365,20 @@
             </div>
         </section>
 
+        <section id="map-handoffs" class="settings-section" aria-labelledby="map-handoffs-heading">
+            <h2 class="section-title" id="map-handoffs-heading">Send GPX</h2>
+            <div class="card">
+                <div class="row order-setting-row">
+                    <div class="label">
+                        <span class="title">Map providers</span>
+                        <span class="desc">Choose which buttons appear below a saved ascent’s GPX download. Move them into your preferred order.</span>
+                    </div>
+                    <ol id="map-provider-order" class="order-settings" aria-label="Map provider order"></ol>
+                </div>
+            </div>
+            <p class="sub">Provider choices and filter order are included in <a href="#github-settings-backup">Settings backup</a> for transfer to another device.</p>
+        </section>
+
         <section id="beta" class="settings-section" aria-labelledby="beta-settings-heading">
             <h2 class="section-title" id="beta-settings-heading">Ascent beta filter</h2>
             <div class="card">
@@ -393,6 +408,20 @@
                     </div>
                 </div>
 
+                <div class="row order-setting-row">
+                    <div class="label">
+                        <span class="title">Peak ascent filter order</span>
+                        <span class="desc">You can also drag filters directly on a peak’s ascent list.</span>
+                    </div>
+                    <ol id="beta-peak-order" class="order-settings" aria-label="Peak ascent filter order"></ol>
+                </div>
+                <div class="row order-setting-row">
+                    <div class="label">
+                        <span class="title">Personal ascent filter order</span>
+                        <span class="desc">The filter order on a climber’s ascent list.</span>
+                    </div>
+                    <ol id="beta-personal-order" class="order-settings" aria-label="Personal ascent filter order"></ol>
+                </div>
                 <div class="row">
                     <div class="label">
                         <span class="title">Newest ascents first</span>

@@ -267,13 +267,15 @@ test('settings are grouped by the surface they affect', async () => {
         'General',
         'Activity creation',
         'Map & GPX chart',
+        'Send GPX',
         'Ascent beta filter',
         'Favorite climbers',
         'Backup & sync',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, favorites, github, about] = sections;
+    const [general, capture, mapChart, handoffs, beta, favorites, github, about] = sections;
+    assert.ok(handoffs.querySelector('#map-provider-order'));
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('#github-backup .desc').textContent, /manual backup controls/i);
@@ -952,7 +954,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'favorites', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'map-handoffs', 'beta', 'favorites', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {

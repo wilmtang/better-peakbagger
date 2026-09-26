@@ -5,6 +5,7 @@
 // is read only after a trusted provider click. Each destination's visible
 // preview and final confirmation remain the user's review gate.
 
+import { settings as S } from '../settings/settings.js';
 import { ascentPage as AscentPage } from './ascent-page.js';
 import { savedGpxSource as GpxSource } from '../gpx/saved-gpx-source.js';
 import { MAX_CALTOPO_GPX_BYTES } from '../caltopo/caltopo-import.js';
@@ -104,8 +105,15 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     let activeProvider = null;
     let placementObserver = null;
 
+    let preferences = S.clean();
     const updateButtons = () => {
+        for (const [index, id] of preferences.mapProviderOrder.entries()) {
+            const button = providers.get(id).button;
+            if (buttons.children[index] !== button) buttons.insertBefore(button, buttons.children[index] || null);
+        }
+        control.hidden = preferences.mapProvidersEnabled.length === 0 && !activeProvider && !status.textContent;
         for (const provider of providers.values()) {
+            provider.button.hidden = !preferences.mapProvidersEnabled.includes(provider.id) && activeProvider !== provider.id;
             provider.button.disabled = !!activeProvider;
             provider.button.setAttribute('aria-busy', String(activeProvider === provider.id));
         }
@@ -128,7 +136,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const run = async (provider, event) => {
-        if (event?.isTrusted !== true || activeProvider) return;
+        if (event?.isTrusted !== true || activeProvider || !preferences.mapProvidersEnabled.includes(provider.id)) return;
         // A possibly used importer is never reused. A deliberate repeat starts
         // a fresh destination tab, so the old preview remains available for
         // inspection and cannot receive the same file twice.
@@ -237,7 +245,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         provider.button.addEventListener('click', event => run(provider, event));
     }
     updateButtons();
-    const placeBesideDownload = () => {
+    const placeBelowDownload = () => {
         if (trackLink.nextElementSibling !== control) trackLink.after(control);
     };
     const stopPlacement = () => {
@@ -245,17 +253,31 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         placementObserver = null;
     };
     const observePlacement = () => {
-        placeBesideDownload();
+        placeBelowDownload();
         if (placementObserver || !trackLink.parentElement) return;
-        placementObserver = new MutationObserver(placeBesideDownload);
+        placementObserver = new MutationObserver(placeBelowDownload);
         placementObserver.observe(trackLink.parentElement, { childList: true });
     };
     observePlacement();
+    let settingsRevision = 0;
+    const unsubscribe = S.subscribe(settings => {
+        settingsRevision++;
+        preferences = settings;
+        updateButtons();
+    });
+    const loadPreferences = async () => {
+        const revision = settingsRevision;
+        const settings = await S.get();
+        if (revision === settingsRevision) { preferences = settings; updateButtons(); }
+    };
+    void loadPreferences();
     PageLifecycle.create({
         onSuspend: stopPlacement,
-        onResume: observePlacement,
+        onResume: () => { observePlacement(); void loadPreferences(); },
         onDispose: () => {
             generation++;
+            settingsRevision++;
+            unsubscribe();
             stopPlacement();
         },
     });

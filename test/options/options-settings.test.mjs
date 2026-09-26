@@ -394,3 +394,34 @@ test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);
 });
+
+test('provider and filter order controls save independently and reflect remote changes', async () => {
+    const dom = await loadOptions({});
+    const providers = el(dom, 'map-provider-order');
+    const ids = list => [...list.children].map(row => row.dataset.orderItem);
+    const gaia = providers.querySelector('[data-order-item="gaia"]');
+    assert.equal(providers.querySelectorAll('input:checked').length, 4);
+    gaia.querySelector('[data-move="down"]').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
+    assert.deepEqual(ids(providers), ['onx', 'gaia', 'alltrails', 'caltopo']);
+    await waitFor(dom, () => !gaia.querySelector('input').disabled);
+    gaia.querySelector('input').click();
+    await waitFor(dom, () => !dom.chrome._store.bpbSettings.mapProvidersEnabled.includes('gaia'));
+    const peak = el(dom, 'beta-peak-order');
+    peak.querySelector('[data-order-item="beta"] [data-move="up"]').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');
+    assert.deepEqual(ids(el(dom, 'beta-personal-order')), ['gps', 'tr', 'link', 'beta']);
+    await dom.chrome.storage.sync.set({ bpbSettings: settingsSchema.clean({ mapProviderOrder: ['caltopo'], mapProvidersEnabled: [] }) });
+    assert.equal(ids(providers)[0], 'caltopo');
+    assert.equal(providers.querySelectorAll('input:checked').length, 0);
+});
+
+test('moving an order item to the first position keeps keyboard focus on its available move control', async () => {
+    const dom = await loadOptions({});
+    const up = el(dom, 'map-provider-order').querySelector('[data-order-item="onx"] [data-move="up"]');
+    up.focus();
+    up.click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapProviderOrder?.[0] === 'onx');
+    await waitFor(dom, () => !up.parentElement.querySelector('[data-move="down"]').disabled);
+    assert.equal(dom.window.document.activeElement, up.parentElement.querySelector('[data-move="down"]'));
+});

@@ -37,10 +37,12 @@ export const createPageSettingsClient = ({
     const failureMessage = value => (typeof value === 'string' && value.trim() && value.length <= 200
         ? value.trim()
         : WRITE_FAILED_FALLBACK);
+    const sameValue = (left, right) => left === right || (Array.isArray(left) && Array.isArray(right)
+        && left.length === right.length && left.every((value, index) => value === right[index]));
     const sameSettings = (left, right) => {
         if (!left || !right) return left === right;
         const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-        return Array.from(keys).every(key => left[key] === right[key]);
+        return Array.from(keys).every(key => sameValue(left[key], right[key]));
     };
     const markApplied = () => { applied = { ...(settings || safeFallback) }; };
     const recompute = () => {
@@ -50,7 +52,7 @@ export const createPageSettingsClient = ({
         settings = Schema.clean(optimistic);
         if (sameSettings(previous, settings)) return;
         const before = applied || previous || safeFallback;
-        const changed = keys => keys.some(key => before[key] !== settings[key]);
+        const changed = keys => keys.some(key => !sameValue(before[key], settings[key]));
         markApplied();
         subscribers.forEach(subscriber => {
             try { subscriber(settings, changed); } catch (error) { /* A subscriber cannot break the bridge. */ }
