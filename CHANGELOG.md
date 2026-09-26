@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 3.8.0 — 2026-09-26
+
+- **Send a saved GPX to Gaia GPS, onX Backcountry, or AllTrails.** Each
+  handoff starts from the saved ascent and keeps the destination's import
+  flow under your control.
+
+- **Caption report images and refine them in Photo Topos.** Captions survive
+  Rich editing and Undo; the photo editor adds a resizable zoom and pan view,
+  editable freehand strokes, and direct editing of completed route points.
+
+- **Make report photo saving easier to follow.** Pasted photos upload when
+  the ascent is saved, with visible progress and protection against repeating
+  an upload whose outcome is still unknown. Plain mode also shows natural
+  line breaks in place of standalone break tags.
+
+- **Make activity capture and ascent backup recovery more reliable.** Capture
+  checks provider ownership and export readiness before proceeding, reports
+  progress more accurately, and bounds slow work. Backup checks resume after
+  cached navigation and keep uncertain remote outcomes visible.
+
 - **Name ascent and trip-report backups for everything they preserve.** Settings,
   saved-ascent actions, and the My Ascents bulk flow now consistently call the
   feature **Ascent and TR backup**.
