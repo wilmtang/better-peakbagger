@@ -172,7 +172,7 @@ script is added or removed without updating it.
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
-| `npm run verify:capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `-- chrome` or `-- firefox` for one browser. |
+| `npm run verify:capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image and delayed helper navigation. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `-- chrome` or `-- firefox` for one browser. |
 | `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
 | `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
 | `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, AllTrails, and CalTopo HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the four map hosts because hidden automation cannot inspect native permission prompts. |
@@ -607,8 +607,10 @@ add it to the merge-step condition, for example
   native toolbar autosizing is not exercised by this verifier.
 - `npm run verify:capture-readiness` exercises the real worker and Peakbagger
   page helper with a parsed, signed-in page whose image never finishes loading.
-  It checks both progress past session verification and rejection of a signed-out
-  live response despite stale signed-in links in the page. The provider adapter
+  It also delays the first response in an automatically created helper tab to
+  exercise its uncommitted URL state. Both paths must progress past session
+  verification, clean up completed helpers, and block GPS export when signed out,
+  including a live response that disagrees with stale signed-in page links. The provider adapter
   and its host permission exist only in a disposable test extension; no live
   provider compatibility, native popup behavior, or browser focus is established.
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe

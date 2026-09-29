@@ -28,15 +28,24 @@ const accountLinks = '<a href="/climber/climber.aspx?cid=77">My Home Page</a>'
 async function fixtureServer(resources, temporaryRoot) {
     const certificate = await createFixtureCertificate({ directory: temporaryRoot });
     resources.defer('capture fixture certificate', () => certificate.remove());
-    const state = { signedIn: true, loginRequests: 0 };
+    const state = { signedIn: true, loginRequests: 0, holdHelper: false };
+    const heldHelpers = [];
     const server = https.createServer({ key: certificate.key, cert: certificate.cert }, (request, response) => {
+        if (request.url === '/release-helper') {
+            state.holdHelper = false;
+            for (const release of heldHelpers.splice(0)) release();
+            response.end('released');
+            return;
+        }
         if (request.url === '/pending.svg') return; // Intentionally hold window.load.
         response.setHeader('content-type', 'text/html');
         const isLogin = request.headers.host === 'www.peakbagger.com' && request.url === '/Default.aspx';
         if (isLogin) state.loginRequests++;
         const body = isLogin && !state.signedIn ? '<p>Sign in</p>' : accountLinks;
-        response.end(`<!doctype html><title>Capture readiness fixture</title>${body}`
+        const finish = () => response.end(`<!doctype html><title>Capture readiness fixture</title>${body}`
             + (request.url === '/Default.aspx?pending' ? '<img src="/pending.svg" alt="">' : ''));
+        if (isLogin && state.holdHelper) heldHelpers.push(finish);
+        else finish();
     });
     resources.defer('capture fixture HTTPS server', () => closeServer(server));
     await listenServer(server, 0, '127.0.0.1');
@@ -130,6 +139,38 @@ async function capture(tabs) {
     return { phase: job?.phase, error: job?.error, status: peakbagger.status, exports: results[0]?.result };
 }
 
+// Hold the helper's first response until the observer has seen its tab. This
+// covers the real pre-commit tab state without depending on network timing.
+async function captureWithNewHelper(tabs) {
+    const api = globalThis.browser || globalThis.chrome;
+    const existing = await api.tabs.query({ url: 'https://www.peakbagger.com/*' });
+    for (const tab of existing) await api.tabs.remove(tab.id);
+    const before = new Set((await api.tabs.query({})).map(tab => tab.id));
+    const capturePromise = api.runtime.sendMessage({ type: 'CAPTURE_START', tabId: tabs.providerId, force: true });
+    let helper;
+    try {
+        const expiresAt = Date.now() + 10_000;
+        do {
+            helper = (await api.tabs.query({})).find(tab => !before.has(tab.id));
+            if (helper) break;
+            await new Promise(resolve => setTimeout(resolve, 25));
+        } while (Date.now() < expiresAt);
+        if (!helper) throw new Error('Capture did not create its helper tab');
+    } finally {
+        await fetch('https://www.peakbagger.com/release-helper');
+    }
+    const job = await capturePromise;
+    const results = await api.scripting.executeScript({
+        target: { tabId: tabs.providerId }, world: 'MAIN',
+        func: () => globalThis.bpbFixtureExports || 0,
+    });
+    return {
+        phase: job?.phase, error: job?.error, exports: results[0]?.result,
+        helperRemains: (await api.tabs.query({})).some(tab => tab.id === helper.id),
+        initialUrl: helper.url || null,
+    };
+}
+
 async function verify(evaluate, fixture, label) {
     const viewport = await evaluate(() => ({ width: globalThis.innerWidth, height: globalThis.innerHeight }));
     fixture.state.signedIn = true;
@@ -145,7 +186,19 @@ async function verify(evaluate, fixture, label) {
     const signedOut = await evaluate(capture, tabs);
     assert.equal(signedOut.error?.code, 'peakbagger-signed-out', `${label}: ${JSON.stringify(signedOut)}`);
     assert.equal(signedOut.exports, 1, 'stale signed-in DOM links must not permit another GPS export');
-    console.log(`${label}: pending-image capture and signed-out privacy gate passed`
+    fixture.state.signedIn = true;
+    fixture.state.holdHelper = true;
+    const freshHelper = await evaluate(captureWithNewHelper, tabs);
+    assert.equal(freshHelper.phase, 'no-gps', `${label} new helper: ${JSON.stringify(freshHelper)}`);
+    assert.equal(freshHelper.exports, 2);
+    assert.equal(freshHelper.helperRemains, false, 'the completed helper must be cleaned up');
+
+    fixture.state.signedIn = false;
+    fixture.state.holdHelper = true;
+    const signedOutHelper = await evaluate(captureWithNewHelper, tabs);
+    assert.equal(signedOutHelper.error?.code, 'peakbagger-signed-out', `${label}: ${JSON.stringify(signedOutHelper)}`);
+    assert.equal(signedOutHelper.exports, 2, 'a new signed-out helper must also block GPS export');
+    console.log(`${label}: pending-image capture, new-helper startup, and signed-out privacy gates passed`
         + ` (hidden, ${viewport.width}x${viewport.height} viewport; no WebGL).`);
 }
 

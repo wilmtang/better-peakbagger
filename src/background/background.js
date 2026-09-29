@@ -750,44 +750,68 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }));
     };
 
-    const waitForPeakbaggerTab = async (tabId, signal) => {
+    const waitForPeakbaggerTab = async (tabId, signal, { created = false } = {}) => {
+        let awaitingFirstDocument = created;
+        let readinessError = null;
         const expiresAt = now() + PEAKBAGGER_OPERATION_TIMEOUT_MS;
         try {
             while (true) {
                 if (signal?.aborted) throw cancelledCaptureError();
                 const remaining = expiresAt - now();
-                if (remaining <= 0) throw peakbaggerOperationTimeoutError(
-                    'temporary-tab readiness',
-                    new Error('Peakbagger request tab did not finish loading.'),
-                );
+                if (remaining <= 0) {
+                    if (readinessError) throw readinessError;
+                    throw peakbaggerOperationTimeoutError(
+                        'temporary-tab readiness',
+                        new Error('Peakbagger request tab did not finish loading.'),
+                    );
+                }
                 const tab = await runPeakbaggerBrowserOperation({
                     phase: 'temporary-tab readiness',
                     operation: () => ext.tabs.get(tabId),
                     signal,
                     timeoutMs: remaining,
                 });
-                if (!canonicalPeakbaggerTab(tab)) {
-                    throw peakbaggerTabChangedError(new Error('The Peakbagger request tab navigated away.'));
-                }
-                if (tab.status === 'complete') return tab;
-                // A usable document can remain "loading" indefinitely while an
-                // unrelated image or subframe is pending. Capture needs the DOM
-                // and its same-origin fetch, not the window's load event.
-                const results = await runPeakbaggerBrowserOperation({
-                    phase: 'page-document readiness',
-                    signal,
-                    timeoutMs: Math.max(1, expiresAt - now()),
-                    operation: () => ext.scripting.executeScript({
-                        target: { tabId },
-                        world: 'MAIN',
-                        injectImmediately: true,
-                        func: () => ({ url: location.href, readyState: document.readyState }),
-                    }),
-                });
-                const documentState = results?.[0]?.result;
-                if (documentState?.url === tab.url
-                    && (documentState.readyState === 'interactive' || documentState.readyState === 'complete')) {
-                    return tab;
+                // Firefox may omit url (Chrome may report about:blank) until a
+                // newly created tab commits its first document. Wait without
+                // injecting; only a canonical committed document can be used.
+                const uncommitted = awaitingFirstDocument && tab
+                    && (!tab.url || tab.url === 'about:blank')
+                    && (!tab.pendingUrl || canonicalPeakbaggerUrl(tab.pendingUrl));
+                if (!uncommitted) {
+                    if (!canonicalPeakbaggerTab(tab)
+                        || (tab.pendingUrl && !canonicalPeakbaggerUrl(tab.pendingUrl))) {
+                        throw peakbaggerTabChangedError(new Error('The Peakbagger request tab navigated away.'));
+                    }
+                    awaitingFirstDocument = false;
+                    if (tab.status === 'complete') return tab;
+                    // A usable document can remain "loading" indefinitely while
+                    // an unrelated image or subframe is pending.
+                    let results;
+                    try {
+                        results = await runPeakbaggerBrowserOperation({
+                            phase: 'page-document readiness',
+                            signal,
+                            timeoutMs: Math.max(1, expiresAt - now()),
+                            operation: () => ext.scripting.executeScript({
+                                target: { tabId },
+                                world: 'MAIN',
+                                injectImmediately: true,
+                                func: () => ({ url: location.href, readyState: document.readyState }),
+                            }),
+                        });
+                        readinessError = null;
+                    } catch (error) {
+                        if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
+                        // Injection can race document creation/replacement. A
+                        // rejection alone is not evidence that the tab closed.
+                        // Recheck its identity before retrying within the deadline.
+                        readinessError = error;
+                    }
+                    const documentState = results?.[0]?.result;
+                    if (documentState?.url === tab.url
+                        && (documentState.readyState === 'interactive' || documentState.readyState === 'complete')) {
+                        return tab;
+                    }
                 }
                 if (typeof globalThis.setTimeout !== 'function') {
                     throw peakbaggerPageError(
@@ -805,8 +829,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
         } catch (error) {
             if (signal?.aborted) throw cancelledCaptureError();
+            if (readinessError && error?.code === 'peakbagger-page-timeout') {
+                throw await peakbaggerPageConnectionError(tabId, readinessError, signal);
+            }
             if (PublicErrors.isPublic(error)) throw error;
-            throw peakbaggerTabChangedError(error);
+            throw await peakbaggerPageConnectionError(tabId, error, signal);
         }
     };
 
@@ -1076,7 +1103,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 await createPeakbaggerHelperLease(tab, generation, leaseCreatedAt);
             }
             const accountEvidenceIsFresh = created || tab.status !== 'complete';
-            await waitForPeakbaggerTab(tab.id, signal);
+            await waitForPeakbaggerTab(tab.id, signal, { created });
             await ensurePeakbaggerPage(tab.id, signal);
             let adoptedForRecovery = false;
             return {
