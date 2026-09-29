@@ -35,9 +35,9 @@
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#map-chart-chart">GPX chart</a></li>
                     <li><a class="nav-subitem" href="#map-chart-map">Map</a></li>
+                    <li><a class="nav-subitem" href="#map-handoffs">Send GPX</a></li>
                 </ul>
             </li>
-            <li><a class="nav-item" href="#map-handoffs">Send GPX</a></li>
             <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
             <li><a class="nav-item" href="#favorites">Favorite climbers</a></li>
             <li>
@@ -363,20 +363,20 @@
                     </div>
                 </div>
             </div>
-        </section>
 
-        <section id="map-handoffs" class="settings-section" aria-labelledby="map-handoffs-heading">
-            <h2 class="section-title" id="map-handoffs-heading">Send GPX</h2>
-            <div class="card">
-                <div class="row order-setting-row">
-                    <div class="label">
-                        <span class="title">Map providers</span>
-                        <span class="desc">Check the providers to show beside a saved ascent’s GPX download. Drag the grips to change their order.</span>
+            <div id="map-handoffs" class="subsection" role="group" aria-labelledby="map-handoffs-heading">
+                <h3 class="subsection-title" id="map-handoffs-heading">Send GPX</h3>
+                <div class="card">
+                    <div class="row order-setting-row">
+                        <div class="label">
+                            <span class="title">Map providers</span>
+                            <span class="desc">Check the providers to show beside a saved ascent’s GPX download. Drag the grips to change their order.</span>
+                        </div>
+                        <ol id="map-provider-order" class="order-settings" aria-label="Map provider order"></ol>
                     </div>
-                    <ol id="map-provider-order" class="order-settings" aria-label="Map provider order"></ol>
                 </div>
+                <p class="sub">Provider choices and filter order are included in <a href="#github-settings-backup">Settings backup</a> for transfer to another device.</p>
             </div>
-            <p class="sub">Provider choices and filter order are included in <a href="#github-settings-backup">Settings backup</a> for transfer to another device.</p>
         </section>
 
         <section id="beta" class="settings-section" aria-labelledby="beta-settings-heading">
