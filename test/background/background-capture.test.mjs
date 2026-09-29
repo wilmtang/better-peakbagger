@@ -32,6 +32,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     afterSessionSet = null, clock = null, groupError = null, faults = {},
     sessionValues = null, browserTabs = null, timerDelayCap = null,
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
+    peakbaggerDocumentState = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
     captureDiagnostics = false,
@@ -211,6 +212,12 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return [];
                 }
                 const functionSource = String(details.func);
+                if (functionSource.includes('document.readyState')) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'readiness', details, true);
+                    const tab = tabs.get(details.target.tabId);
+                    const result = peakbaggerDocumentState || { url: tab?.url, readyState: 'interactive' };
+                    return [{ result: structuredClone(result) }];
+                }
                 const isOwnershipCheck = functionSource.includes('inspectOwnership')
                     || functionSource.includes('inspectExpectedOwnership')
                     || functionSource.includes('waitForOwnership');
@@ -1438,6 +1445,83 @@ test('activity capture creates and removes an inactive Peakbagger request tab wh
     assert.equal(harness.tabs.has(100), false);
     assert.equal(harness.tabs.get(1).active, true,
         'the provider tab remains active while the helper works in the background');
+});
+
+test('an interactive Peakbagger document can verify login while unrelated resources keep loading', async () => {
+    const harness = createHarness({
+        beforePeakbaggerScript: ({ details }) => {
+            assert.equal(details.injectImmediately, true,
+                'page-helper calls must not wait for the pending window load event');
+        },
+    });
+    harness.tabs.get(5).status = 'loading';
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.tabs.get(5).status, 'loading');
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks'],
+        'an incompletely loaded tab must still make a live login request');
+    assert.equal(harness.providerCaptureCalls.length, 1);
+});
+
+test('an interactive Peakbagger document cannot bypass a signed-out live login response', async () => {
+    const harness = createHarness({ loginHtml: '<html><body>Sign in</body></html>' });
+    harness.tabs.get(5).status = 'loading';
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.error.code, 'peakbagger-signed-out');
+    assert.equal(harness.providerCaptureCalls.length, 0,
+        'GPS export remains behind authoritative account verification');
+});
+
+test('Peakbagger document readiness requires a parsed document at the expected URL', async t => {
+    for (const documentState of [
+        { url: 'https://www.peakbagger.com/Default.aspx', readyState: 'loading' },
+        { url: 'https://www.peakbagger.com/other.aspx', readyState: 'interactive' },
+        { url: 'https://example.com/', readyState: 'complete' },
+        { url: 'https://www.peakbagger.com/Default.aspx', readyState: 'unexpected' },
+    ]) {
+        await t.test(`${documentState.url} ${documentState.readyState}`, async () => {
+            const clock = { now: Date.now() };
+            const harness = createHarness({
+                clock,
+                timerDelayCap: 5,
+                peakbaggerDocumentState: documentState,
+                beforeTabGet: ({ tabId }) => { if (tabId === 5) clock.now += 10_000; },
+            });
+            harness.tabs.get(5).status = 'loading';
+
+            const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+            assert.equal(failed.error.code, 'peakbagger-page-timeout');
+            assert.equal(harness.peakbaggerPageCalls.length, 0);
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('cancelling a stalled Peakbagger document-readiness probe settles capture immediately', { timeout: 1000 }, async () => {
+    let reached;
+    const readinessReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase !== 'readiness') return;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    harness.tabs.get(5).status = 'loading';
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await readinessReached;
+
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+
+    assert.equal(cancelled.cancelled, true);
+    assert.equal(await capture, null);
+    assert.equal(harness.providerCaptureCalls.length, 0);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
 });
 
 test('selecting a temporary Peakbagger request tab transfers cleanup ownership to the user', async () => {

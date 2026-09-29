@@ -770,6 +770,25 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     throw peakbaggerTabChangedError(new Error('The Peakbagger request tab navigated away.'));
                 }
                 if (tab.status === 'complete') return tab;
+                // A usable document can remain "loading" indefinitely while an
+                // unrelated image or subframe is pending. Capture needs the DOM
+                // and its same-origin fetch, not the window's load event.
+                const results = await runPeakbaggerBrowserOperation({
+                    phase: 'page-document readiness',
+                    signal,
+                    timeoutMs: Math.max(1, expiresAt - now()),
+                    operation: () => ext.scripting.executeScript({
+                        target: { tabId },
+                        world: 'MAIN',
+                        injectImmediately: true,
+                        func: () => ({ url: location.href, readyState: document.readyState }),
+                    }),
+                });
+                const documentState = results?.[0]?.result;
+                if (documentState?.url === tab.url
+                    && (documentState.readyState === 'interactive' || documentState.readyState === 'complete')) {
+                    return tab;
+                }
                 if (typeof globalThis.setTimeout !== 'function') {
                     throw peakbaggerPageError(
                         'peakbagger-tab-load-failed',
@@ -801,6 +820,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     func: version => globalThis.BPBPeakbaggerPage?.version === version,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
+                    injectImmediately: true,
                 }),
             });
             return results?.[0]?.result === true;
@@ -813,6 +833,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 target: { tabId },
                 files: ['peakbagger-page.js'],
                 world: 'MAIN',
+                injectImmediately: true,
             }),
         });
         if (!await probe()) throw new Error('The Peakbagger page helper did not start.');
@@ -831,6 +852,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         : null,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
+                    injectImmediately: true,
                 }),
             });
             const tab = await runPeakbaggerBrowserOperation({
@@ -947,6 +969,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 func: id => globalThis.BPBPeakbaggerPage?.cancel?.(id) === true,
                 args: [requestId],
                 world: 'MAIN',
+                injectImmediately: true,
             }).catch(() => {});
         };
         const attempt = async () => {
@@ -970,6 +993,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     },
                     args: [PEAKBAGGER_PAGE_VERSION, requestId, url, kind],
                     world: 'MAIN',
+                    injectImmediately: true,
                 }),
             });
             if (!results?.[0]) throw new Error('The Peakbagger page returned no request result.');

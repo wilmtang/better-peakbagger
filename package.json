@@ -20,6 +20,7 @@
     "test": "npm run build && node --test \"test/**/*.test.mjs\"",
     "test:scale": "npm run build && node --test \"test/scale/**/*.scale.mjs\"",
     "verify:capture-popup": "npm run build && node scripts/verify-capture-popup.mjs",
+    "verify:capture-readiness": "npm run build && node scripts/verify-capture-readiness.mjs",
     "verify:provider-contracts": "npm run build && node scripts/verify-provider-contracts.mjs",
     "verify:provider-performance": "npm run build && node scripts/verify-provider-performance.mjs",
     "verify:map-handoffs": "npm run build && node scripts/verify-map-handoffs.mjs",
