@@ -201,6 +201,42 @@ try {
     const providerList = options.locator('#map-provider-order');
     await providerList.locator('input:checked').first().waitFor();
     assert.equal(await providerList.locator('input:checked').count(), 4);
+    // Measure real layout: jsdom cannot expose description caps or centering.
+    for (const width of [1000, 760, 430]) {
+        await options.setViewportSize({ width, height: 760 });
+        for (const theme of ['light', 'dark']) {
+            await options.locator('#theme').selectOption(theme);
+            await options.waitForFunction(value => document.documentElement.dataset.bpbTheme === value, theme);
+            await options.waitForFunction(() => !document.querySelector('#status').classList.contains('show'));
+            const layout = await options.evaluate(() => {
+                const orders = [...document.querySelectorAll('.order-setting-row')].map(row => {
+                    const label = row.querySelector('.label').getBoundingClientRect();
+                    const desc = row.querySelector('.desc').getBoundingClientRect();
+                    const list = row.querySelector('ol').getBoundingClientRect();
+                    return { labelWidth: label.width, descWidth: desc.width, descBottom: desc.bottom, listTop: list.top };
+                });
+                const row = document.querySelector('.viewport-setting-row');
+                const label = row.querySelector('.label').getBoundingClientRect();
+                const controls = row.querySelector('.control').getBoundingClientRect();
+                return { orders, labelTop: label.top, labelBottom: label.bottom, controlsTop: controls.top,
+                    viewportFits: row.scrollWidth <= row.clientWidth,
+                    stacked: window.getComputedStyle(row).flexDirection === 'column' };
+            });
+            for (const order of layout.orders) {
+                assert.ok(Math.abs(order.labelWidth - order.descWidth) < 1, `order description uses available width at ${width}px`);
+                assert.ok(order.listTop >= order.descBottom, `order description clears the list at ${width}px`);
+            }
+            assert.ok(layout.viewportFits, `viewport setting fits at ${width}px`);
+            assert.ok(layout.stacked ? layout.controlsTop >= layout.labelBottom : Math.abs(layout.controlsTop - layout.labelTop) < 1,
+                `viewport label aligns with the control group or stacks above it at ${width}px`);
+            await options.locator('#map-handoffs').screenshot({ path: path.join(evidenceDir, `provider-layout-${theme}-${width}.png`) });
+            await options.locator('.order-setting-row').filter({ has: options.locator('#beta-peak-order') }).screenshot({ path: path.join(evidenceDir, `filter-layout-${theme}-${width}.png`) });
+            await options.locator('.viewport-setting-row').screenshot({ path: path.join(evidenceDir, `viewport-layout-${theme}-${width}.png`) });
+        }
+    }
+    await options.setViewportSize({ width: 1000, height: 760 });
+    await options.locator('#theme').selectOption('light');
+
     await providerList.getByRole('button', { name: 'Reorder onX Backcountry', exact: true }).press('ArrowUp');
     await waitForCondition(async () => options.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Reorder onX Backcountry' && !document.activeElement.disabled), { description: 'keyboard focus preserved at the first position' });
     await providerList.getByRole('button', { name: 'Reorder onX Backcountry', exact: true }).press('ArrowDown');
@@ -506,6 +542,7 @@ try {
         checks: [
             'real unpacked dist',
             'ascent-page placement beside GPX download',
+            'settings description width and viewport alignment at 1000, 760, and 430px in light and dark themes',
             'provider and beta grip controls: mouse drag, touch drag, keyboard, and reduced motion',
             'provider and beta order controls, live sync, all-off, settings file export/import',
             'trusted click and worker route',
