@@ -245,7 +245,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         provider.button.addEventListener('click', event => run(provider, event));
     }
     updateButtons();
-    const placeBelowDownload = () => {
+    const placeBesideDownload = () => {
         if (trackLink.nextElementSibling !== control) trackLink.after(control);
     };
     const stopPlacement = () => {
@@ -253,9 +253,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         placementObserver = null;
     };
     const observePlacement = () => {
-        placeBelowDownload();
+        placeBesideDownload();
         if (placementObserver || !trackLink.parentElement) return;
-        placementObserver = new MutationObserver(placeBelowDownload);
+        placementObserver = new MutationObserver(placeBesideDownload);
         placementObserver.observe(trackLink.parentElement, { childList: true });
     };
     observePlacement();

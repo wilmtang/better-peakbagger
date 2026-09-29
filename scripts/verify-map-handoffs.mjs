@@ -193,7 +193,8 @@ try {
     await source.locator('#gpxlinks').screenshot({ path: path.join(evidenceDir, 'ascent-button-light.png') });
     const linkBox = await source.locator('#gpxlinks > a').first().boundingBox();
     const controlsBox = await source.locator('.bpb-map-handoff-control').boundingBox();
-    assert.ok(controlsBox.y >= linkBox.y + linkBox.height, 'send controls occupy a row below the download');
+    assert.ok(controlsBox.x >= linkBox.x + linkBox.width, 'send controls sit beside the download');
+    assert.ok(controlsBox.y < linkBox.y + linkBox.height && controlsBox.y + controlsBox.height > linkBox.y, 'send controls share the download line');
 
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/options/options.html#map-handoffs`);
@@ -504,7 +505,7 @@ try {
         nativePermissionPrompt: 'not inspected; Gaia, onX, AllTrails, and CalTopo were granted only in the disposable manifest',
         checks: [
             'real unpacked dist',
-            'ascent-page placement below GPX download',
+            'ascent-page placement beside GPX download',
             'provider and beta grip controls: mouse drag, touch drag, keyboard, and reduced motion',
             'provider and beta order controls, live sync, all-off, settings file export/import',
             'trusted click and worker route',
