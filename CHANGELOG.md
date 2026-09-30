@@ -2,33 +2,60 @@
 
 ## Unreleased
 
-## 3.8.0 — 2026-09-26
+## 3.8.0 — 2026-09-29
 
-- **Send a saved GPX to Gaia GPS, onX Backcountry, or AllTrails.** Each
-  handoff starts from the saved ascent and keeps the destination's import
-  flow under your control.
+- **Keep Firefox submissions within Mozilla's reviewer-note limit.** Release
+  metadata preserves source, dependency, privacy, and terrain details and
+  rejects oversized notes before submission.
 
-- **Caption report images and refine them in Photo Topos.** Captions survive
-  Rich editing and Undo; the photo editor adds a resizable zoom and pan view,
-  editable freehand strokes, and direct editing of completed route points.
+- **Name backups for everything they preserve.** Settings, saved-ascent actions,
+  and the My Ascents bulk flow consistently call the feature **Ascent and TR
+  backup**. Backup checks resume after cached navigation and keep uncertain
+  remote outcomes visible.
 
-- **Make report photo saving easier to follow.** Pasted photos upload when
-  the ascent is saved, with visible progress and protection against repeating
-  an upload whose outcome is still unknown. Plain mode also shows natural
-  line breaks in place of standalone break tags.
+- **Make activity capture more reliable.** Capture checks provider ownership
+  and export readiness, reports progress accurately, and offers recovery for
+  the service that failed. Pending page resources no longer stall a ready
+  capture, and temporary Peakbagger helper tabs wait for the expected document
+  before checking account identity. Cancelling and reopening the popup preserve
+  the capture's privacy and exactly-once Preview boundaries.
 
-- **Make activity capture and ascent backup recovery more reliable.** Capture
-  checks provider ownership and export readiness before proceeding, reports
-  progress more accurately, and bounds slow work. Backup checks resume after
-  cached navigation and keep uncertain remote outcomes visible.
+- **Make report photos easier to save and edit.** Pasted photos upload on Save
+  with visible progress and protection against repeating an upload whose
+  outcome is unknown. Image captions survive Rich editing and Undo and can be
+  edited in Photo Topos. Plain mode shows natural line breaks in place of
+  standalone break tags.
 
-- **Name ascent and trip-report backups for everything they preserve.** Settings,
-  saved-ascent actions, and the My Ascents bulk flow now consistently call the
-  feature **Ascent and TR backup**.
+- **Send saved GPX files to Gaia GPS, onX Backcountry, AllTrails, or CalTopo.**
+  Buttons beside the saved ascent's GPX download supply the original file to
+  the destination's importer. Review, Import, and Save remain under your
+  control. onX uses its current Backcountry host, and AllTrails waits for its
+  file control wherever the importer places it.
 
-- **Keep Firefox reviewer notes within Mozilla's submission limit.** Release
-  metadata now preserves source, dependency, privacy, and terrain details while
-  failing locally before an oversized approval note can reach AMO.
+- **Refine photo topos with less friction.** Fit portrait photos, zoom and pan
+  inside a resizable view, draw editable freehand strokes, and directly edit
+  completed route points. Text labels wrap to adjustable widths; tools share
+  color and opacity while remembering their other preferences. Undo removes
+  unfinished route points one at a time, and conflicting local drafts can be
+  replaced explicitly.
+
+- **Arrange the controls you use.** Drag or use the keyboard to order map
+  providers and ascent filters in Settings; provider visibility and both list
+  layouts travel with Settings backup. **Send GPX** lives under **Map & GPX
+  chart**, and descriptions remain readable at narrow widths. Saved-ascent
+  details retain their divider even without trip-report prose.
+
+- **Understand suspect GPX segments without changing the saved file.** The
+  metrics row shows source point counts. Exact duplicates with degenerate
+  metadata and narrowly identified distant isolated points get an explained,
+  reversible interpretation; the original download and mapping-app transfers
+  remain unchanged.
+
+- **Update dependencies and repair their verification gates.** Include the
+  latest queued CodeMirror, MapLibre, Marked, ESLint, and jsdom upgrades, plus
+  patched development dependencies. Browser checks await completed storage
+  reads, closed-window test cleanup no longer hangs, and Settings drags survive
+  in-page focus restoration. Dependency auditing still requires zero advisories.
 
 ## 3.7.2 — 2026-09-03
 

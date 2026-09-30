@@ -1738,7 +1738,7 @@ No single green command proves the extension works:
   `web-ext` 10.7.0 / `addons-linter` 10.13.0 path uses patched `image-size` 2.0.4;
   the former time-limited exception has been removed. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
-  `minimatch@^3` path on patched 1.1.18 through a scoped override.
+  `minimatch@^3` path on patched 1.1.21 through a scoped override.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,
@@ -1750,8 +1750,8 @@ No single green command proves the extension works:
   the exact minified store archives.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render packaged
   MapLibre on a reported hardware GPU with synthetic route, peak, basemap, and
-  DEM fixtures. Their storage and bridge protocols are stubs, and they do not
-  contact the live terrain service. Both serve the showcase over HTTPS on a
+  DEM fixtures. They use stubbed extension storage APIs through the production settings
+  bridge and do not contact the live terrain service. Both serve the showcase over HTTPS on a
   Peakbagger hostname, because `src/peakbagger/peakbagger-request.js` refuses
   any other origin and the analyzer fetches its GPX through that guard.
 
