@@ -41,7 +41,7 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   static HTML, with no WebGL; native window focus was not established.
 - Preserved CodeMirror, tooling, and vendored dependency branches with real
   two-parent merges. Full tests passed: 2,097 tests. Full lint passed with seven
-  exact owned warnings after reviewing the removed MapLibre scale warning.
+  reviewed warnings after reviewing the removed MapLibre scale warning.
 - Chrome terrain passed on M3 Pro ANGLE Metal with 798×448 and 448×448 canvases.
   Firefox 155.0 terrain passed hidden at 1000×760 on M3 Pro ANGLE Metal,
   including resizing to 748×448. Neither check proves visible window behavior.
@@ -61,7 +61,8 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
 
 - Both minified 3.8.0 archives passed structural checks (85 entries each) and
   exact-package execution in hidden Chrome 153.0.8010.12 and Firefox 157.0 at
-  1000×760. The archives contain no subsequent test-only changes.
+  1000×760. After the staging correction, both rebuilt 86-entry archives
+  passed those same structural and browser checks again.
 - A hosted Firefox GPU Control-drag timeout exposed a missing camera-settlement
   boundary after the preceding pitch gesture. Both pitch gestures now settle
   before the next operation, and failures report current camera state. Hidden
@@ -82,8 +83,7 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   and checks the opening transaction on each poll. All 181 background tests
   passed, including stalled-tab rollback and cancellation coverage. The full
   2,100-test suite, hidden Chrome 153 and Firefox 157 verifiers, and two real
-  multi-summit runs passed. Release archives must be refreshed for this worker
-  change.
+  multi-summit runs passed. The staging correction below supersedes the initial blank-tab wait.
 
 - The lint warning baseline now uses upper limits: upstream warning removal
   passes, while unreviewed code/file pairs and excess occurrences fail. Reports
@@ -96,6 +96,11 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   the ten-second bound and transaction cancellation remain enforced. All 2,101
   Node tests, full lint, hidden Chrome 153/Firefox 157 checks, and the
   unmodified multi-summit verifier passed after this correction.
+
+- [Firefox Android validation](firefox-android-validation-2026-09-30.md) passed
+  on hidden Android 15 ARM64 with Firefox 157, using the final 86-entry archive.
+  Settings, worker startup, and the ascent analyzer were verified and rendered
+  screenshots inspected. The desktop-width ascent layout remains a limitation.
 
 ## Intentionally not changed
 
@@ -113,11 +118,9 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   runs; the local results above do not establish either.
 - Live Chrome/Garmin evidence is recorded in
   [the capture validation ledger](capture-chrome-validation-2026-09-29.md).
-  A fresh live Firefox capture and Firefox Android device run remain pending:
-  the existing Firefox Marionette connection was refused, and no Android
-  device or Android debugging tools were found. The current Firefox profile
-  also has no Garmin or Strava cookies, so an authenticated provider check
-  needs sign-in. Desktop hidden checks cannot
-  substitute for either check.
+  A fresh live desktop Firefox capture remains pending: the existing Firefox
+  Marionette connection was refused, and its profile has no Garmin or Strava
+  cookies. An authenticated provider session and controllable browser are
+  needed. Hidden fixture and Android checks do not substitute for this check.
 - The Chrome listing text is regenerated locally. Its dashboard metadata
   requires a separate update because the package-publishing API cannot edit it.
