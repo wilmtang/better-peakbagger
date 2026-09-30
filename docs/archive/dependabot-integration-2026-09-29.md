@@ -46,11 +46,16 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   Firefox 155.0 terrain passed hidden at 1000×760 on M3 Pro ANGLE Metal,
   including resizing to 748×448. Neither check proves visible window behavior.
 
+- Firefox 157's caption verifier now permits 0.01 CSS pixel of rectangle
+  rounding. A scroll sweep reproduced a negative gap of only 1/65536 pixel;
+  the hidden 1000×760 verifier and inspected caption screenshot passed with
+  text, width, and placement assertions preserved.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,
   protected release tags, and the browser-stores reviewer gate. No permission,
-  test assertion, advisory policy, or production deadline was relaxed.
+  advisory policy, or production deadline was relaxed.
 - Warning disappearance still requires review; exact-count lint enforcement
   remains. The queue workflow needed no repair because it correctly queued
   both updates and respected failing required checks.
