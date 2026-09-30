@@ -40,6 +40,8 @@ import {
     quitFirefoxDriver,
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
@@ -168,7 +170,7 @@ async function main() {
         const fixture = await createBrowserFixtureServer({
             temporaryRoot,
             analyzerGpx: capitolRegressionGpx,
-            analyzerGpxByCase: { scale: createScaleAnalyzerGpx() },
+            analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
         });
         resources.defer('Firefox browser fixture', () => fixture.close());
         const buddyListFixture = await readFile(
@@ -1293,6 +1295,29 @@ async function main() {
         assertState(unitFocusState.focused && unitFocusState.outlineStyle === 'solid'
             && unitFocusState.outlineWidth === '3px' && unitFocusState.outlineOffset === '2px',
         'Firefox unit selector lacks a non-color focus indicator', unitFocusState);
+        const segmentReturnHandle = await driver.getWindowHandle();
+        await driver.switchTo().newWindow('tab');
+        try {
+            await verifyGpxSegments({
+                navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-suspect`),
+                evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                resize: (width, height) => driver.manage().window().setRect({ width, height }),
+                click: selector => driver.findElement(By.css(selector)).click(),
+                press: async (selector, key) => {
+                    const element = await driver.findElement(By.css(selector));
+                    await driver.executeScript('arguments[0].focus()', element);
+                    await element.sendKeys(key === 'Enter' ? Key.ENTER : Key.ARROW_RIGHT);
+                },
+                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox segment interpretation'),
+                screenshot: process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT ? name => writeElementScreenshot(
+                    driver, '#bpb-gpx-analysis', `${process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT}.${name}.png`,
+                ) : null,
+            });
+        } finally {
+            await driver.close();
+            await driver.switchTo().window(segmentReturnHandle);
+            await driver.manage().window().setRect(verificationViewport);
+        }
         const analyzerHandle = await driver.getWindowHandle();
         await driver.switchTo().newWindow('tab');
         await driver.manage().window().setRect({ width: 520, height: 760 });
@@ -2622,6 +2647,28 @@ async function main() {
         await driver.executeScript(`
       [...document.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === 'Rich text').click();
     `);
+        const captionScreenshot = process.env.BPB_VERIFY_FIREFOX_CAPTION_SCREENSHOT
+            || path.join(root, 'tmp/report-photos/firefox-caption.png');
+        await mkdir(path.dirname(captionScreenshot), { recursive: true });
+        await waitForScript(driver, 'return document.querySelector(\'.bpb-re-surface figure img\')?.naturalWidth === 640;', 'Firefox restored caption image');
+        const captionScrollGaps = await driver.executeScript(`
+      const startY = scrollY;
+      const result = [];
+      for (let y = 0; y <= document.documentElement.scrollHeight; y += 137) {
+        scrollTo(0, y);
+        const figure = document.querySelector('.bpb-re-surface figure');
+        if (!figure) throw new Error('Missing caption figure');
+        const image = figure.querySelector('img').getBoundingClientRect();
+        const caption = figure.querySelector('figcaption').getBoundingClientRect();
+        result.push({ y: scrollY, gap: caption.top - image.bottom });
+      }
+      scrollTo(0, startY);
+      return result;
+    `);
+        // Firefox rectangle subtraction can differ by 1/65536 CSS pixel after scrolling.
+        assertState(captionScrollGaps.length > 0
+            && captionScrollGaps.every(({ gap }) => Number.isFinite(gap) && gap >= -0.01),
+        'Firefox caption overlaps its image after scrolling', captionScrollGaps);
         const captionState = await waitForScript(driver, `
       const figure = document.querySelector('.bpb-re-surface figure');
       if (!figure) return false;
@@ -2629,19 +2676,21 @@ async function main() {
       const caption = figure.querySelector('figcaption').getBoundingClientRect();
       const text = figure.querySelector('figcaption').textContent;
       const source = document.getElementById('JournalText').value;
-      const below = caption.top >= image.bottom;
+      const below = caption.top + 0.01 >= image.bottom;
       return { ready: text === 'North ridge caption' && below
           && Math.abs(caption.width - image.width) <= 2 && image.width >= 319
           && source.includes('[figcaption]North ridge caption') && source.includes('After the photo'),
-        text, width: caption.width, imageWidth: image.width, below, source };
-    `, 'Firefox caption round trip', 15_000, state => state?.ready);
+        text, width: caption.width, imageWidth: image.width, below,
+        imageBottom: image.bottom, captionTop: caption.top, captionHeight: caption.height, source };
+    `, 'Firefox caption round trip', 15_000, state => state?.ready).catch(async error => {
+            await writeElementScreenshot(driver, '#bpb-report-editor', captionScreenshot)
+                .catch(screenshotError => console.error('Caption failure screenshot:', screenshotError));
+            throw error;
+        });
         assertState(captionState.text === 'North ridge caption' && captionState.below
             && Math.abs(captionState.width - captionState.imageWidth) <= 2
             && captionState.imageWidth >= 319 && /\[figcaption\]North ridge caption/.test(captionState.source)
             && captionState.source.includes('After the photo'), 'Firefox caption lost text, image association or geometry', captionState);
-        const captionScreenshot = process.env.BPB_VERIFY_FIREFOX_CAPTION_SCREENSHOT
-            || path.join(root, 'tmp/report-photos/firefox-caption.png');
-        await mkdir(path.dirname(captionScreenshot), { recursive: true });
         await writeElementScreenshot(driver, '#bpb-report-editor', captionScreenshot);
         const mediaResizeState = await driver.executeAsyncScript(done => {
             const mode = label => [...document.querySelectorAll('.bpb-re-mode')]

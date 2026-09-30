@@ -106,3 +106,15 @@ test('conditional settings restore yields to a newer queued patch', async () => 
     assert.equal(area.data[STORAGE_KEY].theme, 'dark');
     assert.equal(area.data[STORAGE_KEY].units, 'metric');
 });
+
+test('legacy order migration fills missing lists without overwriting a newer choice', async () => {
+    const area = makeArea();
+    const store = createSettingsStore({ area, sendMessage: null });
+    const selected = ['beta', 'gps', 'tr', 'link', 'fav'];
+    await Promise.all([
+        store.applyPatch({ betaPeakFilterOrder: selected }),
+        store.applyPatch({ betaPeakFilterOrder: ['fav', 'gps', 'tr', 'link', 'beta'], betaPersonalFilterOrder: ['beta', 'link', 'tr', 'gps'] }, { onlyIfUnset: true }),
+    ]);
+    assert.deepEqual(area.data[STORAGE_KEY].betaPeakFilterOrder, selected);
+    assert.deepEqual(area.data[STORAGE_KEY].betaPersonalFilterOrder, ['beta', 'link', 'tr', 'gps']);
+});

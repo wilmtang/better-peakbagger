@@ -12,6 +12,7 @@ import {
     readAnalyzerChartState,
     readScaleChartState,
     readSunCalculatorGeometry,
+    waitForPageCondition,
     webdriverScript,
 } from '../../scripts/browser-verification-fixtures.mjs';
 
@@ -20,6 +21,20 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('page conditions await async false results and poll until the visible state is ready', async () => {
+    let reads = 0;
+    const page = { evaluate: async (predicate, arg) => predicate(arg) };
+    const state = await waitForPageCondition(page, async expected => {
+        await Promise.resolve();
+        reads++;
+        return reads === 3 ? { status: expected } : false;
+    }, 'saved', { timeout: 2000 });
+    assert.deepEqual(state, { status: 'saved' });
+    assert.equal(reads, 3);
+    await assert.rejects(waitForPageCondition(page, async () => false, null, { timeout: 1 }),
+        /Timed out waiting for page condition.*last value: false/s);
+});
 
 const persistedEvent = (dom, type, persisted) => {
     const event = new dom.window.Event(type);

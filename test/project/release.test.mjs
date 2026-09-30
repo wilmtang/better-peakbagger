@@ -649,7 +649,7 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.doesNotMatch(navigationProbe, /requestAnimationFrame/);
 
     const captionStart = verifier.indexOf('const captionState =');
-    const captionEnd = verifier.indexOf('const captionScreenshot =', captionStart);
+    const captionEnd = verifier.indexOf('assertState(captionState.text', captionStart);
     assert.notEqual(captionStart, -1);
     assert.notEqual(captionEnd, -1);
     const captionProbe = verifier.slice(captionStart, captionEnd);

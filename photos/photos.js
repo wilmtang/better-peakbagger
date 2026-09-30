@@ -107,6 +107,8 @@ const ui = {
     rotationValue: byId('object-rotation-value'),
     pitch: byId('pitch-number'),
     text: byId('object-text'),
+    textWidth: byId('text-width'),
+    textWidthAuto: byId('text-width-auto'),
     align: byId('text-align'),
     background: byId('label-background'),
     sendBack: byId('send-back'),
@@ -117,6 +119,7 @@ const ui = {
     upload: byId('upload-insert'),
     exportSummary: byId('export-summary'),
     saveStatus: byId('save-status'),
+    saveConflictedDraft: byId('save-conflicted-draft'),
     uploadFormat: byId('upload-format'),
     originalFormat: byId('upload-format-original'),
     jpegQualityControl: byId('jpeg-quality-control'),
@@ -176,6 +179,7 @@ let autosaveTimer = null;
 let draftRevision = 0;
 let draftDirty = false;
 let draftWriteQueue = Promise.resolve(true);
+let replacingOtherTab = false;
 let teardownStarted = false;
 let sessionKey = '';
 let configuredKey = false;
@@ -242,6 +246,9 @@ const applyReportWidthPreview = () => {
     ui.zoom.value = camera.fit ? 'fit' : exact ? token : 'custom';
     ui.zoomIn.disabled = camera.scale >= 8;
     ui.zoomOut.disabled = camera.scale <= 0.01;
+    ui.overlay.querySelectorAll('.text-width-handle').forEach(handle => {
+        handle.setAttribute('r', String(6 / camera.scale));
+    });
 };
 const zoomPhoto = (scale, anchor = null) => {
     if (!project || drawingSession || dragSession || panSession) return;
@@ -333,24 +340,34 @@ let libraryMaintenanceSuspended = false;
 let libraryMaintenanceFailure = null;
 let photoBackupBusy = false;
 let newVersionTransaction = null;
-// Each tool owns its preferences; project history never rewinds these choices.
+// Color and opacity are shared; other preferences belong to their tool.
+// Project history never rewinds these choices.
 const toolPreferences = Object.fromEntries(Project.OBJECT_TYPES.map(type =>
     [type, ToolPreferences.clean(type)]));
 const preferenceKey = type => `bpbPhotoTool:${type}`;
+const SHARED_STYLE_KEY = 'bpbPhotoSharedStyle';
 let preferenceWrites = Promise.resolve();
 const rememberTool = (type, patch) => {
     toolPreferences[type] = ToolPreferences.clean(type, {
         ...toolPreferences[type], ...patch,
         style: { ...toolPreferences[type].style, ...patch.style },
     });
-    const saved = structuredClone(toolPreferences[type]);
-    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set({
-        [preferenceKey(type)]: saved,
-    })).catch(() => toast('Tool settings apply now, but could not be saved on this device.'));
+    const shared = {};
+    for (const key of ['color', 'opacity']) {
+        if (Object.hasOwn(patch.style || {}, key)) shared[key] = toolPreferences[type].style[key];
+    }
+    for (const preferences of Object.values(toolPreferences)) Object.assign(preferences.style, shared);
+    const { color, opacity } = toolPreferences[type].style;
+    const saved = structuredClone({
+        [preferenceKey(type)]: toolPreferences[type],
+        ...(Object.keys(shared).length ? { [SHARED_STYLE_KEY]: { color, opacity } } : {}),
+    });
+    preferenceWrites = preferenceWrites.then(() => ext.storage.local.set(saved))
+        .catch(() => toast('Tool settings apply now, but could not be saved on this device.'));
 };
 const loadToolPreferences = async () => {
     try {
-        const stored = await ext.storage.local.get([...Project.OBJECT_TYPES.map(preferenceKey), VIEWPORT_KEY]);
+        const stored = await ext.storage.local.get([...Project.OBJECT_TYPES.map(preferenceKey), VIEWPORT_KEY, SHARED_STYLE_KEY]);
         viewportSize = {
             width: cleanViewportDimension(stored[VIEWPORT_KEY]?.width, 280, 2400),
             height: cleanViewportDimension(stored[VIEWPORT_KEY]?.height, 240, 1400),
@@ -358,6 +375,10 @@ const loadToolPreferences = async () => {
         applyViewportSize();
         for (const type of Project.OBJECT_TYPES) {
             toolPreferences[type] = ToolPreferences.clean(type, stored[preferenceKey(type)]);
+            if (stored[SHARED_STYLE_KEY]) {
+                const shared = ToolPreferences.clean(type, { style: stored[SHARED_STYLE_KEY] }).style;
+                Object.assign(toolPreferences[type].style, { color: shared.color, opacity: shared.opacity });
+            }
         }
     } catch { /* Defaults remain usable when local storage is unavailable. */ }
 };
@@ -503,6 +524,8 @@ const editorMutationControls = () => [
     ui.rotation,
     ui.pitch,
     ui.text,
+    ui.textWidth,
+    ui.textWidthAuto,
     ui.align,
     ui.background,
     ui.addAtCenter,
@@ -528,6 +551,8 @@ const updateEditorControls = () => {
         || selectedVertex == null || route.geometry.points.length <= 2;
     ui.upload.disabled = storeReloadRequired || busy || localPhotoReturned || !project
         || PUBLISHED_STATES.includes(photo?.remote.state);
+    ui.saveConflictedDraft.disabled = storeReloadRequired || busy || localPhotoReturned
+        || replacingOtherTab;
     ui.showEditor.disabled = storeReloadRequired || busy;
     ui.showLibrary.disabled = storeReloadRequired || busy;
     ui.file.disabled = storeReloadRequired || busy;
@@ -909,7 +934,7 @@ const enqueueDraftWrite = write => {
     return operation;
 };
 
-const persistDraft = async ({ required = false } = {}) => {
+const persistDraft = async ({ required = false, replaceOtherTab = false } = {}) => {
     clearTimeout(autosaveTimer);
     autosaveTimer = null;
     // Upload freezes editor mutations before taking its required snapshot. Let
@@ -942,10 +967,27 @@ const persistDraft = async ({ required = false } = {}) => {
     setSaveStatus('Saving locally…');
     return enqueueDraftWrite(async () => {
         try {
-            const writePhoto = photo?.localId === nextPhoto.localId
+            let writePhoto = photo?.localId === nextPhoto.localId
                 && photo.revision > nextPhoto.revision
                 ? Library.cleanPhoto({ ...nextPhoto, revision: photo.revision })
                 : nextPhoto;
+            if (replaceOtherTab) {
+                const latest = await store.getBundle(nextPhoto.localId);
+                if (!latest.photo || latest.photo.deletedAt || latest.photo.remote.state !== 'draft'
+                    || !latest.photo.assets.originalRetained || !latest.photo.assets.projectRetained
+                    || !latest.project
+                    || latest.photo.source.sha256 !== nextPhoto.source.sha256
+                    || !Project.matchingImageDimensions(latest.project.image, nextPhoto.source)) {
+                    throw new Store.PhotoStoreConflictError(nextPhoto.localId,
+                        'This photo can no longer be replaced. Your edits are still open in this tab.');
+                }
+                // Keep references and backup state added by the other tab;
+                // replace only the editor-owned title, caption, and project.
+                writePhoto = cleanDraftFromFields({
+                    now, project: snapshot.project, photo: latest.photo,
+                    original: snapshot.original, title: snapshot.title, caption: snapshot.caption,
+                });
+            }
             const storedPhoto = await store.putDraft({
                 photo: writePhoto,
                 project: nextProject,
@@ -956,6 +998,7 @@ const persistDraft = async ({ required = false } = {}) => {
             if (stillCurrent) {
                 photo = storedPhoto;
                 project = nextProject;
+                ui.saveConflictedDraft.hidden = true;
                 setSaveStatus('Saved on this device');
             } else if (!photo && project?.localId === storedPhoto.localId) {
                 // The first save may finish after the user has already edited
@@ -976,8 +1019,10 @@ const persistDraft = async ({ required = false } = {}) => {
             const quotaExceeded = error?.name === 'QuotaExceededError';
             if (stillCurrent) {
                 draftDirty = true;
+                ui.saveConflictedDraft.hidden = !(error instanceof Store.PhotoStoreConflictError)
+                    || storeReloadRequired;
                 setSaveStatus(error instanceof Store.PhotoStoreConflictError
-                    ? 'Changed in another tab'
+                    ? 'Not saved · changed in another tab. Your edits are still here.'
                     : quotaExceeded
                         ? 'Not saved · browser storage is full'
                         : 'Could not save locally');
@@ -989,6 +1034,7 @@ const persistDraft = async ({ required = false } = {}) => {
                 }
             }
             if (error instanceof Store.PhotoStoreConflictError) {
+                if (replaceOtherTab) toast(error.message, { duration: 9000 });
                 if (required) toast(error.message, { duration: 9000 });
                 return false;
             }
@@ -1041,8 +1087,9 @@ const flushDraftPersistence = () => {
 };
 
 const updateHistoryButtons = () => {
-    ui.undo.disabled = history.length === 0 || busy;
-    ui.redo.disabled = future.length === 0 || busy;
+    ui.undo.disabled = !(drawingSession || routeSession?.points.length || history.length) || busy;
+    ui.redo.disabled = (routeSession ? !routeSession.removedPoints.length : !future.length)
+        || !!drawingSession || busy;
 };
 
 const selectedObject = () => project?.objects.find(object => object.id === selectedId) || null;
@@ -1110,6 +1157,11 @@ const renderInspector = () => {
         if (document.activeElement !== ui.text || ui.text.value.trim() !== object.text) {
             ui.text.value = object.text;
         }
+        ui.textWidth.max = String(Project.MAX_DIMENSION);
+        if (document.activeElement !== ui.textWidth) {
+            ui.textWidth.value = object.geometry.width == null ? '' : String(Math.round(object.geometry.width));
+        }
+        ui.textWidthAuto.setAttribute('aria-pressed', String(object.geometry.width == null));
         ui.align.value = object.style.align;
     }
     if (label) ui.background.checked = object.style.background;
@@ -1191,7 +1243,7 @@ const renderAnnotationBrowser = () => {
 // the pending point, and rubber-band the segment the next click would commit.
 const renderRoutePreview = () => {
     ui.overlay.querySelector('.route-preview')?.remove();
-    if (!routeSession || !project) return;
+    if (!routeSession?.points.length || !project) return;
     const group = document.createElementNS(SVG_NS, 'g');
     group.classList.add('route-preview');
     const unit = Math.min(project.image.width, project.image.height);
@@ -1217,6 +1269,39 @@ const renderRoutePreview = () => {
         group.append(dot);
     }
     ui.overlay.append(group);
+};
+
+const renderTextBoxControls = object => {
+    const group = [...ui.overlay.querySelectorAll('[data-bpb-object]')]
+        .find(node => node.getAttribute('data-bpb-object') === object.id);
+    const box = group?.querySelector('[data-bpb-text-box]');
+    if (!box) return;
+    const controls = document.createElementNS(SVG_NS, 'g');
+    controls.setAttribute('transform', group.getAttribute('transform'));
+    const outline = box.cloneNode();
+    outline.removeAttribute('data-bpb-text-box');
+    outline.classList.add('text-box-outline');
+    controls.append(outline);
+    const x = Number(box.getAttribute('x'));
+    const width = Number(box.getAttribute('width'));
+    const middle = Number(box.getAttribute('y')) + Number(box.getAttribute('height')) / 2;
+    const screenScale = ui.overlay.getBoundingClientRect().width / project.image.width;
+    const radius = 6 / (screenScale || 1);
+    const cursor = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][
+        ((Math.round(object.geometry.rotation / 45) % 4) + 4) % 4];
+    for (const side of ['left', 'right']) {
+        const handle = document.createElementNS(SVG_NS, 'circle');
+        handle.classList.add('text-width-handle');
+        handle.dataset.textResize = side;
+        handle.dataset.objectId = object.id;
+        handle.dataset.width = String(width);
+        handle.setAttribute('cx', String(x + (side === 'right' ? width : 0)));
+        handle.setAttribute('cy', String(middle));
+        handle.setAttribute('r', String(radius));
+        handle.style.cursor = cursor;
+        controls.append(handle);
+    }
+    ui.overlay.append(controls);
 };
 
 const renderProject = () => {
@@ -1252,6 +1337,7 @@ const renderProject = () => {
             ui.overlay.append(handle);
         });
     }
+    if (activeTool === 'select' && selected?.type === 'text') renderTextBoxControls(selected);
     renderAnnotationBrowser();
     renderRoutePreview();
     ui.exportSummary.textContent = `${project.objects.length} annotation${project.objects.length === 1 ? '' : 's'}`
@@ -1288,8 +1374,18 @@ const setProject = (next, { pushHistory = true, persist = true, coalesce = null 
 };
 
 const undo = () => {
-    if (editorMutationLocked() || !history.length || !project) return;
-    cancelDrawing();
+    if (editorMutationLocked() || !project) return;
+    if (drawingSession) { cancelDrawing(); return; }
+    if (routeSession?.points.length) {
+        routeSession.removedPoints.push(routeSession.points.pop());
+        routeSession.lastPress = null;
+        renderPendingRoute();
+        schedulePersist();
+        setEditorStatus('Last route point removed. Click to continue, or Redo to restore it.');
+        return;
+    }
+    if (routeSession) finishRoute(true);
+    if (!history.length) return;
     endCoalescing();
     future.push(structuredClone(project));
     project = history.pop();
@@ -1303,7 +1399,17 @@ const undo = () => {
 };
 
 const redo = () => {
-    if (editorMutationLocked() || !future.length || !project) return;
+    if (editorMutationLocked() || !project || drawingSession) return;
+    if (routeSession) {
+        if (!routeSession.removedPoints.length) return;
+        routeSession.points.push(routeSession.removedPoints.pop());
+        routeSession.lastPress = null;
+        renderPendingRoute();
+        schedulePersist();
+        setEditorStatus('Route point restored. Click to continue, or Enter to finish.');
+        return;
+    }
+    if (!future.length) return;
     endCoalescing();
     history.push(structuredClone(project));
     project = future.pop();
@@ -1375,9 +1481,45 @@ const DOUBLE_PRESS_SLOP = 8;
 const pressOf = event => ({ x: event.clientX, y: event.clientY, at: event.timeStamp });
 
 const isDoublePress = (previous, press) => !!previous
+    && !!press
     && press.at - previous.at <= DOUBLE_PRESS_MS
     && Math.abs(press.x - previous.x) <= DOUBLE_PRESS_SLOP
     && Math.abs(press.y - previous.y) <= DOUBLE_PRESS_SLOP;
+
+// Route points have their own in-progress Undo/Redo. The finished route still
+// occupies one project-history entry, including style changes made while drawing.
+const renderPendingRoute = () => {
+    const session = routeSession;
+    const existing = project.objects.find(object => object.id === session.id);
+    if (session.points.length < 2) {
+        project = session.baseline;
+        history = session.historyBefore.slice();
+        future = session.futureBefore.slice();
+        session.historyPushed = false;
+        selectedId = null;
+    } else {
+        const object = {
+            id: session.id, type: 'route',
+            geometry: { points: session.points, controls: [] },
+            style: defaultRouteStyle(),
+        };
+        const next = existing ? Project.updateObject(project, session.id, { geometry: object.geometry })
+            : Project.addObject(session.baseline, object);
+        if (!next) return false;
+        if (!session.historyPushed) {
+            history.push(structuredClone(session.baseline));
+            if (history.length > HISTORY_LIMIT) history.shift();
+            future = [];
+            session.historyPushed = true;
+        }
+        project = next;
+        selectedId = session.id;
+    }
+    selectedVertex = null;
+    invalidateExportEstimate();
+    renderProject();
+    return true;
+};
 
 const addRoutePoint = (point, press) => {
     if (editorMutationLocked()) return;
@@ -1392,36 +1534,26 @@ const addRoutePoint = (point, press) => {
             points: [point],
             cursor: null,
             historyPushed: false,
+            historyBefore: history.slice(),
+            futureBefore: future.slice(),
+            removedPoints: [],
             lastPress: press,
         };
         ui.finishRoute.hidden = false;
         setEditorStatus('Route started. Click the next point; double-click, right-click, or Enter finishes.');
         renderRoutePreview();
+        updateHistoryButtons();
         return;
     }
     routeSession.lastPress = press;
     routeSession.points.push(point);
-    const object = {
-        id: routeSession.id,
-        type: 'route',
-        // Controls stay empty on purpose: a smooth route derives them from its
-        // own points, so the curve survives every point added after it.
-        geometry: { points: routeSession.points, controls: [] },
-        style: defaultRouteStyle(),
-    };
-    if (routeSession.points.length === 2) {
-        history.push(structuredClone(routeSession.baseline));
-        if (history.length > HISTORY_LIMIT) history.shift();
-        future = [];
-        routeSession.historyPushed = true;
-        project = Project.addObject(routeSession.baseline, object);
-    } else {
-        project = Project.updateObject(project, routeSession.id, { geometry: object.geometry });
+    if (!renderPendingRoute()) {
+        routeSession.points.pop();
+        routeSession.lastPress = null;
+        return;
     }
-    selectedId = routeSession.id;
-    selectedVertex = null;
-    invalidateExportEstimate();
-    renderProject();
+    routeSession.removedPoints = [];
+    updateHistoryButtons();
 };
 
 const finishRoute = cancel => {
@@ -1429,7 +1561,8 @@ const finishRoute = cancel => {
     const changed = routeSession.historyPushed;
     if (cancel) {
         project = routeSession.baseline;
-        if (routeSession.historyPushed) history.pop();
+        history = routeSession.historyBefore;
+        future = routeSession.futureBefore;
         selectedId = null;
         selectedVertex = null;
         setEditorStatus('Route cancelled.');
@@ -1443,6 +1576,7 @@ const finishRoute = cancel => {
     ui.finishRoute.hidden = true;
     if (changed) invalidateExportEstimate();
     renderProject();
+    if (cancel && changed) schedulePersist();
 };
 
 const addPointObject = (type, point) => {
@@ -1465,6 +1599,8 @@ const addPointObject = (type, point) => {
         object = {
             ...base,
             text: 'Label',
+            geometry: { ...base.geometry, width: Object.hasOwn(toolPreferences.text, 'width')
+                ? toolPreferences.text.width : Math.max(1, Math.round(project.image.width * 0.28)) },
             style: base.style,
         };
     }
@@ -1539,6 +1675,7 @@ const cancelDrawing = () => {
     drawingSession = null;
     ui.overlay.querySelector('.drawing-preview')?.remove();
     if (ui.overlay.hasPointerCapture?.(pointerId)) ui.overlay.releasePointerCapture(pointerId);
+    updateHistoryButtons();
 };
 const drawingPoint = event => pointerPoint(event).map((value, axis) =>
     Math.max(0, Math.min(axis ? project.image.height : project.image.width, value)));
@@ -1581,6 +1718,7 @@ const beginDrawing = event => {
     preview.setAttribute('points', `${point.join(',')} ${point.join(',')}`);
     ui.overlay.append(preview);
     drawingSession = { pointerId: event.pointerId, points: [point], style, preview, limit };
+    updateHistoryButtons();
     ui.overlay.setPointerCapture?.(event.pointerId);
     event.preventDefault();
 };
@@ -1601,26 +1739,31 @@ const finishDrawing = event => {
     setEditorStatus('Stroke added. Drag to draw another, or press V to select.');
 };
 
-const beginDrag = (event, objectId, vertex = null) => {
+const beginDrag = (event, objectId, vertex = null, resize = null) => {
     if (editorMutationLocked()) return;
     const object = project.objects.find(candidate => candidate.id === objectId);
     if (!object) return;
     endCoalescing();
     dragSession = {
         start: pointerPoint(event),
-        baseline: structuredClone(project),
+        baseline: resize ? project : structuredClone(project),
         object: structuredClone(object),
         vertex,
+        resize,
+        pointerId: event.pointerId,
         moved: false,
     };
-    history.push(structuredClone(project));
-    if (history.length > HISTORY_LIMIT) history.shift();
-    future = [];
+    if (!resize) {
+        history.push(structuredClone(project));
+        if (history.length > HISTORY_LIMIT) history.shift();
+        future = [];
+    }
     ui.overlay.setPointerCapture?.(event.pointerId);
 };
 
 const moveDrag = event => {
     if (editorMutationLocked()) return;
+    if (dragSession?.resize && event.pointerId !== dragSession.pointerId) return;
     if (drawingSession) { moveDrawing(event); return; }
     if (routeSession) {
         routeSession.cursor = pointerPoint(event);
@@ -1630,10 +1773,23 @@ const moveDrag = event => {
     const point = pointerPoint(event);
     const dx = point[0] - dragSession.start[0];
     const dy = point[1] - dragSession.start[1];
-    if (Math.abs(dx) + Math.abs(dy) < 0.01) return;
+    if (!dragSession.resize && Math.abs(dx) + Math.abs(dy) < 0.01) return;
     dragSession.moved = true;
     let geometry;
-    if (dragSession.object.type === 'route' && dragSession.vertex != null) {
+    if (dragSession.resize) {
+        const object = dragSession.object;
+        const angle = object.geometry.rotation * Math.PI / 180;
+        const localDx = dx * Math.cos(angle) + dy * Math.sin(angle);
+        const { side, width: previousWidth } = dragSession.resize;
+        const width = Math.max(1, Math.min(Project.MAX_DIMENSION,
+            previousWidth + (side === 'right' ? localDx : -localDx)));
+        const align = object.style.align === 'center' ? 0.5 : object.style.align === 'right' ? 1 : 0;
+        const shift = (width - previousWidth) * (align - (side === 'left' ? 1 : 0));
+        geometry = { ...object.geometry, width,
+            x: object.geometry.x + shift * Math.cos(angle),
+            y: object.geometry.y + shift * Math.sin(angle) };
+        dragSession.moved = Math.abs(width - previousWidth) > 0.01;
+    } else if (dragSession.object.type === 'route' && dragSession.vertex != null) {
         const index = dragSession.vertex;
         // `existing` is this vertex's own stored position. It was named
         // `point` and shadowed the pointer position above, so the untouched
@@ -1650,12 +1806,29 @@ const moveDrag = event => {
     } else {
         geometry = translatedGeometry(dragSession.object, dx, dy);
     }
-    project = Project.updateObject(dragSession.baseline, dragSession.object.id, { geometry });
+    const next = Project.updateObject(dragSession.baseline, dragSession.object.id, { geometry });
+    if (!next) return;
+    project = next;
     renderProject();
+    if (dragSession.resize) {
+        // The preview must not leak into a pending autosave or export estimate.
+        dragSession.preview = next;
+        project = dragSession.baseline;
+    }
 };
 
 const endDrag = () => {
     if (!dragSession) return;
+    if (dragSession.resize) {
+        const session = dragSession;
+        dragSession = null;
+        if (session.moved && session.preview) {
+            if (setProject(session.preview)) rememberTool('text', { width: selectedObject().geometry.width });
+        }
+        else renderProject();
+        if (ui.overlay.hasPointerCapture?.(session.pointerId)) ui.overlay.releasePointerCapture(session.pointerId);
+        return;
+    }
     if (!dragSession.moved) history.pop();
     else {
         invalidateExportEstimate();
@@ -1665,8 +1838,27 @@ const endDrag = () => {
     updateHistoryButtons();
 };
 
+const cancelTextResize = () => {
+    if (!dragSession?.resize) return false;
+    const session = dragSession;
+    dragSession = null;
+    project = session.baseline;
+    if (ui.overlay.hasPointerCapture?.(session.pointerId)) ui.overlay.releasePointerCapture(session.pointerId);
+    renderProject();
+    return true;
+};
+
 const onPointerDown = event => {
     if (!project || editorMutationLocked() || event.button !== 0) return;
+    const resizeNode = activeTool === 'select' ? event.target.closest?.('[data-text-resize]') : null;
+    if (resizeNode) {
+        event.preventDefault();
+        ui.viewport.focus({ preventScroll: true });
+        beginDrag(event, resizeNode.dataset.objectId, null, {
+            side: resizeNode.dataset.textResize, width: Number(resizeNode.dataset.width),
+        });
+        return;
+    }
     if (activeTool === 'drawing') { beginDrawing(event); return; }
     const vertexNode = activeTool === 'select' ? event.target.closest?.('[data-vertex]') : null;
     if (vertexNode) {
@@ -1697,13 +1889,20 @@ const updateSelected = (patch, { coalesce = null } = {}) => {
     if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
-    if (patch.style || patch.geometry?.rotation != null) {
+    const next = Project.updateObject(project, object.id, patch);
+    if (!next) return;
+    const styleChanges = Object.fromEntries(Object.entries(patch.style || {})
+        .filter(([key, value]) => value !== object.style[key]));
+    if (patch.style || patch.geometry?.rotation != null || (object.type === 'text' && patch.geometry)) {
         rememberTool(object.type, {
-            ...(patch.style ? { style: patch.style } : {}),
+            ...(patch.style ? { style: styleChanges } : {}),
             ...(patch.geometry?.rotation != null ? { rotation: patch.geometry.rotation } : {}),
+            ...(object.type === 'text' && Object.hasOwn(patch.geometry || {}, 'width')
+                ? { width: patch.geometry.width } : {}),
         });
     }
-    setProject(Project.updateObject(project, object.id, patch), {
+    setProject(next, {
+        pushHistory: object.id !== routeSession?.id,
         coalesce: coalesce && `${coalesce}:${object.id}`,
     });
 };
@@ -1839,6 +2038,7 @@ const loadBundle = async bundle => {
     // this editor state or replace this status with its own result.
     draftRevision += 1;
     draftDirty = false;
+    ui.saveConflictedDraft.hidden = true;
     history = [];
     future = [];
     selectedId = null;
@@ -1917,6 +2117,7 @@ const chooseFile = async file => {
         thumbnailBlob = nextThumbnail;
         project = nextProject;
         photo = null;
+        ui.saveConflictedDraft.hidden = true;
         selectedId = null;
         selectedVertex = null;
         history = [];
@@ -2956,6 +3157,23 @@ const bindInspector = () => {
             rememberTool(inspectorType(), { rotation });
         }
     });
+    ui.textWidth.addEventListener('change', () => {
+        const object = selectedObject();
+        if (object?.type !== 'text') return;
+        const width = ui.textWidth.value === '' ? null : Number(ui.textWidth.value);
+        if (ui.textWidth.validity.valid) {
+            if (width === (object.geometry.width ?? null)) return;
+            updateSelected({ geometry: { ...object.geometry, width } });
+        } else {
+            ui.textWidth.value = object.geometry.width == null ? '' : String(Math.round(object.geometry.width));
+        }
+    });
+    ui.textWidthAuto.addEventListener('click', () => {
+        const object = selectedObject();
+        if (object?.type === 'text' && object.geometry.width != null) {
+            updateSelected({ geometry: { ...object.geometry, width: null } });
+        }
+    });
     ui.pitch.addEventListener('change', () => {
         const object = selectedObject();
         if (object?.type === 'pitch') updateSelected({ pitch: Number(ui.pitch.value) });
@@ -3088,8 +3306,12 @@ const bindEvents = () => {
     ui.finishRoute.addEventListener('click', () => finishRoute(false));
     ui.overlay.addEventListener('pointerdown', onPointerDown);
     ui.overlay.addEventListener('pointermove', moveDrag);
-    ui.overlay.addEventListener('pointerup', event => { finishDrawing(event); endDrag(); });
-    ui.overlay.addEventListener('pointercancel', () => { cancelDrawing(); endDrag(); });
+    ui.overlay.addEventListener('pointerup', event => {
+        if (dragSession?.resize && event.pointerId !== dragSession.pointerId) return;
+        finishDrawing(event); endDrag();
+    });
+    ui.overlay.addEventListener('pointercancel', () => { cancelDrawing(); if (!cancelTextResize()) endDrag(); });
+    ui.overlay.addEventListener('lostpointercapture', cancelTextResize);
     ui.overlay.addEventListener('lostpointercapture', cancelDrawing);
     ui.overlay.addEventListener('pointerleave', () => {
         if (!routeSession) return;
@@ -3133,6 +3355,15 @@ const bindEvents = () => {
         });
     });
     ui.upload.addEventListener('click', () => void uploadAndInsert());
+    ui.saveConflictedDraft.addEventListener('click', () => {
+        if (editorMutationLocked() || replacingOtherTab) return;
+        replacingOtherTab = true;
+        updateEditorControls();
+        void persistDraft({ replaceOtherTab: true }).finally(() => {
+            replacingOtherTab = false;
+            updateEditorControls();
+        });
+    });
     ui.uploadFormat.addEventListener('change', () => {
         uploadFormat = ui.uploadFormat.value;
         applyUploadSettings();
@@ -3188,9 +3419,13 @@ const bindEvents = () => {
                 && (!active || active === document.body || active === document.documentElement
                     || ui.editorView.contains(active)))
         );
-        if (busy || !editorScoped || editing) return;
+        if (busy || !editorScoped) return;
+        if (event.key === 'Escape' && cancelTextResize()) { event.preventDefault(); return; }
+        if (dragSession?.resize || editing) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
-            const available = event.shiftKey ? future.length : history.length;
+            const available = event.shiftKey
+                ? !drawingSession && (routeSession ? routeSession.removedPoints.length : future.length)
+                : drawingSession || routeSession?.points.length || history.length;
             if (!available || editorMutationLocked() || !project) return;
             event.preventDefault();
             if (event.shiftKey) redo();

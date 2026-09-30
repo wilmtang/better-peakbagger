@@ -40,8 +40,11 @@ import {
     storeUrls,
     surfaceSelectors,
     verificationViewport,
-    waitForCondition
+    waitForCondition,
+    waitForPageCondition
 } from './browser-verification-fixtures.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 
@@ -80,7 +83,7 @@ try {
     fixture = await createBrowserFixtureServer({
         temporaryRoot: profile,
         analyzerGpx: capitolRegressionGpx,
-        analyzerGpxByCase: { scale: createScaleAnalyzerGpx() },
+        analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
         analyzerDelayMs: Math.max(0, Number(process.env.BPB_VERIFY_ANALYZER_DELAY_MS) || 0),
     });
     resources.defer('Chrome browser fixture', () => fixture.close());
@@ -353,7 +356,7 @@ try {
             if (previousViewport) await optionsPage.setViewportSize(previousViewport);
         }
         await optionsPage.locator('#settings-backup-confirm').click();
-        const importedSettingsState = await optionsPage.waitForFunction(async () => {
+        const importedSettingsState = await waitForPageCondition(optionsPage, async () => {
             const [{ bpbSettings }, { bpbImgbbAuth }] = await Promise.all([
                 chrome.storage.sync.get('bpbSettings'),
                 chrome.storage.local.get('bpbImgbbAuth'),
@@ -385,12 +388,12 @@ try {
             JSON.stringify(restoredSettingsState)}`);
 
         await optionsPage.locator('#units').selectOption('metric');
-        const optionPersisted = await optionsPage.waitForFunction(async () =>
+        const optionPersisted = await waitForPageCondition(optionsPage, async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'metric',
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(optionPersisted, 'the Chrome options page did not persist a real setting change');
         await optionsPage.locator('#units').selectOption('auto');
-        await optionsPage.waitForFunction(async () =>
+        await waitForPageCondition(optionsPage, async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'auto',
         null, { timeout: 5000 });
         await optionsPage.evaluate(async () => {
@@ -949,7 +952,7 @@ try {
         await photoPage.locator('[data-report-width]').first().selectOption('320');
         await photoPage.locator('#upload-format').selectOption('jpeg');
         await photoPage.locator('#jpeg-quality-control').waitFor({ state: 'visible', timeout: 5000 });
-        await photoPage.waitForFunction(async () =>
+        await waitForPageCondition(photoPage, async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 320,
         null, { timeout: 5000 });
         const reportSizeState = await photoPage.evaluate(() => {
@@ -1099,7 +1102,7 @@ try {
         }
         if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
         await photoPage.locator('[data-report-width]').first().selectOption('640');
-        await photoPage.waitForFunction(async () =>
+        await waitForPageCondition(photoPage, async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 640,
         null, { timeout: 5000 });
 
@@ -1179,13 +1182,13 @@ try {
             && /may not appear immediately; choose Refresh now/.test(buddyCacheHint || ''),
         `the Buddy source did not explain its saved-copy freshness: ${JSON.stringify(buddyCacheHint)}`);
         await optionsPage.locator('#favorites-refresh-buddies').click();
-        const buddyRefresh = await optionsPage.waitForFunction(async () => {
+        const buddyRefresh = await waitForPageCondition(optionsPage, async () => {
             const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
             const status = document.getElementById('favorites-buddy-status')?.textContent || '';
             return cache?.entries?.length === 6 && /6 buddies/.test(status)
                 ? { ownerCid: cache.ownerCid, entries: cache.entries.length, status }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).catch(() => null);
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         check(buddyRequests === 1 && buddyRefresh?.ownerCid === 900001 && buddyRefresh?.entries === 6,
             `the options Buddy refresh did not use the direct signed-in report: ${JSON.stringify({ buddyRequests, buddyRefresh })}`);
@@ -1228,7 +1231,7 @@ try {
         // the initiating extension page's fallback deadline as a background
         // tab while the helper itself opens inactive.
         await optionsPage.bringToFront();
-        await optionsPage.waitForFunction(async () =>
+        await waitForPageCondition(optionsPage, async () =>
             (await chrome.tabs.getCurrent())?.active === true,
         null, { timeout: 5000 });
         await optionsPage.locator('#favorites-merge-buddies').click();
@@ -1326,7 +1329,7 @@ try {
         await optionsPage.locator('[data-favorites-source-filter="all"]').click();
         await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
         await optionsPage.locator('#favorites-mirror-buddies').click();
-        const mirrorConfirmation = await optionsPage.waitForFunction(async () => {
+        const mirrorConfirmation = await waitForPageCondition(optionsPage, async () => {
             const dialog = document.getElementById('favorites-mirror-confirmation');
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             return dialog && !dialog.hidden && favorites?.entries?.length === 7
@@ -1337,7 +1340,7 @@ try {
                     focused: document.activeElement?.id || '',
                 }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).catch(() => null);
         check(mirrorConfirmation?.role === 'alertdialog'
             && /0 buddies will be added\. 1 custom favorite will be removed\./.test(mirrorConfirmation.text)
             && /exactly match your 6 current buddies/.test(mirrorConfirmation.text)
@@ -1449,7 +1452,7 @@ try {
         });
         const buddyRequestsBeforeRetry = await optionsPage.evaluate(() => window.__bpbMirrorBuddyRequests);
         await optionsPage.locator('#favorites-mirror-confirm').click();
-        const mirrorApplied = await optionsPage.waitForFunction(async () => {
+        const mirrorApplied = await waitForPageCondition(optionsPage, async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             const status = document.getElementById('favorites-import-status')?.textContent || '';
             return favorites?.entries?.length === 6
@@ -1461,7 +1464,7 @@ try {
                     buddyRequests: window.__bpbMirrorBuddyRequests,
                 }
                 : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).catch(() => null);
         check(mirrorApplied?.hidden
             && mirrorApplied.dismissals === 1
             && mirrorApplied.buddyRequests === buddyRequestsBeforeRetry,
@@ -1735,10 +1738,10 @@ try {
                 ? { text: button.textContent, pressed: button.getAttribute('aria-pressed') }
                 : false;
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
-        const favoriteAppliedStorage = await optionsPage.waitForFunction(async () => {
+        const favoriteAppliedStorage = await waitForPageCondition(optionsPage, async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             return favorites?.entries?.some(entry => entry.cid === 900002) ? favorites : false;
-        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 5000 }).catch(() => null);
         check(!!favoriteAppliedUi && !!favoriteAppliedStorage,
             `the compact climber favorite toggle did not persist or fill after clicking: ${JSON.stringify({ favoriteAppliedUi, favoriteAppliedStorage })}`);
 
@@ -1747,7 +1750,7 @@ try {
         // The content script must wait for the server-updated control and the
         // refreshed report before touching favorites.
         await climberPage.locator('#bpb-climber-favorite').click();
-        await optionsPage.waitForFunction(async () => {
+        await waitForPageCondition(optionsPage, async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             return !favorites?.entries?.some(entry => entry.cid === 900002);
         }, null, { timeout: 5000 });
@@ -1790,7 +1793,7 @@ try {
             { description: 'the default-removal Buddy report', timeoutMs: 10000 }
         );
         await optionsPage.bringToFront();
-        const removalPreserved = await optionsPage.waitForFunction(async () => {
+        const removalPreserved = await waitForPageCondition(optionsPage, async () => {
             const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
@@ -1809,7 +1812,7 @@ try {
                 bpbSettings: { ...bpbSettings, removeFavoriteWhenBuddyRemoved: true },
             });
         });
-        await optionsPage.waitForFunction(async () =>
+        await waitForPageCondition(optionsPage, async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.removeFavoriteWhenBuddyRemoved === true,
         null, { timeout: 10000 });
         await climberPage.bringToFront();
@@ -1819,7 +1822,7 @@ try {
                 && document.getElementById('bpb-climber-favorite')?.textContent === '★',
         null, { timeout: 20000 }).then(() => true).catch(() => false);
         await optionsPage.bringToFront();
-        const syncedAdditionStorage = await optionsPage.waitForFunction(async () => {
+        const syncedAdditionStorage = await waitForPageCondition(optionsPage, async () => {
             const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
@@ -1851,7 +1854,7 @@ try {
                 && document.getElementById('bpb-climber-favorite')?.textContent === '☆',
         null, { timeout: 20000 }).then(() => true).catch(() => false);
         await optionsPage.bringToFront();
-        const removalSyncedStorage = await optionsPage.waitForFunction(async () => {
+        const removalSyncedStorage = await waitForPageCondition(optionsPage, async () => {
             const { bpbFavoriteClimbers: favorites, bpbBuddyCache: cache } = await chrome.storage.local.get([
                 'bpbFavoriteClimbers', 'bpbBuddyCache'
             ]);
@@ -2097,7 +2100,7 @@ try {
         // the host or browser locale silently choose metric units and turn a
         // compatibility-floor check into a locale assertion.
         await optionsPage.locator('#units').selectOption('imperial');
-        await optionsPage.waitForFunction(async () =>
+        await waitForPageCondition(optionsPage, async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'imperial',
         null, { timeout: 5000 });
         await optionsPage.close();
@@ -2496,6 +2499,30 @@ try {
             path: process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT,
         });
     }
+    const detailsPage = await context.newPage();
+    try {
+        await detailsPage.setViewportSize({ width: 1200, height: 800 });
+        await detailsPage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?layout=details`);
+        const detailsHandle = detailsPage.locator('#bpb-ascent-table-resize-handle');
+        await detailsHandle.waitFor();
+        await detailsHandle.press('End');
+        check(await detailsHandle.getAttribute('aria-valuenow') === '75',
+            'the details-only ascent split did not mount or resize');
+        if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+            await detailsPage.locator('#bpb-ascent-table-split').screenshot({
+                path: `${process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT}.details.png`,
+            });
+        }
+        await detailsPage.setViewportSize({ width: 600, height: 800 });
+        check(!await detailsHandle.isVisible(), 'the details-only ascent did not stack on narrow screens');
+        if (process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT) {
+            await detailsPage.locator('#bpb-ascent-table-split').screenshot({
+                path: `${process.env.BPB_VERIFY_ASCENT_LAYOUT_SCREENSHOT}.details-stacked.png`,
+            });
+        }
+    } finally {
+        await detailsPage.close();
+    }
     const imagePage = await context.newPage();
     try {
         await imagePage.setViewportSize({ width: 1200, height: 800 });
@@ -2570,6 +2597,70 @@ try {
     check(/Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/.test(off.stats)
         && /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/.test(off.stats),
     `the packaged analyzer did not produce the Capitol regression metrics: ${off.stats.slice(0, 160)}`);
+    const metricSource = await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+    const sourcePointCount = (metricSource.match(/<trkpt\b/g) || []).length;
+    check(await offPage.locator('.bpb-gpx-point-count').textContent() === ` · ${sourcePointCount.toLocaleString()} points`,
+        'the GPX note must show the source count, not the sampled chart count');
+    const metricViewport = offPage.viewportSize();
+    try {
+        for (const width of [1000, 430]) {
+            await offPage.setViewportSize({ width, height: 760 });
+            const geometry = await offPage.locator('.bpb-gpx-metric-note').evaluate(note => {
+                const count = note.querySelector('.bpb-gpx-point-count');
+                const header = note.closest('.bpb-gpx-header');
+                const full = note.getBoundingClientRect();
+                const countBox = count.getBoundingClientRect();
+                const headerHeight = header.getBoundingClientRect().height;
+                count.hidden = true;
+                const without = note.getBoundingClientRect();
+                const withoutHeaderHeight = header.getBoundingClientRect().height;
+                count.hidden = false;
+                return { height: full.height, previousHeight: without.height, headerHeight, withoutHeaderHeight,
+                    countFits: countBox.right <= full.right + 1 && full.right <= innerWidth,
+                    oneLine: Math.abs(full.height - countBox.height) < 1 };
+            });
+            check(geometry.countFits && geometry.oneLine
+                && geometry.height === geometry.previousHeight
+                && geometry.headerHeight === geometry.withoutHeaderHeight,
+            `GPX point count increased the header height or clipped at ${width}px: ${JSON.stringify(geometry)}`);
+            if (process.env.BPB_VERIFY_GPX_METRICS_SCREENSHOT) {
+                await offPage.locator('.bpb-gpx-header').screenshot({ path: `${process.env.BPB_VERIFY_GPX_METRICS_SCREENSHOT}.${width}.png` });
+            }
+        }
+    } finally {
+        await offPage.setViewportSize(metricViewport);
+    }
+    const segmentPage = await context.newPage();
+    const segmentSettings = await context.newPage();
+    await segmentSettings.goto(`chrome-extension://${extensionId}/options/options.html`);
+    const savedSegmentTheme = await segmentSettings.evaluate(async () =>
+        (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.theme || 'system');
+    try {
+        for (const theme of ['light', 'dark']) {
+            await segmentSettings.evaluate(async value => {
+                const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+            }, theme);
+            await verifyGpxSegments({
+                navigate: () => segmentPage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-suspect`),
+                evaluate: fn => segmentPage.evaluate(fn),
+                resize: (width, height) => segmentPage.setViewportSize({ width, height }),
+                click: selector => segmentPage.locator(selector).click(),
+                press: (selector, key) => segmentPage.locator(selector).press(key),
+                wait: fn => segmentPage.waitForFunction(fn),
+                screenshot: process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT ? name => segmentPage.locator('#bpb-gpx-analysis').screenshot({
+                    path: `${process.env.BPB_VERIFY_GPX_SEGMENTS_SCREENSHOT}.${theme}.${name}.png`,
+                }) : null,
+            });
+        }
+    } finally {
+        await segmentSettings.evaluate(async theme => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme } });
+        }, savedSegmentTheme);
+        await segmentSettings.close();
+        await segmentPage.close();
+    }
     const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
     const capitolChartState = await offPage.evaluate(readAnalyzerChartState);
     check(capitolChartState?.labels?.join('|') === 'Elevation by Distance|Elevation by Time'

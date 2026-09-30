@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
 // no live site, user browser, API key, or upload is involved.
-/* global document, DataTransfer, chrome, innerWidth */
+/* global document, DataTransfer, chrome, innerWidth, HTMLCanvasElement, FileReader */
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -128,6 +128,76 @@ try {
     await page.locator('.viewport-size-control summary').click();
     await page.locator('#reset-viewport').click();
     await page.locator('.viewport-size-control summary').click();
+    // Capture the real full-resolution encoding used by the upload estimate.
+    // This exercises SVG decoding and canvas flattening without any upload.
+    await page.evaluate(() => {
+        const encode = HTMLCanvasElement.prototype.toBlob;
+        HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+            return encode.call(this, blob => {
+                if (this.width === 1600 && this.height === 1200) globalThis.photoVerificationExport = blob;
+                callback(blob);
+            }, ...args);
+        };
+    });
+    await page.locator('[data-tool="text"]').click();
+    await page.locator('#add-at-center').click();
+    const labelText = 'North ridge traverse\nKeep left above the gully';
+    await page.locator('#object-text').fill(labelText);
+    await page.locator('#object-color').selectOption('#ffffff');
+    await page.locator('#label-background').check();
+    await page.locator('#text-width').fill('300');
+    await page.locator('#text-width').press('Tab');
+    await page.locator('#annotation-list button').filter({ hasText: 'Text: North ridge' }).click();
+    const spans = page.locator('#photo-overlay g.selected text tspan');
+    assert.ok(await spans.count() >= 4);
+    assert.equal(await page.locator('#object-text').inputValue(), labelText);
+    await capture('text-wrapped');
+    const labelBefore = await page.locator('#photo-overlay g.selected').getAttribute('transform');
+    const fontBefore = await page.locator('#photo-overlay g.selected text').getAttribute('font-size');
+    const handle = await page.locator('[data-text-resize="right"]').boundingBox();
+    const center = [handle.x + handle.width / 2, handle.y + handle.height / 2];
+    await stroke(center, [center[0] - 40, center[1]]);
+    assert.ok(Number(await page.locator('#text-width').inputValue()) < 300);
+    assert.equal(await page.locator('#photo-overlay g.selected text').getAttribute('font-size'), fontBefore);
+    assert.equal(await page.locator('#photo-overlay g.selected').getAttribute('transform'), labelBefore);
+    await capture('text-narrower');
+    await page.locator('#undo').click();
+    assert.equal(await page.locator('#text-width').inputValue(), '300');
+    // Escape keeps selection, width, and the available redo gesture intact.
+    await page.mouse.move(...center); await page.mouse.down();
+    await page.mouse.move(center[0] + 30, center[1]);
+    await page.keyboard.press('Escape'); await page.mouse.up();
+    assert.equal(await page.locator('#text-width').inputValue(), '300');
+    assert.equal(await page.locator('#redo').isEnabled(), true);
+    await page.locator('#text-width-auto').click();
+    assert.equal(await spans.count(), 2, 'Auto still respects manual line breaks');
+    await page.locator('#undo').click();
+    assert.equal(await page.locator('#text-width').inputValue(), '300');
+    await page.locator('#object-rotation').evaluate(input => {
+        input.value = '35'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const rotated = await page.locator('[data-text-resize="right"]').boundingBox();
+    const rotatedCenter = [rotated.x + rotated.width / 2, rotated.y + rotated.height / 2];
+    await stroke(rotatedCenter, [rotatedCenter[0] + 25 * Math.cos(35 * Math.PI / 180),
+        rotatedCenter[1] + 25 * Math.sin(35 * Math.PI / 180)]);
+    assert.ok(Number(await page.locator('#text-width').inputValue()) > 300);
+    await capture('text-rotated');
+    await page.locator('#undo').click();
+    await page.locator('#undo').click();
+    // Wait for the user-visible estimate after the final undo, not a stale blob.
+    await page.waitForFunction(() => document.getElementById('upload-estimate').textContent.startsWith('Estimated upload')
+        && globalThis.photoVerificationExport);
+    if (screenshots) {
+        const base64 = await page.evaluate(async () => {
+            const reader = new FileReader();
+            return new Promise(resolve => {
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(globalThis.photoVerificationExport);
+            });
+        });
+        await writeFile(path.join(screenshots, 'text-export.png'), Buffer.from(base64, 'base64'));
+    }
     for (const [width, height] of [[720, 900], [390, 844], [320, 800]]) {
         await page.setViewportSize({ width, height });
         await capture(`width-${width}`);
@@ -137,6 +207,54 @@ try {
     await page.setViewportSize({ width: 1440, height: 1100 });
     await page.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
     await capture('dark');
+    // A real IndexedDB round trip also verifies original Blob retention, which
+    // the jsdom/fake-indexeddb file-picking harness cannot faithfully clone.
+    await page.waitForFunction(() => document.getElementById('save-status').textContent === 'Saved on this device');
+    const savedEditor = await context.newPage();
+    await savedEditor.goto(`${url}?mode=library`);
+    await savedEditor.getByRole('button', { name: 'Edit as new version', exact: true }).click();
+    await savedEditor.locator('#editor-workspace').waitFor({ state: 'visible' });
+    await savedEditor.locator('#annotation-list button').filter({ hasText: 'Text: North ridge' }).click();
+    assert.equal(await savedEditor.locator('#text-width').inputValue(), '300');
+    assert.equal(await savedEditor.locator('#object-text').inputValue(), labelText);
+    assert.ok(await savedEditor.locator('#photo-overlay g.selected text tspan').count() >= 4);
+    await savedEditor.locator('#text-width').fill('275');
+    await savedEditor.locator('#text-width').press('Tab');
+    await savedEditor.locator('#object-color').selectOption('#1e88e5');
+    await savedEditor.locator('#object-opacity').fill('45');
+    await savedEditor.locator('[data-tool="route"]').click();
+    assert.equal(await savedEditor.locator('#object-color').inputValue(), '#1e88e5');
+    assert.equal(await savedEditor.locator('#object-opacity').inputValue(), '45');
+    await savedEditor.locator('[data-tool="text"]').click();
+    await savedEditor.locator('#add-at-center').click();
+    assert.equal(await savedEditor.locator('#text-width').inputValue(), '275');
+    await savedEditor.locator('#text-width-auto').click();
+    await savedEditor.locator('#add-at-center').click();
+    assert.equal(await savedEditor.locator('#text-width').inputValue(), '');
+    await savedEditor.locator('[data-tool="route"]').click();
+    const routeBox = await savedEditor.locator('#photo-overlay').boundingBox();
+    const markCount = await savedEditor.locator('#annotation-list button').count();
+    for (const offset of [100, 180, 260]) {
+        await savedEditor.mouse.click(routeBox.x + offset, routeBox.y + offset);
+    }
+    const routePath = () => savedEditor.locator('#photo-overlay g.selected path').first().getAttribute('d');
+    const fullRoute = await routePath();
+    await savedEditor.keyboard.press('Control+z');
+    assert.notEqual(await routePath(), fullRoute);
+    assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount + 1);
+    await savedEditor.keyboard.press('Meta+z');
+    assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount);
+    assert.equal(await savedEditor.locator('.route-preview-dot').count(), 1);
+    await savedEditor.keyboard.press('Control+Shift+z');
+    await savedEditor.keyboard.press('Meta+Shift+z');
+    assert.equal(await routePath(), fullRoute);
+    if (screenshots) await savedEditor.locator('#editor-workspace').screenshot({
+        path: path.join(screenshots, 'route-point-redo.png'),
+    });
+    await savedEditor.keyboard.press('Enter');
+    await savedEditor.keyboard.press('Control+z');
+    assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount);
+    await savedEditor.close();
     const renderer = await page.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl');
         const extension = gl?.getExtension('WEBGL_debug_renderer_info');

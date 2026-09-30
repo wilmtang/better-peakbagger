@@ -74,6 +74,16 @@ export async function waitForCondition(read, {
     throw new Error(`Timed out waiting for ${description} (${detail})`);
 }
 
+// Playwright's waitForFunction polls the immediate return value. An async
+// predicate returns a truthy Promise even when it later resolves to false.
+// Await each page read in the driver before deciding whether polling is done.
+export function waitForPageCondition(page, predicate, arg = null, { timeout = 10_000 } = {}) {
+    return waitForCondition(() => page.evaluate(predicate, arg), {
+        description: `page condition: ${predicate.toString()}`,
+        timeoutMs: timeout,
+    });
+}
+
 // These probes run inside the page, through either Playwright or WebDriver.
 // Keep them browser-neutral and free of module-scope dependencies so the same
 // function can be serialized for Firefox without drifting from Chrome.
@@ -637,12 +647,20 @@ export async function createBrowserFixtureServer({
         }
         if (/ascent\.aspx/i.test(url.pathname)) {
             const analyzerCase = (url.searchParams.get('aid') || '').replace(/^analyzer-/, '');
-            const layoutHtml = url.searchParams.get('layout') === 'images'
+            let layoutHtml = url.searchParams.get('layout') === 'images'
                 ? ascentHtml.replace(/<br clear="left">[\s\S]*$/, '</body></html>').replace(
                     '<td colspan="2">A long climb report with enough prose to make the adjustable column width visible.</td>',
                     `<td>Trip Report</td><td>${ascentImageHtml}</td>`,
                 )
                 : ascentHtml;
+            if (url.searchParams.get('layout') === 'details') {
+                layoutHtml = ascentHtml.replace(/<br clear="left">[\s\S]*$/, '</body></html>').replace(
+                    /<tr><th colspan="2">Ascent Trip Report<\/th><\/tr>\s*<tr><td colspan="2">[^<]*<\/td><\/tr>/,
+                    `<tr><td><b>Date:</b></td><td>Saturday, August 26, 2023</td></tr>
+                    <tr><td><b>Ascent Type:</b></td><td>Successful Summit Attained</td></tr>
+                    <tr><td><b>Peak:</b></td><td><a href="/peak.aspx?pid=1">Fixture Peak</a></td></tr>`,
+                );
+            }
             const body = analyzerCase && analyzerCase !== url.searchParams.get('aid')
                 ? layoutHtml.replace('/track.gpx', `/track.gpx?case=${encodeURIComponent(analyzerCase)}`)
                 : layoutHtml;

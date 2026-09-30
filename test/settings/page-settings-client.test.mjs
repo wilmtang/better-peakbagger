@@ -390,3 +390,13 @@ test('every bridge snapshot is schema-cleaned before becoming confirmed state', 
     assert.equal(fixture.client.get().mapRouteColor, '#d9483b');
     fixture.close();
 });
+
+test('equal array preferences do not notify subscribers again', async () => {
+    const fixture = await setup();
+    const settings = { ...fixture.client.get(), mapProviderOrder: ['caltopo', 'gaia', 'onx', 'alltrails'] };
+    fixture.dispatch({ kind: 'push', settings, snapshotRevision: 2, throughRequestId: 0 });
+    const count = fixture.notifications.length;
+    fixture.dispatch({ kind: 'push', settings: structuredClone(settings), snapshotRevision: 3, throughRequestId: 0 });
+    assert.equal(fixture.notifications.length, count);
+    fixture.client.dispose();
+});

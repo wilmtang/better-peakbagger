@@ -212,3 +212,14 @@ test('known route, viewport, and theme defaults and bounds stay schema-owned', a
     assert.deepEqual(leaks, [],
         `these belong in src/settings/settings-schema.js:\n${leaks.join('\n')}`);
 });
+
+test('provider and filter lists validate duplicates, unknown IDs, and explicit all-off', () => {
+    const clean = Schema.clean({ mapProviderOrder: ['caltopo', 'caltopo', 'unknown'], mapProvidersEnabled: [], betaPeakFilterOrder: ['beta', 'gps', 'bad', 'gps'] });
+    assert.deepEqual(clean.mapProviderOrder, ['caltopo', 'gaia', 'onx', 'alltrails']);
+    assert.deepEqual(clean.mapProvidersEnabled, []);
+    assert.deepEqual(clean.betaPeakFilterOrder, ['beta', 'gps', 'fav', 'tr', 'link']);
+    assert.equal(clean.betaPersonalFilterOrder, null);
+    assert.deepEqual(Schema.clean(clean), clean);
+    assert.deepEqual(Schema.clean({}).mapProvidersEnabled, Schema.MAP_PROVIDERS);
+    assert.notEqual(Schema.clean({}).mapProviderOrder, Schema.DEFAULTS.mapProviderOrder);
+});

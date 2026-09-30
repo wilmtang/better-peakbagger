@@ -915,6 +915,48 @@ test('a late autosave completion cannot replace a newer editor revision', async 
     assert.deepEqual(page.errors, []);
 });
 
+test('a conflicting autosave keeps local edits and replaces the newer draft only on request', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    const otherTab = await Store.createPhotoStore({ indexedDB });
+    t.after(() => otherTab.close());
+    const [initial] = await otherTab.listPhotos();
+    const referenced = await otherTab.putPhoto(Library.addReference(initial, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: new Date().toISOString(),
+    }));
+    await otherTab.putPhoto(Library.cleanPhoto({
+        ...referenced, title: 'Other tab title', updatedAt: new Date().toISOString(),
+    }));
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await waitFor(page.dom, () => page.doc.getElementById('save-conflicted-draft').hidden === false);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.doc.getElementById('save-status').textContent, /Not saved.*another tab/i);
+    assert.equal((await otherTab.getBundle(initial.localId)).project.objects.length, 0,
+        'autosave does not silently overwrite the other tab');
+
+    const title = page.doc.getElementById('photo-title');
+    title.value = 'My unsaved title';
+    title.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+    page.click(page.doc.getElementById('save-conflicted-draft'));
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device').catch(error => {
+        throw new Error(`${error.message}; status=${page.doc.getElementById('save-status').textContent}; `
+            + `toast=${page.doc.getElementById('toast-message').textContent}; `
+            + `errors=${page.errors.join(' | ')}`);
+    });
+    const saved = await otherTab.getBundle(initial.localId);
+    assert.equal(saved.project.objects.length, 1);
+    assert.equal(saved.photo.title, 'My unsaved title');
+    assert.deepEqual(saved.photo.references, referenced.references,
+        'the override preserves metadata written by the other tab');
+    assert.equal(page.doc.getElementById('save-conflicted-draft').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
 test('pagehide flushes an edit before its autosave debounce expires', async t => {
     const page = await loadEditor();
     const { doc, win } = page;
@@ -2734,7 +2776,7 @@ test('dragging one route vertex moves only that vertex', async () => {
 });
 
 
-test('tool preferences are independent and survive reopening the editor', async () => {
+test('tools share color and opacity but keep their other preferences after reopening', async () => {
     const page = await loadEditor();
     const change = (id, value, event = 'input') => {
         const control = page.doc.getElementById(id);
@@ -2744,11 +2786,13 @@ test('tool preferences are independent and survive reopening the editor', async 
     };
     page.tool('route');
     change('object-opacity', 40);
+    change('object-color', '#1e88e5', 'change');
     change('route-width', 27);
     change('route-arrow', true, 'change');
     change('route-smooth', true, 'change');
     page.tool('bolt');
-    assert.equal(page.doc.getElementById('object-opacity').value, '100');
+    assert.equal(page.doc.getElementById('object-opacity').value, '40');
+    assert.equal(page.doc.getElementById('object-color').value, '#1e88e5');
     change('object-scale', 2);
     change('object-rotation', 45);
     page.tool('text');
@@ -2757,6 +2801,7 @@ test('tool preferences are independent and survive reopening the editor', async 
     await page.settle();
     const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
     reopened.tool('route');
+    assert.equal(reopened.doc.getElementById('object-color').value, '#1e88e5');
     assert.equal(reopened.doc.getElementById('object-opacity').value, '40');
     assert.equal(reopened.doc.getElementById('route-width').value, '27');
     assert.equal(reopened.doc.getElementById('route-arrow').checked, true);
@@ -2929,4 +2974,274 @@ test('malformed ImgBB success keeps the photo-page recovery journal and blocks a
     assert.equal(posts, 1);
     assert.equal((await readPhotoStore(page.win, 'operations')).length, 1);
     assert.deepEqual(page.errors, []);
+});
+
+test('text width reflows without editing the source and Auto keeps manual line breaks', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    page.tool('text');
+    page.click(page.doc.getElementById('add-at-center'));
+    const input = page.doc.getElementById('object-text');
+    const width = page.doc.getElementById('text-width');
+    assert.equal(width.value, '448');
+    input.value = 'North ridge traverse\nKeep left';
+    page.emit(input, 'input');
+    const fontSize = page.overlay.querySelector('text').getAttribute('font-size');
+    width.value = '160'; page.emit(width, 'change');
+    assert.ok(page.overlay.querySelectorAll('text tspan').length > 2);
+    assert.equal(input.value, 'North ridge traverse\nKeep left');
+    assert.equal(page.overlay.querySelector('text').getAttribute('font-size'), fontSize);
+    page.click(page.doc.getElementById('text-width-auto'));
+    assert.equal(width.value, '');
+    assert.deepEqual([...page.overlay.querySelectorAll('text tspan')].map(node => node.textContent),
+        ['North ridge traverse', 'Keep left']);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(width.value, '160');
+    page.click(page.doc.getElementById('duplicate-object'));
+    assert.equal(width.value, '160', 'duplicates retain wrap width');
+    assert.deepEqual(page.errors, []);
+});
+
+test('text resize fixes the opposite edge at every alignment and rotation and is one Undo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    page.tool('text'); page.click(page.doc.getElementById('add-at-center'));
+    const { doc, overlay } = page;
+    page.tool('select');
+    page.click(doc.querySelector('#annotation-list button'));
+    const textGeometry = () => {
+        const transform = overlay.querySelector('[data-bpb-object]').getAttribute('transform');
+        return transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    };
+    for (const align of ['left', 'center', 'right']) {
+        doc.getElementById('text-align').value = align; page.emit(doc.getElementById('text-align'), 'change');
+        for (const rotation of [0, 45, 90, -135]) {
+            doc.getElementById('object-rotation').value = rotation;
+            page.emit(doc.getElementById('object-rotation'), 'input');
+            page.emit(doc.getElementById('object-rotation'), 'change');
+            for (const side of ['left', 'right']) {
+                const baseline = textGeometry();
+                const width = Number(doc.getElementById('text-width').value);
+                const radians = rotation * Math.PI / 180;
+                const sign = side === 'right' ? 1 : -1;
+                page.pointer('pointerdown', 200, 200, overlay.querySelector(`[data-text-resize="${side}"]`));
+                for (const delta of [10, 20, 30]) {
+                    page.pointer('pointermove', 200 + sign * delta * Math.cos(radians),
+                        200 + sign * delta * Math.sin(radians));
+                }
+                page.pointer('pointerup', 0, 0);
+                assert.equal(Number(doc.getElementById('text-width').value), width + 60);
+                const current = textGeometry();
+                const factor = (align === 'center' ? 0.5 : align === 'right' ? 1 : 0) - (side === 'left' ? 1 : 0);
+                assert.ok(Math.abs(current[0] - baseline[0] - factor * 60 * Math.cos(radians)) < 0.002);
+                assert.ok(Math.abs(current[1] - baseline[1] - factor * 60 * Math.sin(radians)) < 0.002);
+                page.click(doc.getElementById('undo'));
+                assert.equal(Number(doc.getElementById('text-width').value), width);
+                assert.deepEqual(textGeometry(), baseline);
+                page.click(doc.getElementById('redo'));
+                assert.equal(Number(doc.getElementById('text-width').value), width + 60);
+                page.click(doc.getElementById('undo'));
+            }
+        }
+    }
+    assert.deepEqual(page.errors, []);
+});
+
+test('cancelled and no-op text resizes preserve the label and redo history', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    const { doc, overlay } = page;
+    page.tool('text'); page.click(doc.getElementById('add-at-center'));
+    page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
+    const width = doc.getElementById('text-width');
+    width.value = '300'; page.emit(width, 'change');
+    page.click(doc.getElementById('undo'));
+    const before = overlay.innerHTML;
+    for (const cancellation of ['Escape', 'pointercancel', 'lostpointercapture', 'return-to-start']) {
+        page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
+        page.pointer('pointermove', 240, 200);
+        assert.equal(width.value, '528');
+        if (cancellation === 'Escape') page.key('keydown', { key: 'Escape' });
+        else if (cancellation === 'return-to-start') {
+            page.pointer('pointermove', 200, 200); page.pointer('pointerup', 200, 200);
+        } else page.pointer(cancellation, 240, 200);
+        assert.equal(width.value, '448');
+        assert.equal(overlay.innerHTML, before);
+        assert.equal(doc.getElementById('redo').disabled, false);
+    }
+    page.click(doc.getElementById('redo'));
+    assert.equal(width.value, '300');
+    assert.deepEqual(page.errors, []);
+});
+
+test('autosave excludes text resize previews and persists the released width', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    t.after(() => page.dom.window.close());
+    const { doc, overlay, win } = page;
+    page.tool('text'); page.click(doc.getElementById('add-at-center'));
+    const text = doc.getElementById('object-text');
+    text.value = 'North ridge traverse\nKeep left'; page.emit(text, 'input');
+    page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
+    page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
+    page.pointer('pointermove', 100, 200);
+    assert.equal(doc.getElementById('text-width').value, '248');
+    win.dispatchEvent(new win.Event('pagehide'));
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    assert.equal((await readPhotoStore(win, 'projects'))[0].objects[0].geometry.width, 448);
+    page.pointer('pointerup', 100, 200);
+    win.dispatchEvent(new win.Event('pagehide'));
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const [saved] = await readPhotoStore(win, 'projects');
+    assert.equal(saved.objects[0].geometry.width, 248);
+    assert.equal(saved.objects[0].text, text.value);
+    assert.deepEqual(page.errors, []);
+});
+
+test('text labels remember explicit and Auto width across placements and reopening', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('text');
+    page.pointer('pointerdown', 100, 100);
+    const width = page.doc.getElementById('text-width');
+    width.value = '275'; page.emit(width, 'change');
+    page.pointer('pointerdown', 300, 300);
+    assert.equal(width.value, '275');
+    await page.settle();
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore });
+    t.after(() => reopened.win.close());
+    reopened.tool('text'); reopened.pointer('pointerdown', 100, 100);
+    assert.equal(reopened.doc.getElementById('text-width').value, '275');
+    page.click(page.doc.getElementById('text-width-auto'));
+    page.pointer('pointerdown', 400, 400);
+    assert.equal(width.value, '');
+    await page.settle();
+    const auto = await loadEditor({ localPreferences: page.chrome._localStore });
+    t.after(() => auto.win.close());
+    auto.tool('text'); auto.pointer('pointerdown', 100, 100);
+    assert.equal(auto.doc.getElementById('text-width').value, '');
+});
+
+test('editing an old mark size does not replace the latest shared color or opacity', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    const old = page.overlay.querySelector('[data-bpb-object]');
+    const id = old.getAttribute('data-bpb-object');
+    page.tool('text');
+    const color = page.doc.getElementById('object-color');
+    color.value = '#1e88e5'; page.emit(color, 'change');
+    const opacity = page.doc.getElementById('object-opacity');
+    opacity.value = '40'; page.emit(opacity, 'input');
+    page.tool('select');
+    page.pointer('pointerdown', 100, 100, page.overlay.querySelector(`[data-bpb-object="${id}"]`));
+    page.pointer('pointerup', 100, 100);
+    const scale = page.doc.getElementById('object-scale');
+    scale.value = '2'; page.emit(scale, 'input');
+    page.tool('drawing');
+    assert.equal(color.value, '#1e88e5');
+    assert.equal(opacity.value, '40');
+});
+
+test('Cmd and Ctrl Undo remove route points before touching earlier annotations', async t => {
+    for (const modifier of ['metaKey', 'ctrlKey']) {
+        const page = await loadEditor();
+        t.after(() => page.win.close());
+        page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+        page.tool('route');
+        page.pointer('pointerdown', 100, 100);
+        assert.equal(page.doc.getElementById('undo').disabled, false);
+        page.pointer('pointerdown', 200, 200);
+        page.pointer('pointerdown', 300, 300);
+        const routeId = page.overlay.querySelector('g.selected').getAttribute('data-bpb-object');
+        const routePath = () => page.overlay.querySelector(`[data-bpb-object="${routeId}"] > path`)?.getAttribute('d');
+        const full = routePath();
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.notEqual(routePath(), full);
+        assert.equal(page.markCount(), 2, 'the unfinished two-point route and bolt survive');
+        assert.equal(page.drawing(), true);
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1);
+        assert.ok(page.overlay.querySelector('.route-preview-dot'));
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1, 'undoing the first point must preserve the bolt');
+        assert.equal(page.overlay.querySelector('.route-preview'), null);
+        for (let i = 0; i < 3; i++) page.key('keydown', { key: 'z', [modifier]: true, shiftKey: true });
+        assert.equal(routePath(), full);
+        page.key('keydown', { key: 'Enter' });
+        assert.equal(page.drawing(), false);
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1, 'the finished route is one project Undo');
+        page.key('keydown', { key: 'z', [modifier]: true, shiftKey: true });
+        assert.equal(routePath(), full);
+        assert.deepEqual(page.errors, []);
+    }
+});
+
+test('route Undo works from the first point and a new point discards point Redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('route'); page.pointer('pointerdown', 100, 100);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.doc.getElementById('undo').disabled, true);
+    assert.equal(page.doc.getElementById('redo').disabled, false);
+    page.click(page.doc.getElementById('redo'));
+    assert.ok(page.overlay.querySelector('.route-preview-dot'));
+    page.pointer('pointerdown', 200, 200);
+    page.pointer('pointerdown', 300, 300);
+    page.click(page.doc.getElementById('undo'));
+    page.pointer('pointerdown', 400, 350);
+    assert.equal(page.doc.getElementById('redo').disabled, true);
+    assert.match(page.routePath(), /800 700$/);
+    assert.doesNotMatch(page.routePath(), /600 600/);
+    page.key('keydown', { key: 'Escape' });
+    assert.equal(page.markCount(), 0);
+    assert.equal(page.doc.getElementById('undo').disabled, true);
+});
+
+test('route restyling stays in its transaction while point Undo retains the style', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.tool('route'); page.pointer('pointerdown', 100, 100); page.pointer('pointerdown', 200, 200);
+    const smooth = page.doc.getElementById('route-smooth');
+    smooth.checked = true; page.emit(smooth, 'change');
+    const width = page.doc.getElementById('route-width');
+    width.value = '27'; page.emit(width, 'input');
+    page.click(page.doc.getElementById('undo'));
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(width.value, '27');
+    assert.equal(smooth.checked, true);
+    page.key('keydown', { key: 'Enter' });
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0);
+});
+
+test('Undo during an unfinished freehand gesture leaves previous marks intact', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.tool('drawing'); page.pointer('pointerdown', 100, 100); page.pointer('pointermove', 200, 200);
+    page.key('keydown', { key: 'z', ctrlKey: true });
+    assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+    assert.equal(page.markCount(), 1);
+    page.pointer('pointerup', 200, 200);
+    assert.equal(page.markCount(), 1);
+});
+
+test('undoing every pending route point preserves the previous project Redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.click(page.doc.getElementById('undo'));
+    page.tool('route'); page.pointer('pointerdown', 100, 100); page.pointer('pointerdown', 200, 200);
+    page.click(page.doc.getElementById('undo'));
+    page.click(page.doc.getElementById('undo'));
+    page.key('keydown', { key: 'Escape' });
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.drawing(), false);
+    assert.match(page.doc.getElementById('annotation-list').textContent, /Bolt/);
 });

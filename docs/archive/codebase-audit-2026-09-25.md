@@ -290,8 +290,9 @@ speech, packaging, and remote CI.
   across tabs; see `docs/trip-report-editor.md` (lines 572–594). This is an
   existing product limitation, distinct from F3's unconditional consumption of
   a newer backup snapshot. A multi-draft design requires a separate decision.
-- The [report caption plan](../plans/report-image-captions.md) still requires live
-  Peakbagger save/reopen proof. Passing local conversion tests does not close it.
+- At this audit's date, the [report caption plan](report-image-captions.md) still
+  required live Peakbagger save/reopen proof. Passing local conversion tests did
+  not close it.
 - The [Imgur plan](../plans/imgur-media-hosting.md) remains proposed feature work.
 - The uncommitted AllTrails adapter and the Gaia/onX adapters depend on provider
   UI contracts. This audit inspected their failure/identity boundaries and ran

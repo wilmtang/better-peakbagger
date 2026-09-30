@@ -63,13 +63,21 @@ export async function prepareAlltrailsImport({ gpx, filename, timeoutMs = 20_000
         if (openers.length !== 1 || openers[0].disabled) {
             return fail('ambiguous-importer', 'AllTrails’ route uploader changed or is unavailable.');
         }
+        const existingInputs = new Set(doc.querySelectorAll('input[type="file"]'));
         openers[0].click();
 
-        const dialog = await wait(() => {
+        const inputs = await wait(() => {
             const candidates = uploadDialogs();
-            return candidates.length === 1 ? candidates[0] : null;
-        }, 'its route upload dialog');
-        const inputs = [...dialog.querySelectorAll('input[type="file"][aria-label="hidden file upload"]')];
+            if (candidates.length !== 1) return null;
+            // Dropzone mounts the hidden input under body, outside the modal.
+            // Admit only a newly mounted Dropzone input while our one route
+            // dialog is open; never borrow an unrelated or pre-existing input.
+            // Also retain support for a control mounted inside the dialog.
+            const files = [...doc.querySelectorAll('input[type="file"]')].filter(input =>
+                candidates[0].contains(input) || (!existingInputs.has(input)
+                    && input.parentElement === doc.body && input.classList.contains('dz-hidden-input')));
+            return files.length ? files : null;
+        }, 'its route upload file control');
         const accepts = inputs[0]?.accept.toLowerCase().split(',').map(value => value.trim()) || [];
         if (inputs.length !== 1 || inputs[0].files.length || inputs[0].disabled || !accepts.includes('.gpx')) {
             return fail('ambiguous-input', 'AllTrails’ file uploader changed or already contains a file.');

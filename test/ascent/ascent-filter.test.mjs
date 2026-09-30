@@ -281,6 +281,8 @@ test('pointer drag lifts and follows a filter while neighbors ease into place', 
     assert.equal(bar(dom).hasAttribute('data-pbaf-reordering'), true);
     assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-x'), '-290px');
     assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-y'), '0px');
+    await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
+    assert.equal(bar(dom).hasAttribute('data-pbaf-reordering'), true, 'an unrelated settings update must not cancel the drag');
     assert.ok(animations.some(animation => animation.item === favoriteItem
         && animation.frames[0].transform === 'translate3d(-120px, 0px, 0)'
         && animation.frames[1].transform === 'translate3d(0, 0, 0)'
@@ -1173,4 +1175,16 @@ test('a header sort captured before settings resolve wins over the auto-flip', a
 
     assert.deepEqual(dateTexts(dom), served, 'the auto-flip must not reverse a user-chosen sort');
     assert.equal(sortParam(dom), null, 'the skipped auto-flip left the URL alone');
+});
+
+test('legacy orders migrate, synced orders win, and keyboard changes reach settings', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL,
+        prepare: page => rememberFilterState(page, { peakOrder: ['beta', 'tr', 'gps', 'link', 'fav'], personalOrder: ['beta', 'link', 'tr', 'gps'] }) });
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[0] === 'beta');
+    assert.deepEqual(Array.from(dom.chrome._store.bpbSettings.betaPersonalFilterOrder), ['beta', 'link', 'tr', 'gps']);
+    await dom.chrome.storage.sync.set({ bpbSettings: { betaPeakFilterOrder: ['gps', 'fav', 'tr', 'link', 'beta'] } });
+    assert.deepEqual(filterLabels(dom), ['GPS track', 'Climbing buddies', 'Trip report', 'Link', 'Has beta']);
+    chip(dom, 'Has beta').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');
+    assert.deepEqual(Array.from(dom.chrome._store.bpbSettings.betaPeakFilterOrder), ['gps', 'fav', 'tr', 'beta', 'link']);
 });

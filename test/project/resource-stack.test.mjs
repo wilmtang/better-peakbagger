@@ -233,7 +233,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         chromeVerifier.indexOf('// --- Extension-owned photo editor and local library'),
     );
     assert.match(backupSetup,
-        /waitForFunction[\s\S]*units === 'auto'[\s\S]*SETTINGS_PATCH[\s\S]*enableGithubBackup: true/,
+        /waitForPageCondition[\s\S]*units === 'auto'[\s\S]*SETTINGS_PATCH[\s\S]*enableGithubBackup: true/,
         'the backup fixture must settle options and use the serialized settings route');
     assert.doesNotMatch(backupSetup, /chrome\.storage\.sync\.set\(/,
         'a raw fixture replacement must not overwrite a real pending settings patch');

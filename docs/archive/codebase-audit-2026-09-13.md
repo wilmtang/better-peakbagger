@@ -60,9 +60,9 @@ needed. This audit makes no claims about spacing, clipping, screen-reader
 speech, native focus, or window placement. Temporary probe/log files are not
 required by the plan; reproduction inputs and observed outcomes are below.
 
-The existing [caption plan](../plans/report-image-captions.md) already records the open
-real Peakbagger save/reopen compatibility gate. Preserve it as an independent
-release requirement; local caption tests do not close that gate. The
+The existing [caption plan](report-image-captions.md) recorded the then-open
+real Peakbagger save/reopen compatibility gate. It was an independent release
+requirement; local caption tests did not close that gate. The
 [Imgur plan](../plans/imgur-media-hosting.md) remains proposed work.
 
 ## F1 — Hand off text ownership when disabling the report editor

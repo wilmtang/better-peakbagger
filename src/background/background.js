@@ -19,6 +19,7 @@ import {
 } from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
+import { createCaltopoRoutes } from './caltopo-routes.js';
 import { createAlltrailsRoutes } from './alltrails-routes.js';
 import { createGaiaRoutes } from './gaia-routes.js';
 import { createOnxRoutes } from './onx-routes.js';
@@ -397,8 +398,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const peakbaggerPublicError = error => {
         const failure = PeakbaggerError.exception(error);
+        // Transport codes are shared across Peakbagger features. Capture has
+        // its own recovery policy; leaking a transport code makes the popup
+        // fall back to telling the user to reload the activity provider.
+        const code = {
+            cloudflare: 'cloudflare',
+            'rate-limit': 'rate-limit',
+            'signed-out': 'peakbagger-signed-out',
+            timeout: 'peakbagger-page-timeout',
+            cancelled: 'capture-cancelled',
+            'unexpected-content': 'peakbagger-response-invalid',
+            'not-found': 'peakbagger-response-invalid',
+            http: 'peakbagger-response-invalid',
+            'response-too-large': error?.resource === 'peaks'
+                ? 'peak-response-too-large' : 'peakbagger-response-invalid',
+        }[failure.code] || 'peakbagger-unavailable';
         const publicError = PublicErrors.exception(
-            failure.code || 'peakbagger-unavailable',
+            code,
             failure.message,
             { cause: failure },
         );
@@ -749,26 +765,69 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }));
     };
 
-    const waitForPeakbaggerTab = async (tabId, signal) => {
+    const waitForPeakbaggerTab = async (tabId, signal, { created = false } = {}) => {
+        let awaitingFirstDocument = created;
+        let readinessError = null;
         const expiresAt = now() + PEAKBAGGER_OPERATION_TIMEOUT_MS;
         try {
             while (true) {
                 if (signal?.aborted) throw cancelledCaptureError();
                 const remaining = expiresAt - now();
-                if (remaining <= 0) throw peakbaggerOperationTimeoutError(
-                    'temporary-tab readiness',
-                    new Error('Peakbagger request tab did not finish loading.'),
-                );
+                if (remaining <= 0) {
+                    if (readinessError) throw readinessError;
+                    throw peakbaggerOperationTimeoutError(
+                        'temporary-tab readiness',
+                        new Error('Peakbagger request tab did not finish loading.'),
+                    );
+                }
                 const tab = await runPeakbaggerBrowserOperation({
                     phase: 'temporary-tab readiness',
                     operation: () => ext.tabs.get(tabId),
                     signal,
                     timeoutMs: remaining,
                 });
-                if (!canonicalPeakbaggerTab(tab)) {
-                    throw peakbaggerTabChangedError(new Error('The Peakbagger request tab navigated away.'));
+                // Firefox may omit url (Chrome may report about:blank) until a
+                // newly created tab commits its first document. Wait without
+                // injecting; only a canonical committed document can be used.
+                const uncommitted = awaitingFirstDocument && tab
+                    && (!tab.url || tab.url === 'about:blank')
+                    && (!tab.pendingUrl || canonicalPeakbaggerUrl(tab.pendingUrl));
+                if (!uncommitted) {
+                    if (!canonicalPeakbaggerTab(tab)
+                        || (tab.pendingUrl && !canonicalPeakbaggerUrl(tab.pendingUrl))) {
+                        throw peakbaggerTabChangedError(new Error('The Peakbagger request tab navigated away.'));
+                    }
+                    awaitingFirstDocument = false;
+                    if (tab.status === 'complete') return tab;
+                    // A usable document can remain "loading" indefinitely while
+                    // an unrelated image or subframe is pending.
+                    let results;
+                    try {
+                        results = await runPeakbaggerBrowserOperation({
+                            phase: 'page-document readiness',
+                            signal,
+                            timeoutMs: Math.max(1, expiresAt - now()),
+                            operation: () => ext.scripting.executeScript({
+                                target: { tabId },
+                                world: 'MAIN',
+                                injectImmediately: true,
+                                func: () => ({ url: location.href, readyState: document.readyState }),
+                            }),
+                        });
+                        readinessError = null;
+                    } catch (error) {
+                        if (signal?.aborted || PublicErrors.isPublic(error)) throw error;
+                        // Injection can race document creation/replacement. A
+                        // rejection alone is not evidence that the tab closed.
+                        // Recheck its identity before retrying within the deadline.
+                        readinessError = error;
+                    }
+                    const documentState = results?.[0]?.result;
+                    if (documentState?.url === tab.url
+                        && (documentState.readyState === 'interactive' || documentState.readyState === 'complete')) {
+                        return tab;
+                    }
                 }
-                if (tab.status === 'complete') return tab;
                 if (typeof globalThis.setTimeout !== 'function') {
                     throw peakbaggerPageError(
                         'peakbagger-tab-load-failed',
@@ -785,8 +844,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
         } catch (error) {
             if (signal?.aborted) throw cancelledCaptureError();
+            if (readinessError && error?.code === 'peakbagger-page-timeout') {
+                throw await peakbaggerPageConnectionError(tabId, readinessError, signal);
+            }
             if (PublicErrors.isPublic(error)) throw error;
-            throw peakbaggerTabChangedError(error);
+            throw await peakbaggerPageConnectionError(tabId, error, signal);
         }
     };
 
@@ -800,6 +862,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     func: version => globalThis.BPBPeakbaggerPage?.version === version,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
+                    injectImmediately: true,
                 }),
             });
             return results?.[0]?.result === true;
@@ -812,6 +875,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 target: { tabId },
                 files: ['peakbagger-page.js'],
                 world: 'MAIN',
+                injectImmediately: true,
             }),
         });
         if (!await probe()) throw new Error('The Peakbagger page helper did not start.');
@@ -830,6 +894,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         : null,
                     args: [PEAKBAGGER_PAGE_VERSION],
                     world: 'MAIN',
+                    injectImmediately: true,
                 }),
             });
             const tab = await runPeakbaggerBrowserOperation({
@@ -946,6 +1011,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 func: id => globalThis.BPBPeakbaggerPage?.cancel?.(id) === true,
                 args: [requestId],
                 world: 'MAIN',
+                injectImmediately: true,
             }).catch(() => {});
         };
         const attempt = async () => {
@@ -969,6 +1035,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     },
                     args: [PEAKBAGGER_PAGE_VERSION, requestId, url, kind],
                     world: 'MAIN',
+                    injectImmediately: true,
                 }),
             });
             if (!results?.[0]) throw new Error('The Peakbagger page returned no request result.');
@@ -1051,7 +1118,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 await createPeakbaggerHelperLease(tab, generation, leaseCreatedAt);
             }
             const accountEvidenceIsFresh = created || tab.status !== 'complete';
-            await waitForPeakbaggerTab(tab.id, signal);
+            await waitForPeakbaggerTab(tab.id, signal, { created });
             await ensurePeakbaggerPage(tab.id, signal);
             let adoptedForRecovery = false;
             return {
@@ -3277,6 +3344,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         mutateMap,
         trustedActions,
     });
+    const caltopoRoutes = createCaltopoRoutes({
+        ext, isPeakbaggerSender, trustedActions, action: TrustedActions.ACTIONS.CALTOPO_IMPORT,
+    });
     const alltrailsRoutes = createAlltrailsRoutes({
         ext,
         isPeakbaggerSender,
@@ -3482,6 +3552,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (reportDraftHandler) return reportDraftHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
+            const caltopoHandler = caltopoRoutes.handlers[type];
+            if (caltopoHandler) return caltopoHandler(message, sender);
             const alltrailsHandler = alltrailsRoutes.handlers[type];
             if (alltrailsHandler) return alltrailsHandler(message, sender);
             const gaiaHandler = gaiaRoutes.handlers[type];
@@ -3503,7 +3575,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                         },
                     };
                 }
-                return { ok: true, settings: await Settings.applyPatch(message.patch) };
+                return { ok: true, settings: await Settings.applyPatch(message.patch, { onlyIfUnset: message.onlyIfUnset === true }) };
             case FavoritesStore.MESSAGE_TYPE:
                 if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
                     return {

@@ -8,9 +8,18 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [Chrome capture validation — 2026-09-29](capture-chrome-validation-2026-09-29.md) —
+  completed toolbar-to-draft fixtures, recovery fixes, lifecycle checks, and
+  live Garmin GPX Preview, with live Strava and remote CI proof gaps recorded.
+- [Suspect GPX segments](gpx-suspect-segments.md) — completed conservative
+  interpretation of exact degenerate duplicates and isolated distant points,
+  reversible source view, compact disclosure, and local verification ledger.
 - [Codebase audit — 2026-09-25](codebase-audit-2026-09-25.md) — seven findings
   remediated in focused commits, with local regression evidence and explicit
   live-service/browser/CI proof limits in the closure ledger.
+- [Report image captions](report-image-captions.md) — completed Rich editing,
+  conversion, and photo lifecycle plan with saved Peakbagger markup and public
+  rendering verified against a real captioned report.
 - [3D map: the layer drape usually fails to load](3d-map-basemap-drape-cors.md) —
   why a draped 2D layer often falls back to terrain-only in 3D (cross-origin tile
   restrictions).

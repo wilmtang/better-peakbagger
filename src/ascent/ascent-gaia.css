@@ -9,6 +9,7 @@
     gap: 8px;
     margin-left: 6px;
     vertical-align: middle;
+    max-width: calc(100% - 6px);
     font: 11px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -36,7 +37,7 @@
         box-shadow 120ms ease, transform 120ms ease;
 }
 
-.bpb-map-handoff-button-gaia {
+:is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo) {
     border-color: #1d5539;
     background: linear-gradient(180deg, #347a55 0%, #286544 100%);
     box-shadow: 0 1px 2px rgba(13, 55, 35, 0.24), inset 0 1px rgba(255, 255, 255, 0.12);
@@ -58,7 +59,7 @@
     box-shadow: 0 2px 4px rgba(24, 37, 29, 0.28), inset 0 1px rgba(255, 255, 255, 0.12);
     transform: translateY(-1px);
 }
-.bpb-map-handoff-button-gaia:hover:not(:disabled) {
+:is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo):hover:not(:disabled) {
     border-color: #153f2b;
     background: linear-gradient(180deg, #2e714e 0%, #215b3b 100%);
 }
@@ -102,7 +103,7 @@
     box-shadow: none;
     opacity: 1 !important;
 }
-.bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+:is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo).bpb-map-handoff-button-success {
     border-color: #83ae91;
     color: #245e40;
     background: #eef7f0;
@@ -118,7 +119,7 @@
     background: #fff2e8;
 }
 .bpb-map-handoff-button-success .bpb-map-handoff-icon { color: #fff; }
-.bpb-map-handoff-button-gaia.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #347a55; }
+:is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo).bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #347a55; }
 .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #4b742c; }
 .bpb-map-handoff-button-onx.bpb-map-handoff-button-success .bpb-map-handoff-icon { background: #984400; }
 .bpb-map-handoff-button-success .bpb-map-handoff-icon::before { content: "✓"; transform: none; }
@@ -137,9 +138,9 @@
 
 @media (prefers-color-scheme: dark) {
     .bpb-map-handoff-button-alltrails { border-color: #86a967; }
-    .bpb-map-handoff-button-gaia { border-color: #5c9872; }
+    :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo) { border-color: #5c9872; }
     .bpb-map-handoff-button-onx { border-color: #c06d31; }
-    .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+    :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo).bpb-map-handoff-button-success {
         border-color: #5c9872; color: #9bd3ab; background: #24352c;
     }
     .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
@@ -152,9 +153,9 @@
 }
 
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-alltrails { border-color: #86a967; }
-:root[data-bpb-theme="dark"] .bpb-map-handoff-button-gaia { border-color: #5c9872; }
+:root[data-bpb-theme="dark"] :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo) { border-color: #5c9872; }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-onx { border-color: #c06d31; }
-:root[data-bpb-theme="dark"] .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+:root[data-bpb-theme="dark"] :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo).bpb-map-handoff-button-success {
     border-color: #5c9872; color: #9bd3ab; background: #24352c;
 }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
@@ -165,9 +166,9 @@
 }
 :root[data-bpb-theme="dark"] .bpb-map-handoff-status { color: #d0cbc2; }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-alltrails { border-color: #294d13; }
-:root[data-bpb-theme="light"] .bpb-map-handoff-button-gaia { border-color: #1d5539; }
+:root[data-bpb-theme="light"] :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo) { border-color: #1d5539; }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-onx { border-color: #753500; }
-:root[data-bpb-theme="light"] .bpb-map-handoff-button-gaia.bpb-map-handoff-button-success {
+:root[data-bpb-theme="light"] :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo).bpb-map-handoff-button-success {
     border-color: #83ae91; color: #245e40; background: #eef7f0;
 }
 :root[data-bpb-theme="light"] .bpb-map-handoff-button-alltrails.bpb-map-handoff-button-success {
@@ -177,3 +178,6 @@
     border-color: #d79d72; color: #713100; background: #fff2e8;
 }
 :root[data-bpb-theme="light"] .bpb-map-handoff-status { color: #4d514d; }
+
+.bpb-map-handoff-control[hidden],
+.bpb-map-handoff-button[hidden] { display: none; }

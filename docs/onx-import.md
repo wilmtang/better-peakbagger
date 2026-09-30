@@ -13,7 +13,7 @@ or KML, must be under 4 MB, and requires a Premium or Elite membership. See
 
 1. Open a saved Peakbagger ascent that has a GPX download.
 2. Click **Send to onX** beside the native GPX link.
-3. Grant one-time access to `webmap.onxmaps.com`, if the browser asks.
+3. Grant one-time access to `backcountry.onxmaps.com`, if the browser asks.
 4. Sign in to onX if prompted, return to Peakbagger, and click the button again.
 5. Review the selected file in onX and click **Import**.
 6. If onX cannot complete the import, return to Peakbagger and click
@@ -53,7 +53,7 @@ sequenceDiagram
   saved ascent. Analyzer data and captured-provider tracks are not accepted.
 - onX's 4 MB limit is enforced before the worker opens or injects the target
   tab and again inside the adapter.
-- Optional access is limited to `https://webmap.onxmaps.com/*`. Better
+- Optional access is limited to `https://backcountry.onxmaps.com/*`. Better
   Peakbagger does not request access to onX's identity service, read passwords,
   or inspect unrelated onX tabs.
 - A trusted click is exchanged for a sender-bound workflow grant that the
@@ -68,6 +68,11 @@ sequenceDiagram
   possibly failed document.
 
 ## Maintainer contract
+
+The importer uses `backcountry.onxmaps.com` directly. The retired
+`webmap.onxmaps.com` address redirects across origins, so permission for that
+old host cannot authorize file injection on the new one. Existing installs
+request the new optional host permission on their next explicit send.
 
 The current adapter validates the exact origin and
 `/backcountry/map/content/import` path, one empty

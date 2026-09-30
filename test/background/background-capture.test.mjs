@@ -32,6 +32,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     afterSessionSet = null, clock = null, groupError = null, faults = {},
     sessionValues = null, browserTabs = null, timerDelayCap = null,
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
+    peakbaggerDocumentState = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
     captureDiagnostics = false,
@@ -211,6 +212,12 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return [];
                 }
                 const functionSource = String(details.func);
+                if (functionSource.includes('document.readyState')) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'readiness', details, true);
+                    const tab = tabs.get(details.target.tabId);
+                    const result = peakbaggerDocumentState || { url: tab?.url, readyState: 'interactive' };
+                    return [{ result: structuredClone(result) }];
+                }
                 const isOwnershipCheck = functionSource.includes('inspectOwnership')
                     || functionSource.includes('inspectExpectedOwnership')
                     || functionSource.includes('waitForOwnership');
@@ -1440,6 +1447,205 @@ test('activity capture creates and removes an inactive Peakbagger request tab wh
         'the provider tab remains active while the helper works in the background');
 });
 
+test('a new Peakbagger helper waits for its first committed URL before injection', async t => {
+    for (const url of [undefined, 'about:blank']) {
+        await t.test(String(url), async () => {
+            let reads = 0;
+            const harness = createHarness({
+                timerDelayCap: 100,
+                beforeTabGet: ({ tabId, tabs }) => {
+                    if (tabId !== 100) return;
+                    const tab = tabs.get(tabId);
+                    if (++reads <= 2) {
+                        tab.url = url;
+                        tab.status = reads === 1 ? 'complete' : 'loading';
+                    } else {
+                        tab.url = 'https://www.peakbagger.com/Default.aspx';
+                        tab.status = 'complete';
+                    }
+                },
+                beforePeakbaggerScript: () => assert.ok(reads >= 3,
+                    'never inject into the uncommitted document'),
+            });
+            harness.tabs.delete(5);
+            const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(job.phase, 'ready');
+            assert.equal(harness.providerCaptureCalls.length, 1);
+            assert.deepEqual(harness.removedTabs, [100]);
+        });
+    }
+});
+
+test('an uncommitted helper remains bounded and never authorizes GPS export', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock, timerDelayCap: 100,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            tabs.get(tabId).url = undefined;
+            tabs.get(tabId).status = 'loading';
+            clock.now += 10_000;
+        },
+        beforePeakbaggerScript: () => assert.fail('an uncommitted helper must not run page scripts'),
+    });
+    harness.tabs.delete(5);
+    const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(job.error.code, 'peakbagger-page-timeout');
+    assert.equal(harness.providerCaptureCalls.length, 0);
+});
+
+test('a helper navigating to a foreign origin is rejected before script injection', async t => {
+    for (const url of ['about:blank', 'https://www.peakbagger.com/Default.aspx']) {
+        await t.test(url, async () => {
+            const harness = createHarness({
+                beforeTabGet: ({ tabId, tabs }) => {
+                    if (tabId !== 100) return;
+                    Object.assign(tabs.get(tabId), { url, pendingUrl: 'https://example.com/', status: 'loading' });
+                },
+                beforePeakbaggerScript: () => assert.fail('foreign pending navigation must not run scripts'),
+            });
+            harness.tabs.delete(5);
+            const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(job.error.code, 'peakbagger-tab-changed');
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('a transient Peakbagger readiness injection failure retries the still-open tab', async () => {
+    let probes = 0;
+    const harness = createHarness({
+        timerDelayCap: 100,
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase === 'readiness' && ++probes === 1) throw new Error('Frame not ready');
+        },
+    });
+    harness.tabs.get(5).status = 'loading';
+    const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(job.phase, 'ready');
+    assert.equal(probes, 2);
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+});
+
+test('a persistent readiness injection failure reports connection failure, not tab closure', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock, timerDelayCap: 100,
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase !== 'readiness') return;
+            clock.now += 10_000;
+            throw new Error('Cannot access this page');
+        },
+    });
+    harness.tabs.get(5).status = 'loading';
+    const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(job.error.code, 'peakbagger-page-connect-failed');
+    assert.equal(harness.providerCaptureCalls.length, 0);
+});
+
+test('waiting for a helper document still rejects closure or navigation away', async t => {
+    for (const destination of [undefined, 'about:blank', 'https://example.com/']) {
+        await t.test(String(destination), async () => {
+            let changed = false;
+            const harness = createHarness({
+                timerDelayCap: 100,
+                beforePeakbaggerScript: ({ phase }) => {
+                    if (phase !== 'readiness') return;
+                    changed = true;
+                    throw new Error('Document unloaded');
+                },
+                beforeTabGet: ({ tabId, tabs }) => {
+                    if (tabId !== 5 || !changed) return;
+                    if (destination) tabs.get(5).url = destination;
+                    else tabs.delete(5);
+                },
+            });
+            harness.tabs.get(5).status = 'loading';
+            const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(job.error.code, 'peakbagger-tab-changed');
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('an interactive Peakbagger document can verify login while unrelated resources keep loading', async () => {
+    const harness = createHarness({
+        beforePeakbaggerScript: ({ details }) => {
+            assert.equal(details.injectImmediately, true,
+                'page-helper calls must not wait for the pending window load event');
+        },
+    });
+    harness.tabs.get(5).status = 'loading';
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.tabs.get(5).status, 'loading');
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks'],
+        'an incompletely loaded tab must still make a live login request');
+    assert.equal(harness.providerCaptureCalls.length, 1);
+});
+
+test('an interactive Peakbagger document cannot bypass a signed-out live login response', async () => {
+    const harness = createHarness({ loginHtml: '<html><body>Sign in</body></html>' });
+    harness.tabs.get(5).status = 'loading';
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.error.code, 'peakbagger-signed-out');
+    assert.equal(harness.providerCaptureCalls.length, 0,
+        'GPS export remains behind authoritative account verification');
+});
+
+test('Peakbagger document readiness requires a parsed document at the expected URL', async t => {
+    for (const documentState of [
+        { url: 'https://www.peakbagger.com/Default.aspx', readyState: 'loading' },
+        { url: 'https://www.peakbagger.com/other.aspx', readyState: 'interactive' },
+        { url: 'https://example.com/', readyState: 'complete' },
+        { url: 'https://www.peakbagger.com/Default.aspx', readyState: 'unexpected' },
+    ]) {
+        await t.test(`${documentState.url} ${documentState.readyState}`, async () => {
+            const clock = { now: Date.now() };
+            const harness = createHarness({
+                clock,
+                timerDelayCap: 5,
+                peakbaggerDocumentState: documentState,
+                beforeTabGet: ({ tabId }) => { if (tabId === 5) clock.now += 10_000; },
+            });
+            harness.tabs.get(5).status = 'loading';
+
+            const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+            assert.equal(failed.error.code, 'peakbagger-page-timeout');
+            assert.equal(harness.peakbaggerPageCalls.length, 0);
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('cancelling a stalled Peakbagger document-readiness probe settles capture immediately', { timeout: 1000 }, async () => {
+    let reached;
+    const readinessReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase !== 'readiness') return;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    harness.tabs.get(5).status = 'loading';
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await readinessReached;
+
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+
+    assert.equal(cancelled.cancelled, true);
+    assert.equal(await capture, null);
+    assert.equal(harness.providerCaptureCalls.length, 0);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+});
+
 test('selecting a temporary Peakbagger request tab transfers cleanup ownership to the user', async () => {
     const harness = createHarness({
         beforePeakbaggerAccountEvidence: () => {
@@ -2582,6 +2788,38 @@ test('a validated Peakbagger rate limit survives worker restart and resumes only
     const resumed = await restarted.send({ type: 'CAPTURE_START', tabId: 2, force: true });
     assert.equal(resumed.phase, 'ready');
     assert.equal(responses, 2);
+});
+
+test('Peakbagger transport failures use capture recovery codes at login and summit lookup', async t => {
+    const cases = [
+        ['server', 'transient', 'peakbagger-unavailable', 503],
+        ['network', 'transient', 'peakbagger-unavailable', 0],
+        ['response-read', 'transient', 'peakbagger-unavailable', 200],
+        ['timeout', 'transient', 'peakbagger-page-timeout', 0],
+        ['signed-out', 'wrong-content', 'peakbagger-signed-out', 200],
+        ['unexpected-content', 'wrong-content', 'peakbagger-response-invalid', 200],
+        ['not-found', 'wrong-content', 'peakbagger-response-invalid', 404],
+        ['http', 'wrong-content', 'peakbagger-response-invalid', 403],
+        ['response-too-large', 'wrong-content', 'peak-response-too-large', 200],
+    ];
+    for (const resource of ['html', 'peaks']) {
+        for (const [code, kind, expected, status] of cases) {
+            await t.test(`${resource}: ${code}`, async () => {
+                const harness = createHarness({
+                    [resource === 'html' ? 'peakbaggerPageLoginResult' : 'peakbaggerPagePeakResult']: call => ({
+                        kind, requestedUrl: call.url, url: call.url, status, redirected: false,
+                        error: { source: 'peakbagger', code, resource, status },
+                    }),
+                });
+                const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                const expectedCode = resource === 'html' && code === 'response-too-large'
+                    ? 'peakbagger-response-invalid' : expected;
+                assert.equal(job.error.code, expectedCode);
+                assert.equal(job.matches.length, 0);
+                assert.equal(harness.providerCaptureCalls.length, resource === 'html' ? 0 : 1);
+            });
+        }
+    }
 });
 
 test('summit lookup retries only network and server failures once', async () => {

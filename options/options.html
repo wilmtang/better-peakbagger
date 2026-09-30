@@ -35,6 +35,7 @@
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#map-chart-chart">GPX chart</a></li>
                     <li><a class="nav-subitem" href="#map-chart-map">Map</a></li>
+                    <li><a class="nav-subitem" href="#map-handoffs">Send GPX</a></li>
                 </ul>
             </li>
             <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
@@ -341,7 +342,7 @@
                         </div>
                     </div>
 
-                    <div class="row">
+                    <div class="row viewport-setting-row">
                         <div class="label">
                             <span class="title">Map viewport</span>
                             <span class="desc">By default, ascent maps use Peakbagger’s original 450 × 450 px size. Drag the lower-right corner up to the page width; changes apply to every ascent page.</span>
@@ -361,6 +362,20 @@
                         </fieldset>
                     </div>
                 </div>
+            </div>
+
+            <div id="map-handoffs" class="subsection" role="group" aria-labelledby="map-handoffs-heading">
+                <h3 class="subsection-title" id="map-handoffs-heading">Send GPX</h3>
+                <div class="card">
+                    <div class="row order-setting-row">
+                        <div class="label">
+                            <span class="title">Map providers</span>
+                            <span class="desc">Check the providers to show beside a saved ascent’s GPX download. Drag the grips to change their order.</span>
+                        </div>
+                        <ol id="map-provider-order" class="order-settings" aria-label="Map provider order"></ol>
+                    </div>
+                </div>
+                <p class="sub">Provider choices and filter order are included in <a href="#github-settings-backup">Settings backup</a> for transfer to another device.</p>
             </div>
         </section>
 
@@ -393,6 +408,20 @@
                     </div>
                 </div>
 
+                <div class="row order-setting-row">
+                    <div class="label">
+                        <span class="title">Peak ascent filter order</span>
+                        <span class="desc">Drag the grips to reorder. You can also drag filters directly on a peak’s ascent list.</span>
+                    </div>
+                    <ol id="beta-peak-order" class="order-settings" aria-label="Peak ascent filter order"></ol>
+                </div>
+                <div class="row order-setting-row">
+                    <div class="label">
+                        <span class="title">Personal ascent filter order</span>
+                        <span class="desc">Drag the grips to set the filter order on a climber’s ascent list.</span>
+                    </div>
+                    <ol id="beta-personal-order" class="order-settings" aria-label="Personal ascent filter order"></ol>
+                </div>
                 <div class="row">
                     <div class="label">
                         <span class="title">Newest ascents first</span>

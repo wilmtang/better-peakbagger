@@ -22,6 +22,7 @@ const create = ({
     idleUi,
     buildInit,
     nativeMap,
+    inheritNativeCamera = () => true,
     hideNativeMap,
     restoreNativeMap,
     post,
@@ -117,7 +118,7 @@ const create = ({
         state = 'loading';
         onView(null);
         clearFailure();
-        viewCamera = TerrainCamera.fromLeaflet(nativeMap());
+        viewCamera = inheritNativeCamera() ? TerrainCamera.fromLeaflet(nativeMap()) : null;
         update();
         post('init', {
             ...detail,

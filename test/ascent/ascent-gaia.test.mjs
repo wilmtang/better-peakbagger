@@ -7,12 +7,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, fireTrustedEvent, waitFor, makeChromeStub } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
 
 const loadSurface = async ({
+    settings = {},
     permissions = {},
     results = {},
     gpx = GPX,
@@ -25,6 +26,7 @@ const loadSurface = async ({
     const sent = [];
     let fetches = 0;
     dom.window.chrome = {
+        storage: makeChromeStub({ bpbSettings: settings }).storage,
         runtime: {
             id: 'test',
             getManifest: () => ({ version: '3.7.2' }),
@@ -38,7 +40,7 @@ const loadSurface = async ({
                 if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
                 if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
                 if (message.type.endsWith('_IMPORT_PREPARE')) {
-                    const name = message.type.startsWith('ALLTRAILS_')
+                    const name = message.type.startsWith('CALTOPO_') ? 'CalTopo' : message.type.startsWith('ALLTRAILS_')
                         ? 'AllTrails'
                         : message.type.startsWith('ONX_') ? 'onX' : 'Gaia';
                     return results[message.type] || {
@@ -71,7 +73,7 @@ const loadSurface = async ({
 const control = dom => dom.window.document.querySelector('.bpb-map-handoff-control');
 const button = (dom, provider) => control(dom).querySelector(`[data-provider="${provider}"]`);
 
-test('Gaia, onX, and AllTrails controls mount together directly after the saved GPX download', async () => {
+test('Gaia, onX, AllTrails, and CalTopo controls mount together directly after the saved GPX download', async () => {
     const h = await loadSurface();
     const download = h.dom.window.document.querySelector('#gpxlinks a');
     assert.equal(control(h.dom).previousElementSibling, download);
@@ -79,6 +81,7 @@ test('Gaia, onX, and AllTrails controls mount together directly after the saved 
         'Send to Gaia',
         'Send to onX',
         'Send to AllTrails',
+        'Send to CalTopo',
     ]);
     assert.equal(button(h.dom, 'gaia').getAttribute('aria-label'), 'Send saved GPX to Gaia GPS');
     assert.equal(button(h.dom, 'onx').getAttribute('aria-label'), 'Send saved GPX to onX Backcountry');
@@ -111,6 +114,7 @@ test('a persisted history restore re-establishes placement observation', async (
 for (const provider of [
     { id: 'gaia', permission: 'GAIA_PERMISSION_REQUEST', prepare: 'GAIA_IMPORT_PREPARE', action: 'gaia-import' },
     { id: 'onx', permission: 'ONX_PERMISSION_REQUEST', prepare: 'ONX_IMPORT_PREPARE', action: 'onx-import' },
+    { id: 'caltopo', permission: 'CALTOPO_PERMISSION_REQUEST', prepare: 'CALTOPO_IMPORT_PREPARE', action: 'caltopo-import' },
     { id: 'alltrails', permission: 'ALLTRAILS_PERMISSION_REQUEST', prepare: 'ALLTRAILS_IMPORT_PREPARE', action: 'alltrails-import' },
 ]) {
     test(`trusted ${provider.id} click reads and transfers the exact saved GPX`, async () => {
@@ -126,9 +130,9 @@ for (const provider of [
         assert.equal(transfer.grantToken, 'grant');
         assert.equal(h.sent.find(message => message.type === 'TRUSTED_ACTION_ISSUE').action, provider.action);
         assert.equal(button(h.dom, provider.id).disabled, false);
-        const name = { gaia: 'Gaia', onx: 'onX', alltrails: 'AllTrails' }[provider.id];
+        const name = { gaia: 'Gaia', onx: 'onX', alltrails: 'AllTrails', caltopo: 'CalTopo' }[provider.id];
         assert.equal(button(h.dom, provider.id).textContent.trim(), `Send to ${name} again`);
-        for (const other of ['gaia', 'onx', 'alltrails'].filter(id => id !== provider.id)) {
+        for (const other of ['gaia', 'onx', 'alltrails', 'caltopo'].filter(id => id !== provider.id)) {
             assert.equal(button(h.dom, other).disabled, false);
         }
     });
@@ -193,4 +197,36 @@ test('explicit onX repeat fetches again and never reuses the possibly failed imp
     assert.equal(transfers[0].targetTabId, undefined);
     assert.equal(transfers[1].targetTabId, undefined);
     assert.equal(transfers[1].gpx, GPX);
+});
+
+
+test('provider preferences reorder and hide buttons live, including all off', async () => {
+    const h = await loadSurface({ settings: { mapProviderOrder: ['caltopo', 'gaia', 'onx', 'alltrails'], mapProvidersEnabled: ['gaia', 'caltopo'] } });
+    const visible = () => [...control(h.dom).querySelectorAll('button')].filter(b => !b.hidden).map(b => b.dataset.provider);
+    await waitFor(h.dom, () => visible()[0] === 'caltopo');
+    assert.deepEqual(visible(), ['caltopo', 'gaia']);
+    fireTrustedEvent(button(h.dom, 'onx'), 'click');
+    assert.equal(h.sent.length, 0);
+    await h.dom.window.chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: [] } });
+    assert.equal(control(h.dom).hidden, true);
+    await h.dom.window.chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: ['onx'] } });
+    assert.equal(control(h.dom).hidden, false);
+    assert.deepEqual(visible(), ['onx']);
+    h.dom.window.close();
+});
+
+test('disabling providers during a handoff preserves its busy indicator and result', async () => {
+    let finishPermission;
+    const permission = new Promise(resolve => { finishPermission = resolve; });
+    const h = await loadSurface({ permissions: { GAIA_PERMISSION_REQUEST: permission } });
+    fireTrustedEvent(button(h.dom, 'gaia'), 'click');
+    await h.dom.window.chrome.storage.sync.set({ bpbSettings: { mapProvidersEnabled: [] } });
+    assert.equal(button(h.dom, 'gaia').hidden, false);
+    assert.equal(button(h.dom, 'gaia').disabled, true);
+    assert.equal(control(h.dom).hidden, false);
+    finishPermission({ ok: false, message: 'Access canceled.' });
+    await waitFor(h.dom, () => control(h.dom).textContent.includes('Access canceled.'));
+    assert.equal(button(h.dom, 'gaia').hidden, true);
+    assert.equal(control(h.dom).hidden, false, 'the completed result remains readable');
+    h.dom.window.close();
 });

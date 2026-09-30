@@ -53,6 +53,7 @@ from several directories when a shipped surface crosses those boundaries.
 | `src/github/` | GitHub authentication, API transport, repository writes, and backup payloads |
 | `src/gaia/` | Gaia's visible import adapter and optional-access fallback page |
 | `src/onx/` | onX Backcountry import adapter and optional-access fallback page |
+| `src/caltopo/` | CalTopo file-import adapter and optional-access fallback page |
 | `src/alltrails/` | AllTrails custom-route upload adapter and optional-access fallback page |
 | `src/gpx/` | Shared GPX parsing, saved-track validation, metrics, and ascent-page analysis |
 | `src/maps/` | BigMap and Peak map coordinators, bridges, links, and peak markers |
@@ -171,9 +172,12 @@ script is added or removed without updating it.
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
+| `npm run verify:multi-summit` | Verifies sequential Preview and simulated manual Save for multiple summit drafts in hidden Chrome, with isolated HTTPS Peakbagger fixtures. Checks complete GPX retention, shared trip identity, and session payload cleanup. |
+| `npm run verify:capture-flow` | Exercises the unmodified extension in current hidden Chrome through its actual toolbar action: temporary provider access, Garmin/Strava exports, summit lookup, results, draft Preview, privacy gates, outage retry, cancellation/restart, popup reopening, and track deletion. All sites are isolated HTTPS fixtures; no live provider compatibility or native focus is established. |
+| `npm run verify:capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image and delayed helper navigation. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `-- chrome` or `-- firefox` for one browser. |
 | `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
 | `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
-| `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, and AllTrails HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the three map hosts because hidden automation cannot inspect native permission prompts. |
+| `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, AllTrails, and CalTopo HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the four map hosts because hidden automation cannot inspect native permission prompts. |
 | `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
@@ -603,6 +607,21 @@ add it to the merge-step condition, for example
   These checks prove sizing, action mapping, and content containment, not visible
   popup chrome, dismissal, browser focus, or screen-reader speech. Firefox's
   native toolbar autosizing is not exercised by this verifier.
+- `npm run verify:capture-flow` invokes Chrome's real toolbar action with the
+  unmodified extension, so the provider adapter receives the same temporary
+  `activeTab` grant as a user click. Garmin and Strava fixtures go through
+  ownership, export, summit lookup, results, and one draft Preview without Save.
+  Failure cases cover the privacy gates and recovery actions; held exports
+  exercise cancellation, restart, and popup reopening without duplicate work.
+  This proves the fixture flow, not current live provider compatibility.
+- `npm run verify:capture-readiness` exercises the real worker and Peakbagger
+  page helper with a parsed, signed-in page whose image never finishes loading.
+  It also delays the first response in an automatically created helper tab to
+  exercise its uncommitted URL state. Both paths must progress past session
+  verification, clean up completed helpers, and block GPS export when signed out,
+  including a live response that disagrees with stale signed-in page links. The provider adapter
+  and its host permission exist only in a disposable test extension; no live
+  provider compatibility, native popup behavior, or browser focus is established.
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe
   equality in source without rewriting it, then checks the built extension
   package. Neither lint stage establishes browser behavior.

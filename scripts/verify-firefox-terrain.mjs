@@ -426,6 +426,7 @@ async function main() {
 
         // Firefox on macOS rewrites Ctrl+primary into a secondary-button gesture.
         // Exercise that production alternative separately from the normal right drag.
+        await waitForTerrainCameraSettled(page, 'Analyzer pitch');
         const ctrlPitchBefore = await canvas.evaluate(() => globalThis.__bpbTerrainTestMap.getPitch());
         dragTarget = await getExposedCanvasDragTarget(canvas, 'Analyzer Control-drag');
         await page.keyboard.down('Control');
@@ -437,7 +438,14 @@ async function main() {
         await page.waitForFunction(previous => {
             const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
             return Math.abs((map?.getPitch() ?? previous) - previous) > 1;
-        }, ctrlPitchBefore, { timeout: 8_000 });
+        }, ctrlPitchBefore, { timeout: 8_000 }).catch(async cause => {
+            const state = await canvas.evaluate(() => {
+                const map = globalThis.__bpbTerrainTestMap;
+                return { pitch: map.getPitch(), moving: map.isMoving(), rotating: map.isRotating() };
+            });
+            throw new Error(`Firefox Control-drag did not change pitch: ${JSON.stringify({ before: ctrlPitchBefore, ...state })}`, { cause });
+        });
+        await waitForTerrainCameraSettled(page, 'Analyzer Control-drag');
 
         const widthBeforeResize = await canvas.evaluate(element => element.width);
         await page.locator('#bpb-map-resize-handle').press('Shift+ArrowLeft');

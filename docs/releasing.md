@@ -88,8 +88,10 @@ visible in the AMO Developer Hub.
 
 ## Release checklist
 
-1. In dedicated Chrome Stable and Firefox Stable test profiles, perform one
-   minimal owned-provider capture in each browser family:
+1. Prefer the existing signed-in Chrome Stable and Firefox Stable profiles for
+   one minimal owned-provider capture in each browser family. Keep test windows
+   in the background or on a separate display without taking focus; use
+   isolated hidden profiles for the automated fixtures below.
 
    - Open an owned Garmin or Strava activity and click Better Peakbagger's
      actual toolbar action. Do not open `popup.html` directly; that bypasses the
@@ -98,16 +100,17 @@ visible in the AMO Developer Hub.
      fields, attached GPX, and GPS Preview are present.
    - Confirm Save remains wholly manual. Do not click either Save control.
    - Check the native popup presentation, permission prompts, Firefox inline
-     Preferences, and tab-group presentation while the dedicated profile is
-     visible.
+     Preferences, and tab-group presentation in a visible test window under the
+     same non-interruption rule.
    - Load the candidate through Mozilla's
      [Firefox for Android extension-testing workflow](https://extensionworkshop.com/documentation/develop/developing-extensions-for-firefox-for-android/)
      on a Firefox for Android 142+ device. Confirm the add-on enables, an ascent
      analyzer initializes, and Settings opens without an unsupported-manifest
      error. Record the device, Firefox version, and any mobile layout
      limitation; desktop Firefox does not establish this.
-   - Discard the extension's capture state, close the draft and provider tabs,
-     and close the test profile. Keep the live check minimal and rate-limited.
+   - Discard only the test capture state and close only test-owned tabs. Close
+     disposable profiles, preserving the user's existing browser and tabs.
+     Keep the live check minimal and rate-limited.
 
    Automated fixtures cover the repeatable paths but cannot establish the live
    provider DOM/export, browser chrome, or native toolbar grant.

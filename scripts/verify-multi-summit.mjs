@@ -114,10 +114,10 @@ try {
         assert.ok(opened.tabIds?.length === 2, JSON.stringify(opened));
         const firstUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2829&cid=900001';
         const secondUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2830&cid=900001';
-        // Explicitly open the waiting tab as a user may do while reviewing
-        // the first ascent. Chrome may defer an inactive newly created tab.
-        const waitingPage = await waitForCondition(() => context.pages().find(page => page.url() === secondUrl || page.url() === ''));
-        await waitingPage.goto(secondUrl);
+        // Select the exact returned tab as a user would. An arbitrary blank
+        // Playwright page may be either draft before its initial navigation;
+        // forcing goto on it can interrupt the extension's own navigation.
+        await control.evaluate(tabId => chrome.tabs.update(tabId, { active: true }), opened.tabIds[1]);
         const pages = await waitForCondition(() => {
             const a = context.pages().find(page => page !== first && page.url() === firstUrl) || (provider === 'upload' ? first : null);
             const b = context.pages().find(page => page.url() === secondUrl);

@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
+import { suspectSegments, segmentsGpx } from '../helpers/suspect-gpx.mjs';
 import { waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -1329,6 +1330,7 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
     assert.match(analysisText(), /Route Progress: 0\.15 km/);
+    assert.match(dom.window.document.querySelector('.bpb-gpx-stats').textContent, / · 3 points$/);
     assert.match(analysisText(), /Time: 2h 0m/);
     assert.match(analysisText(), /Possible Camping: Day 1 \(47\.00000, -121\.00000\)/);
     assert.match(analysisText(), /Times in the mountain’s local time/);
@@ -1376,6 +1378,7 @@ test('GPX analyzer renders an untimed coordinate-only route as a distance scrubb
 
     await waitFor(dom, () => chartConfig() !== null);
     assert.match(analysisText(), /Route: 0\.15 km/);
+    assert.match(dom.window.document.querySelector('.bpb-gpx-stats').textContent, / · 3 points$/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.match(analysisText(), /Time data is unavailable in this GPX/);
     assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
@@ -1547,8 +1550,8 @@ test('GPX analyzer safely sequences reversed multi-day segments without reorderi
     assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
     assert.match(analysisText(), /Times in the mountain’s local time \(PDT\)/,
         'mountain time must come from the earliest route point, not the first appended segment');
-    assert.match(analysisText(), /Possible Camping: Day 1 \(47\.10000, -121\.10000\)/,
-        'camping inference must use the last chronological point before the local day boundary');
+    assert.doesNotMatch(analysisText(), /Possible Camping/,
+        'disconnected recordings do not establish a campsite between them');
     assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
         [[40, -105], [40.1, -105.1]],
         [[47, -121], [47.1, -121.1]]
@@ -1601,6 +1604,8 @@ test('shipped GPX analyzer renders the full Capitol regression without artificia
     assert.match(analysisText(),
         /Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/);
     assert.match(analysisText(), /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/);
+    const sourceCount = (capitolRegressionGpx.match(/<trkpt\b/g) || []).length;
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${sourceCount.toLocaleString()} points`);
     assert.ok(distanceSeries.data.length <= 640 && distanceSeries.data.length >= 256,
         `the distance series must honor the fallback canvas budget, got ${distanceSeries.data.length}`);
     assert.ok(timeSeries.data.length <= 640 && timeSeries.data.length >= 256,
@@ -2248,4 +2253,102 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /#bpb-map-resize-handle:focus-visible \.bpb-map-resize-grip\s*\{[\s\S]*outline:\s*2px solid Highlight/);
 
     dom.window.close();
+});
+
+
+test('healthy GPX includes the source point count on the existing metrics note', async () => {
+    const { dom, chartConfig } = await loadElevationAnalyzer(gpx);
+    await waitFor(dom, () => chartConfig() !== null);
+    const note = dom.window.document.querySelector('.bpb-gpx-metric-note');
+    assert.match(note.textContent, /^Adjusted GPX metrics.* · 4 points$/);
+    assert.equal(note.querySelector('.bpb-gpx-point-count').title, 'Track points in the source GPX');
+    assert.equal(note.querySelector('br'), null);
+    assert.equal(note.querySelector('.bpb-gpx-metric-note-text').title,
+        note.querySelector('.bpb-gpx-metric-note-text').textContent);
+    dom.window.close();
+});
+
+test('source point count includes excluded coordinates and uses singular for one point', async () => {
+    for (const [points, expected] of [
+        ['<trkpt lat="47" lon="-121"><ele>100</ele></trkpt>', '1 point'],
+        ['<trkpt lat="47" lon="-121"><ele>100</ele></trkpt><trkpt lat="bad" lon="-121"><ele>110</ele></trkpt>', '2 points'],
+    ]) {
+        const { dom, chartConfig } = await loadElevationAnalyzer(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`);
+        await waitFor(dom, () => chartConfig() !== null);
+        assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${expected}`);
+        dom.window.close();
+    }
+});
+
+test('suspect segments are reversible across metrics, source identities, overlays and terrain', async () => {
+    const source = segmentsGpx(suspectSegments());
+    const { dom, chartConfig, setActiveElements, polylineCalls, postedMessages } =
+        await loadElevationAnalyzer(source, { withMap: true, settings: { enable3dMap: true } });
+    const { window } = dom;
+    const doc = window.document;
+    try {
+        await waitFor(dom, () => chartConfig() !== null && polylineCalls.length > 0);
+        const panel = doc.querySelector('#bpb-gpx-analysis');
+        const stats = panel.querySelector('.bpb-gpx-stats');
+        const disclosure = panel.querySelector('.bpb-gpx-segment-disclosure');
+        const details = panel.querySelector('#bpb-gpx-segment-details');
+        const toggle = details.querySelector('button');
+        const canvas = panel.querySelector('canvas');
+        assert.match(stats.textContent, /Time: 12h 32m/);
+        assert.equal(disclosure.textContent, '2 segments excluded ▾');
+        assert.match(panel.querySelector('.bpb-gpx-point-count').textContent, /113 points/);
+        assert.equal(details.hidden, true);
+        disclosure.click();
+        assert.equal(disclosure.getAttribute('aria-expanded'), 'true');
+        assert.equal(details.hidden, false);
+        assert.match(details.textContent, /56 points used; 57 points excluded/);
+        assert.match(details.textContent, /GPX download and files sent to map providers are unchanged/);
+        assert.equal(polylineCalls.at(-1).latLngs.length, 56);
+        doc.querySelector('#bpb-terrain-toggle').click();
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
+        const selectId = id => {
+            const index = chartConfig().data.datasets[0].data.findIndex(p => p._raw?.sourcePointId === id);
+            assert.ok(index >= 0, `missing source point ${id}`);
+            setActiveElements([{ datasetIndex: 0, index }]);
+            canvas.dispatchEvent(new window.MouseEvent('click'));
+        };
+        selectId('1:20');
+        toggle.click();
+        assert.match(stats.textContent, /Time: 68h 28m/);
+        assert.match(canvas.getAttribute('aria-label'), /46.01000/);
+        assert.match(details.textContent, /113 points used; 0 points excluded/);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 2);
+        assert.doesNotMatch(panel.querySelector('.bpb-gpx-substats').textContent, /Possible Camping/);
+        assert.equal(toggle.textContent, 'Use interpreted view');
+        selectId('2:20');
+        toggle.click();
+        assert.match(stats.textContent, /Time: 12h 32m/);
+        assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls button').disabled, true);
+        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
+        assert.match(panel.querySelector('.bpb-sun-calculator').textContent, /Select a chart point/);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
+        for (let i = 0; i < 4; i++) toggle.click();
+        assert.match(details.textContent, /56 points used; 57 points excluded/);
+        assert.equal(doc.querySelectorAll('.bpb-gpx-segment-disclosure').length, 1);
+        assert.equal(doc.querySelector('a').href, 'https://www.peakbagger.com/demo.gpx');
+        assert.equal(source, segmentsGpx(suspectSegments()));
+        window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
+            data: bridgeSnapshot(window, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
+        await waitFor(dom, () => /miles/.test(stats.textContent));
+        assert.match(stats.textContent, /Time: 12h 32m/);
+        assert.match(panel.querySelector('.bpb-gpx-point-count').textContent, /113 points/);
+    } finally { dom.window.close(); }
+});
+
+test('warning-only segment disclosure never claims to exclude source points', async () => {
+    const segments = suspectSegments().slice(1);
+    segments.push(structuredClone(segments[0]));
+    const { dom, chartConfig } = await loadElevationAnalyzer(segmentsGpx(segments));
+    try {
+        await waitFor(dom, () => chartConfig() !== null);
+        const doc = dom.window.document;
+        assert.match(doc.querySelector('.bpb-gpx-segment-disclosure').textContent, /1 segment to review/);
+        assert.match(doc.querySelector('#bpb-gpx-segment-details').textContent, /168 points used/);
+        assert.equal(doc.querySelector('.bpb-gpx-segment-view').hidden, true);
+    } finally { dom.window.close(); }
 });

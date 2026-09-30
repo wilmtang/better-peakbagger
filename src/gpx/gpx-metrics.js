@@ -77,6 +77,47 @@ const haversineDistanceM = (a, b) => {
     return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 };
 
+// Nearest distance to minor great-circle arcs, including edge interiors.
+// Ambiguous antipodal geometry returns NaN so classification cannot assume a
+// remote point. Vector projection handles antimeridian and polar routes.
+const distanceToPathM = (point, path) => {
+    if (!isValidCoordinate(point.lat, point.lon) || !path.length
+        || path.some(p => !isValidCoordinate(p.lat, p.lon))) return NaN;
+    const vector = p => {
+        const lat = toRad(p.lat), lon = toRad(p.lon);
+        return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
+    };
+    const dot = (a, b) => a.reduce((sum, x, i) => sum + x * b[i], 0);
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const norm = a => Math.hypot(...a);
+    const angle = (a, b) => Math.atan2(norm(cross(a, b)), dot(a, b));
+    const p = vector(point);
+    let a = vector(path[0]);
+    let minimum = angle(p, a);
+    for (let i = 1; i < path.length; i++) {
+        const b = vector(path[i]);
+        const arc = angle(a, b);
+        if (arc > Math.PI - 1e-6) return NaN;
+        minimum = Math.min(minimum, angle(p, b));
+        const normal = cross(a, b);
+        const length = norm(normal);
+        if (length > 1e-12) {
+            const unitNormal = normal.map(x => x / length);
+            const projection = p.map((x, j) => x - dot(p, unitNormal) * unitNormal[j]);
+            const projectionLength = norm(projection);
+            if (projectionLength > 1e-12) {
+                const foot = projection.map(x => x / projectionLength);
+                // Only the near projection can improve endpoint distance.
+                if (angle(a, foot) + angle(foot, b) <= arc + 1e-10) {
+                    minimum = Math.min(minimum, angle(p, foot));
+                }
+            }
+        }
+        a = b;
+    }
+    return minimum * EARTH_RADIUS_M;
+};
+
 const median = values => {
     if (!values.length) return 0;
     const sorted = values.slice().sort((a, b) => a - b);
@@ -1062,6 +1103,7 @@ const API = {
     longitudeUtcOffsetMinutes,
     isPlausibleElevationM,
     distanceM: haversineDistanceM,
+    distanceToPathM,
     computeRouteDistanceM,
     calculateConfirmedGainM,
     sampleChartPoints,

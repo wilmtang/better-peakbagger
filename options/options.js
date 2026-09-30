@@ -3,6 +3,7 @@
 //
 // Better Peakbagger — options page controller.
 
+import { initOrderSettings } from './order-settings.js';
 import { settings as S } from '../src/settings/settings.js';
 import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
 import { panelTheme as Theme } from '../src/theme/panel-theme.js';
@@ -138,6 +139,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         betaGpsEl.checked = settings.betaGps;
         betaLinkEl.checked = settings.betaLink;
         betaSortDateDescEl.checked = settings.betaSortDateDesc;
+        orderSettings.populate(settings);
         favoritesBackup.populate(settings);
         settingsBackup.populate(settings);
         photoBackup.populate(settings);
@@ -163,6 +165,8 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         });
         return operation;
     };
+
+    const orderSettings = initOrderSettings({ save });
 
     // GitHub connection and ascent and TR backup setup own their panels together; the
     // options page drives GITHUB_AUTH_* messages and never sees the token.

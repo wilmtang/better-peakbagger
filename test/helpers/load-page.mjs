@@ -223,7 +223,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
         } else if (message?.type === 'SETTINGS_PATCH') {
             operation = settingsPatchQueue.then(async () => {
                 const current = settingsSchema.clean(store.bpbSettings);
-                const next = settingsSchema.clean({ ...current, ...(message.patch || {}) });
+                const next = settingsSchema.clean({ ...current, ...Object.fromEntries(Object.entries(message.patch || {}).filter(([key]) => !message.onlyIfUnset || current[key] == null)) });
                 await chrome.storage.sync.set({ bpbSettings: next });
                 return { ok: true, settings: next };
             });

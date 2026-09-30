@@ -21,6 +21,8 @@ Data leaves the browser only when a feature requires it:
   **Send to Gaia**.
 - **onX Backcountry** receives the saved Peakbagger GPX only when the user
   clicks **Send to onX**.
+- **CalTopo** receives the saved Peakbagger GPX for parsing only when the user
+  clicks **Send to CalTopo**. Object import and map saving remain manual.
 - **Media hosts** receive ordinary browser requests when remote report media is
   displayed.
 
@@ -33,14 +35,15 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | --- | --- |
 | `storage` | Stores preferences, credentials, caches, drafts, and other extension data as detailed below. |
 | `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. There is no persistent provider host access. |
-| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia, onX, or AllTrails after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
+| `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia, onX, AllTrails, or CalTopo after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
 | `alarms` | Removes expired session records every five minutes and schedules the one-minute debounce and bounded retries for user-enabled automatic backups. |
 | Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
 | Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
-| Optional onX host access | Access to `webmap.onxmaps.com` is requested only when the user clicks **Send to onX**. It lets the extension open onX Backcountry's import page and supply the saved GPX to its visible preview; the extension does not click onX's **Import** control and has no access to `identity.onxmaps.com`. |
+| Optional onX host access | Access to `backcountry.onxmaps.com` is requested only when the user clicks **Send to onX**. It lets the extension open onX Backcountry's import page and supply the saved GPX to its visible preview; the extension does not click onX's **Import** control and has no access to `identity.onxmaps.com`. |
+| Optional CalTopo host access | Access to `caltopo.com` is requested only when the user clicks **Send to CalTopo**. File selection sends the saved GPX to CalTopo for parsing and object review; the extension does not confirm **Import** or **Save**. |
 | Optional AllTrails host access | Access to `www.alltrails.com` is requested only when the user clicks **Send to AllTrails**. It lets the extension open the custom route builder and supply the saved GPX to its visible upload preview; the extension does not click AllTrails' **Upload** control. |
 
 Firefox's `locationInfo` declaration is a data-handling disclosure, not
@@ -51,7 +54,7 @@ permission to read device location. It covers:
   compatible map provider when 3D is used;
 - a Peakbagger-stored GPS track written to the user's GitHub repository when
   the user backs up an ascent; and
-- a Peakbagger-stored GPS track sent to Gaia or onX when the user clicks that destination's **Send** button.
+- a Peakbagger-stored GPS track sent to Gaia, onX, AllTrails, or CalTopo when the user clicks that destination's **Send** button.
 
 ### Where browser data is stored
 
@@ -160,6 +163,19 @@ date. That happens entirely locally.
   ascent and processes it locally.
 - Cross-page preferences use `storage.sync`; page-specific filter state and the
   early theme mirror use Peakbagger's `localStorage`.
+
+### Send to CalTopo
+
+- A trusted **Send to CalTopo** click on a saved ascent requests optional access
+  to `https://caltopo.com/*` and sends the exact saved GPX through the worker
+  to a fresh CalTopo map's file importer. This includes any locations, track
+  names, waypoints, timestamps, or other metadata already in that saved file.
+- Selecting the file invokes CalTopo's server-side parser. The adapter waits
+  for a populated **Import Data** review; confirming **Import** and saving the
+  map remain manual. It does not read credentials or unrelated CalTopo tabs.
+- The GPX remains in memory and is never retained in extension storage.
+  An uncertain transfer requires inspecting the destination; an explicit
+  repeat opens a fresh tab rather than sending the file twice to one importer.
 
 ### Send to Gaia GPS
 
@@ -373,6 +389,7 @@ The user can export and import settings without GitHub:
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
+| CalTopo | The saved Peakbagger GPX after **Send to CalTopo**, including server-side parsing; object review, Import, and map Save remain manual. |
 | Gaia GPS | The saved Peakbagger GPX after the user clicks **Send to Gaia**; Gaia's review and Save remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
 | GitHub | User-triggered or separately enabled automatic backups to the selected repository; validation reads for an imported connection; explicit restores. |

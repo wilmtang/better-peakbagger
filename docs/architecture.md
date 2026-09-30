@@ -43,6 +43,7 @@ flowchart TB
     github["GitHub API<br/>user-selected repository"]
     gaia["Gaia GPS map<br/>visible import preview"]
     onx["onX Backcountry<br/>visible import preview"]
+    caltopo["CalTopo map<br/>object import review"]
     alltrails["AllTrails custom route<br/>visible upload preview"]
     tiles["Mapterhorn / OpenFreeMap /<br/>selected raster provider"]
 
@@ -64,6 +65,7 @@ flowchart TB
     worker <--> github
     worker --> gaia
     worker --> onx
+    worker --> caltopo
     worker --> alltrails
     isolated <-->|"validated postMessage"| main
     main <--> master
@@ -151,12 +153,12 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
-| Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/terrain-activation.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
+| Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
-| Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
+| Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -166,7 +168,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.js`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.js`, `src/onx/onx-import.js`, `src/alltrails/alltrails-import.js` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, or AllTrails Upload |
+| Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.js`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.js`, `src/onx/onx-import.js`, `src/alltrails/alltrails-import.js`, `src/caltopo/caltopo-import.js` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.js` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
@@ -799,7 +801,7 @@ before any time view is shown. A missing or malformed timestamp no longer
 erases the valid timed runs around it: the chart breaks at that sample,
 coverage is disclosed, and the elapsed value is labelled **Known time span**
 rather than complete duration. Full start/back, summit-duration, and camping
-inferences remain limited to complete timing.
+inferences remain limited to complete timing, and camping also requires continuity between timed groups.
 
 The shared GPX parser accepts only its supported ISO-shaped timestamp forms and
 validates their calendar fields, leap days, `24:00` boundary, and timezone
@@ -807,8 +809,17 @@ offset before calling the platform date parser. A nonexistent date is invalid
 input, not a normalized instant, so analyzer and capture consumers take the
 same degraded-time path.
 
-The native and extension-owned map paths preserve GPX document order and
-explicit `<trkseg>` geometry. Metrics and charts sequence whole segments by
+Saved-ascent analysis first diagnoses suspect segments with the pure
+`gpx-segment-diagnostics.js` policy. Exact degenerate duplicates and a narrowly
+qualified distant singleton may be excluded in an explainable, reversible
+interpreted view. Source identities/counts and separate metric results are
+retained; the shared `computeMetrics` API does not filter segments implicitly,
+so capture and draft calculations keep their existing input contract. See the
+[segment policy](gpx-data-quality.md#suspect-segments-on-saved-ascents) for exact
+criteria and fallback behavior.
+
+The native map keeps its source geometry. Extension-owned map paths preserve
+GPX document order and explicit `<trkseg>` geometry within the chosen view. Metrics and charts sequence whole segments by
 time only when every segment is internally chronological and the segment
 ranges do not overlap; otherwise they preserve source order. Individual
 trackpoints are never reordered. After that safe sequencing, a segment boundary
@@ -1717,7 +1728,7 @@ No single green command proves the extension works:
   manager/search/backup path so the default local loop can stay fast without
   losing large-input coverage.
 - `npm run lint` catches JavaScript errors without rewriting source, then checks
-  the built extension package and accepts only the eight owner-annotated
+  the built extension package and accepts only the seven owner-annotated
   manifest/dependency warnings, counted per `(code, file)`; a
   new warning, an extra or missing occurrence in an owned file, an error, or a
   notice fails. Generated line and column numbers are not pinned, because every
@@ -1727,7 +1738,7 @@ No single green command proves the extension works:
   `web-ext` 10.7.0 / `addons-linter` 10.13.0 path uses patched `image-size` 2.0.4;
   the former time-limited exception has been removed. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
-  `minimatch@^3` path on patched 1.1.18 through a scoped override.
+  `minimatch@^3` path on patched 1.1.21 through a scoped override.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,
@@ -1739,8 +1750,8 @@ No single green command proves the extension works:
   the exact minified store archives.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render packaged
   MapLibre on a reported hardware GPU with synthetic route, peak, basemap, and
-  DEM fixtures. Their storage and bridge protocols are stubs, and they do not
-  contact the live terrain service. Both serve the showcase over HTTPS on a
+  DEM fixtures. They use stubbed extension storage APIs through the production settings
+  bridge and do not contact the live terrain service. Both serve the showcase over HTTPS on a
   Peakbagger hostname, because `src/peakbagger/peakbagger-request.js` refuses
   any other origin and the analyzer fetches its GPX through that guard.
 

@@ -409,6 +409,33 @@ kbd {
   vector-effect: non-scaling-stroke;
 }
 
+#photo-overlay .text-box-outline {
+  fill: none;
+  stroke: var(--canvas-active);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+#photo-overlay .text-width-handle {
+  fill: #fff;
+  stroke: var(--canvas-mark);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+}
+
+.text-width-control {
+  display: flex;
+  gap: 8px;
+}
+
+.text-width-control input {
+  width: 0;
+  min-width: 0;
+  flex: 1;
+}
+
 /* The route being drawn: the point already clicked, and the segment the next
    click would commit. Neither is part of the project, so neither exports. */
 #photo-overlay .route-preview {

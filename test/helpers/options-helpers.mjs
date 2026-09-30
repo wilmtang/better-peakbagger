@@ -5,6 +5,7 @@
 
 import { afterEach } from 'node:test';
 import { readFile } from 'node:fs/promises';
+import { setTimeout as nextTask } from 'node:timers/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
@@ -22,8 +23,10 @@ export const registerCleanup = () => {
     const filePages = new Set();
     afterEach(async () => {
         const livePages = Array.from(filePages).filter(dom => dom.window?.document);
-        await Promise.all(livePages.map(dom =>
-            new Promise(resolve => dom.window.setTimeout(resolve, 0))));
+        // jsdom 30.1 retains document after close(), but closed-window timers
+        // never fire. Drain pending callbacks through the harness event loop,
+        // which remains alive even when a test already closed its page.
+        await nextTask(0);
         for (const dom of livePages) dom.window.close();
         filePages.clear();
     });

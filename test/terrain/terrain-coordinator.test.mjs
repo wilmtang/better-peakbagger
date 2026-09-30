@@ -15,7 +15,7 @@ test('the outer terrain deadline leaves room for the renderer handoff', () => {
         'authorization, iframe startup, and both loaded relays need their own budget');
 });
 
-const setup = ({ enabled = true } = {}) => {
+const setup = ({ enabled = true, inheritNativeCamera = () => true } = {}) => {
     const dom = new JSDOM('<!doctype html><button id="toggle"></button>');
     const toggle = dom.window.document.getElementById('toggle');
     const posted = [];
@@ -45,6 +45,7 @@ const setup = ({ enabled = true } = {}) => {
         idleUi: () => ({ disabled: false, title: 'Open 3D', ariaLabel: 'Show 3D terrain' }),
         buildInit: () => ({ routeSegments: [[[48.8, -121.6], [48.81, -121.59]]] }),
         nativeMap: () => map,
+        inheritNativeCamera,
         hideNativeMap: () => { hidden = true; },
         restoreNativeMap: () => { hidden = false; restored++; },
         post: (type, detail = {}) => posted.push({ type, ...detail }),
@@ -234,4 +235,13 @@ test('the disabled feature delegates only idle activation to the consent owner',
     assert.equal(fixture.coordinator.start(), true);
     fixture.coordinator.stop();
     fixture.dom.window.close();
+});
+
+test('a filtered subject can fit its own route without inheriting the source camera', () => {
+    const { coordinator, posted, dom } = setup({ inheritNativeCamera: () => false });
+    coordinator.start();
+    assert.equal(posted.at(-1).type, 'init');
+    assert.equal('camera' in posted.at(-1), false);
+    coordinator.reset();
+    dom.window.close();
 });

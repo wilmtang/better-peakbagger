@@ -274,6 +274,9 @@ test('settings are grouped by the surface they affect', async () => {
     ]);
 
     const [general, capture, mapChart, beta, favorites, github, about] = sections;
+    assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
+    assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
+        ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('#github-backup .desc').textContent, /manual backup controls/i);
@@ -961,7 +964,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
-            '#map-chart-chart', '#map-chart-map', '#github-connection',
+            '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
     for (const link of subLinks) {
@@ -973,7 +976,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     }
     assert.deepEqual(
         Array.from(doc.querySelectorAll('#github > .subsection'), section => `#${section.id}`),
-        subLinks.slice(6).map(link => link.getAttribute('href')),
+        subLinks.slice(7).map(link => link.getAttribute('href')),
         'Backup & sync subsections should follow their sidebar order',
     );
     const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');
@@ -1090,18 +1093,20 @@ test('sidebar navigation animates nearby jumps and makes long jumps instant', as
     assert.equal(content.style.scrollBehavior, '', 'a modified click must not move the current page');
 });
 
-test('a deep link to a subsection activates its sub-item and marks the parent', async () => {
-    const dom = await loadOptions({}, { hash: '#capture-gpx' });
-    const doc = dom.window.document;
-    const current = activeLinks(dom);
-    assert.equal(current.length, 1, 'exactly one link is current');
-    assert.equal(current[0].getAttribute('href'), '#capture-gpx');
-    assert.ok(current[0].classList.contains('nav-subitem'));
-    // The parent nav-item is highlighted (accent) but not itself "current".
-    const parent = doc.querySelector('.side-nav a.nav-item[href="#capture"]');
-    assert.ok(parent.classList.contains('nav-parent-active'));
-    assert.equal(parent.hasAttribute('aria-current'), false);
-});
+for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs', '#map-chart']]) {
+    test(`a deep link to ${hash} activates its sub-item and marks the parent`, async () => {
+        const dom = await loadOptions({}, { hash });
+        const doc = dom.window.document;
+        const current = activeLinks(dom);
+        assert.equal(current.length, 1, 'exactly one link is current');
+        assert.equal(current[0].getAttribute('href'), hash);
+        assert.ok(current[0].classList.contains('nav-subitem'));
+        // The parent nav-item is highlighted (accent) but not itself "current".
+        const parent = doc.querySelector(`.side-nav a.nav-item[href="${parentHash}"]`);
+        assert.ok(parent.classList.contains('nav-parent-active'));
+        assert.equal(parent.hasAttribute('aria-current'), false);
+    });
+}
 
 test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
     // jsdom reports every offset/rect as 0 and nothing scrolls; the scroll
