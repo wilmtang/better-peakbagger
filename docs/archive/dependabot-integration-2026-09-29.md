@@ -68,6 +68,14 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; fresh hosted
   evidence is still required.
 
+- [Integration CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36674688421)
+  passed, and PR #34 merged as `e48cfa1`, preserving both Dependabot branches.
+  Post-merge CI exposed a separate Chrome metric-header probe that retained a
+  detached note across a resize render. It now resolves and measures the
+  connected header in one browser callback. All 154 project tests and hidden
+  Chrome 153 passed; 1000px and 430px screenshots were inspected. This changes
+  verification only, so the already-verified release archives remain valid.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,

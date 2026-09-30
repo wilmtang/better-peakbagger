@@ -2605,10 +2605,15 @@ try {
     try {
         for (const width of [1000, 430]) {
             await offPage.setViewportSize({ width, height: 760 });
-            const geometry = await offPage.locator('.bpb-gpx-metric-note').evaluate(note => {
-                const count = note.querySelector('.bpb-gpx-point-count');
-                const header = note.closest('.bpb-gpx-header');
+            // Resize may replace the metric note between locator resolution and
+            // evaluation. Resolve the connected header and measure it atomically.
+            const geometry = await waitForPageCondition(offPage, () => {
+                const note = document.querySelector('.bpb-gpx-metric-note');
+                const count = note?.querySelector('.bpb-gpx-point-count');
+                const header = note?.closest('.bpb-gpx-header');
+                if (!count || !header?.isConnected) return false;
                 const full = note.getBoundingClientRect();
+                if (full.width <= 0 || full.height <= 0) return false;
                 const countBox = count.getBoundingClientRect();
                 const headerHeight = header.getBoundingClientRect().height;
                 count.hidden = true;
