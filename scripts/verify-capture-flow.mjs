@@ -94,6 +94,7 @@ try {
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port},MAP connect.garmin.com 127.0.0.1:${port},MAP www.strava.com 127.0.0.1:${port}`],
     });
     resources.defer('capture browser', () => context.close());
+    resources.defer('held export responses', () => state.releases.splice(0).forEach(release => release()));
     await context.route('**/*', route => {
         const url = new URL(route.request().url());
         return ['www.peakbagger.com', 'connect.garmin.com', 'www.strava.com'].includes(url.hostname)
@@ -232,7 +233,59 @@ try {
         for (const page of context.pages()) if (page.url().startsWith('https://www.peakbagger.com/')) await page.close();
         console.log(`${item.name}: expected terminal state and export boundary passed`);
     }
-    if (artifacts) await writeFile(path.join(artifacts, 'result.json'), JSON.stringify({ browser: context.browser().version(), cases: ['garmin success', 'strava success', ...cases.map(item => item.name)] }, null, 2));
+    for (const action of ['cancel', 'reopen']) {
+        Object.assign(state, { owner: true, signedIn: true, providerStatus: 200, providerBody: gpx,
+            peakStatus: 200, peakBody: peaks, holdExport: true });
+        const exportsBefore = state.exports;
+        const peaksBefore = state.peakRequests;
+        const source = await start();
+        await waitForCondition(() => state.releases.length, count => count === 1, { message: 'export was not held' });
+        await waitForCondition(popupState, ui => ui?.title === 'Getting the GPS track…', { message: 'export progress was not displayed' });
+        const original = await jobFor(source.tabId);
+        assert.equal(original.phase, 'exporting-gpx');
+        if (action === 'cancel') {
+            const aborted = source.page.waitForEvent('requestfailed', {
+                predicate: request => request.url().includes('/export'), timeout: 10_000,
+            });
+            await clickPopup('#state button');
+            await waitForCondition(popupState, ui => ui?.title === 'Capture cancelled', { message: 'cancellation not displayed' });
+            await aborted;
+            assert.equal(await jobFor(source.tabId), null);
+            assert.equal(state.peakRequests, peaksBefore, 'cancelled export must not reach summit lookup');
+            await screenshotPopup('cancelled');
+        } else {
+            // invoke closes the current popup before clicking the real toolbar.
+            assert.equal(await invoke(source.page), source.tabId);
+            await waitForCondition(popupState, ui => ui?.title === 'Getting the GPS track…', { message: 'reopened popup lost progress' });
+            assert.equal((await jobFor(source.tabId)).id, original.id, 'reopening must reuse the running job');
+        }
+        assert.equal(state.exports, exportsBefore + 1);
+        state.holdExport = false;
+        state.releases.splice(0).forEach(release => release());
+        if (action === 'cancel') await clickPopup('#state button');
+        const ready = await terminal(source.tabId);
+        assert.equal(ready.phase, 'ready', JSON.stringify(ready.error));
+        assert.equal(ready.id === original.id, action === 'reopen', 'only an explicit restart creates a new job');
+        await waitForCondition(popupState, ui => ui?.ready && ui.count === 1, { message: 'results not displayed after lifecycle action' });
+        const expectedExports = exportsBefore + (action === 'cancel' ? 2 : 1);
+        assert.equal(state.exports, expectedExports);
+        await invoke(source.page);
+        await waitForCondition(popupState, ui => ui?.ready && ui.count === 1, { message: 'reopening lost completed results' });
+        assert.equal((await jobFor(source.tabId)).id, ready.id);
+        assert.equal(state.exports, expectedExports, 'reopening ready results must not export again');
+        await clickPopup('#clear-capture');
+        await waitForCondition(popupState, ui => ui?.title === 'Captured track data deleted', { message: 'track deletion not displayed' });
+        assert.equal(await jobFor(source.tabId), null);
+        const stored = await control.evaluate(() => chrome.storage.session.get(null));
+        assert.doesNotMatch(JSON.stringify(stored), new RegExp(ready.id), 'clearing removes the job and its payload');
+        assert.equal(state.saves, 0);
+        await closePopup();
+        await source.page.close();
+        for (const page of context.pages()) if (page.url().startsWith('https://www.peakbagger.com/')) await page.close();
+        console.log(`${action}: export lifecycle, stable results, and track deletion passed`);
+    }
+    if (artifacts) await writeFile(path.join(artifacts, 'result.json'), JSON.stringify({ browser: context.browser().version(),
+        cases: ['garmin success', 'strava success', ...cases.map(item => item.name), 'cancel and restart', 'popup close and reopen', 'track deletion'] }, null, 2));
     console.log(`Capture flow passed in hidden Chrome ${context.browser().version()}, 1000x760 pages; no WebGL or native focus proof.`);
 } catch (error) { failure = error; }
 finally { await resources.dispose(failure); }

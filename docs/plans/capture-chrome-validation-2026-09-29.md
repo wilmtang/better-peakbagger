@@ -27,6 +27,10 @@ failures. Map them into the existing capture error policy at the worker boundary
 - The new full-flow verifier covers Garmin and Strava success, one Preview,
   no Save, date/suffix filling, raw GPX metadata exclusion, account and ownership
   gates, no GPS, malformed GPX, provider rate limits, and summit outages.
+  Cancellation aborts a held provider request, removes the job, and allows a
+  fresh capture. Reopening during export or after completion reuses the same
+  job without another export; deleting captured data removes its job/payload.
+  The extended hidden Chrome flow and focused script lint passed.
 - `npm test`: 2,095 passed. `npm run lint`: passed with 8 owned warnings.
   `npm run verify:chrome`: passed. Provider-contract checks passed in Chrome
   153 and Firefox 155; those are sanitized fixtures, not live providers.
@@ -62,4 +66,4 @@ failures. Map them into the existing capture error policy at the worker boundary
 - The fresh isolated live profile hit Cloudflare and was stopped; the existing
   user profile passed after explicit authorization to use it. Live Strava was
   not tested; its provider and end-to-end checks use fixtures.
-- Cancellation and popup close/reopen need the remaining browser checks. Hidden runs do not establish visible focus or screen-reader behavior.
+- Hidden runs do not establish visible focus or screen-reader behavior.
