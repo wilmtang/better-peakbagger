@@ -162,7 +162,7 @@ visible in the AMO Developer Hub.
    `image-size` exception. Do not weaken the gate during release rehearsal.
    `npm run lint`
    likewise permits only the owner-annotated warnings checked into
-   `scripts/check-web-ext-lint.mjs`, at the exact per-file occurrence counts
+   `scripts/check-web-ext-lint.mjs`, up to the reviewed per-file occurrence limits
    recorded there.
 
    Release CI also downloads the verified archives and executes them in hidden

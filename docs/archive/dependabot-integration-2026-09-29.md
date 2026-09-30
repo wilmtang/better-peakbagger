@@ -85,14 +85,18 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   multi-summit runs passed. Release archives must be refreshed for this worker
   change.
 
+- The lint warning baseline now uses upper limits: upstream warning removal
+  passes, while unreviewed code/file pairs and excess occurrences fail. Reports
+  show observed counts, including combined owners in the same bundle. Focused
+  regression tests cover partial/complete removal and new warnings.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,
   protected release tags, and the browser-stores reviewer gate. No permission,
   advisory policy, or production deadline was relaxed.
-- Warning disappearance still requires review; exact-count lint enforcement
-  remains. The queue workflow needed no repair because it correctly queued
-  both updates and respected failing required checks.
+- The queue workflow needed no repair because it correctly queued both
+  updates and respected failing required checks.
 - Live Peakbagger Save remains manual. Automated provider and map-import
   fixtures do not establish current authenticated provider behavior.
 

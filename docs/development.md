@@ -449,9 +449,10 @@ release tooling derives `THIRD_PARTY_NOTICES.txt`, AMO approval notes, and
 web-ext warning-owner labels from that lockfile. Maintained acknowledgements and
 editor documentation intentionally name projects without copying their current
 versions; the metadata test rejects reintroducing those redundant pins. The
-web-ext gate still fails closed on warning code, output file, and occurrence
-count, so version automation does not turn an added or disappeared warning into
-an accepted one.
+web-ext gate rejects unreviewed warning codes/files and occurrence counts above
+the reviewed per-file limits. Fewer warnings pass and the report shows actual
+counts. Counts cannot detect a replacement warning of the same type in the same
+file, so dependency source review remains necessary.
 
 Every package is declared under `devDependencies`, so that field says nothing
 about whether a package ships. The three named release-path groups do; updates
