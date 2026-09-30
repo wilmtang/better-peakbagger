@@ -74,6 +74,16 @@ export async function waitForCondition(read, {
     throw new Error(`Timed out waiting for ${description} (${detail})`);
 }
 
+// Playwright's waitForFunction polls the immediate return value. An async
+// predicate returns a truthy Promise even when it later resolves to false.
+// Await each page read in the driver before deciding whether polling is done.
+export function waitForPageCondition(page, predicate, arg = null, { timeout = 10_000 } = {}) {
+    return waitForCondition(() => page.evaluate(predicate, arg), {
+        description: `page condition: ${predicate.toString()}`,
+        timeoutMs: timeout,
+    });
+}
+
 // These probes run inside the page, through either Playwright or WebDriver.
 // Keep them browser-neutral and free of module-scope dependencies so the same
 // function can be serialized for Firefox without drifting from Chrome.
