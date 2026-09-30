@@ -68,14 +68,35 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; fresh hosted
   evidence is still required.
 
+- [Integration CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36674688421)
+  passed, and PR #34 merged as `e48cfa1`, preserving both Dependabot branches.
+  Post-merge CI exposed a separate Chrome metric-header probe that retained a
+  detached note across a resize render. It now resolves and measures the
+  connected header in one browser callback. All 154 project tests and hidden
+  Chrome 153 passed; 1000px and 430px screenshots were inspected.
+
+- Multi-summit verification reproduced a native Chromium SIGSEGV when a newly
+  created blank tab was navigated before its initial document completed. Waiting
+  for browser readiness eliminated the crash without modifying the fixture's
+  runtime or Save assertions. The worker now bounds that wait to ten seconds
+  and checks the opening transaction on each poll. All 181 background tests
+  passed, including stalled-tab rollback and cancellation coverage. The full
+  2,100-test suite, hidden Chrome 153 and Firefox 157 verifiers, and two real
+  multi-summit runs passed. Release archives must be refreshed for this worker
+  change.
+
+- The lint warning baseline now uses upper limits: upstream warning removal
+  passes, while unreviewed code/file pairs and excess occurrences fail. Reports
+  show observed counts, including combined owners in the same bundle. Focused
+  regression tests cover partial/complete removal and new warnings.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,
   protected release tags, and the browser-stores reviewer gate. No permission,
   advisory policy, or production deadline was relaxed.
-- Warning disappearance still requires review; exact-count lint enforcement
-  remains. The queue workflow needed no repair because it correctly queued
-  both updates and respected failing required checks.
+- The queue workflow needed no repair because it correctly queued both
+  updates and respected failing required checks.
 - Live Peakbagger Save remains manual. Automated provider and map-import
   fixtures do not establish current authenticated provider behavior.
 

@@ -569,6 +569,66 @@ const openDraftsManager = async (harness, sender) => {
     }, sender);
 };
 
+test('draft navigation waits for the newly created blank document to finish', async () => {
+    let reads = 0;
+    const harness = createHarness({
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            assert.equal(tabs.get(tabId).url, 'about:blank');
+            tabs.get(tabId).status = ++reads < 3 ? 'loading' : 'complete';
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...opened.tabIds], [100]);
+    assert.equal(reads, 3);
+    assert.match(harness.tabs.get(100).url, /ascentedit/);
+});
+
+test('a stalled blank draft times out and rolls back without orphaning its tab', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            tabs.get(tabId).status = 'loading';
+            clock.now += 6000;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(opened.error.code, 'draft-open-failed');
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.deepEqual(harness.values.bpbDraftTabs, {});
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+});
+
+test('clearing capture while a blank draft loads cancels its opening transaction', async () => {
+    let reached;
+    let release;
+    const waiting = new Promise(resolve => { reached = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    const harness = createHarness({
+        beforeTabGet: async ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            tabs.get(tabId).status = 'loading';
+            reached();
+            await gate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await waiting;
+    const clearing = harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    release();
+    const [opened, cleared] = await Promise.all([opening, clearing]);
+    assert.equal(opened.error.code, 'draft-open-cancelled');
+    assert.equal(cleared.ok, true);
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.deepEqual(harness.values.bpbDraftTabs, {});
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+});
+
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
     const harness = createHarness();
     const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });

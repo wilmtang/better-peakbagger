@@ -166,7 +166,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
                     faults.tabCreateAt = null;
                     throw new Error(message);
                 }
-                const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active };
+                const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active, status: 'complete' };
                 tabs.set(tab.id, tab);
                 return structuredClone(tab);
             },

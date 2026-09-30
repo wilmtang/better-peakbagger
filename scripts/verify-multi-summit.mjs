@@ -16,6 +16,9 @@ let context;
 let server;
 let certificate;
 let handler;
+const reportBrowserError = message => {
+    if (message.type() === 'error') console.error(`Browser: ${message.text()}`);
+};
 try {
     certificate = await createFixtureCertificate({ directory: root });
     server = createServer(certificate, (request, response) => {
@@ -33,6 +36,9 @@ try {
         args: [`--disable-extensions-except=${path.resolve('dist')}`, `--load-extension=${path.resolve('dist')}`,
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port}`],
     });
+    // Include worker failures in CI output; the public reply intentionally
+    // contains only the user-facing error and hides its browser-level cause.
+    context.on('console', reportBrowserError);
     const saved = new Map();
     let temporary = '';
     let previews = 0;
@@ -157,6 +163,7 @@ try {
     }
     console.log(`Hidden Chrome ${context.browser().version()}, 1000x760; native window/focus behavior untested.`);
 } finally {
+    context?.off('console', reportBrowserError);
     await context?.close();
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await certificate?.remove(); await rm(root, { recursive: true, force: true });

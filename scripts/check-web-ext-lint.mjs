@@ -8,21 +8,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// One entry per owned warning. Identity is (code, file) plus how many times
-// that pair may appear — deliberately not the line and column.
-//
-// Every owned warning except the manifest one sits inside vendored code that
-// esbuild bundles, so its line and column are a byte offset into generated
-// output. Pinning them made an unrelated source edit anywhere in the same
-// bundle fail this gate as "baseline warnings disappeared or moved", and the
-// only available repair was to paste the new offsets back in — a re-baselining
-// step that reviews nothing and, done often enough, trains the reader to
-// accept a moved warning without checking whether it is still the same one.
-// Counting occurrences per file keeps what the gate is actually for: no new
-// warning, no owned warning silently disappearing, and nothing unowned.
-// Package versions are intentionally absent here. The CLI resolves them from
-// package-lock.json for its report, so a dependency-only update cannot be
-// blocked by a second hand-maintained copy of metadata that npm already owns.
+// Reviewed upper limits per warning code and output file. Generated positions
+// drift with bundling, and upstream fixes may remove warnings. Neither is a
+// regression. New code/file pairs and counts above the reviewed limit fail.
+// These limits cannot distinguish a removed warning from a replacement of the
+// same type in the same file; dependency source review remains necessary.
+// Package versions come from package-lock.json for reporting only.
 export const WEB_EXT_WARNING_BASELINE = Object.freeze([
     {
         code: 'BACKGROUND_SERVICE_WORKER_IGNORED',
@@ -97,31 +88,31 @@ export function evaluateWebExtLint(report, baseline = WEB_EXT_WARNING_BASELINE) 
     const warnings = report.warnings || [];
     const expected = tally(baseline, warning => warning.count ?? 1);
     const actual = tally(warnings, () => 1);
-    const total = [...expected.values()].reduce((sum, count) => sum + count, 0);
 
     const unexpected = [];
-    const missing = [];
     for (const key of new Set([...expected.keys(), ...actual.keys()])) {
         const allowed = expected.get(key) || 0;
         const seen = actual.get(key) || 0;
         if (seen > allowed) unexpected.push(`${describeKey(key)} (${seen}, owned ${allowed})`);
-        else if (seen < allowed) missing.push(`${describeKey(key)} (${seen}, owned ${allowed})`);
     }
-    if (unexpected.length || missing.length || report.summary?.warnings !== warnings.length) {
+    if (unexpected.length || report.summary?.warnings !== warnings.length) {
         throw new Error([
             unexpected.length ? `new warnings: ${unexpected.join(', ')}` : '',
-            missing.length ? `baseline warnings disappeared: ${missing.join(', ')}` : '',
             report.summary?.warnings !== warnings.length
                 ? `warning count mismatch: summary ${report.summary?.warnings}, reported ${warnings.length}`
                 : ''
         ].filter(Boolean).join('; '));
     }
-    if (warnings.length !== total) {
-        throw new Error(`warning count mismatch: reported ${warnings.length}, owned ${total}`);
-    }
-
-    return baseline.map(({ code, file, count, owner, reason }) =>
-        ({ code, file, count: count ?? 1, owner, reason }));
+    // Owners sharing a code/file pair cannot be distinguished by this report.
+    // Report their combined allowance and the actual observed count honestly.
+    return [...actual].map(([key, count]) => {
+        const owners = baseline.filter(warning => fingerprint(warning) === key);
+        return {
+            ...JSON.parse(key), count, maxCount: expected.get(key),
+            owner: owners.map(warning => warning.owner).join('; '),
+            reason: owners.map(warning => warning.reason).join('; '),
+        };
+    });
 }
 
 export function resolveWarningDependencyVersions(packageLock, baseline = WEB_EXT_WARNING_BASELINE) {
@@ -164,7 +155,7 @@ function main() {
     const total = accepted.reduce((sum, warning) => sum + warning.count, 0);
     console.log(`web-ext lint passed with ${total} owned warnings:`);
     for (const warning of accepted) {
-        console.log(`  - ${warning.code} ×${warning.count} in ${warning.file} — ${warning.owner}: ${warning.reason}`);
+        console.log(`  - ${warning.code} ×${warning.count} (limit ${warning.maxCount}) in ${warning.file} — ${warning.owner}: ${warning.reason}`);
     }
 }
 

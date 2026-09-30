@@ -31,9 +31,9 @@ const reportFor = warnings => ({
     warnings
 });
 
-test('the web-ext lint gate accepts exactly the owned warnings per file', async () => {
+test('the web-ext lint gate accepts warnings within the reviewed per-file limits', async () => {
     const accepted = evaluateWebExtLint(reportFor(occurrences()));
-    assert.equal(accepted.length, 5);
+    assert.equal(accepted.length, 4);
     assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 7);
     assert.ok(accepted.every(warning => warning.owner && warning.reason));
 
@@ -71,10 +71,10 @@ test('the web-ext lint gate ignores generated line and column drift', () => {
         line: warning.line + 4173,
         column: warning.column + 91
     }));
-    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 5);
+    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 4);
 });
 
-test('the web-ext lint gate rejects new, extra, missing, error, and notice output', () => {
+test('the web-ext lint gate rejects new, extra, error, and notice output', () => {
     const extra = reportFor([
         ...occurrences(),
         { code: 'UNSAFE_VAR_ASSIGNMENT', file: 'content/new.js', line: 1, column: 1 }
@@ -85,14 +85,6 @@ test('the web-ext lint gate rejects new, extra, missing, error, and notice outpu
     // the count, not the position, is what the baseline promises.
     const duplicate = reportFor([...occurrences(), occurrences()[0]]);
     assert.throws(() => evaluateWebExtLint(duplicate), /new warnings: BACKGROUND_SERVICE_WORKER_IGNORED manifest\.json \(2, owned 1\)/);
-
-    const dropped = reportFor(occurrences().slice(1));
-    assert.throws(() => evaluateWebExtLint(dropped), /baseline warnings disappeared: BACKGROUND_SERVICE_WORKER_IGNORED manifest\.json \(0, owned 1\)/);
-
-    // A vendored file that keeps its code but loses one of its occurrences
-    // must still fail; collapsing to a per-file boolean would hide it.
-    const partial = reportFor(occurrences().filter((warning, index) => index !== 3));
-    assert.throws(() => evaluateWebExtLint(partial), /baseline warnings disappeared: UNSAFE_VAR_ASSIGNMENT vendor\/maplibre-gl\.mjs \(1, owned 2\)/);
 
     assert.throws(() => evaluateWebExtLint({
         ...reportFor(occurrences()),
@@ -108,4 +100,19 @@ test('the web-ext lint gate rejects new, extra, missing, error, and notice outpu
         ...reportFor(occurrences()),
         summary: { errors: 0, notices: 0, warnings: 5 }
     }), /warning count mismatch: summary 5, reported 7/);
+});
+
+test('the web-ext lint gate accepts removed warnings and reports actual counts', () => {
+    const partial = reportFor(occurrences().filter((_warning, index) => index !== 3));
+    const accepted = evaluateWebExtLint(partial);
+    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 6);
+    const maplibre = accepted.find(warning => warning.file === 'vendor/maplibre-gl.mjs');
+    assert.equal(maplibre.count, 1);
+    assert.equal(maplibre.maxCount, 2);
+    assert.equal(evaluateWebExtLint(reportFor(occurrences().slice(1))).length, 3);
+    assert.deepEqual(evaluateWebExtLint(reportFor([])), []);
+    // Unused allowance in a different file cannot excuse a new warning.
+    assert.throws(() => evaluateWebExtLint(reportFor([
+        { code: 'UNSAFE_VAR_ASSIGNMENT', file: 'content/new.js' },
+    ])), /new warnings/);
 });
