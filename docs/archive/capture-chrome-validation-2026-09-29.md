@@ -1,10 +1,17 @@
 # Chrome capture validation — 2026-09-29
 
-Status: in progress; live Garmin capture and Preview passed. Baseline: `23f3666` on local main. The user requested full
+Status: local validation complete; live Garmin capture and Preview passed.
+Baseline: `23f3666` on local main. The user requested full
 Chrome capture testing, bug fixes, and a pause for manual validation if a live
 bot-detection page blocks the test.
 
 ## Coverage and findings
+
+The preceding fixes addressed two readiness failures: waiting for every page
+resource despite an already parsed document (`6c58a31`), and treating an
+uncommitted helper-tab URL or transient probe failure as a changed tab
+(`23f3666`). Their regression fixtures cover pending images, delayed navigation,
+and signed-out export gates. This follow-up verified the complete live flow.
 
 The existing readiness verifier replaces the provider adapter and ends before
 summit lookup. Existing draft checks seed completed jobs. The new
@@ -36,7 +43,9 @@ failures. Map them into the existing capture error policy at the worker boundary
   153 and Firefox 155; those are sanitized fixtures, not live providers.
 - Browser: Chrome for Testing 153.0.8010.12, hidden, 1000x760 page viewport,
   native action-popup sizing, no WebGL. Result, outage, and draft screenshots
-  were inspected locally under ignored `tmp/capture-flow/`.
+  were inspected locally under ignored `tmp/capture-flow/`; the cancellation
+  card was also inspected. Disposable browser processes and verifier profiles
+  were absent after teardown; the separate live-test profile was removed.
 
 - Multi-summit fixture selection now activates the exact returned tab ID rather
   than guessing an arbitrary blank tab and forcing navigation. Both activity
@@ -63,6 +72,7 @@ failures. Map them into the existing capture error policy at the worker boundary
 ### Changed but not fully proven
 
 - The error mapping and new verifier have local evidence; remote CI is pending.
+  No changes were pushed or released.
 - The fresh isolated live profile hit Cloudflare and was stopped; the existing
   user profile passed after explicit authorization to use it. Live Strava was
   not tested; its provider and end-to-end checks use fixtures.

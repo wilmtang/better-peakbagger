@@ -8,6 +8,9 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [Chrome capture validation — 2026-09-29](capture-chrome-validation-2026-09-29.md) —
+  completed toolbar-to-draft fixtures, recovery fixes, lifecycle checks, and
+  live Garmin GPX Preview, with live Strava and remote CI proof gaps recorded.
 - [Suspect GPX segments](gpx-suspect-segments.md) — completed conservative
   interpretation of exact degenerate duplicates and isolated distant points,
   reversible source view, compact disclosure, and local verification ledger.
