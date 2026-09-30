@@ -124,6 +124,7 @@ export const COPY_FILES = [
     ['README.md', 'README.md'],
     ['third_party/betacreator-LICENSE.txt', 'vendor/betacreator-LICENSE.txt'],
     ['manifest.json', 'manifest.json'],
+    ['src/capture/draft-tab.html', 'capture/draft-tab.html'],
     // The panel design language, shared by every extension-owned page and the
     // popup; each page stylesheet below is loaded after it and only adds its
     // own layout.

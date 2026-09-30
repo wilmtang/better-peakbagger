@@ -2380,7 +2380,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const created = [];
         for (let index = 0; index < matches.length; index++) {
             const match = matches[index];
-            const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
+            const tab = await ext.tabs.create({ url: ext.runtime.getURL('capture/draft-tab.html'), active: false, windowId: sourceTab.windowId });
             transaction.trackTab(tab.id);
             await transaction.assertCurrent();
             const draft = makeDraft(match, {
@@ -2389,8 +2389,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 focusOnReady: focusFirst && index === 0,
             });
             await transaction.writeDraft(draft);
-            // Chromium may return tabs.create before its initial blank document
-            // commits. Navigating that provisional tab can crash the renderer.
+            // Use a real packaged document: Chromium may leave an initial
+            // about:blank provisional, with no reliable load-complete signal.
             await waitForDraftTabReady(tab.id, transaction);
             await transaction.assertCurrent();
             created.push(draft);

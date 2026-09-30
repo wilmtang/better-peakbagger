@@ -90,6 +90,13 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   show observed counts, including combined owners in the same bundle. Focused
   regression tests cover partial/complete removal and new warnings.
 
+- The merged readiness wait still failed in main CI because Chromium can leave
+  a new `about:blank` tab provisional without reporting completion. Draft tabs
+  now load a packaged inert staging document before grouping and navigation;
+  the ten-second bound and transaction cancellation remain enforced. All 2,101
+  Node tests, full lint, hidden Chrome 153/Firefox 157 checks, and the
+  unmodified multi-summit verifier passed after this correction.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,
