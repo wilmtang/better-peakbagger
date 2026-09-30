@@ -492,6 +492,20 @@ test('dragging from a checkbox never starts a reorder', async () => {
     assert.deepEqual(ids(), ['gaia', 'onx', 'alltrails', 'caltopo']);
 });
 
+test('viewport focus moving to a grip preserves a drag but leaving the window cancels it', async () => {
+    const { dom, list, pointer, ids } = await orderDragFixture();
+    const grip = list.querySelector('[data-order-item="caltopo"] .order-grip');
+    pointer(grip, 'pointerdown', 166);
+    pointer(dom.window, 'pointermove', 18);
+    dom.window.dispatchEvent(new dom.window.FocusEvent('blur', { relatedTarget: grip }));
+    assert.equal(list.hasAttribute('data-reordering'), true);
+    assert.deepEqual(ids(), ['caltopo', 'gaia', 'onx', 'alltrails']);
+    dom.window.dispatchEvent(new dom.window.FocusEvent('blur'));
+    assert.equal(list.hasAttribute('data-reordering'), false);
+    assert.deepEqual(ids(), ['gaia', 'onx', 'alltrails', 'caltopo']);
+    assert.equal(dom.chrome._store.bpbSettings.mapProviderOrder, undefined);
+});
+
 test('a failed drag save restores the confirmed order and reports the failure', async () => {
     const { dom, list, pointer, ids } = await orderDragFixture();
     dom.chrome.storage.sync.set = async () => { throw new Error('storage write failed'); };

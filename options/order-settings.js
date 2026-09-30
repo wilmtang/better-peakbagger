@@ -110,6 +110,7 @@ export const initOrderSettings = ({ save }) => {
             if (!sameOrder(others, drag.draft)) {
                 drag.draft = others;
                 render(true);
+                if (!drag) return;
                 // Moving the grip's ancestor can release capture in a browser.
                 try { drag.handle.setPointerCapture?.(drag.pointerId); } catch { /* Window listeners remain active. */ }
             }
@@ -190,7 +191,12 @@ export const initOrderSettings = ({ save }) => {
         window.addEventListener('pointerup', event => { if (event.pointerId === drag?.pointerId) finish(false); });
         window.addEventListener('pointercancel', event => { if (event.pointerId === drag?.pointerId) finish(true); });
         window.addEventListener('keydown', event => { if (drag && event.key === 'Escape') { event.preventDefault(); finish(true); } });
-        window.addEventListener('blur', () => finish(true));
+        window.addEventListener('blur', event => {
+            // Refocusing a moved grip can blur the document viewport without
+            // leaving this window. Only an external focus change cancels.
+            if (event.relatedTarget?.ownerDocument === document) return;
+            finish(true);
+        });
         window.addEventListener('pagehide', () => finish(true));
         render();
         return next => {
