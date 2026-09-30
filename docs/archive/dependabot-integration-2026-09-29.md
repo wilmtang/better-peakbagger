@@ -59,6 +59,15 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   runs passed all provider, draft, failure, and cancellation cases. Preview
   failures now report page titles and draft banners for remote diagnosis.
 
+- Both minified 3.8.0 archives passed structural checks (85 entries each) and
+  exact-package execution in hidden Chrome 153.0.8010.12 and Firefox 157.0 at
+  1000×760. The archives contain no subsequent test-only changes.
+- A hosted Firefox GPU Control-drag timeout exposed a missing camera-settlement
+  boundary after the preceding pitch gesture. Both pitch gestures now settle
+  before the next operation, and failures report current camera state. Hidden
+  Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; fresh hosted
+  evidence is still required.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,
@@ -78,7 +87,9 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   [the capture validation ledger](capture-chrome-validation-2026-09-29.md).
   A fresh live Firefox capture and Firefox Android device run remain pending:
   the existing Firefox Marionette connection was refused, and no Android
-  device or Android debugging tools were found. Desktop hidden checks cannot
+  device or Android debugging tools were found. The current Firefox profile
+  also has no Garmin or Strava cookies, so an authenticated provider check
+  needs sign-in. Desktop hidden checks cannot
   substitute for either check.
 - The Chrome listing text is regenerated locally. Its dashboard metadata
   requires a separate update because the package-publishing API cannot edit it.
