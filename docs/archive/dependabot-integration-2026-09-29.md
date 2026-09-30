@@ -51,6 +51,14 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   the hidden 1000×760 verifier and inspected caption screenshot passed with
   text, width, and placement assertions preserved.
 
+- The first integration CI run stopped at Chrome current's Strava draft
+  Preview. Local repetition exposed an extension-created helper at Chrome's
+  `Privacy error` page: Playwright's per-page certificate policy could attach
+  after initial navigation. The capture fixture now trusts only its disposable
+  certificate's SPKI at browser launch. Three consecutive hidden Chrome 153
+  runs passed all provider, draft, failure, and cancellation cases. Preview
+  failures now report page titles and draft banners for remote diagnosis.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,

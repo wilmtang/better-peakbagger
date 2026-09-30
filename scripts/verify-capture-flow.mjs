@@ -4,6 +4,7 @@
 // the shipped manifest, seeding jobs, or replacing any extension runtime code.
 /* global chrome */
 import assert from 'node:assert/strict';
+import { createHash, X509Certificate } from 'node:crypto';
 import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import os from 'node:os';
@@ -87,10 +88,14 @@ try {
     resources.defer('capture fixture server', () => closeServer(server));
     await listenServer(server, 0, '127.0.0.1');
     const port = server.address().port;
+    // Extension-created tabs can navigate before Playwright attaches its per-page
+    // certificate policy. Trust only this run's disposable certificate at launch.
+    const fixtureSpki = createHash('sha256').update(new X509Certificate(cert.cert)
+        .publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
     const context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
-        channel: 'chromium', headless: true, viewport: { width: 1000, height: 760 }, ignoreHTTPSErrors: true,
+        channel: 'chromium', headless: true, viewport: { width: 1000, height: 760 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: ['--enable-unsafe-extension-debugging', `--load-extension=${path.resolve('dist')}`, `--disable-extensions-except=${path.resolve('dist')}`,
+        args: [`--ignore-certificate-errors-spki-list=${fixtureSpki}`, '--enable-unsafe-extension-debugging', `--load-extension=${path.resolve('dist')}`, `--disable-extensions-except=${path.resolve('dist')}`,
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port},MAP connect.garmin.com 127.0.0.1:${port},MAP www.strava.com 127.0.0.1:${port}`],
     });
     resources.defer('capture browser', () => context.close());
@@ -183,7 +188,14 @@ try {
         const previewsBefore = state.previews.length;
         await clickPopup('#open-drafts');
         await waitForCondition(() => state.previews.length, count => count === previewsBefore + 1,
-            { timeoutMs: 15_000, message: 'draft did not Preview exactly once' });
+            { timeoutMs: 15_000, message: 'draft did not Preview exactly once' }).catch(async error => {
+            const pages = await Promise.all(context.pages().map(async page => ({
+                url: page.url(), title: await page.title().catch(() => 'unavailable'),
+                banner: await page.locator('#bpb-draft-banner').textContent({ timeout: 500 }).catch(() => null),
+            })));
+            console.error('Draft Preview failure:', { provider, job: await jobFor(source.tabId), pages });
+            throw error;
+        });
         const draft = context.pages().find(page => page.url().includes('/ascentedit.aspx') && !completed.some(item => item.draft === page));
         await draft.waitForFunction(() => globalThis.document.getElementById('GPXStatusLabel')?.textContent.includes('successfully'));
         assert.equal(state.saves, 0, 'capture must never Save');
