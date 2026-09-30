@@ -1728,7 +1728,7 @@ No single green command proves the extension works:
   manager/search/backup path so the default local loop can stay fast without
   losing large-input coverage.
 - `npm run lint` catches JavaScript errors without rewriting source, then checks
-  the built extension package and accepts only the eight owner-annotated
+  the built extension package and accepts only the seven owner-annotated
   manifest/dependency warnings, counted per `(code, file)`; a
   new warning, an extra or missing occurrence in an owned file, an error, or a
   notice fails. Generated line and column numbers are not pinned, because every
