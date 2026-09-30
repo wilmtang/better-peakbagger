@@ -888,7 +888,7 @@ test('a failed sibling open restores the exact current-tab draft and upload job 
     assert.deepEqual(harness.values.bpbDraftTabs, { 5: previousDraft },
         'the current-tab record overwritten by this attempt must be restored exactly');
     assert.deepEqual(harness.values.bpbCaptureJobs['5'], priorJob);
-    assert.deepEqual([...harness.tabs.keys()], [5], 'the sibling about:blank tab must be closed');
+    assert.deepEqual([...harness.tabs.keys()], [5], 'the sibling staging tab must be closed');
     assert.deepEqual(harness.tabMessages, [], 'the current form must not proceed after rollback');
 
     const retried = await harness.send({

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 3.8.0 — 2026-09-29
+## 3.8.0 — 2026-09-30
 
 - **Keep Firefox submissions within Mozilla's reviewer-note limit.** Release
   metadata preserves source, dependency, privacy, and terrain details and

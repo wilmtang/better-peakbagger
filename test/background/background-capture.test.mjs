@@ -569,12 +569,12 @@ const openDraftsManager = async (harness, sender) => {
     }, sender);
 };
 
-test('draft navigation waits for the newly created blank document to finish', async () => {
+test('draft navigation waits for the newly created staging document to finish', async () => {
     let reads = 0;
     const harness = createHarness({
         beforeTabGet: ({ tabId, tabs }) => {
             if (tabId !== 100) return;
-            assert.equal(tabs.get(tabId).url, 'about:blank');
+            assert.match(tabs.get(tabId).url, /^chrome-extension:\/\/[^/]+\/capture\/draft-tab\.html$/);
             tabs.get(tabId).status = ++reads < 3 ? 'loading' : 'complete';
         },
     });
@@ -585,7 +585,7 @@ test('draft navigation waits for the newly created blank document to finish', as
     assert.match(harness.tabs.get(100).url, /ascentedit/);
 });
 
-test('a stalled blank draft times out and rolls back without orphaning its tab', async () => {
+test('a stalled staging draft times out and rolls back without orphaning its tab', async () => {
     const clock = { now: Date.now() };
     const harness = createHarness({
         clock,
@@ -603,7 +603,7 @@ test('a stalled blank draft times out and rolls back without orphaning its tab',
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
 });
 
-test('clearing capture while a blank draft loads cancels its opening transaction', async () => {
+test('clearing capture while a staging draft loads cancels its opening transaction', async () => {
     let reached;
     let release;
     const waiting = new Promise(resolve => { reached = resolve; });
