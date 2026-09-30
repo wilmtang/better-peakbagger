@@ -102,6 +102,14 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   Settings, worker startup, and the ascent analyzer were verified and rendered
   screenshots inspected. The desktop-width ascent layout remains a limitation.
 
+- Main CI then reached a browser error page inside capture readiness. That
+  fixture still depended on Playwright attaching TLS policy after navigation.
+  Capture readiness and multi-summit fixtures now trust only their disposable
+  certificate SPKI at launch, matching the toolbar-capture fixture. Three
+  consecutive hidden Chrome readiness runs, hidden Firefox readiness, the
+  multi-summit flow, 155 project tests, and focused ESLint passed. Request
+  failures and page URLs are retained in future readiness failure output.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,

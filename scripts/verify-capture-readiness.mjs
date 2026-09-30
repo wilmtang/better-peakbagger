@@ -6,6 +6,7 @@
 // its temporary host permission and no-GPS response never enter shipped dist/.
 /* global document */
 import assert from 'node:assert/strict';
+import { createHash, X509Certificate } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
@@ -74,7 +75,9 @@ async function fixtureServer(resources, temporaryRoot) {
     resources.defer('capture fixture proxy', () => closeServer(proxy));
     resources.defer('capture fixture sockets', () => { for (const socket of sockets) socket.destroy(); });
     await listenServer(proxy, 0, '127.0.0.1');
-    return { state, port: proxy.address().port };
+    const certificateSpki = createHash('sha256').update(new X509Certificate(certificate.cert)
+        .publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
+    return { state, port: proxy.address().port, certificateSpki };
 }
 
 async function prepareFixtureExtension(temporaryRoot) {
@@ -213,17 +216,34 @@ async function run(browserName) {
         if (browserName === 'chrome') {
             const context = await chromium.launchPersistentContext(path.join(temporaryRoot, 'profile'), {
                 ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chromium' }),
-                headless: true, ignoreHTTPSErrors: true,
+                headless: true,
                 viewport: verificationViewport,
                 ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
                 proxy: { server: `http://127.0.0.1:${fixture.port}` },
-                args: [`--disable-extensions-except=${source}`, `--load-extension=${source}`],
+                // Extension-created tabs may navigate before Playwright can
+                // attach its per-page certificate policy. Trust this run's key
+                // at launch so initial navigation cannot hit a TLS error page.
+                args: [`--ignore-certificate-errors-spki-list=${fixture.certificateSpki}`,
+                    `--disable-extensions-except=${source}`, `--load-extension=${source}`],
             });
             resources.defer('capture Chrome context', () => context.close());
+            const networkFailures = [];
+            context.on('requestfailed', request => {
+                if (networkFailures.length < 10) networkFailures.push({
+                    url: request.url(), error: request.failure()?.errorText,
+                });
+            });
             const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
             const page = await context.newPage();
             await page.goto(`chrome-extension://${new URL(worker.url()).host}/options/options.html`);
-            await verify((fn, arg) => page.evaluate(fn, arg), fixture, `Chrome ${context.browser().version()}`);
+            try {
+                await verify((fn, arg) => page.evaluate(fn, arg), fixture, `Chrome ${context.browser().version()}`);
+            } catch (error) {
+                console.error('Capture readiness failure:', {
+                    pages: context.pages().map(page => page.url()), networkFailures,
+                });
+                throw error;
+            }
         } else {
             resources.defer('owned Firefox processes', () => stopOwnedFirefoxProcesses(temporaryRoot));
             const prepared = await prepareFirefoxSource({ distDir: source, temporaryRoot });

@@ -4,6 +4,7 @@
 // The fixture deliberately shares one temporary upload across ascent forms.
 /* global chrome, document */
 import assert from 'node:assert/strict';
+import { createHash, X509Certificate } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,11 +30,14 @@ try {
     const base = (await readFile('test/fixtures/pages/climber-ascentedit.html', 'utf8'))
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/(<form\b[^>]*\baction=")[^"]*/i, '$1');
+    // Trust the disposable certificate before extension-created tabs navigate.
+    const certificateSpki = createHash('sha256').update(new X509Certificate(certificate.cert)
+        .publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
     context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
         ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chromium' }),
-        headless: true, ignoreHTTPSErrors: true,
+        headless: true,
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], viewport: { width: 1000, height: 760 },
-        args: [`--disable-extensions-except=${path.resolve('dist')}`, `--load-extension=${path.resolve('dist')}`,
+        args: [`--ignore-certificate-errors-spki-list=${certificateSpki}`, `--disable-extensions-except=${path.resolve('dist')}`, `--load-extension=${path.resolve('dist')}`,
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port}`],
     });
     // Include worker failures in CI output; the public reply intentionally
