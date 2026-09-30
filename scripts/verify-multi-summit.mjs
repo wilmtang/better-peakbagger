@@ -102,6 +102,19 @@ try {
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const control = await context.newPage();
     await control.goto(`chrome-extension://${new URL(worker.url()).host}/options/options.html`);
+    await control.evaluate(() => {
+        globalThis.draftTabEvents = [];
+        const record = (event, tab) => {
+            const { id, status, url, pendingUrl, discarded, frozen, groupId } = tab;
+            globalThis.draftTabEvents.push({ event, id, status, url, pendingUrl, discarded, frozen, groupId });
+            if (globalThis.draftTabEvents.length > 100) globalThis.draftTabEvents.shift();
+        };
+        chrome.tabs.onCreated.addListener(tab => record('created', tab));
+        chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+            if (change.status || change.url) record('updated', tab);
+        });
+        chrome.tabs.onRemoved.addListener(id => record('removed', { id }));
+    });
     for (const provider of ['strava', 'upload']) {
         const source = provider === 'upload' ? first : await context.newPage();
         if (provider === 'strava') await source.goto('https://www.peakbagger.com/Default.aspx');
@@ -121,6 +134,16 @@ try {
             const [result] = await chrome.scripting.executeScript({ target: { tabId: job.sourceTabId }, func: async job => chrome.runtime.sendMessage({ type: 'GPX_PROCESS_APPLY', jobId: job.id, selectedIds: job.selectedIds, primaryId: 2829, pageSessionId: job.pageSessionId, selectionGeneration: job.selectionGeneration, selectionNonce: job.selectionNonce }), args: [job] });
             return result.result;
         }, { job, payload, provider });
+        if (opened.tabIds?.length !== 2) {
+            console.error('Draft opening diagnostics:', JSON.stringify({
+                provider,
+                pages: context.pages().map(page => page.url()),
+                ...await control.evaluate(async () => ({
+                    tabs: await chrome.tabs.query({}),
+                    events: globalThis.draftTabEvents,
+                })),
+            }));
+        }
         assert.ok(opened.tabIds?.length === 2, JSON.stringify(opened));
         const firstUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2829&cid=900001';
         const secondUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2830&cid=900001';

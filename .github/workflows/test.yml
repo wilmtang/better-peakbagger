@@ -124,6 +124,8 @@ jobs:
         run: npm run verify:capture-flow
 
       - name: Verify sequential multi-summit drafts
+        env:
+          DEBUG: pw:browser
         run: npm run verify:multi-summit
 
   chrome-floor:
