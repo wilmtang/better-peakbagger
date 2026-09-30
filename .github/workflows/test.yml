@@ -120,6 +120,9 @@ jobs:
       - name: Verify capture with pending page resources
         run: npm run verify:capture-readiness -- chrome
 
+      - name: Verify toolbar-to-draft capture
+        run: npm run verify:capture-flow
+
   chrome-floor:
     name: Chrome 128 extension smoke
     runs-on: ubuntu-latest

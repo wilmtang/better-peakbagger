@@ -398,8 +398,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const peakbaggerPublicError = error => {
         const failure = PeakbaggerError.exception(error);
+        // Transport codes are shared across Peakbagger features. Capture has
+        // its own recovery policy; leaking a transport code makes the popup
+        // fall back to telling the user to reload the activity provider.
+        const code = {
+            cloudflare: 'cloudflare',
+            'rate-limit': 'rate-limit',
+            'signed-out': 'peakbagger-signed-out',
+            timeout: 'peakbagger-page-timeout',
+            cancelled: 'capture-cancelled',
+            'unexpected-content': 'peakbagger-response-invalid',
+            'not-found': 'peakbagger-response-invalid',
+            http: 'peakbagger-response-invalid',
+            'response-too-large': error?.resource === 'peaks'
+                ? 'peak-response-too-large' : 'peakbagger-response-invalid',
+        }[failure.code] || 'peakbagger-unavailable';
         const publicError = PublicErrors.exception(
-            failure.code || 'peakbagger-unavailable',
+            code,
             failure.message,
             { cause: failure },
         );

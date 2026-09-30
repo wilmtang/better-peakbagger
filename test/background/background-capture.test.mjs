@@ -2790,6 +2790,38 @@ test('a validated Peakbagger rate limit survives worker restart and resumes only
     assert.equal(responses, 2);
 });
 
+test('Peakbagger transport failures use capture recovery codes at login and summit lookup', async t => {
+    const cases = [
+        ['server', 'transient', 'peakbagger-unavailable', 503],
+        ['network', 'transient', 'peakbagger-unavailable', 0],
+        ['response-read', 'transient', 'peakbagger-unavailable', 200],
+        ['timeout', 'transient', 'peakbagger-page-timeout', 0],
+        ['signed-out', 'wrong-content', 'peakbagger-signed-out', 200],
+        ['unexpected-content', 'wrong-content', 'peakbagger-response-invalid', 200],
+        ['not-found', 'wrong-content', 'peakbagger-response-invalid', 404],
+        ['http', 'wrong-content', 'peakbagger-response-invalid', 403],
+        ['response-too-large', 'wrong-content', 'peak-response-too-large', 200],
+    ];
+    for (const resource of ['html', 'peaks']) {
+        for (const [code, kind, expected, status] of cases) {
+            await t.test(`${resource}: ${code}`, async () => {
+                const harness = createHarness({
+                    [resource === 'html' ? 'peakbaggerPageLoginResult' : 'peakbaggerPagePeakResult']: call => ({
+                        kind, requestedUrl: call.url, url: call.url, status, redirected: false,
+                        error: { source: 'peakbagger', code, resource, status },
+                    }),
+                });
+                const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                const expectedCode = resource === 'html' && code === 'response-too-large'
+                    ? 'peakbagger-response-invalid' : expected;
+                assert.equal(job.error.code, expectedCode);
+                assert.equal(job.matches.length, 0);
+                assert.equal(harness.providerCaptureCalls.length, resource === 'html' ? 0 : 1);
+            });
+        }
+    }
+});
+
 test('summit lookup retries only network and server failures once', async () => {
     let responses = 0;
     const harness = createHarness({

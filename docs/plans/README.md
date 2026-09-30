@@ -1,5 +1,8 @@
 # Active plans
 
+- [Chrome capture validation](capture-chrome-validation-2026-09-29.md) — in progress;
+  full toolbar-to-draft fixtures, recovery fixes, and live Garmin validation.
+
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.
