@@ -83,8 +83,12 @@ test('Firefox GPU gestures target exposed canvas pixels and settle between drags
         'the verifier must establish the Peak disclosure state instead of blindly toggling it');
     assert.equal(verifier.match(/const normalizedNorth =/g)?.length, 2,
         'both 2D reset checks must accept CSS angles equivalent to zero modulo 360');
-    assert.equal(verifier.match(/waitForTerrainCameraSettled\(page,/g)?.length, 5,
+    assert.equal(verifier.match(/waitForTerrainCameraSettled\(page,/g)?.length, 7,
         'each Firefox camera transition must settle through the diagnostic bounded wait');
+    assert.match(verifier,
+        /waitForTerrainCameraSettled\(page, 'Analyzer pitch'\);\s*const ctrlPitchBefore/);
+    assert.match(verifier,
+        /waitForTerrainCameraSettled\(page, 'Analyzer Control-drag'\);\s*const widthBeforeResize/);
     assert.match(verifier,
         /TERRAIN_CAMERA_SETTLE_TIMEOUT_MS = 20_000[\s\S]*isMoving: map\.isMoving\(\)/,
         'the load-sensitive Firefox GPU wait must report the live camera state at its deadline');
