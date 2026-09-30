@@ -73,8 +73,17 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   Post-merge CI exposed a separate Chrome metric-header probe that retained a
   detached note across a resize render. It now resolves and measures the
   connected header in one browser callback. All 154 project tests and hidden
-  Chrome 153 passed; 1000px and 430px screenshots were inspected. This changes
-  verification only, so the already-verified release archives remain valid.
+  Chrome 153 passed; 1000px and 430px screenshots were inspected.
+
+- Multi-summit verification reproduced a native Chromium SIGSEGV when a newly
+  created blank tab was navigated before its initial document completed. Waiting
+  for browser readiness eliminated the crash without modifying the fixture's
+  runtime or Save assertions. The worker now bounds that wait to ten seconds
+  and checks the opening transaction on each poll. All 181 background tests
+  passed, including stalled-tab rollback and cancellation coverage. The full
+  2,100-test suite, hidden Chrome 153 and Firefox 157 verifiers, and two real
+  multi-summit runs passed. Release archives must be refreshed for this worker
+  change.
 
 ## Intentionally not changed
 

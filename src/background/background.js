@@ -54,6 +54,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const DRAFTS_KEY = 'bpbDraftTabs';
     const JOB_TTL_MS = 30 * 60 * 1000;
     const DRAFT_APPLY_LEASE_MS = 30 * 1000;
+    const DRAFT_TAB_READY_TIMEOUT_MS = 10_000;
     // Save-time GitHub backup snapshots, keyed by climber+peak+date+source tab,
     // expiring on the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
@@ -2347,6 +2348,24 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return { live, stale };
     };
 
+    const waitForDraftTabReady = async (tabId, transaction) => {
+        const expiresAt = now() + DRAFT_TAB_READY_TIMEOUT_MS;
+        const timeoutError = cause => new Error('The new draft tab did not finish opening.', { cause });
+        while (true) {
+            await transaction.assertCurrent();
+            const remaining = expiresAt - now();
+            if (remaining <= 0) throw timeoutError();
+            const tab = await runBrowserOperation({
+                operation: () => ext.tabs.get(tabId),
+                timeoutMs: remaining,
+                timeoutError,
+            });
+            if (!tab) throw new Error('The new draft tab closed before it was ready.');
+            if (tab.status === 'complete') return;
+            await new Promise(resolve => globalThis.setTimeout(resolve, 50));
+        }
+    };
+
     const openNewDraftTabs = async ({
         sourceTabId,
         matches,
@@ -2370,6 +2389,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 focusOnReady: focusFirst && index === 0,
             });
             await transaction.writeDraft(draft);
+            // Chromium may return tabs.create before its initial blank document
+            // commits. Navigating that provisional tab can crash the renderer.
+            await waitForDraftTabReady(tab.id, transaction);
             await transaction.assertCurrent();
             created.push(draft);
         }

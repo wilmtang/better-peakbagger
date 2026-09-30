@@ -55,7 +55,9 @@
   latest queued CodeMirror, MapLibre, Marked, ESLint, and jsdom upgrades, plus
   patched development dependencies. Browser checks await completed storage
   reads, closed-window test cleanup no longer hangs, and Settings drags survive
-  in-page focus restoration. Dependency auditing still requires zero advisories.
+  in-page focus restoration. Fresh draft tabs finish their initial browser
+  document before navigation, avoiding a Chromium crash during multi-summit
+  capture. Dependency auditing still requires zero advisories.
 
 ## 3.7.2 — 2026-09-03
 
