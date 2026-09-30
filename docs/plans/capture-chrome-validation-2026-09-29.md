@@ -1,6 +1,6 @@
 # Chrome capture validation — 2026-09-29
 
-Status: in progress. Baseline: `23f3666` on local main. The user requested full
+Status: in progress; live Garmin capture and Preview passed. Baseline: `23f3666` on local main. The user requested full
 Chrome capture testing, bug fixes, and a pause for manual validation if a live
 bot-detection page blocks the test.
 
@@ -34,10 +34,24 @@ failures. Map them into the existing capture error policy at the worker boundary
   native action-popup sizing, no WebGL. Result, outage, and draft screenshots
   were inspected locally under ignored `tmp/capture-flow/`.
 
+- Multi-summit fixture selection now activates the exact returned tab ID rather
+  than guessing an arbitrary blank tab and forcing navigation. Both activity
+  and local-upload flows pass in hidden Chrome 153 at 1000x760, including
+  simulated manual Save, intact GPX for both ascents, shared trip/sequence, and
+  payload cleanup. The low-level renderer crash itself was not diagnosed.
+- At the user's explicit request, live validation used their existing signed-in
+  Chrome profile. Reloaded this workspace's unpacked extension and refreshed the
+  supplied Garmin activity. The real export returned HTTP 200; 8,708 points were
+  reduced to 3,000, Hoodoo Peak matched at 100% confidence, and the live draft
+  retained date 2026-09-27 with a blank suffix. Peakbagger confirmed GPX Preview
+  success. The draft is unsaved, at a 2048x950 page viewport.
+
 ### Intentionally not changed
 
 - Ownership and Peakbagger session checks remain fail closed. Provider host
   permissions remain temporary and raw GPX stays in the provider page.
+- Ascent-detail autofill was disabled in the user's settings; the live draft's
+  empty metrics are expected. No user setting was changed.
 - No live Peakbagger Save will be clicked. A browser reload of a POST result can
   repeat the browser's POST; the exactly-once assertion instead revisits by GET
   to distinguish browser resubmission from extension reapplication.
@@ -45,8 +59,7 @@ failures. Map them into the existing capture error policy at the worker boundary
 ### Changed but not fully proven
 
 - The error mapping and new verifier have local evidence; remote CI is pending.
-- Live Garmin activity 24524298734, provider authentication, Peakbagger session,
-  live summit responses, and draft field compatibility still require validation.
-- Cancellation and popup close/reopen need the remaining browser checks.
-  The existing multi-summit verifier hit a Chrome renderer crash on its second
-  draft navigation; investigate before claiming that flow verified. Hidden runs do not establish visible focus or screen-reader behavior.
+- The fresh isolated live profile hit Cloudflare and was stopped; the existing
+  user profile passed after explicit authorization to use it. Live Strava was
+  not tested; its provider and end-to-end checks use fixtures.
+- Cancellation and popup close/reopen need the remaining browser checks. Hidden runs do not establish visible focus or screen-reader behavior.

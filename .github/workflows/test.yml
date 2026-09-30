@@ -123,6 +123,9 @@ jobs:
       - name: Verify toolbar-to-draft capture
         run: npm run verify:capture-flow
 
+      - name: Verify sequential multi-summit drafts
+        run: npm run verify:multi-summit
+
   chrome-floor:
     name: Chrome 128 extension smoke
     runs-on: ubuntu-latest

@@ -20,6 +20,7 @@
     "test": "npm run build && node --test \"test/**/*.test.mjs\"",
     "test:scale": "npm run build && node --test \"test/scale/**/*.scale.mjs\"",
     "verify:capture-popup": "npm run build && node scripts/verify-capture-popup.mjs",
+    "verify:multi-summit": "npm run build && node scripts/verify-multi-summit.mjs",
     "verify:capture-flow": "npm run build && node scripts/verify-capture-flow.mjs",
     "verify:capture-readiness": "npm run build && node scripts/verify-capture-readiness.mjs",
     "verify:provider-contracts": "npm run build && node scripts/verify-provider-contracts.mjs",
