@@ -559,7 +559,7 @@ const createGithubClient = ({
         });
     };
 
-    const commitRootEntries = async ({ entries, message, resolved, head, state }) => {
+    const commitRootEntries = async ({ entries, message, resolved, head, state, beforeCommit = null }) => {
         const treeEntries = entries.map(entry => {
             const existing = (head.root.tree || []).find(node => node.path === entry.path);
             if (existing && existing.type !== 'blob') {
@@ -584,6 +584,7 @@ const createGithubClient = ({
             body: { message, tree: tree.sha, parents: [head.baseCommitSha] },
             phase: 'write',
         });
+        if (beforeCommit) await beforeCommit();
         await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
             body: { sha: commit.sha, force: false },
             phase: 'ref',
@@ -625,7 +626,7 @@ const createGithubClient = ({
     // reader/merge callback after every non-fast-forward. Photo-library
     // backup uses this to merge another device's records instead of
     // retrying stale content over a newly advanced branch.
-    const updateRootFileOnce = async (path, update, commitMessage, { maxBytes = null } = {}) => {
+    const updateRootFileOnce = async (path, update, commitMessage, { maxBytes = null, beforeCommit = null } = {}) => {
         const filePath = rootFilePath(path);
         if (typeof update !== 'function') {
             throw new TypeError('github client requires a root file update function');
@@ -667,6 +668,7 @@ const createGithubClient = ({
             resolved,
             head,
             state,
+            beforeCommit,
         });
         return {
             sha: result.sha,

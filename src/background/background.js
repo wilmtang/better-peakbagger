@@ -3375,7 +3375,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         now
     });
 
+    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local });
     const githubRoutes = createGithubRoutes({
+        ignoredStore: ignoredMutations,
         ext,
         snapshotKey: SNAPSHOTS_KEY,
         storage,
@@ -3430,7 +3432,6 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         verifyGithubConnection: githubRoutes.validateImportedConnection,
     });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
-    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local });
 
     const openDraftsManager = async (message, sender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {

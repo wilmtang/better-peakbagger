@@ -581,6 +581,36 @@
                         <button class="favorite-undo" id="favorites-restore-undo-button" type="button">Undo</button>
                     </div>
                 </div>
+                <div class="card" id="ignored-github">
+                    <div class="row">
+                        <div class="label"><span class="title">Ignored climbers</span>
+                            <span class="desc" id="ignored-github-status" role="status">Saved on this device</span>
+                        </div>
+                        <div class="control favorites-github-buttons">
+                            <button id="ignored-backup" class="secondary" type="button">Back up now</button>
+                            <button id="ignored-restore" class="secondary" type="button">Restore…</button>
+                        </div>
+                    </div>
+                    <p class="desc">Backup uploads climber IDs and names to your connected repository. Public repositories and prior Git history may expose this list.</p>
+                    <div class="favorites-mirror-confirmation" id="ignored-review" role="alertdialog"
+                        aria-labelledby="ignored-review-title" aria-describedby="ignored-review-impact" tabindex="-1" hidden>
+                        <div class="ignored-review-content">
+                            <p class="favorites-mirror-confirmation-title" id="ignored-review-title">Review ignored climbers</p>
+                            <label>Keep <select id="ignored-review-mode" aria-label="How to reconcile ignored climbers">
+                                <option value="merge">Merge lists</option><option value="github">Use GitHub's list</option>
+                                <option value="device">Use this device's list</option>
+                            </select></label>
+                            <p id="ignored-review-impact" class="favorites-mirror-confirmation-detail"></p>
+                            <div id="ignored-review-conflicts"></div>
+                        </div>
+                        <div class="favorites-mirror-confirmation-actions">
+                            <button id="ignored-review-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="ignored-review-confirm" type="button">Apply reviewed changes</button>
+                        </div>
+                    </div>
+                    <button id="ignored-restore-undo" class="favorite-undo" type="button" hidden>Undo list replacement</button>
+                </div>
+
             </div>
 
             <div class="subsection" id="github-photos-backup" role="group" aria-labelledby="github-photos-backup-heading">
