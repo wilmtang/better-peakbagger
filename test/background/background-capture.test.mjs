@@ -1407,6 +1407,21 @@ test('favorites mutations serialize in the worker and reject unrelated senders',
     assert.deepEqual(harness.localValues.bpbFavoriteClimbers.entries.map(entry => entry.cid), [82, 81]);
 });
 
+test('ignored mutations and device report preferences reject unrelated senders', async () => {
+    const harness = createHarness();
+    const sender = { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/climber.aspx?cid=82' };
+    const message = { type: 'IGNORED_MUTATE', mutation: { kind: 'add', entry: {
+        cid: 82, name: 'Example', addedAt: 1,
+    } } };
+    assert.equal((await harness.send(message, sender)).ok, true);
+    assert.equal(harness.localValues.bpbIgnoredClimbers.revision, 1);
+    const foreign = { tab: { id: 8 }, url: 'https://evil.example/peak.aspx' };
+    assert.equal((await harness.send(message, foreign)).error.code, 'forbidden');
+    assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: true }, sender)).ok, true);
+    assert.equal(harness.localValues.bpbPeakReportFilter.favoritesOnly, true);
+    assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: false }, foreign)).ok, false);
+});
+
 test('worker settings patches serialize and reject unrelated senders', async () => {
     const harness = createHarness({ settings: { enable3dMap: false, units: 'imperial' } });
     const patch = value => ({ type: 'SETTINGS_PATCH', patch: value });
