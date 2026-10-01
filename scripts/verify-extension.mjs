@@ -4089,6 +4089,52 @@ try {
     }
 
     {
+        const manager = await context.newPage();
+        await manager.goto(`chrome-extension://${extensionId}/options/favorites.html`);
+        const saved = await manager.evaluate(async () => {
+            const previous = await chrome.storage.local.get('bpbIgnoredClimbers');
+            await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 200,
+                entries: [6723, 38769, 900002].map(cid => ({ cid, name: 'Example', addedAt: 1 })) } });
+            return previous;
+        });
+        const page = await context.newPage();
+        try {
+            for (const surface of ['list', 'compact', 'detail']) {
+                await page.goto(`https://www.peakbagger.com:${port}/climber/${surface === 'detail'
+                    ? 'ascent.aspx?aid=ignored&ignored=1' : `PeakAscents.aspx?pid=1039${surface === 'compact' ? '&compact=1' : ''}`}`,
+                { waitUntil: 'domcontentloaded' });
+                const reveal = page.getByRole('button', { name: /^Show \d+ ignored (ascents|report)$/ });
+                await reveal.waitFor({ state: 'visible' });
+                if (surface === 'detail') {
+                    check(await page.locator('#bpb-ascent-report-content').isVisible() === false, 'ignored detail report remained visible');
+                    check(await page.locator('#Gmap').isVisible(), 'ignored detail concealed the map');
+                    await reveal.focus(); await page.keyboard.press('Enter');
+                    await page.locator('#bpb-ascent-report-content').waitFor({ state: 'visible' });
+                    await page.locator('#bpb-ascent-report-content a').first().focus();
+                    await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate(node => node.click());
+                    check(await page.evaluate(() => document.activeElement?.textContent === 'Show ignored · 1'), 'detail hiding stranded focus');
+                }
+                if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
+                    for (const theme of ['light', 'dark']) {
+                        await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                        for (const [width, height] of [[1440, 1000], [390, 844]]) {
+                            await page.setViewportSize({ width, height });
+                            await reveal.scrollIntoViewIfNeeded();
+                            await page.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${surface}-${theme}-${width}.png`) });
+                        }
+                    }
+                }
+                await page.getByRole('button', { name: /^Show \d+ ignored (ascents|report)$/ }).click();
+                await page.getByRole('button', { name: /^Hide \d+ ignored (ascents|report)$/ }).waitFor({ state: 'visible' });
+            }
+        } finally {
+            await page.close();
+            await manager.evaluate(async previous => { await chrome.storage.local.remove('bpbIgnoredClimbers'); await chrome.storage.local.set(previous); }, saved);
+            await manager.close();
+        }
+    }
+
+    {
         const filterPage = await context.newPage();
         // Filtering starts at DOMContentLoaded, independently of page images.
         // Hold the legend through navigation and reload to exercise that boundary.

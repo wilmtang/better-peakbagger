@@ -112,6 +112,19 @@
         "https://peakbagger.com/climber/ascent.aspx*",
         "https://peakbagger.com/climber/Ascent.aspx*"
       ],
+      "js": [
+        "content/ascent-report-visibility.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
+      ],
       "css": [
         "css/ascent-layout.css"
       ],
@@ -259,7 +272,9 @@
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*"
       ],
-      "js": ["content/peak-report-filter.js"],
+      "js": [
+        "content/peak-report-filter.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     },

@@ -32,15 +32,19 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
             const result = await fetchDocument(F.buddyListUrl(ownCid, doc.location?.origin),
                 { kind: 'buddies', signal: controller.signal });
             if (stopped || token !== requestGeneration || mode !== 'buddies' || ownCid !== owner()) return;
-            if (result.kind !== 'ok' || ownerClimberId(result.document) !== ownCid) {
+            if (result.kind !== 'ok') {
                 throw new Error("Couldn't load your climbing buddies.");
+            }
+            if (ownerClimberId(result.document) !== ownCid) {
+                throw new Error('The Buddy List belongs to a different Peakbagger account.');
             }
             const next = { ownerCid: ownCid, entries: F.parseBuddyDocument(result.document), fetchedAt: Date.now() };
             cache = next;
-            await api.storage.local.set({ [F.BUDDY_CACHE_KEY]: next });
-        } catch {
-            if (token === requestGeneration) error = cache
-                ? "Using your saved climbing buddies. Couldn't refresh them." : "Couldn't load your climbing buddies.";
+            try { await api.storage.local.set({ [F.BUDDY_CACHE_KEY]: next }); }
+            catch { error = 'Your Buddy List loaded, but Better Peakbagger could not save it. Try again.'; }
+        } catch (failure) {
+            if (token === requestGeneration) error = validCache(cache)
+                ? `Using your saved Buddy List (saved climbing buddies). ${failure.message}` : failure.message;
         } finally {
             if (token === requestGeneration) { controller = null; loading = false; emit(); }
         }
@@ -60,7 +64,7 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
             const nextMode = Schema.favoritesSource(config.favoritesSource);
             if (mode !== nextMode) cancel();
             mode = nextMode; error = ''; acceptFavorites(stored[F.FAVORITES_KEY]);
-            cache = validCache(stored[F.BUDDY_CACHE_KEY]); loading = false; emit(); void refresh();
+            cache = F.cleanBuddyCache(stored[F.BUDDY_CACHE_KEY]); loading = false; emit(); void refresh();
         } catch {
             if (!stopped && token === generation) { loading = false; error = "Couldn't load climber lists."; emit(); }
         }
@@ -70,7 +74,7 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
         if (!changes[F.FAVORITES_KEY] && !changes[F.BUDDY_CACHE_KEY]) return;
         generation++;
         if (changes[F.FAVORITES_KEY]) acceptFavorites(changes[F.FAVORITES_KEY].newValue);
-        if (changes[F.BUDDY_CACHE_KEY]) cache = validCache(changes[F.BUDDY_CACHE_KEY].newValue);
+        if (changes[F.BUDDY_CACHE_KEY]) cache = F.cleanBuddyCache(changes[F.BUDDY_CACHE_KEY].newValue);
         emit();
         // A change during the initial read needs a new coherent snapshot.
         if (mode === null) void read();
@@ -82,6 +86,7 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
     });
     const ready = read();
     return { ready, refresh, retry: () => read().then(() => refresh({ force: true })),
+        reconcile: () => { emit(); void refresh(); },
         pause: () => { paused = true; cancel(); loading = false; },
         resume: () => { paused = false; return read(); },
         stop: () => { stopped = true; generation++; cancel(); unsubscribe(); api.storage.onChanged.removeListener(changed); } };

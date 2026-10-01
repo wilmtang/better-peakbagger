@@ -363,4 +363,6 @@ structure and whitespace, not the proposed runtime or UI.
 
 Peak report UX: 39 focused source/filter/manifest/fixture-tooling tests passed; hidden real Chrome verification passed. Light/dark peak screenshots inspected at 1440×1000 and 390×844, including favorite/ignore overlap and temporary reveal. The toolbar preserves the narrow peak column.
 
-Remaining delivery: ascent-list/detail controllers, guarded manual GitHub transfer, genuine two-way sync, final integration/documentation. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.
+Ascent-list/detail UX: 94 focused ascent, source, adapter, manifest and fixture-tooling tests passed; hidden real Chrome verification passed. Light/dark screenshots inspected at 1440×1000 and 390×844 for full lists, true compact lists and detail reports. Sort/reveal composition, BFCache reset, report media suspension and focus recovery are covered. Native site overflow remains outside the added controls.
+
+Remaining delivery: guarded manual GitHub transfer, genuine two-way sync, final integration/documentation. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.

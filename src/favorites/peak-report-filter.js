@@ -126,7 +126,7 @@ const mount = () => {
     window.addEventListener('pagehide', event => {
         restore(); source.pause(); if (!event.persisted) { source.stop(); ignoreObserver.stop(); }
     });
-    render();
+    source.reconcile(); render();
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });
 else mount();
