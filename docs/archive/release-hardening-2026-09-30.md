@@ -103,8 +103,8 @@ but an immediate assertion required its separate Network event to arrive too.
   Firefox submission succeeded and produced
   [AMO version 6530485](https://addons.mozilla.org/en-US/developers/addon/better-peakbagger/versions/6530485),
   awaiting approval. Chrome stopped before upload because its rejected 3.7.2
-  revision was still present. The full release run therefore remains failed;
-  its Chrome job is not evidence of a 3.8 upload.
+  revision was still present. The first attempt therefore failed; its Chrome
+  job is not evidence of a 3.8 upload.
 
 - Chrome's dashboard identified excessive description keywords (Yellow Argon)
   in the old service-name disclaimer. The source listing now uses a concise
@@ -121,6 +121,17 @@ but an immediate assertion required its separate Network event to arrive too.
   `8fdddda4287b4d0fc3f423393b1a66fb0b0f6434d1d6076ce51e633929697f1f`.
   No package was rebuilt, tag moved, or successful Firefox submission retried.
 
+- After dashboard submission, only the failed Chrome job was rerun with the
+  normal browser-stores reviewer approval. It reused the attempt-one artifact,
+  verified the original package identity, and reconciled the existing 3.8.0
+  submitted revision. The publisher's matched-version preflight returns before
+  either upload or publish, so this recovery did not replay the mutation.
+  [Release attempt two](https://github.com/wilmtang/better-peakbagger/actions/runs/36821357389/attempts/2)
+  finished successfully, with every release job successful and the Firefox
+  submission's original completion time preserved. The original failed
+  [attempt one](https://github.com/wilmtang/better-peakbagger/actions/runs/36821357389/attempts/1)
+  remains available as the rejection evidence.
+
 ## Intentionally not changed
 
 - Required checks, zero-advisory policy, GPU renderer assertions, runtime
@@ -134,8 +145,12 @@ but an immediate assertion required its separate Network event to arrive too.
   main-profile restart restored tabs, Garmin ownership was visible, and the
   production candidate was installed temporarily. With separately authorized
   browser-UI debugging, the actual toolbar action opened the extension popup;
-  summit results, draft filling, and GPX Preview were not established. Firefox
-  was subsequently closed, leaving no privileged debugging process running.
+  summit results, draft filling, and GPX Preview were not established. A fresh
+  run of the exact tag-run package reached "Couldn’t connect to Peakbagger";
+  its Open Peakbagger recovery opened the real site at Cloudflare's
+  "Performing security verification" page. Provider access cannot proceed
+  until the user's existing Firefox session clears that challenge.
 - Both submissions await store approval. Accepted submission is not evidence
   that 3.8 is publicly available. Chrome's rejection recovery was completed
-  manually through the dashboard; the original failed workflow is retained.
+  manually through the dashboard; the original failed attempt is retained and
+  the Chrome-only reconciliation brought the release workflow to success.

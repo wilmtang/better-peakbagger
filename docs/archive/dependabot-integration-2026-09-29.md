@@ -165,8 +165,9 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   A fresh live desktop Firefox capture remains pending. The authorized restart
   made the main profile reachable and Garmin ownership visible. The real
   toolbar action opened the candidate's popup with separately authorized
-  browser-UI debugging; the capture result and draft Preview were not proven.
-  Firefox was subsequently closed. Hidden fixture and Android checks do not
-  substitute for this check.
+  browser-UI debugging; capture then failed to connect to Peakbagger, and
+  recovery reached its Cloudflare security-verification page. The capture
+  result and draft Preview remain unproven until that session clears the
+  challenge. Hidden fixture and Android checks do not substitute for this check.
 - Chrome's corrected 3.8 listing was saved separately in the dashboard because
   the package-publishing API cannot edit it; its 3.8 draft is pending review.
