@@ -106,7 +106,7 @@ try {
         globalThis.draftTabEvents = [];
         const record = (event, tab) => {
             const { id, status, url, pendingUrl, discarded, frozen, groupId } = tab;
-            globalThis.draftTabEvents.push({ event, id, status, url, pendingUrl, discarded, frozen, groupId });
+            globalThis.draftTabEvents.push({ time: Date.now(), event, id, status, url, pendingUrl, discarded, frozen, groupId });
             if (globalThis.draftTabEvents.length > 100) globalThis.draftTabEvents.shift();
         };
         chrome.tabs.onCreated.addListener(tab => record('created', tab));
