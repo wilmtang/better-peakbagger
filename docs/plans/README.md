@@ -1,5 +1,10 @@
 # Active plans
 
+- [Ignored climbers and report filtering](ignored-climbers.md) — proposed;
+  profile Ignore, shared list manager, counted report reveal, persistent peak
+  favorites filtering, and GitHub backup/two-way sync. Includes a
+  [UX specification](ignored-climbers-ux.md).
+
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.
