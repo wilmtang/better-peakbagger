@@ -124,6 +124,11 @@ visible in the AMO Developer Hub.
    in the background or on a separate display without taking focus; use
    isolated hidden profiles for the automated fixtures below.
 
+   Use a signed-in Chrome session for the Chrome Developer Dashboard. Firefox
+   is needed for its own toolbar grant, popup, worker, and inline Preferences
+   checks. Choose the browser for the behavior being verified; ordinary store
+   page inspection does not require Firefox debugging.
+
    - Open an owned Garmin or Strava activity and click Better Peakbagger's
      actual toolbar action. Do not open `popup.html` directly; that bypasses the
      native `activeTab` gesture being checked.
@@ -142,6 +147,14 @@ visible in the AMO Developer Hub.
    - Discard only the test capture state and close only test-owned tabs. Close
      disposable profiles, preserving the user's existing browser and tabs.
      Keep the live check minimal and rate-limited.
+
+   If Peakbagger presents a Cloudflare challenge, leave that tab for the user
+   to validate and record the live check as pending. Fixture success cannot
+   fill that evidence gap. Any restart of the user's browser or temporary
+   privileged browser-UI debugging needs explicit permission. Preserve the
+   profile and tabs, keep debugging local, and restore the original launch
+   options afterward. Inspect the remaining process command lines: disconnecting
+   a driver alone does not remove the browser's debugging flags.
 
    Automated fixtures cover the repeatable paths but cannot establish the live
    provider DOM/export, browser chrome, or native toolbar grant.
@@ -238,6 +251,90 @@ software renderers. Run it hidden on representative GPU hardware and record the
 reported Firefox version, renderer, and viewport in the release notes. Hosted
 CI does not run this command until its renderer can satisfy that condition.
 
+## Recover a partial store release
+
+Inspect the failed job's logs and both stores before choosing a recovery action.
+Record the exact version, tag commit, original package artifact, and each
+store's upload/submission state. A previous rejected Chrome revision can block
+the next upload before any package bytes are sent; inspect the quoted rejection
+in the Developer Dashboard rather than assuming the extension code failed.
+
+1. If the rejection concerns listing text, correct
+   `store-assets/description.md`, regenerate the Chrome text, and save it in the
+   dashboard. Confirm the saved listing before uploading a package. See
+   [Store listing description](#store-listing-description).
+2. List the original release run's artifacts and download the name actually
+   retained by its successful verification job:
+
+   ```sh
+   gh api repos/wilmtang/better-peakbagger/actions/runs/RUN_ID/artifacts --paginate \
+     --jq '.artifacts[] | {name, expired}'
+   gh run download RUN_ID --name ARTIFACT_NAME --dir tmp/release-X.Y.Z
+   node scripts/release-package-identity.mjs verify tmp/release-X.Y.Z X.Y.Z TAG_COMMIT
+   ```
+
+   Use the tag's full commit SHA. A store-job rerun increases the run attempt
+   without rebuilding the verified packages, so the artifact can still end in
+   an earlier attempt number. Read its actual name; do not derive it from the
+   latest run attempt. If it is expired or identity verification fails, stop
+   recovery and record the blocker.
+3. Reconcile the target store. Chrome can accept a dashboard upload of the
+   verified ZIP and submit it for review after the listing is corrected. Confirm
+   the draft version and automatic publication choice. If that exact version
+   is already submitted, the Chrome publisher's preflight returns before upload
+   or publish. If it is already published, retain that evidence and follow the
+   publisher's guidance; do not submit it again. Firefox signing can run only
+   after the authenticated exact-version check proves the version unused.
+4. Rerun only the affected store job after reconciliation, through the normal
+   `browser-stores` reviewer gate:
+
+   ```sh
+   gh run view RUN_ID --json jobs --jq '.jobs[] | {name, databaseId, conclusion}'
+   gh run rerun RUN_ID --job JOB_DATABASE_ID
+   gh run watch RUN_ID --exit-status
+   ```
+
+   Obtain `databaseId` from the command output, as described in the
+   [GitHub CLI manual](https://cli.github.com/manual/gh_run_rerun). GitHub also
+   reruns [dependent jobs](https://docs.github.com/en/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run);
+   inspect the job graph before dispatch. The two store jobs are independent.
+   Leave an accepted Firefox submission intact during Chrome recovery. Record
+   terminal results, the original failed attempt, and whether recovery performed
+   a new submission or only reconciled an existing one.
+
+The separate [Firefox recovery workflow](../.github/workflows/retry-firefox-release.yml)
+currently resolves an artifact named for the release run's latest attempt, then
+falls back to the legacy artifact name. It does not search earlier numbered
+attempts. Check that it can resolve the verified artifact before dispatching it;
+an earlier-attempt-only artifact needs a reviewed tooling correction. Rerunning
+all release jobs to create the expected name would also replay store mutations.
+
+## Confirm public availability
+
+Keep three outcomes separate in the release record:
+
+| Outcome | Evidence |
+| --- | --- |
+| Packages verified | Terminal verification jobs and matching package identity. |
+| Submitted for review | Exact version accepted in the store's developer dashboard/API. |
+| Publicly available | Exact version shown on the public store listing/API. |
+
+Check each store independently. For Firefox, the public AMO API exposes the
+currently available version without developer credentials:
+
+```sh
+curl --fail --silent --show-error \
+  https://addons.mozilla.org/api/v5/addons/addon/better-peakbagger/ \
+  | jq '{version: .current_version.version, version_id: .current_version.id}'
+```
+
+For Chrome, check the Version field on the
+[public listing](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
+and the submitted version's status in the Developer Dashboard. Pending review
+with automatic publication enabled is still a submission. Record the check
+date and any disagreement between the dashboard and public listing; do not
+report both stores live from a green release workflow alone.
+
 ## Store listing description
 
 `store-assets/description.md` is the single source of truth for the "About this
@@ -247,3 +344,15 @@ automatically via `scripts/create-amo-metadata.mjs`. After editing it, run
 `store-assets/description-chrome.txt`. The Chrome Web Store API does not support
 updating listing metadata, so paste that generated plain text into the Chrome
 Developer Dashboard manually.
+
+Review the generated text as listing metadata before tagging. Keep brand and
+supported-site references relevant and concise, including in independence
+disclaimers. Google's
+[keyword-spam guidance](https://developer.chrome.com/docs/webstore/program-policies/spam-faq#keyword-spam)
+limits lists of supported sites or brands to five. The 3.8 recovery removed a
+long service-name disclaimer after Chrome rejected it for excessive keywords.
+Use the canonical short independence statement instead of recreating that list.
+Generator tests prove the text is current; store review determines acceptance.
+
+The [3.8 hardening ledger](archive/release-hardening-2026-09-30.md) records the
+original failures, preserved package identities, and Chrome-only recovery.

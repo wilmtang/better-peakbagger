@@ -1,8 +1,9 @@
 # Release hardening — 2026-09-30
 
-Status: implementation complete; main CI, the read-only rehearsal, and tagged
-package gates passed. Version 3.8.0 was submitted to both stores on 2026-10-01;
-store approval and live desktop Firefox capture remain unproven.
+Status: hardening changes merged; main CI, the read-only rehearsal, and tagged
+package gates passed. Version 3.8.0 was submitted to both stores; the 2026-10-01
+follow-up confirmed Firefox publicly available and Chrome pending review.
+Live desktop Firefox capture remains unproven.
 
 ## Findings
 
@@ -150,7 +151,28 @@ but an immediate assertion required its separate Network event to arrive too.
   its Open Peakbagger recovery opened the real site at Cloudflare's
   "Performing security verification" page. Provider access cannot proceed
   until the user's existing Firefox session clears that challenge.
-- Both submissions await store approval. Accepted submission is not evidence
-  that 3.8 is publicly available. Chrome's rejection recovery was completed
+- Chrome's 3.8 submission remains pending review at the 2026-10-01 follow-up;
+  its public listing still shows 3.7.2. Chrome's rejection recovery was completed
   manually through the dashboard; the original failed attempt is retained and
   the Chrome-only reconciliation brought the release workflow to success.
+- Source inspection during the documentation follow-up found a narrower
+  recovery limitation: the separate Firefox retry workflow looks for the
+  release run's latest numbered artifact or its legacy name, and does not
+  search earlier numbered attempts. A store-only rerun can leave the package
+  in an earlier attempt. This path was not exercised during 3.8 recovery,
+  because Firefox had already accepted the version and was not retried.
+
+## Follow-up verification — 2026-10-01
+
+- [The public AMO API](https://addons.mozilla.org/api/v5/addons/addon/better-peakbagger/)
+  reported `current_version.version` as `3.8.0` and version ID `6530485`.
+  Firefox public availability is therefore established for this check date.
+- Chrome's signed-in dashboard showed Pending review; the
+  [public listing](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
+  showed version `3.7.2`. These are point-in-time observations.
+- [PR #39](https://github.com/wilmtang/better-peakbagger/pull/39) merged as
+  `8dce946` with two parents and the full `codex/chrome-store-listing-fix` name.
+  Its [main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36834476830)
+  reached terminal success. The original Firefox profile restarted normally;
+  its process command line had no Marionette, remote-debugging, or privileged
+  browser-UI flags, and no owned live-check driver remained running.
