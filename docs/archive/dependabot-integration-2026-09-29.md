@@ -66,8 +66,8 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
 - A hosted Firefox GPU Control-drag timeout exposed a missing camera-settlement
   boundary after the preceding pitch gesture. Both pitch gestures now settle
   before the next operation, and failures report current camera state. Hidden
-  Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; fresh hosted
-  evidence is still required.
+  Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; the latest
+  hosted integration run also passed both copied-runtime GPU checks.
 
 - [Integration CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36674688421)
   passed, and PR #34 merged as `e48cfa1`, preserving both Dependabot branches.
@@ -102,6 +102,39 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   Settings, worker startup, and the ascent analyzer were verified and rendered
   screenshots inspected. The desktop-width ascent layout remains a limitation.
 
+- Main CI then reached a browser error page inside capture readiness. That
+  fixture still depended on Playwright attaching TLS policy after navigation.
+  Capture readiness and multi-summit fixtures now trust only their disposable
+  certificate SPKI at launch, matching the toolbar-capture fixture. Three
+  consecutive hidden Chrome readiness runs, hidden Firefox readiness, the
+  multi-summit flow, 155 project tests, and focused ESLint passed. Request
+  failures and page URLs are retained in future readiness failure output.
+
+- The subsequent hosted multi-summit failure was inside the worker's readiness
+  wait. Its protocol trace showed the staging document loading promptly, but
+  a 50 ms polling timer woke 20,064 ms later, after the ten-second deadline.
+  Browser completion now wakes that wait directly; polling still checks
+  cancellation, and a completion received after the deadline is rejected.
+  A regression that holds the polling timer fails against the old bundle and
+  passes with the event wake-up. All 2,103 Node tests, full lint, hidden
+  Chrome 153/Firefox 157 extension checks, and multi-summit checks passed.
+  [PR #37 CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36807485004)
+  passed every job on `e2ebd67`, including current/minimum Chrome and Firefox,
+  both GPU checks, and the unmodified multi-summit worker. The rebuilt minified
+  archives passed structural and packaged-browser checks; Firefox Android 157
+  also passed again with the corrected worker and inspected screenshots.
+
+- The final documentation run then timed out waiting for the Peak Ascents
+  fixture's full `load` event, before testing the filter. The filter starts at
+  `DOMContentLoaded`; a focused hidden-browser reproduction held the legend
+  image and showed all five controls mounted while the old load gate timed out.
+  Navigation and reload now wait for `DOMContentLoaded` plus the visible
+  filter, and the full verifier deliberately holds that image through both
+  operations. The hosted log did not identify its stalled resource, so that
+  specific resource remains unknown. All 155 project tests, focused ESLint,
+  and the full hidden Chrome 153 verifier passed with the held-image coverage.
+  Fresh hosted verification remains required for this verifier correction.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,
@@ -114,8 +147,8 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
 
 ## Changed but not fully proven
 
-- Hosted CI and store acceptance must be recorded from their actual terminal
-  runs; the local results above do not establish either.
+- The corrected PR's hosted CI is recorded above. Post-merge main CI and store
+  acceptance still need their actual terminal evidence.
 - Live Chrome/Garmin evidence is recorded in
   [the capture validation ledger](capture-chrome-validation-2026-09-29.md).
   A fresh live desktop Firefox capture remains pending: the existing Firefox

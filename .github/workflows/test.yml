@@ -124,7 +124,19 @@ jobs:
         run: npm run verify:capture-flow
 
       - name: Verify sequential multi-summit drafts
-        run: npm run verify:multi-summit
+        shell: bash
+        env:
+          DEBUG: pw:browser
+        run: npm run verify:multi-summit 2>&1 | tee multi-summit.log
+
+      - name: Retain multi-summit failure trace
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: multi-summit-failure-trace
+          path: multi-summit.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   chrome-floor:
     name: Chrome 128 extension smoke
