@@ -124,6 +124,17 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   archives passed structural and packaged-browser checks; Firefox Android 157
   also passed again with the corrected worker and inspected screenshots.
 
+- The final documentation run then timed out waiting for the Peak Ascents
+  fixture's full `load` event, before testing the filter. The filter starts at
+  `DOMContentLoaded`; a focused hidden-browser reproduction held the legend
+  image and showed all five controls mounted while the old load gate timed out.
+  Navigation and reload now wait for `DOMContentLoaded` plus the visible
+  filter, and the full verifier deliberately holds that image through both
+  operations. The hosted log did not identify its stalled resource, so that
+  specific resource remains unknown. All 155 project tests, focused ESLint,
+  and the full hidden Chrome 153 verifier passed with the held-image coverage.
+  Fresh hosted verification remains required for this verifier correction.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,

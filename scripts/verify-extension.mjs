@@ -4007,13 +4007,29 @@ try {
     // --- Ascent-list filter and in-place sort -------------------------------
     {
         const filterPage = await context.newPage();
+        // Filtering starts at DOMContentLoaded, independently of page images.
+        // Hold the legend through navigation and reload to exercise that boundary.
+        let releaseLegend;
+        let pendingLegendLoads = 0;
+        const legendGate = new Promise(resolve => { releaseLegend = resolve; });
+        resources.defer('ascent-filter pending legend', () => releaseLegend());
+        await filterPage.route('**/image/RouteGear/iconlegend.gif', async route => {
+            pendingLegendLoads++;
+            await legendGate;
+            await route.abort().catch(() => {});
+        });
         await filterPage.goto(
             `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`,
-            { waitUntil: 'load' }
+            { waitUntil: 'domcontentloaded' }
         );
+        await waitForCondition(() => pendingLegendLoads > 0, {
+            description: 'pending ascent-filter legend image',
+        });
         const mounted = await filterPage.locator('#pbaf-bar').waitFor({ state: 'visible', timeout: 10000 })
             .then(() => true).catch(() => false);
         check(mounted, 'the Chrome ascent filter never mounted');
+        check(await filterPage.evaluate(() => document.readyState) === 'interactive',
+            'the ascent-filter startup check did not retain its pending page image');
         if (mounted) {
             const before = await filterPage.evaluate(() => ({
                 visible: [...document.querySelectorAll('table.gray tr')]
@@ -4079,8 +4095,13 @@ try {
                     ?.getAttribute('aria-pressed'),
                 announcement: document.querySelector('.pbaf-order-status')?.textContent,
             }));
-            await filterPage.reload({ waitUntil: 'load' });
+            await filterPage.reload({ waitUntil: 'domcontentloaded' });
             await filterPage.locator('#pbaf-bar').waitFor({ state: 'visible', timeout: 10000 });
+            await waitForCondition(() => pendingLegendLoads > 1, {
+                description: 'pending ascent-filter legend after reload',
+            });
+            check(await filterPage.evaluate(() => document.readyState) === 'interactive',
+                'the ascent-filter reload check did not retain its pending page image');
             const persistedOrder = await filterPage.locator('.pbaf-chip-label').allTextContents();
             hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
             await hasBeta.focus();
@@ -4344,6 +4365,7 @@ try {
                 newWindowTopology,
             })}`);
         }
+        releaseLegend();
         await filterPage.close();
     }
 
