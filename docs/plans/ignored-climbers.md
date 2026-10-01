@@ -361,4 +361,6 @@ structure and whitespace, not the proposed runtime or UI.
 - `cb37cd0`: conservative report adapters and a masked detail/media fixture; 3 tests passed. Live read-only authenticated inspection confirmed the Selected Trip Reports section and the individual ascent `Climber:` heading plus dedicated report cell on 2026-10-01. Navigation and prose links remain excluded from author identity.
 - Profile/manager UX: 34 focused favorites/ignored UI tests and 40 options/documentation tests passed. Hidden Chrome screenshots inspected at 1440×1000 / 390×844 (profiles) and 1024×900 / 390×844 (manager), light and dark. Native Peakbagger columns outside the added profile controls retain their existing narrow-page overflow.
 
-Remaining delivery: peak filtering, ascent-list/detail controllers, guarded manual GitHub transfer, genuine two-way sync, final integration/documentation. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.
+Peak report UX: 39 focused source/filter/manifest/fixture-tooling tests passed; hidden real Chrome verification passed. Light/dark peak screenshots inspected at 1440×1000 and 390×844, including favorite/ignore overlap and temporary reveal. The toolbar preserves the narrow peak column.
+
+Remaining delivery: ascent-list/detail controllers, guarded manual GitHub transfer, genuine two-way sync, final integration/documentation. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.

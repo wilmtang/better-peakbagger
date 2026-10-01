@@ -552,6 +552,8 @@ export async function createBrowserFixtureServer({
         ),
     ]));
     const gpxPath = path.join(temporaryRoot, 'browser-verification.gpx');
+    const ignoredPeakHtml = await resources.guard(readFile(
+        path.join(projectRoot, 'test', 'fixtures', 'pages', 'peak-rainier.html'), 'utf8'));
     await resources.guard(writeFile(gpxPath, gpx, 'utf8'));
     const requests = {
         previewPosts: 0,
@@ -697,7 +699,8 @@ export async function createBrowserFixtureServer({
         if (/\/list\.aspx$/i.test(url.pathname)) {
             return send('text/html; charset=utf-8', peakListHtml);
         }
-        if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', peakHtml);
+        if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8',
+            url.searchParams.has('ignored') ? ignoredPeakHtml : peakHtml);
         if (/bigmap\.aspx/i.test(url.pathname)) {
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakBigMapHtml : bigMapHtml);

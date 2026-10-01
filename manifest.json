@@ -259,6 +259,17 @@
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*"
       ],
+      "js": ["content/peak-report-filter.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*"
+      ],
       "js": [
         "content/peak-map.js"
       ],
