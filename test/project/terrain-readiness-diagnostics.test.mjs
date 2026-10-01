@@ -1,9 +1,48 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from '../../scripts/terrain-readiness-diagnostics.mjs';
+
+const pendingDrapeProbe = async ({ intercept = true } = {}) => {
+    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url), 'utf8');
+    const start = source.indexOf('// Regression: a configured raster drape');
+    const end = source.indexOf('// The pending-drape probe is the only reason', start);
+    assert.ok(start >= 0 && end > start, 'the pending-drape probe boundaries are missing');
+    const calls = [];
+    const context = {
+        baseUrl: 'https://www.peakbagger.com:1234/climber/ascent.aspx',
+        basemapRequests: [], // Network delivery can lag Fetch interception.
+        pendingBasemapRequestIds: [],
+        holdBasemapRequests: false,
+        navigate: async () => { calls.push('navigate'); },
+        openTerrainWithTrustedClick: async () => {
+            calls.push('open');
+            if (intercept) context.pendingBasemapRequestIds.push('paused-raster');
+        },
+        waitForCondition: async (predicate, describe) => {
+            if (!await predicate()) throw new Error(await describe());
+        },
+        waitForPageState: async () => { calls.push('active terrain'); },
+        cdp: { call: async (method, args) => { calls.push([method, args.requestId]); } },
+    };
+    await vm.runInNewContext(`(async () => { ${source.slice(start, end)} })()`, context);
+    return { context, calls };
+};
+
+test('pending-drape verification accepts Fetch interception before Network delivery', async () => {
+    const { context, calls } = await pendingDrapeProbe();
+    assert.deepEqual(calls, ['navigate', 'open', 'active terrain', ['Fetch.continueRequest', 'paused-raster']]);
+    assert.equal(context.basemapRequests.length, 0);
+    assert.equal(context.pendingBasemapRequestIds.length, 0);
+    assert.equal(context.holdBasemapRequests, false);
+});
+
+test('pending-drape verification fails when no raster was intercepted', async () => {
+    await assert.rejects(pendingDrapeProbe({ intercept: false }), /did not intercept a raster request/);
+});
 
 test('lifecycle diagnostics retain bounded reasons without capturing terrain payloads', () => {
     let receive;

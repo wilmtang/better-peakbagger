@@ -37,6 +37,12 @@ but an immediate assertion required its separate Network event to arrive too.
 
 - The prior independent corrections are recorded in the integration ledger.
 - PR #37's actual merge has two parents and preserves its full source name.
+- The pending-raster probe uses a fresh Fetch interception after navigation,
+  instead of requiring immediate delivery of a separate Network event. The
+  delayed-Network regression fails against the previous probe and passes with
+  the correction; absent interception still fails. All five focused tests and
+  focused ESLint passed. Hidden Chrome terrain passed on M3 Pro ANGLE Metal at
+  798×448 and 448×448, including pending drape and twelve canvas resizes.
 
 ## Intentionally not changed
 
@@ -47,7 +53,7 @@ but an immediate assertion required its separate Network event to arrive too.
 
 ## Changed but not fully proven
 
-- The hardening work above is pending.
+- Shared fixture trust, failure evidence, and release rehearsal remain pending.
 - Main CI has not yet passed after the latest merge.
 - Live authenticated desktop Firefox capture remains pending; its debugging
   connection is unavailable and its profile has no provider login.

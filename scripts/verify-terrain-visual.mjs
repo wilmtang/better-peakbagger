@@ -1099,11 +1099,13 @@ try {
     // Pause every fixture drape request at the protocol boundary, require the
     // terrain surface to become active anyway, then release the requests before
     // navigating so the test leaves no intercepted work behind.
-    holdBasemapRequests = true;
-    const pendingBasemapBefore = basemapRequests.length;
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+    const pausedBasemapBefore = pendingBasemapRequestIds.length;
+    holdBasemapRequests = true;
     await openTerrainWithTrustedClick(cdp);
-    await waitForCondition(() => pendingBasemapRequestIds.length > 0,
+    // Fetch interception is the authoritative evidence that this probe has
+    // held a new request. Its separate Network event may arrive later.
+    await waitForCondition(() => pendingBasemapRequestIds.length > pausedBasemapBefore,
         () => 'The pending-drape regression did not intercept a raster request');
     await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
@@ -1115,9 +1117,6 @@ try {
             frameOpacity: frame && frame.style.opacity
         };
     })()`, 8000);
-    if (basemapRequests.length <= pendingBasemapBefore) {
-        throw new Error('The pending-drape regression observed no new raster request');
-    }
     holdBasemapRequests = false;
     await Promise.all(pendingBasemapRequestIds.splice(0).map(async requestId => {
         try {
