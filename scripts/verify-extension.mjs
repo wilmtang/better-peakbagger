@@ -47,6 +47,7 @@ import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
@@ -150,6 +151,7 @@ const readDownloadText = async download => {
 };
 
 let context;
+let requestEvidence;
 let primaryError = null;
 let chromeBfcacheResult = null;
 try {
@@ -170,6 +172,7 @@ try {
         ]
     });
     resources.defer('Chrome verification context', () => context.close());
+    requestEvidence = watchFixtureRequests(context, `https://www.peakbagger.com:${port}`);
     const terrainProviderHosts = new Set([
         'tiles.mapterhorn.com',
         'tiles.openfreemap.org',
@@ -5891,6 +5894,9 @@ try {
 } catch (error) {
     primaryError = error;
 }
+if (primaryError || failures.length) await retainBrowserFailure({
+    context, fixtureOrigin: `https://www.peakbagger.com:${port}`, requests: requestEvidence,
+});
 await resources.dispose(primaryError);
 
 if (failures.length) {

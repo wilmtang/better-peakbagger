@@ -53,6 +53,14 @@ but an immediate assertion required its separate Network event to arrive too.
   terrain on M3 Pro ANGLE Metal. The separate LOD and showcase renderers were
   structurally checked but not separately rendered for this change.
 
+- Browser CI retains failure logs and Chrome terrain screenshots for seven
+  days. Chrome records bounded fixture requests, structural page state, and
+  at most three screenshots with form fields masked; Firefox records its current
+  fixture's structural state. Diagnostics preserve the original failure and run
+  before teardown. All 51 focused tests, focused ESLint, and YAML parsing passed.
+  An intentional hidden Chrome 153 failure at 1280×720 retained the original
+  error and a screenshot; visual inspection confirmed form values were masked.
+
 ## Intentionally not changed
 
 - Required checks, zero-advisory policy, GPU renderer assertions, runtime
@@ -62,7 +70,7 @@ but an immediate assertion required its separate Network event to arrive too.
 
 ## Changed but not fully proven
 
-- Failure evidence and release rehearsal remain pending.
+- Release rehearsal remains pending.
 - Main CI has not yet passed after the latest merge.
 - Live authenticated desktop Firefox capture remains pending; its debugging
   connection is unavailable and its profile has no provider login.

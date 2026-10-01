@@ -156,6 +156,18 @@ running Node process has already loaded those inputs.
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
 
+## Browser failure evidence
+
+CI retains browser logs and available terrain screenshots for seven days when
+one of the browser jobs fails. The full Chrome verifier also records up to three
+fixture-page screenshots with form fields masked, bounded pending/failed fixture
+requests, and structural page state. Firefox records its current fixture's
+structural state without changing the failed document to mask a screenshot.
+Queries, fragments, credentials, form values, storage, and request bodies are
+excluded. These diagnostics run before teardown and cannot make a failed check
+pass. For local diagnosis, set `BPB_VERIFY_ARTIFACTS` to an output directory;
+use this only with the isolated fixture verifiers.
+
 ## Commands
 
 `package.json` is strict JSON and cannot carry comments. This table is the

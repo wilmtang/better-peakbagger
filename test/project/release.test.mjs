@@ -554,7 +554,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     // release callers from accidentally selecting only one half.
     assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm test[\s\S]*?run: npm run lint\n/);
     assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
-    assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
+    assert.match(workflow, /chrome:\s*\n[\s\S]*?npm run verify:chrome/);
     assert.match(
         workflow,
         /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
@@ -562,7 +562,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     );
     assert.match(workflow,
         /chrome-required:\s*\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)/);
-    assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
+    assert.match(workflow, /firefox:\s*\n[\s\S]*?npm run verify:firefox/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: 128/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
     assert.match(workflow, /CHROME_BIN: \$\{\{ steps\.chrome-floor\.outputs\.chrome-path \}\}/);
