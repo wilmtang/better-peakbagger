@@ -20,9 +20,9 @@ try {
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
     resources.defer('report photo HTTPS fixture', () => fixture.close());
     const context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true, ignoreHTTPSErrors: true,
+        channel: 'chromium', headless: true,
         viewport: { width: 1280, height: 900 },
-        args: [`--disable-extensions-except=${path.join(root, 'dist')}`, `--load-extension=${path.join(root, 'dist')}`,
+        args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${path.join(root, 'dist')}`, `--load-extension=${path.join(root, 'dist')}`,
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
     });
     resources.defer('report photo browser', () => context.close());

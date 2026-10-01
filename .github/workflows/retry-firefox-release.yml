@@ -44,6 +44,7 @@ jobs:
         run: npm ci
 
       - name: Validate recovery source and release run
+        id: recovery
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -64,14 +65,33 @@ jobs:
           test "$(jq -r .event <<<"$run_json")" = push
           test "$(jq -r .head_sha <<<"$run_json")" = "$tag_commit"
           test "$(jq -r .name <<<"$run_json")" = "Release browser extensions"
+          attempt="$(jq -r .run_attempt <<<"$run_json")"
+          if ! [[ "$attempt" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Release run attempt must be numeric" >&2
+            exit 1
+          fi
+          artifact_name="browser-extension-${TARGET_TAG}-${attempt}"
+          artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/artifacts?per_page=100")"
+          if ! jq -e --arg name "$artifact_name" '.artifacts | any(.name == $name and .expired == false)' <<<"$artifacts" >/dev/null; then
+            # Releases predating package identity use the legacy artifact name.
+            artifact_name="browser-extension-${TARGET_TAG}"
+            jq -e --arg name "$artifact_name" '.artifacts | any(.name == $name and .expired == false)' <<<"$artifacts" >/dev/null
+          fi
+          echo "artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "tag-commit=$tag_commit" >> "$GITHUB_OUTPUT"
 
       - name: Download verified Firefox package
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: browser-extension-${{ inputs.tag }}
+          name: ${{ steps.recovery.outputs.artifact-name }}
           path: release-package
           github-token: ${{ github.token }}
           run-id: ${{ inputs.release_run_id }}
+
+      - name: Verify preserved package identity
+        # Legacy releases have only structural archive evidence.
+        if: steps.recovery.outputs.artifact-name != format('browser-extension-{0}', inputs.tag)
+        run: node scripts/release-package-identity.mjs verify release-package "${TARGET_TAG#v}" "${{ steps.recovery.outputs.tag-commit }}"
 
       - name: Revalidate the preserved Firefox package
         run: |

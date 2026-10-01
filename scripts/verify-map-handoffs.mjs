@@ -145,9 +145,9 @@ try {
         channel: 'chromium',
         headless: true,
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        ignoreHTTPSErrors: true,
         viewport: { width: 1000, height: 760 },
         args: [
+            ...certificate.chromeTrustArgs,
             `--disable-extensions-except=${extensionDir}`,
             `--load-extension=${extensionDir}`,
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1, MAP www.gaiagps.com 127.0.0.1:${port}, MAP backcountry.onxmaps.com 127.0.0.1:${port}, MAP www.alltrails.com 127.0.0.1:${port}, MAP caltopo.com 127.0.0.1:${port}`,

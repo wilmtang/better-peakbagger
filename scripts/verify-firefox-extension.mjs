@@ -44,6 +44,7 @@ import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { retainBrowserFailure } from './browser-verification-evidence.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
@@ -145,6 +146,8 @@ async function evaluatePageRealm(driver, expression) {
 async function main() {
     const resources = createResourceStack();
     let primaryError = null;
+    let driver;
+    let fixture;
     let firefoxBfcacheResult = null;
     try {
         const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-firefox-verify-'));
@@ -167,7 +170,7 @@ async function main() {
         const extensionSource = suppliedSource || prepared.sourceDir;
         const capitolRegressionGpx =
             await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
-        const fixture = await createBrowserFixtureServer({
+        fixture = await createBrowserFixtureServer({
             temporaryRoot,
             analyzerGpx: capitolRegressionGpx,
             analyzerGpxByCase: { scale: createScaleAnalyzerGpx(), suspect: segmentsGpx(suspectSegments()) },
@@ -198,7 +201,7 @@ async function main() {
         options.setAcceptInsecureCerts(true);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
-        const driver = await startFirefoxDriver(options, temporaryRoot);
+        driver = await startFirefoxDriver(options, temporaryRoot);
         resources.defer('Firefox WebDriver', () => quitFirefoxDriver(driver, temporaryRoot));
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
@@ -2977,6 +2980,9 @@ async function main() {
     } catch (error) {
         primaryError = error;
     }
+    if (primaryError && fixture) await retainBrowserFailure({
+        driver, fixtureOrigin: `https://${fixtureHost}:${fixture.port}`,
+    });
     await resources.dispose(primaryError);
 }
 

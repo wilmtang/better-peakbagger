@@ -38,10 +38,10 @@ try {
     const origin = `https://www.peakbagger.com:${server.address().port}`;
     const dist = path.join(projectRoot, 'dist');
     const context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true, ignoreHTTPSErrors: true,
+        channel: 'chromium', headless: true,
         viewport: { width: 1000, height: 760 },
         ignoreDefaultArgs: ['--disable-back-forward-cache', '--enable-unsafe-swiftshader'],
-        args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`,
+        args: [...certificate.chromeTrustArgs, `--disable-extensions-except=${dist}`, `--load-extension=${dist}`,
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
     });
     resources.defer('browser', () => context.close());

@@ -198,7 +198,7 @@ const screenshot = async (port, route, output) => {
         '--virtual-time-budget=2600',
         // The showcase certificate is generated per run for this host only, and
         // the resolver rule below keeps the name pointed at the local server.
-        '--ignore-certificate-errors',
+        ...certificate.chromeTrustArgs,
         `--host-resolver-rules=MAP ${SHOWCASE_HOST} 127.0.0.1`,
         `--screenshot=${output}`,
         `https://${SHOWCASE_HOST}:${port}${route}`

@@ -17,6 +17,11 @@ concurrency:
 permissions:
   contents: read
 
+# Explicit bash preserves verifier failures through tee (pipefail).
+defaults:
+  run:
+    shell: bash
+
 jobs:
   dependency-impact:
     name: Detect dependency impact
@@ -95,6 +100,8 @@ jobs:
     # Chrome 128 remains the Linux floor.
     runs-on: macos-15-intel
     timeout-minutes: 20
+    env:
+      BPB_VERIFY_ARTIFACTS: browser-evidence
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,29 +119,39 @@ jobs:
         run: npx playwright install --with-deps chromium firefox
 
       - name: Verify toolbar popup sizing and recovery layout
-        run: npm run verify:capture-popup
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:capture-popup 2>&1 | tee browser-evidence/verify-capture-popup.log
 
       - name: Verify the real Chrome extension
-        run: npm run verify:chrome
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:chrome 2>&1 | tee browser-evidence/verify-chrome.log
 
       - name: Verify capture with pending page resources
-        run: npm run verify:capture-readiness -- chrome
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:capture-readiness -- chrome 2>&1 | tee browser-evidence/verify-capture-readiness-chrome.log
 
       - name: Verify toolbar-to-draft capture
-        run: npm run verify:capture-flow
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:capture-flow 2>&1 | tee browser-evidence/verify-capture-flow.log
 
       - name: Verify sequential multi-summit drafts
         shell: bash
         env:
           DEBUG: pw:browser
-        run: npm run verify:multi-summit 2>&1 | tee multi-summit.log
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:multi-summit 2>&1 | tee browser-evidence/verify-multi-summit.log
 
-      - name: Retain multi-summit failure trace
+      - name: Retain browser failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: multi-summit-failure-trace
-          path: multi-summit.log
+          name: browser-failure-chrome
+          path: browser-evidence/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -142,6 +159,8 @@ jobs:
     name: Chrome 128 extension smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      BPB_VERIFY_ARTIFACTS: browser-evidence
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -165,12 +184,25 @@ jobs:
       - name: Verify the real Chrome 128 extension
         env:
           CHROME_BIN: ${{ steps.chrome-floor.outputs.chrome-path }}
-        run: npm run verify:chrome
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:chrome 2>&1 | tee browser-evidence/verify-chrome.log
+
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-chrome-floor
+          path: browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   firefox:
     name: Firefox ${{ matrix.firefox }} extension smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      BPB_VERIFY_ARTIFACTS: browser-evidence
     strategy:
       fail-fast: false
       matrix:
@@ -211,12 +243,25 @@ jobs:
       - name: Verify the real Firefox extension
         env:
           FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
-        run: npm run verify:firefox
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:firefox 2>&1 | tee browser-evidence/verify-firefox.log
 
       - name: Verify capture with pending page resources
         env:
           FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
-        run: npm run verify:capture-readiness -- firefox
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:capture-readiness -- firefox 2>&1 | tee browser-evidence/verify-capture-readiness-firefox.log
+
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-firefox-${{ matrix.firefox }}
+          path: browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   chrome-terrain:
     name: Chrome copied-runtime GPU smoke
@@ -226,6 +271,8 @@ jobs:
     # renderer and fails closed if the hosted environment exposes software GL.
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      BPB_VERIFY_ARTIFACTS: browser-evidence
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -243,7 +290,18 @@ jobs:
         run: npx playwright install chromium
 
       - name: Verify copied runtime on Chrome GPU
-        run: npm run terrain:verify
+        run: |
+          mkdir -p browser-evidence
+          npm run terrain:verify -- browser-evidence/terrain 2>&1 | tee browser-evidence/terrain-verify.log
+
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-chrome-terrain
+          path: browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   chrome-required:
     name: Chrome extension smoke
@@ -280,6 +338,8 @@ jobs:
     # Firefox uses ANGLE Metal on macOS; native OpenGL stalls in hosted VMs.
     runs-on: macos-15
     timeout-minutes: 20
+    env:
+      BPB_VERIFY_ARTIFACTS: browser-evidence
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -297,7 +357,18 @@ jobs:
         run: npx playwright install firefox
 
       - name: Verify copied runtime on Firefox GPU
-        run: npm run terrain:verify:firefox
+        run: |
+          mkdir -p browser-evidence
+          npm run terrain:verify:firefox 2>&1 | tee browser-evidence/terrain-verify-firefox.log
+
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-firefox-terrain
+          path: browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
 
   firefox-required:
     # The main ruleset requires this stable name. Matrix job names include the

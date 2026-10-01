@@ -6,7 +6,6 @@
 // its temporary host permission and no-GPS response never enter shipped dist/.
 /* global document */
 import assert from 'node:assert/strict';
-import { createHash, X509Certificate } from 'node:crypto';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
@@ -75,9 +74,7 @@ async function fixtureServer(resources, temporaryRoot) {
     resources.defer('capture fixture proxy', () => closeServer(proxy));
     resources.defer('capture fixture sockets', () => { for (const socket of sockets) socket.destroy(); });
     await listenServer(proxy, 0, '127.0.0.1');
-    const certificateSpki = createHash('sha256').update(new X509Certificate(certificate.cert)
-        .publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
-    return { state, port: proxy.address().port, certificateSpki };
+    return { state, port: proxy.address().port, chromeTrustArgs: certificate.chromeTrustArgs };
 }
 
 async function prepareFixtureExtension(temporaryRoot) {
@@ -223,7 +220,7 @@ async function run(browserName) {
                 // Extension-created tabs may navigate before Playwright can
                 // attach its per-page certificate policy. Trust this run's key
                 // at launch so initial navigation cannot hit a TLS error page.
-                args: [`--ignore-certificate-errors-spki-list=${fixture.certificateSpki}`,
+                args: [...fixture.chromeTrustArgs,
                     `--disable-extensions-except=${source}`, `--load-extension=${source}`],
             });
             resources.defer('capture Chrome context', () => context.close());

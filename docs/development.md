@@ -156,6 +156,18 @@ running Node process has already loaded those inputs.
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
 
+## Browser failure evidence
+
+CI retains browser logs and available terrain screenshots for seven days when
+one of the browser jobs fails. The full Chrome verifier also records up to three
+fixture-page screenshots with form fields masked, bounded pending/failed fixture
+requests, and structural page state. Firefox records its current fixture's
+structural state without changing the failed document to mask a screenshot.
+Queries, fragments, credentials, form values, storage, and request bodies are
+excluded. These diagnostics run before teardown and cannot make a failed check
+pass. For local diagnosis, set `BPB_VERIFY_ARTIFACTS` to an output directory;
+use this only with the isolated fixture verifiers.
+
 ## Commands
 
 `package.json` is strict JSON and cannot carry comments. This table is the
@@ -196,7 +208,7 @@ script is added or removed without updating it.
 | `npm run release:bump X.Y.Z` | From a clean synchronized `main`, validates and stamps release metadata and the UTC changelog date; deliberately creates no commit or tag before verification. |
 | `npm run release:check -- vX.Y.Z` | Validates an exact release tag, synchronized versions, stable Gecko identity, store description, and changelog heading. |
 | `npm run release:check-history` | Fails when already-released changelog sections or tags have been rewritten; CI runs it with full Git history. |
-| `npm run release:check:firefox-version -- X.Y.Z --require-unused` | Authenticates to AMO for a read-only exact-version lookup and fails unless the Firefox version is unused; the guarded Firefox-only recovery workflow runs it before retrying a rejected submission. |
+| `npm run release:check:firefox-version -- X.Y.Z --require-unused` | Authenticates to AMO for a read-only exact-version lookup and fails unless the Firefox version is unused; both release and guarded Firefox-only recovery workflows run it before submission. |
 | `npm run release:metadata:firefox` | Converts the canonical store description into the AMO metadata JSON used for submission. |
 | `npm run release:sign:firefox` | Submits the prepared Firefox source to AMO with the release environment's credentials and metadata. |
 | `npm run release:verify-archive -- ARCHIVE.zip BROWSER` | Checks a Chrome or Firefox archive for required runtime files, licenses, browser-specific manifest policy, and forbidden development artifacts. |
