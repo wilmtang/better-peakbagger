@@ -30,16 +30,25 @@ try {
     const page = await context.newPage();
     await page.addInitScript(() => {
         if (!globalThis.chrome?.storage) return;
+        globalThis.__ignoredFixture = { count: 1500, enabled: false, phase: 'local', error: '' };
         const original = chrome.runtime.sendMessage.bind(chrome.runtime);
         chrome.permissions.contains = async () => true;
         chrome.runtime.sendMessage = async message => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'example', name: 'backup' } };
             if (message.type !== 'GITHUB_IGNORED_LIST') return original(message);
-            if (message.action === 'status') return { ok: true, count: 1500, state: { enabled: false, phase: 'local', error: '' } };
+            const fixture = globalThis.__ignoredFixture;
+            if (message.action === 'status' || message.action === 'check') return { ok: true, count: fixture.count, state: fixture };
             if (message.action === 'dismiss') return { ok: true, state: { phase: 'local' } };
+            if (fixture.hold) return new Promise(resolve => {
+                globalThis.__releaseIgnoredFixture = () => resolve({ ok: true, state: { phase: 'backed-up' } });
+            });
             return { ok: true, preview: { id: 'fixture', kind: message.action === 'restore' ? 'restore' : 'setup',
                 local: Array.from({ length: 1500 }, (_, index) => ({ cid: index === 1499 ? 900002 : index + 1, name: 'Example', addedAt: 1 })),
-                remote: [{ cid: 900002, name: 'GitHub name', addedAt: 2 }, { cid: 900003, name: 'Remote climber', addedAt: 1 }], conflicts: [{ cid: 900002, device: { name: 'Alex Example with a long climber name that wraps without clipping' }, github: null }],
+                remote: [{ cid: 900002, name: 'GitHub name', addedAt: 2 }, { cid: 900003, name: 'Remote climber', addedAt: 1 }],
+                conflicts: [{ cid: 900002,
+                    device: { name: 'Alex Example with a long climber name that wraps without clipping', addedAt: 1759276800000 },
+                    github: { name: 'Alex Example renamed on the other device', addedAt: 1759363200000 } },
+                { cid: 900003, device: null, github: { name: 'Remote climber', addedAt: 1759363200000 } }],
                 impacts: { device: { local: { added: 0, removed: 0 }, remote: { added: 1500, removed: 2 } },
                     github: { local: { added: 2, removed: 1500 }, remote: { added: 0, removed: 0 } },
                     merge: { local: { added: 2, removed: 0 }, remote: { added: 1500, removed: 0 } } } } };
@@ -52,8 +61,7 @@ try {
     });
     await page.locator('#ignored-backup').waitFor({ state: 'visible' });
     await page.waitForFunction(() => !document.getElementById('ignored-backup').disabled);
-    for (const state of ['idle', 'review']) {
-        if (state === 'review') { await page.locator('#ignored-backup').click(); await page.locator('#ignored-review').waitFor({ state: 'visible' }); }
+    const capture = async state => {
         for (const theme of ['light', 'dark']) {
             await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
             for (const [width, height] of [[1024,900], [390,844]]) {
@@ -64,12 +72,39 @@ try {
                 await page.screenshot({ path: path.join(output, `backup-${state}-${theme}-${width}.png`) });
             }
         }
-    }
+    };
+    await capture('idle');
+    await page.locator('#ignored-backup').click(); await page.locator('#ignored-review').waitFor({ state: 'visible' });
+    await capture('review');
     const protocol = await context.newCDPSession(page);
     await protocol.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: false });
     await page.locator('#ignored-review-cancel').focus();
     await page.locator('#ignored-github').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'backup-review-dark-200percent.png') });
-    console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
+    await protocol.send('Emulation.clearDeviceMetricsOverride');
+    await page.locator('#ignored-review-cancel').click(); await page.locator('#ignored-review').waitFor({ state: 'hidden' });
+    const setState = async state => {
+        await page.evaluate(async value => {
+            globalThis.__ignoredFixture = { error: '', count: 1500, enabled: false, ...value };
+            await chrome.storage.local.set({ bpbIgnoredSyncState: { fixture: value } });
+        }, state);
+    };
+    await setState({ phase: 'local', count: 0 });
+    await page.waitForFunction(() => document.getElementById('ignored-github-status').textContent.includes('0 climbers'));
+    await capture('empty');
+    await setState({ phase: 'offline', enabled: true, error: 'Could not reach GitHub. Try again.' });
+    await page.waitForFunction(() => document.getElementById('ignored-github-status').textContent.includes('Offline'));
+    await capture('offline');
+    await setState({ phase: 'pending', enabled: true, hold: true });
+    await page.waitForFunction(() => document.getElementById('ignored-github-status').textContent === 'Pending changes');
+    const before = await page.locator('#ignored-backup').boundingBox();
+    await page.locator('#ignored-backup').click();
+    await page.waitForFunction(() => document.getElementById('ignored-github').getAttribute('aria-busy') === 'true');
+    assert.equal(await page.locator('#ignored-sync-enable').isEnabled(), true, 'busy sync cannot be cancelled');
+    assert.equal((await page.locator('#ignored-backup').boundingBox()).width, before.width, 'sync busy state changed button width');
+    await capture('loading');
+    await page.evaluate(() => { globalThis.__ignoredFixture.phase = 'local'; globalThis.__releaseIgnoredFixture(); });
+    await page.waitForFunction(() => !document.getElementById('ignored-github').hasAttribute('aria-busy'));
+    console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark, loading/offline/empty/conflict/1500-entry states and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
 } catch (error) { failure = error; }
 await resources.dispose(failure);

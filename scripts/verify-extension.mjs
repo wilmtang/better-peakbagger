@@ -4123,7 +4123,7 @@ try {
         const manager = await context.newPage();
         await manager.goto(`chrome-extension://${extensionId}/options/favorites.html`);
         const saved = await manager.evaluate(async () => {
-            const keys = ['bpbIgnoredClimbers', 'bpbPeakReportFilter', 'bpbFavoriteClimbers'];
+            const keys = ['bpbIgnoredClimbers', 'bpbPeakReportFilter', 'bpbFavoriteClimbers', 'bpbBuddyCache'];
             const local = await chrome.storage.local.get(keys);
             const sync = await chrome.storage.sync.get('bpbSettings');
             await chrome.storage.sync.set({ bpbSettings: { ...sync.bpbSettings, favoritesSource: 'custom' } });
@@ -4135,6 +4135,17 @@ try {
             return { local, sync, keys };
         });
         const reports = await context.newPage();
+        const captureReports = async name => {
+            if (!process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) return;
+            for (const theme of ['light', 'dark']) {
+                await reports.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                for (const [width, height] of [[1440,1000], [390,844]]) {
+                    await reports.setViewportSize({ width, height });
+                    await reports.locator('#bpb-peak-report-tools').scrollIntoViewIfNeeded();
+                    await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${name}-${theme}-${width}.png`) });
+                }
+            }
+        };
         try {
             await reports.goto(`https://www.peakbagger.com:${port}/peak.aspx?pid=2296&ignored=1`, { waitUntil: 'domcontentloaded' });
             await reports.locator('#bpb-peak-report-tools').waitFor({ state: 'visible' });
@@ -4146,19 +4157,45 @@ try {
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
             check(await reports.locator('.bpb-report-favorites').getAttribute('aria-pressed') === 'true',
                 'revealing peak reports cleared the favorites preference');
-            if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
-                for (const theme of ['light', 'dark']) {
-                    await reports.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
-                    for (const [width, height] of [[1440,1000], [390,844]]) {
-                        await reports.setViewportSize({ width, height });
-                        await reports.locator('#bpb-peak-report-tools').scrollIntoViewIfNeeded();
-                        await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `peak-${theme}-${width}.png`) });
-                    }
-                }
-            }
+            await captureReports('peak');
             await reports.reload({ waitUntil: 'domcontentloaded' });
             await reports.waitForFunction(() => document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'true'
                 && document.querySelector('.bpb-report-empty')?.hidden === false);
+            await captureReports('peak-overlap');
+            await manager.evaluate(() => chrome.storage.local.set({ bpbFavoriteClimbers: { schemaVersion: 1, entries: [] } }));
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.includes('No selected reports from your favorites'));
+            await captureReports('peak-empty');
+            const authorIds = await reports.locator('#bpb-selected-reports').evaluate(table => [...new Set(
+                [...table.querySelectorAll('a[href]')].flatMap(link => {
+                    const url = new URL(link.href);
+                    return url.pathname.toLowerCase() === '/climber/climber.aspx' ? [Number(url.searchParams.get('cid'))] : [];
+                }))]);
+            await manager.evaluate(ids => chrome.storage.local.set({
+                bpbIgnoredClimbers: { schemaVersion: 1, revision: 101, entries: ids.map(cid => ({ cid, name: 'Example', addedAt: 1 })) },
+                bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: false },
+            }), authorIds);
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.startsWith('All '));
+            await captureReports('peak-all-hidden');
+            let releaseBuddy, buddyRequested = false;
+            const buddyGate = new Promise(resolve => { releaseBuddy = resolve; });
+            resources.defer('ignored peak Buddy response', () => releaseBuddy());
+            await reports.route('**/report/report.aspx?*', async route => {
+                buddyRequested = true; await buddyGate;
+                await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Synthetic unavailable Buddy List' }).catch(() => {});
+            });
+            await manager.evaluate(async () => {
+                await chrome.storage.local.remove('bpbBuddyCache');
+                await chrome.storage.local.set({ bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: true } });
+                const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
+                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, favoritesSource: 'buddies' } });
+            });
+            await waitForCondition(() => buddyRequested, { description: 'ignored peak Buddy request' });
+            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes('Loading climbing buddies'));
+            await captureReports('peak-loading');
+            releaseBuddy();
+            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes("Couldn't load your climbing buddies"));
+            check(await reports.getByRole('button', { name: 'Retry', exact: true }).isVisible(), 'failed peak Buddy refresh offers no retry');
+            await captureReports('peak-failed');
         } finally {
             await reports.close();
             await manager.evaluate(async value => {
@@ -4189,8 +4226,10 @@ try {
                 if (surface === 'detail') {
                     check(await page.locator('#bpb-ascent-report-content').isVisible() === false, 'ignored detail report remained visible');
                     check(await page.locator('#Gmap').isVisible(), 'ignored detail concealed the map');
+                    check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === null, 'ignored detail retained a srcdoc player');
                     await reveal.focus(); await page.keyboard.press('Enter');
                     await page.locator('#bpb-ascent-report-content').waitFor({ state: 'visible' });
+                    check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === '<p>Synthetic player</p>', 'revealed detail lost its srcdoc player');
                     await page.locator('#bpb-ascent-report-content a').first().focus();
                     await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate(node => node.click());
                     check(await page.evaluate(() => document.activeElement?.textContent === 'Show ignored · 1'), 'detail hiding stranded focus');
