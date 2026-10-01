@@ -36,6 +36,21 @@ const mount = () => {
     const status = document.createElement('span'); status.setAttribute('role', 'status');
     const frames = new Map();
     let reveal = false, hidden = false;
+    const suspendFrames = () => {
+        for (const frame of cell.querySelectorAll('iframe')) {
+            const saved = frames.get(frame);
+            const src = frame.getAttribute('src'), srcdoc = frame.getAttribute('srcdoc');
+            if (saved && src === 'about:blank' && srcdoc === null) continue;
+            frames.set(frame, { src: saved && src === 'about:blank' ? saved.src : src,
+                srcdoc: srcdoc ?? saved?.srcdoc ?? null });
+            frame.removeAttribute('srcdoc'); frame.src = 'about:blank';
+        }
+    };
+    const frameObserver = new MutationObserver(() => { if (hidden) suspendFrames(); });
+    frameObserver.observe(cell, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcdoc'] });
+    cell.addEventListener('play', event => {
+        if (hidden && event.target.matches('video,audio')) { try { event.target.pause(); } catch { /* unsupported media */ } }
+    }, true);
     const button = utilityButton(document, 'Show ignored · 1', () => { reveal = !reveal; render(); });
     button.setAttribute('aria-controls', cell.id);
     const retry = utilityButton(document, 'Retry', () => { void observer.refresh(); });
@@ -50,13 +65,12 @@ const mount = () => {
             }
             // Embedded players have no common pause API. Suspend their source
             // while concealed, retaining the same iframe node and original URL.
-            for (const frame of cell.querySelectorAll('iframe')) {
-                frames.set(frame, frame.getAttribute('src')); frame.src = 'about:blank';
-            }
+            suspendFrames();
         }
         if (!conceal && hidden) {
-            for (const [frame, src] of frames) {
-                if (src === null) frame.removeAttribute('src'); else frame.setAttribute('src', src);
+            for (const [frame, saved] of frames) {
+                if (saved.src === null) frame.removeAttribute('src'); else frame.setAttribute('src', saved.src);
+                if (saved.srcdoc === null) frame.removeAttribute('srcdoc'); else frame.setAttribute('srcdoc', saved.srcdoc);
             }
             frames.clear();
         }

@@ -369,4 +369,6 @@ Manual transfer: 140 focused transaction/client/queue/photo/options/manifest tes
 
 Two-way sync: 151 focused transaction/client/queue/photo/options/manifest tests passed. The full suite passed 2,166 tests; lint passed with the existing 7 owned warnings; all 14 scale checks passed. Hidden real Chrome exercised the packaged worker, exact-page routes, semantic Git Data update, independent additions/deletions and a synthetic non-fast-forward retry while preserving unrelated root files. Per-device opt-in, three-way baseline, conflict review, durable journal recovery, post-upload edit rebase, cancellation, 30-second trailing changes alarm, browser startup, rate-limited manager checks and 15-minute periodic checks are implemented. Transfer/sync UI screenshots were inspected in light/dark at desktop/narrow sizes. No live GitHub repository was modified.
 
-Remaining delivery: embedded srcdoc-player suspension edge case, final Firefox integration, documentation and archive. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.
+Embedded-player hardening: 6 detail/adapter tests and hidden Chrome verification passed. Concealment suspends srcdoc as well as URL players, watches report-only iframe enhancements, and pauses media that starts playing while concealed; reveal retains the original outer nodes.
+
+Remaining delivery: final Firefox integration, documentation and archive. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.

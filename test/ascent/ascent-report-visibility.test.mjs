@@ -36,3 +36,23 @@ test('ambiguous authors and empty reports get no placeholder', async () => {
         assert.equal(dom.window.document.querySelector('#bpb-ascent-report-tools'), null); dom.window.close();
     }
 });
+test('srcdoc and dynamically enhanced report players are suspended while hidden', async () => {
+    const source = '<video autoplay src="/example.mp4"></video>';
+    const dom = await load({ prepare: page => {
+        page.window.document.querySelector('iframe[title="Report video"]').setAttribute('srcdoc', source);
+    } });
+    const doc = dom.window.document;
+    await waitFor(dom, () => doc.querySelector('#bpb-ascent-report-content')?.parentElement.style.display === 'none');
+    const cell = doc.querySelector('#bpb-ascent-report-content'), original = cell.querySelector('iframe');
+    assert.equal(original.hasAttribute('srcdoc'), false);
+    const enhanced = doc.createElement('iframe'); enhanced.src = 'https://example.com/enhanced-player'; enhanced.srcdoc = source;
+    cell.append(enhanced);
+    await waitFor(dom, () => enhanced.src === 'about:blank' && !enhanced.hasAttribute('srcdoc'));
+    const button = doc.querySelector('#bpb-ascent-report-tools button'); button.click();
+    assert.equal(original.getAttribute('srcdoc'), source); assert.equal(enhanced.getAttribute('srcdoc'), source);
+    assert.equal(enhanced.src, 'https://example.com/enhanced-player');
+    button.click(); enhanced.srcdoc = '<audio autoplay></audio>';
+    await waitFor(dom, () => !enhanced.hasAttribute('srcdoc'));
+    button.click(); assert.equal(enhanced.srcdoc, '<audio autoplay></audio>');
+    dom.window.close();
+});
