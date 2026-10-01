@@ -8,6 +8,16 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [Release hardening — 2026-09-30](release-hardening-2026-09-30.md) — completed
+  fixture readiness, shared certificate trust, bounded failure evidence, and
+  package identity checks; main CI and package gates passed, and 3.8 was
+  submitted to both stores with approval and live Firefox proof gaps recorded.
+- [Dependabot integration — 2026-09-29](dependabot-integration-2026-09-29.md) —
+  preserved dependency merges, diagnosed required-check failures, runtime and
+  verifier corrections, with live Firefox and store proof gaps recorded.
+- [Firefox Android validation — 2026-09-30](firefox-android-validation-2026-09-30.md) —
+  candidate startup, Settings, and ascent analyzer passed on hidden Android 15
+  with Firefox 157; physical-device and live-provider limits remain explicit.
 - [Chrome capture validation — 2026-09-29](capture-chrome-validation-2026-09-29.md) —
   completed toolbar-to-draft fixtures, recovery fixes, lifecycle checks, and
   live Garmin GPX Preview, with live Strava and remote CI proof gaps recorded.

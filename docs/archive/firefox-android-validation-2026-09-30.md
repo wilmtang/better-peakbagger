@@ -11,6 +11,12 @@
   including the inert draft staging page.
 - Latest retest: 2026-10-01 UTC, after the worker readiness event correction.
 - Archive SHA-256: `dff8a56fa1b7e36b945639e829913697adecfeefe96a4cab3c232b34c9c22317`.
+- The later successful [release rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/36817205927)
+  preserved a Firefox ZIP with SHA-256
+  `d0c7aace8e9b63d3e72bd5aecb2bae7f46696c9c5de01890406593a69f1be153`.
+  Comparing both inventories and every uncompressed entry established that all
+  86 payload files are byte-identical. ZIP container metadata differs; the
+  rehearsal archive itself was not reinstalled on Android.
 - The retest uses Mozilla's documented `automationtest` Android intent extra
   to bypass the onboarding flow in the disposable WebDriver session. See the
   [geckodriver startup workaround](https://github.com/mozilla-firefox/firefox/blob/main/testing/geckodriver/CHANGES.md#0371-2026-07-20-300705c65d1b).

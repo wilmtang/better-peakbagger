@@ -133,7 +133,16 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   operations. The hosted log did not identify its stalled resource, so that
   specific resource remains unknown. All 155 project tests, focused ESLint,
   and the full hidden Chrome 153 verifier passed with the held-image coverage.
-  Fresh hosted verification remains required for this verifier correction.
+  [Final PR #37 CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36809278094)
+  passed all jobs after this correction.
+
+- [Main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36817144694)
+  passed every job on `2177420`, after the independent pending-raster event
+  race was fixed. The same commit passed the actual
+  [release rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/36817205927),
+  including current and floor production-package checks; both store jobs were
+  skipped. The [hardening ledger](release-hardening-2026-09-30.md) records those
+  fixes, package identity, and failure-diagnostic coverage.
 
 ## Intentionally not changed
 
@@ -147,13 +156,18 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
 
 ## Changed but not fully proven
 
-- The corrected PR's hosted CI is recorded above. Post-merge main CI and store
-  acceptance still need their actual terminal evidence.
+- Version 3.8.0 was tagged at `2177420` and submitted to both stores on
+  2026-10-01. The [hardening ledger](release-hardening-2026-09-30.md) records
+  the passing tag package gates, successful Firefox job, and manual Chrome
+  recovery from the old rejected listing. Store approval remains pending.
 - Live Chrome/Garmin evidence is recorded in
   [the capture validation ledger](capture-chrome-validation-2026-09-29.md).
-  A fresh live desktop Firefox capture remains pending: the existing Firefox
-  Marionette connection was refused, and its profile has no Garmin or Strava
-  cookies. An authenticated provider session and controllable browser are
-  needed. Hidden fixture and Android checks do not substitute for this check.
-- The Chrome listing text is regenerated locally. Its dashboard metadata
-  requires a separate update because the package-publishing API cannot edit it.
+  A fresh live desktop Firefox capture remains pending. The authorized restart
+  made the main profile reachable and Garmin ownership visible. The real
+  toolbar action opened the candidate's popup with separately authorized
+  browser-UI debugging; capture then failed to connect to Peakbagger, and
+  recovery reached its Cloudflare security-verification page. The capture
+  result and draft Preview remain unproven until that session clears the
+  challenge. Hidden fixture and Android checks do not substitute for this check.
+- Chrome's corrected 3.8 listing was saved separately in the dashboard because
+  the package-publishing API cannot edit it; its 3.8 draft is pending review.

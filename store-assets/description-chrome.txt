@@ -35,7 +35,7 @@ No analytics, telemetry, ads, or developer data server.
 Read the complete privacy policy:
 https://github.com/wilmtang/better-peakbagger/blob/main/PRIVACY.md
 
-Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an independent, open-source project and is not affiliated with Peakbagger.com, Garmin, Strava, Gaia GPS, onX Backcountry, AllTrails, CalTopo, Mountain Project, ImgBB, GitHub, Mapterhorn, or the linked planning services.
+Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an independent, open-source project and is not affiliated with Peakbagger or the services it connects to.
 
 Source code:
 https://github.com/wilmtang/better-peakbagger

@@ -1,8 +1,5 @@
 # Active plans
 
-- [Release hardening](release-hardening-2026-09-30.md) — implementation in progress;
-  deterministic fixture readiness, shared TLS trust, failure evidence, and
-  a read-only package rehearsal before publication.
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.
