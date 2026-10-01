@@ -13,7 +13,14 @@ const workerBundle = await fs.readFile(new URL('../../dist/background.js', impor
 
 const event = () => {
     const listeners = [];
-    return { listeners, addListener: listener => listeners.push(listener) };
+    return {
+        listeners,
+        addListener: listener => listeners.push(listener),
+        removeListener: listener => {
+            const index = listeners.indexOf(listener);
+            if (index !== -1) listeners.splice(index, 1);
+        },
+    };
 };
 
 const waitForCondition = async (predicate, timeoutMs = 2000) => {
@@ -30,7 +37,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     beforeProviderScript = null, afterProviderScript = null, beforeProviderCapture = null,
     beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
     afterSessionSet = null, clock = null, groupError = null, faults = {},
-    sessionValues = null, browserTabs = null, timerDelayCap = null,
+    sessionValues = null, browserTabs = null, timerDelayCap = null, workerTimer = null,
     peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
     peakbaggerDocumentState = null,
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
@@ -483,9 +490,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         TextEncoder,
         TextDecoder,
         crypto: globalThis.crypto,
-        setTimeout: timerDelayCap === null
+        setTimeout: workerTimer || (timerDelayCap === null
             ? setTimeout
-            : (callback, delay, ...args) => setTimeout(callback, Math.min(delay, timerDelayCap), ...args),
+            : (callback, delay, ...args) => setTimeout(callback, Math.min(delay, timerDelayCap), ...args)),
         clearTimeout,
         BPB_CAPTURE_DIAGNOSTICS: captureDiagnostics,
     });
@@ -601,6 +608,62 @@ test('a stalled staging draft times out and rolls back without orphaning its tab
     assert.deepEqual(harness.removedTabs, [100]);
     assert.deepEqual(harness.values.bpbDraftTabs, {});
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+    assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after timeout');
+});
+
+test('draft completion wakes readiness even when the polling timer is delayed', async () => {
+    let pollScheduled;
+    let releasePoll;
+    const polling = new Promise(resolve => { pollScheduled = resolve; });
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId === 100) tabs.get(tabId).status = 'loading';
+        },
+        workerTimer: (callback, delay, ...args) => {
+            if (delay !== 50) return setTimeout(callback, delay, ...args);
+            const timer = setTimeout(callback, 60_000, ...args).unref();
+            releasePoll = () => { clearTimeout(timer); callback(...args); };
+            pollScheduled();
+            return timer;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    try {
+        await polling;
+        const tab = { ...harness.tabs.get(100), status: 'complete' };
+        harness.tabUpdated.listeners.slice().forEach(listener => listener(100, { status: 'complete' }, tab));
+        const opened = await Promise.race([opening, new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('completion remained blocked on the polling timer')), 500).unref();
+        })]);
+        assert.deepEqual([...opened.tabIds], [100]);
+        assert.match(harness.tabs.get(100).url, /ascentedit/);
+        assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after completion');
+    } finally {
+        clock.now += 20_000;
+        releasePoll?.();
+        await opening;
+    }
+});
+
+test('a draft completion returned after its deadline still rolls back', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            tabs.get(tabId).status = 'complete';
+            clock.now += 10_001;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(opened.error.code, 'draft-open-failed');
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.deepEqual(harness.values.bpbDraftTabs, {});
+    assert.equal(harness.tabUpdated.listeners.length, 1);
 });
 
 test('clearing capture while a staging draft loads cancels its opening transaction', async () => {
@@ -627,6 +690,7 @@ test('clearing capture while a staging draft loads cancels its opening transacti
     assert.deepEqual(harness.removedTabs, [100]);
     assert.deepEqual(harness.values.bpbDraftTabs, {});
     assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after cancellation');
 });
 
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {

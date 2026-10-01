@@ -194,7 +194,8 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
                 return structuredClone(tabs.get(tabId));
             },
             sendMessage: async (tabId, message) => { tabMessages.push({ tabId, message: structuredClone(message) }); return true; },
-            onRemoved: { addListener: () => {} }
+            onRemoved: { addListener: () => {} },
+            onUpdated: { addListener: () => {}, removeListener: () => {} }
         },
         tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
         alarms: { create: () => {}, onAlarm: { addListener: () => {} } }

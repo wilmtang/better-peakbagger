@@ -110,6 +110,16 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   multi-summit flow, 155 project tests, and focused ESLint passed. Request
   failures and page URLs are retained in future readiness failure output.
 
+- The subsequent hosted multi-summit failure was inside the worker's readiness
+  wait. Its protocol trace showed the staging document loading promptly, but
+  a 50 ms polling timer woke 20,064 ms later, after the ten-second deadline.
+  Browser completion now wakes that wait directly; polling still checks
+  cancellation, and a completion received after the deadline is rejected.
+  A regression that holds the polling timer fails against the old bundle and
+  passes with the event wake-up. All 2,103 Node tests, full lint, hidden
+  Chrome 153/Firefox 157 extension checks, and multi-summit checks passed.
+  Fresh hosted evidence remains required for this correction.
+
 ## Intentionally not changed
 
 - Keep required CI checks, signed single-commit Dependabot provenance,

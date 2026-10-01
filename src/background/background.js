@@ -2351,18 +2351,38 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     const waitForDraftTabReady = async (tabId, transaction) => {
         const expiresAt = now() + DRAFT_TAB_READY_TIMEOUT_MS;
         const timeoutError = cause => new Error('The new draft tab did not finish opening.', { cause });
-        while (true) {
-            await transaction.assertCurrent();
-            const remaining = expiresAt - now();
-            if (remaining <= 0) throw timeoutError();
-            const tab = await runBrowserOperation({
-                operation: () => ext.tabs.get(tabId),
-                timeoutMs: remaining,
-                timeoutError,
-            });
-            if (!tab) throw new Error('The new draft tab closed before it was ready.');
-            if (tab.status === 'complete') return;
-            await new Promise(resolve => globalThis.setTimeout(resolve, 50));
+        let onUpdated;
+        let pollTimer = null;
+        const completed = new Promise(resolve => {
+            onUpdated = (updatedTabId, changeInfo, tab) => {
+                if (updatedTabId === tabId && changeInfo.status === 'complete') resolve(tab);
+            };
+        });
+        ext.tabs.onUpdated.addListener(onUpdated);
+        try {
+            while (true) {
+                await transaction.assertCurrent();
+                const remaining = expiresAt - now();
+                if (remaining <= 0) throw timeoutError();
+                const tab = await runBrowserOperation({
+                    operation: () => Promise.race([ext.tabs.get(tabId), completed]),
+                    timeoutMs: remaining,
+                    timeoutError,
+                });
+                if (now() >= expiresAt) throw timeoutError();
+                if (!tab) throw new Error('The new draft tab closed before it was ready.');
+                if (tab.status === 'complete') return;
+                // A worker timer can wake much later than requested. Browser
+                // completion must wake the wait as soon as the document loads.
+                await Promise.race([completed, new Promise(resolve => {
+                    pollTimer = globalThis.setTimeout(resolve, 50);
+                })]);
+                globalThis.clearTimeout(pollTimer);
+                pollTimer = null;
+            }
+        } finally {
+            ext.tabs.onUpdated.removeListener(onUpdated);
+            if (pollTimer !== null) globalThis.clearTimeout(pollTimer);
         }
     };
 
