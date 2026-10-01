@@ -61,6 +61,17 @@ but an immediate assertion required its separate Network event to arrive too.
   An intentional hidden Chrome 153 failure at 1280×720 retained the original
   error and a screenshot; visual inspection confirmed form values were masked.
 
+- The release workflow now supports a read-only manual rehearsal with the
+  same package and current/floor browser gates. Listing metadata is validated
+  early; protected-main tag validation remains mandatory on publication. Both
+  store jobs are skipped on every manual dispatch, including dispatches on tags.
+  Version/commit/SHA-256 identity accompanies the verified archives and is
+  checked after each download. Firefox checks the exact AMO version is unused
+  before submission. Recovery resolves the preserved run attempt and retains
+  the historical artifact format explicitly. All 68 focused tests, focused
+  ESLint, metadata generation, real archive identity checks, and actionlint
+  1.7.12 on all three changed workflows passed.
+
 ## Intentionally not changed
 
 - Required checks, zero-advisory policy, GPU renderer assertions, runtime
@@ -70,7 +81,7 @@ but an immediate assertion required its separate Network event to arrive too.
 
 ## Changed but not fully proven
 
-- Release rehearsal remains pending.
+- The actual remote release rehearsal remains pending.
 - Main CI has not yet passed after the latest merge.
 - Live authenticated desktop Firefox capture remains pending; its debugging
   connection is unavailable and its profile has no provider login.

@@ -1,6 +1,8 @@
 # Browser store releases
 
 Pushing an exact `vMAJOR.MINOR.PATCH` tag starts `.github/workflows/release.yml`.
+Manually dispatching that workflow runs a read-only rehearsal. Both store jobs
+require a tag push and are skipped on every manual dispatch, even one on a tag.
 The workflow verifies separate Firefox and Chrome packages, then submits that
 version independently to the Chrome Web Store and Firefox Add-ons (AMO). The
 canonical Chrome package opens settings in a full tab; the Firefox package
@@ -11,6 +13,35 @@ submissions, not that review has completed.
 The workflow deliberately has no manual dispatch. A store version cannot be
 reused, so publishing an arbitrary branch or rerunning a successful store job
 would create an avoidable partial-release failure.
+
+## Rehearse before tagging
+
+After the release metadata is merged and main CI passes, run:
+
+```bash
+gh workflow run release.yml --ref main
+gh run list --workflow release.yml --event workflow_dispatch --limit 1
+gh run watch RUN_ID --exit-status
+```
+
+Use the returned run ID and confirm **Verify release**, packaged Chrome 128,
+and packaged Firefox 152 finish successfully, with both store jobs skipped.
+This checks listing metadata before expensive work, then runs the same audit,
+tests, lint, production packaging, archive validation, and current/floor browser
+checks used for publication. A rehearsal proves package readiness for its commit;
+a later tag still reruns the gates for its own commit.
+
+Verified artifacts contain the exact two ZIPs and `package-identity.json`, which
+records their version, source commit, and SHA-256 hashes. Each downstream job
+checks that identity before using the downloads. Artifact names include the
+release version and run attempt; failed-job reruns consume the successful verify
+job's output instead of guessing a new artifact name. Do not rebuild an archive
+between verification and submission. Browser failures retain bounded diagnostics
+and logs for seven days; verified packages are retained for thirty days.
+
+Firefox submission also checks the authenticated AMO version immediately before
+signing and stops if it is already used. An ambiguous store response still
+requires reconciliation; do not rerun a mutation to see whether it works.
 
 ## One-time setup
 
