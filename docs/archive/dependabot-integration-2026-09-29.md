@@ -66,8 +66,8 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
 - A hosted Firefox GPU Control-drag timeout exposed a missing camera-settlement
   boundary after the preceding pitch gesture. Both pitch gestures now settle
   before the next operation, and failures report current camera state. Hidden
-  Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; fresh hosted
-  evidence is still required.
+  Firefox 155.0 passed on M3 Pro ANGLE Metal after this change; the latest
+  hosted integration run also passed both copied-runtime GPU checks.
 
 - [Integration CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36674688421)
   passed, and PR #34 merged as `e48cfa1`, preserving both Dependabot branches.
@@ -118,7 +118,11 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
   A regression that holds the polling timer fails against the old bundle and
   passes with the event wake-up. All 2,103 Node tests, full lint, hidden
   Chrome 153/Firefox 157 extension checks, and multi-summit checks passed.
-  Fresh hosted evidence remains required for this correction.
+  [PR #37 CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36807485004)
+  passed every job on `e2ebd67`, including current/minimum Chrome and Firefox,
+  both GPU checks, and the unmodified multi-summit worker. The rebuilt minified
+  archives passed structural and packaged-browser checks; Firefox Android 157
+  also passed again with the corrected worker and inspected screenshots.
 
 ## Intentionally not changed
 
@@ -132,8 +136,8 @@ privileged queue workflow succeeded; required checks correctly prevented merge.
 
 ## Changed but not fully proven
 
-- Hosted CI and store acceptance must be recorded from their actual terminal
-  runs; the local results above do not establish either.
+- The corrected PR's hosted CI is recorded above. Post-merge main CI and store
+  acceptance still need their actual terminal evidence.
 - Live Chrome/Garmin evidence is recorded in
   [the capture validation ledger](capture-chrome-validation-2026-09-29.md).
   A fresh live desktop Firefox capture remains pending: the existing Firefox
