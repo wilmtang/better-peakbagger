@@ -10,9 +10,9 @@ differs only by keeping settings inline in the Add-ons Manager. Store
 review is asynchronous; a successful workflow means both stores accepted the
 submissions, not that review has completed.
 
-The workflow deliberately has no manual dispatch. A store version cannot be
-reused, so publishing an arbitrary branch or rerunning a successful store job
-would create an avoidable partial-release failure.
+A store version cannot be reused. Manual dispatches therefore stop at
+verification; publishing an arbitrary branch or replaying a successful store
+mutation would create an avoidable partial-release failure.
 
 ## Rehearse before tagging
 
