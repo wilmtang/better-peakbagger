@@ -651,3 +651,4 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 #ignored-review .favorites-mirror-confirmation-actions { justify-content: flex-end; flex-wrap: wrap; }
 #ignored-review-confirm { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); border-radius: 8px; padding: 6px 10px; }
 #ignored-restore-undo { margin: 0 18px 16px; }
+.ignored-conflict-version { flex-basis: 100%; }

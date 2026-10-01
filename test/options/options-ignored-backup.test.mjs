@@ -74,3 +74,21 @@ test('sync setup waits for confirmation, labels actual sync, and can be disabled
     assert.equal((await h.engine.status()).state.enabled, false);
     assert.deepEqual(new Set((await h.store.read()).entries.map(e => e.cid)), new Set([1,2]));
 });
+test('metadata conflicts expose both names and do not accept an undecided version', async () => {
+    const h = harness({ remote: [entry(1, 'Remote name')] });
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+        h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
+        chrome.permissions = { contains: async () => true };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true };
+            if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => !el(dom, 'ignored-sync-enable').disabled);
+    el(dom, 'ignored-sync-enable').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
+    assert.match(el(dom, 'ignored-review-conflicts').textContent, /Device: Climber 1/);
+    assert.match(el(dom, 'ignored-review-conflicts').textContent, /GitHub: Remote name/);
+    el(dom, 'ignored-review-confirm').click(); await waitFor(dom, () => /Choose a version/.test(el(dom, 'ignored-github-status').textContent));
+    assert.equal(h.writes, 0); assert.equal((await h.store.read()).entries[0].name, 'Climber 1');
+});

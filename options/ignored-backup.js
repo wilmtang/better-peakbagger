@@ -40,6 +40,12 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
         for (const conflict of preview.conflicts) {
             const label = document.createElement('label'); label.className = 'ignored-conflict';
             label.append(document.createTextNode(`${conflict.device?.name || conflict.github?.name || 'Climber'} · #${conflict.cid} `));
+            for (const [side, entry] of [['Device', conflict.device], ['GitHub', conflict.github]]) {
+                const detail = document.createElement('span'); detail.className = 'desc ignored-conflict-version';
+                const date = new Date(entry?.addedAt);
+                detail.textContent = entry ? `${side}: ${entry.name} · Added ${Number.isFinite(date.getTime()) ? date.toLocaleDateString() : 'date unavailable'}` : `${side}: Removed`;
+                label.append(detail);
+            }
             const select = document.createElement('select'); select.dataset.cid = String(conflict.cid);
             select.setAttribute('aria-label', `Version to keep for climber ${conflict.cid}`);
             for (const [value, name] of [['', 'Choose version…'], ['device', conflict.device ? 'Keep device version' : 'Keep device removal'],
