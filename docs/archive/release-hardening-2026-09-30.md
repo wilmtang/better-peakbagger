@@ -1,5 +1,9 @@
 # Release hardening — 2026-09-30
 
+Status: implementation complete; main CI, the read-only rehearsal, and tagged
+package gates passed. Version 3.8.0 was submitted to both stores on 2026-10-01;
+store approval and live desktop Firefox capture remain unproven.
+
 ## Findings
 
 The 3.8 integration exposed separate product and verification defects. Required
@@ -8,7 +12,7 @@ The worker's delayed readiness timer required a runtime correction. The exact
 lint count, async storage predicates, closed-jsdom timers, stale geometry, TLS
 attachment, page-load waits, and camera settlement were verification defects.
 Their corrections and evidence are recorded in
-[the integration ledger](../archive/dependabot-integration-2026-09-29.md).
+[the integration ledger](dependabot-integration-2026-09-29.md).
 
 PR #37 passed all jobs and merged as `26a6898`. Its
 [main run](https://github.com/wilmtang/better-peakbagger/actions/runs/36809788736)
@@ -72,6 +76,51 @@ but an immediate assertion required its separate Network event to arrive too.
   ESLint, metadata generation, real archive identity checks, and actionlint
   1.7.12 on all three changed workflows passed.
 
+- [PR #38 CI](https://github.com/wilmtang/better-peakbagger/actions/runs/36816697144)
+  passed all jobs on `10412f7`. Its real two-parent merge `2177420` preserves
+  `codex/release-hardening` in the subject. The
+  [main run](https://github.com/wilmtang/better-peakbagger/actions/runs/36817144694)
+  then passed every job, including both GPU checks and all capture flows.
+  Local verification passed 2,118 tests, 14 scale tests, full lint with seven
+  reviewed warnings, the zero-advisory audit, and all 14 immutable changelog
+  sections.
+
+- The actual
+  [read-only rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/36817205927)
+  passed on `2177420b7aa55a270ac9b22aa2ddef6d9506772f`. It built and executed
+  the production archives in hidden Chrome for Testing 153.0.8010.12 and
+  Firefox 157.0, then executed the preserved archives at the Chrome
+  128.0.6613.137 and Firefox 152.0 floors. Both store jobs were skipped.
+  Downloaded artifact `browser-extension-v3.8.0-1` passed the identity verifier
+  for that version and full source commit. Its Firefox ZIP has SHA-256
+  `d0c7aace8e9b63d3e72bd5aecb2bae7f46696c9c5de01890406593a69f1be153`;
+  all 86 entry contents match the Android-tested archive recorded in the
+  [Android ledger](firefox-android-validation-2026-09-30.md).
+
+- Tag `v3.8.0` points to `2177420b7aa55a270ac9b22aa2ddef6d9506772f`.
+  The [tagged release run](https://github.com/wilmtang/better-peakbagger/actions/runs/36821357389)
+  passed source, test, audit, listing, packaged-browser, and browser-floor gates.
+  Firefox submission succeeded and produced
+  [AMO version 6530485](https://addons.mozilla.org/en-US/developers/addon/better-peakbagger/versions/6530485),
+  awaiting approval. Chrome stopped before upload because its rejected 3.7.2
+  revision was still present. The full release run therefore remains failed;
+  its Chrome job is not evidence of a 3.8 upload.
+
+- Chrome's dashboard identified excessive description keywords (Yellow Argon)
+  in the old service-name disclaimer. The source listing now uses a concise
+  independence statement. The regenerated 3.8 description was saved in the
+  signed-in Chrome dashboard. The exact tag-run Chrome ZIP was uploaded,
+  the draft version was confirmed as 3.8.0, and submission returned
+  "Your extension was submitted for review." The
+  [dashboard](https://chrome.google.com/webstore/devconsole/77aee95a-922b-40c1-a3cd-fe17c47d77fe/kndjohodnpdoejmjkiiakejfehoodedn/edit/status)
+  then showed Pending review; automatic publication after approval is enabled.
+  Downloaded artifact `browser-extension-v3.8.0-1` passed identity verification
+  against the tag commit. Its Chrome ZIP SHA-256 is
+  `3602d72f492e6408d9103b0d232868a96758fdd26a011099d8762714993c3706`;
+  its Firefox ZIP SHA-256 is
+  `8fdddda4287b4d0fc3f423393b1a66fb0b0f6434d1d6076ce51e633929697f1f`.
+  No package was rebuilt, tag moved, or successful Firefox submission retried.
+
 ## Intentionally not changed
 
 - Required checks, zero-advisory policy, GPU renderer assertions, runtime
@@ -81,8 +130,12 @@ but an immediate assertion required its separate Network event to arrive too.
 
 ## Changed but not fully proven
 
-- The actual remote release rehearsal remains pending.
-- Main CI has not yet passed after the latest merge.
-- Live authenticated desktop Firefox capture remains pending; its debugging
-  connection is unavailable and its profile has no provider login.
-- Version 3.8 has not been tagged or submitted to either store.
+- Live authenticated desktop Firefox capture remains pending. The authorized
+  main-profile restart restored tabs, Garmin ownership was visible, and the
+  production candidate was installed temporarily. With separately authorized
+  browser-UI debugging, the actual toolbar action opened the extension popup;
+  summit results, draft filling, and GPX Preview were not established. Firefox
+  was subsequently closed, leaving no privileged debugging process running.
+- Both submissions await store approval. Accepted submission is not evidence
+  that 3.8 is publicly available. Chrome's rejection recovery was completed
+  manually through the dashboard; the original failed workflow is retained.
