@@ -100,6 +100,23 @@ try {
     await first.goto('https://www.peakbagger.com/climber/ascentedit.aspx?pid=2829&cid=900001');
     await first.locator('#bpb-report-editor').waitFor();
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+    await worker.evaluate(() => {
+        const get = chrome.tabs.get.bind(chrome.tabs);
+        chrome.tabs.get = async (...args) => {
+            const start = Date.now();
+            const result = await get(...args);
+            console.debug('Readiness probe: tabs.get', { start, elapsed: Date.now() - start, id: result?.id, status: result?.status });
+            return result;
+        };
+        const timer = globalThis.setTimeout.bind(globalThis);
+        globalThis.setTimeout = (callback, delay, ...args) => {
+            const start = Date.now();
+            return timer(() => {
+                if (delay <= 100) console.debug('Readiness probe: timer', { start, delay, elapsed: Date.now() - start });
+                callback(...args);
+            }, delay);
+        };
+    });
     const control = await context.newPage();
     await control.goto(`chrome-extension://${new URL(worker.url()).host}/options/options.html`);
     await control.evaluate(() => {
