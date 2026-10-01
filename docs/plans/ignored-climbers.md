@@ -1,6 +1,6 @@
 # Ignored climbers and report filtering
 
-Status: proposed, 2026-10-01. Documentation only; no runtime implementation yet.
+Status: implementation in progress, 2026-10-01. See the delivery record below.
 
 ## Outcome and scope
 
@@ -353,3 +353,12 @@ sync is missing. Preserve this record and unresolved verification gaps on archiv
 Planning validation on 2026-10-01: `node --test test/project/documentation.test.mjs`
 passed all 3 tests; `git diff --check` passed. These checks validate documentation
 structure and whitespace, not the proposed runtime or UI.
+
+## Implementation delivery record
+
+- `4b6f42e`: pure storage/backup, visibility and three-way merge contracts; 5 focused tests passed.
+- `81c9e3b`: serialized worker mutations and local peak preference; 10 model/store tests and 208 background/manifest tests passed; hidden real Chrome verification passed.
+- `cb37cd0`: conservative report adapters and a masked detail/media fixture; 3 tests passed. Live read-only authenticated inspection confirmed the Selected Trip Reports section and the individual ascent `Climber:` heading plus dedicated report cell on 2026-10-01. Navigation and prose links remain excluded from author identity.
+- Profile/manager UX: 34 focused favorites/ignored UI tests and 40 options/documentation tests passed. Hidden Chrome screenshots inspected at 1440×1000 / 390×844 (profiles) and 1024×900 / 390×844 (manager), light and dark. Native Peakbagger columns outside the added profile controls retain their existing narrow-page overflow.
+
+Remaining delivery: peak filtering, ascent-list/detail controllers, guarded manual GitHub transfer, genuine two-way sync, final integration/documentation. Live GitHub, Firefox feature screenshots, 200% zoom, native focus and screen-reader speech remain unproven.

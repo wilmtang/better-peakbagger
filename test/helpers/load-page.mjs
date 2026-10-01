@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { createFavoritesStore, favoritesStore } from '../../src/background/favorites-store.js';
+import { createIgnoredStore } from '../../src/background/ignored-store.js';
 import { settingsSchema } from '../../src/settings/settings-schema.js';
 
 const require = createRequire(import.meta.url);
@@ -92,6 +93,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
     let draftGeneration = 0;
     let terrainActivationSequence = 0;
     const favoriteMutations = createFavoritesStore({ storage: chrome.storage.local });
+    const ignoredMutations = createIgnoredStore({ storage: chrome.storage.local });
     const nextDraftGeneration = () => `${Date.now()}:${++draftGeneration}:test-generation`;
     const draftMutation = message => {
         const operation = draftMutationQueue.then(async () => {
@@ -215,7 +217,11 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
     ]);
     const routedSendMessage = (message, callback) => {
         let operation;
-        if (message?.type === favoritesStore.MESSAGE_TYPE) {
+        if (message?.type === 'IGNORED_MUTATE') {
+            operation = ignoredMutations.mutate(message.mutation);
+        } else if (message?.type === 'PEAK_REPORT_PREFERENCE') {
+            operation = ignoredMutations.preference(message.favoritesOnly);
+        } else if (message?.type === favoritesStore.MESSAGE_TYPE) {
             chrome._favoriteMutations.push(structuredClone(message.mutation));
             operation = favoriteMutations.mutate(message.mutation);
         } else if (DRAFT_MUTATION_TYPES.has(message?.type)) {

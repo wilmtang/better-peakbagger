@@ -268,7 +268,7 @@ test('settings are grouped by the surface they affect', async () => {
         'Activity creation',
         'Map & GPX chart',
         'Ascent beta filter',
-        'Favorite climbers',
+        'Climber lists',
         'Backup & sync',
         'About'
     ]);

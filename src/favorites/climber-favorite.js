@@ -207,7 +207,7 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         style.id = 'bpb-climber-favorite-style';
         style.textContent = `
 #TitleLabel.bpb-climber-favorite-host { display: inline-flex; align-items: center; justify-content: center;
-    flex-wrap: nowrap; gap: 8px; max-width: 100%; vertical-align: middle; }
+    flex-wrap: wrap; gap: 8px; max-width: 100%; vertical-align: middle; }
 #TitleLabel.bpb-climber-favorite-host > h1 { flex: 0 1 auto; min-width: 0; }
 #bpb-climber-favorite { appearance: none; display: inline-flex; flex: 0 0 auto; align-items: center;
     justify-content: center; width: 30px; height: 30px; margin: 0; padding: 0 0 2px;

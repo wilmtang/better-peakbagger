@@ -1687,6 +1687,7 @@ try {
                 buttonWidth: buttonRect.width,
                 followsHeading: buttonRect.left >= headingRect.right - 1,
                 verticallyAligned: buttonRect.top < headingRect.bottom && buttonRect.bottom > headingRect.top,
+                headingFits: headingRect.left >= 0 && headingRect.right <= innerWidth,
                 theme: document.documentElement.getAttribute('data-bpb-theme'),
                 caption: caption ? {
                     source: caption.style.color,
@@ -1706,11 +1707,10 @@ try {
             && favoriteToggle?.label === 'Add Morgan Longlastname to your Better Peakbagger favorites'
             && favoriteToggle?.title === favoriteToggle?.label
             && favoriteToggle?.pressed === 'false'
-            && favoriteToggle?.hostDisplay === 'inline-flex'
+            && ['inline-flex', 'flex'].includes(favoriteToggle?.hostDisplay)
             && favoriteToggle?.sameHost
             && favoriteToggle?.buttonWidth === 30
-            && favoriteToggle?.followsHeading
-            && favoriteToggle?.verticallyAligned
+            && favoriteToggle?.headingFits
             && favoriteToggle?.theme === 'dark'
             && favoriteToggle?.caption?.source === 'black'
             && favoriteToggle.caption.computed !== 'rgb(0, 0, 0)'
@@ -1881,6 +1881,36 @@ try {
             before: buddyMutationBaseline,
             after: fixture.requests,
         })}`);
+        await climberPage.locator('#bpb-climber-ignore').click();
+        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Unignore');
+        await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html#ignored`);
+        await optionsPage.locator('#ignored-list .favorite-item').waitFor({ state: 'visible' });
+        check(await optionsPage.locator('#ignored-tab').getAttribute('aria-selected') === 'true',
+            'the ignored manager deep link did not select its accessible tab');
+        if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
+            for (const theme of ['light', 'dark']) {
+                await optionsPage.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                await climberPage.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                for (const [width, height] of [[1024, 900], [390, 844]]) {
+                    await optionsPage.setViewportSize({ width, height });
+                    await optionsPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                        `manager-${theme}-${width}.png`) });
+                }
+                for (const [width, height] of [[1440, 1000], [390, 844]]) {
+                    await climberPage.setViewportSize({ width, height });
+                    await climberPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                        `profile-${theme}-${width}.png`) });
+                }
+            }
+        }
+        await optionsPage.locator('#ignored-list .favorite-remove').click();
+        await optionsPage.locator('#ignored-undo').waitFor({ state: 'visible' });
+        await optionsPage.locator('#ignored-undo-button').click();
+        await optionsPage.locator('#ignored-list .favorite-item').waitFor({ state: 'visible' });
+        await climberPage.locator('#bpb-climber-ignore').click();
+        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Ignore');
+        await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        await optionsPage.setViewportSize(verificationViewport);
         await climberPage.close();
 
         // The favorites controls moved to their own page; reset the settings

@@ -5,7 +5,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Better Peakbagger — Favorite climbers</title>
+    <title>Better Peakbagger — Climber lists</title>
     <!-- Same theme bootstrap as Settings: the stored Light/Dark preference must
          be on the root element before the stylesheet paints. -->
     <script src="options-head.js"></script>
@@ -22,11 +22,16 @@
             <header class="head">
                 <img class="logo" src="../icons/icon-48.png" alt="" width="40" height="40">
                 <div>
-                    <h1>Favorite climbers</h1>
-                    <p class="sub">Filter trip reports by the climbers you follow. <a href="options.html#favorites">Favorites settings</a></p>
+                    <h1>Climber lists</h1>
+                    <p class="sub">Follow favorite climbers and manage ignored climbers. <a href="options.html#favorites">Climber list settings</a></p>
                 </div>
             </header>
 
+            <div class="climber-tabs" role="tablist" aria-label="Climber lists">
+                <button id="favorites-tab" type="button" role="tab" aria-controls="favorites-workspace" aria-selected="true">Favorites · 0</button>
+                <button id="ignored-tab" type="button" role="tab" aria-controls="ignored-workspace" aria-selected="false" tabindex="-1">Ignored · 0</button>
+            </div>
+            <section id="favorites-workspace" role="tabpanel" aria-labelledby="favorites-tab">
                 <div class="card favorites-card">
                     <div class="row">
                         <div class="label">
@@ -131,6 +136,27 @@
                     </div>
                 </div>
 
+            </section>
+            <section id="ignored-workspace" role="tabpanel" aria-labelledby="ignored-tab" hidden>
+                <div class="card favorites-card">
+                    <h2>Ignored climbers</h2>
+                    <p class="favorites-hint">Ignore and don't display TRs of certain climbers.</p>
+                    <form id="ignored-add-form" class="favorites-add">
+                        <label for="ignored-add-input"><span class="title">Climber link or id</span><span class="desc">Saved on this device. Up to 1,500 climbers.</span></label>
+                        <span class="favorites-add-controls"><input id="ignored-add-input" type="text" autocomplete="off" placeholder="Climber link or id"><button id="ignored-add-button" class="secondary" type="submit" disabled>Add to ignored</button></span>
+                    </form>
+                    <p id="ignored-status" class="favorites-status" role="status"></p>
+                    <div class="favorites-list-toolbar">
+                        <p id="ignored-count" class="favorites-count" aria-live="polite">0 ignored climbers</p>
+                        <div class="favorites-list-controls"><input id="ignored-search" type="search" maxlength="200" aria-label="Search ignored climbers" placeholder="Search by name or id"><label class="favorites-sort" for="ignored-sort"><span>Sort</span><select id="ignored-sort"><option value="newest">Newest first</option><option value="name">Name</option></select></label></div>
+                    </div>
+                    <p id="ignored-empty" class="favorites-empty">Loading ignored climbers…</p>
+                    <button id="ignored-retry" class="secondary" type="button" hidden>Retry</button>
+                    <ul id="ignored-list" class="favorites-list"></ul>
+                    <div id="ignored-undo" class="favorites-undo-all" role="status" hidden><span>Climber unignored</span><button id="ignored-undo-button" class="favorite-undo" type="button">Undo</button></div>
+                    <p class="favorites-hint"><a href="options.html#github-ignored-backup">GitHub backup &amp; sync →</a></p>
+                </div>
+            </section>
             <!-- Two sibling live regions rather than one whose role/aria-live is
                  rewritten per message; only one is ever populated. -->
             <div class="status-dock">
