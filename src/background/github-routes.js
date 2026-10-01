@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createClimberListSync } from './climber-list-sync.js';
+import * as Ignored from '../favorites/ignored-climbers.js';
 import { createIgnoredStore } from './ignored-store.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
@@ -823,7 +824,7 @@ export function createGithubRoutes({
 
     const ignoredSync = createClimberListSync({ storage: ext.storage.local,
         store: ignoredStore || createIgnoredStore({ storage: ext.storage.local }), writeQueue,
-        getAccess: connectedGithubClient, now });
+        getAccess: connectedGithubClient, alarms: ext.alarms, now });
 
     // Profile backup preflight adds the repository's ascent-folder leaves to
     // the ordinary status. This stays a dedicated message so viewing a saved
@@ -1897,7 +1898,8 @@ export function createGithubRoutes({
     const onStorageChanged = (changes, area) => {
         if (area !== 'local') return;
         const connectionChanged = !!(changes[GithubAuth.STORAGE_KEY] || changes[GithubAuth.EPOCH_KEY]);
-        if (connectionChanged) ignoredSync.cancel();
+        if (connectionChanged) ignoredSync.connectionChanged();
+        if (changes[Ignored.IGNORED_KEY]) void ignoredSync.localChanged().catch(() => {});
         if (!connectionChanged && !changes[Favorites.FAVORITES_KEY]) return;
         void Settings.get().then(settings => {
             if (connectionChanged && settings.autoSettingsBackup) settingsAutoBackup.schedule();
@@ -1920,6 +1922,8 @@ export function createGithubRoutes({
     };
 
     const onAlarm = name => {
+        const ignoredOperation = ignoredSync.onAlarm(name);
+        if (ignoredOperation) return ignoredOperation;
         if (name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
         if (name === FAVORITES_BACKUP_ALARM) void favoritesAutoBackup.fire();
         if (name === PHOTO_BACKUP_ALARM) return firePhotoAutoBackup();
@@ -1933,6 +1937,7 @@ export function createGithubRoutes({
         onSettingsChanged,
         onAlarm,
         startPhotoBackupWatchdog,
+        startIgnoredSync: ignoredSync.start,
         validateImportedConnection,
         isExtensionOnly: routeTable.isExtensionOnly,
         isPhotoPage,

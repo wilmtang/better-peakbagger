@@ -649,7 +649,7 @@ const createGithubClient = ({
                     expectedSize: existing.size ?? null,
                 })
             : null;
-        const content = await update(current);
+        const content = await update(current, { head: head.baseCommitSha, fileSha: existing?.sha || null, branch: resolved.targetBranch });
         if (typeof content !== 'string') {
             throw new TypeError('github client root file update must return string content');
         }
@@ -660,6 +660,7 @@ const createGithubClient = ({
                 message,
                 path: filePath,
                 unchanged: true,
+                branch: resolved.targetBranch,
             };
         }
         const result = await commitRootEntries({
@@ -676,6 +677,7 @@ const createGithubClient = ({
             message: result.message,
             path: filePath,
             unchanged: false,
+            branch: resolved.targetBranch,
         };
     };
 

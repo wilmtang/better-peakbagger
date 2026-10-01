@@ -4037,6 +4037,87 @@ try {
         await peakPage.close();
     }
 
+    // Real worker routes and Git Data client; all GitHub traffic stays synthetic.
+    {
+        const manager = await context.newPage();
+        await manager.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const saved = await manager.evaluate(async () => {
+            const keys = ['bpbIgnoredClimbers', 'bpbIgnoredSyncState'];
+            const previous = await chrome.storage.local.get(keys);
+            await chrome.storage.local.remove('bpbIgnoredSyncState');
+            await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1,
+                entries: [{ cid: 900002, name: 'Device climber', addedAt: 1 }] } });
+            return { keys, previous };
+        });
+        await worker.evaluate(() => {
+            const entry = cid => ({ cid, name: `Example ${cid}`, addedAt: 1 });
+            const backup = entries => JSON.stringify({ kind: 'better-peakbagger-ignored-climbers', schemaVersion: 1,
+                exportedAt: '2026-10-01T12:00:00.000Z', entries });
+            const mock = globalThis.__bpbIgnoredGithub = { head: 0, proposals: new Map(), commits: new Map(), writes: 0, race: false,
+                files: { 'ignored-climbers.json': backup([entry(900003)]), 'unrelated.txt': 'preserve this file' }, backup, entry };
+            globalThis.__bpbIgnoredOriginalFetch = globalThis.fetch;
+            globalThis.fetch = async (raw, init = {}) => {
+                const url = new URL(String(raw));
+                if (url.hostname !== 'api.github.com') return globalThis.__bpbIgnoredOriginalFetch(raw, init);
+                const method = init.method || 'GET', endpoint = url.pathname.replace('/repos/fixture/backup', '');
+                const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+                if (method === 'GET' && endpoint === '') return reply({ default_branch: 'main', permissions: { push: true } });
+                if (method === 'GET' && endpoint === '/git/ref/heads/main') return reply({ object: { sha: `C${mock.head}` } });
+                if (method === 'GET' && endpoint.startsWith('/git/commits/')) return reply({ tree: { sha: `T${mock.head}` } });
+                if (method === 'GET' && endpoint.startsWith('/git/trees/')) return reply({ tree: Object.entries(mock.files).map(([path, text]) =>
+                    ({ path, type: 'blob', mode: '100644', sha: `B:${path}`, size: new TextEncoder().encode(text).length })) });
+                if (method === 'GET' && endpoint.startsWith('/git/blobs/')) {
+                    const text = mock.files[decodeURIComponent(endpoint.slice('/git/blobs/B:'.length))];
+                    return init.headers?.Accept?.includes('raw') || init.headers?.accept?.includes('raw')
+                        ? new Response(text, { status: 200 }) : reply({ encoding: 'base64', content: btoa(text) });
+                }
+                const body = init.body ? JSON.parse(init.body) : {};
+                if (method === 'POST' && endpoint === '/git/trees') {
+                    const sha = `proposal${mock.proposals.size}`; mock.proposals.set(sha, body.tree); return reply({ sha }, 201);
+                }
+                if (method === 'POST' && endpoint === '/git/commits') {
+                    const sha = `commit${mock.commits.size}`; mock.commits.set(sha, body.tree); return reply({ sha }, 201);
+                }
+                if (method === 'PATCH' && endpoint === '/git/refs/heads/main') {
+                    if (mock.race) {
+                        mock.race = false; const entries = JSON.parse(mock.files['ignored-climbers.json']).entries;
+                        mock.files['ignored-climbers.json'] = backup([...entries, entry(900005)]); mock.head++;
+                        return reply({ message: 'Update is not a fast forward' }, 422);
+                    }
+                    if (body.force !== false) throw new Error('mock refuses a forced ref update');
+                    for (const file of mock.proposals.get(mock.commits.get(body.sha))) mock.files[file.path] = file.content;
+                    mock.head++; mock.writes++; return reply({ object: { sha: body.sha } });
+                }
+                throw new Error(`Unexpected synthetic GitHub request: ${method} ${endpoint}`);
+            };
+        });
+        const send = message => manager.evaluate(value => chrome.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', ...value }), message);
+        try {
+            const prepared = await send({ action: 'setup' });
+            check(prepared.ok && prepared.preview?.mergeCount === 2, `real worker sync setup failed: ${JSON.stringify(prepared)}`);
+            const confirmed = await send({ action: 'confirm', reviewId: prepared.preview?.id, mode: 'merge' });
+            check(confirmed.ok && confirmed.state?.enabled && confirmed.list?.entries.length === 2,
+                `real worker sync confirmation failed: ${JSON.stringify(confirmed)}`);
+            await manager.evaluate(() => chrome.runtime.sendMessage({ type: 'IGNORED_MUTATE', mutation: { kind: 'remove', cid: 900002 } }));
+            await worker.evaluate(() => { const mock = globalThis.__bpbIgnoredGithub;
+                mock.files['ignored-climbers.json'] = mock.backup([...JSON.parse(mock.files['ignored-climbers.json']).entries, mock.entry(900004)]); mock.head++; });
+            const synced = await send({ action: 'sync' });
+            check(synced.ok && JSON.stringify(synced.list.entries.map(entry => entry.cid).sort()) === '[900003,900004]',
+                `real worker did not merge remote additions and local deletions: ${JSON.stringify(synced)}`);
+            await manager.evaluate(() => chrome.runtime.sendMessage({ type: 'IGNORED_MUTATE', mutation: { kind: 'add', entry: { cid: 900006, name: 'New local', addedAt: 1 } } }));
+            await worker.evaluate(() => { globalThis.__bpbIgnoredGithub.race = true; });
+            const raced = await send({ action: 'sync' });
+            const remote = await worker.evaluate(() => globalThis.__bpbIgnoredGithub.files);
+            check(raced.ok && JSON.stringify(JSON.parse(remote['ignored-climbers.json']).entries.map(entry => entry.cid).sort()) === '[900003,900004,900005,900006]'
+                && remote['unrelated.txt'] === 'preserve this file', `real worker ref retry lost membership or unrelated files: ${JSON.stringify(raced)}`);
+        } finally {
+            await send({ action: 'disable' });
+            await worker.evaluate(() => { globalThis.fetch = globalThis.__bpbIgnoredOriginalFetch; delete globalThis.__bpbIgnoredGithub; delete globalThis.__bpbIgnoredOriginalFetch; });
+            await manager.evaluate(async value => { await chrome.storage.local.remove(value.keys); await chrome.storage.local.set(value.previous); }, saved);
+            await manager.close();
+        }
+    }
+
     // --- Ascent-list filter and in-place sort -------------------------------
     {
         const manager = await context.newPage();

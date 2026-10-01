@@ -7,6 +7,7 @@ import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js
 import { isPeakbaggerUrl } from '../src/peakbagger/peakbagger-origin.js';
 
 export const initIgnored = api => {
+    void api.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', action: 'check' }).catch(() => {});
     const el = id => document.getElementById(id);
     const listEl = el('ignored-list');
     if (!listEl) return;

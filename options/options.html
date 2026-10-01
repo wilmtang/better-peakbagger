@@ -591,7 +591,10 @@
                             <button id="ignored-restore" class="secondary" type="button">Restore…</button>
                         </div>
                     </div>
-                    <p class="desc">Backup uploads climber IDs and names to your connected repository. Public repositories and prior Git history may expose this list.</p>
+                    <div class="row"><label class="check" for="ignored-sync-enable">
+                        <input type="checkbox" id="ignored-sync-enable"><span>Sync ignored climbers with GitHub</span>
+                    </label></div>
+                    <p class="desc">Backup and sync upload climber IDs and names to your connected repository. Public repositories and prior Git history may expose this list.</p>
                     <div class="favorites-mirror-confirmation" id="ignored-review" role="alertdialog"
                         aria-labelledby="ignored-review-title" aria-describedby="ignored-review-impact" tabindex="-1" hidden>
                         <div class="ignored-review-content">

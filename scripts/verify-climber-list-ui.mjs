@@ -38,7 +38,8 @@ try {
             if (message.action === 'status') return { ok: true, count: 1500, state: { enabled: false, phase: 'local', error: '' } };
             if (message.action === 'dismiss') return { ok: true, state: { phase: 'local' } };
             return { ok: true, preview: { id: 'fixture', kind: message.action === 'restore' ? 'restore' : 'setup',
-                local: [], remote: [], conflicts: [{ cid: 900002, device: { name: 'Alex Example with a long climber name that wraps without clipping' }, github: null }],
+                local: Array.from({ length: 1500 }, (_, index) => ({ cid: index === 1499 ? 900002 : index + 1, name: 'Example', addedAt: 1 })),
+                remote: [{ cid: 900002, name: 'GitHub name', addedAt: 2 }, { cid: 900003, name: 'Remote climber', addedAt: 1 }], conflicts: [{ cid: 900002, device: { name: 'Alex Example with a long climber name that wraps without clipping' }, github: null }],
                 impacts: { device: { local: { added: 0, removed: 0 }, remote: { added: 1500, removed: 2 } },
                     github: { local: { added: 2, removed: 1500 }, remote: { added: 0, removed: 0 } },
                     merge: { local: { added: 2, removed: 0 }, remote: { added: 1500, removed: 0 } } } } };

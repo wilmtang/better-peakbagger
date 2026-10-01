@@ -46,3 +46,31 @@ test('ignored GitHub routes accept only exact packaged settings and manager page
     }
     assert.equal(h.writes, 0);
 });
+
+test('sync setup waits for confirmation, labels actual sync, and can be disabled during upload', async () => {
+    const h = harness({ remote: [entry(2)] });
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+        h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
+        chrome.permissions = { contains: async () => true };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
+            if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
+            return { ok: true };
+        };
+    } });
+    await waitFor(dom, () => !el(dom, 'ignored-sync-enable').disabled);
+    el(dom, 'ignored-sync-enable').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
+    assert.equal(el(dom, 'ignored-sync-enable').checked, false);
+    assert.equal((await h.engine.status()).state.enabled, false);
+    el(dom, 'ignored-review-confirm').click();
+    await waitFor(dom, () => el(dom, 'ignored-backup').textContent === 'Sync now');
+    assert.equal(el(dom, 'ignored-sync-enable').checked, true);
+    let release; const gate = new Promise(resolve => { release = resolve; }); h.commitHook = () => gate;
+    el(dom, 'ignored-backup').click(); await waitFor(dom, () => dom.window.document.getElementById('ignored-github').getAttribute('aria-busy') === 'true');
+    assert.equal(el(dom, 'ignored-sync-enable').disabled, false);
+    el(dom, 'ignored-sync-enable').click();
+    await waitFor(dom, () => !el(dom, 'ignored-sync-enable').checked);
+    release(); await waitFor(dom, () => !dom.window.document.getElementById('ignored-github').hasAttribute('aria-busy'));
+    assert.equal((await h.engine.status()).state.enabled, false);
+    assert.deepEqual(new Set((await h.store.read()).entries.map(e => e.cid)), new Set([1,2]));
+});

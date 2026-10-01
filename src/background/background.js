@@ -3781,6 +3781,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     runDetachedCleanup('photo backup watchdog startup', () =>
         githubRoutes.startPhotoBackupWatchdog());
 
+    runDetachedCleanup('ignored climber transaction recovery', () => githubRoutes.startIgnoredSync());
+    ext.runtime.onStartup?.addListener(() => {
+        runDetachedCleanup('ignored climber browser startup', () => githubRoutes.startIgnoredSync({ startup: true }));
+    });
+
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
         ext.alarms.onAlarm.addListener(alarm => {

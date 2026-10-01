@@ -20,7 +20,7 @@ export const harness = ({ local = [entry(1)], remote = null } = {}) => {
             assert.equal(path, I.BACKUP_PATH); assert.equal(options.maxBytes, I.MAX_BYTES);
             let text = await update(h.remote);
             if (h.retryHook) { await h.retryHook(); text = await update(h.remote); }
-            await options.beforeCommit?.();
+            await h.beforeRefHook?.(); await options.beforeCommit?.();
             h.remote = text; h.writes++; await h.commitHook?.(); return { sha: 'confirmed' };
         },
     };
