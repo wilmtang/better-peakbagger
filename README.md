@@ -4,7 +4,7 @@
 
 Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 have—into review-ready ascent drafts. It also adds free 3D terrain, richer GPX
-analysis, filters and favorite climbers for finding useful beta, rich-text and
+analysis, filters and climber lists for finding useful beta, rich-text and
 Markdown trip reports with reusable photo topos, optional GitHub backup,
 one-click saved-track handoff to Gaia GPS and onX Backcountry, offline Sun and Moon planning,
 location-aware planning links, and a polished dark theme to
@@ -114,8 +114,12 @@ ridges, weather, smoke, and actual direct light are outside its model. See the
 Filter and sort long ascent lists by trip report, GPS track, external link, or
 favorite climber—without reloading the page. Favorites can follow your
 Peakbagger Buddy List or a searchable custom list, with optional Buddy syncing
-and GitHub transfer. Filters combine, show live counts, and remember which
-signals you consider useful beta.
+and GitHub transfer. Ignore other climbers' reports on peak pages, ascent lists
+and individual reports, with counted temporary reveal. Manage both lists under
+**Settings → Climber lists**; ignores stay local unless you choose GitHub backup
+or enable two-way sync on this device. Filters combine, show live counts, and
+remember which signals you consider useful beta. See the
+[climber lists guide](docs/climber-lists.md).
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 

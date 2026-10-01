@@ -49,7 +49,7 @@ from several directories when a shipped surface crosses those boundaries.
 | `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and backup of saved ascents and TRs |
 | `src/background/` | Extension service-worker coordination |
 | `src/capture/` | Provider adapters, ownership checks, and pure capture analysis |
-| `src/favorites/` | Favorite-climber data and climber-page controls |
+| `src/favorites/` | Climber-list schemas, shared favorite source, profile controls and conservative report adapters |
 | `src/github/` | GitHub authentication, API transport, repository writes, and backup payloads |
 | `src/gaia/` | Gaia's visible import adapter and optional-access fallback page |
 | `src/onx/` | onX Backcountry import adapter and optional-access fallback page |
@@ -696,6 +696,44 @@ prove current live control labels, authenticated cookies, or report markup.
 The runners open ordinary extension pages in hidden tabs; they do not establish
 native popup size, browser-chrome focus, permission-prompt presentation, or the
 toolbar click that grants `activeTab`. Those remain explicit release checks.
+
+### Climber-list verification
+
+The [climber lists guide](climber-lists.md) describes behavior; the
+[archived ledger](archive/ignored-climbers.md) records proof and release gaps.
+Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.test.mjs`,
+`test/ascent/ascent-report-visibility.test.mjs`,
+`test/background/climber-list-sync.test.mjs` and
+`test/options/options-ignored-backup.test.mjs`. They cover exact author evidence,
+visibility/count composition, unknown/empty/error states, mutation races, bounded
+files, reviewed replacements, three-way deletions/conflicts, ref retry, journal
+recovery, cancellation and durable scheduling. Scale coverage includes native
+4,145-row groups separately from the added empty-state row.
+
+Both real-extension verifiers load the ignored profile/manager, peak report,
+full/compact ascent list and individual-report fixtures. The detail fixture's
+synthetic identities/media preserve the live validated Climber heading and report
+cell boundary. HTTPS fixture routes add `peak.aspx?ignored=1`,
+`climber/PeakAscents.aspx?compact=1` and `climber/ascent.aspx?ignored=1`.
+Chrome also exercises the real packaged worker/client against a fully synthetic
+GitHub Git Data endpoint, including an external ref race and unrelated root files.
+No real backup repository is test scratch space.
+
+Set `BPB_VERIFY_IGNORED_SCREENSHOT_DIR` to an existing output directory for light/
+dark site and manager screenshots. `node scripts/verify-climber-list-ui.mjs`
+checks the real Settings bundle with synthetic worker replies, long names,
+1,500-entry counts and a 200% equivalent reduced CSS viewport at DPR 2. It proves
+layout, not live GitHub. Firefox logs measured CSS viewport dimensions; native
+headless window limits may require test-tab zoom. Inspect those dimensions and
+screenshots rather than treating requested outer window sizes as viewport proof.
+Run build-owning npm commands sequentially in one worktree: concurrent build
+publication can collide. All runners close only their disposable browser/profile.
+
+Live read-only Peakbagger inspection confirmed the author/section adapters on
+2026-10-01. Before release, validate two-device sync and interrupted operations
+against an owner-authorized disposable GitHub repository. Browser-store builds,
+minimum browser versions, Firefox Android, native focus/permission presentation
+and screen-reader speech remain separate checks.
 
 ### A plain-HTTP fixture breaks these checks
 
