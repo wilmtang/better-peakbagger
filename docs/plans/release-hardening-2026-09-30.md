@@ -44,6 +44,15 @@ but an immediate assertion required its separate Network event to arrive too.
   focused ESLint passed. Hidden Chrome terrain passed on M3 Pro ANGLE Metal at
   798×448 and 448×448, including pending drape and twelve canvas resizes.
 
+- Disposable certificate trust is computed once and applied at Chrome launch,
+  scoped to that certificate's public key. Ten fixture consumers use the shared
+  helper. Certificate generation, fingerprint failure, and cleanup regressions
+  passed; all 160 project tests and focused ESLint passed. Nine hidden browser
+  checks passed: desktop Chrome and Firefox, capture readiness, toolbar capture,
+  multi-summit drafts, GPX handoffs, report photos, backup lifecycle, and Chrome
+  terrain on M3 Pro ANGLE Metal. The separate LOD and showcase renderers were
+  structurally checked but not separately rendered for this change.
+
 ## Intentionally not changed
 
 - Required checks, zero-advisory policy, GPU renderer assertions, runtime
@@ -53,7 +62,7 @@ but an immediate assertion required its separate Network event to arrive too.
 
 ## Changed but not fully proven
 
-- Shared fixture trust, failure evidence, and release rehearsal remain pending.
+- Failure evidence and release rehearsal remain pending.
 - Main CI has not yet passed after the latest merge.
 - Live authenticated desktop Firefox capture remains pending; its debugging
   connection is unavailable and its profile has no provider login.

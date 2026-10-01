@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
+import { createHash, createPublicKey } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
@@ -21,6 +22,35 @@ import {
 } from '../../scripts/resource-stack.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+
+test('fixture launch trust identifies only the disposable certificate key and cleans up', async () => {
+    const certificate = await createFixtureCertificate({ label: 'trust-test' });
+    const ownedRoot = certificate.root;
+    try {
+        const spki = createHash('sha256').update(createPublicKey(certificate.key)
+            .export({ type: 'spki', format: 'der' })).digest('base64');
+        assert.deepEqual(certificate.chromeTrustArgs, [`--ignore-certificate-errors-spki-list=${spki}`]);
+        assert.ok(Object.isFrozen(certificate.chromeTrustArgs));
+        assert.throws(() => certificate.chromeTrustArgs.push('--ignore-certificate-errors'), TypeError);
+    } finally {
+        await certificate.remove();
+    }
+    await assert.rejects(readdir(ownedRoot), { code: 'ENOENT' });
+});
+
+test('Chrome fixture verifiers use shared launch trust instead of late or broad TLS overrides', async () => {
+    for (const name of [
+        'verify-extension', 'verify-capture-flow', 'verify-capture-readiness', 'verify-multi-summit',
+        'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
+        'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase',
+    ]) {
+        const source = await readFile(path.join(projectRoot, 'scripts', `${name}.mjs`), 'utf8');
+        assert.match(source, /\.\.\.(?:fixture|certificate|cert)\.chromeTrustArgs/, name);
+        assert.doesNotMatch(source, /['"]--ignore-certificate-errors['"]/, name);
+        assert.doesNotMatch(source, /ignoreHTTPSErrors:\s*true/, name);
+        assert.doesNotMatch(source, /X509Certificate/, name);
+    }
+});
 
 test('verifier resources clean up LIFO and one rejection cannot skip the rest', async () => {
     const order = [];
@@ -148,6 +178,18 @@ test('invalid OpenSSL and certificate reads leave no key material behind', async
                 directory,
                 readCertificate: async () => { throw new Error('injected read failure'); },
             }), /injected read failure/);
+            assert.deepEqual(await readdir(directory), []);
+        } finally {
+            await rm(directory, { recursive: true, force: true });
+        }
+    });
+    await t.test('certificate fingerprint failure', async () => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'bpb-cert-fingerprint-'));
+        try {
+            await assert.rejects(createFixtureCertificate({
+                directory,
+                readCertificate: async () => Buffer.from('invalid certificate'),
+            }), /Could not create/);
             assert.deepEqual(await readdir(directory), []);
         } finally {
             await rm(directory, { recursive: true, force: true });

@@ -49,7 +49,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // never loads, and the 3D toggle stays disabled, so every check downstream of
 // it times out. Self-signed for this host, exactly as
 // scripts/browser-verification-fixtures.mjs does; Chrome is launched with
-// --ignore-certificate-errors below.
+// trust scoped to this disposable certificate at launch below.
 const resources = createResourceStack();
 let primaryError = null;
 const certificate = await resources.guard(() =>
@@ -798,7 +798,7 @@ const chrome = spawn(chromePath, [
     '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1',
     // The fixture certificate is generated per run for this host only; the
     // profile is disposable and no live origin is reachable from this launch.
-    '--ignore-certificate-errors',
+    ...certificate.chromeTrustArgs,
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
     'about:blank'

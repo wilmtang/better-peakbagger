@@ -558,7 +558,7 @@ const chrome = spawn(chromePath, [
     // Headless Chrome reaches the real hardware renderer, so no ANGLE override
     // belongs here; the renderer is asserted below rather than assumed.
     `--host-resolver-rules=MAP ${FIXTURE_HOST} 127.0.0.1,MAP ${DRAPE_HOST} 127.0.0.1`,
-    '--ignore-certificate-errors',
+    ...certificate.chromeTrustArgs,
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
     'about:blank'

@@ -4,7 +4,6 @@
 // the shipped manifest, seeding jobs, or replacing any extension runtime code.
 /* global chrome */
 import assert from 'node:assert/strict';
-import { createHash, X509Certificate } from 'node:crypto';
 import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
 import os from 'node:os';
@@ -88,14 +87,10 @@ try {
     resources.defer('capture fixture server', () => closeServer(server));
     await listenServer(server, 0, '127.0.0.1');
     const port = server.address().port;
-    // Extension-created tabs can navigate before Playwright attaches its per-page
-    // certificate policy. Trust only this run's disposable certificate at launch.
-    const fixtureSpki = createHash('sha256').update(new X509Certificate(cert.cert)
-        .publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
     const context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
         channel: 'chromium', headless: true, viewport: { width: 1000, height: 760 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [`--ignore-certificate-errors-spki-list=${fixtureSpki}`, '--enable-unsafe-extension-debugging', `--load-extension=${path.resolve('dist')}`, `--disable-extensions-except=${path.resolve('dist')}`,
+        args: [...cert.chromeTrustArgs, '--enable-unsafe-extension-debugging', `--load-extension=${path.resolve('dist')}`, `--disable-extensions-except=${path.resolve('dist')}`,
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port},MAP connect.garmin.com 127.0.0.1:${port},MAP www.strava.com 127.0.0.1:${port}`],
     });
     resources.defer('capture browser', () => context.close());

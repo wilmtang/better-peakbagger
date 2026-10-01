@@ -156,7 +156,6 @@ try {
     context = await chromium.launchPersistentContext(profile, {
         ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
         headless: true,
-        ignoreHTTPSErrors: true,
         // Playwright disables BFCache by default for test determinism. This
         // verifier explicitly exercises persisted pagehide/pageshow, so remove
         // only that default launch argument and diagnose any real exclusion.
@@ -164,6 +163,7 @@ try {
         ignoreDefaultArgs: ['--disable-back-forward-cache', '--enable-unsafe-swiftshader'],
         viewport: verificationViewport,
         args: [
+            ...fixture.chromeTrustArgs,
             `--disable-extensions-except=${dist}`,
             `--load-extension=${dist}`,
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'

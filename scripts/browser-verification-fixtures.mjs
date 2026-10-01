@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFile } from 'node:child_process';
+import { createHash, X509Certificate } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:https';
 import os from 'node:os';
@@ -485,10 +486,15 @@ export async function createFixtureCertificate({
             readCertificate(keyPath),
             readCertificate(certificatePath),
         ]);
+        // Apply trust at browser launch: extension-created tabs can navigate
+        // before a per-page TLS policy attaches. Scope it to this disposable key.
+        const spki = createHash('sha256').update(new X509Certificate(cert)
+            .publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
         return {
             key,
             cert,
             root,
+            chromeTrustArgs: Object.freeze([`--ignore-certificate-errors-spki-list=${spki}`]),
             async remove() {
                 await resources.dispose();
             },
@@ -754,6 +760,7 @@ export async function createBrowserFixtureServer({
     await resources.guard(listenServer(server, 0, '127.0.0.1'));
     return {
         port: server.address().port,
+        chromeTrustArgs: certificate.chromeTrustArgs,
         gpxPath,
         requests,
         close: () => resources.dispose(),
