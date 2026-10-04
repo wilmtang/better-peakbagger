@@ -66,7 +66,7 @@ test('a nonexistent GPX date cannot become a capture date or duration', () => {
     assert.equal(fields.downDuration, null);
 });
 
-test('sanitization excludes impossible elevations from matching and serialized GPX', () => {
+test('sanitization excludes impossible elevations from matching and serialized GPX', async () => {
     const { segments, quality } = Core.sanitizeTrack([[
         point(0, -0.001, 100),
         point(0, 0, 1_000_000_000),
@@ -75,7 +75,7 @@ test('sanitization excludes impossible elevations from matching and serialized G
 
     assert.equal(quality.suspectElevation, 1);
     assert.equal(segments[0][1].ele, null);
-    const [match] = Core.detectPeaks(
+    const [match] = await Core.detectPeaksAsync(
         segments,
         [{ id: 99, name: 'Peak', location: '', lat: 0, lon: 0, elevationM: 1_000_000_000 }],
         quality.score,
@@ -149,40 +149,40 @@ test('Peakbagger peak parsing validates coordinates and enforces its structure c
     );
 });
 
-test('full-resolution segment projection detects a sparse summit crossing', () => {
+test('full-resolution segment projection detects a sparse summit crossing', async () => {
     const segments = [[point(0, -0.001, 100), point(0, 0.001, 100)]];
-    const matches = Core.detectPeaks(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    const matches = await Core.detectPeaksAsync(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
     assert.equal(matches.length, 1);
     assert.equal(matches[0].classification, 'strong');
     assert.ok(matches[0].evidence.distanceM < 0.01);
     assert.ok(Math.abs(matches[0].encounter.fraction - 0.5) < 0.001);
 });
 
-test('missing elevation can be probable but is capped below strong', () => {
+test('missing elevation can be probable but is capped below strong', async () => {
     const segments = [[point(0, -0.001, null), point(0, 0.001, null)]];
-    const [match] = Core.detectPeaks(segments, [{ id: 2, name: 'Horizontal Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    const [match] = await Core.detectPeaksAsync(segments, [{ id: 2, name: 'Horizontal Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
     assert.equal(match.confidence, 69);
     assert.equal(match.classification, 'probable');
     assert.equal(Core.publicMatch(match).selected, false);
 });
 
-test('separate GPX segments are never bridged through a summit', () => {
+test('separate GPX segments are never bridged through a summit', async () => {
     const segments = [
         [point(0, -0.002, 100)],
         [point(0, 0.002, 100)]
     ];
-    const [match] = Core.detectPeaks(segments, [{ id: 3, name: 'Gap Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    const [match] = await Core.detectPeaksAsync(segments, [{ id: 3, name: 'Gap Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
     assert.notEqual(match.classification, 'strong');
     assert.ok(match.evidence.distanceM > 200);
 });
 
-test('nearby peaks sharing one encounter are capped unless one clearly leads', () => {
+test('nearby peaks sharing one encounter are capped unless one clearly leads', async () => {
     const segments = [[
         point(0, -0.001, 80),
         point(0, 0, 100),
         point(0, 0.001, 80)
     ]];
-    const matches = Core.detectPeaks(segments, [
+    const matches = await Core.detectPeaksAsync(segments, [
         { id: 4, name: 'Main', location: '', lat: 0, lon: 0, elevationM: 100 },
         { id: 5, name: 'Subpeak', location: '', lat: 0, lon: 0.00001, elevationM: 100 }
     ], 1);
@@ -194,7 +194,7 @@ test('nearby peaks sharing one encounter are capped unless one clearly leads', (
 // A chain A–B–C where only the neighbours overlap: whichever peak seeds the
 // group must pull in the whole chain, or the escapee keeps an uncapped Strong
 // score and arrives at the popup pre-selected for drafting.
-test('chained ambiguity caps every peak regardless of the order Peakbagger returns them', () => {
+test('chained ambiguity caps every peak regardless of the order Peakbagger returns them', async () => {
     const bump = (index, centre) => Math.max(0, 60 - Math.abs(index - centre));
     const segment = Array.from({ length: 801 }, (_value, index) => point(
         47 + index * 0.000009,
@@ -215,7 +215,7 @@ test('chained ambiguity caps every peak regardless of the order Peakbagger retur
     const c = peakAt(3, 'C', 700);
     // A–B and B–C share an encounter window; A–C do not.
     for (const order of [[a, b, c], [c, a, b], [b, c, a], [c, b, a]]) {
-        const matches = Core.detectPeaks([segment], order, 1);
+        const matches = await Core.detectPeaksAsync([segment], order, 1);
         assert.equal(matches.length, 3, `order ${order.map(peak => peak.name).join('')}`);
         for (const match of matches) {
             assert.ok(
@@ -227,7 +227,7 @@ test('chained ambiguity caps every peak regardless of the order Peakbagger retur
     }
 });
 
-test('cooperative peak detection is result-equivalent to the indexed synchronous path', async () => {
+test('cooperative peak detection caps crowded summits and checks cancellation for every peak', async () => {
     const segment = Array.from({ length: 1_000 }, (_, index) => ({
         lat: 40 + Math.sin(index / 17) * 0.0002,
         lon: -105 + index * 0.02 / 999,
@@ -243,16 +243,16 @@ test('cooperative peak detection is result-equivalent to the indexed synchronous
         elevationM: 2_000,
         prominenceFt: 100,
     }));
-    const synchronous = Core.detectPeaks([segment], peaks, 0.91);
     let checkpoints = 0;
     const cooperative = await Core.detectPeaksAsync([segment], peaks, 0.91, {
         checkpoint: async () => { checkpoints++; },
     });
-    assert.deepEqual(cooperative, synchronous);
+    assert.deepEqual(cooperative.map(match => match.id).sort((a, b) => a - b), peaks.map(peak => peak.id));
+    assert.ok(cooperative.every(match => match.classification === 'probable' && match.evidence.ambiguous));
     assert.ok(checkpoints >= peaks.length, 'every peak offers cancellation a checkpoint');
 });
 
-test('cooperative peak detection stays equivalent at encounter-policy boundaries', async () => {
+test('cooperative peak detection preserves encounter-policy boundary results', async () => {
     const start = Date.UTC(2026, 6, 1);
     const cases = [];
 
@@ -324,10 +324,16 @@ test('cooperative peak detection stays equivalent at encounter-policy boundaries
         ]
     });
 
-    for (const scenario of cases) {
+    // Explicit encounter fixtures replace a second implementation as the oracle.
+    const expected = [
+        [[1, 0, 0, 0, 0, 900, start], [2, 1, 0, 0, 0, 950, start + 60_000]],
+        [[4, 0, 1, 1, 17.036, 2020, null], [3, 1, 0, 0, 17.036, 2015, start + 10_000]],
+        [[5, 0, 0, 0.5, 0, 505, start + 30_000], [6, 1, 0, 0.5, 0, 705, start + 30_000]],
+        [[7, 0, 139, 1, 0, 1060, start + 140_000], [8, 0, 419, 1, 0, 1060, start + 420_000],
+            [9, 0, 699, 1, 0, 1060, start + 700_000]],
+    ];
+    for (const [index, scenario] of cases.entries()) {
         const qualityScore = scenario.qualityScore ?? 1;
-        const synchronous = Core.detectPeaks(scenario.segments, scenario.peaks, qualityScore);
-        assert.equal(synchronous.length, scenario.expectedMatches, `${scenario.label} fixture coverage`);
         let checkpoints = 0;
         const cooperative = await Core.detectPeaksAsync(
             scenario.segments,
@@ -335,7 +341,12 @@ test('cooperative peak detection stays equivalent at encounter-policy boundaries
             qualityScore,
             { checkpoint: async () => { checkpoints++; } }
         );
-        assert.deepEqual(cooperative, synchronous, scenario.label);
+        assert.equal(cooperative.length, scenario.expectedMatches, scenario.label);
+        assert.ok(cooperative.every(match => match.confidence === 79
+            && match.classification === 'probable' && match.evidence.ambiguous), scenario.label);
+        assert.deepEqual(cooperative.map(match => [match.id, match.encounter.segmentIndex, match.encounter.edgeIndex,
+            +match.encounter.fraction.toFixed(6), +match.evidence.distanceM.toFixed(3),
+            +match.encounter.ele.toFixed(3), match.encounter.time]), expected[index], scenario.label);
         assert.ok(checkpoints >= scenario.peaks.length, `${scenario.label} must remain cancellable`);
     }
 });
@@ -360,11 +371,11 @@ test('query boxes stay short, padded, and split at the antimeridian', () => {
     assert.ok(Core.buildQueryBoxes([[]]).length === 0, 'an empty segment contributes no box');
 });
 
-test('priority reduction retains original objects, summit brackets, and an exact 3,000-point cap', () => {
+test('priority reduction retains original objects, summit brackets, and an exact 3,000-point cap', async () => {
     const segment = Array.from({ length: 4000 }, (_value, index) =>
         point(47 + index * 0.00001, -121 + Math.sin(index / 20) * 0.00003, 100 + Math.sin(index / 50) * 10));
     const matches = [{ encounter: { segmentIndex: 0, edgeIndex: 1999 } }];
-    const result = Core.reduceTrack([segment], matches);
+    const result = await Core.reduceTrackAsync([segment], matches);
     assert.equal(result.originalPointCount, 4000);
     assert.equal(result.retainedPointCount, 3000);
     assert.equal(result.segments[0].length, 3000);
@@ -382,24 +393,25 @@ test('cooperative reduction preserves the exact priority simplifier result', asy
         time: Date.UTC(2026, 6, 1) + index * 1_000,
     }));
     const matches = [{ encounter: { segmentIndex: 0, edgeIndex: 1_999 } }];
-    const synchronous = Core.reduceTrack([segment], matches, 700);
     let checkpoints = 0;
     const cooperative = await Core.reduceTrackAsync([segment], matches, 700, {
         checkpoint: async () => { checkpoints++; },
     });
-    assert.deepEqual(cooperative, synchronous);
+    assert.equal(cooperative.retainedPointCount, 700);
+    assert.ok(cooperative.segments[0].includes(segment[1999]) && cooperative.segments[0].includes(segment[2000]));
+    assert.ok(Math.abs(cooperative.maxDeviationM - 0.592043061) < 0.000001);
     assert.ok(checkpoints > 10, 'long interval scans remain cooperatively interruptible');
 });
 
-test('tracks at the limit are unchanged and mandatory overflow fails closed', () => {
+test('tracks at the limit are unchanged and mandatory overflow fails closed', async () => {
     const exact = Array.from({ length: 3000 }, (_value, index) => point(0, index * 0.000001));
-    const unchanged = Core.reduceTrack([exact], []);
+    const unchanged = await Core.reduceTrackAsync([exact], []);
     assert.equal(unchanged.retainedPointCount, 3000);
     assert.equal(unchanged.segments[0][1500], exact[1500]);
 
     const small = [[point(0, 0), point(0, 1), point(0, 2), point(0, 3)]];
-    assert.throws(
-        () => Core.reduceTrack(small, [
+    await assert.rejects(
+        () => Core.reduceTrackAsync(small, [
             { encounter: { segmentIndex: 0, edgeIndex: 0 } },
             { encounter: { segmentIndex: 0, edgeIndex: 2 } }
         ], 3),
@@ -715,4 +727,17 @@ test('no surface keeps its own copy of a Peakbagger upload limit', async () => {
     }
     assert.deepEqual(leaks, [],
         `import MAX_UPLOAD_POINTS / MAX_TRACK_SEGMENTS from src/capture/upload-limits.js:\n${leaks.join('\n')}`);
+});
+
+
+test('priority reduction preserves midpoint ties and elevation extrema', async () => {
+    for (const [elevations, indices] of [
+        [Array(9).fill(100), [0, 2, 4, 6, 8]],
+        [[100, 100, 50, 100, 100, 150, 100, 100, 100], [0, 2, 3, 5, 8]],
+    ]) {
+        const segment = elevations.map((ele, index) => point(0, index * 0.0001, ele));
+        const result = await Core.reduceTrackAsync([segment], [], 5);
+        assert.deepEqual(result.segments[0].map(retained => segment.indexOf(retained)), indices);
+        assert.ok(result.maxDeviationM < 0.000001);
+    }
 });

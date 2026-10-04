@@ -15,7 +15,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | C5 | Exact transitive version assertions reject compatible security patches. | Fixed: reviewed semver ranges retain minimum patched releases and dev-only checks without snapshot churn; zero-advisory gate unchanged. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
 | U2 | Favorites setup and import controls bury the actual list. | Fixed: native Buddy List disclosure and shorter copy keep the list visible; confirmation remains outside the disclosure and Cancel restores visible focus. |
-| E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Pin expected behavior, migrate tests to the shipped async functions, then remove unused implementations. Preserve cancellation and cooperative work coverage. |
+| E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Fixed: removed unused sync implementations and migrated tests to the unchanged shipped async path with explicit encounter and reduction fixtures. |
 | E2 | Four map destination access pages duplicate the same permission interaction. | Share the initializer with explicit per-provider parameters and preserve trusted-event permission boundaries. |
 
 ## Evidence and scope
@@ -81,6 +81,13 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   image-size/adm-zip patches are accepted; known-old, unreviewed-major, and
   prerelease versions are rejected. The exact scoped brace-expansion override
   stays pinned; no installed dependency version was changed.
+
+- E1: removed 128 net capture runtime lines. Before deletion, all three parity
+  cases and the 8-test full-analysis scale suite passed. After migration,
+  45 capture/scale tests, 2,181 full-suite tests, scoped ESLint, documentation
+  checks, and full hidden Chrome/Firefox extension verification passed.
+  Cancellation, mandatory points, midpoint ties, source identity, and the
+  20,000-point/5,000-peak budget remain covered.
 
 ### Intentionally not changed
 

@@ -547,7 +547,8 @@ segment's cumulative distance and elevation range data once. Peak matching and
 the exact priority simplifier yield at internal checkpoints on an 8 ms CPU
 slice, then recheck cancellation and the monotonic 60-second transaction
 budget. Late work cannot restore an abandoned generation, and the cooperative
-path is regression-tested against the synchronous reference result.
+path is regression-tested against explicit encounter and reduction fixtures,
+including protected points, tie-breaking, and cancellation.
 
 Peakbagger login and summit requests made through a signed-in page are one
 bounded capture-owned transaction. Every tab query, helper probe/injection,
