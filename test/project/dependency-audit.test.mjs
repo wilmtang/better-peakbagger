@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { satisfies } from 'semver';
 
 import {
     evaluateAudit,
@@ -57,37 +58,50 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
     const entry = lockfile.packages['node_modules/brace-expansion'];
     assert.equal(entry.version, '1.1.21');
     assert.equal(entry.dev, true, 'brace-expansion must never become a production dependency');
-    const patchedVersions = new Set(['1.1.21', '5.0.12']);
+    const patchedRange = '^1.1.21 || ^5.0.12';
     for (const [packagePath, resolved] of Object.entries(lockfile.packages)) {
         if (!packagePath.endsWith('node_modules/brace-expansion')) continue;
         assert.equal(resolved.dev, true, `${packagePath} must stay development-only`);
-        assert.ok(patchedVersions.has(resolved.version),
+        assert.ok(satisfies(resolved.version, patchedRange),
             `${packagePath} resolves ${resolved.version}, not a reviewed patched version`);
     }
 });
 
-test('patched lint dependencies stay dev-only and pinned', async () => {
+// Floors prevent known regressions; compatible patched releases must not need
+// a test edit. The separate live audit still rejects newly disclosed advisories.
+const patchedTools = {
+    'web-ext': '^10.7.0', 'addons-linter': '^10.13.0', 'image-size': '^2.0.4',
+    'adm-zip': '^0.6.1', 'js-yaml': '^4.3.2', 'fast-uri': '^3.1.8',
+};
+const checkPatchedTools = lockfile => {
+    for (const [name, range] of Object.entries(patchedTools)) {
+        const entries = Object.entries(lockfile.packages)
+            .filter(([key]) => key === `node_modules/${name}` || key.endsWith(`/node_modules/${name}`));
+        assert.ok(entries.length, `${name} is missing from the development toolchain`);
+        for (const [key, entry] of entries) {
+            assert.equal(entry.dev, true, `${key} must stay development-only`);
+            assert.ok(satisfies(entry.version, range), `${key}@${entry.version} is outside reviewed range ${range}`);
+        }
+    }
+};
+
+test('patched lint dependencies stay dev-only within reviewed release lines', async () => {
     const [packageJson, lockfile] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
         readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
     ]);
-    assert.equal(packageJson.devDependencies['web-ext'], '^10.7.0');
     assert.equal(packageJson.overrides['firefox-profile'], undefined,
         'firefox-profile must resolve patched adm-zip releases through its maintained range');
-    for (const [packagePath, version] of Object.entries({ 'node_modules/web-ext': '10.7.0', 'node_modules/addons-linter': '10.13.0', 'node_modules/image-size': '2.0.4' })) {
-        const entry = lockfile.packages[packagePath];
-        assert.equal(entry.version, version);
-        assert.equal(entry.dev, true, `${packagePath} must stay development-only`);
+    assert.ok(satisfies(lockfile.packages['node_modules/web-ext'].version, packageJson.devDependencies['web-ext']));
+    checkPatchedTools(lockfile);
+    const patched = structuredClone(lockfile);
+    patched.packages['node_modules/image-size'].version = '2.0.5';
+    patched.packages['node_modules/adm-zip'].version = '0.6.2';
+    assert.doesNotThrow(() => checkPatchedTools(patched));
+    for (const version of ['2.0.3', '3.0.0', '2.0.5-beta.1']) {
+        patched.packages['node_modules/image-size'].version = version;
+        assert.throws(() => checkPatchedTools(patched), /outside reviewed range/);
     }
-    const admZip = lockfile.packages['node_modules/adm-zip'];
-    assert.equal(admZip.version, '0.6.1', 'symlink-safe extraction requires adm-zip 0.6.1 or later');
-    assert.equal(admZip.dev, true, 'adm-zip must stay development-only');
-    const jsYaml = lockfile.packages['node_modules/js-yaml'];
-    assert.equal(jsYaml.version, '4.3.2', 'empty merge sources must use the patched CPU limit');
-    assert.equal(jsYaml.dev, true, 'js-yaml must stay development-only');
-    const fastUri = lockfile.packages['node_modules/fast-uri'];
-    assert.equal(fastUri.version, '3.1.8');
-    assert.equal(fastUri.dev, true, 'fast-uri must stay development-only');
 });
 
 test('maintained release guidance requires zero advisories', async () => {

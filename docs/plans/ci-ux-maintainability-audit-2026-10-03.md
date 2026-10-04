@@ -12,6 +12,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fixed locally: select the latest unexpired exact-tag artifact across paginated attempts; preserve SHA/version/hash checks. 55 release tests and focused ESLint pass. |
 | C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Fixed: bounded polling waits for the exact persisted height and reports the latest value on timeout. 18 focused tests and hidden Chrome verification pass. |
 | C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
+| C5 | Exact transitive version assertions reject compatible security patches. | Fixed: reviewed semver ranges retain minimum patched releases and dev-only checks without snapshot churn; zero-advisory gate unchanged. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
 | U2 | Favorites setup and import controls bury the actual list. | Fixed: native Buddy List disclosure and shorter copy keep the list visible; confirmation remains outside the disclosure and Cancel restores visible focus. |
 | E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Pin expected behavior, migrate tests to the shipped async functions, then remove unused implementations. Preserve cancellation and cooperative work coverage. |
@@ -71,6 +72,11 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   Cancel focus are verified. Dark-theme text uses the existing link color.
   Static UI only, no WebGL; no native browser chrome/screen-reader proof.
   Disposable profiles and verifier processes were removed.
+
+- C5: 6 dependency-policy tests and scoped ESLint pass. Synthetic later
+  image-size/adm-zip patches are accepted; known-old, unreviewed-major, and
+  prerelease versions are rejected. The exact scoped brace-expansion override
+  stays pinned; no installed dependency version was changed.
 
 ### Intentionally not changed
 
