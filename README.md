@@ -116,9 +116,9 @@ favorite climber—without reloading the page. Favorites can follow your
 Peakbagger Buddy List or a searchable custom list, with optional Buddy syncing
 and GitHub transfer. Ignore other climbers' reports on peak pages, ascent lists
 and individual reports, with counted temporary reveal. Manage both lists under
-**Settings → Climber lists**; ignores stay local unless you choose GitHub backup
-or enable two-way sync on this device. Filters combine, show live counts, and
-remember which signals you consider useful beta. See the
+**Settings → Ascent beta filter → Climber lists**; ignores stay local unless you
+choose GitHub backup or enable two-way sync on this device. Filters combine, show
+live counts, and remember which signals you consider useful beta. See the
 [climber lists guide](docs/climber-lists.md).
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)

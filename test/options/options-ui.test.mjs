@@ -268,12 +268,15 @@ test('settings are grouped by the surface they affect', async () => {
         'Activity creation',
         'Map & GPX chart',
         'Ascent beta filter',
-        'Climber lists',
         'Backup & sync',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, favorites, github, about] = sections;
+    const [general, capture, mapChart, beta, github, about] = sections;
+    const favorites = beta.querySelector('#favorites');
+    assert.equal(beta.children[1], favorites, 'climber lists comes before the other beta settings');
+    assert.equal(favorites.querySelector('.desc').textContent,
+        'Special filter to show users constantly making high quality TRs, with an option to hide users constantly making low effort TRs');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
     assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
         ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
@@ -282,7 +285,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.match(github.querySelector('#github-backup .desc').textContent, /manual backup controls/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
-    for (const section of [general, capture, mapChart, beta, favorites, github]) {
+    for (const section of [general, capture, mapChart, beta, github]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.ok(section.querySelector('.card'), 'the section carries a settings card');
@@ -955,7 +958,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'favorites', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
@@ -964,7 +967,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
-            '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#github-connection',
+            '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
     for (const link of subLinks) {
@@ -976,7 +979,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     }
     assert.deepEqual(
         Array.from(doc.querySelectorAll('#github > .subsection'), section => `#${section.id}`),
-        subLinks.slice(7).map(link => link.getAttribute('href')),
+        subLinks.slice(8).map(link => link.getAttribute('href')),
         'Backup & sync subsections should follow their sidebar order',
     );
     const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');
@@ -1093,7 +1096,7 @@ test('sidebar navigation animates nearby jumps and makes long jumps instant', as
     assert.equal(content.style.scrollBehavior, '', 'a modified click must not move the current page');
 });
 
-for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs', '#map-chart']]) {
+for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs', '#map-chart'], ['#favorites', '#beta']]) {
     test(`a deep link to ${hash} activates its sub-item and marks the parent`, async () => {
         const dom = await loadOptions({}, { hash });
         const doc = dom.window.document;

@@ -61,6 +61,25 @@ try {
     });
     await page.locator('#ignored-backup').waitFor({ state: 'visible' });
     await page.waitForFunction(() => !document.getElementById('ignored-backup').disabled);
+    await page.goto(`chrome-extension://${id}/options/options.html#favorites`);
+    await page.waitForFunction(() => document.querySelector('a[href="#favorites"][aria-current]')
+        && document.querySelector('a[href="#beta"].nav-parent-active'));
+    assert.equal(await page.locator('#beta').evaluate(node => node.children[1].id), 'favorites', 'climber lists is not first under beta');
+    for (const theme of ['light', 'dark']) {
+        for (const [width, height] of [[1024,900], [390,844]]) {
+            await page.setViewportSize({ width, height });
+            await page.goto(`chrome-extension://${id}/options/options.html#beta`);
+            await page.waitForFunction(() => {
+                const content = document.querySelector('.content'), beta = document.getElementById('beta');
+                return Math.abs(beta.getBoundingClientRect().top - content.getBoundingClientRect().top - 24) < 2;
+            });
+            await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+            const bounds = await page.locator('#favorites .card').boundingBox();
+            assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1, 'climber list card overflowed');
+            assert.ok(await page.locator('#open-favorites').isVisible(), 'manager action is not visible');
+            await page.screenshot({ path: path.join(output, `climber-settings-${theme}-${width}.png`) });
+        }
+    }
     const capture = async state => {
         for (const theme of ['light', 'dark']) {
             await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
@@ -105,6 +124,6 @@ try {
     await capture('loading');
     await page.evaluate(() => { globalThis.__ignoredFixture.phase = 'local'; globalThis.__releaseIgnoredFixture(); });
     await page.waitForFunction(() => !document.getElementById('ignored-github').hasAttribute('aria-busy'));
-    console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark, loading/offline/empty/conflict/1500-entry states and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
+    console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark, beta/climber-list layout, loading/offline/empty/conflict/1500-entry states and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
 } catch (error) { failure = error; }
 await resources.dispose(failure);

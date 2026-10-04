@@ -41,7 +41,8 @@ body.standalone-page .content { height: 100%; }
 }
 
 /* Level-2 groups inside a section: each is its own titled card. */
-.subsection + .subsection { margin-top: 16px; }
+.subsection + .subsection,
+.subsection + .card { margin-top: 16px; }
 .subsection-title {
     margin: 0 2px 7px;
     color: var(--sub);

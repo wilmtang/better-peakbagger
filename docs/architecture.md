@@ -1195,8 +1195,9 @@ sync must never acquire the third-party names stored in either local dataset.
 | `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns list management on its own page,
-`options/favorites.html`; the Settings **Climber lists** section keeps only a
-link to it, and `options/favorites-backup.js` keeps the GitHub backup and restore
+`options/favorites.html`; the Settings **Climber lists** subsection comes first
+under **Ascent beta filter** and keeps only a link to it, and
+`options/favorites-backup.js` keeps the GitHub backup and restore
 under **Backup & sync**. The two coordinate only through storage and the
 signature-gated worker replacement, so restore confirms and undoes on the
 Settings page while an open list page redraws from the resulting storage change.

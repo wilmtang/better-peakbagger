@@ -1,6 +1,7 @@
 # Climber lists and report visibility
 
-Open **Settings → Climber lists → Manage climber lists**. Favorites and Ignored
+Open **Settings → Ascent beta filter → Climber lists → Manage climber lists**.
+Climber lists is the first subsection. Favorites and Ignored
 have separate tabs, searches and counts. The existing `favorites.html` page and
 Settings `#favorites` link remain valid; `favorites.html#ignored` opens Ignored.
 
