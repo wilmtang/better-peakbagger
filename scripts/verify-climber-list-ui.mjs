@@ -4,7 +4,7 @@
 // behavior is covered separately; this check never contacts a GitHub repository.
 /* global chrome, document */
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -158,6 +158,44 @@ try {
     await page.waitForFunction(() => document.getElementById('ignored-undo').hidden
         && document.activeElement?.closest('[data-cid]')?.dataset.cid === '2');
     await page.screenshot({ path: path.join(output, 'ignored-restored-dark-390.png') });
-    console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark, beta/climber-list layout, loading/offline/empty/conflict/1500-entry states and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
+    await page.evaluate(async () => {
+        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+        await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, favoritesSource: 'custom' } });
+    });
+    await page.route('https://www.peakbagger.com/report/report.aspx*', async route => route.fulfill({
+        contentType: 'text/html', body: await readFile('test/fixtures/pages/report-buddy-list.html', 'utf8'),
+    }));
+    await page.goto(`chrome-extension://${id}/options/favorites.html`);
+    for (const state of ['empty', 'populated', 'long-name']) {
+        await page.evaluate(async value => {
+            await chrome.storage.local.set({ bpbFavoriteClimbers: { schemaVersion: 1,
+                entries: value === 'empty' ? [] : [{ cid: 900099, addedAt: Date.now(), source: 'manual',
+                    name: value === 'long-name' ? 'Alex Example with a long climber name that wraps without clipping' : 'Alex Example' }] } });
+        }, state);
+        await page.waitForFunction(empty => document.getElementById('favorites-list').children.length === (empty ? 0 : 1), state === 'empty');
+        for (const theme of ['light', 'dark']) {
+            await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+            for (const [width, height] of [[1024,900], [390,844]]) {
+                await page.setViewportSize({ width, height });
+                await page.evaluate(() => globalThis.scrollTo(0, 0));
+                const searchBox = await page.locator('#favorites-search').boundingBox();
+                const resultBox = await page.locator(state === 'empty' ? '#favorites-empty' : '#favorites-list li').boundingBox();
+                assert.ok(searchBox.y > 0 && resultBox.y + resultBox.height <= height, `${state}: list is below the initial viewport`);
+                assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > globalThis.innerWidth), false, 'workspace overflows horizontally');
+                await page.screenshot({ path: path.join(output, `favorites-${state}-${theme}-${width}.png`) });
+            }
+        }
+    }
+    const summary = page.locator('.favorites-buddy-options summary');
+    await summary.focus(); await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('.favorites-buddy-options').open);
+    await page.locator('#favorites-mirror-buddies').click();
+    await page.locator('#favorites-mirror-confirmation').waitFor({ state: 'visible' });
+    await summary.focus(); await page.keyboard.press('Space');
+    await page.waitForFunction(() => !document.querySelector('.favorites-buddy-options').open);
+    assert.equal(await page.locator('#favorites-mirror-confirmation').isVisible(), true, 'closing options concealed confirmation');
+    await page.locator('#favorites-mirror-cancel').click();
+    assert.equal(await summary.evaluate(node => document.activeElement === node), true, 'cancel focused a hidden import button');
+    console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark, climber-list workspace and settings, list focus/Undo, keyboard disclosure, loading/offline/empty/conflict/1500-entry states and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
 } catch (error) { failure = error; }
 await resources.dispose(failure);

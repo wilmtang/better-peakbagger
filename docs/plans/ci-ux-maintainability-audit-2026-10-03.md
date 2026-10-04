@@ -13,7 +13,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Fixed: bounded polling waits for the exact persisted height and reports the latest value on timeout. 18 focused tests and hidden Chrome verification pass. |
 | C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
-| U2 | Favorites setup and import controls bury the actual list. | Native disclosure for uncommon Buddy List options; simplify copy and inspect both themes at narrow and desktop sizes. |
+| U2 | Favorites setup and import controls bury the actual list. | Fixed: native Buddy List disclosure and shorter copy keep the list visible; confirmation remains outside the disclosure and Cancel restores visible focus. |
 | E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Pin expected behavior, migrate tests to the shipped async functions, then remove unused implementations. Preserve cancellation and cooperative work coverage. |
 | E2 | Four map destination access pages duplicate the same permission interaction. | Share the initializer with explicit per-provider parameters and preserve trusted-event permission boundaries. |
 
@@ -62,6 +62,15 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   screenshots inspected at 390×844 (light) with light/dark captures also made
   at 1024×900; no WebGL involved. Task browser/profile cleanup confirmed.
   Hidden DOM focus checks do not prove native focus or screen-reader speech.
+
+- U2: 29 focused options tests and scoped ESLint pass. Hidden Chrome 153.0.8010.12
+  verified empty/populated/long-name workspaces in both themes at 390×844 and
+  1024×900, with screenshots visually inspected. The first list row fits
+  without scrolling; narrow toolbar moved from y=785 to approximately y=490.
+  Enter/Space disclosure operation, visible confirmation after collapse, and
+  Cancel focus are verified. Dark-theme text uses the existing link color.
+  Static UI only, no WebGL; no native browser chrome/screen-reader proof.
+  Disposable profiles and verifier processes were removed.
 
 ### Intentionally not changed
 

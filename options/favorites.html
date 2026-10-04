@@ -36,11 +36,11 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">Favorites source</span>
-                            <span class="desc">Favorite climbers can filter trip reports. Your custom list can hold up to 1,500 climbers; Peakbagger’s Buddy List supports up to 100. You can add your buddies to the custom list at any time.</span>
+                            <span class="desc">Choose which climbers the Favorites filter shows.</span>
                         </div>
                         <fieldset class="control favorites-source" aria-label="Favorite climbers source">
-                            <label><input type="radio" name="favorites-source" value="buddies"> <span>Use my Peakbagger Buddy List</span></label>
-                            <label><input type="radio" name="favorites-source" value="custom"> <span>Use a custom list managed here</span></label>
+                            <label><input type="radio" name="favorites-source" value="buddies"> <span>Peakbagger Buddy List</span></label>
+                            <label><input type="radio" name="favorites-source" value="custom"> <span>Custom list</span></label>
                         </fieldset>
                     </div>
             
@@ -56,7 +56,7 @@
                         <form id="favorites-add-form" class="favorites-add">
                             <label for="favorites-add-input">
                                 <span class="title">Add a climber</span>
-                                <span class="desc">Paste a Peakbagger climber-page link or id. Stored only on this device unless you back it up from <a href="options.html#github-favorites-backup">Backup &amp; sync</a>. Up to <span id="favorites-limit"></span> climbers.</span>
+                                <span class="desc">Saved on this device. Up to <span id="favorites-limit"></span> climbers. <a href="options.html#github-favorites-backup">Backup &amp; sync</a></span>
                             </label>
                             <span class="favorites-add-controls">
                                 <input id="favorites-add-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Climber link or id">
@@ -64,18 +64,21 @@
                             </span>
                         </form>
             
-                        <div class="favorites-tools">
-                            <button id="favorites-merge-buddies" class="secondary" type="button">Merge buddies into favorites</button>
-                            <button id="favorites-mirror-buddies" class="secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
-                        </div>
-                        <p class="favorites-hint">Merge adds missing buddies and keeps every current favorite. Mirror replaces custom favorites with the exact Buddy List.</p>
-                        <label class="favorites-sync-setting" for="favorites-remove-with-buddy">
-                            <input id="favorites-remove-with-buddy" type="checkbox">
-                            <span>
-                                <span class="title">Keep Buddy removals in sync</span>
-                                <span class="desc">Adding a Buddy always adds them here. When on, removing a Buddy also removes that favorite.</span>
-                            </span>
-                        </label>
+                        <details class="favorites-buddy-options">
+                            <summary>Buddy List options</summary>
+                            <div class="favorites-tools">
+                                <button id="favorites-merge-buddies" class="secondary" type="button">Add buddies to favorites</button>
+                                <button id="favorites-mirror-buddies" class="secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
+                            </div>
+                            <p class="favorites-hint">Add keeps your existing favorites. Mirror replaces them with your Buddy List (up to 100 climbers).</p>
+                            <label class="favorites-sync-setting" for="favorites-remove-with-buddy">
+                                <input id="favorites-remove-with-buddy" type="checkbox">
+                                <span>
+                                    <span class="title">Keep Buddy removals in sync</span>
+                                    <span class="desc">Adding a Buddy always adds them here. When on, removing a Buddy also removes that favorite.</span>
+                                </span>
+                            </label>
+                        </details>
                         <p class="favorites-status favorites-import-status" id="favorites-import-status" role="status" hidden></p>
                         <!-- The mirror action's own confirm-then-undo. GitHub restore
                              is the same shape but lives beside its trigger in Backup
