@@ -14,13 +14,18 @@ export const initIgnored = api => {
     let list = null, error = '', busy = false, undo = null;
     const message = el('ignored-status');
     const search = el('ignored-search'), sort = el('ignored-sort');
+    const undoButton = el('ignored-undo-button');
     const announce = value => { message.textContent = value; };
     const render = () => {
-        const focusedCid = document.activeElement?.closest('[data-cid]')?.dataset.cid;
+        const focused = document.activeElement;
+        const focusedRow = listEl.contains(focused) ? focused.closest('[data-cid]') : null;
+        const focusedIndex = [...listEl.children].indexOf(focusedRow);
         const entries = list?.entries || [];
         el('ignored-tab').textContent = `Ignored · ${entries.length}`;
         el('ignored-count').textContent = `${entries.length} ignored climber${entries.length === 1 ? '' : 's'}`;
         el('ignored-add-button').disabled = busy || !list;
+        listEl.setAttribute('aria-busy', String(busy));
+        undoButton.setAttribute('aria-disabled', String(busy));
         const matches = entries.map(entry => ({ entry, score: F.fuzzyScore(entry, search.value) }))
             .filter(item => item.score != null).sort((a, b) => (search.value.trim() ? a.score - b.score : 0)
                 || (sort.value === 'name' ? F.byName(a.entry, b.entry) : F.byAddedAtDesc(a.entry, b.entry)));
@@ -35,8 +40,11 @@ export const initIgnored = api => {
             info.append(name, meta);
             const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'favorite-remove';
             remove.textContent = 'Unignore'; remove.setAttribute('aria-label', `Unignore ${entry.name}`);
-            remove.disabled = busy;
+            // Keep the focused control available while saving. Native disabled
+            // buttons cannot regain focus after this list is rendered again.
+            remove.setAttribute('aria-disabled', String(busy));
             remove.addEventListener('click', async () => {
+                if (busy) return;
                 busy = true; render();
                 try {
                     const result = await mutateIgnored(api, { kind: 'remove', cid: entry.cid,
@@ -52,7 +60,12 @@ export const initIgnored = api => {
         el('ignored-empty').textContent = error || (!list ? 'Loading ignored climbers…'
             : entries.length ? 'No matching ignored climbers.' : 'No ignored climbers yet.');
         el('ignored-retry').hidden = !error;
-        if (focusedCid) listEl.querySelector(`[data-cid="${focusedCid}"] button`)?.focus({ preventScroll: true });
+        if (focusedRow) {
+            const row = listEl.querySelector(`[data-cid="${focusedRow.dataset.cid}"]`)
+                || listEl.children[Math.min(focusedIndex, listEl.children.length - 1)];
+            (row?.querySelector(focused.matches('a') ? 'a' : 'button')
+                || el('ignored-add-input')).focus({ preventScroll: true });
+        }
     };
     const accept = next => { if (!list || next.revision >= list.revision) list = next; };
     const observer = observeIgnored(api, state => { if (state.list) accept(state.list); error = state.error; render(); });
@@ -86,14 +99,21 @@ export const initIgnored = api => {
         } catch (failure) { announce(failure.message); }
         finally { busy = false; render(); }
     });
-    el('ignored-undo-button').addEventListener('click', async () => {
+    undoButton.addEventListener('click', async () => {
         if (!undo || busy) return;
+        const entry = undo;
+        let restoreFocus = false;
         busy = true; render();
         try {
-            const response = await mutateIgnored(api, { kind: 'add', entry: undo, expectedEntry: 'absent' });
+            const response = await mutateIgnored(api, { kind: 'add', entry, expectedEntry: 'absent' });
+            restoreFocus = document.activeElement === undoButton;
             accept(response.list); undo = null; el('ignored-undo').hidden = true; announce('Ignore restored.');
         } catch (failure) { announce(failure.message); }
-        finally { busy = false; render(); }
+        finally {
+            busy = false; render();
+            if (restoreFocus) (listEl.querySelector(`[data-cid="${entry.cid}"] button`)
+                || el('ignored-add-input')).focus({ preventScroll: true });
+        }
     });
     const tabs = [el('favorites-tab'), el('ignored-tab')];
     const activate = index => {

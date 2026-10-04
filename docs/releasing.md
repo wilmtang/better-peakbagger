@@ -303,11 +303,16 @@ in the Developer Dashboard rather than assuming the extension code failed.
    a new submission or only reconciled an existing one.
 
 The separate [Firefox recovery workflow](../.github/workflows/retry-firefox-release.yml)
-currently resolves an artifact named for the release run's latest attempt, then
-falls back to the legacy artifact name. It does not search earlier numbered
-attempts. Check that it can resolve the verified artifact before dispatching it;
-an earlier-attempt-only artifact needs a reviewed tooling correction. Rerunning
-all release jobs to create the expected name would also replay store mutations.
+searches every artifact page for the latest unexpired verified package from
+the target release run, including earlier attempts retained after store-only
+reruns. It checks the exact tag and rejects ambiguous names before downloading;
+version, commit, and archive hashes are still verified after download. Releases
+predating package identity retain the explicit legacy-name fallback. Never rerun
+all release jobs merely to recreate an artifact; that also replays store mutations.
+
+Recovery still validates metadata and archive contents against current main.
+If main has advanced to another version or changed its package file contract,
+older-tag recovery requires a reviewed tooling correction before dispatch.
 
 ## Confirm public availability
 

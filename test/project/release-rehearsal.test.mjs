@@ -62,7 +62,9 @@ test('Firefox recovery resolves the preserved attempt and verifies its tagged so
     const recovery = yaml.load(await readFile(new URL('../../.github/workflows/retry-firefox-release.yml', import.meta.url), 'utf8'));
     const steps = recovery.jobs.firefox.steps;
     const source = steps.find(step => step.id === 'recovery');
-    assert.match(source.run, /artifact_name="browser-extension-\$\{TARGET_TAG\}-\$\{attempt\}"/);
+    assert.equal(source.shell, 'bash', 'artifact lookup failures must propagate through the selector pipeline');
+    assert.match(source.run, /gh api --paginate --slurp/);
+    assert.match(source.run, /node scripts\/select-release-artifact\.mjs "\$TARGET_TAG" "\$attempt"/);
     assert.match(source.run, /\.event.*push/);
     assert.match(source.run, /\.head_sha.*tag_commit/);
     const download = steps.find(step => step.uses?.startsWith('actions/download-artifact@'));

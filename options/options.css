@@ -330,6 +330,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
     cursor: pointer;
 }
 .favorite-remove:hover, .favorite-undo:hover { text-decoration: underline; }
+.favorite-remove[aria-disabled="true"], .favorite-undo[aria-disabled="true"] { cursor: wait; opacity: .55; text-decoration: none; }
 .favorite-remove:focus-visible, .favorite-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .favorite-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
 .favorites-undo-all { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--sub); font-size: 13px; }
