@@ -11,7 +11,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | C1 | Latest dependency CI stops before tests on `web-ext → @devicefarmer/adbkit → node-forge`. | Current npm audit reproduces three high findings for GHSA-86w9-cpqp-85rv. Registry latest versions are web-ext 10.7.0, adbkit 3.3.9, node-forge 1.4.0; no patched release is available. Keep the zero-advisory gate. |
 | C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fixed locally: select the latest unexpired exact-tag artifact across paginated attempts; preserve SHA/version/hash checks. 55 release tests and focused ESLint pass. |
 | C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Fixed: bounded polling waits for the exact persisted height and reports the latest value on timeout. 18 focused tests and hidden Chrome verification pass. |
-| C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
+| C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Not changed: current-main metadata, archive inventory, and AMO reviewer metadata must all be bound to the target tag before historical recovery can be supported safely; documented in releasing.md. |
 | C5 | Exact transitive version assertions reject compatible security patches. | Fixed: reviewed semver ranges retain minimum patched releases and dev-only checks without snapshot churn; zero-advisory gate unchanged. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
 | U2 | Favorites setup and import controls bury the actual list. | Fixed: native Buddy List disclosure and shorter copy keep the list visible; confirmation remains outside the disclosure and Cancel restores visible focus. |
@@ -111,6 +111,10 @@ inspection. No push, merge, tag, or store mutation is included in this work.
 
 - C1: no reviewed patched upstream version currently exists. Do not downgrade
   web-ext to npm's suggested 5.1.0 or waive security findings to turn CI green.
+- C4: historical-tag recovery remains limited by current-main metadata and
+  archive contracts, including AMO reviewer metadata. Relaxing only the version
+  check would leave package validation and reviewer instructions inconsistent.
+  The release guide records the limitation; no store recovery was attempted.
 - Earlier terrain pending-request failure is already repaired in this tree.
 - Retain privacy, cancellation, ownership, settings validation, and manual Save
   boundaries. Native/live-provider behavior requires separate evidence.
@@ -121,3 +125,25 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   workflow or store mutation was dispatched. C4 remains a separate limitation.
 - Remote CI success requires an authorized push and a terminal workflow on the
   resulting commit; local checks cannot establish it.
+
+## Final local verification
+
+- `npm test`: 2,181 passed, zero failed.
+- `npm run test:scale`: 14 passed, zero failed.
+- `npm run lint`: passed; seven existing owned web-ext warnings, no new warnings.
+- Final built extension: full hidden Chrome for Testing 153.0.8010.12 and
+  Firefox 157.0 verifiers passed, base viewport 1000×760 plus their responsive
+  cases. Map handoffs also passed hidden Chrome with masked HTTPS fixtures.
+  Targeted Favorites/ignored-list screenshots were inspected in light/dark
+  and narrow/desktop states. No native permission-prompt, window-placement,
+  screen-reader speech, or live-provider proof is claimed. Process and profile
+  inspection confirmed teardown; no hardware WebGL result is claimed here.
+- `npm run audit:ci`: failed on the same three unowned node-forge-chain findings.
+  This is a real unresolved dependency gate, not evidence of a timing flake.
+- Runtime source (`src/`, `options/`, `popup/`, `photos/`) is 186 lines smaller
+  than the audit baseline. The duplicated draft helper is 105 lines smaller.
+  Regression tests, verification tooling, and this ledger add lines overall;
+  runtime and test-oracle duplication were removed without compressing code.
+
+The plan stays active for the upstream advisory, historical-tag recovery, and
+remote workflow evidence. No push, tag, release submission, or merge occurred.
