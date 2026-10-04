@@ -3248,10 +3248,16 @@ try {
         return contentHeight === previous - 1 && labelledHeight === contentHeight
             ? { contentHeight, labelledHeight } : false;
     }, firstDownHeight.contentHeight, { timeout: 5000 }).then(handle => handle.jsonValue());
-    await effectiveHeightSettingsPage.waitForTimeout(800);
-    const persistedEffectiveHeight = await effectiveHeightSettingsPage.evaluate(async () => {
-        const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-        return bpbSettings.mapViewportHeight;
+    let persistedEffectiveHeight;
+    await waitForCondition(async () => {
+        persistedEffectiveHeight = await effectiveHeightSettingsPage.evaluate(async () => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            return bpbSettings.mapViewportHeight;
+        });
+        return persistedEffectiveHeight === firstPointerHeight.contentHeight;
+    }, { description: 'the resized map height to persist', timeoutMs: 5000 }).catch(error => {
+        error.message += `; expected ${firstPointerHeight.contentHeight}, current value: ${persistedEffectiveHeight}`;
+        throw error;
     });
     await offPage.setViewportSize({ width: 1200, height: 1100 });
     const grownInteractedHeight = await offPage.waitForFunction(expected => {

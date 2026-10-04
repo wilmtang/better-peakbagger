@@ -10,7 +10,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | --- | --- | --- |
 | C1 | Latest dependency CI stops before tests on `web-ext → @devicefarmer/adbkit → node-forge`. | Current npm audit reproduces three high findings for GHSA-86w9-cpqp-85rv. Registry latest versions are web-ext 10.7.0, adbkit 3.3.9, node-forge 1.4.0; no patched release is available. Keep the zero-advisory gate. |
 | C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fixed locally: select the latest unexpired exact-tag artifact across paginated attempts; preserve SHA/version/hash checks. 55 release tests and focused ESLint pass. |
-| C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Replace the timing assumption with bounded polling and live diagnostics. |
+| C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Fixed: bounded polling waits for the exact persisted height and reports the latest value on timeout. 18 focused tests and hidden Chrome verification pass. |
 | C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Restore focus after list mutation, with deferred-mutation regression coverage. |
 | U2 | Favorites setup and import controls bury the actual list. | Native disclosure for uncommon Buddy List options; simplify copy and inspect both themes at narrow and desktop sizes. |
@@ -48,6 +48,14 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   verified attempt after a store-only rerun. Selection rejects expired,
   future, wrong-tag, and ambiguous matches; legacy fallback remains explicit.
   All 55 focused release tests, focused ESLint, and `git diff --check` passed.
+- C3: replaced the 800 ms persistence assumption with the existing bounded
+  async wait. The timeout reports the expected and latest stored heights.
+  All 18 resource/fixture tests and focused ESLint passed. The full real
+  extension verifier passed in hidden Chrome for Testing 153.0.8010.12, using
+  a 1000×760 base viewport and 1200×600 / 1200×1100 resize cases. Process
+  inspection confirmed the verifier and its exact disposable profile were
+  removed. This storage check does not establish native focus/window placement
+  or a hardware WebGL renderer.
 
 ### Intentionally not changed
 
