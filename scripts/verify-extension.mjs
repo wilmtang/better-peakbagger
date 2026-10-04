@@ -4152,16 +4152,15 @@ try {
         const reports = await context.newPage();
         await reports.addInitScript(() => {
             window.__bpbReportActivationProbe = [];
-            for (const type of ['pointerdown', 'pointerup', 'click']) {
-                document.addEventListener(type, event => {
+            for (const type of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup']) {
+                window.addEventListener(type, event => {
                     const button = document.querySelector('.bpb-report-favorites');
-                    if (!button) return;
-                    const bounds = button.getBoundingClientRect();
+                    const bounds = button?.getBoundingClientRect();
                     window.__bpbReportActivationProbe.push({
                         type, target: event.target.tagName,
                         favorites: event.target === button, trusted: event.isTrusted,
                         point: { x: event.clientX, y: event.clientY },
-                        button: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+                        button: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
                     });
                     window.__bpbReportActivationProbe.splice(0, window.__bpbReportActivationProbe.length - 6);
                 }, true);
@@ -4259,8 +4258,11 @@ try {
                 busy: document.querySelector('.bpb-report-favorites')?.getAttribute('aria-busy'),
                 empty: document.querySelector('.bpb-report-empty')?.hidden,
                 status: document.querySelector('#bpb-peak-report-tools [role="status"]')?.textContent,
+                focused: document.activeElement === document.querySelector('.bpb-report-favorites'),
                 activation: window.__bpbReportActivationProbe,
             })).catch(() => 'Page inaccessible'));
+            console.error('Ignored report frame input:', await Promise.all(reports.frames().map(frame =>
+                frame.evaluate(() => window.__bpbReportActivationProbe).catch(() => 'Frame inaccessible'))));
             await retainBrowserFailure({
                 context, fixtureOrigin: `https://www.peakbagger.com:${port}`,
                 requests: requestEvidence,
@@ -6211,6 +6213,10 @@ try {
     await verifyTerminalAnalyzerFailures();
 } catch (error) {
     primaryError = error;
+}
+if (primaryError && failures.length) {
+    console.error('Checks that failed before the terminal error:');
+    for (const failure of failures) console.error(`  - ${failure}`);
 }
 if (primaryError || failures.length) await retainBrowserFailure({
     context, fixtureOrigin: `https://www.peakbagger.com:${port}`, requests: requestEvidence,
