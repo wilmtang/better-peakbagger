@@ -124,6 +124,40 @@ try {
     await capture('loading');
     await page.evaluate(() => { globalThis.__ignoredFixture.phase = 'local'; globalThis.__releaseIgnoredFixture(); });
     await page.waitForFunction(() => !document.getElementById('ignored-github').hasAttribute('aria-busy'));
+    await page.goto(`chrome-extension://${id}/options/favorites.html#ignored`);
+    await page.evaluate(async () => {
+        await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1,
+            entries: [1, 2].map(cid => ({ cid, name: `Example climber ${cid}`, addedAt: cid })) } });
+        const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+        chrome.runtime.sendMessage = message => message.type === 'IGNORED_MUTATE'
+            ? new Promise((resolve, reject) => {
+                globalThis.__releaseListMutation = () => send(message).then(resolve, reject);
+            }) : send(message);
+    });
+    await page.waitForFunction(() => document.querySelectorAll('#ignored-list li').length === 2);
+    const removed = page.locator('#ignored-list [data-cid="2"] button');
+    await removed.focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#ignored-list [data-cid="2"] button')
+        ?.getAttribute('aria-disabled') === 'true');
+    assert.equal(await removed.evaluate(node => document.activeElement === node), true, 'pending removal lost focus');
+    for (const theme of ['light', 'dark']) {
+        await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+        for (const [width, height] of [[1024,900], [390,844]]) {
+            await page.setViewportSize({ width, height });
+            await page.screenshot({ path: path.join(output, `ignored-pending-${theme}-${width}.png`) });
+        }
+    }
+    await page.evaluate(() => globalThis.__releaseListMutation());
+    await page.waitForFunction(() => document.getElementById('ignored-list').getAttribute('aria-busy') === 'false'
+        && document.activeElement?.closest('[data-cid]')?.dataset.cid === '1');
+    await page.locator('#ignored-undo-button').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.getElementById('ignored-list').getAttribute('aria-busy') === 'true');
+    await page.evaluate(() => globalThis.__releaseListMutation());
+    await page.waitForFunction(() => document.getElementById('ignored-undo').hidden
+        && document.activeElement?.closest('[data-cid]')?.dataset.cid === '2');
+    await page.screenshot({ path: path.join(output, 'ignored-restored-dark-390.png') });
     console.log(`Hidden ${context.browser().version()}; static extension UI, 1024x900 / 390x844, light/dark, beta/climber-list layout, loading/offline/empty/conflict/1500-entry states and a 200% equivalent CSS viewport (DPR 2). Synthetic worker replies; no GitHub network writes.`);
 } catch (error) { failure = error; }
 await resources.dispose(failure);

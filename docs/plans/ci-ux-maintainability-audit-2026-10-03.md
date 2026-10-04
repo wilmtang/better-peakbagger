@@ -12,7 +12,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fixed locally: select the latest unexpired exact-tag artifact across paginated attempts; preserve SHA/version/hash checks. 55 release tests and focused ESLint pass. |
 | C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Fixed: bounded polling waits for the exact persisted height and reports the latest value on timeout. 18 focused tests and hidden Chrome verification pass. |
 | C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
-| U1 | Removing an ignored climber loses keyboard focus to BODY. | Restore focus after list mutation, with deferred-mutation regression coverage. |
+| U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
 | U2 | Favorites setup and import controls bury the actual list. | Native disclosure for uncommon Buddy List options; simplify copy and inspect both themes at narrow and desktop sizes. |
 | E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Pin expected behavior, migrate tests to the shipped async functions, then remove unused implementations. Preserve cancellation and cooperative work coverage. |
 | E2 | Four map destination access pages duplicate the same permission interaction. | Share the initializer with explicit per-provider parameters and preserve trusted-event permission boundaries. |
@@ -56,6 +56,12 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   inspection confirmed the verifier and its exact disposable profile were
   removed. This storage check does not establish native focus/window placement
   or a hardware WebGL renderer.
+
+- U1: 28 focused options tests and scoped ESLint pass. Hidden Chrome 153.0.8010.12
+  verified pending removal, successor focus, and Undo restoration. Static UI
+  screenshots inspected at 390×844 (light) with light/dark captures also made
+  at 1024×900; no WebGL involved. Task browser/profile cleanup confirmed.
+  Hidden DOM focus checks do not prove native focus or screen-reader speech.
 
 ### Intentionally not changed
 
