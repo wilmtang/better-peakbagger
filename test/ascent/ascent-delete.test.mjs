@@ -162,9 +162,10 @@ test('a confirmed delete clears the local report draft and pagehide cannot recre
     submit(dom, button);
     await waitFor(dom, () => nativeSubmissions.length === 1);
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
-    await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.deletedGeneration);
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
 
-    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    assert.ok(dom.chrome._localStore[DRAFT_KEY].deletedGeneration);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, undefined);
     dom.window.close();
 });

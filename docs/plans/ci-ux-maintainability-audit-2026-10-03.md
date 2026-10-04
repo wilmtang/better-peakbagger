@@ -18,6 +18,8 @@ existing commits beyond `origin/main`. Audit work continues on
 | E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Fixed: removed unused sync implementations and migrated tests to the unchanged shipped async path with explicit encounter and reduction fixtures. |
 | E2 | Four map destination access pages duplicate the same permission interaction. | Fixed: shared initializer with explicit provider parameters; trusted-event permission boundaries retained. |
 
+| E3 | The page-test helper duplicates draft routes but bypasses identity checks and differs on deletion/pruning. | Fixed: page fixtures use production mutation handlers, identity validation, tombstones, and pruning; save-confirmation lifecycle messages remain explicit fixture delegates. |
+
 ## Evidence and scope
 
 - [Latest dependency failure](https://github.com/wilmtang/better-peakbagger/actions/runs/37172512591):
@@ -95,6 +97,15 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   inspected at 1000×760; static HTML, no WebGL. Native permission prompts
   remain uninspected; grants existed only in the disposable test manifest.
   Test browser/profile teardown confirmed.
+
+- E3: removed 105 net lines from the draft helper by using production handlers.
+  All 172 focused editor/options tests, 2,181 full-suite tests, 14 scale tests,
+  and full lint passed (seven existing owned web-ext warnings). Updated stale
+  physical-deletion assumptions in editor, draft-manager, and ascent-delete
+  tests; verified sender identity, tombstone suppression of stale writes,
+  storage failure recovery, terminal autosave cleanup, and unrelated-cache
+  preservation during pruning. Save-confirmation orchestration remains
+  delegated explicitly and has separate worker-route coverage.
 
 ### Intentionally not changed
 
