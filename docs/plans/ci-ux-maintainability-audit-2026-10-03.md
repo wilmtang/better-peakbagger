@@ -9,7 +9,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | ID | Finding | Disposition / verification |
 | --- | --- | --- |
 | C1 | Latest dependency CI stops before tests on `web-ext → @devicefarmer/adbkit → node-forge`. | Current npm audit reproduces three high findings for GHSA-86w9-cpqp-85rv. Registry latest versions are web-ext 10.7.0, adbkit 3.3.9, node-forge 1.4.0; no patched release is available. Keep the zero-advisory gate. |
-| C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fix exact-tag artifact selection across attempts; preserve SHA/version/hash checks. |
+| C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fixed locally: select the latest unexpired exact-tag artifact across paginated attempts; preserve SHA/version/hash checks. 55 release tests and focused ESLint pass. |
 | C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Replace the timing assumption with bounded polling and live diagnostics. |
 | C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Restore focus after list mutation, with deferred-mutation regression coverage. |
@@ -44,7 +44,10 @@ inspection. No push, merge, tag, or store mutation is included in this work.
 
 ### Fixed and verified
 
-Pending implementation.
+- C2: Firefox recovery searches all artifact pages and accepts an earlier
+  verified attempt after a store-only rerun. Selection rejects expired,
+  future, wrong-tag, and ambiguous matches; legacy fallback remains explicit.
+  All 55 focused release tests, focused ESLint, and `git diff --check` passed.
 
 ### Intentionally not changed
 
@@ -56,5 +59,7 @@ Pending implementation.
 
 ### Changed but not fully proven
 
-No implementation yet. Remote CI success requires an authorized push and a
-terminal workflow on the resulting commit; local checks cannot establish it.
+- C2: selector and workflow contracts are locally verified; no recovery
+  workflow or store mutation was dispatched. C4 remains a separate limitation.
+- Remote CI success requires an authorized push and a terminal workflow on the
+  resulting commit; local checks cannot establish it.
