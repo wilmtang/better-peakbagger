@@ -77,6 +77,15 @@ that no published fix exists remains accurate. Release audits remain blocked.
   as well as ignored climbers, and retains bounded diagnostics before closing
   that fixture page. Five focused tests, targeted lint and the complete hidden
   Chrome 128.0.6613.137 check at 1000×760 passed on macOS.
+- Hosted reproduction still failed after the readiness change. A bounded
+  activation trace then established that no pointer-down, pointer-up or click
+  reached the report document while Playwright acknowledged the click. The
+  verifier now explicitly activates its owned headless fixture tab, checks the
+  browser's actual active-tab state, and requires a trusted Favorites click
+  before asserting the empty state. It does not retry a lost click or substitute
+  a synthetic event, and it retains the same filter and persistence assertions.
+  The complete hidden Chrome 128 verifier with this guard and targeted lint
+  passed locally before submission to hosted CI.
 
 ### Intentionally not changed
 
@@ -95,10 +104,9 @@ that no published fix exists remains accurate. Release audits remain blocked.
 - Local tests cannot establish remote CI. The integration is to be submitted
   through a PR and merged only after its required checks succeed; the live PR
   and workflow records supply that later evidence.
-- The first hosted Chrome 128 timeout did not reproduce in 25 focused local
-  attempts or either complete diagnostic run. Missing source readiness and
-  premature evidence cleanup were corrected, but the original timeout's exact
-  cause is not established. A passing repeat alone is not a root-cause proof.
+- The hosted Chrome 128 input-delivery failure did not reproduce in 25 focused
+  local attempts. The platform's underlying reason for dropping protocol input
+  is not established; hosted CI must verify the explicit tab activation repair.
 - Hidden browser checks do not establish native focus, window placement,
   permission prompts, screen-reader speech or live authenticated providers.
   Historical-tag release recovery and live ignored-list synchronization gaps

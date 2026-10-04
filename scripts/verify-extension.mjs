@@ -4188,8 +4188,17 @@ try {
                 && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1')
                 && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorites · 0'
                 && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
+            // Hosted Chrome 128 acknowledged input without delivering it to
+            // this document. Establish the owned headless fixture's tab state
+            // before input; Playwright emulates DOM focus even in inactive tabs.
+            await reports.bringToFront();
+            await waitForPageCondition(manager, async url =>
+                (await chrome.tabs.query({ active: true, currentWindow: true }))
+                    .some(tab => tab.url === url), reports.url());
             await reports.locator('.bpb-report-favorites').click();
-            console.log('Ignored peak report activation:', await reports.evaluate(() => window.__bpbReportActivationProbe));
+            const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
+            check(activation.some(event => event.type === 'click' && event.favorites && event.trusted),
+                `the ignored peak report fixture received no trusted Favorites click: ${JSON.stringify(activation)}`);
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
             await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
