@@ -16,7 +16,7 @@ existing commits beyond `origin/main`. Audit work continues on
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
 | U2 | Favorites setup and import controls bury the actual list. | Fixed: native Buddy List disclosure and shorter copy keep the list visible; confirmation remains outside the disclosure and Cancel restores visible focus. |
 | E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Fixed: removed unused sync implementations and migrated tests to the unchanged shipped async path with explicit encounter and reduction fixtures. |
-| E2 | Four map destination access pages duplicate the same permission interaction. | Share the initializer with explicit per-provider parameters and preserve trusted-event permission boundaries. |
+| E2 | Four map destination access pages duplicate the same permission interaction. | Fixed: shared initializer with explicit provider parameters; trusted-event permission boundaries retained. |
 
 ## Evidence and scope
 
@@ -88,6 +88,13 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   checks, and full hidden Chrome/Firefox extension verification passed.
   Cancellation, mandatory points, midpoint ties, source identity, and the
   20,000-point/5,000-peak budget remain covered.
+
+- E2: 30 focused access/manifest tests and scoped ESLint pass. Hidden Chrome
+  153.0.8010.12 map-handoff verification passed against masked HTTPS fixtures
+  at 1000×760 and 430×760. Light Gaia and dark CalTopo access screenshots
+  inspected at 1000×760; static HTML, no WebGL. Native permission prompts
+  remain uninspected; grants existed only in the disposable test manifest.
+  Test browser/profile teardown confirmed.
 
 ### Intentionally not changed
 
