@@ -4195,12 +4195,19 @@ try {
             await waitForPageCondition(manager, async url =>
                 (await chrome.tabs.query({ active: true, currentWindow: true }))
                     .some(tab => tab.url === url), reports.url());
-            await reports.locator('.bpb-report-favorites').click();
+            // This scenario verifies filter composition and persistence. Use
+            // native keyboard activation so it does not depend on the failing
+            // Linux Chrome 128 protocol pointer delivery. Never dispatch a
+            // synthetic click or retry an activation that may already save.
+            await reports.locator('.bpb-report-favorites').focus();
+            await reports.waitForFunction(() => document.activeElement === document.querySelector('.bpb-report-favorites'));
+            await reports.keyboard.press('Enter');
             const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
             check(activation.some(event => event.type === 'click' && event.favorites && event.trusted),
                 `the ignored peak report fixture received no trusted Favorites click: ${JSON.stringify(activation)}`);
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
-            await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
+            await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).focus();
+            await reports.keyboard.press('Enter');
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
             check(await reports.locator('.bpb-report-favorites').getAttribute('aria-pressed') === 'true',
                 'revealing peak reports cleared the favorites preference');
