@@ -240,7 +240,7 @@ test('GPX structure rejects segment and waypoint limit plus one before retaining
         .repeat(MAX_GPX_TRACK_SEGMENTS + 1);
     assert.throws(
         () => parseGpxData(`<gpx>${segments}</gpx>`),
-        error => error.code === 'gpx-too-large' && /20,000 track points/.test(error.message),
+        error => error.code === 'gpx-too-large' && /100,000 track points/.test(error.message),
     );
 
     const waypoints = '<wpt lat="1" lon="2"/>'.repeat(MAX_GPX_WAYPOINTS + 1);

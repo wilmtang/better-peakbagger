@@ -521,20 +521,23 @@ fail-closed contract before summit detection:
 
 | Resource | Limit |
 | --- | ---: |
-| Encoded GPX body and decoded GPX text | 16 MiB each |
-| Parsed track points / track segments / waypoints | 20,000 / 50 / 3,000 |
+| Encoded GPX body and decoded GPX text | 64 MiB each |
+| Parsed track points / track segments / waypoints | 100,000 / 50 / 3,000 |
 | One Peakbagger summit response | 1 MiB |
 | Parsed Peakbagger summits / route encounters | 5,000 / 256 |
-| One Peakbagger GPX response | 16 MiB |
+| One Peakbagger GPX response | 64 MiB |
 | Other Peakbagger HTML responses | 8 MiB |
 | Corridor boxes / total attempts / concurrent Peakbagger requests origin-wide | 64 / 128 / 4 |
 | Complete sanitize, corridor, and detection transaction | 60 seconds |
 
 Response bodies are counted while streaming after content decoding; a missing,
 compressed, or dishonest `Content-Length` does not bypass the limit. The
-20,000-point scale case remains supported when its route fits the bounded
+100,000-point scale case remains supported when its route fits the bounded
 corridor plan. Oversized or excessively fragmented input is rejected with an
 actionable error and is never silently truncated into a partial summit result.
+The point budget covers more than 24 hours at one fix per second; the byte budget
+also accommodates Garmin's per-point extensions. It does not expand the summit
+request, elapsed-time, or final 3,000-point upload budgets.
 Cancellation, job replacement, source closure, and expiry abort both the
 page-owned provider request and the worker-owned Peakbagger lookup generation.
 Provider ownership and export use their page-owned eight- and 30-second
@@ -560,8 +563,9 @@ the user, while release or restart cleanup may remove only an expired,
 unadopted tab whose current URL still exactly matches the lease.
 
 Provider parsing is preflighted before DOM construction and is measured in
-hidden native Chrome and Firefox at 1,000, 5,000, and 20,000 points plus the
-limit-plus-one rejection. Local developer/test realms can opt into
+hidden native Chrome and Firefox at 1,000, 5,000, 20,000, and 100,000 points plus
+a 100,000-point Garmin-shaped export with extensions and limit-plus-one rejection.
+Local developer/test realms can opt into
 `BPB_CAPTURE_DIAGNOSTICS` for one allowlisted duration/count record covering
 admission through storage and popup-to-ready. The hook writes only to the local
 console, is inert by default, and cannot accept URLs, identities, coordinates,
@@ -1766,7 +1770,7 @@ No single green command proves the extension works:
   bundles in jsdom. It covers algorithms, fixtures, privacy gates, DOM behavior,
   and worker state, but no browser interprets the real manifest.
 - `npm run test:scale` separately exercises the 4,145-row ascent fixture, a
-  synthetic 20,000-point provider GPX, and the complete 1,500-entry favorite
+  synthetic 100,000-point provider GPX, and the complete 1,500-entry favorite
   manager/search/backup path so the default local loop can stay fast without
   losing large-input coverage.
 - `npm run lint` catches JavaScript errors without rewriting source, then checks

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Production-scale CPU coverage stays outside npm test. This exercises the
-// accepted 20,000-point route and 5,000-peak response together, including the
+// accepted 100,000-point route and 5,000-peak response together, including the
 // summit identities, protected anchors, point budgets, and event-loop yielding.
 
 import test from 'node:test';
@@ -13,12 +13,18 @@ import { captureCore as Core } from '../../../src/capture/capture-core.js';
 import { captureResourceLimits as Limits } from '../../../src/capture/capture-resource-limits.js';
 
 const START_TIME = Date.UTC(2026, 6, 1, 14);
-const route = Array.from({ length: Limits.MAX_GPX_TRACK_POINTS }, (_, index) => ({
-    lat: 40 + Math.sin(index / 7) * 0.0001,
-    lon: -105.3 + index * 0.6 / (Limits.MAX_GPX_TRACK_POINTS - 1),
-    ele: 2_000 + Math.sin(index / 13) * 80,
-    time: START_TIME + index * 1_000,
-}));
+const route = Array.from({ length: Limits.MAX_GPX_TRACK_POINTS }, (_, index) => {
+    const fraction = index / (Limits.MAX_GPX_TRACK_POINTS - 1);
+    // Increase recording density without changing the original route's
+    // geometry or elevation oscillations and its reduction-error expectation.
+    const originalIndex = fraction * 19_999;
+    return {
+        lat: 40 + Math.sin(originalIndex / 7) * 0.0001,
+        lon: -105.3 + fraction * 0.6,
+        ele: 2_000 + Math.sin(originalIndex / 13) * 80,
+        time: START_TIME + index * 1_000,
+    };
+});
 const peaks = Array.from({ length: Limits.MAX_PEAKBAGGER_PEAKS }, (_, index) => ({
     id: index + 1,
     name: `Scale Peak ${index + 1}`,

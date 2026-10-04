@@ -15,7 +15,10 @@ const corridorTrack = pointCount => Array.from({ length: pointCount }, (_, index
 }));
 
 test('the capture resource contract preserves the production scale within hard budgets', () => {
-    assert.equal(Limits.MAX_GPX_TRACK_POINTS, 20_000);
+    assert.equal(Limits.MAX_GPX_BYTES, 64 * 1024 * 1024);
+    assert.equal(Limits.MAX_GPX_TEXT_CHARS, Limits.MAX_GPX_BYTES);
+    assert.equal(Limits.MAX_PEAKBAGGER_GPX_BYTES, Limits.MAX_GPX_BYTES);
+    assert.equal(Limits.MAX_GPX_TRACK_POINTS, 100_000);
     assert.equal(Limits.MAX_GPX_TRACK_SEGMENTS, 50);
     assert.equal(Limits.MAX_GPX_WAYPOINTS, 3_000);
     assert.equal(Limits.MAX_PEAKBAGGER_PEAKS, 5_000);

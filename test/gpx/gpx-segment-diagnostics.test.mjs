@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { gpxMetrics as M } from '../../src/gpx/gpx-metrics.js';
+import { MAX_GPX_TRACK_POINTS, MAX_GPX_TRACK_SEGMENTS } from '../../src/capture/capture-resource-limits.js';
 import { diagnoseGpxSegments as diagnose, diagnosticMetricInputs } from '../../src/gpx/gpx-segment-diagnostics.js';
 import { suspectSegments, metricInputs } from '../helpers/suspect-gpx.mjs';
 
@@ -67,10 +68,11 @@ test('multiple possible donors warn without selecting a survivor', () => {
     assert.equal(result.inventory[2].reason, 'ambiguous-duplicate');
 });
 
-test('20,000 points and 50 segments stay bounded and oversized input is rejected', () => {
+test('100,000 points and 50 segments stay bounded and oversized input is rejected', () => {
     const route = suspectSegments()[1];
-    const source = Array.from({ length: 50 }, () => Array.from({ length: 400 }, (_, i) => ({ ...route[i % 56] })));
-    assert.equal(diagnose(source).sourcePointCount, 20_000);
+    const source = Array.from({ length: MAX_GPX_TRACK_SEGMENTS }, () =>
+        Array.from({ length: MAX_GPX_TRACK_POINTS / MAX_GPX_TRACK_SEGMENTS }, (_, i) => ({ ...route[i % 56] })));
+    assert.equal(diagnose(source).sourcePointCount, MAX_GPX_TRACK_POINTS);
     assert.throws(() => diagnose([...source, []]), /too large/);
     source[0].push(route[0]);
     assert.throws(() => diagnose(source), /too large/);

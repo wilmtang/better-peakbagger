@@ -182,13 +182,13 @@ script is added or removed without updating it.
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
-| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 20,000-point/5,000-peak cooperative capture analysis, 20,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
 | `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
 | `npm run verify:multi-summit` | Verifies sequential Preview and simulated manual Save for multiple summit drafts in hidden Chrome, with isolated HTTPS Peakbagger fixtures. Checks complete GPX retention, shared trip identity, and session payload cleanup. |
 | `npm run verify:capture-flow` | Exercises the unmodified extension in current hidden Chrome through its actual toolbar action: temporary provider access, Garmin/Strava exports, summit lookup, results, draft Preview, privacy gates, outage retry, cancellation/restart, popup reopening, and track deletion. All sites are isolated HTTPS fixtures; no live provider compatibility or native focus is established. |
 | `npm run verify:capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image and delayed helper navigation. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `-- chrome` or `-- firefox` for one browser. |
 | `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
-| `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, and 20,000-point provider GPX parsing plus over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
+| `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, 20,000-, and 100,000-point provider GPX parsing, a 100,000-point Garmin-shaped export with extensions, and over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
 | `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, AllTrails, and CalTopo HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the four map hosts because hidden automation cannot inspect native permission prompts. |
 | `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
@@ -596,15 +596,17 @@ add it to the merge-step condition, for example
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
-  20,000-point GPX completeness case, 20,000-point/5,000-peak analysis, and
+  100,000-point GPX completeness case, 100,000-point/5,000-peak analysis, and
   1,500-entry favorite render/search/backup path out of the fast local loop.
-  The capture case checks summit identities and protected reduction anchors, internal
-  cancellation checkpoints, a generous total CPU ceiling, and a 100 ms
-  maximum yield gap; it still cannot prove the live MV3 message scheduler.
+  The capture case checks summit identities and protected reduction anchors,
+  internal cancellation checkpoints, and a generous total CPU ceiling; it still
+  cannot prove native renderer responsiveness or the live MV3 message scheduler.
 - `npm run verify:provider-performance` measures native `DOMParser` and
-  extraction for synthetic 1,000-, 5,000-, and 20,000-point GPX plus early
+  extraction for synthetic 1,000-, 5,000-, 20,000-, and 100,000-point GPX,
+  including a Garmin-shaped export with extensions, plus early
   over-limit rejection in hidden Chrome and Firefox. It blocks network and does
-  not estimate provider latency or slower hardware.
+  not estimate provider latency or slower hardware. The parser remains
+  synchronous; this gate does not measure peak memory or cancellation latency.
 - `npm run verify:provider-contracts` routes sanitized provider-shaped pages to
   the exact Garmin and Strava HTTPS origins, intercepts every request, and
   exercises ownership, loading, sign-out, localization, navigation, Garmin

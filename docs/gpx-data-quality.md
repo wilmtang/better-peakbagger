@@ -90,7 +90,7 @@ singletons in ambiguous recordings remain included with review diagnostics.
 Ordinary multi-day recordings, nearby early points, and legitimate repeated
 routes remain included. There is no longest-route heuristic, approximate
 matching, or reconstruction of missing measurements. Resource limits remain
-20,000 track points and 50 segments, and classification runs once per load,
+100,000 track points and 50 segments, and classification runs once per load,
 not on hover, resize, unit changes, or theme changes.
 
 The existing metrics row always shows the **source** point count. When relevant,

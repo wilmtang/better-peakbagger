@@ -519,7 +519,7 @@ test('provider GPX rejects an oversized declared body before reading it', async 
 
     const capture = await dom.window.BPBProviderPage.capture();
     assert.equal(capture.code, 'gpx-too-large');
-    assert.match(capture.message, /16 MiB.*20,000 track points/);
+    assert.match(capture.message, /64 MiB.*100,000 track points/);
     assert.equal(read, false);
 });
 

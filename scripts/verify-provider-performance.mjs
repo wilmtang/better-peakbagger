@@ -6,6 +6,7 @@
 
 import fs from 'node:fs/promises';
 import { chromium, firefox } from 'playwright';
+import { MAX_GPX_TRACK_POINTS } from '../src/capture/capture-resource-limits.js';
 
 const providerBundle = await fs.readFile(new URL('../dist/provider-page.js', import.meta.url), 'utf8');
 const VIEWPORT = { width: 1280, height: 720 };
@@ -13,14 +14,23 @@ const CASES = Object.freeze([
     { points: 1000, maxMs: 200 },
     { points: 5000, maxMs: 300 },
     { points: 20000, maxMs: 500 },
+    { points: MAX_GPX_TRACK_POINTS, maxMs: 1000 },
+    // Whitespace and per-point extensions materialize extra DOM nodes. Allow
+    // two seconds at the long-recording cap; this parser is still synchronous.
+    { points: MAX_GPX_TRACK_POINTS, extensions: true, maxMs: 2000 },
 ]);
 const LIMIT_REJECTION_MAX_MS = 300;
 
-const measure = (page, points, overLimit = false) => page.evaluate(({ count, reject }) => {
+const measure = (page, points, { overLimit = false, extensions = false } = {}) => page.evaluate(({ count, reject, extensions }) => {
     const trackPoints = Array.from({ length: count }, (_, index) =>
-        `<trkpt lat="${47 + index / 100000}" lon="${-122 + index / 100000}">`
-        + `<ele>${100 + index % 100}</ele><time>2026-09-03T12:00:00Z</time></trkpt>`).join('');
-    const gpx = `<gpx><trk><trkseg>${trackPoints}</trkseg></trk></gpx>`;
+        `      <trkpt lat="${47 + index / 100000}" lon="${-122 + index / 100000}">\n`
+        + `        <ele>${100 + index % 100}</ele>\n        <time>2026-09-03T12:00:00Z</time>\n`
+        + (extensions ? '        <extensions>\n          <gpxtpx:TrackPointExtension>\n'
+            + '            <gpxtpx:hr>120</gpxtpx:hr>\n          </gpxtpx:TrackPointExtension>\n        </extensions>\n' : '')
+        + '      </trkpt>\n').join('');
+    const gpx = '<gpx xmlns="http://www.topografix.com/GPX/1/1" '
+        + `xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><trkseg>${trackPoints}</trkseg></trk></gpx>`;
+    const bytes = new TextEncoder().encode(gpx).byteLength;
     const started = performance.now();
     try {
         const parsed = globalThis.BPBProviderPage.parseGpxData(gpx);
@@ -28,6 +38,7 @@ const measure = (page, points, overLimit = false) => page.evaluate(({ count, rej
             elapsedMs: performance.now() - started,
             parsedPoints: parsed.segments[0]?.length || 0,
             rejected: false,
+            bytes,
         };
     } catch (error) {
         return {
@@ -37,7 +48,7 @@ const measure = (page, points, overLimit = false) => page.evaluate(({ count, rej
             expectedRejection: reject,
         };
     }
-}, { count: points, reject: overLimit });
+}, { count: points, reject: overLimit, extensions });
 
 const verifyBrowser = async ({ name, engine, launch }) => {
     let browser = null;
@@ -49,13 +60,18 @@ const verifyBrowser = async ({ name, engine, launch }) => {
         await page.addScriptTag({ content: providerBundle });
         const measurements = [];
         for (const item of CASES) {
-            const result = await measure(page, item.points);
+            const result = await measure(page, item.points, { extensions: !!item.extensions });
             if (result.rejected || result.parsedPoints !== item.points || result.elapsedMs > item.maxMs) {
                 throw new Error(`${name} ${item.points}-point parse failed its ${item.maxMs} ms bound: ${JSON.stringify(result)}`);
             }
-            measurements.push({ points: item.points, parseMs: Math.round(result.elapsedMs * 10) / 10 });
+            measurements.push({
+                points: item.points,
+                extensions: !!item.extensions,
+                bytes: result.bytes,
+                parseMs: Math.round(result.elapsedMs * 10) / 10,
+            });
         }
-        const rejected = await measure(page, 20001, true);
+        const rejected = await measure(page, MAX_GPX_TRACK_POINTS + 1, { overLimit: true });
         if (!rejected.rejected || rejected.elapsedMs > LIMIT_REJECTION_MAX_MS) {
             throw new Error(`${name} limit rejection failed its ${LIMIT_REJECTION_MAX_MS} ms bound: ${JSON.stringify(rejected)}`);
         }

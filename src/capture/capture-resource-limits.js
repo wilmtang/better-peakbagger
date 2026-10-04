@@ -6,9 +6,11 @@
 // readers, the pure parser, background validation, Peakbagger response reads,
 // and the bounded corridor lookup.
 
-export const MAX_GPX_BYTES = 16 * 1024 * 1024;
-export const MAX_GPX_TEXT_CHARS = 16 * 1024 * 1024;
-export const MAX_GPX_TRACK_POINTS = 20_000;
+// Allow more than 24 hours at one track point per second, with room for
+// Garmin's per-point extensions. Network and analysis budgets remain separate.
+export const MAX_GPX_BYTES = 64 * 1024 * 1024;
+export const MAX_GPX_TEXT_CHARS = 64 * 1024 * 1024;
+export const MAX_GPX_TRACK_POINTS = 100_000;
 export const MAX_GPX_TRACK_SEGMENTS = 50;
 export const MAX_GPX_WAYPOINTS = 3_000;
 
@@ -30,7 +32,7 @@ export const peakbaggerResponseLimit = kind => {
 };
 
 export const gpxLimitMessage = () =>
-    'This GPX is too large to process safely. Keep it within 16 MiB, 20,000 track points, 50 track segments, and 3,000 waypoints.';
+    'This GPX is too large to process safely. Keep it within 64 MiB, 100,000 track points, 50 track segments, and 3,000 waypoints.';
 
 export const captureResourceLimits = {
     MAX_GPX_BYTES,

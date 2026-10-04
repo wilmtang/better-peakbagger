@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { MAX_GPX_TRACK_POINTS } from '../../src/capture/capture-resource-limits.js';
 import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mjs';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
@@ -472,18 +473,34 @@ test('a partial corridor lookup fails closed as an error, never as "no peaks"', 
         'one box receives exactly the documented two-attempt budget');
 });
 
+test('the worker admits the complete 100,000-point recording at the shared limit', async () => {
+    const harness = createHarness({ peakXml: '<p/>' });
+    const segments = [Array.from({ length: MAX_GPX_TRACK_POINTS }, (_, index) => ({
+        lat: 0,
+        lon: -0.001 + index * 0.002 / (MAX_GPX_TRACK_POINTS - 1),
+        ele: 100,
+        time: Date.UTC(2026, 6, 1, 15) + index * 1000,
+    }))];
+    const result = await harness.send({
+        type: 'GPX_PROCESS_START', segments, waypoints: [], trackName: '', utcOffsetMinutes: 0,
+    });
+    assert.equal(result.phase, 'no-matches');
+    assert.equal(harness.values.bpbCaptureJobs['5'].trackSummary.originalPointCount, MAX_GPX_TRACK_POINTS);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 1);
+});
+
 test('the worker rejects point and corridor limits before issuing summit requests', async () => {
     const tooManyPoints = createHarness();
     const point = { lat: 0, lon: 0, ele: null, time: null };
     const pointsResult = await tooManyPoints.send({
         type: 'GPX_PROCESS_START',
-        segments: [Array(20_001).fill(point)],
+        segments: [Array(MAX_GPX_TRACK_POINTS + 1).fill(point)],
         waypoints: [],
         trackName: '',
         utcOffsetMinutes: 0,
     });
     assert.equal(pointsResult.error.code, 'gpx-too-large');
-    assert.match(pointsResult.error.message, /20,000 track points/);
+    assert.match(pointsResult.error.message, /100,000 track points/);
     assert.equal(tooManyPoints.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
 
     const fragmented = createHarness();

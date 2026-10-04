@@ -794,7 +794,7 @@ test('local upload rejects an oversized file before reading or messaging the wor
 
     assert.equal(read, false);
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
-    assert.match(uploadStatus(dom).textContent, /16 MiB.*20,000 track points/);
+    assert.match(uploadStatus(dom).textContent, /64 MiB.*100,000 track points/);
 });
 
 test('processing failures name the problem and restore the native Preview', async () => {
