@@ -962,6 +962,7 @@ async function main() {
         });
       };
     })()`);
+        await driver.findElement(By.css('.favorites-buddy-options summary')).click();
         await driver.findElement(By.id('favorites-mirror-buddies')).click();
         const mirrorPreview = await waitForScript(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
@@ -1192,6 +1193,9 @@ async function main() {
 
         // The "Keep Buddy removals in sync" toggle lives on the favorites page.
         await driver.get(favoritesUrl);
+        if (!await driver.executeScript("return document.querySelector('.favorites-buddy-options').open")) {
+            await driver.findElement(By.css('.favorites-buddy-options summary')).click();
+        }
         const removeWithBuddy = await driver.findElement(By.id('favorites-remove-with-buddy'));
         assertState(!(await removeWithBuddy.isSelected()),
             'Firefox rendered destructive Buddy removal sync on by default');

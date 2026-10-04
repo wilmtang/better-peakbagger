@@ -72,6 +72,10 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   Cancel focus are verified. Dark-theme text uses the existing link color.
   Static UI only, no WebGL; no native browser chrome/screen-reader proof.
   Disposable profiles and verifier processes were removed.
+  The broader Chrome/Firefox smoke flows initially attempted hidden import
+  controls; they now open the disclosure through its summary. Both full
+  verifiers passed afterward (hidden Chrome 153.0.8010.12, Firefox 157.0;
+  base viewport 1000×760), with teardown confirmed.
 
 - C5: 6 dependency-policy tests and scoped ESLint pass. Synthetic later
   image-size/adm-zip patches are accepted; known-old, unreviewed-major, and
