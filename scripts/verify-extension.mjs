@@ -4150,6 +4150,23 @@ try {
             return { local, sync, keys };
         });
         const reports = await context.newPage();
+        await reports.addInitScript(() => {
+            window.__bpbReportActivationProbe = [];
+            for (const type of ['pointerdown', 'pointerup', 'click']) {
+                document.addEventListener(type, event => {
+                    const button = document.querySelector('.bpb-report-favorites');
+                    if (!button) return;
+                    const bounds = button.getBoundingClientRect();
+                    window.__bpbReportActivationProbe.push({
+                        type, target: event.target.tagName,
+                        favorites: event.target === button, trusted: event.isTrusted,
+                        point: { x: event.clientX, y: event.clientY },
+                        button: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+                    });
+                    window.__bpbReportActivationProbe.splice(0, window.__bpbReportActivationProbe.length - 6);
+                }, true);
+            }
+        });
         const captureReports = async name => {
             if (!process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) return;
             for (const theme of ['light', 'dark']) {
@@ -4172,6 +4189,7 @@ try {
                 && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorites · 0'
                 && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
             await reports.locator('.bpb-report-favorites').click();
+            console.log('Ignored peak report activation:', await reports.evaluate(() => window.__bpbReportActivationProbe));
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
             await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
@@ -4225,6 +4243,7 @@ try {
                 busy: document.querySelector('.bpb-report-favorites')?.getAttribute('aria-busy'),
                 empty: document.querySelector('.bpb-report-empty')?.hidden,
                 status: document.querySelector('#bpb-peak-report-tools [role="status"]')?.textContent,
+                activation: window.__bpbReportActivationProbe,
             })).catch(() => 'Page inaccessible'));
             await retainBrowserFailure({
                 context, fixtureOrigin: `https://www.peakbagger.com:${port}`,
