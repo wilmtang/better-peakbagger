@@ -80,15 +80,14 @@ that no published fix exists remains accurate. Release audits remain blocked.
 - Hosted reproduction still failed after the readiness change. A bounded
   activation trace then established that no pointer-down, pointer-up or click
   reached the report document while Playwright acknowledged the click. The
-  Explicit tab activation also failed to restore protocol pointer delivery.
-  This filter-composition scenario now activates its native buttons by focused
-  Enter, checks the browser's actual active-tab state and DOM focus, and requires
-  a trusted Favorites click before asserting the empty state. It does not retry
-  activation or substitute a synthetic event, and it retains the same reveal,
-  filter and persistence assertions. This case supplies native keyboard proof;
-  it does not establish physical pointer input on the hosted Chrome 128 floor.
-  The full hidden Chrome 128.0.6613.137 verifier and targeted lint passed with
-  native keyboard activation before hosted submission.
+  Explicit tab activation and native Enter also failed on the new target.
+  Window-level traces established that neither frame received keyboard or
+  pointer events; all preceding checks had passed. The scenario now reuses the
+  Peak page target that already proved native interaction, navigates it afresh,
+  and requires a trusted pointer click for Favorites plus native Enter for
+  ignored reveal. Active-tab, focus, filter and persistence assertions remain.
+  It does not retry activation or substitute a synthetic event. The full hidden
+  Chrome 128.0.6613.137 verifier and targeted lint passed locally with target reuse.
 
 ### Intentionally not changed
 
@@ -109,7 +108,7 @@ that no published fix exists remains accurate. Release audits remain blocked.
   and workflow records supply that later evidence.
 - The hosted Chrome 128 input-delivery failure did not reproduce in 25 focused
   local attempts. The platform's underlying reason for dropping protocol input
-  is not established; hosted CI must verify the native keyboard scenario.
+  is not established; hosted CI must verify the reused native-input target.
 - Hidden browser checks do not establish native focus, window placement,
   permission prompts, screen-reader speech or live authenticated providers.
   Historical-tag release recovery and live ignored-list synchronization gaps

@@ -154,6 +154,7 @@ let context;
 let requestEvidence;
 let primaryError = null;
 let chromeBfcacheResult = null;
+let peakReportPage;
 try {
     context = await chromium.launchPersistentContext(profile, {
         ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
@@ -4049,7 +4050,10 @@ try {
         const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })
             .then(() => true).catch(() => false);
         check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');
-        await peakPage.close();
+        // Reuse this proven native-input target for the report scenario below.
+        // Hosted Chrome 128 dropped both keyboard and pointer input to a new
+        // report target after this page closed, despite active-tab/DOM focus.
+        peakReportPage = peakPage;
     }
 
     // Real worker routes and Git Data client; all GitHub traffic stays synthetic.
@@ -4149,7 +4153,7 @@ try {
             });
             return { local, sync, keys };
         });
-        const reports = await context.newPage();
+        const reports = peakReportPage;
         await reports.addInitScript(() => {
             window.__bpbReportActivationProbe = [];
             for (const type of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup']) {
@@ -4194,13 +4198,9 @@ try {
             await waitForPageCondition(manager, async url =>
                 (await chrome.tabs.query({ active: true, currentWindow: true }))
                     .some(tab => tab.url === url), reports.url());
-            // This scenario verifies filter composition and persistence. Use
-            // native keyboard activation so it does not depend on the failing
-            // Linux Chrome 128 protocol pointer delivery. Never dispatch a
-            // synthetic click or retry an activation that may already save.
             await reports.locator('.bpb-report-favorites').focus();
             await reports.waitForFunction(() => document.activeElement === document.querySelector('.bpb-report-favorites'));
-            await reports.keyboard.press('Enter');
+            await reports.locator('.bpb-report-favorites').click();
             const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
             check(activation.some(event => event.type === 'click' && event.favorites && event.trusted),
                 `the ignored peak report fixture received no trusted Favorites click: ${JSON.stringify(activation)}`);
