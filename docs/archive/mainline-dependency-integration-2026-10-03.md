@@ -90,6 +90,12 @@ that no published fix exists remains accurate. Release audits remain blocked.
   actions, retaining the trusted-click assertion and bounded diagnostics.
   Six focused tests, targeted lint and the full hidden Chrome 128.0.6613.137
   verifier passed locally before hosted submission.
+- [Hosted Chrome 128 verification](https://github.com/wilmtang/better-peakbagger/actions/runs/37187693609/job/111393052571)
+  passed with the corrected HTTPS frame, both original pointer actions and the
+  trusted-click assertion. On the same source head, hosted Node tests passed
+  all 2,198 tests and lint with six owned warnings; scale, Firefox 152/latest
+  and both copied-runtime GPU checks passed. The required audit output named
+  the exact accepted development advisory and October 17 expiry.
 
 ### Intentionally not changed
 
@@ -105,12 +111,13 @@ that no published fix exists remains accurate. Release audits remain blocked.
 
 - The unpatched development advisory is accepted temporarily in ordinary CI,
   not fixed. Raw npm audit and strict release audits still fail.
-- Local tests cannot establish remote CI. The integration is to be submitted
-  through a PR and merged only after its required checks succeed; the live PR
-  and workflow records supply that later evidence.
+- [Integration PR #44](https://github.com/wilmtang/better-peakbagger/pull/44)
+  and its mainline workflow records supply final merge and whole-pipeline
+  evidence. Local passes alone cannot establish that result.
 - The hosted Chrome 128 input-delivery failure did not reproduce in 25 focused
   local attempts. The platform's underlying reason for dropping protocol input
-  is not established; hosted CI must verify the corrected HTTPS fixture frame.
+  is not established. The corrected HTTPS frame and native pointer behavior are
+  now hosted-verified; this does not explain the older browser's internals.
 - Hidden browser checks do not establish native focus, window placement,
   permission prompts, screen-reader speech or live authenticated providers.
   Historical-tag release recovery and live ignored-list synchronization gaps
