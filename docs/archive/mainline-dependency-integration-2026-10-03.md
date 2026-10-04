@@ -70,6 +70,13 @@ that no published fix exists remains accurate. Release audits remain blocked.
   cover scope, expiry and release separation. The resulting full Node 24.21.0
   suite passed all 2,197 tests; full lint passed with six owned warnings.
   Test, release and auto-merge workflow YAML parsed successfully.
+- The first integration PR run passed Node, scale, Firefox and GPU checks but
+  Chrome 128 timed out after the ignored-report Favorites click. Its artifact
+  had no page state because scope cleanup ran before the outer failure handler.
+  The verifier now waits for the independently loaded custom Favorites source
+  as well as ignored climbers, and retains bounded diagnostics before closing
+  that fixture page. Five focused tests, targeted lint and the complete hidden
+  Chrome 128.0.6613.137 check at 1000×760 passed on macOS.
 
 ### Intentionally not changed
 
@@ -88,6 +95,10 @@ that no published fix exists remains accurate. Release audits remain blocked.
 - Local tests cannot establish remote CI. The integration is to be submitted
   through a PR and merged only after its required checks succeed; the live PR
   and workflow records supply that later evidence.
+- The first hosted Chrome 128 timeout did not reproduce in 25 focused local
+  attempts or either complete diagnostic run. Missing source readiness and
+  premature evidence cleanup were corrected, but the original timeout's exact
+  cause is not established. A passing repeat alone is not a root-cause proof.
 - Hidden browser checks do not establish native focus, window placement,
   permission prompts, screen-reader speech or live authenticated providers.
   Historical-tag release recovery and live ignored-list synchronization gaps

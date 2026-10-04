@@ -4164,8 +4164,13 @@ try {
         try {
             await reports.goto(`https://www.peakbagger.com:${port}/peak.aspx?pid=2296&ignored=1`, { waitUntil: 'domcontentloaded' });
             await reports.locator('#bpb-peak-report-tools').waitFor({ state: 'visible' });
+            // Ignored climbers and the Favorites source load independently.
+            // Wait for both before targeting a control whose label can change
+            // as the source resolves, rather than racing that render.
             await reports.waitForFunction(() => document.querySelector('#bpb-selected-reports')?.style.visibility !== 'hidden'
-                && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1'));
+                && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1')
+                && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorites · 0'
+                && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
             await reports.locator('.bpb-report-favorites').click();
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
             await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
@@ -4211,6 +4216,23 @@ try {
             await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes("Couldn't load your climbing buddies"));
             check(await reports.getByRole('button', { name: 'Retry', exact: true }).isVisible(), 'failed peak Buddy refresh offers no retry');
             await captureReports('peak-failed');
+        } catch (error) {
+            // The outer handler runs after this scope's finally closes the
+            // fixture page. Capture its state here while it is still available.
+            console.error('Ignored peak report failure state:', await reports.evaluate(() => ({
+                favorites: document.querySelector('.bpb-report-favorites')?.textContent,
+                pressed: document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed'),
+                busy: document.querySelector('.bpb-report-favorites')?.getAttribute('aria-busy'),
+                empty: document.querySelector('.bpb-report-empty')?.hidden,
+                status: document.querySelector('#bpb-peak-report-tools [role="status"]')?.textContent,
+            })).catch(() => 'Page inaccessible'));
+            await retainBrowserFailure({
+                context, fixtureOrigin: `https://www.peakbagger.com:${port}`,
+                requests: requestEvidence,
+                directory: process.env.BPB_VERIFY_ARTIFACTS
+                    ? path.join(process.env.BPB_VERIFY_ARTIFACTS, 'ignored-peak-reports') : undefined,
+            });
+            throw error;
         } finally {
             await reports.close();
             await manager.evaluate(async value => {
