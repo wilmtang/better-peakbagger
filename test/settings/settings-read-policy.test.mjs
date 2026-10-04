@@ -33,6 +33,7 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'src/favorites/favorite-source.js': [{ count: 1, kind: 'preservation', reason: 'resolve the selected source without substituting defaults after a failed settings read' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
     'src/ascent/ascent-upload.js': [{ count: 1, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],

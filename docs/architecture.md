@@ -1130,6 +1130,47 @@ Compact views without the necessary beta columns degrade to a link to the full
 all-years view. Missing headers or an unrecognized table opt out instead of
 guessing column positions.
 
+## Climber lists and ignored-report boundaries
+
+See the maintained [climber lists guide](climber-lists.md) and
+[delivery ledger](archive/ignored-climbers.md). The existing favorites contract
+below remains independent of ignored membership.
+
+| Module | Boundary and responsibility |
+| --- | --- |
+| `src/favorites/ignored-climbers.js` | Pure schema, exact HTTPS profile identity, bounded backup parser/serializer, visibility arithmetic and three-way merge with absence as a deletion |
+| `src/background/ignored-store.js` | Sole ignored-list writer; one mutation lane for idempotent entry operations, revision/signature-guarded replacements and atomic sync reconciliation |
+| `src/favorites/ignored-client.js` | Subscribe before read; generation/revision guards retain the latest valid local list after read errors |
+| `src/favorites/favorite-source.js` | Shared custom-or-Buddy source, positive account ownership, stale-cache use, bounded authenticated refresh, cancellation and late-response rejection |
+| `src/favorites/climber-ignore.js`, `options/ignored.js` | Independent public-profile Ignore control and accessible manager tab, verified lookup, search/sort and entry Undo |
+| `src/favorites/report-adapters.js`, `src/favorites/peak-report-filter.js` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
+| `src/ascent/ascent-filter.js` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
+| `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
+| `src/background/climber-list-sync.js` | Device opt-in, scoped common baseline, reviewed transfer/setup/conflicts, durable proposals, restart recovery and post-upload local-edit rebase |
+| `options/ignored-backup.js` | Settings transfer/sync UI, scoped impact/version preview and guarded whole-list Undo |
+
+`bpbIgnoredClimbers`, `bpbPeakReportFilter` and `bpbIgnoredSyncState` live in
+`storage.local`. No ignored-list preference is added to the MAIN-world settings
+bridge or browser-synced settings. Ignores are device-wide across Peakbagger
+accounts; only Buddy-cache ownership is account-scoped. Personal ascent lists,
+Buddy reports, editors, native maps/GPX and server totals remain independent.
+
+The new peak and detail bundles run isolated at `document_start`. They conceal
+only a positively identified region during a bounded initial read and recover
+readability on failure. Reveal/full-list flags stay in page memory and reset on
+reload/navigation/BFCache. Ordinary filters continue to compose; unknown author
+identity does not become the signed-in account. This is presentation hiding,
+not a network-blocking boundary.
+
+Sync uses the same exclusive GitHub queue as other writers, rather than its
+coalescing last-snapshot root-file path. Every ref retry reads and merges current
+remote/local state again. The proposal is durable before ref advancement; list,
+baseline and cleared journal are stored together in the ignored mutation lane.
+Auth epoch/repository/branch checks and cancellation protect both commit and
+reconciliation. Browser startup and rate-limited manager opening check opted-in
+sync; ordinary worker starts only recover proposals and maintain the durable
+alarm, so page visits do not initiate routine GitHub checks.
+
 ## Deep dive: favorite climbers
 
 Favorite Climbers is not one interchangeable list. It is a source selector, two
@@ -1154,8 +1195,9 @@ sync must never acquire the third-party names stored in either local dataset.
 | `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns list management on its own page,
-`options/favorites.html`; the Settings **Favorite climbers** section keeps only a
-link to it, and `options/favorites-backup.js` keeps the GitHub backup and restore
+`options/favorites.html`; the Settings **Climber lists** subsection comes first
+under **Ascent beta filter** and keeps only a link to it, and
+`options/favorites-backup.js` keeps the GitHub backup and restore
 under **Backup & sync**. The two coordinate only through storage and the
 signature-gated worker replacement, so restore confirms and undoes on the
 Settings page while an open list page redraws from the resulting storage change.
@@ -1282,11 +1324,10 @@ mode omits the count until a valid owner-matching Buddy List has been loaded;
 after a valid empty list is loaded, `0` is meaningful and displayed. The chip
 composes with every other filter using AND semantics.
 
-An empty or unavailable effective set deliberately does not hide the entire
-ascent table. The chip becomes disabled and a persisted `fav: true` state is
-temporarily ineffective. If a later storage or source change makes the set
-available, the same saved state becomes active again and the open table is
-re-filtered. Compact Peak Ascents views deliberately retain the existing
+An empty effective set keeps a persisted active Favorites chip active and renders
+an honest empty state with recovery controls. Unavailable data is distinguished
+from zero and gets Retry; it never silently makes the active predicate ineffective.
+Later coherent source updates recalculate the same saved filter. Compact Peak Ascents views deliberately retain the existing
 “open the full details view” notice instead of mounting only part of the filter
 bar. Personal `ClimbListC.aspx` pages omit Favorites because every row belongs
 to the one listed climber and does not expose a meaningful cross-climber filter.
@@ -1302,8 +1343,8 @@ ascent filter: /report/report.aspx?r=b&cid=<signed-in-owner-cid>
 ```
 
 The options page omits `cid` so Peakbagger resolves the current account and the
-extension derives `ownerCid` from that same response. The ascent filter already
-knows the rendered page owner, includes that id, and requires the response owner
+extension derives `ownerCid` from that same response. The shared site favorite-source resolver
+requires the rendered page owner, includes that id, and requires the response owner
 to match.
 
 The shared request boundary uses authenticated, no-cache fetches with a bounded
@@ -1356,9 +1397,9 @@ Cache states have precise behavior:
 | Fresh, matching owner | Uses cached ids immediately | Automatic filter path skips the request; options refresh, merge, and mirror still request the current report |
 | Stale, matching owner, non-empty | Uses stale ids immediately | An active Favorites chip revalidates in the background |
 | Stale refresh fails | Keeps using the stale ids | A later eligible user trigger may retry |
-| Matching owner, empty entries | Represents a valid empty Buddy List; Favorites is unavailable | Options refresh, a later Buddy-page visit, or eligible revalidation after it becomes stale can replace it |
+| Matching owner, empty entries | Represents a valid empty Buddy List; an active Favorites predicate shows no matches | Options refresh, a later Buddy-page visit, or eligible revalidation after it becomes stale can replace it |
 | Different detectable owner | Treats the cache as absent without deleting it | Fetches the current owner's list when eligible |
-| Owner cannot be detected | A previously stored cache remains usable, but an absent cache cannot load | No automatic page request; options reports sign-in state after validating the Buddy response |
+| Owner cannot be detected | No Buddy cache is used without positive owner evidence | No automatic page request; options reports sign-in state after validating the Buddy response |
 | Invalid cache envelope | Treats it as absent | A successful eligible refresh replaces it |
 
 Seven days is only the freshness boundary:

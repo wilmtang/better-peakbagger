@@ -1,6 +1,9 @@
 # Ignored climbers and report filtering
 
-Status: proposed, 2026-10-01. Documentation only; no runtime implementation yet.
+Status: implementation delivered and locally verified, 2026-10-01. Live GitHub
+and native accessibility release evidence remain open below. This archive keeps
+the original plan and delivery ledger; use the maintained
+[climber lists guide](../climber-lists.md) for current behavior.
 
 ## Outcome and scope
 
@@ -37,11 +40,13 @@ for controls, copy, count arithmetic, empty states, and layout acceptance.
 | Peak structure | [Rainier](../../test/fixtures/pages/peak-rainier.html) and [Garibaldi](../../test/fixtures/pages/peak-garibaldi.html) contain nested Selected Trip Reports tables alongside totals, My Ascents and map links. Match the section plus its header/row structure, not the first gray table or every climber link. |
 | Individual author identity | [Saved ascent fixture](../../test/fixtures/pages/climber-ascent.html) has a report body but no independently identified report-author link. Its navigation account ID is insufficient. Add evidence-backed masked fixtures before defining the production author selector. |
 
-A read-only attempt to inspect the user's [example peak](https://www.peakbagger.com/peak.aspx?pid=1596)
-returned HTTP 403 on 2026-10-01. No live layout or author-selector claim is made.
-Use the existing authenticated browser for one minimal read-only validation when
-implementing; stop for user validation if bot detection blocks it. Do not fetch
-all ascents to fill gaps in a selected list.
+The initial direct request for the user's
+[example peak](https://www.peakbagger.com/peak.aspx?pid=1596) returned HTTP 403.
+After the user reconnected Chrome, minimal read-only inspection of the existing
+authenticated session confirmed Hoodoo Peak's Selected Trip Reports table and
+an individual ascent's independent `Climber:` heading plus dedicated report row
+on 2026-10-01. Synthetic fixtures preserve those boundaries without saving the
+user's report or identity. No additional ascents were fetched to fill a list.
 
 ## Product invariants
 
@@ -66,13 +71,13 @@ all ascents to fill gaps in a selected list.
 
 Introduce a small pure ignored-climber model beside the existing favorites
 model; share only suitable identity helpers, not a broad favorites rewrite.
-Suggested new module basenames are `ignored-climbers.js`, `ignored-store.js`,
+Implemented new module basenames are `ignored-climbers.js`, `ignored-store.js`,
 `climber-list-sync.js`, `peak-report-filter.js`, and `ascent-report-visibility.js`.
-These are proposed files, not existing modules.
+These modules now exist; their maintained ownership is in the architecture guide.
 
 `chrome.storage.local` owns:
 
-| Key | Proposed value and rules |
+| Key | Implemented value and rules |
 | --- | --- |
 | `bpbIgnoredClimbers` | `{schemaVersion: 1, revision, entries: [{cid, name, addedAt}]}`; at most 1,500 unique IDs, trimmed nonempty names at most 200 characters, finite nonnegative timestamps, monotonically incremented local revision. No free-text reasons. |
 | `bpbPeakReportFilter` | `{schemaVersion: 1, favoritesOnly: false}` by default. Boolean validation; device-local across peaks and www/bare-host aliases. Independent of existing ascent-list filter state. Excluded from settings export and GitHub list files. |
@@ -337,14 +342,14 @@ At implementation time update:
 - `docs/development.md`: fixture routes, focused tests and visual verification.
 - A maintained climber-lists guide promoted from the proposed UX specification.
 
-Planning checks and implementation proof must remain separate. At each delivery
-step record the commit, checks actually run and remaining gaps. Current record:
+Planning checks and implementation proof remain separate. Each independent unit
+was committed after its focused checks. Final closure ledger:
 
 | Category | Status |
 | --- | --- |
-| Fixed and verified | None; this is a proposed feature plan. |
-| Intentionally not changed | Runtime code, existing favorite file/schema, native Buddy membership, personal lists, editors, GPX/map data and server totals. |
-| Changed but not fully proven | Planning documents only. No runtime, visual, live Peakbagger author-selector or live GitHub sync evidence yet. |
+| Fixed and verified | Local schema and sole-writer mutations; profile/manager editing and Undo; all three hiding surfaces with counted temporary reveal; device-local peak preference; shared owner-validated favorite source; guarded manual transfer; opt-in three-way sync, semantic ref retries, scoped journals, cancellation and durable scheduling. Pure/worker/fixture tests, scale checks and real hidden Chrome/Firefox passed. Live read-only author/section identity and light/dark desktop/narrow renders were inspected. |
+| Intentionally not changed | Existing favorites backup file/schema and one-way automatic backup; native Buddy membership; personal lists, Buddy reports, editors, map/GPX data, server totals and draft Save ownership. No ignored state enters browser-synced settings or the MAIN-world settings bridge. Ignore remains presentation hiding and cannot guarantee media/network blocking. |
+| Changed but not fully proven | Live two-device GitHub convergence, interrupted operations and repository permissions require an owner-authorized disposable repository before release; no live GitHub writes occurred. Live Peakbagger inspection validates author/section markup; the new hiding controls were exercised on fixtures rather than live reports. Minimum browser versions, Firefox Android and browser-store packages were not checked here. Native 200% browser zoom, window/focus behavior and screen-reader speech are not established by hidden rendering; DPR 2 plus a reduced CSS viewport provides layout evidence only. |
 
 The final feature is not complete while any of the three surfaces, local
 persistence, counted reveal, manager editing, manual backup, or genuine two-way
@@ -353,3 +358,73 @@ sync is missing. Preserve this record and unresolved verification gaps on archiv
 Planning validation on 2026-10-01: `node --test test/project/documentation.test.mjs`
 passed all 3 tests; `git diff --check` passed. These checks validate documentation
 structure and whitespace, not the proposed runtime or UI.
+
+## Implementation delivery record
+
+- `4b6f42e`: pure storage/backup, visibility and three-way merge contracts; 5 focused tests passed.
+- `81c9e3b`: serialized worker mutations and local peak preference; 10 model/store tests and 208 background/manifest tests passed; hidden real Chrome verification passed.
+- `cb37cd0`: conservative report adapters and a masked detail/media fixture; 3 tests passed. Live read-only authenticated inspection confirmed the Selected Trip Reports section and the individual ascent `Climber:` heading plus dedicated report cell on 2026-10-01. Navigation and prose links remain excluded from author identity.
+- `4e2b415`, profile/manager UX: 34 focused favorites/ignored UI tests and 40 options/documentation tests passed. Hidden Chrome screenshots inspected at 1440×1000 / 390×844 (profiles) and 1024×900 / 390×844 (manager), light and dark. Native Peakbagger columns outside the added profile controls retain their existing narrow-page overflow.
+
+`dd1176a`, peak report UX: 39 focused source/filter/manifest/fixture-tooling tests passed; hidden real Chrome verification passed. Light/dark peak screenshots inspected at 1440×1000 and 390×844, including favorite/ignore overlap and temporary reveal. The toolbar preserves the narrow peak column.
+
+`270b18f`, ascent-list/detail UX: 94 focused ascent, source, adapter, manifest and fixture-tooling tests passed; hidden real Chrome verification passed. Light/dark screenshots inspected at 1440×1000 and 390×844 for full lists, true compact lists and detail reports. Sort/reveal composition, BFCache reset, report media suspension and focus recovery are covered. Native site overflow remains outside the added controls.
+
+`d8dec55`, manual transfer: 140 focused transaction/client/queue/photo/options/manifest tests passed; focused ESLint and hidden real Chrome verification passed. Settings screenshots inspected at 1024×900 and 390×844, light/dark, with a 200% equivalent CSS viewport at DPR 2. Render checks use synthetic worker replies and establish no live GitHub writes. Manual backup/restore use exact packaged-page gates, bounded reads, reviewed replacements, conditional writes, durable journals and guarded Undo.
+
+`2d5ed49`, two-way sync: 151 focused transaction/client/queue/photo/options/manifest tests passed. The full suite passed 2,166 tests; lint passed with the existing 7 owned warnings; all 14 scale checks passed. Hidden real Chrome exercised the packaged worker, exact-page routes, semantic Git Data update, independent additions/deletions and a synthetic non-fast-forward retry while preserving unrelated root files. Per-device opt-in, three-way baseline, conflict review, durable journal recovery, post-upload edit rebase, cancellation, 30-second trailing changes alarm, browser startup, rate-limited manager checks and 15-minute periodic checks are implemented. Transfer/sync UI screenshots were inspected in light/dark at desktop/narrow sizes. No live GitHub repository was modified.
+
+`e3c8d6b`, embedded-player hardening: 6 detail/adapter tests and hidden Chrome verification passed. Concealment suspends srcdoc as well as URL players, watches report-only iframe enhancements, and pauses media that starts playing while concealed; reveal retains the original outer nodes.
+
+Final review: `9ac9fe7` exposes both conflict versions' names, added dates and
+removals; undecided versions cause no writes. `8de0bd9` adds real Firefox feature
+coverage and iframe srcdoc checks in both browsers, plus held/failed Buddy and
+empty/overlap/all-hidden peak states. Ten focused tests and focused ESLint passed.
+The hidden verifiers passed using Chrome for Testing 153.0.8010.12 and Firefox
+157.0. Maintained guides now describe shipped behavior; this plan and its UX
+companion are archived with the proof gaps preserved.
+
+## Final rendered evidence
+
+- Chrome site/profile/full-list/compact-list/detail renders: 1440×1000 and
+  390×844, light/dark; manager and Settings: 1024×900 and 390×844. Peak captures
+  include revealed, all-hidden, favorite overlap, empty favorites, held Buddy
+  loading and failed Buddy refresh. Settings captures include long names, both
+  conflict versions, removals, 1,500-entry count, empty list, offline and busy sync.
+- Firefox site renders: measured 1440×1000 and 392×848 CSS viewports; manager:
+  1024×900 and 392×848, light/dark. The requested narrow 390×844 outer window is
+  corrected with test-tab zoom because headless Firefox enforces a minimum outer
+  width; its quantized zoom produces the dimensions above. Profile, manager,
+  peak favorite/ignore overlap, full/compact lists and concealed detail were
+  captured. Detail keyboard reveal restores its srcdoc player.
+- These checks used hidden desktop DOM/CSS renderers with the real unpacked
+  `dist/`, disposable profiles and HTTPS Peakbagger fixtures. No new WebGL
+  renderer path is part of this feature. Screenshots were inspected for wrapping,
+  control alignment and contrast. Native Peakbagger table overflow remains
+  outside the added controls; no whole-display capture or user-window focus
+  change was used. Disposable browsers, profiles and certificate helpers were
+  closed/removed; evidence screenshots and logs are retained under `/tmp`.
+- A Settings screenshot uses 390×844 at DPR 2 as a 200% equivalent CSS viewport.
+  It does not establish native browser zoom/chrome, screen-reader speech or
+  visible window placement. Firefox loading/error Settings captures and native
+  minimum-version/mobile rendering were not inspected; behavior is covered by
+  focused tests and desktop browser integration.
+
+## Final repository checks
+
+Executed on 2026-10-01 against the completed source and shipped bundles:
+
+- `npm test`: 2,168 passed, 0 failed; includes a fresh 40-bundle build.
+- `npm run lint`: passed, with the existing 7 explicitly owned web-ext warnings.
+- `npm run test:scale`: all 14 passed after the ascent visibility changes.
+- `npm run verify:browsers`: both hidden real-extension verifiers passed during
+  integration. After the final srcdoc, conflict and peak-state cases, the current
+  Chrome and Firefox verifier scripts each passed again against rebuilt `dist/`.
+- `node scripts/verify-climber-list-ui.mjs`: hidden Settings layout/behavior
+  assertions passed with synthetic worker responses; screenshots inspected.
+- `node --test test/project/documentation.test.mjs`: all 3 passed after moving
+  this plan and its companion and updating the active/archive indexes.
+- `git diff --check`: passed. Exact owned browser/profile command lines and
+  disposable profile/certificate paths were inspected after verification; no
+  verifier-owned browser, profile or certificate directory remained. No push,
+  release, store submission or live repository write was performed.

@@ -1,8 +1,9 @@
 # Climber lists and report visibility — UX specification
 
-Status: proposed, 2026-10-01. Companion to the
-[implementation plan](ignored-climbers.md); wireframes are design intent, not
-screenshots of implemented or visually verified UI.
+Status: delivered, 2026-10-01. Archived design specification accompanying the
+[implementation and verification ledger](ignored-climbers.md). The maintained
+[climber lists guide](../climber-lists.md) describes current behavior. Wireframes
+remain design intent; rendered evidence and release proof gaps are in the ledger.
 
 ## Design direction
 

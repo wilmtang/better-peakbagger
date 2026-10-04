@@ -15,7 +15,7 @@ Data leaves the browser only when a feature requires it:
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **GitHub** receives only the data types the user explicitly or automatically
-  backs up to their selected repository.
+  backs up or opts to synchronize to their selected repository.
 - **ImgBB** receives a flattened image only when the user uploads it.
 - **Gaia GPS** receives the saved Peakbagger GPX only when the user clicks
   **Send to Gaia**.
@@ -37,8 +37,8 @@ date, time, map bearing, and astronomical results remain in the Peakbagger tab.
 | `activeTab` | Temporarily accesses only the Garmin Connect or Strava activity tab where the user clicks the toolbar button. There is no persistent provider host access. |
 | `scripting` | Injects packaged adapters into the clicked provider tab to verify ownership and request its same-origin GPX export, into a Peakbagger tab for the login and summit requests described below, and into Gaia, onX, AllTrails, or CalTopo after the matching **Send** click to use that site's visible importer. It never downloads or executes remote code. |
 | `tabGroups` | Groups newly opened ascent drafts under **Peak Drafts** without inspecting or reorganizing unrelated groups. |
-| `alarms` | Removes expired session records every five minutes and schedules the one-minute debounce and bounded retries for user-enabled automatic backups. |
-| Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and favorite management on Peakbagger. |
+| `alarms` | Removes expired session records every five minutes and schedules automatic backups and the 30-second trailing / 15-minute periodic ignored-list sync checks when enabled. |
+| Peakbagger host access | Supports GPX analysis, offline Sun and Moon planning, filters, theme, login and summit checks, draft filling, and climber-list management on Peakbagger. |
 | Optional GitHub host access | Access to `github.com` and `api.github.com` is requested only when the user connects GitHub. It supports device-flow sign-in and the one repository the user grants. |
 | Optional ImgBB host access | Access to `api.imgbb.com` is requested only from the photo editor when the user uploads or from Settings when the user saves an API key. It does not inspect unrelated browsing. |
 | Optional Gaia GPS host access | Access to `www.gaiagps.com` is requested only when the user clicks **Send to Gaia**. It lets the extension open Gaia's map and supply the saved GPX to Gaia's visible import preview; the extension does not click Gaia's **Save** control. |
@@ -229,6 +229,31 @@ date. That happens entirely locally.
 - A confirmed Buddy addition can add that climber to custom favorites. A Buddy
   removal changes custom favorites only when **Keep Buddy removals in sync** is
   enabled; only that preference, not the list, uses browser sync.
+
+### Ignored climbers and report visibility
+
+- Up to 1,500 climber IDs, displayed names and added dates stay in `storage.local`.
+  They are a device preference across Peakbagger accounts. Adding a link or ID
+  fetches the public profile to verify it; ignoring on a profile needs no extra
+  lookup. Reasons, report content and browsing history are not stored in this list.
+- Peak favorite filtering is a separate device-local preference. Temporary reveal
+  and full-list overrides live only in the page. The feature conceals selected
+  report/ascent presentations; it does not block network requests. Native pages
+  and remote media may load before the local preference is applied. Concealed
+  players are suspended, and iframe players can restart on reveal.
+- GitHub backup/restore is explicit. Two-way sync has a separate device-local
+  opt-in, off by default, using the connected repository's `ignored-climbers.json`.
+  Browser startup, rate-limited manager checks, trailing local-change alarms and
+  periodic alarms check only when enabled. Visiting a peak does not request sync.
+  `autoFavoritesBackup` does not enable ignored-list transfer.
+- GitHub receives only the file kind/schema/export date and entries' IDs, names
+  and added dates. Revisions, credentials, Buddy cache, filter/reveal state and
+  account-navigation identity are excluded. Baselines, reviewed snapshots and
+  interrupted-upload journals remain in local extension storage for reconciliation.
+- Public repositories can expose the list. Unignore propagates to the current file
+  after successful sync, but older Git commits can retain the previous entry.
+  Disabling sync or disconnecting preserves local membership and pending edits;
+  it does not delete the remote file or its Git history.
 
 ### Trip-report drafts and remote media
 

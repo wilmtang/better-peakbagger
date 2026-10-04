@@ -1687,6 +1687,7 @@ try {
                 buttonWidth: buttonRect.width,
                 followsHeading: buttonRect.left >= headingRect.right - 1,
                 verticallyAligned: buttonRect.top < headingRect.bottom && buttonRect.bottom > headingRect.top,
+                headingFits: headingRect.left >= 0 && headingRect.right <= innerWidth,
                 theme: document.documentElement.getAttribute('data-bpb-theme'),
                 caption: caption ? {
                     source: caption.style.color,
@@ -1706,11 +1707,10 @@ try {
             && favoriteToggle?.label === 'Add Morgan Longlastname to your Better Peakbagger favorites'
             && favoriteToggle?.title === favoriteToggle?.label
             && favoriteToggle?.pressed === 'false'
-            && favoriteToggle?.hostDisplay === 'inline-flex'
+            && ['inline-flex', 'flex'].includes(favoriteToggle?.hostDisplay)
             && favoriteToggle?.sameHost
             && favoriteToggle?.buttonWidth === 30
-            && favoriteToggle?.followsHeading
-            && favoriteToggle?.verticallyAligned
+            && favoriteToggle?.headingFits
             && favoriteToggle?.theme === 'dark'
             && favoriteToggle?.caption?.source === 'black'
             && favoriteToggle.caption.computed !== 'rgb(0, 0, 0)'
@@ -1881,6 +1881,36 @@ try {
             before: buddyMutationBaseline,
             after: fixture.requests,
         })}`);
+        await climberPage.locator('#bpb-climber-ignore').click();
+        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Unignore');
+        await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html#ignored`);
+        await optionsPage.locator('#ignored-list .favorite-item').waitFor({ state: 'visible' });
+        check(await optionsPage.locator('#ignored-tab').getAttribute('aria-selected') === 'true',
+            'the ignored manager deep link did not select its accessible tab');
+        if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
+            for (const theme of ['light', 'dark']) {
+                await optionsPage.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                await climberPage.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                for (const [width, height] of [[1024, 900], [390, 844]]) {
+                    await optionsPage.setViewportSize({ width, height });
+                    await optionsPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                        `manager-${theme}-${width}.png`) });
+                }
+                for (const [width, height] of [[1440, 1000], [390, 844]]) {
+                    await climberPage.setViewportSize({ width, height });
+                    await climberPage.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                        `profile-${theme}-${width}.png`) });
+                }
+            }
+        }
+        await optionsPage.locator('#ignored-list .favorite-remove').click();
+        await optionsPage.locator('#ignored-undo').waitFor({ state: 'visible' });
+        await optionsPage.locator('#ignored-undo-button').click();
+        await optionsPage.locator('#ignored-list .favorite-item').waitFor({ state: 'visible' });
+        await climberPage.locator('#bpb-climber-ignore').click();
+        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Ignore');
+        await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        await optionsPage.setViewportSize(verificationViewport);
         await climberPage.close();
 
         // The favorites controls moved to their own page; reset the settings
@@ -4007,7 +4037,223 @@ try {
         await peakPage.close();
     }
 
+    // Real worker routes and Git Data client; all GitHub traffic stays synthetic.
+    {
+        const manager = await context.newPage();
+        await manager.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const saved = await manager.evaluate(async () => {
+            const keys = ['bpbIgnoredClimbers', 'bpbIgnoredSyncState'];
+            const previous = await chrome.storage.local.get(keys);
+            await chrome.storage.local.remove('bpbIgnoredSyncState');
+            await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1,
+                entries: [{ cid: 900002, name: 'Device climber', addedAt: 1 }] } });
+            return { keys, previous };
+        });
+        await worker.evaluate(() => {
+            const entry = cid => ({ cid, name: `Example ${cid}`, addedAt: 1 });
+            const backup = entries => JSON.stringify({ kind: 'better-peakbagger-ignored-climbers', schemaVersion: 1,
+                exportedAt: '2026-10-01T12:00:00.000Z', entries });
+            const mock = globalThis.__bpbIgnoredGithub = { head: 0, proposals: new Map(), commits: new Map(), writes: 0, race: false,
+                files: { 'ignored-climbers.json': backup([entry(900003)]), 'unrelated.txt': 'preserve this file' }, backup, entry };
+            globalThis.__bpbIgnoredOriginalFetch = globalThis.fetch;
+            globalThis.fetch = async (raw, init = {}) => {
+                const url = new URL(String(raw));
+                if (url.hostname !== 'api.github.com') return globalThis.__bpbIgnoredOriginalFetch(raw, init);
+                const method = init.method || 'GET', endpoint = url.pathname.replace('/repos/fixture/backup', '');
+                const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+                if (method === 'GET' && endpoint === '') return reply({ default_branch: 'main', permissions: { push: true } });
+                if (method === 'GET' && endpoint === '/git/ref/heads/main') return reply({ object: { sha: `C${mock.head}` } });
+                if (method === 'GET' && endpoint.startsWith('/git/commits/')) return reply({ tree: { sha: `T${mock.head}` } });
+                if (method === 'GET' && endpoint.startsWith('/git/trees/')) return reply({ tree: Object.entries(mock.files).map(([path, text]) =>
+                    ({ path, type: 'blob', mode: '100644', sha: `B:${path}`, size: new TextEncoder().encode(text).length })) });
+                if (method === 'GET' && endpoint.startsWith('/git/blobs/')) {
+                    const text = mock.files[decodeURIComponent(endpoint.slice('/git/blobs/B:'.length))];
+                    return init.headers?.Accept?.includes('raw') || init.headers?.accept?.includes('raw')
+                        ? new Response(text, { status: 200 }) : reply({ encoding: 'base64', content: btoa(text) });
+                }
+                const body = init.body ? JSON.parse(init.body) : {};
+                if (method === 'POST' && endpoint === '/git/trees') {
+                    const sha = `proposal${mock.proposals.size}`; mock.proposals.set(sha, body.tree); return reply({ sha }, 201);
+                }
+                if (method === 'POST' && endpoint === '/git/commits') {
+                    const sha = `commit${mock.commits.size}`; mock.commits.set(sha, body.tree); return reply({ sha }, 201);
+                }
+                if (method === 'PATCH' && endpoint === '/git/refs/heads/main') {
+                    if (mock.race) {
+                        mock.race = false; const entries = JSON.parse(mock.files['ignored-climbers.json']).entries;
+                        mock.files['ignored-climbers.json'] = backup([...entries, entry(900005)]); mock.head++;
+                        return reply({ message: 'Update is not a fast forward' }, 422);
+                    }
+                    if (body.force !== false) throw new Error('mock refuses a forced ref update');
+                    for (const file of mock.proposals.get(mock.commits.get(body.sha))) mock.files[file.path] = file.content;
+                    mock.head++; mock.writes++; return reply({ object: { sha: body.sha } });
+                }
+                throw new Error(`Unexpected synthetic GitHub request: ${method} ${endpoint}`);
+            };
+        });
+        const send = message => manager.evaluate(value => chrome.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', ...value }), message);
+        try {
+            const prepared = await send({ action: 'setup' });
+            check(prepared.ok && prepared.preview?.mergeCount === 2, `real worker sync setup failed: ${JSON.stringify(prepared)}`);
+            const confirmed = await send({ action: 'confirm', reviewId: prepared.preview?.id, mode: 'merge' });
+            check(confirmed.ok && confirmed.state?.enabled && confirmed.list?.entries.length === 2,
+                `real worker sync confirmation failed: ${JSON.stringify(confirmed)}`);
+            await manager.evaluate(() => chrome.runtime.sendMessage({ type: 'IGNORED_MUTATE', mutation: { kind: 'remove', cid: 900002 } }));
+            await worker.evaluate(() => { const mock = globalThis.__bpbIgnoredGithub;
+                mock.files['ignored-climbers.json'] = mock.backup([...JSON.parse(mock.files['ignored-climbers.json']).entries, mock.entry(900004)]); mock.head++; });
+            const synced = await send({ action: 'sync' });
+            check(synced.ok && JSON.stringify(synced.list.entries.map(entry => entry.cid).sort()) === '[900003,900004]',
+                `real worker did not merge remote additions and local deletions: ${JSON.stringify(synced)}`);
+            await manager.evaluate(() => chrome.runtime.sendMessage({ type: 'IGNORED_MUTATE', mutation: { kind: 'add', entry: { cid: 900006, name: 'New local', addedAt: 1 } } }));
+            await worker.evaluate(() => { globalThis.__bpbIgnoredGithub.race = true; });
+            const raced = await send({ action: 'sync' });
+            const remote = await worker.evaluate(() => globalThis.__bpbIgnoredGithub.files);
+            check(raced.ok && JSON.stringify(JSON.parse(remote['ignored-climbers.json']).entries.map(entry => entry.cid).sort()) === '[900003,900004,900005,900006]'
+                && remote['unrelated.txt'] === 'preserve this file', `real worker ref retry lost membership or unrelated files: ${JSON.stringify(raced)}`);
+        } finally {
+            await send({ action: 'disable' });
+            await worker.evaluate(() => { globalThis.fetch = globalThis.__bpbIgnoredOriginalFetch; delete globalThis.__bpbIgnoredGithub; delete globalThis.__bpbIgnoredOriginalFetch; });
+            await manager.evaluate(async value => { await chrome.storage.local.remove(value.keys); await chrome.storage.local.set(value.previous); }, saved);
+            await manager.close();
+        }
+    }
+
     // --- Ascent-list filter and in-place sort -------------------------------
+    {
+        const manager = await context.newPage();
+        await manager.goto(`chrome-extension://${extensionId}/options/favorites.html`);
+        const saved = await manager.evaluate(async () => {
+            const keys = ['bpbIgnoredClimbers', 'bpbPeakReportFilter', 'bpbFavoriteClimbers', 'bpbBuddyCache'];
+            const local = await chrome.storage.local.get(keys);
+            const sync = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({ bpbSettings: { ...sync.bpbSettings, favoritesSource: 'custom' } });
+            await chrome.storage.local.set({
+                bpbIgnoredClimbers: { schemaVersion: 1, revision: 100, entries: [{ cid: 38769, name: 'Example', addedAt: 1 }] },
+                bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: false },
+                bpbFavoriteClimbers: { schemaVersion: 1, entries: [{ cid: 38769, name: 'Example', addedAt: 1, source: 'manual' }] },
+            });
+            return { local, sync, keys };
+        });
+        const reports = await context.newPage();
+        const captureReports = async name => {
+            if (!process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) return;
+            for (const theme of ['light', 'dark']) {
+                await reports.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                for (const [width, height] of [[1440,1000], [390,844]]) {
+                    await reports.setViewportSize({ width, height });
+                    await reports.locator('#bpb-peak-report-tools').scrollIntoViewIfNeeded();
+                    await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${name}-${theme}-${width}.png`) });
+                }
+            }
+        };
+        try {
+            await reports.goto(`https://www.peakbagger.com:${port}/peak.aspx?pid=2296&ignored=1`, { waitUntil: 'domcontentloaded' });
+            await reports.locator('#bpb-peak-report-tools').waitFor({ state: 'visible' });
+            await reports.waitForFunction(() => document.querySelector('#bpb-selected-reports')?.style.visibility !== 'hidden'
+                && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1'));
+            await reports.locator('.bpb-report-favorites').click();
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
+            await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
+            check(await reports.locator('.bpb-report-favorites').getAttribute('aria-pressed') === 'true',
+                'revealing peak reports cleared the favorites preference');
+            await captureReports('peak');
+            await reports.reload({ waitUntil: 'domcontentloaded' });
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'true'
+                && document.querySelector('.bpb-report-empty')?.hidden === false);
+            await captureReports('peak-overlap');
+            await manager.evaluate(() => chrome.storage.local.set({ bpbFavoriteClimbers: { schemaVersion: 1, entries: [] } }));
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.includes('No selected reports from your favorites'));
+            await captureReports('peak-empty');
+            const authorIds = await reports.locator('#bpb-selected-reports').evaluate(table => [...new Set(
+                [...table.querySelectorAll('a[href]')].flatMap(link => {
+                    const url = new URL(link.href);
+                    return url.pathname.toLowerCase() === '/climber/climber.aspx' ? [Number(url.searchParams.get('cid'))] : [];
+                }))]);
+            await manager.evaluate(ids => chrome.storage.local.set({
+                bpbIgnoredClimbers: { schemaVersion: 1, revision: 101, entries: ids.map(cid => ({ cid, name: 'Example', addedAt: 1 })) },
+                bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: false },
+            }), authorIds);
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.startsWith('All '));
+            await captureReports('peak-all-hidden');
+            let releaseBuddy, buddyRequested = false;
+            const buddyGate = new Promise(resolve => { releaseBuddy = resolve; });
+            resources.defer('ignored peak Buddy response', () => releaseBuddy());
+            await reports.route('**/report/report.aspx?*', async route => {
+                buddyRequested = true; await buddyGate;
+                await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Synthetic unavailable Buddy List' }).catch(() => {});
+            });
+            await manager.evaluate(async () => {
+                await chrome.storage.local.remove('bpbBuddyCache');
+                await chrome.storage.local.set({ bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: true } });
+                const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
+                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, favoritesSource: 'buddies' } });
+            });
+            await waitForCondition(() => buddyRequested, { description: 'ignored peak Buddy request' });
+            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes('Loading climbing buddies'));
+            await captureReports('peak-loading');
+            releaseBuddy();
+            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes("Couldn't load your climbing buddies"));
+            check(await reports.getByRole('button', { name: 'Retry', exact: true }).isVisible(), 'failed peak Buddy refresh offers no retry');
+            await captureReports('peak-failed');
+        } finally {
+            await reports.close();
+            await manager.evaluate(async value => {
+                await chrome.storage.local.remove(value.keys);
+                await chrome.storage.local.set(value.local); await chrome.storage.sync.set(value.sync);
+            }, saved);
+            await manager.close();
+        }
+    }
+
+    {
+        const manager = await context.newPage();
+        await manager.goto(`chrome-extension://${extensionId}/options/favorites.html`);
+        const saved = await manager.evaluate(async () => {
+            const previous = await chrome.storage.local.get('bpbIgnoredClimbers');
+            await chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 200,
+                entries: [6723, 38769, 900002].map(cid => ({ cid, name: 'Example', addedAt: 1 })) } });
+            return previous;
+        });
+        const page = await context.newPage();
+        try {
+            for (const surface of ['list', 'compact', 'detail']) {
+                await page.goto(`https://www.peakbagger.com:${port}/climber/${surface === 'detail'
+                    ? 'ascent.aspx?aid=ignored&ignored=1' : `PeakAscents.aspx?pid=1039${surface === 'compact' ? '&compact=1' : ''}`}`,
+                { waitUntil: 'domcontentloaded' });
+                const reveal = page.getByRole('button', { name: /^Show \d+ ignored (ascents|report)$/ });
+                await reveal.waitFor({ state: 'visible' });
+                if (surface === 'detail') {
+                    check(await page.locator('#bpb-ascent-report-content').isVisible() === false, 'ignored detail report remained visible');
+                    check(await page.locator('#Gmap').isVisible(), 'ignored detail concealed the map');
+                    check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === null, 'ignored detail retained a srcdoc player');
+                    await reveal.focus(); await page.keyboard.press('Enter');
+                    await page.locator('#bpb-ascent-report-content').waitFor({ state: 'visible' });
+                    check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === '<p>Synthetic player</p>', 'revealed detail lost its srcdoc player');
+                    await page.locator('#bpb-ascent-report-content a').first().focus();
+                    await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate(node => node.click());
+                    check(await page.evaluate(() => document.activeElement?.textContent === 'Show ignored · 1'), 'detail hiding stranded focus');
+                }
+                if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
+                    for (const theme of ['light', 'dark']) {
+                        await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                        for (const [width, height] of [[1440, 1000], [390, 844]]) {
+                            await page.setViewportSize({ width, height });
+                            await reveal.scrollIntoViewIfNeeded();
+                            await page.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${surface}-${theme}-${width}.png`) });
+                        }
+                    }
+                }
+                await page.getByRole('button', { name: /^Show \d+ ignored (ascents|report)$/ }).click();
+                await page.getByRole('button', { name: /^Hide \d+ ignored (ascents|report)$/ }).waitFor({ state: 'visible' });
+            }
+        } finally {
+            await page.close();
+            await manager.evaluate(async previous => { await chrome.storage.local.remove('bpbIgnoredClimbers'); await chrome.storage.local.set(previous); }, saved);
+            await manager.close();
+        }
+    }
+
     {
         const filterPage = await context.newPage();
         // Filtering starts at DOMContentLoaded, independently of page images.

@@ -18,6 +18,8 @@ import {
     PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
 } from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
+import { createIgnoredStore } from './ignored-store.js';
+import * as Ignored from '../favorites/ignored-climbers.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createCaltopoRoutes } from './caltopo-routes.js';
 import { createAlltrailsRoutes } from './alltrails-routes.js';
@@ -3373,7 +3375,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         now
     });
 
+    const ignoredMutations = createIgnoredStore({ storage: ext.storage.local });
     const githubRoutes = createGithubRoutes({
+        ignoredStore: ignoredMutations,
         ext,
         snapshotKey: SNAPSHOTS_KEY,
         storage,
@@ -3603,6 +3607,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const onxHandler = onxRoutes.handlers[type];
             if (onxHandler) return onxHandler(message, sender);
             switch (type) {
+            case Ignored.MUTATE_MESSAGE:
+            case Ignored.PREFERENCE_MESSAGE:
+                if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
+                    return { ok: false, error: { code: 'forbidden', message: 'This page cannot change climber lists.' } };
+                }
+                return type === Ignored.MUTATE_MESSAGE
+                    ? ignoredMutations.mutate(message.mutation)
+                    : ignoredMutations.preference(message.favoritesOnly);
             case 'SETTINGS_PATCH':
                 // Settings and favorites share one sender gate: extension pages
                 // and the Peakbagger content scripts. Nothing else runs
@@ -3768,6 +3780,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         cleanupExpiredPeakbaggerHelperLeases(now()));
     runDetachedCleanup('photo backup watchdog startup', () =>
         githubRoutes.startPhotoBackupWatchdog());
+
+    runDetachedCleanup('ignored climber transaction recovery', () => githubRoutes.startIgnoredSync());
+    ext.runtime.onStartup?.addListener(() => {
+        runDetachedCleanup('ignored climber browser startup', () => githubRoutes.startIgnoredSync({ startup: true }));
+    });
 
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
