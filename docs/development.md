@@ -49,7 +49,7 @@ from several directories when a shipped surface crosses those boundaries.
 | `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and backup of saved ascents and TRs |
 | `src/background/` | Extension service-worker coordination |
 | `src/capture/` | Provider adapters, ownership checks, and pure capture analysis |
-| `src/favorites/` | Favorite-climber data and climber-page controls |
+| `src/favorites/` | Climber-list schemas, shared favorite source, profile controls and conservative report adapters |
 | `src/github/` | GitHub authentication, API transport, repository writes, and backup payloads |
 | `src/gaia/` | Gaia's visible import adapter and optional-access fallback page |
 | `src/onx/` | onX Backcountry import adapter and optional-access fallback page |
@@ -193,7 +193,7 @@ script is added or removed without updating it.
 | `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
-| `npm run audit:ci` | Requires zero advisories, including development dependencies. The former image-size exception was removed after updating the patched web-ext/addons-linter toolchain. |
+| `npm run audit:ci` | Requires zero advisories, including development dependencies. Ordinary Test CI explicitly opts into one owner-reviewed, exact-path node-forge exception until October 17, 2026; default and release commands remain strict. See the [integration ledger](archive/mainline-dependency-integration-2026-10-03.md). |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
 | `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
@@ -598,7 +598,7 @@ add it to the merge-step condition, for example
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
   20,000-point GPX completeness case, 20,000-point/5,000-peak analysis, and
   1,500-entry favorite render/search/backup path out of the fast local loop.
-  The capture case checks exact sync/cooperative equivalence, internal
+  The capture case checks summit identities and protected reduction anchors, internal
   cancellation checkpoints, a generous total CPU ceiling, and a 100 ms
   maximum yield gap; it still cannot prove the live MV3 message scheduler.
 - `npm run verify:provider-performance` measures native `DOMParser` and
@@ -696,6 +696,44 @@ prove current live control labels, authenticated cookies, or report markup.
 The runners open ordinary extension pages in hidden tabs; they do not establish
 native popup size, browser-chrome focus, permission-prompt presentation, or the
 toolbar click that grants `activeTab`. Those remain explicit release checks.
+
+### Climber-list verification
+
+The [climber lists guide](climber-lists.md) describes behavior; the
+[archived ledger](archive/ignored-climbers.md) records proof and release gaps.
+Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.test.mjs`,
+`test/ascent/ascent-report-visibility.test.mjs`,
+`test/background/climber-list-sync.test.mjs` and
+`test/options/options-ignored-backup.test.mjs`. They cover exact author evidence,
+visibility/count composition, unknown/empty/error states, mutation races, bounded
+files, reviewed replacements, three-way deletions/conflicts, ref retry, journal
+recovery, cancellation and durable scheduling. Scale coverage includes native
+4,145-row groups separately from the added empty-state row.
+
+Both real-extension verifiers load the ignored profile/manager, peak report,
+full/compact ascent list and individual-report fixtures. The detail fixture's
+synthetic identities/media preserve the live validated Climber heading and report
+cell boundary. HTTPS fixture routes add `peak.aspx?ignored=1`,
+`climber/PeakAscents.aspx?compact=1` and `climber/ascent.aspx?ignored=1`.
+Chrome also exercises the real packaged worker/client against a fully synthetic
+GitHub Git Data endpoint, including an external ref race and unrelated root files.
+No real backup repository is test scratch space.
+
+Set `BPB_VERIFY_IGNORED_SCREENSHOT_DIR` to an existing output directory for light/
+dark site and manager screenshots. `node scripts/verify-climber-list-ui.mjs`
+checks the real Settings bundle with synthetic worker replies, long names,
+1,500-entry counts and a 200% equivalent reduced CSS viewport at DPR 2. It proves
+layout, not live GitHub. Firefox logs measured CSS viewport dimensions; native
+headless window limits may require test-tab zoom. Inspect those dimensions and
+screenshots rather than treating requested outer window sizes as viewport proof.
+Run build-owning npm commands sequentially in one worktree: concurrent build
+publication can collide. All runners close only their disposable browser/profile.
+
+Live read-only Peakbagger inspection confirmed the author/section adapters on
+2026-10-01. Before release, validate two-device sync and interrupted operations
+against an owner-authorized disposable GitHub repository. Browser-store builds,
+minimum browser versions, Firefox Android, native focus/permission presentation
+and screen-reader speech remain separate checks.
 
 ### A plain-HTTP fixture breaks these checks
 

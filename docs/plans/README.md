@@ -1,5 +1,8 @@
 # Active plans
 
+- [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
+  in progress; release recovery, verifier timing, focused UI simplification,
+  and removal of duplicated runtime code, with an explicit closure ledger.
 - [Imgur uploads and media-host selection](imgur-media-hosting.md) — proposed;
   host dropdown, user-owned Imgur Client IDs with guided account connection,
   and a dedicated MP4 upload path.

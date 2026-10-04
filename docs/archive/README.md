@@ -8,6 +8,16 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [Mainline and dependency integration — 2026-10-03](mainline-dependency-integration-2026-10-03.md) —
+  real branch merges, the repeated unpatched development-tool advisory, and
+  an owner-approved CI-only exception with an October 17 expiry. Release
+  audits remain strict; raw audit findings and remote proof limits are explicit.
+- [Ignored climbers and report filtering](ignored-climbers.md) and its
+  [UX specification](ignored-climbers-ux.md) — completed local lists, profile
+  Ignore, counted reveal across three surfaces, persistent peak filtering and
+  optional GitHub transfer/two-way sync. Hidden Chrome/Firefox evidence and live
+  GitHub/native accessibility gaps remain explicit. Current behavior lives in
+  the maintained [climber lists guide](../climber-lists.md).
 - [Release hardening — 2026-09-30](release-hardening-2026-09-30.md) — completed
   fixture readiness, shared certificate trust, bounded failure evidence, and
   package identity checks; main CI and package gates passed, and 3.8 was

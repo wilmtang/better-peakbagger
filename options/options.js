@@ -9,6 +9,7 @@ import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
 import { panelTheme as Theme } from '../src/theme/panel-theme.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 import { initGithubBackup } from './github.js';
+import { initIgnoredBackup } from './ignored-backup.js';
 import { initFavoritesBackup } from './favorites-backup.js';
 import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
@@ -173,6 +174,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
     // The custom-list workspace lives on its own page (options/favorites.html);
     // only its GitHub backup stays here, under Backup & sync.
+    initIgnoredBackup({ extensionApi });
     const favoritesBackup = initFavoritesBackup({ extensionApi, flash, save });
     // Credentials stay out of synced settings. The exact Settings file route
     // supplies the ImgBB key and, after a separate opt-in, the GitHub token only

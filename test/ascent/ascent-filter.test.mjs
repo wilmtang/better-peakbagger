@@ -35,7 +35,7 @@ const filterLabels = dom => [...bar(dom).querySelectorAll('.pbaf-chip-label')]
 // nested icon tables; >1 cells excludes year-separator and stray empty rows.
 const dataRows = dom => [...table(dom).rows].filter(r => r.cells.length > 1 && r.cells[0].tagName === 'TD');
 const visibleRows = dom => dataRows(dom).filter(r => r.style.display === '');
-const sectionRows = dom => [...table(dom).rows].filter(r => r.cells.length === 1);
+const sectionRows = dom => [...table(dom).rows].filter(r => r.cells.length === 1 && !r.parentElement.dataset.bpbEmpty);
 const rowCid = row => {
     const anchor = row.querySelector('a[href*="climber.aspx?cid="]');
     return anchor ? Number(new URL(anchor.href).searchParams.get('cid')) : null;
@@ -375,7 +375,7 @@ test('Fav climbers can filter independently and persists with the other chips', 
     assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).fav, false);
 });
 
-test('an empty custom list disables Fav climbers without hiding the ascent table', async () => {
+test('an empty custom list keeps the saved filter active with explicit recovery', async () => {
     const dom = await loadPage(SMALL, {
         url: SMALL_URL,
         settings: { favoritesSource: 'custom' },
@@ -385,9 +385,10 @@ test('an empty custom list disables Fav climbers without hiding the ascent table
         })),
     });
     await waitFor(dom, () => bar(dom));
-    assert.equal(chip(dom, 'Fav climbers').disabled, true);
-    assert.match(chip(dom, 'Fav climbers').title, /No favorite climbers yet/);
-    assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'false');
+    assert.equal(chip(dom, 'Fav climbers').disabled, false);
+    assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'true');
+    assert.equal(visibleRows(dom).length, 0);
+    dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, dataRows(dom).length);
 });
 
@@ -397,10 +398,10 @@ test('local favorite changes update the custom filter live', async () => {
         settings: { favoritesSource: 'custom' },
         local: { [FAVORITES_KEY]: favoriteStore([]) },
     });
-    assert.equal(chip(dom, 'Fav climbers').disabled, true);
+    assert.equal(chip(dom, 'Fav climbers').disabled, false);
 
     await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore(customCids) });
-    await waitFor(dom, () => chip(dom, 'Fav climbers').disabled === false);
+    await waitFor(dom, () => Number(chipCount(dom, 'Fav climbers')) > 0);
     assert.equal(chipCount(dom, 'Fav climbers'), String(
         dataRows(dom).filter(row => customCids.includes(rowCid(row))).length));
 });
@@ -411,7 +412,12 @@ test('buddy mode reads the owner-scoped local cache', async () => {
         entries: customCids.map((cid, index) => ({ cid, name: `Buddy ${index + 1}` })),
         fetchedAt: Date.now(),
     };
-    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, local: { [BUDDY_CACHE_KEY]: cache } });
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, local: { [BUDDY_CACHE_KEY]: cache },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001'; owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+        } });
     const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row))).length;
     assert.equal(chipCount(dom, 'Climbing buddies'), String(expected));
     assert.equal(chip(dom, 'Climbing buddies').disabled, false);
@@ -1187,4 +1193,47 @@ test('legacy orders migrate, synced orders win, and keyboard changes reach setti
     chip(dom, 'Has beta').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');
     assert.deepEqual(Array.from(dom.chrome._store.bpbSettings.betaPeakFilterOrder), ['gps', 'fav', 'tr', 'beta', 'link']);
+});
+
+const ignoredStore = cids => ({ schemaVersion: 1, revision: 1,
+    entries: cids.map(cid => ({ cid, name: 'Ignored', addedAt: 1 })) });
+const utility = (dom, text) => [...bar(dom).querySelectorAll('button')].find(button => button.textContent.startsWith(text));
+test('ignores compose with favorites, sorting, clear filters and temporary full-list recovery', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, settings: { favoritesSource: 'custom' },
+        local: { bpbIgnoredClimbers: ignoredStore([customCids[0]]), [FAVORITES_KEY]: favoriteStore(customCids) } });
+    const all = dataRows(dom).length;
+    const ignored = dataRows(dom).filter(row => rowCid(row) === customCids[0]).length;
+    assert.equal(visibleRows(dom).length, all - ignored);
+    chip(dom, 'Fav climbers').click();
+    assert.ok(visibleRows(dom).every(row => rowCid(row) === customCids[1]));
+    utility(dom, 'Show ignored').click();
+    assert.ok(visibleRows(dom).every(row => customCids.includes(rowCid(row))));
+    sortControl(dom).click();
+    assert.ok(visibleRows(dom).every(row => customCids.includes(rowCid(row))));
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, all - ignored);
+    await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore([]) });
+    chip(dom, 'Fav climbers').click();
+    assert.equal(visibleRows(dom).length, 0);
+    const saved = dom.window.localStorage.getItem('pbAscentBetaFilter.v1');
+    utility(dom, 'View full list').click();
+    assert.equal(visibleRows(dom).length, all);
+    assert.equal(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'), saved);
+    utility(dom, 'Hide ignored').click();
+    assert.equal(visibleRows(dom).length, 0);
+    utility(dom, 'View full list').click();
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    assert.equal(visibleRows(dom).length, 0);
+    dom.window.close();
+});
+test('compact PeakAscents ignores authors while preserving its beta guidance', async () => {
+    const options = { url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296',
+        local: { bpbIgnoredClimbers: ignoredStore([38769]) } };
+    const dom = await loadPageWithBar('ascent-ignored-compact.html', { ...options, fixtures: PAGE_FIXTURES });
+    assert.equal(dom.window.document.querySelector('.pbaf-chip'), null);
+    const hidden = dataRows(dom).filter(row => row.style.display === 'none');
+    assert.ok(hidden.length > 0); assert.ok(hidden.every(row => rowCid(row) === 38769));
+    utility(dom, 'Show ignored').click();
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+    dom.window.close();
 });

@@ -962,6 +962,7 @@ async function main() {
         });
       };
     })()`);
+        await driver.findElement(By.css('.favorites-buddy-options summary')).click();
         await driver.findElement(By.id('favorites-mirror-buddies')).click();
         const mirrorPreview = await waitForScript(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
@@ -1192,6 +1193,9 @@ async function main() {
 
         // The "Keep Buddy removals in sync" toggle lives on the favorites page.
         await driver.get(favoritesUrl);
+        if (!await driver.executeScript("return document.querySelector('.favorites-buddy-options').open")) {
+            await driver.findElement(By.css('.favorites-buddy-options summary')).click();
+        }
         const removeWithBuddy = await driver.findElement(By.id('favorites-remove-with-buddy'));
         assertState(!(await removeWithBuddy.isSelected()),
             'Firefox rendered destructive Buddy removal sync on by default');
@@ -2222,6 +2226,90 @@ async function main() {
             'Firefox Full Screen peak map did not expose the 3D toggle',
             peakBigMapState,
         );
+
+        // All ignored-climber surfaces use the real isolated bundles and worker.
+        await driver.get(optionsUrl);
+        const ignoredSaved = await driver.executeAsyncScript(`
+            const done = arguments[arguments.length - 1];
+            (async () => {
+                const keys = ['bpbIgnoredClimbers', 'bpbPeakReportFilter', 'bpbFavoriteClimbers'];
+                const local = await browser.storage.local.get(keys), sync = await browser.storage.sync.get('bpbSettings');
+                await browser.storage.sync.set({ bpbSettings: { ...sync.bpbSettings, favoritesSource: 'custom' } });
+                await browser.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 501,
+                    entries: [6723, 38769, 900002].map(cid => ({ cid, name: 'Example', addedAt: 1 })) },
+                    bpbPeakReportFilter: { schemaVersion: 1, favoritesOnly: false },
+                    bpbFavoriteClimbers: { schemaVersion: 1, entries: [{ cid: 38769, name: 'Example', addedAt: 1, source: 'manual' }] } });
+                done({ keys, local, sync });
+            })().catch(error => done({ error: error.message }));
+        `);
+        assertState(!ignoredSaved.error, 'Firefox ignored fixture seeding failed', ignoredSaved);
+        const captureIgnored = async (surface, selector) => {
+            if (!process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) return;
+            for (const theme of ['light', 'dark']) {
+                await driver.executeScript('document.documentElement.dataset.bpbTheme = arguments[0];', theme);
+                for (const [width, height] of [[surface === 'manager' ? 1024 : 1440, surface === 'manager' ? 900 : 1000], [390,844]]) {
+                    await driver.manage().window().setRect({ width, height });
+                    const actual = await driver.executeScript('return { width: window.innerWidth, height: window.innerHeight, outerHeight: window.outerHeight };');
+                    const zoom = actual.width / width;
+                    if (zoom !== 1) {
+                        await driver.setContext('chrome');
+                        try { await driver.executeScript('window.gBrowser.selectedBrowser.fullZoom = arguments[0];', zoom); }
+                        finally { await driver.setContext('content'); }
+                    }
+                    await driver.manage().window().setRect({ width, height: Math.round(height * zoom + actual.outerHeight - actual.height) });
+                    const viewport = await driver.executeScript('return { width: window.innerWidth, height: window.innerHeight };');
+                    await driver.executeScript('document.querySelector(arguments[0]).scrollIntoView({block:"center"});', selector);
+                    await writeFile(path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                        `firefox-${surface}-${theme}-${width}.png`), await driver.takeScreenshot(), 'base64');
+                    console.log(`  Firefox ignored ${surface} ${theme}: hidden CSS viewport ${viewport.width}x${viewport.height}`);
+                    await driver.setContext('chrome');
+                    try { await driver.executeScript('window.gBrowser.selectedBrowser.fullZoom = 1;'); }
+                    finally { await driver.setContext('content'); }
+                }
+            }
+        };
+        try {
+            await driver.get(`https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`);
+            await waitForScript(driver, 'return document.getElementById("bpb-climber-ignore")?.textContent === "Unignore";', 'Firefox profile ignored state');
+            await captureIgnored('profile', '#bpb-climber-ignore');
+            await driver.get(`${favoritesUrl}#ignored`);
+            await waitForScript(driver, 'return document.getElementById("ignored-tab")?.getAttribute("aria-selected") === "true" && document.querySelectorAll("#ignored-list .favorite-item").length === 3;', 'Firefox ignored manager');
+            await captureIgnored('manager', '#ignored-list');
+            await driver.get(`https://${fixtureHost}:${fixture.port}/peak.aspx?pid=2296&ignored=1`);
+            await waitForScript(driver, 'return document.getElementById("bpb-peak-report-tools")?.textContent.includes("Show ignored · 1");', 'Firefox peak ignored reports');
+            await driver.findElement(By.css('.bpb-report-favorites')).click();
+            await waitForScript(driver, 'return document.querySelector(".bpb-report-empty")?.hidden === false;', 'Firefox favorite and ignore overlap');
+            await captureIgnored('peak-empty', '#bpb-peak-report-tools');
+            await driver.findElement(By.css('button[aria-label="Show 1 ignored reports"]')).click();
+            await waitForScript(driver, 'return document.querySelector(".bpb-report-empty")?.hidden === true;', 'Firefox temporary peak reveal');
+            for (const surface of ['list', 'compact', 'detail']) {
+                await driver.get(`https://${fixtureHost}:${fixture.port}/climber/${surface === 'detail'
+                    ? 'ascent.aspx?aid=ignored&ignored=1' : `PeakAscents.aspx?pid=1039${surface === 'compact' ? '&compact=1' : ''}`}`);
+                const state = await waitForScript(driver, `
+                    const button = document.querySelector('button[aria-label^="Show"][aria-label*="ignored"]');
+                    return button && !button.hidden ? { label: button.getAttribute('aria-label') } : false;
+                `, `Firefox ignored ${surface}`);
+                assertState(/ignored/.test(state.label), 'Firefox ignored reveal missing', state);
+                if (surface === 'detail') {
+                    const boundary = await driver.executeScript(`return {
+                        hidden: document.getElementById('bpb-ascent-report-content').parentElement.style.display === 'none',
+                        map: Boolean(document.getElementById('Gmap')), srcdoc: document.querySelector('#bpb-ascent-report-content iframe').getAttribute('srcdoc') };`);
+                    assertState(boundary.hidden && boundary.map && boundary.srcdoc === null, 'Firefox detail boundary failed', boundary);
+                }
+                await captureIgnored(surface, surface === 'detail' ? '#bpb-ascent-report-tools' : '#pbaf-bar');
+                await driver.findElement(By.css('button[aria-label^="Show"][aria-label*="ignored"]')).sendKeys(Key.ENTER);
+                await waitForScript(driver, 'return Boolean(document.querySelector(\'button[aria-label^="Hide"][aria-label*="ignored"]\'));', `Firefox ${surface} keyboard reveal`);
+                if (surface === 'detail') {
+                    assertState(await driver.executeScript('return document.querySelector("#bpb-ascent-report-content iframe").getAttribute("srcdoc") === "<p>Synthetic player</p>";'), 'Firefox srcdoc reveal failed');
+                }
+            }
+        } finally {
+            await driver.get(optionsUrl);
+            await driver.executeAsyncScript(`const value = arguments[0], done = arguments[arguments.length - 1];
+                browser.storage.local.remove(value.keys).then(() => browser.storage.local.set(value.local))
+                    .then(() => browser.storage.sync.set(value.sync)).then(() => done(true), error => done(error.message));`, ignoredSaved);
+            await driver.manage().window().setRect(verificationViewport);
+        }
 
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/PeakAscents.aspx?pid=1039`,

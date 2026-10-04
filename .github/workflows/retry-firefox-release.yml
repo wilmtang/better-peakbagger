@@ -45,6 +45,7 @@ jobs:
 
       - name: Validate recovery source and release run
         id: recovery
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -70,13 +71,10 @@ jobs:
             echo "Release run attempt must be numeric" >&2
             exit 1
           fi
-          artifact_name="browser-extension-${TARGET_TAG}-${attempt}"
-          artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/artifacts?per_page=100")"
-          if ! jq -e --arg name "$artifact_name" '.artifacts | any(.name == $name and .expired == false)' <<<"$artifacts" >/dev/null; then
-            # Releases predating package identity use the legacy artifact name.
-            artifact_name="browser-extension-${TARGET_TAG}"
-            jq -e --arg name "$artifact_name" '.artifacts | any(.name == $name and .expired == false)' <<<"$artifacts" >/dev/null
-          fi
+          # Store-only reruns retain packages from an earlier verify attempt.
+          artifact_name="$(gh api --paginate --slurp \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/artifacts?per_page=100" \
+            | node scripts/select-release-artifact.mjs "$TARGET_TAG" "$attempt")"
           echo "artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
           echo "tag-commit=$tag_commit" >> "$GITHUB_OUTPUT"
 

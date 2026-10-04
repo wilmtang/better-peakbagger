@@ -222,7 +222,17 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     }
 
     const chromeVerifier = sources.find(entry => entry.verifierPath === 'scripts/verify-extension.mjs').source;
-    assert.doesNotMatch(chromeVerifier, /waitForTimeout\(2_?000\)/);
+    assert.doesNotMatch(chromeVerifier, /waitForTimeout\(/,
+        'Chrome verification must await postconditions instead of sleeping before a one-shot assertion');
+    const heightPersistence = chromeVerifier.slice(
+        chromeVerifier.indexOf('let persistedEffectiveHeight;'),
+        chromeVerifier.indexOf('const grownInteractedHeight ='),
+    );
+    assert.match(heightPersistence,
+        /waitForCondition\(async[\s\S]*await chrome\.storage\.sync\.get[\s\S]*persistedEffectiveHeight === firstPointerHeight\.contentHeight/,
+        'map resize persistence must await the exact asynchronous storage result');
+    assert.match(heightPersistence, /current value: \$\{persistedEffectiveHeight\}/,
+        'storage timeout diagnostics must include the latest observed height');
     const workerProbeEnd = chromeVerifier.indexOf('// --- Extension-owned photo editor');
     assert.notEqual(workerProbeEnd, -1);
     const workerProbe = chromeVerifier.slice(0, workerProbeEnd);

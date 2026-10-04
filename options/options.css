@@ -41,7 +41,8 @@ body.standalone-page .content { height: 100%; }
 }
 
 /* Level-2 groups inside a section: each is its own titled card. */
-.subsection + .subsection { margin-top: 16px; }
+.subsection + .subsection,
+.subsection + .card { margin-top: 16px; }
 .subsection-title {
     margin: 0 2px 7px;
     color: var(--sub);
@@ -184,6 +185,9 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-add-controls { display: flex; align-items: center; gap: 7px; }
 .favorites-add input[type="text"] { min-width: 230px; }
 .favorites-add button.secondary { align-self: auto; }
+.favorites-buddy-options { margin-top: 14px; }
+.favorites-buddy-options summary { color: var(--link); cursor: pointer; font-size: 13px; }
+.favorites-buddy-options summary:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
 .favorites-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; color: var(--sub); font-size: 12.5px; }
 .favorites-tools button.secondary { align-self: auto; }
 button.secondary.favorites-mirror-trigger { color: var(--danger); border-color: var(--danger-border); }
@@ -287,7 +291,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 }
 .favorites-source-filter button:hover { color: var(--text); border-color: var(--input-border); }
 .favorites-source-filter button[aria-pressed="true"] {
-    color: var(--accent);
+    color: var(--link);
     background: color-mix(in srgb, var(--accent) 9%, var(--input-bg));
     border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
     font-weight: 650;
@@ -296,6 +300,13 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorites-filter-count { font-variant-numeric: tabular-nums; }
 .favorites-empty { margin-top: 18px; }
 .favorites-list { list-style: none; margin: 14px -18px 0; padding: 0; border-top: 1px solid var(--border); }
+.climber-tabs { display:flex; gap:8px; margin:18px 0; }
+.climber-tabs button { min-height:32px; padding:6px 12px; border:1px solid var(--border); border-radius:7px; background:var(--input-bg); color:var(--text); font:inherit; cursor:pointer; }
+.climber-tabs button[aria-selected="true"] { border-color:var(--accent); color:var(--link); background:color-mix(in srgb,var(--accent) 12%,var(--input-bg)); }
+.climber-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+#ignored-workspace .card { padding:18px; }
+#ignored-workspace .favorite-name { overflow-wrap:anywhere; }
+#ignored-workspace .favorite-remove { min-height:32px; flex-shrink:0; }
 .favorite-item {
     display: flex;
     align-items: center;
@@ -322,6 +333,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
     cursor: pointer;
 }
 .favorite-remove:hover, .favorite-undo:hover { text-decoration: underline; }
+.favorite-remove[aria-disabled="true"], .favorite-undo[aria-disabled="true"] { cursor: wait; opacity: .55; text-decoration: none; }
 .favorite-remove:focus-visible, .favorite-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .favorite-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
 .favorites-undo-all { display: flex; align-items: center; gap: 8px; margin-top: 14px; color: var(--sub); font-size: 13px; }
@@ -632,3 +644,16 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .order-settings[data-reordering] { user-select: none; }
 .order-settings[data-reordering] .order-grip { cursor: grabbing; }
 .order-settings-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+#ignored-github { margin-top: 12px; }
+.ignored-review-content { min-width: 0; flex: 1; }
+.ignored-review-content select { max-width: 100%; }
+.ignored-conflict { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; overflow-wrap: anywhere; }
+#ignored-github .desc { overflow-wrap: anywhere; }
+#ignored-github > .desc { margin: 0; padding: 0 18px 16px; }
+#ignored-review { margin: 0 18px 16px; background: var(--bg); border-color: var(--border); flex-direction: column; align-items: stretch; }
+#ignored-review-title { color: var(--text); }
+#ignored-review .favorites-mirror-confirmation-actions { justify-content: flex-end; flex-wrap: wrap; }
+#ignored-review-confirm { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); border-radius: 8px; padding: 6px 10px; }
+#ignored-restore-undo { margin: 0 18px 16px; }
+.ignored-conflict-version { flex-basis: 100%; }

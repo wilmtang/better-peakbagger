@@ -38,15 +38,19 @@
                     <li><a class="nav-subitem" href="#map-handoffs">Send GPX</a></li>
                 </ul>
             </li>
-            <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
-            <li><a class="nav-item" href="#favorites">Favorite climbers</a></li>
+            <li>
+                <a class="nav-item" href="#beta">Ascent beta filter</a>
+                <ul class="nav-sublist">
+                    <li><a class="nav-subitem" href="#favorites">Climber lists</a></li>
+                </ul>
+            </li>
             <li>
                 <a class="nav-item" href="#github">Backup &amp; sync</a>
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#github-connection">GitHub connection</a></li>
                     <li><a class="nav-subitem" href="#github-backup">Ascent and TR backup</a></li>
                     <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
-                    <li><a class="nav-subitem" href="#github-favorites-backup">Favorite climbers backup</a></li>
+                    <li><a class="nav-subitem" href="#github-favorites-backup">Climber lists backup &amp; sync</a></li>
                     <li><a class="nav-subitem" href="#github-photos-backup">Photo library backup</a></li>
                 </ul>
             </li>
@@ -381,6 +385,22 @@
 
         <section id="beta" class="settings-section" aria-labelledby="beta-settings-heading">
             <h2 class="section-title" id="beta-settings-heading">Ascent beta filter</h2>
+            <!-- Keep the established #favorites deep link to the standalone
+                 manager while grouping climber lists with the beta filters. -->
+            <div id="favorites" class="subsection" role="group" aria-labelledby="favorites-heading">
+                <h3 class="subsection-title" id="favorites-heading">Climber lists</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Climber lists</span>
+                            <span class="desc">Special filter to show users constantly making high quality TRs, with an option to hide users constantly making low effort TRs</span>
+                        </div>
+                        <div class="control">
+                            <a class="secondary" id="open-favorites" href="favorites.html">Manage climber lists</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="card">
                 <div class="row">
                     <div class="label">
@@ -432,25 +452,6 @@
                             <input type="checkbox" id="beta-sort-date-desc">
                             <span>Sort newest first</span>
                         </label>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- The custom-list workspace is its own page — a list to manage, not a
-             preference. The anchor stays so an existing options.html#favorites
-             link still lands on the topic, one click from the manager. Its
-             GitHub backup stays below in Backup & sync. -->
-        <section id="favorites" class="settings-section" aria-labelledby="favorites-heading">
-            <h2 class="section-title" id="favorites-heading">Favorite climbers</h2>
-            <div class="card">
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Favorite climbers</span>
-                        <span class="desc">Filter trip reports by the climbers you follow. Choose your Buddy List or a custom list, add climbers, and mirror or merge your buddies — on their own page. Your custom list can hold up to 1,500 climbers.</span>
-                    </div>
-                    <div class="control">
-                        <a class="secondary" id="open-favorites" href="favorites.html">Manage favorite climbers</a>
                     </div>
                 </div>
             </div>
@@ -540,7 +541,7 @@
             </div>
 
             <div class="subsection" id="github-favorites-backup" role="group" aria-labelledby="github-favorites-backup-heading">
-                <h3 class="subsection-title" id="github-favorites-backup-heading">Favorite climbers backup</h3>
+                <h3 class="subsection-title" id="github-favorites-backup-heading">Climber lists backup &amp; sync</h3>
                 <div class="card">
                     <div class="row">
                         <div class="label">
@@ -581,6 +582,39 @@
                         <button class="favorite-undo" id="favorites-restore-undo-button" type="button">Undo</button>
                     </div>
                 </div>
+                <div class="card" id="ignored-github">
+                    <div class="row">
+                        <div class="label"><span class="title">Ignored climbers</span>
+                            <span class="desc" id="ignored-github-status" role="status">Saved on this device</span>
+                        </div>
+                        <div class="control favorites-github-buttons">
+                            <button id="ignored-backup" class="secondary" type="button">Back up now</button>
+                            <button id="ignored-restore" class="secondary" type="button">Restore…</button>
+                        </div>
+                    </div>
+                    <div class="row"><label class="check" for="ignored-sync-enable">
+                        <input type="checkbox" id="ignored-sync-enable"><span>Sync ignored climbers with GitHub</span>
+                    </label></div>
+                    <p class="desc">Backup and sync upload climber IDs and names to your connected repository. Public repositories and prior Git history may expose this list.</p>
+                    <div class="favorites-mirror-confirmation" id="ignored-review" role="alertdialog"
+                        aria-labelledby="ignored-review-title" aria-describedby="ignored-review-impact" tabindex="-1" hidden>
+                        <div class="ignored-review-content">
+                            <p class="favorites-mirror-confirmation-title" id="ignored-review-title">Review ignored climbers</p>
+                            <label>Keep <select id="ignored-review-mode" aria-label="How to reconcile ignored climbers">
+                                <option value="merge">Merge lists</option><option value="github">Use GitHub's list</option>
+                                <option value="device">Use this device's list</option>
+                            </select></label>
+                            <p id="ignored-review-impact" class="favorites-mirror-confirmation-detail"></p>
+                            <div id="ignored-review-conflicts"></div>
+                        </div>
+                        <div class="favorites-mirror-confirmation-actions">
+                            <button id="ignored-review-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="ignored-review-confirm" type="button">Apply reviewed changes</button>
+                        </div>
+                    </div>
+                    <button id="ignored-restore-undo" class="favorite-undo" type="button" hidden>Undo list replacement</button>
+                </div>
+
             </div>
 
             <div class="subsection" id="github-photos-backup" role="group" aria-labelledby="github-photos-backup-heading">

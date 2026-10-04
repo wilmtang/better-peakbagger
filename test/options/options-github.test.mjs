@@ -325,8 +325,9 @@ test('report drafts render newest-first with labels, fallbacks, and edit links',
         'https://www.peakbagger.com/climber/ascentedit.aspx?pid=456&cid=900001',
         'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001'
     ]);
-    assert.equal('bpbReportDraft:900001:a999' in dom.chrome._localStore, false,
-        'opening the manager should prune expired drafts');
+    assert.ok(dom.chrome._localStore['bpbReportDraft:900001:a999'].deletedGeneration,
+        'opening the manager should mark expired drafts as deleted');
+    assert.equal(dom.chrome._localStore['bpbReportDraft:900001:a999'].text, undefined);
     assert.equal(el(dom, 'drafts-empty').hidden, true);
     assert.equal(el(dom, 'drafts-delete-all').hidden, false);
 });

@@ -11,8 +11,11 @@
 import { settings as S } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
-import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
-import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
+import * as I from '../favorites/ignored-climbers.js';
+import { observeIgnored } from '../favorites/ignored-client.js';
+import { createFavoriteSource } from '../favorites/favorite-source.js';
+import { reportStyle, utilityButton, paintReveal } from '../favorites/report-controls.js';
+import { authorInCell } from '../favorites/report-adapters.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
@@ -33,9 +36,14 @@ const isSorterOnlyPage = isBuddyListPage || isPeakListPage;
 const settingsPromise = S && isAscentListPage
     ? S.requireCurrent().catch(() => null)
     : Promise.resolve(null);
-const favoritesPromise = isPeakAscentsPage
-    ? chrome.storage.local.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]).catch(() => ({}))
-    : Promise.resolve({});
+let ignoredState = { list: null, error: '' }, favoriteSourceState = null;
+let updateIgnored = () => {}, updateFavoriteSource = () => {};
+const ignoredReader = isPeakAscentsPage ? observeIgnored(chrome, state => {
+    ignoredState = state; updateIgnored();
+}) : null;
+const favoriteSource = isPeakAscentsPage ? createFavoriteSource({ api: chrome, doc: document,
+    settings: { requireCurrent: () => settingsPromise, subscribe: S.subscribe },
+    onState: state => { favoriteSourceState = state; updateFavoriteSource(); } }) : null;
 
 // Chip toggles and the word threshold remain page-local. Order is synced;
 // existing page-local orders seed the settings on the first list visit.
@@ -635,6 +643,39 @@ const renderCompactNotice = table => {
     table.parentNode.insertBefore(bar, table);
 };
 
+const mountCompactIgnores = (table, records, sections) => {
+    reportStyle(document);
+    const tools = document.createElement('span'); tools.className = 'bpb-report-tools';
+    const status = document.createElement('span'); status.setAttribute('role', 'status');
+    const detail = document.createElement('span'); detail.className = 'bpb-report-status';
+    const error = document.createElement('span'); error.setAttribute('role', 'status');
+    let reveal = false;
+    if (!table.id) table.id = 'bpb-ascent-list';
+    const button = utilityButton(document, 'Show ignored', () => { reveal = !reveal; render(); });
+    button.setAttribute('aria-controls', table.id);
+    const retry = utilityButton(document, 'Retry', () => { void ignoredReader.refresh(); });
+    tools.append(status, button, detail, error, retry); document.getElementById('pbaf-bar').append(tools);
+    const render = () => {
+        const ids = new Set(ignoredState.list?.entries.map(entry => entry.cid) || []);
+        const result = I.visibility(records, ids, () => true, reveal);
+        const visible = new Set(result.visible);
+        for (const record of records) {
+            record.visible = visible.has(record);
+            record.row.style.display = record.visible ? record.originalDisplay : 'none';
+        }
+        for (const section of sections) {
+            section.visible = section.items.some(item => item.visible);
+            section.row.style.display = section.visible ? '' : 'none';
+        }
+        status.textContent = `${result.visible.length} of ${records.length} ascents shown`;
+        paintReveal(button, detail, result, reveal, 'ascents');
+        error.textContent = ignoredState.error; retry.hidden = !ignoredState.error;
+    };
+    updateIgnored = render;
+    window.addEventListener('pageshow', event => { if (event.persisted) { reveal = false; render(); void ignoredReader.refresh(); } });
+    render();
+};
+
 let startupTable = null;
 let startupVisibility = null;
 let startupVisibilityPriority = '';
@@ -692,7 +733,8 @@ const init = async () => {
     const columns = {
         tr: findColumn(text => text.startsWith('tr-words')),
         gps: findColumn(text => text === 'gps'),
-        link: findColumn(text => text === 'link')
+        link: findColumn(text => text === 'link'),
+        climber: findColumn(text => text === 'climber')
     };
 
     injectStyle();
@@ -719,13 +761,8 @@ const init = async () => {
         const trMatch = /^TR-(\d+)/.exec(normalize(cell('tr') && cell('tr').textContent));
         const record = {
             row,
-            climberId: (() => {
-                const anchor = Array.from(row.querySelectorAll('a[href]')).find(candidate => {
-                    try { return /\/climber\/climber\.aspx$/i.test(new URL(candidate.href, document.baseURI).pathname); }
-                    catch (e) { return false; }
-                });
-                return anchor ? numericParam(anchor.href, 'cid', document.baseURI) : null;
-            })(),
+            climberId: columns.climber == null ? null : authorInCell(row.cells[columns.climber]),
+            originalDisplay: row.style.display,
             words: trMatch ? parseInt(trMatch[1], 10) : 0,
             gps: !!(cell('gps') && cell('gps').querySelector('img')),
             link: !!(cell('link') && cell('link').querySelector('a[href]')),
@@ -782,6 +819,7 @@ const init = async () => {
     if (columns.tr === null && columns.gps === null && columns.link === null) {
         await autoSortPromise;
         renderCompactNotice(table);
+        if (isPeakAscentsPage) mountCompactIgnores(table, dataRows, sections);
         return;
     }
 
@@ -853,19 +891,9 @@ const init = async () => {
     if (currentSettings && !currentSettings.betaPeakFilterOrder) migrateOrders.betaPeakFilterOrder = [...state.peakOrder];
     if (currentSettings && !currentSettings.betaPersonalFilterOrder) migrateOrders.betaPersonalFilterOrder = [...state.personalOrder];
     if (Object.keys(migrateOrders).length) void S.set(migrateOrders, { onlyIfUnset: true }).catch(() => {});
-    const initialFavorites = await favoritesPromise;
-    const ownCid = ownerClimberId(document);
-    const cacheForOwner = value => {
-        const cache = F.cleanBuddyCache(value);
-        return cache && ownCid != null && cache.ownerCid !== ownCid ? null : cache;
-    };
-    let favoritesSource = Schema.favoritesSource(currentSettings?.favoritesSource);
-    let favorites = F.cleanFavorites(initialFavorites[F.FAVORITES_KEY]);
-    let buddyCache = cacheForOwner(initialFavorites[F.BUDDY_CACHE_KEY]);
-    let favoriteIds = new Set();
-    let favoriteAvailable = false;
-    let favoriteLoadError = '';
-    let buddyRefreshPromise = null;
+    if (favoriteSource) { await favoriteSource.ready; favoriteSource.reconcile(); }
+    let favoritesSource = favoriteSourceState?.mode || Schema.favoritesSource(currentSettings?.favoritesSource);
+    let revealIgnored = false, fullList = false;
     let renderFrame = null;
     const bar = buildBarShell();
     const chips = {};
@@ -903,6 +931,7 @@ const init = async () => {
                 suppressChipClick = null;
                 return;
             }
+            fullList = false;
             state[key] = !state[key];
             saveState(state);
             render();
@@ -922,87 +951,25 @@ const init = async () => {
         return item;
     };
 
-    const favoriteTooltip = () => {
-        if (favoriteLoadError) return favoriteLoadError;
-        if (favoritesSource === 'custom') {
-            return favorites.entries.length
-                ? 'Only ascents logged by climbers in your custom favorites list. Remembered across visits.'
-                : "No favorite climbers yet. Add them from a climber's page or in the extension settings.";
-        }
-        if (!buddyCache) {
-            return ownCid == null
-                ? 'Sign in to Peakbagger to load your Buddy List.'
-                : 'Load your Peakbagger Buddy List and show only ascents logged by those climbers.';
-        }
-        if (!buddyCache.entries.length) return 'Your Peakbagger Buddy List is empty.';
-        return F.isFresh(buddyCache)
-            ? 'Only ascents logged by climbers on your Peakbagger Buddy List. Remembered across visits.'
-            : 'Using your saved Buddy List while a fresh copy loads in the background.';
-    };
-
     const refreshFavorites = () => {
-        favoriteIds = F.favoriteSet(favoritesSource, favorites, buddyCache);
-        favoriteAvailable = favoriteIds.size > 0;
+        const ids = favoriteSourceState?.ids || new Set();
+        favoritesSource = favoriteSourceState?.mode || favoritesSource;
         counts.fav = 0;
         for (const record of dataRows) {
-            record.fav = record.climberId != null && favoriteIds.has(record.climberId);
+            record.fav = record.climberId != null && ids.has(record.climberId);
             if (record.fav) counts.fav++;
         }
         if (chips.fav) {
             chips.fav.querySelector('.pbaf-chip-label').textContent = favoritesSource === 'custom'
-                ? 'Fav climbers'
-                : 'Climbing buddies';
-            const count = chips.fav.querySelector('.pbaf-count');
-            const countKnown = favoritesSource === 'custom' || buddyCache !== null;
-            count.hidden = !countKnown;
-            count.textContent = countKnown ? String(counts.fav) : '';
-            chips.fav.title = favoriteTooltip();
-            const canInitialLoad = favoritesSource === 'buddies'
-                    && !buddyCache && ownCid != null && !favoriteLoadError;
-            chips.fav.disabled = !favoriteAvailable && !canInitialLoad;
+                ? 'Fav climbers' : 'Climbing buddies';
+            chips.fav.querySelector('.pbaf-count').textContent = String(counts.fav);
+            chips.fav.title = favoriteSourceState?.error || (favoriteSourceState?.available
+                ? 'Only ascents from your selected climber list. Remembered across visits.'
+                : 'Load your Peakbagger Buddy List to filter these ascents.');
+            chips.fav.disabled = false;
         }
     };
-
-    const refreshBuddyCache = () => {
-        if (!isPeakAscentsPage || favoritesSource !== 'buddies' || !state.fav
-                || ownCid == null || F.isFresh(buddyCache) || buddyRefreshPromise) return buddyRefreshPromise;
-        favoriteLoadError = '';
-        if (chips.fav) chips.fav.title = buddyCache
-            ? 'Using your saved Buddy List while a fresh copy loads in the background.'
-            : 'Loading your Peakbagger Buddy List…';
-        const url = F.buddyListUrl(ownCid, location.origin);
-        buddyRefreshPromise = (async () => {
-            const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
-            if (result.kind !== 'ok') throw result.error;
-            const responseOwner = ownerClimberId(result.document);
-            if (responseOwner !== ownCid) {
-                throw PeakbaggerError.failure('identity-mismatch', { resource: 'buddies' });
-            }
-            const nextCache = {
-                ownerCid: ownCid,
-                entries: F.parseBuddyDocument(result.document),
-                fetchedAt: Date.now(),
-            };
-            buddyCache = nextCache;
-            try {
-                await chrome.storage.local.set({ [F.BUDDY_CACHE_KEY]: nextCache });
-            } catch {
-                favoriteLoadError = PeakbaggerError.message(
-                    PeakbaggerError.failure('storage', { resource: 'buddies' })
-                );
-            }
-        })().catch(error => {
-            const message = PeakbaggerError.message(error && error.code
-                ? error
-                : PeakbaggerError.failure('network', { resource: 'buddies' }));
-            favoriteLoadError = buddyCache ? `Using your saved Buddy List. ${message}` : message;
-        }).finally(() => {
-            buddyRefreshPromise = null;
-            refreshFavorites();
-            render();
-        });
-        return buddyRefreshPromise;
-    };
+    const refreshBuddyCache = () => favoriteSource?.refresh({ active: state.fav });
 
     const wordsWrap = document.createElement('span');
     wordsWrap.className = 'pbaf-words';
@@ -1016,6 +983,7 @@ const init = async () => {
     wordsInput.value = String(Math.max(1, parseInt(state.minWords, 10) || 1));
     wordsWrap.append('Trip report filter: ≥ ', wordsInput, ' words');
     wordsInput.addEventListener('input', () => {
+        fullList = false;
         const value = parseInt(wordsInput.value, 10);
         state.minWords = Number.isFinite(value) && value > 0 ? value : 1;
         saveState(state);
@@ -1037,9 +1005,11 @@ const init = async () => {
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.className = 'pbaf-reset pbaf-control';
-    resetButton.textContent = 'Show all';
+    resetButton.textContent = 'Clear filters';
     resetButton.title = 'Turn off all filters (remembered for future visits)';
     resetButton.addEventListener('click', () => {
+        fullList = false;
+        revealIgnored = false;
         state.beta = false;
         state.tr = false;
         state.gps = false;
@@ -1344,12 +1314,27 @@ const init = async () => {
     }, true);
     window.addEventListener('blur', () => finishPointerReorder(true));
 
+    reportStyle(document);
+    const ignoreTools = document.createElement('span'); ignoreTools.className = 'bpb-report-tools';
+    const ignoredStatus = document.createElement('span'); ignoredStatus.className = 'bpb-report-status';
+    const ignoreError = document.createElement('span'); ignoreError.setAttribute('role', 'status');
+    if (!table.id) table.id = 'bpb-ascent-list';
+    const revealButton = utilityButton(document, 'Show ignored', () => {
+        fullList = false; revealIgnored = !revealIgnored; render();
+    });
+    revealButton.setAttribute('aria-controls', table.id);
+    const fullButton = utilityButton(document, 'View full list', () => { fullList = true; revealIgnored = true; render(); });
+    const restoreFilters = utilityButton(document, 'Restore filters', () => { fullList = false; revealIgnored = false; render(); });
+    const retryLists = utilityButton(document, 'Retry', () => { void ignoredReader?.refresh(); void favoriteSource?.retry(); });
+    ignoreTools.append(revealButton, ignoredStatus, ignoreError, retryLists, fullButton, restoreFilters);
+    const emptyBody = document.createElement('tbody'); emptyBody.dataset.bpbEmpty = 'true';
+    const emptyRow = document.createElement('tr'); const emptyCell = document.createElement('td');
+    emptyCell.colSpan = headerRow.cells.length; emptyCell.setAttribute('role', 'status');
+    emptyRow.append(emptyCell); emptyBody.append(emptyRow);
+    if (isPeakAscentsPage) table.append(emptyBody);
     bar.append(
         ...state[orderKey].map(key => filterItems[key]).filter(Boolean),
-        spacer,
-        statusEl,
-        resetButton,
-        orderStatusEl,
+        spacer, statusEl, resetButton, ...(isPeakAscentsPage ? [ignoreTools] : []), orderStatusEl,
     );
     refreshBeta();
     refreshFavorites();
@@ -1360,25 +1345,43 @@ const init = async () => {
             renderFrame = null;
         }
         for (const [key, chip] of Object.entries(chips)) {
-            const active = !!state[key] && (key !== 'fav' || favoriteAvailable);
+            const active = !!state[key];
             chip.setAttribute('aria-pressed', String(active));
         }
         wordsWrap.hidden = !state.tr;
 
         const minWords = Math.max(1, parseInt(state.minWords, 10) || 1);
-        let shown = 0;
+        const ids = new Set(ignoredState.list?.entries.map(entry => entry.cid) || []);
+        const ordinary = record => fullList || ((!state.beta || record.beta)
+            && (!state.tr || record.words >= minWords) && (!state.gps || record.gps)
+            && (!state.link || record.link) && (!state.fav || record.fav));
+        const result = I.visibility(dataRows, isPeakAscentsPage ? ids : new Set(), ordinary, revealIgnored);
+        const visibleRows = new Set(result.visible);
+        const shown = result.visible.length;
         for (const record of dataRows) {
-            let visible = true;
-            if (state.beta && !record.beta) visible = false;
-            if (state.tr && record.words < minWords) visible = false;
-            if (state.gps && !record.gps) visible = false;
-            if (state.link && !record.link) visible = false;
-            if (state.fav && favoriteAvailable && !record.fav) visible = false;
+            const visible = visibleRows.has(record);
             if (record.visible !== visible) {
                 record.visible = visible;
-                record.row.style.display = visible ? '' : 'none';
+                record.row.style.display = visible ? record.originalDisplay : 'none';
             }
-            if (visible) shown++;
+        }
+        if (isPeakAscentsPage) {
+            paintReveal(revealButton, ignoredStatus, result, revealIgnored, 'ascents');
+            ignoreError.textContent = ignoredState.error || (state.fav ? favoriteSourceState?.error || '' : '');
+            if (state.fav && favoriteSourceState?.loading) ignoreError.textContent = 'Loading climbing buddies…';
+            retryLists.hidden = !ignoreError.textContent || ignoreError.textContent === 'Loading climbing buddies…';
+            fullButton.hidden = shown > 0 || fullList;
+            restoreFilters.hidden = !fullList;
+            emptyBody.hidden = shown > 0;
+            emptyCell.textContent = ignoreError.textContent || (result.ignored.length === total && !revealIgnored
+                ? `All ${total} loaded ascents are from ignored climbers.` : 'No ascents match your filters.');
+            for (const [key, chip] of Object.entries(chips)) {
+                const count = dataRows.filter(record => (revealIgnored || !ids.has(record.climberId))
+                    && (key === 'tr' ? record.words > 0 : record[key])).length;
+                const badge = chip.querySelector('.pbaf-count');
+                badge.hidden = key === 'fav' && !favoriteSourceState?.available;
+                badge.textContent = badge.hidden ? '' : String(count);
+            }
         }
         for (const section of sections) {
             const visible = section.items.some(item => item.visible);
@@ -1389,7 +1392,7 @@ const init = async () => {
         }
 
         const anyActive = state.beta || state.tr || state.gps || state.link
-                || (state.fav && favoriteAvailable);
+                || state.fav || (isPeakAscentsPage && result.totalHidden > 0) || fullList;
         statusEl.textContent = '';
         const strong = document.createElement('b');
         if (anyActive) {
@@ -1401,7 +1404,7 @@ const init = async () => {
             strong.textContent = String(total);
             statusEl.append(strong, ` ascent${total === 1 ? '' : 's'}`);
         }
-        resetButton.hidden = !anyActive;
+        resetButton.hidden = !(state.beta || state.tr || state.gps || state.link || state.fav || fullList);
     };
 
     const scheduleRender = () => {
@@ -1421,22 +1424,12 @@ const init = async () => {
         renderFrame = null;
     }, { once: true });
 
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== 'local') return;
-        let changed = false;
-        if (changes[F.FAVORITES_KEY]) {
-            favorites = F.cleanFavorites(changes[F.FAVORITES_KEY].newValue);
-            changed = true;
-        }
-        if (changes[F.BUDDY_CACHE_KEY]) {
-            buddyCache = cacheForOwner(changes[F.BUDDY_CACHE_KEY].newValue);
-            favoriteLoadError = '';
-            changed = true;
-        }
-        if (!changed) return;
-        refreshFavorites();
-        render();
-    });
+    updateIgnored = render;
+    updateFavoriteSource = () => { refreshFavorites(); render(); };
+    window.addEventListener('pageshow', event => { if (event.persisted) {
+        revealIgnored = false; fullList = false; render(); void ignoredReader?.refresh(); void favoriteSource?.resume();
+    } });
+    window.addEventListener('pagehide', () => favoriteSource?.pause());
 
     // Re-apply the beta definition if it changes in the options page /
     // another tab. (The Trip report word threshold is local UI state.)
@@ -1459,7 +1452,6 @@ const init = async () => {
             }
             if (nextSource !== favoritesSource) {
                 favoritesSource = nextSource;
-                favoriteLoadError = '';
                 refreshFavorites();
                 changed = true;
             }

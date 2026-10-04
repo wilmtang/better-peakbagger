@@ -16,7 +16,7 @@ const table = dom => dom.window.document.querySelector('table.gray');
 const dataRows = dom => [...table(dom).rows].filter(row =>
     row.cells.length > 1 && row.cells[0].tagName === 'TD');
 const visibleRows = dom => dataRows(dom).filter(row => row.style.display === '');
-const sectionRows = dom => [...table(dom).rows].filter(row => row.cells.length === 1);
+const sectionRows = dom => [...table(dom).rows].filter(row => row.cells.length === 1 && !row.parentElement.dataset.bpbEmpty);
 const dateTexts = dom => dataRows(dom).map(row => row.cells[1].textContent.trim());
 const sectionLabels = dom => sectionRows(dom).map(row => row.textContent.trim());
 const chip = (dom, label) => [...dom.window.document.querySelectorAll('.pbaf-chip')]

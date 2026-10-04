@@ -939,6 +939,24 @@ test('a semantic root update rereads and remerges after a branch conflict', asyn
     ]);
 });
 
+test('semantic root update checks authorization immediately before advancing the ref', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'TNEW' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'CNEW' }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => assert.fail('cancelled write reached the branch'),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    await assert.rejects(client.updateRootFile('ignored-climbers.json', () => 'reviewed', 'Reconcile ignored climbers', {
+        beforeCommit: async () => { throw new Error('connection changed'); },
+    }), /connection changed/);
+    assert.equal(calls.filter(call => call.key.startsWith('PATCH')).length, 0);
+});
+
 test('root file writes fail closed on a foreign marker or path collision', async () => {
     const foreign = makeFetch({
         'GET /repos/me/backup': REPO_OK(),

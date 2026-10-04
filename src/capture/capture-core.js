@@ -359,7 +359,7 @@ const buildQueryBoxes = segments => {
         // Emit the chunk accumulated so far. The mid-loop call always has at
         // least one edge behind it; the call after the loop may have none,
         // because sanitizeTrack's flush() keeps a single-point segment (which
-        // findEncounters handles explicitly below). That case wants exactly what
+        // findEncountersAsync handles explicitly below). That case wants exactly what
         // this does: bbox is still the degenerate start point, and paddedBoxes
         // turns it into the corridor box around that fix. There is nothing to
         // guard — but the reason is that a zero-edge chunk is correct here, not
@@ -511,15 +511,6 @@ const nearestEncounters = candidates => {
         candidate.distanceM < best.distanceM ? candidate : best));
 };
 
-const findEncounters = (segments, peak, trackIndex) => {
-    const candidates = [];
-    for (const record of candidateEdges(trackIndex, peak)) {
-        const candidate = encounterCandidate(segments, peak, trackIndex, record);
-        if (candidate) candidates.push(candidate);
-    }
-    return nearestEncounters(candidates);
-};
-
 const findEncountersAsync = async (segments, peak, trackIndex, checkpoint) => {
     const candidates = [];
     let visited = 0;
@@ -630,33 +621,10 @@ const capAmbiguousGroup = (matches, group) => {
     });
 };
 
-const applyAmbiguityCaps = matches => {
-    const remaining = new Set(matches.map((_match, index) => index));
-    while (remaining.size) {
-        const seed = remaining.values().next().value;
-        remaining.delete(seed);
-        // Ambiguity is transitive: a peak pulled into the group can itself
-        // pull in peaks the earlier members already passed over. Sweep the
-        // group as a worklist so the closure is complete. A single pass
-        // over one snapshot made the result depend on the order Peakbagger
-        // happened to return the peaks — the same track could cap a summit
-        // or leave it Strong and pre-selected.
-        const group = [seed];
-        for (let cursor = 0; cursor < group.length; cursor++) {
-            for (const index of [...remaining]) {
-                if (!sharesEncounterWindow(matches[group[cursor]].encounter, matches[index].encounter)) continue;
-                group.push(index);
-                remaining.delete(index);
-            }
-        }
-        capAmbiguousGroup(matches, group);
-    }
-    return matches;
-};
-
 const applyAmbiguityCapsAsync = async (matches, checkpoint) => {
     const remaining = new Set(matches.map((_match, index) => index));
     let comparisons = 0;
+    // Expand the full transitive ambiguity group, independent of peak order.
     while (remaining.size) {
         const seed = remaining.values().next().value;
         remaining.delete(seed);
@@ -672,20 +640,6 @@ const applyAmbiguityCapsAsync = async (matches, checkpoint) => {
         capAmbiguousGroup(matches, group);
     }
     return matches;
-};
-
-const detectPeaks = (segments, peaks, qualityScore = 1) => {
-    const trackIndex = buildTrackIndex(segments);
-    const matches = [];
-    for (const peak of peaks) {
-        const encounters = findEncounters(segments, peak, trackIndex);
-        if (!encounters.length) continue;
-        const scored = encounters.map(encounter =>
-            scoreEncounter(segments, peak, encounter, trackIndex, qualityScore));
-        scored.sort((a, b) => b.confidence - a.confidence || a.evidence.distanceM - b.evidence.distanceM);
-        matches.push(scored[0]);
-    }
-    return applyAmbiguityCaps(matches).sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name));
 };
 
 const detectPeaksAsync = async (
@@ -750,22 +704,6 @@ class MaxHeap {
     }
 }
 
-const intervalCandidate = (segment, segmentIndex, startIndex, endIndex) => {
-    if (endIndex - startIndex <= 1) return null;
-    let bestIndex = -1;
-    let errorM = -1;
-    const midpoint = (startIndex + endIndex) / 2;
-    for (let index = startIndex + 1; index < endIndex; index++) {
-        const candidateErrorM = pointSegmentDistanceM(segment[index], segment[startIndex], segment[endIndex]);
-        if (candidateErrorM > errorM + 1e-9
-                || (Math.abs(candidateErrorM - errorM) <= 1e-9 && Math.abs(index - midpoint) < Math.abs(bestIndex - midpoint))) {
-            bestIndex = index;
-            errorM = candidateErrorM;
-        }
-    }
-    return { segmentIndex, startIndex, endIndex, index: bestIndex, errorM };
-};
-
 const reductionAnchors = (segments, matches) => {
     const anchors = segments.map(() => new Set());
     segments.forEach((segment, segmentIndex) => {
@@ -792,70 +730,6 @@ const reductionAnchors = (segments, matches) => {
         anchors[encounter.segmentIndex].add(clamp(encounter.edgeIndex + 1, 0, segment.length - 1));
     }
     return anchors;
-};
-
-const reduceTrack = (segments, matches, limit = MAX_UPLOAD_POINTS) => {
-    const originalPointCount = segments.reduce((sum, segment) => sum + segment.length, 0);
-    if (segments.length > MAX_TRACK_SEGMENTS) {
-        const error = new Error(`Track has ${segments.length} segments; Peakbagger allows ${MAX_TRACK_SEGMENTS}.`);
-        error.code = 'too-many-segments';
-        throw error;
-    }
-    if (originalPointCount <= limit) {
-        return {
-            segments: segments.map(segment => segment.slice()),
-            originalPointCount,
-            retainedPointCount: originalPointCount,
-            maxDeviationM: 0
-        };
-    }
-
-    const anchors = reductionAnchors(segments, matches);
-    const mandatoryCount = anchors.reduce((sum, set) => sum + set.size, 0);
-    if (mandatoryCount > limit) {
-        const error = new Error(`Track requires ${mandatoryCount} protected points, exceeding Peakbagger's ${limit}-point limit.`);
-        error.code = 'mandatory-point-overflow';
-        throw error;
-    }
-
-    const heap = new MaxHeap();
-    anchors.forEach((set, segmentIndex) => {
-        const sorted = [...set].sort((a, b) => a - b);
-        for (let index = 1; index < sorted.length; index++) {
-            const candidate = intervalCandidate(segments[segmentIndex], segmentIndex, sorted[index - 1], sorted[index]);
-            if (candidate) heap.push(candidate);
-        }
-    });
-
-    let retainedPointCount = mandatoryCount;
-    while (retainedPointCount < limit && heap.length) {
-        const candidate = heap.pop();
-        const set = anchors[candidate.segmentIndex];
-        if (set.has(candidate.index)) continue;
-        set.add(candidate.index);
-        retainedPointCount++;
-        const segment = segments[candidate.segmentIndex];
-        const left = intervalCandidate(segment, candidate.segmentIndex, candidate.startIndex, candidate.index);
-        const right = intervalCandidate(segment, candidate.segmentIndex, candidate.index, candidate.endIndex);
-        if (left) heap.push(left);
-        if (right) heap.push(right);
-    }
-
-    let maxDeviationM = 0;
-    const reducedSegments = segments.map((segment, segmentIndex) => {
-        const retained = [...anchors[segmentIndex]].sort((a, b) => a - b);
-        for (let retainedIndex = 1; retainedIndex < retained.length; retainedIndex++) {
-            const startIndex = retained[retainedIndex - 1];
-            const endIndex = retained[retainedIndex];
-            for (let index = startIndex + 1; index < endIndex; index++) {
-                maxDeviationM = Math.max(maxDeviationM,
-                    pointSegmentDistanceM(segment[index], segment[startIndex], segment[endIndex]));
-            }
-        }
-        return retained.map(index => segment[index]);
-    });
-
-    return { segments: reducedSegments, originalPointCount, retainedPointCount, maxDeviationM };
 };
 
 const intervalCandidateAsync = async (
@@ -1254,9 +1128,7 @@ const API = {
     sanitizeWaypoints,
     buildQueryBoxes,
     parsePeakbaggerPeaks,
-    detectPeaks,
     detectPeaksAsync,
-    reduceTrack,
     reduceTrackAsync,
     serializeUploadGpx,
     calculateDraftFields,

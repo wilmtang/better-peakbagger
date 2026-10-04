@@ -1,6 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createClimberListSync } from './climber-list-sync.js';
+import * as Ignored from '../favorites/ignored-climbers.js';
+import { createIgnoredStore } from './ignored-store.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
@@ -70,6 +73,7 @@ export function createGithubRoutes({
     mutateMap,
     createPhotoStore = PhotoStore.createPhotoStore,
     resolveGithubAccess = null,
+    ignoredStore = null,
     photoBackupSettings = Settings,
     trustedActions = null,
 }) {
@@ -818,6 +822,10 @@ export function createGithubRoutes({
         },
     });
 
+    const ignoredSync = createClimberListSync({ storage: ext.storage.local,
+        store: ignoredStore || createIgnoredStore({ storage: ext.storage.local }), writeQueue,
+        getAccess: connectedGithubClient, alarms: ext.alarms, now });
+
     // Profile backup preflight adds the repository's ascent-folder leaves to
     // the ordinary status. This stays a dedicated message so viewing a saved
     // ascent never pays for GitHub tree reads.
@@ -1306,6 +1314,13 @@ export function createGithubRoutes({
                     && actual.pathname === expected.pathname;
             } catch { return false; }
         };
+    };
+    const isClimberListPage = packagedPage('options/favorites.html');
+    const ignoredListAction = (message, sender) => {
+        if (!packagedPage('options/options.html')(sender) && !isClimberListPage(sender)) {
+            return { ok: false, error: { code: 'forbidden', message: 'Open Climber lists in Settings.' } };
+        }
+        return message.action === 'status' ? ignoredSync.status() : ignoredSync.action(message);
     };
     const isPhotoPage = packagedPage('photos/photos.html');
     const isOptionsPage = packagedPage('options/options.html');
@@ -1854,6 +1869,7 @@ export function createGithubRoutes({
         GITHUB_ASCENT_BACKUP_SUMMARY: extensionPage(() => githubAscentBackupSummary()),
         GITHUB_BACKUP_PROFILE_STATUS: peakbaggerPage((_message, sender) => githubProfileBackupStatus(sender)),
         GITHUB_BACKUP_PROFILE_BATCH: peakbaggerPage((message, sender) => backupProfileBatch(message, sender)),
+        GITHUB_IGNORED_LIST: extensionPage(ignoredListAction),
         GITHUB_FAVORITES_BACKUP: extensionPage(() => backupFavorites()),
         GITHUB_FAVORITES_RESTORE: extensionPage(() => restoreFavorites()),
         GITHUB_SETTINGS_BACKUP: extensionPage(() => backupSettings()),
@@ -1882,6 +1898,8 @@ export function createGithubRoutes({
     const onStorageChanged = (changes, area) => {
         if (area !== 'local') return;
         const connectionChanged = !!(changes[GithubAuth.STORAGE_KEY] || changes[GithubAuth.EPOCH_KEY]);
+        if (connectionChanged) ignoredSync.connectionChanged();
+        if (changes[Ignored.IGNORED_KEY]) void ignoredSync.localChanged().catch(() => {});
         if (!connectionChanged && !changes[Favorites.FAVORITES_KEY]) return;
         void Settings.get().then(settings => {
             if (connectionChanged && settings.autoSettingsBackup) settingsAutoBackup.schedule();
@@ -1904,6 +1922,8 @@ export function createGithubRoutes({
     };
 
     const onAlarm = name => {
+        const ignoredOperation = ignoredSync.onAlarm(name);
+        if (ignoredOperation) return ignoredOperation;
         if (name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
         if (name === FAVORITES_BACKUP_ALARM) void favoritesAutoBackup.fire();
         if (name === PHOTO_BACKUP_ALARM) return firePhotoAutoBackup();
@@ -1917,6 +1937,7 @@ export function createGithubRoutes({
         onSettingsChanged,
         onAlarm,
         startPhotoBackupWatchdog,
+        startIgnoredSync: ignoredSync.start,
         validateImportedConnection,
         isExtensionOnly: routeTable.isExtensionOnly,
         isPhotoPage,

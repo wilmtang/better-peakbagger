@@ -3,7 +3,7 @@
 //
 // Production-scale CPU coverage stays outside npm test. This exercises the
 // accepted 20,000-point route and 5,000-peak response together, including the
-// exact synchronous/cooperative equivalence and the event-loop yield contract.
+// summit identities, protected anchors, point budgets, and event-loop yielding.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,16 +43,13 @@ const cooperativeScheduler = () => {
 };
 
 test('production-scale full analysis remains exact, bounded, and cooperative', async () => {
-    // Reference work is deliberately outside the scheduling measurement: the
-    // shipped worker uses only the cooperative path.
-    const referenceMatches = Core.detectPeaks([route], peaks, 0.95);
-    const referenceReduced = Core.reduceTrack([route], referenceMatches, Core.MAX_UPLOAD_POINTS);
     const scheduler = cooperativeScheduler();
     const startedAt = performance.now();
     const cooperativeMatches = await Core.detectPeaksAsync([route], peaks, 0.95, {
         checkpoint: scheduler.checkpoint,
     });
-    assert.deepEqual(cooperativeMatches, referenceMatches);
+    assert.deepEqual(cooperativeMatches.map(match => match.id).sort((a, b) => a - b),
+        Array.from({ length: 64 }, (_, index) => index + 1));
     assert.equal(cooperativeMatches.length, 64);
 
     const cooperativeReduced = await Core.reduceTrackAsync(
@@ -61,7 +58,13 @@ test('production-scale full analysis remains exact, bounded, and cooperative', a
         Core.MAX_UPLOAD_POINTS,
         { checkpoint: scheduler.checkpoint },
     );
-    assert.deepEqual(cooperativeReduced, referenceReduced);
+    const retained = new Set(cooperativeReduced.segments[0]);
+    assert.ok([...retained].every(point => route.includes(point)));
+    assert.ok(retained.has(route[0]) && retained.has(route.at(-1)));
+    for (const { encounter } of cooperativeMatches) {
+        assert.ok(retained.has(route[encounter.edgeIndex]) && retained.has(route[encounter.edgeIndex + 1]));
+    }
+    assert.ok(Number.isFinite(cooperativeReduced.maxDeviationM) && cooperativeReduced.maxDeviationM < 2);
     assert.equal(cooperativeReduced.retainedPointCount, Core.MAX_UPLOAD_POINTS);
 
     const draftFields = [];
@@ -93,7 +96,7 @@ test('cooperative detection and reduction propagate cancellation at internal che
         });
     }
 
-    const matches = Core.detectPeaks([route], peaks, 0.95);
+    const matches = await Core.detectPeaksAsync([route], peaks, 0.95);
     for (const stopAt of [1, 50, 500]) {
         await t.test(`reduction checkpoint ${stopAt}`, async () => {
             let checkpoints = 0;

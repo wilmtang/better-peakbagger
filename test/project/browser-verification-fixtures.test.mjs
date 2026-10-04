@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
 import {
@@ -21,6 +22,22 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('the captured peak report fixture loads a served HTTPS map instead of an MHTML archive frame', async () => {
+    const html = await readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8');
+    const dom = new JSDOM(html, { url: 'https://www.peakbagger.com:45678/peak.aspx?pid=2296&ignored=1' });
+    try {
+        const frame = dom.window.document.querySelector('#Gmap');
+        assert.ok(frame);
+        const url = new URL(frame.src);
+        assert.equal(url.origin, 'https://www.peakbagger.com:45678');
+        assert.equal(url.pathname, '/map/MasterMap.aspx');
+        assert.equal(url.searchParams.get('t'), 'P');
+        assert.equal(url.searchParams.get('d'), '2296');
+    } finally {
+        dom.window.close();
+    }
+});
 
 test('page conditions await async false results and poll until the visible state is ready', async () => {
     let reads = 0;

@@ -95,7 +95,9 @@ export const loadOptions = async (settings = {}, {
         runScripts: 'outside-only'
     });
     trackPage(dom);
-    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local, {
+        getSender: () => ({ url: dom.chrome.runtime.getURL('options/options.html') }),
+    });
     if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
@@ -130,7 +132,9 @@ export const loadDraftsPage = async (settings = {}, { local = {}, prepareChrome 
         runScripts: 'outside-only'
     });
     trackPage(dom);
-    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local, {
+        getSender: () => ({ url: dom.chrome.runtime.getURL('options/drafts.html') }),
+    });
     if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
     await evalBundle(dom.window, 'options/options-head.js');
@@ -146,7 +150,9 @@ export const loadFavoritesPage = async (settings = {}, { local = {}, prepareChro
         runScripts: 'outside-only'
     });
     trackPage(dom);
-    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local, {
+        getSender: () => ({ url: dom.chrome.runtime.getURL('options/favorites.html') }),
+    });
     if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
     if (prepareWindow) prepareWindow(dom.window);

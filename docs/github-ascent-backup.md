@@ -3,7 +3,7 @@
 This is the single maintained design for GitHub backup. It covers the
 manual saved-ascent action, automatic backup after Add/Edit, opt-in deletion
 mirroring, full-profile backup, source-data acquisition, snapshot correlation,
-batching, repository writes, the settings and custom-favorites companion files,
+batching, repository writes, the settings, climber-list and photo companion files,
 the photo-library metadata recovery file, authentication, failure handling, and
 the regressions that established the current invariants.
 
@@ -123,7 +123,7 @@ link, which automatically tracks endpoint query changes.
 | `src/photos/photo-backup.js` | Pure bounded `photo-library.json` serialization, signatures, semantic merge, tombstones, and metadata-only reconstruction | IndexedDB, pixels, credentials, network |
 | `src/photos/photo-store.js` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
 | `photos/photos.js` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
-| `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
+| `options/favorites-backup.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.js` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
 | `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
 | `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
@@ -569,6 +569,7 @@ disclosure.
 | `GITHUB_ASCENT_BACKUP_SUMMARY` | Extension options page | Extension origin; auth/repo; marker-validated repository tree | Ascent count only, never folder names or token |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; active trusted-action session grant; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
+| `GITHUB_IGNORED_LIST` | Exact packaged Settings or Climber lists page | Extension origin plus exact protocol/host/path; local schema/revision; auth epoch/repo/branch; reviewed remote signature or three-way baseline | Validated snapshots, impact/conflict preview, status and commit metadata; never token |
 | `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads and cleans `bpbFavoriteClimbers`; fixed `favorite-climbers.json` path | Commit metadata, never token |
 | `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorite-climbers.json` path | File text or `null`, never token |
 | `GITHUB_SETTINGS_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads settings through the shared schema and exports known keys only; fixed `settings.json` path | Commit metadata, never token |
@@ -714,6 +715,63 @@ Because both alarms are armed with the same delay they fire together, and the
 queue merges them into one commit; each writer records only its own signature,
 and a writer whose content was superseded records nothing. Restore is never
 automatic.
+
+### `ignored-climbers.json`: transfer and genuine two-way sync
+
+[Climber lists](climber-lists.md) uses a separate v1 root file:
+`kind: "better-peakbagger-ignored-climbers"`, `schemaVersion: 1`, ISO `exportedAt`,
+and `entries: [{cid, name, addedAt}]`. The strict parser rejects duplicates,
+invalid positive safe IDs, missing/invalid fields, unknown schema/kind, more than
+1,500 entries, names over 200 characters and content over 2 MiB of UTF-8. Reads
+use bounded raw blobs from one head; writes serialize only these fields.
+`favorite-climbers.json` and its automatic backup retain their existing semantics.
+
+`GITHUB_IGNORED_LIST` is extension-only **and** restricted to the exact packaged
+`options/options.html` or `options/favorites.html` protocol/host/path. Other
+extension pages and Peakbagger senders cannot initiate transfer or sync. Actions
+are status/check, conditional backup, restore preview, setup preview, confirm,
+sync, disable and dismiss. Responses contain validated snapshots, counts and
+commit metadata; credentials remain in the worker.
+
+`src/background/climber-list-sync.js` owns device-local `bpbIgnoredSyncState`:
+opt-in, auth epoch + owner/repo/branch scope, common baseline, last success,
+reviewed snapshots, retry time and durable proposal. Missing baseline requires
+setup; failed storage never supplies an empty upload. Manual backup first reviews
+a changed or first-seen remote file. Restore compares the reviewed revision and
+both signatures before replacement and provides guarded Undo. With sync enabled,
+restore/Undo become new local changes against the existing baseline.
+
+Setup defaults to Merge lists, with explicit whole-side choices and scoped
+metadata/removal choices. Subsequent sync is a three-way comparison by ID:
+unchanged sides yield to changed sides, identical changes converge and absence
+propagates deletions. Concurrent different changes pause before writes or local
+replacement. A missing previously confirmed file requires review rather than
+automatic recreation. Capacity overflow also pauses; no timestamp chooses a
+winner and no baseline is inferred or compacted while offline.
+
+Each read/merge/write uses exclusive `writeQueue.run` plus semantic
+`client.updateRootFile`. A non-fast-forward re-runs its callback from a fresh head,
+remote blob and local snapshot. A pre-ref callback rechecks connection and local
+revision. It preserves unrelated tree entries and the existing marker rules.
+A proposal is stored before commit. After confirmation, the worker rebases later
+local edits onto the posted result and atomically stores membership, baseline and
+transaction state in `ignored-store.run`; new edits remain Pending changes.
+
+Restart recovery reads the remote file. An exact posted result confirms the
+proposal; an unchanged prior file permits another attempt; an uncertain advanced
+or missing file requires a new review. Cancelled control generations cannot
+re-enable sync during recovery. Disconnect/target changes abort in-flight work,
+retain local data and require setup for the new scope. A recovered snapshot has
+no invented commit SHA when the accepted commit could not be identified.
+
+Alarms debounce local edits for 30 seconds and check every 15 minutes. Browser
+startup checks sync; manager opening is rate limited to one minute. Normal worker
+boot maintains the existing alarm and recovers pending transactions without a
+routine network check. Duplicate sync triggers share an operation. The existing
+transport's deadlines, retry/backoff and Retry-After handling remain in force;
+a whole transaction has a two-minute deadline. Closed browsers/offline operation
+can delay delivery. Upload-only status says Backed up; only reconciled sync says
+Synced. IDs/names removed from the current file can remain in prior Git history.
 
 ### `photo-library.json` metadata recovery
 
