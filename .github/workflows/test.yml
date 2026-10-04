@@ -61,7 +61,9 @@ jobs:
         run: npm ci
 
       - name: Check dependency advisories
-        run: npm run audit:ci
+        # Owner-reviewed exact dev-only node-forge chain; expires October 17.
+        # Release workflows intentionally use the strict default command.
+        run: npm run audit:ci -- --allow-reviewed-development-advisory
 
       - name: Check immutable release history
         run: npm run release:check-history

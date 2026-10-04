@@ -4,6 +4,12 @@ Baseline: `f6a3029`, clean `codex/ignored-climbers` checkout, with fourteen
 existing commits beyond `origin/main`. Audit work continues on
 `codex/ci-ux-maintainability-audit`; those existing commits are preserved.
 
+Integration follow-up: the owner later approved an exact, expiring exception
+for C1 in ordinary Test CI. Default and release audits remain strict. The
+[mainline integration ledger](../archive/mainline-dependency-integration-2026-10-03.md)
+records that separate decision and the merge evidence; the audit observations
+and original verification below remain point-in-time records.
+
 ## Findings and execution
 
 | ID | Finding | Disposition / verification |

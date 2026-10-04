@@ -1781,6 +1781,11 @@ No single green command proves the extension works:
   the former time-limited exception has been removed. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.21 through a scoped override.
+  Ordinary Test CI explicitly accepts one owner-reviewed node-forge advisory
+  through its exact development dependency path until October 17, 2026.
+  Default and release audits remain strict; new findings, changed paths or
+  versions, production resolutions, and expiry fail closed. See the
+  [integration ledger](archive/mainline-dependency-integration-2026-10-03.md).
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,
