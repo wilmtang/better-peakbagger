@@ -12,10 +12,13 @@ existing commits beyond `origin/main`. Audit work continues on
 | C2 | Firefox recovery guesses the latest run attempt's artifact, missing a verified earlier attempt after store-only reruns. | Fixed locally: select the latest unexpired exact-tag artifact across paginated attempts; preserve SHA/version/hash checks. 55 release tests and focused ESLint pass. |
 | C3 | Chrome resize verification sleeps 800 ms then reads storage once. | Fixed: bounded polling waits for the exact persisted height and reports the latest value on timeout. 18 focused tests and hidden Chrome verification pass. |
 | C4 | Old-tag Firefox recovery reads current main metadata and archive contracts. | Investigate a safe tagged-contract validation path; retain explicit limitation if it cannot be proven. |
+| C5 | Exact transitive version assertions reject compatible security patches. | Fixed: reviewed semver ranges retain minimum patched releases and dev-only checks without snapshot churn; zero-advisory gate unchanged. |
 | U1 | Removing an ignored climber loses keyboard focus to BODY. | Fixed: preserve visible row/control focus through remove, Undo, pending writes, failures, and storage refreshes; leave external focus alone. |
-| U2 | Favorites setup and import controls bury the actual list. | Native disclosure for uncommon Buddy List options; simplify copy and inspect both themes at narrow and desktop sizes. |
-| E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Pin expected behavior, migrate tests to the shipped async functions, then remove unused implementations. Preserve cancellation and cooperative work coverage. |
-| E2 | Four map destination access pages duplicate the same permission interaction. | Share the initializer with explicit per-provider parameters and preserve trusted-event permission boundaries. |
+| U2 | Favorites setup and import controls bury the actual list. | Fixed: native Buddy List disclosure and shorter copy keep the list visible; confirmation remains outside the disclosure and Cancel restores visible focus. |
+| E1 | Capture core duplicates synchronous summit matching/reduction used only by tests. | Fixed: removed unused sync implementations and migrated tests to the unchanged shipped async path with explicit encounter and reduction fixtures. |
+| E2 | Four map destination access pages duplicate the same permission interaction. | Fixed: shared initializer with explicit provider parameters; trusted-event permission boundaries retained. |
+
+| E3 | The page-test helper duplicates draft routes but bypasses identity checks and differs on deletion/pruning. | Fixed: page fixtures use production mutation handlers, identity validation, tombstones, and pruning; save-confirmation lifecycle messages remain explicit fixture delegates. |
 
 ## Evidence and scope
 
@@ -62,6 +65,47 @@ inspection. No push, merge, tag, or store mutation is included in this work.
   screenshots inspected at 390×844 (light) with light/dark captures also made
   at 1024×900; no WebGL involved. Task browser/profile cleanup confirmed.
   Hidden DOM focus checks do not prove native focus or screen-reader speech.
+
+- U2: 29 focused options tests and scoped ESLint pass. Hidden Chrome 153.0.8010.12
+  verified empty/populated/long-name workspaces in both themes at 390×844 and
+  1024×900, with screenshots visually inspected. The first list row fits
+  without scrolling; narrow toolbar moved from y=785 to approximately y=490.
+  Enter/Space disclosure operation, visible confirmation after collapse, and
+  Cancel focus are verified. Dark-theme text uses the existing link color.
+  Static UI only, no WebGL; no native browser chrome/screen-reader proof.
+  Disposable profiles and verifier processes were removed.
+  The broader Chrome/Firefox smoke flows initially attempted hidden import
+  controls; they now open the disclosure through its summary. Both full
+  verifiers passed afterward (hidden Chrome 153.0.8010.12, Firefox 157.0;
+  base viewport 1000×760), with teardown confirmed.
+
+- C5: 6 dependency-policy tests and scoped ESLint pass. Synthetic later
+  image-size/adm-zip patches are accepted; known-old, unreviewed-major, and
+  prerelease versions are rejected. The exact scoped brace-expansion override
+  stays pinned; no installed dependency version was changed.
+
+- E1: removed 128 net capture runtime lines. Before deletion, all three parity
+  cases and the 8-test full-analysis scale suite passed. After migration,
+  45 capture/scale tests, 2,181 full-suite tests, scoped ESLint, documentation
+  checks, and full hidden Chrome/Firefox extension verification passed.
+  Cancellation, mandatory points, midpoint ties, source identity, and the
+  20,000-point/5,000-peak budget remain covered.
+
+- E2: 30 focused access/manifest tests and scoped ESLint pass. Hidden Chrome
+  153.0.8010.12 map-handoff verification passed against masked HTTPS fixtures
+  at 1000×760 and 430×760. Light Gaia and dark CalTopo access screenshots
+  inspected at 1000×760; static HTML, no WebGL. Native permission prompts
+  remain uninspected; grants existed only in the disposable test manifest.
+  Test browser/profile teardown confirmed.
+
+- E3: removed 105 net lines from the draft helper by using production handlers.
+  All 172 focused editor/options tests, 2,181 full-suite tests, 14 scale tests,
+  and full lint passed (seven existing owned web-ext warnings). Updated stale
+  physical-deletion assumptions in editor, draft-manager, and ascent-delete
+  tests; verified sender identity, tombstone suppression of stale writes,
+  storage failure recovery, terminal autosave cleanup, and unrelated-cache
+  preservation during pruning. Save-confirmation orchestration remains
+  delegated explicitly and has separate worker-route coverage.
 
 ### Intentionally not changed
 

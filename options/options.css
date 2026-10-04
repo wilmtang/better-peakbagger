@@ -185,6 +185,9 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-add-controls { display: flex; align-items: center; gap: 7px; }
 .favorites-add input[type="text"] { min-width: 230px; }
 .favorites-add button.secondary { align-self: auto; }
+.favorites-buddy-options { margin-top: 14px; }
+.favorites-buddy-options summary { color: var(--link); cursor: pointer; font-size: 13px; }
+.favorites-buddy-options summary:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; }
 .favorites-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; color: var(--sub); font-size: 12.5px; }
 .favorites-tools button.secondary { align-self: auto; }
 button.secondary.favorites-mirror-trigger { color: var(--danger); border-color: var(--danger-border); }
@@ -288,7 +291,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 }
 .favorites-source-filter button:hover { color: var(--text); border-color: var(--input-border); }
 .favorites-source-filter button[aria-pressed="true"] {
-    color: var(--accent);
+    color: var(--link);
     background: color-mix(in srgb, var(--accent) 9%, var(--input-bg));
     border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
     font-weight: 650;

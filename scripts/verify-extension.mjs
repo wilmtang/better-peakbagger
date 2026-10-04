@@ -1214,6 +1214,9 @@ try {
         `the options Buddy recovery did not point back to the direct report: ${JSON.stringify({ buddyRequests, buddyRecovery })}`);
 
         await optionsPage.locator('input[name="favorites-source"][value="custom"]').check();
+        if (!await optionsPage.locator('.favorites-buddy-options').evaluate(node => node.open)) {
+            await optionsPage.locator('.favorites-buddy-options summary').click();
+        }
         await optionsPage.locator('#favorites-mirror-buddies').click();
         const importRecovery = await optionsPage.waitForFunction(() => {
             const status = document.getElementById('favorites-import-status');
@@ -1331,6 +1334,9 @@ try {
         })}`);
         await optionsPage.locator('[data-favorites-source-filter="all"]').click();
         await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
+        if (!await optionsPage.locator('.favorites-buddy-options').evaluate(node => node.open)) {
+            await optionsPage.locator('.favorites-buddy-options summary').click();
+        }
         await optionsPage.locator('#favorites-mirror-buddies').click();
         const mirrorConfirmation = await waitForPageCondition(optionsPage, async () => {
             const dialog = document.getElementById('favorites-mirror-confirmation');
@@ -1385,6 +1391,9 @@ try {
                 return new Promise(resolve => { window.__bpbHeldReplacement = resolve; });
             };
         });
+        if (!await optionsPage.locator('.favorites-buddy-options').evaluate(node => node.open)) {
+            await optionsPage.locator('.favorites-buddy-options summary').click();
+        }
         await optionsPage.locator('#favorites-mirror-buddies').click();
         await optionsPage.locator('#favorites-mirror-confirmation').waitFor({ state: 'visible', timeout: 5000 });
         const reviewedReplacement = await optionsPage.locator('#favorites-mirror-confirmation-detail').textContent();

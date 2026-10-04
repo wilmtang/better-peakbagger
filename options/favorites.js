@@ -173,7 +173,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         if (replacementBusy) return false;
         pendingReplacement = null;
         mirrorConfirmationEl.hidden = true;
-        if (restoreFocus && !mirrorEl.disabled) mirrorEl.focus();
+        if (restoreFocus && !mirrorEl.disabled) {
+            const disclosure = mirrorEl.closest('details:not([open])');
+            (disclosure?.querySelector('summary') || mirrorEl).focus();
+        }
         return true;
     };
 

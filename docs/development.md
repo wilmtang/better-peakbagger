@@ -598,7 +598,7 @@ add it to the merge-step condition, for example
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
   20,000-point GPX completeness case, 20,000-point/5,000-peak analysis, and
   1,500-entry favorite render/search/backup path out of the fast local loop.
-  The capture case checks exact sync/cooperative equivalence, internal
+  The capture case checks summit identities and protected reduction anchors, internal
   cancellation checkpoints, a generous total CPU ceiling, and a 100 ms
   maximum yield gap; it still cannot prove the live MV3 message scheduler.
 - `npm run verify:provider-performance` measures native `DOMParser` and

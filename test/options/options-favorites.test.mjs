@@ -599,3 +599,20 @@ test('without a helper tab available the original diagnosis still stands', async
     assert.match(el(dom, 'favorites-buddy-status').textContent, /sign in/i);
 });
 
+
+
+test('closing Buddy List options keeps confirmation visible and restores focus to the summary', async () => {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+    });
+    const disclosure = dom.window.document.querySelector('.favorites-buddy-options');
+    assert.equal(disclosure.open, false);
+    disclosure.open = true;
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => !el(dom, 'favorites-mirror-confirmation').hidden);
+    disclosure.open = false;
+    assert.equal(el(dom, 'favorites-mirror-confirmation').closest('details'), null);
+    assert.equal(el(dom, 'favorites-undo-all').closest('details'), null);
+    el(dom, 'favorites-mirror-cancel').click();
+    assert.equal(dom.window.document.activeElement, disclosure.querySelector('summary'));
+});
