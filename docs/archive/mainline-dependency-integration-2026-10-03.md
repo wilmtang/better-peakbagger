@@ -80,14 +80,16 @@ that no published fix exists remains accurate. Release audits remain blocked.
 - Hosted reproduction still failed after the readiness change. A bounded
   activation trace then established that no pointer-down, pointer-up or click
   reached the report document while Playwright acknowledged the click. The
-  Explicit tab activation and native Enter also failed on the new target.
+  Explicit tab activation, native Enter and proven-target reuse also failed.
   Window-level traces established that neither frame received keyboard or
-  pointer events; all preceding checks had passed. The scenario now reuses the
-  Peak page target that already proved native interaction, navigates it afresh,
-  and requires a trusted pointer click for Favorites plus native Enter for
-  ignored reveal. Active-tab, focus, filter and persistence assertions remain.
-  It does not retry activation or substitute a synthetic event. The full hidden
-  Chrome 128.0.6613.137 verifier and targeted lint passed locally with target reuse.
+  pointer events; all preceding checks had passed. Source inspection then found
+  an unresolved `cid:…@mhtml.blink` map-frame reference in the captured Rainier
+  fixture. Replaced it with the served Peakbagger MasterMap endpoint and added a
+  regression pinning its HTTPS fixture origin, port and peak identity. Removed
+  unsuccessful input workarounds and restored both original native pointer
+  actions, retaining the trusted-click assertion and bounded diagnostics.
+  Six focused tests, targeted lint and the full hidden Chrome 128.0.6613.137
+  verifier passed locally before hosted submission.
 
 ### Intentionally not changed
 
@@ -108,7 +110,7 @@ that no published fix exists remains accurate. Release audits remain blocked.
   and workflow records supply that later evidence.
 - The hosted Chrome 128 input-delivery failure did not reproduce in 25 focused
   local attempts. The platform's underlying reason for dropping protocol input
-  is not established; hosted CI must verify the reused native-input target.
+  is not established; hosted CI must verify the corrected HTTPS fixture frame.
 - Hidden browser checks do not establish native focus, window placement,
   permission prompts, screen-reader speech or live authenticated providers.
   Historical-tag release recovery and live ignored-list synchronization gaps

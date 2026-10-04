@@ -154,7 +154,6 @@ let context;
 let requestEvidence;
 let primaryError = null;
 let chromeBfcacheResult = null;
-let peakReportPage;
 try {
     context = await chromium.launchPersistentContext(profile, {
         ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
@@ -4050,10 +4049,7 @@ try {
         const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })
             .then(() => true).catch(() => false);
         check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');
-        // Reuse this proven native-input target for the report scenario below.
-        // Hosted Chrome 128 dropped both keyboard and pointer input to a new
-        // report target after this page closed, despite active-tab/DOM focus.
-        peakReportPage = peakPage;
+        await peakPage.close();
     }
 
     // Real worker routes and Git Data client; all GitHub traffic stays synthetic.
@@ -4153,7 +4149,7 @@ try {
             });
             return { local, sync, keys };
         });
-        const reports = peakReportPage;
+        const reports = await context.newPage();
         await reports.addInitScript(() => {
             window.__bpbReportActivationProbe = [];
             for (const type of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup']) {
@@ -4191,22 +4187,12 @@ try {
                 && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1')
                 && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorites · 0'
                 && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
-            // Hosted Chrome 128 acknowledged input without delivering it to
-            // this document. Establish the owned headless fixture's tab state
-            // before input; Playwright emulates DOM focus even in inactive tabs.
-            await reports.bringToFront();
-            await waitForPageCondition(manager, async url =>
-                (await chrome.tabs.query({ active: true, currentWindow: true }))
-                    .some(tab => tab.url === url), reports.url());
-            await reports.locator('.bpb-report-favorites').focus();
-            await reports.waitForFunction(() => document.activeElement === document.querySelector('.bpb-report-favorites'));
             await reports.locator('.bpb-report-favorites').click();
             const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
             check(activation.some(event => event.type === 'click' && event.favorites && event.trusted),
                 `the ignored peak report fixture received no trusted Favorites click: ${JSON.stringify(activation)}`);
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === false);
-            await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).focus();
-            await reports.keyboard.press('Enter');
+            await reports.getByRole('button', { name: 'Show 1 ignored reports', exact: true }).click();
             await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.hidden === true);
             check(await reports.locator('.bpb-report-favorites').getAttribute('aria-pressed') === 'true',
                 'revealing peak reports cleared the favorites preference');
