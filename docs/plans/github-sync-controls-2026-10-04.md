@@ -39,6 +39,13 @@ regrant, disconnect, and reconnect. Verification: the two access-lifecycle
 regressions failed before the fix; all 98 focused options/photo tests and
 changed JavaScript ESLint passed afterward.
 
+The ascent/TR feature switch no longer creates a second rejected promise from
+its event handler when saving fails. The shared Settings save path restores
+confirmed values and displays the error. A failed-write matrix covers the
+parent switch and every automatic/deletion setting. The parent-switch case
+failed with an unhandled rejection before the fix. Verification: build and
+ESLint passed; all 81 focused options tests passed after the fix.
+
 ## Intentionally not changed
 
 - Favorite sync already uses the intended disconnected gate and stored value.

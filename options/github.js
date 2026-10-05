@@ -692,14 +692,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         await connect();
     }
 
-    enableEl.addEventListener('change', async () => {
+    enableEl.addEventListener('change', () => {
         currentSettings = {
             ...currentSettings,
             enableGithubBackup: enableEl.checked,
             ...(!enableEl.checked && { autoGithubBackup: false }),
         };
         renderAscentStatus();
-        await save({
+        void save({
             enableGithubBackup: enableEl.checked,
             ...(!enableEl.checked && { autoGithubBackup: false }),
         });

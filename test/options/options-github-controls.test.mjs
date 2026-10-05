@@ -230,3 +230,20 @@ test('connected optional GitHub choices toggle both ways and preserve opt-outs o
     for (const [id] of syncControls) assert.equal(el(reload.dom, id).checked, false, `${id} retains its opt-out`);
     assert.equal(el(reload.dom, 'ignored-sync-enable').checked, false);
 });
+
+test('failed writes restore every optional GitHub setting and report the error', async () => {
+    const h = await controlPage({ connected: true, granted: true, settings: { enableGithubBackup: true,
+        autoFavoritesBackup: true, autoSettingsBackup: true, autoPhotoLibraryBackup: true,
+        autoGithubBackup: true, removeGithubBackupOnDelete: true } });
+    await waitFor(h.dom, () => accessSettled(h, true));
+    const preferences = JSON.stringify(h.dom.chrome._store.bpbSettings);
+    h.dom.chrome.storage.sync.set = async () => { throw new Error('storage write failed'); };
+    for (const [id] of [...syncControls, ['enable-github-backup']]) {
+        el(h.dom, id).click();
+        await waitFor(h.dom, () => el(h.dom, id)?.checked === true
+            && !el(h.dom, 'status-error').hidden
+            && /Settings couldn’t be saved/.test(el(h.dom, 'status-error-text').textContent));
+        assert.equal(JSON.stringify(h.dom.chrome._store.bpbSettings), preferences, id);
+    }
+    await nextTask(0);
+});
