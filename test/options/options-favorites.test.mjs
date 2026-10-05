@@ -8,6 +8,21 @@ import {
 
 registerCleanup();
 
+test('favorite Undo explains an intervening ignore and preserves both lists', async () => {
+    const entry = { cid: 900002, name: 'Casey Alpine', addedAt: 1, source: 'manual' };
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([entry]) },
+    });
+    favoriteRow(dom, 900002).querySelector('[data-action="delete"]').click();
+    await waitFor(dom, () => favoriteRow(dom, 900002).querySelector('[data-action="undo"]'));
+    await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: [entry] } });
+    favoriteRow(dom, 900002).querySelector('[data-action="undo"]').click();
+    await waitFor(dom, () => /Unignore/.test(el(dom, 'status-error-text').textContent));
+    assert.match(el(dom, 'status-error-text').textContent, /Casey Alpine.*Unignore/);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.length, 0);
+    assert.equal(dom.chrome._localStore.bpbIgnoredClimbers.entries[0].cid, 900002);
+});
+
 test('favorite source defaults to buddies and switching to custom persists', async () => {
     const dom = await loadFavoritesPage({});
     const buddies = dom.window.document.querySelector('input[name="favorites-source"][value="buddies"]');

@@ -93,6 +93,9 @@ export const initIgnored = api => {
             }).map(a => Number(new URL(a.href, doc.baseURI).searchParams.get('cid'))));
             const name = F.climberNameFromDocument(doc);
             if (ids.size !== 1 || !ids.has(cid) || !name) throw new Error("Couldn't confirm this climber's identity.");
+            if ([...doc.querySelectorAll(F.BUDDY_CONTROL_SELECTOR)].some(control => F.buddyControlAction(control) === 'remove')) {
+                throw new Error(`${name}: Remove from your Buddy List before ignoring.`);
+            }
             const response = await mutateIgnored(api, { kind: 'add', entry: { cid, name, addedAt: Date.now() } });
             accept(response.list); el('ignored-add-input').value = '';
             announce(response.alreadyPresent ? 'Already ignored.' : `${name} added to ignored climbers.`);

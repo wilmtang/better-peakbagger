@@ -8,10 +8,11 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
+import { observeClimberMembership } from './climber-membership.js';
 
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
-const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button"], input[type="image"], a[href]';
+const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
 
 (() => {
     'use strict';
@@ -30,6 +31,18 @@ const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button
     let busy = false;
     let errorMessage = '';
     let activeBuddyMutation = null;
+    let membership = null;
+    const buddyTitles = new WeakMap();
+    const ignoreSaving = () => document.getElementById('bpb-climber-ignore')?.getAttribute('aria-busy') === 'true';
+    const additionBlocked = () => ignoreSaving() || !membership?.ignored || !!membership.error || membership.blockedIds.has(pageCid);
+    const blockedReason = () => ignoreSaving() ? 'Saving ignored climbers…' : membership?.error || (!membership?.ignored ? 'Loading climber lists…'
+        : membership.ignored.entries.some(entry => entry.cid === pageCid)
+            ? `Unignore ${name} before adding to favorites or your Buddy List.`
+            : 'Finish the pending ignored-climber sync before adding to favorites or your Buddy List.');
+    const setAttribute = (element, attribute, value) => {
+        if (element.getAttribute(attribute) === value) return;
+        if (value === null) element.removeAttribute(attribute); else element.setAttribute(attribute, value);
+    };
 
     const mutateFavorites = async mutation => {
         const response = await chrome.runtime.sendMessage({
@@ -60,20 +73,7 @@ const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button
             : null;
     };
 
-    const buddyActionForControl = control => {
-        if (!control) return null;
-        const form = control.form;
-        return F.buddyMutationAction([
-            control.value,
-            control.textContent,
-            control.getAttribute?.('aria-label'),
-            control.title,
-            control.id,
-            control.getAttribute?.('name'),
-            form?.id,
-            form?.getAttribute?.('name'),
-        ].filter(Boolean).join(' '));
-    };
+    const buddyActionForControl = F.buddyControlAction;
 
     const buddyControls = root => {
         const controls = [];
@@ -84,7 +84,27 @@ const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button
 
     const decorateBuddyControls = root => {
         for (const control of buddyControls(root)) {
-            if (buddyActionForControl(control)) control.classList.add('bpb-native-buddy-action');
+            const action = buddyActionForControl(control);
+            if (!action) continue;
+            control.classList.add('bpb-native-buddy-action');
+            if (action === 'add' && additionBlocked()) {
+                if (!buddyTitles.has(control)) buddyTitles.set(control, {
+                    title: control.getAttribute('title'), disabled: control.getAttribute('aria-disabled'),
+                    description: control.getAttribute('aria-describedby'),
+                });
+                control.dataset.bpbBuddyBlocked = 'true';
+                setAttribute(control, 'aria-disabled', 'true');
+                setAttribute(control, 'title', blockedReason());
+                setAttribute(control, 'aria-describedby', [buddyTitles.get(control).description,
+                    'bpb-climber-membership-note'].filter(Boolean).join(' '));
+            } else if (buddyTitles.has(control)) {
+                const original = buddyTitles.get(control);
+                delete control.dataset.bpbBuddyBlocked;
+                setAttribute(control, 'title', original.title);
+                setAttribute(control, 'aria-disabled', original.disabled);
+                setAttribute(control, 'aria-describedby', original.description);
+                buddyTitles.delete(control);
+            }
         }
     };
 
@@ -94,6 +114,7 @@ const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button
         style.id = 'bpb-native-buddy-action-style';
         style.textContent = `
 .bpb-native-buddy-action { transition: filter 120ms ease; }
+.bpb-native-buddy-action[data-bpb-buddy-blocked] { opacity:.5; cursor:not-allowed; }
 .bpb-native-buddy-action:hover:not(:disabled) { filter: brightness(.92); }
 .bpb-native-buddy-action:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
 html[data-bpb-theme="dark"] .bpb-native-buddy-action:hover:not(:disabled) { filter: brightness(1.18); }
@@ -119,6 +140,7 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         if (!control || control.disabled) return;
         const action = buddyActionForControl(control);
         if (!action) return;
+        if (action === 'add') control.dataset.bpbBuddyPending = 'true';
         activeBuddyMutation = { action, cid: pageCid };
         try {
             sessionStorage.setItem(BUDDY_MUTATION_SESSION_KEY, JSON.stringify({
@@ -137,6 +159,9 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 if (record.type === 'attributes') decorateBuddyControls(record.target);
+                if (record.target?.id === 'bpb-climber-ignore' && record.attributeName === 'aria-busy') {
+                    decorateBuddyControls(document); mount();
+                }
                 for (const node of record.addedNodes || []) decorateBuddyControls(node);
             }
             if (!activeBuddyMutation) return;
@@ -144,23 +169,31 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
             if (!buddyControls(document).some(control => buddyActionForControl(control) === expectedAction)) return;
             const mutation = activeBuddyMutation;
             activeBuddyMutation = null;
+            for (const control of buddyControls(document)) delete control.dataset.bpbBuddyPending;
             clearRememberedBuddyMutation(mutation);
             void refreshAfterBuddyMutation(mutation);
         });
         observer.observe(document.documentElement, {
             attributes: true,
-            attributeFilter: ['aria-label', 'disabled', 'title', 'value'],
+            attributeFilter: ['aria-label', 'aria-busy', 'disabled', 'title', 'value'],
             childList: true,
             subtree: true,
         });
         document.addEventListener('click', event => {
-            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             const control = event.target?.closest?.(BUDDY_CONTROL_SELECTOR);
+            if (buddyActionForControl(control) === 'add' && additionBlocked()) {
+                event.preventDefault(); event.stopImmediatePropagation(); return;
+            }
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             rememberBuddyMutation(control);
         }, true);
         document.addEventListener('submit', event => {
             const fallback = event.target?.querySelector?.('button[type="submit"], input[type="submit"], input[type="image"]');
-            rememberBuddyMutation(event.submitter || fallback);
+            const control = event.submitter || fallback;
+            if (buddyActionForControl(control) === 'add' && additionBlocked()) {
+                event.preventDefault(); event.stopImmediatePropagation(); return;
+            }
+            rememberBuddyMutation(control);
         }, true);
     };
 
@@ -216,7 +249,8 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
 #bpb-climber-favorite:hover { border-color: #2f6b3f; background: #e7f1e9; transform: translateY(-1px); }
 #bpb-climber-favorite:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
 #bpb-climber-favorite[aria-pressed="true"] { border-color: #2f6b3f; background: #2f6b3f; color: #fff; }
-#bpb-climber-favorite:disabled { cursor: wait; opacity: .58; }
+#bpb-climber-favorite:disabled { cursor: not-allowed; opacity: .58; }
+#bpb-climber-favorite[aria-busy="true"] { cursor: wait; }
 html[data-bpb-theme="dark"] #bpb-climber-favorite { border-color: #71927a; background: #29322b; color: #b5e0bf; }
 html[data-bpb-theme="dark"] #bpb-climber-favorite:hover { border-color: #9ad5a7; background: #334238; }
 html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-color: #8fc99c; background: #3f8a54; color: #fff; }
@@ -228,13 +262,14 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
     const paint = () => {
         if (!button) return;
         const active = included();
-        const actionLabel = active
+        const actionLabel = !active && additionBlocked() ? blockedReason() : active
             ? `Remove ${name} from your Better Peakbagger favorite`
             : `Add ${name} to your Better Peakbagger favorites`;
         button.textContent = active ? '★' : '☆';
         button.setAttribute('aria-pressed', String(active));
         button.setAttribute('aria-label', actionLabel);
-        button.disabled = busy || (!active && favorites.entries.length >= F.LIMIT);
+        setAttribute(button, 'aria-busy', String(busy));
+        button.disabled = busy || (!active && (additionBlocked() || favorites.entries.length >= F.LIMIT));
         button.title = errorMessage || (!active && favorites.entries.length >= F.LIMIT
             ? `Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
             : actionLabel);
@@ -247,7 +282,7 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
     };
 
     const toggle = async () => {
-        if (busy) return;
+        if (busy || button?.disabled) return;
         busy = true;
         errorMessage = '';
         paint();
@@ -261,7 +296,7 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
                 });
             }
         } catch (error) {
-            errorMessage = 'Favorite climbers are unavailable. Try again.';
+            errorMessage = error.message || 'Favorite climbers are unavailable. Try again.';
         } finally {
             busy = false;
             paint();
@@ -291,10 +326,16 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         mode = Schema.favoritesSource(settings.favoritesSource);
         mount();
     });
+    observeClimberMembership(chrome, state => {
+        membership = state;
+        if (state.favorites) favorites = state.favorites;
+        decorateBuddyControls(document);
+        mount();
+    });
 
-    void Promise.all([S.get(), store.get(F.FAVORITES_KEY)]).then(([settings, stored]) => {
+    void S.get().then(settings => {
         mode = Schema.favoritesSource(settings.favoritesSource);
-        favorites = F.cleanFavorites(stored[F.FAVORITES_KEY]);
+        favorites = membership?.favorites || favorites;
         mount();
     }).catch(() => { unmount(); });
 })();

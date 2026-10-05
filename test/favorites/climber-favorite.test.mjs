@@ -103,6 +103,7 @@ test('the control follows live list and source changes', async () => {
 test('native Buddy actions leave a short-lived refresh marker for the completed navigation', async () => {
     const dom = await loadOther({ settings: { favoritesSource: 'buddies' } });
     const nativeButton = dom.window.document.getElementById('BuddyButton');
+    await waitFor(dom, () => nativeButton.getAttribute('aria-disabled') !== 'true');
     assert.equal(nativeButton.classList.contains('bpb-native-buddy-action'), true);
     assert.match(
         dom.window.document.getElementById('bpb-native-buddy-action-style').textContent,
@@ -132,6 +133,7 @@ test('an in-place Buddy addition refreshes Buddy-source membership after the nat
         },
     });
     const nativeButton = dom.window.document.getElementById('BuddyButton');
+    await waitFor(dom, () => nativeButton.getAttribute('aria-disabled') !== 'true');
     nativeButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, button: 0 }));
     const replacement = nativeButton.cloneNode();
     replacement.value = 'Remove from My Buddy List';

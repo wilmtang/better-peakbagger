@@ -342,7 +342,19 @@ const fuzzyScore = (entry, query) => {
     return total;
 };
 
+const buddyControlAction = control => {
+    if (!control || control.id?.startsWith('bpb-') || control.closest?.('.bpb-ignore-actions')) return null;
+    const primary = [control.value, control.textContent, control.getAttribute?.('aria-label'),
+        control.id, control.getAttribute?.('name'), control.form?.id, control.form?.getAttribute?.('name')]
+        .filter(Boolean).join(' ');
+    // An extension explanation in title must not change a native Add/Remove
+    // action, especially after an in-place Buddy button replacement.
+    return buddyMutationAction(primary) || buddyMutationAction(`${primary} ${control.title || ''}`);
+};
+
 export const favoriteClimbers = {
+    BUDDY_CONTROL_SELECTOR: 'button, input[type="submit"], input[type="button"], input[type="image"], a[href]',
+    buddyControlAction,
     SCHEMA_VERSION,
     FAVORITES_KEY,
     BUDDY_CACHE_KEY,

@@ -46,6 +46,7 @@ import {
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
+import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
@@ -1916,6 +1917,17 @@ try {
             before: buddyMutationBaseline,
             after: fixture.requests,
         })}`);
+        await verifyClimberMembership({
+            evaluate: fn => climberPage.evaluate(fn),
+            wait: fn => climberPage.waitForFunction(fn),
+            click: selector => climberPage.locator(selector).click({ force: true }),
+            key: selector => climberPage.locator(selector).press('Enter'),
+            resize: (width, height) => climberPage.setViewportSize({ width, height }),
+            mutations: () => fixture.requests.buddyMutations,
+            screenshot: process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR ? name => climberPage.screenshot({
+                path: path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR, `chrome-${name}.png`),
+            }) : null,
+        });
         await climberPage.locator('#bpb-climber-ignore').click();
         await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Unignore');
         await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html#ignored`);

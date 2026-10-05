@@ -168,7 +168,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
             const response = await mutate({ kind: 'replace', favorites: next, expectedSignature });
             record.appliedSignature = response.signature;
         } catch (error) {
-            flash(error.code === 'stale' ? error.message : "Couldn't update favorites", { error: true });
+            flash(['stale', 'list-conflict'].includes(error.code) ? error.message : "Couldn't update favorites", { error: true });
             return false;
         }
         if (superseded) globalThis.clearTimeout(superseded.timer);
@@ -191,7 +191,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
             renderUndo();
             flash('Custom favorites restored');
         } catch (error) {
-            flash(error.code === 'stale' ? error.message : "Couldn't restore favorites", { error: true });
+            flash(['stale', 'list-conflict'].includes(error.code) ? error.message : "Couldn't restore favorites", { error: true });
         }
     };
 

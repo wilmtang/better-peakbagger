@@ -543,7 +543,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             renderList();
             flash('Favorite restored');
         } catch (error) {
-            flash("Couldn't restore the favorite", { error: true });
+            flash(error.code === 'list-conflict' ? error.message : "Couldn't restore the favorite", { error: true });
         }
     };
 
@@ -558,7 +558,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             });
             pending.appliedSignature = response.signature;
         } catch (error) {
-            flash(error.code === 'stale' ? error.message : "Couldn't update favorites", { error: true });
+            flash(['stale', 'list-conflict'].includes(error.code) ? error.message : "Couldn't update favorites", { error: true });
             return false;
         }
         if (supersededPending) globalThis.clearTimeout(supersededPending.timer);
@@ -586,7 +586,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             renderList();
             flash('Custom favorites restored');
         } catch (error) {
-            flash(error.code === 'stale' ? error.message : "Couldn't restore favorites", { error: true });
+            flash(['stale', 'list-conflict'].includes(error.code) ? error.message : "Couldn't restore favorites", { error: true });
         }
     };
 

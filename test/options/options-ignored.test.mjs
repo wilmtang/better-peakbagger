@@ -2,8 +2,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadFavoritesPage, el, waitFor, registerCleanup, peakbaggerFetch } from '../helpers/options-helpers.mjs';
+import { loadFavoritesPage, el, waitFor, registerCleanup, peakbaggerFetch, pageResponse, climberPageFixture } from '../helpers/options-helpers.mjs';
 registerCleanup();
+for (const kind of ['favorite', 'saved buddy', 'live buddy']) {
+    test(`Ignored manager rejects a ${kind} with an actionable reason`, async () => {
+        const entry = { cid: 900002, name: 'Alex Doe', addedAt: 1, source: 'manual' };
+        const dom = await loadFavoritesPage({}, { local: {
+            ...(kind === 'favorite' ? { bpbFavoriteClimbers: { schemaVersion: 1, entries: [entry] } } : {}),
+            ...(kind === 'saved buddy' ? { bpbBuddyCache: { ownerCid: 900001, fetchedAt: Date.now(), entries: [entry] } } : {}),
+        }, prepareWindow: window => {
+            window.fetch = kind === 'live buddy' ? async () => pageResponse(
+                climberPageFixture.replaceAll('900001', '900002').replace('</body>',
+                    '<input type="button" value="Remove from My Buddy List"></body>'))
+                : peakbaggerFetch({ climberCid: 900002 });
+        } });
+        el(dom, 'ignored-tab').click();
+        await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
+        el(dom, 'ignored-add-input').value = '900002';
+        el(dom, 'ignored-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+        await waitFor(dom, () => /before ignoring/.test(el(dom, 'ignored-status').textContent));
+        assert.match(el(dom, 'ignored-status').textContent, /Alex Doe.*Remove/);
+        assert.equal(dom.chrome._localStore.bpbIgnoredClimbers?.entries.length || 0, 0);
+        assert.equal(el(dom, 'ignored-add-input').value, '900002');
+    });
+}
 test('Ignored tab adds confirmed identities, supports search, and undoes only the removed entry', async () => {
     const dom = await loadFavoritesPage({}, { prepareWindow: window => {
         window.fetch = peakbaggerFetch({ climberCid: 900002 });

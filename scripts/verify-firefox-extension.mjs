@@ -43,6 +43,7 @@ import {
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
+import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
@@ -1264,6 +1265,18 @@ async function main() {
             'Firefox Buddy mutation sync did not issue one confirmed refresh per native action',
             { before: buddyMutationBaseline, after: fixture.requests, removalSynced },
         );
+
+        await verifyClimberMembership({
+            evaluate: fn => driver.executeScript(webdriverScript(fn)),
+            wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox climber membership'),
+            click: async selector => driver.findElement(By.css(selector)).click(),
+            key: async selector => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
+            resize: (width, height) => driver.manage().window().setRect({ width, height }),
+            mutations: () => fixture.requests.buddyMutations,
+            screenshot: process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR ? async name => writeFile(
+                path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR, `firefox-${name}.png`),
+                await driver.takeScreenshot(), 'base64') : null,
+        });
 
         await driver.get(optionsUrl);
         await driver.executeAsyncScript(done => {
