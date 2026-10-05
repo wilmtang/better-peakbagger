@@ -24,6 +24,12 @@ page was rendered and visually inspected in hidden Firefox at a 1200×815 conten
 viewport. Both climber checkboxes remained checked and disabled. The new full
 browser-verifier assertions still await the final audit run.
 
+Settings and photo refreshes now reject superseded responses. The photo
+checkbox reads its preference only from the settings subscriber, so an older
+photo-status snapshot cannot replace a newer choice. Both regressions failed
+against the previous bundles and passed after the fix. Verification: build and
+ESLint passed; 38 options/settings/photo-backup tests passed.
+
 ## Intentionally not changed
 
 - Favorite sync already uses the intended disconnected gate and stored value.
@@ -38,10 +44,6 @@ browser-verifier assertions still await the final audit run.
 
 Open findings to remediate:
 
-- Settings/photo status refreshes lack generation guards. A delayed connected
-  reply can repaint a newer disconnected state.
-- Photo status also writes the sync checkbox from a second settings snapshot,
-  allowing an old reply to overwrite a newer displayed preference.
 - Access changes need consistent refresh across all controls, including
   permission changes and connection changes made from another Settings tab.
 - The GitHub design note incorrectly calls favorite sync default-off.

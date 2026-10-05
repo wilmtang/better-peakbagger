@@ -63,6 +63,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
 
     let pendingImport = null;
     let githubStatus = null;
+    let githubRevision = 0;
     let githubBusy = false;
     let githubOperation = null;
     let githubBackupResult = null;
@@ -256,10 +257,12 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     };
 
     const refreshGithub = async () => {
+        const revision = ++githubRevision;
         const [status, permissionGranted] = await Promise.all([
             send({ type: 'GITHUB_AUTH_STATUS' }),
             hasGithubPermission(extensionApi),
         ]);
+        if (revision !== githubRevision) return;
         githubStatus = { ...(status || {}), permissionGranted };
         renderGithub();
     };

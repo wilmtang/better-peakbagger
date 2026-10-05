@@ -49,6 +49,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         ? error.message
         : GithubError.message(error);
     let githubStatus = null;
+    let githubRevision = 0;
     let backupState = null;
     let busy = false;
     let operation = null;
@@ -89,14 +90,15 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     };
 
     const refresh = async () => {
+        const revision = ++githubRevision;
         const [auth, permissionGranted, photos] = await Promise.all([
             send({ type: 'GITHUB_AUTH_STATUS' }),
             hasGithubPermission(extensionApi),
             send({ type: 'GITHUB_PHOTOS_STATUS' }),
         ]);
+        if (revision !== githubRevision) return;
         githubStatus = { ...(auth || {}), permissionGranted };
         backupState = photos?.ok ? photos.state : null;
-        if (photos?.ok) autoEl.checked = photos.auto === true;
         render();
     };
 
