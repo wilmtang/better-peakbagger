@@ -21,6 +21,7 @@ import {
     createResourceStack,
     listenServer,
 } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const FIXTURE_HOST = 'www.peakbagger.com';
 const VIEWPORT = { width: 1000, height: 760 };
@@ -172,6 +173,7 @@ const runCase = async (context, origin, urls) => {
 };
 
 const verifyBrowser = async ({ name, browserType, launchOptions, origin }) => {
+    if (browserType === chromium) assertChromeLaunchAllowed();
     const browser = await browserType.launch(launchOptions);
     try {
         const context = await browser.newContext({ viewport: VIEWPORT, ignoreHTTPSErrors: true });

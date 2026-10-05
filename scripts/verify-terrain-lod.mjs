@@ -40,6 +40,7 @@ import {
     listenServer,
     manageChildProcess,
 } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
@@ -548,6 +549,7 @@ const serverPort = server.address().port;
 const profile = await resources.guard(
     mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-lod-profile-')));
 resources.defer('terrain LOD Chrome profile', () => rm(profile, { recursive: true, force: true }));
+assertChromeLaunchAllowed();
 const chrome = spawn(chromePath, [
     '--headless=new',
     '--no-first-run',

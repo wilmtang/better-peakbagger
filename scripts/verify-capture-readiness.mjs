@@ -20,6 +20,7 @@ import { createFixtureCertificate, verificationViewport } from './browser-verifi
 import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const accountLinks = '<a href="/climber/climber.aspx?cid=77">My Home Page</a>'
@@ -211,6 +212,7 @@ async function run(browserName) {
         const fixture = await fixtureServer(resources, temporaryRoot);
         const source = await prepareFixtureExtension(temporaryRoot);
         if (browserName === 'chrome') {
+            assertChromeLaunchAllowed();
             const context = await chromium.launchPersistentContext(path.join(temporaryRoot, 'profile'), {
                 ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chromium' }),
                 headless: true,

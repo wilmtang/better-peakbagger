@@ -26,6 +26,12 @@ Better Peakbagger module uses a global as an internal dependency.
   scan by hand with `git config core.hooksPath .githooks`.
 - For Chrome verification: `npx playwright install chromium` (Chrome for
   Testing — stable Chrome refuses `--load-extension`).
+  On macOS, run browser checks outside Codex's Seatbelt sandbox through its
+  approved execution path. Headless Chrome still registers with macOS and can
+  abort during a sandboxed launch, causing a visible system crash dialog.
+  Repository verifiers use `scripts/chrome-launch-guard.mjs` to stop that
+  launch before Chrome starts. Keep test profiles isolated and Chrome hidden;
+  do not disable the system's crash reporting.
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
   `npx playwright install firefox` additionally installs the isolated Firefox
   build used by the GPU terrain check. On macOS this check selects ANGLE Metal

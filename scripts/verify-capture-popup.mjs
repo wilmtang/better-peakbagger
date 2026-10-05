@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
 import { createResourceStack } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const popupHtml = await fs.readFile(new URL('../popup/popup.html', import.meta.url), 'utf8');
 const panelCss = await fs.readFile(new URL('../src/theme/panel.css', import.meta.url), 'utf8');
@@ -53,6 +54,7 @@ const verifyNativeSizing = async () => {
         const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'bpb-capture-popup-'));
         resources.defer('popup profile', () => fs.rm(profile, { recursive: true, force: true }));
         const dist = await fs.realpath(new URL('../dist', import.meta.url));
+        assertChromeLaunchAllowed();
         const context = await chromium.launchPersistentContext(profile, {
             channel: 'chromium',
             headless: true,
@@ -239,6 +241,7 @@ const renderCase = async (browser, browserName, item, variant) => {
 const verifyBrowser = async ({ name, engine, launch }) => {
     let browser = null;
     try {
+        if (engine === chromium) assertChromeLaunchAllowed();
         browser = await engine.launch({ headless: true, ...launch });
         const variants = {};
         for (const variant of VARIANTS) {

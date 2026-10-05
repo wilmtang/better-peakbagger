@@ -10,6 +10,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const resources = createResourceStack();
 const root = process.cwd();
@@ -19,6 +20,7 @@ try {
     resources.defer('report photo profile', () => rm(profile, { recursive: true, force: true }));
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
     resources.defer('report photo HTTPS fixture', () => fixture.close());
+    assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium', headless: true,
         viewport: { width: 1280, height: 900 },

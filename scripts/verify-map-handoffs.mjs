@@ -14,6 +14,7 @@ import { prepareGaiaImport } from '../src/gaia/gaia-import.js';
 import { prepareOnxImport } from '../src/onx/onx-import.js';
 import { prepareCaltopoImport } from '../src/caltopo/caltopo-import.js';
 import { prepareAlltrailsImport } from '../src/alltrails/alltrails-import.js';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
 const evidenceDir = path.join(root, 'web-ext-artifacts', 'map-handoff-evidence');
@@ -141,6 +142,7 @@ try {
     resources.defer('map handoff HTTPS fixture', () => closeServer(server));
     const port = server.address().port;
 
+    assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(path.join(temporary, 'browser'), {
         channel: 'chromium',
         headless: true,

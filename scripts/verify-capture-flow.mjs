@@ -11,6 +11,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { createFixtureCertificate, waitForCondition as waitFor } from './browser-verification-fixtures.mjs';
 import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const waitForCondition = (read, ready, { timeoutMs = 10_000, message = 'capture condition' } = {}) => waitFor(async () => {
     const value = await read();
@@ -87,6 +88,7 @@ try {
     resources.defer('capture fixture server', () => closeServer(server));
     await listenServer(server, 0, '127.0.0.1');
     const port = server.address().port;
+    assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
         channel: 'chromium', headless: true, viewport: { width: 1000, height: 760 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],

@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -16,6 +17,7 @@ const screenshots = process.env.BPB_PHOTO_SCREENSHOTS;
 const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-photo-verification-'));
 let context;
 try {
+    assertChromeLaunchAllowed();
     context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium', headless: true,
         viewport: { width: 1440, height: 1100 },

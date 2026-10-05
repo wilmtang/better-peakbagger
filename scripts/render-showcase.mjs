@@ -23,6 +23,7 @@ import {
     listenServer,
     manageChildProcess,
 } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = path.join(root, 'store-assets');
@@ -189,6 +190,7 @@ const run = (command, args) => new Promise((resolve, reject) => {
 });
 
 const screenshot = async (port, route, output) => {
+    assertChromeLaunchAllowed();
     await run(chrome, [
         '--headless=new',
         '--hide-scrollbars',

@@ -11,6 +11,7 @@ import { chromium } from 'playwright';
 import { JSDOM } from 'jsdom';
 import { createFixtureCertificate, projectRoot } from './browser-verification-fixtures.mjs';
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const resources = createResourceStack();
 let failure;
@@ -37,6 +38,7 @@ try {
     await listenServer(server, 0, '127.0.0.1');
     const origin = `https://www.peakbagger.com:${server.address().port}`;
     const dist = path.join(projectRoot, 'dist');
+    assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium', headless: true,
         viewport: { width: 1000, height: 760 },

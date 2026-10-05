@@ -26,6 +26,7 @@ import {
     listenServer,
     manageChildProcess,
 } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const chromePath = process.env.CHROME_BIN || ({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -783,6 +784,7 @@ const serverPort = server.address().port;
 const profile = await resources.guard(
     mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-terrain-profile-')));
 resources.defer('terrain Chrome profile', () => rm(profile, { recursive: true, force: true }));
+assertChromeLaunchAllowed();
 const chrome = spawn(chromePath, [
     '--headless=new',
     '--no-first-run',

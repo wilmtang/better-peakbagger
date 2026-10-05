@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { chromium, firefox } from 'playwright';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const ROOT = new URL('../test/capture/fixtures/', import.meta.url);
 const bundle = await fs.readFile(new URL('../dist/provider-page.js', import.meta.url), 'utf8');
@@ -79,6 +80,7 @@ const inspectCase = async (browser, item) => {
 const verifyBrowser = async ({ name, engine, launch }) => {
     let browser = null;
     try {
+        if (engine === chromium) assertChromeLaunchAllowed();
         browser = await engine.launch({ headless: true, ...launch });
         const ownershipCases = [];
         for (const item of [

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { createServer } from 'node:https';
 import { createFixtureCertificate, createSyntheticCaptureJob, createSyntheticCapturePayload, waitForCondition } from './browser-verification-fixtures.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'bpb-multi-summit-'));
 let context;
@@ -29,6 +30,7 @@ try {
     const base = (await readFile('test/fixtures/pages/climber-ascentedit.html', 'utf8'))
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/(<form\b[^>]*\baction=")[^"]*/i, '$1');
+    assertChromeLaunchAllowed();
     context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
         ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chromium' }),
         headless: true,

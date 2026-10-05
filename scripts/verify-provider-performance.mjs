@@ -7,6 +7,7 @@
 import fs from 'node:fs/promises';
 import { chromium, firefox } from 'playwright';
 import { MAX_GPX_TRACK_POINTS } from '../src/capture/capture-resource-limits.js';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const providerBundle = await fs.readFile(new URL('../dist/provider-page.js', import.meta.url), 'utf8');
 const VIEWPORT = { width: 1280, height: 720 };
@@ -53,6 +54,7 @@ const measure = (page, points, { overLimit = false, extensions = false } = {}) =
 const verifyBrowser = async ({ name, engine, launch }) => {
     let browser = null;
     try {
+        if (engine === chromium) assertChromeLaunchAllowed();
         browser = await engine.launch({ headless: true, ...launch });
         const page = await browser.newPage({ viewport: VIEWPORT });
         await page.route('**/*', route => route.abort());

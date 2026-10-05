@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { createResourceStack } from './resource-stack.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 const resources = createResourceStack();
 const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-climber-ui-'));
 resources.defer('climber UI profile', () => rm(profile, { recursive: true, force: true }));
@@ -17,6 +18,7 @@ await mkdir(output, { recursive: true });
 let failure;
 try {
     const dist = path.resolve('dist');
+    assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(profile, { channel: 'chromium', headless: true,
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
         args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`] });

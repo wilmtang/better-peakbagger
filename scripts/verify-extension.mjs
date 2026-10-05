@@ -48,6 +48,9 @@ import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+
+assertChromeLaunchAllowed();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
@@ -155,6 +158,7 @@ let requestEvidence;
 let primaryError = null;
 let chromeBfcacheResult = null;
 try {
+    assertChromeLaunchAllowed();
     context = await chromium.launchPersistentContext(profile, {
         ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
         headless: true,
