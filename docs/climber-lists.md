@@ -14,10 +14,32 @@ cache stays usable if refresh fails. Missing or failed data is distinct from a
 valid empty list.
 
 **Ignore** appears on another climber's public profile in either source mode.
-After a confirmed save it becomes **Unignore**, with an **Ignored** status. The
-native Buddy controls and custom favorite star remain independent. You can keep
-the same climber in both lists; ignore takes precedence for visibility. Your own
-profile omits Ignore.
+After a confirmed save it becomes **Unignore**. Ignored climbers cannot be newly
+added to custom favorites or through the profile's native **Add to My Buddy
+List** control. Those actions are dimmed, with guidance to Unignore first.
+Favorites and known climbing buddies cannot be newly ignored; remove them from
+the indicated list first. The rule applies in either source mode, including
+custom favorites that are not the currently selected source. Your own profile
+omits Ignore.
+
+Unignore, Remove favorite, and Remove buddy remain available to resolve existing
+overlaps. Nothing is silently deleted or moved between lists. Ignore still takes
+precedence for visibility when an old overlap exists. Conflicting actions wait
+while a profile save or native Buddy addition is pending. If a Buddy change
+cannot be confirmed, refresh the profile before ignoring.
+
+Imports, replacements, GitHub restores, sync merges, and Undo enforce the same
+rule. A conflicting bulk operation leaves the lists unchanged and identifies
+the climber and required removal. Concurrent extension list edits share one
+worker transaction lane; pending ignored-sync results reserve their IDs against
+favorite additions until reconciliation or review.
+
+Peakbagger owns the Buddy List. Protection uses the native profile controls and
+the last saved Buddy cache, even when the custom favorite source is selected.
+Refresh your Buddy List after changing it elsewhere. Changes through other
+Peakbagger surfaces, another browser, or another device can still introduce an
+overlap; the extension does not silently edit the server or provide a global
+transaction across Peakbagger and local storage.
 
 Ignored climbers are saved on this device, across browser restarts and Peakbagger
 account changes. Each entry contains a climber ID, displayed name and date added.
@@ -53,7 +75,8 @@ list** temporarily bypasses ordinary filters and includes ignored rows; **Restor
 filters**, **Hide ignored**, or changing an ordinary filter ends that override.
 Saved filter choices remain intact.
 
-With 12 loaded rows, 3 ignored, 4 favorites and 1 favorite also ignored:
+For a legacy overlap, with 12 loaded rows, 3 ignored, 4 favorites and 1 favorite
+also ignored:
 
 | Favorites | Reveal | Shown | Hidden by ignore | Hidden by other filters |
 | --- | --- | --- | --- | --- |
@@ -85,8 +108,10 @@ and offers guarded whole-list Undo. A missing file means no backup exists; a val
 empty file can intentionally clear the list after review. Concurrent local or
 remote changes invalidate the preview instead of overwriting them.
 
-**Sync ignored climbers with GitHub** is a separate opt-in on each device. First
-setup previews **Merge lists**, **Use GitHub's list**, or **Use this device's list**.
+Both climber-list sync checkboxes default to checked and remain disabled until
+GitHub is connected with its required permission. Saved opt-outs remain intact.
+First ignored-sync setup previews **Merge lists**, **Use GitHub's list**, or
+**Use this device's list**.
 Merge keeps currently ignored IDs from both sides. Conflicting versions require
 an explicit device/GitHub choice; names, added dates and removals are shown.
 
@@ -114,3 +139,5 @@ file after successful sync; prior Git history can retain it. See
 Implementation and verification evidence, including remaining live-service and
 native accessibility gaps, is recorded in the
 [archived delivery ledger](archive/ignored-climbers.md).
+The mutual-exclusion change and its verification boundaries are recorded in the
+[membership delivery ledger](archive/climber-membership-2026-10-04.md).
