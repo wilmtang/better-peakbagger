@@ -4210,6 +4210,65 @@ try {
                 && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1')
                 && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorite climbers · 0'
                 && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
+            // The global dark theme paints site buttons with !important rules.
+            // Exercise the packaged cascade and real input so the secondary
+            // disclosure stays quiet, accessible and stationary in both states.
+            const originalTheme = await reports.locator('html').getAttribute('data-bpb-theme');
+            const originalViewport = reports.viewportSize();
+            const reveal = reports.locator('#bpb-peak-report-tools .bpb-report-reveal');
+            const revealAppearance = () => reveal.evaluate(button => {
+                const style = getComputedStyle(button);
+                const status = getComputedStyle(document.querySelector('#bpb-peak-report-tools .bpb-report-status[role="status"]'));
+                return { background: style.backgroundColor, border: style.borderWidth,
+                    color: style.color, statusColor: status.color, height: button.getBoundingClientRect().height };
+            });
+            try {
+                for (const theme of ['light', 'dark']) {
+                    await reports.locator('html').evaluate((html, value) => html.dataset.bpbTheme = value, theme);
+                    for (const [width, height] of [[1440,1000], [390,844], [320,844]]) {
+                        await reports.setViewportSize({ width, height });
+                        await reports.evaluate(() => document.activeElement?.blur());
+                        await reports.mouse.move(0, 0);
+                        await reports.locator('#bpb-peak-report-tools').scrollIntoViewIfNeeded();
+                        const hiddenAppearance = await revealAppearance();
+                        check(hiddenAppearance.background === 'rgba(0, 0, 0, 0)' && hiddenAppearance.border === '0px'
+                            && hiddenAppearance.color === hiddenAppearance.statusColor && hiddenAppearance.height >= 32,
+                        `${theme} ${width}px ignored report action competes with the primary filter or loses its click target: ${JSON.stringify(hiddenAppearance)}`);
+                        if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
+                            await reports.screenshot({ path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR,
+                                `peak-quiet-${theme}-${width}.png`) });
+                        }
+                        await reveal.hover();
+                        check(await reveal.evaluate(button => getComputedStyle(button).textDecorationLine.includes('underline')),
+                            `${theme} ${width}px ignored report action offers no hover cue`);
+                        const before = await reveal.boundingBox();
+                        await reveal.click();
+                        await reports.waitForFunction(() => document.querySelector('.bpb-report-reveal')?.textContent === 'Hide ignored · 1'
+                            && document.querySelector('#bpb-peak-report-tools .bpb-report-status[role="status"]')?.textContent === '30 of 30 selected reports shown');
+                        const after = await reveal.boundingBox();
+                        check(['x', 'y', 'width', 'height'].every(key => Math.abs(before[key] - after[key]) < 0.5),
+                            `${theme} ${width}px ignored report action moved when revealed: ${JSON.stringify({ before, after })}`);
+                        const revealedAppearance = await revealAppearance();
+                        check(revealedAppearance.background === 'rgba(0, 0, 0, 0)' && revealedAppearance.border === '0px',
+                            `${theme} ${width}px revealed report action regains button chrome: ${JSON.stringify(revealedAppearance)}`);
+                        await reveal.focus();
+                        await reports.keyboard.press('Tab');
+                        await reports.keyboard.press('Shift+Tab');
+                        check(await reveal.evaluate(button => document.activeElement === button && button.matches(':focus-visible')
+                            && getComputedStyle(button).outlineStyle === 'solid' && parseFloat(getComputedStyle(button).outlineWidth) >= 2),
+                        `${theme} ${width}px ignored report action has no visible keyboard focus`);
+                        await reports.keyboard.press('Space');
+                        await reports.waitForFunction(() => document.querySelector('.bpb-report-reveal')?.textContent === 'Show ignored · 1'
+                            && document.querySelector('#bpb-peak-report-tools .bpb-report-status[role="status"]')?.textContent === '29 of 30 selected reports shown');
+                    }
+                }
+            } finally {
+                await reports.locator('html').evaluate((html, theme) => {
+                    if (theme === null) html.removeAttribute('data-bpb-theme');
+                    else html.dataset.bpbTheme = theme;
+                }, originalTheme);
+                await reports.setViewportSize(originalViewport);
+            }
             await reports.locator('.bpb-report-favorites').click();
             const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
             check(activation.some(event => event.type === 'click' && event.favorites && event.trusted),

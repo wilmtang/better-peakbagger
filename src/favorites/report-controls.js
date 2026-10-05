@@ -10,6 +10,9 @@ export const reportStyle = doc => {
 .bpb-report-tools button:disabled { cursor:wait; }
 #bpb-ascent-report-tools button[aria-controls] { min-inline-size:9em; flex-shrink:0; white-space:nowrap; }
 .bpb-report-tools .bpb-report-reveal { min-inline-size:calc(9em + var(--bpb-report-count-width, 0ch)); flex-shrink:0; white-space:nowrap; }
+/* The site's dark-theme button repaint must not promote this secondary action. */
+#bpb-peak-report-tools .bpb-report-reveal { background:transparent !important; border:0 !important; color:#555e57 !important; font-size:12px; }
+#bpb-peak-report-tools .bpb-report-reveal:hover { text-decoration:underline; text-underline-offset:3px; }
 .bpb-report-tools .bpb-report-favorites { border:1px solid #9aa89e; background:#f6f8f6; }
 .bpb-report-tools .bpb-report-favorites[aria-pressed="true"] { background:#e7f1e9; border-color:#2f6b3f; color:#245332; }
 .bpb-report-status { color:#555e57; font-size:12px; }
@@ -20,6 +23,7 @@ export const reportStyle = doc => {
 html[data-bpb-theme="dark"] .bpb-report-tools { color:#cbd2cd; }
 html[data-bpb-theme="dark"] .bpb-report-tools button { color:#a9d5b5; }
 html[data-bpb-theme="dark"] .bpb-report-status { color:#c0c8c2; }
+html[data-bpb-theme="dark"] #bpb-peak-report-tools .bpb-report-reveal { color:#c0c8c2 !important; }
 html[data-bpb-theme="dark"] .bpb-report-tools .bpb-report-favorites { background:#29322b; border-color:#71927a; }
 html[data-bpb-theme="dark"] .bpb-report-tools .bpb-report-favorites[aria-pressed="true"] { background:#304a36; border-color:#8fc99c; color:#c8edd2; }
 html[data-bpb-theme="dark"] .bpb-report-tools button:focus-visible { outline-color:#8fc99c; }
