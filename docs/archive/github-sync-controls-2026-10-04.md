@@ -1,5 +1,8 @@
 # GitHub sync controls audit — 2026-10-04
 
+Status: completed and archived. No unresolved local findings remain; external
+verification limits are retained below.
+
 Scope: Settings controls for ascent/TR backup, automatic ascent backup,
 deletion mirroring, settings backup, favorite climbers, ignored climbers,
 and photo-library backup. Preserve saved preferences, optional host access,
@@ -21,8 +24,8 @@ the default-on disabled state before setup.
 Verification: 49 focused options tests passed; changed JavaScript passed ESLint.
 The old behavior was reproduced in hidden Firefox 157.0. The fixed packaged
 page was rendered and visually inspected in hidden Firefox at a 1200×815 content
-viewport. Both climber checkboxes remained checked and disabled. The new full
-browser-verifier assertions still await the final audit run.
+viewport. Both climber checkboxes remained checked and disabled. The packaged
+Chrome and Firefox assertions passed in the final audit run.
 
 Settings and photo refreshes now reject superseded responses. The photo
 checkbox reads its preference only from the settings subscriber, so an older
@@ -51,6 +54,19 @@ removal of all URL access). ImgBB access changes do not repaint GitHub setup.
 The unrelated-host regression failed before scoping the observer and passed
 afterward. Build, changed JavaScript ESLint, and 57 focused options tests passed.
 
+The GitHub design note now states the actual favorite/ignored defaults,
+preference persistence, and shared access lifecycle.
+
+Final verification: `npm test` passed **2,228/2,228** tests. ESLint passed for
+all changed JavaScript. The full packaged verifiers passed in hidden Chrome
+for Testing **153.0.8010.12** and Firefox **157.0**, with a 1000×760 base
+viewport and the Settings navigation matrix at 1982×1000, 1000×760, 1000×420,
+and 480×760 in light and dark themes. Disconnected controls were additionally
+visually inspected using native browser form rendering: Chrome dark at
+1200×900 and light at 480×760, Firefox dark at 1200×815. These Settings views
+do not use WebGL. Owned browser processes and disposable profiles were checked
+after teardown; none remained.
+
 ## Intentionally not changed
 
 - Favorite sync already uses the intended disconnected gate and stored value.
@@ -63,10 +79,9 @@ afterward. Build, changed JavaScript ESLint, and 57 focused options tests passed
 
 ## Changed but not fully proven
 
-Open findings to remediate:
-
-- The GitHub design note incorrectly calls favorite sync default-off.
-
-Live GitHub OAuth, repository selection, native permission prompts, and native
-focus/window placement require separate manual evidence; synthetic tests and
-hidden browser checks must not be represented as that evidence.
+Connection changes, revocation/regrant, delayed responses, and setup
+notifications have synthetic regression coverage. Live GitHub OAuth,
+repository selection, native permission prompts, and native focus/window
+placement require separate manual evidence; synthetic tests and hidden browser
+checks must not be represented as that evidence. No live GitHub connection or
+repository was modified during this audit.

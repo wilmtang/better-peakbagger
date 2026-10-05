@@ -1254,11 +1254,17 @@ expected GPX failure as `null`, or bypassing the worker write queue.
   `removeGithubBackupOnDelete` are synced ascent and TR backup booleans. Disabling the
   parent gate forces both subordinate choices off. Neither gates settings or
   favorite transfer.
-- `autoSettingsBackup` and `autoFavoritesBackup` are independent, synced,
-  default-off booleans. Without the device-local connection they are inert.
+- `autoSettingsBackup` and `autoPhotoLibraryBackup` are independent, synced,
+  default-off booleans. `autoFavoritesBackup` is synced and defaults on.
+  Ignored-climber sync also defaults on, with its preference stored locally.
+  Without the device-local connection and GitHub host access these choices are
+  inert. Both climber checkboxes show their saved preferences and stay disabled
+  before setup; explicit opt-outs survive disconnects and reconnects.
 - Token and chosen repository are local auth state, not sync-schema settings.
 - The options page presents that local auth/repository state as one shared
-  GitHub connection used by ascent, settings, and favorite transfer.
+  GitHub connection used by ascent, settings, favorite, ignored-climber, and
+  photo-library transfer. Every section refreshes when auth or GitHub host access
+  changes; superseded status replies cannot repaint a newer connection state.
 - Ascent fields, report, and Peakbagger's stored GPX go only to the selected
   repository, after explicit backup action or the separate automatic opt-in.
 - Firefox's `locationInfo` declaration covers the stored GPS track.

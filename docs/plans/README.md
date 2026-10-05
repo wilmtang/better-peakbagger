@@ -1,7 +1,5 @@
 # Active plans
 
-- [GitHub sync controls audit](github-sync-controls-2026-10-04.md) — in progress;
-  connection gates, saved preferences, asynchronous refreshes, and lifecycle checks.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.
