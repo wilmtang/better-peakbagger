@@ -20,6 +20,7 @@ const syncControls = [
 const controlPage = async ({ connected = false, granted = false, settings = {}, local } = {}) => {
     const h = harness({ syncEnabled: null });
     h.connected = connected; h.granted = granted;
+    h.authReads = 0;
     h.permissionListeners = { added: new Set(), removed: new Set() };
     h.engine = createClimberListSync({ ...h.engineOptions,
         getAccess: async () => h.connected && h.granted ? h.engineOptions.getAccess()
@@ -32,6 +33,7 @@ const controlPage = async ({ connected = false, granted = false, settings = {}, 
             onRemoved: { addListener: listener => h.permissionListeners.removed.add(listener) },
         };
         chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') h.authReads++;
             if (message.type === 'GITHUB_AUTH_STATUS' && h.authReply) return h.authReply();
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: h.connected, hasToken: h.connected,
                 account: { login: 'me' }, repo: h.connected ? { owner: 'me', name: 'backup' } : null };
@@ -70,6 +72,18 @@ test('disconnected and permission-denied GitHub controls retain preferences with
         assert.equal(h.reads, 0); assert.equal(h.writes, 0);
         assert.equal((await h.engine.status()).state.enabled, true);
     }
+});
+
+test('unrelated host permission changes do not refresh GitHub setup', async () => {
+    const h = await controlPage({ connected: true, granted: true, settings: { enableGithubBackup: true } });
+    await waitFor(h.dom, () => accessSettled(h, true));
+    const reads = h.authReads;
+    for (const listeners of Object.values(h.permissionListeners)) {
+        for (const listener of listeners) listener({ origins: ['https://api.imgbb.com/*'] });
+    }
+    await nextTask(0);
+    assert.equal(h.authReads, reads);
+    assert.equal(accessSettled(h, true), true);
 });
 
 const accessSettled = (h, connected) => ['favorites-auto-backup', 'ignored-sync-enable']

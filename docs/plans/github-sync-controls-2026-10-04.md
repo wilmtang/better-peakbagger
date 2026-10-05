@@ -46,6 +46,11 @@ parent switch and every automatic/deletion setting. The parent-switch case
 failed with an unhandled rejection before the fix. Verification: build and
 ESLint passed; all 81 focused options tests passed after the fix.
 
+Permission notifications are scoped to the requested GitHub origins (and
+removal of all URL access). ImgBB access changes do not repaint GitHub setup.
+The unrelated-host regression failed before scoping the observer and passed
+afterward. Build, changed JavaScript ESLint, and 57 focused options tests passed.
+
 ## Intentionally not changed
 
 - Favorite sync already uses the intended disconnected gate and stored value.

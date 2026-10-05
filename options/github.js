@@ -32,7 +32,9 @@ export const observeGithubAccess = (extensionApi, refresh) => {
     extensionApi.storage?.onChanged?.addListener((changes, area) => {
         if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) refresh();
     });
-    const originsChanged = change => { if (change.origins?.length) refresh(); };
+    const originsChanged = change => {
+        if (change.origins?.some(origin => origin === '<all_urls>' || GITHUB_ORIGINS.includes(origin))) refresh();
+    };
     extensionApi.permissions?.onAdded?.addListener(originsChanged);
     extensionApi.permissions?.onRemoved?.addListener(originsChanged);
 };
