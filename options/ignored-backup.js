@@ -65,7 +65,7 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
             connected = !!auth?.connected && permission;
             backup.disabled = restore.disabled = !connected;
             const state = response.state;
-            enabled = state.enabled; syncToggle.checked = enabled; syncToggle.disabled = !connected && !enabled;
+            enabled = state.enabled; syncToggle.checked = enabled; syncToggle.disabled = !connected;
             backup.textContent = enabled ? 'Sync now' : 'Back up now';
             if (response.preview && panel.hidden && state.phase === 'review') paintPreview(response.preview, false);
             status.textContent = state.phase === 'working' ? 'Syncing…' : state.phase === 'review' ? `Review changes${state.error ? ` · ${state.error}` : ''}`
@@ -96,7 +96,7 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
         finally {
             busy = false; root.removeAttribute('aria-busy');
             for (const button of [backup, restore, confirm, cancel, undo]) button.disabled = false;
-            mode.disabled = syncToggle.disabled = false; backup.disabled = restore.disabled = !connected;
+            mode.disabled = false; syncToggle.disabled = !connected; backup.disabled = restore.disabled = !connected;
             // The triggering action may have been disabled while focus moved.
             if (!panel.hidden) cancel.focus({ preventScroll: true }); else trigger.focus({ preventScroll: true });
             void refresh();

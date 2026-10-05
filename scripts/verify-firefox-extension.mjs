@@ -42,7 +42,7 @@ import {
 } from './firefox-verifier-processes.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
-import { verifySettingsNavigation } from './verify-settings-navigation.mjs';
+import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
@@ -261,6 +261,8 @@ async function main() {
         if (!runtimeProbe?.ok) {
             throw new Error(`Firefox background did not answer CAPTURE_STATUS: ${runtimeProbe?.error || 'no reply'}`);
         }
+        await waitForScript(driver, webdriverScript(readDisconnectedGithubControls),
+            'default-on, disabled GitHub climber sync before setup', 5000, state => state?.ready);
 
         const extensionState = await driver.executeAsyncScript(done => {
             const api = globalThis.browser || globalThis.chrome;

@@ -45,7 +45,7 @@ import {
 } from './browser-verification-fixtures.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
-import { verifySettingsNavigation } from './verify-settings-navigation.mjs';
+import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
@@ -284,6 +284,9 @@ try {
         `the Chrome options origin or manifest version was wrong: ${JSON.stringify(storageProbe)}`);
         check(storageProbe.onChanged && storageProbe.values.join(',') === 'sync,local,session',
             `Chrome storage areas or storage.onChanged did not round-trip: ${JSON.stringify(storageProbe)}`);
+        await waitForCondition(async () => (await optionsPage.evaluate(readDisconnectedGithubControls)).ready, {
+            description: 'default-on, disabled GitHub climber sync before setup',
+        });
         const imgbbSaved = await optionsPage.evaluate(async () => {
             const response = await chrome.runtime.sendMessage({
                 type: 'PHOTO_IMGBB_SAVE_KEY',

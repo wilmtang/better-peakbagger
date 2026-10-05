@@ -5,6 +5,22 @@
 
 import assert from 'node:assert/strict';
 
+export const readDisconnectedGithubControls = () => {
+    const favorites = document.getElementById('favorites-auto-backup');
+    const ignored = document.getElementById('ignored-sync-enable');
+    const state = {
+        favorites: { checked: favorites.checked, disabled: favorites.disabled },
+        ignored: { checked: ignored.checked, disabled: ignored.disabled },
+        settingsHidden: document.getElementById('settings-backup-github-actions').hidden,
+        photosHidden: document.getElementById('photos-github-actions').hidden,
+        favoritesStatus: document.getElementById('favorites-github-status').textContent,
+        ignoredStatus: document.getElementById('ignored-github-status').textContent,
+    };
+    return { ...state, ready: state.favorites.checked && state.favorites.disabled
+        && state.ignored.checked && state.ignored.disabled && state.settingsHidden && state.photosHidden
+        && /Connect GitHub/.test(state.favoritesStatus) && /Connect GitHub/.test(state.ignoredStatus) };
+};
+
 // Run in both browsers against the packaged options page. jsdom has no layout
 // or native fragment scrolling, so it cannot detect an escaping app frame.
 const readFrame = () => {
