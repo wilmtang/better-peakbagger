@@ -5,11 +5,10 @@
 
 import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
-import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { boundedText as BoundedText } from '../src/net/bounded-text.js';
-import { GITHUB_ORIGINS, hasGithubPermission } from './github.js';
+import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
@@ -321,10 +320,10 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     window.addEventListener('focus', () => { void refreshGithub(); });
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) void refreshGithub();
             if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithub();
         });
     }
+    observeGithubAccess(extensionApi, () => { void refreshGithub(); });
 
     let painted = false;
     return {

@@ -1003,6 +1003,7 @@ test('a populated repository requires an explicit confirmation before connection
                     reply = { repos: [repo] };
                 } else if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
                     selectMessages.push(message);
+                    void chrome.storage.local.set({ bpbGithubAuth: { repo: message.confirmExisting ? repo : null } });
                     if (!message.confirmExisting) {
                         reply = {
                             connected: false,
@@ -1032,6 +1033,10 @@ test('a populated repository requires an explicit confirmation before connection
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.match(el(dom, 'github-panel').textContent, /already contains files/,
         'a confirmation the user is reading must survive a window focus');
+    await dom.chrome.storage.local.set({ bpbGithubAuth: { repo: null } });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.match(el(dom, 'github-panel').textContent, /already contains files/,
+        'an auth notification must not replace the repository safety confirmation');
 
     Array.from(el(dom, 'github-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Use this repository').click();

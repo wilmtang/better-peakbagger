@@ -30,6 +30,15 @@ photo-status snapshot cannot replace a newer choice. Both regressions failed
 against the previous bundles and passed after the fix. Verification: build and
 ESLint passed; 38 options/settings/photo-backup tests passed.
 
+All five GitHub sections now observe auth storage and optional host-access
+changes. The connection panel rejects superseded refreshes and waits for its
+own auth operations before repainting. Passive notifications preserve an
+active device flow and a repository safety confirmation; revoked host access
+closes the device flow. Preferences remain unchanged through revocation,
+regrant, disconnect, and reconnect. Verification: the two access-lifecycle
+regressions failed before the fix; all 98 focused options/photo tests and
+changed JavaScript ESLint passed afterward.
+
 ## Intentionally not changed
 
 - Favorite sync already uses the intended disconnected gate and stored value.
@@ -44,8 +53,6 @@ ESLint passed; 38 options/settings/photo-backup tests passed.
 
 Open findings to remediate:
 
-- Access changes need consistent refresh across all controls, including
-  permission changes and connection changes made from another Settings tab.
 - The GitHub design note incorrectly calls favorite sync default-off.
 
 Live GitHub OAuth, repository selection, native permission prompts, and native

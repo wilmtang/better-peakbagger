@@ -14,11 +14,10 @@
 // itself from the resulting storage change.
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
-import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
-import { hasGithubPermission } from './github.js';
+import { hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const UNDO_MS = 6000;
@@ -285,10 +284,10 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
             if (area === 'local' && changes[F.FAVORITES_KEY]) void readFavorites();
-            if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) void refreshGithubStatus();
             if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithubStatus();
         });
     }
+    observeGithubAccess(extensionApi, () => { void refreshGithubStatus(); });
 
     void readFavorites();
     void refreshGithubStatus();

@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { mutateIgnored } from '../src/favorites/ignored-client.js';
-import { hasGithubPermission } from './github.js';
-import { STORAGE_KEY as AUTH_KEY } from '../src/github/github-auth.js';
+import { hasGithubPermission, observeGithubAccess } from './github.js';
 import * as I from '../src/favorites/ignored-climbers.js';
 
 export const initIgnoredBackup = ({ extensionApi } = {}) => {
@@ -131,8 +130,9 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
         });
     });
     extensionApi.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && (changes[I.IGNORED_KEY] || changes[I.SYNC_KEY] || changes[AUTH_KEY])) void refresh();
+        if (area === 'local' && (changes[I.IGNORED_KEY] || changes[I.SYNC_KEY])) void refresh();
     });
+    observeGithubAccess(extensionApi, () => { void refresh(); });
     void refresh();
     void request({ action: 'check' }).then(refresh).catch(() => {});
 };

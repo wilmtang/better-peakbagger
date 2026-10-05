@@ -16,6 +16,7 @@ import { githubErrors as GithubErrors } from '../src/github/github-errors.js';
 import { dom as Dom } from '../src/ui/dom.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 
 const { ERROR_CODES } = GithubErrors;
 
@@ -24,6 +25,16 @@ export const hasGithubPermission = async extensionApi => {
     if (!extensionApi?.permissions?.contains) return false;
     try { return !!(await extensionApi.permissions.contains({ origins: GITHUB_ORIGINS })); }
     catch { return false; }
+};
+// Connection and optional host access can change while Settings stays open.
+// Observe origins too: storage alone cannot report a revoked host permission.
+export const observeGithubAccess = (extensionApi, refresh) => {
+    extensionApi.storage?.onChanged?.addListener((changes, area) => {
+        if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) refresh();
+    });
+    const originsChanged = change => { if (change.origins?.length) refresh(); };
+    extensionApi.permissions?.onAdded?.addListener(originsChanged);
+    extensionApi.permissions?.onRemoved?.addListener(originsChanged);
 };
 const errorText = error => GithubError.message(error, {
     fallback: 'GitHub did not return a usable response. Reload Settings and try again.',
@@ -71,6 +82,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     let confirmingExistingRepo = false;
     let ascentSummaryRevision = 0;
     let ascentSummaryRequest = null;
+    let githubRevision = 0;
+    let connectionOperations = 0;
+    let accessRefreshPending = false;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
         stopPollTimer();
@@ -78,12 +92,25 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const send = RuntimeMessage.bind(extensionApi);
+    // Auth writes during our own setup must settle before repainting it.
+    const withConnectionOperation = async operation => {
+        connectionOperations++;
+        try { return await operation(); }
+        finally {
+            connectionOperations--;
+            if (!connectionOperations && accessRefreshPending) {
+                accessRefreshPending = false;
+                void renderFromStatus({ preserveSetup: true });
+            }
+        }
+    };
 
     // ---- small DOM builders ------------------------------------------------
 
     const el = Dom.element;
     const button = (label, { primary = false, onClick } = {}) =>
-        el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label, onclick: onClick });
+        el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label,
+            onclick: event => withConnectionOperation(() => onClick(event)) });
     // One way out to an external page. tabs.create is preferred and cannot be
     // popup-blocked; window.open is the last resort for a context without the
     // tabs API, and no longer swallows its failure — "Open
@@ -108,7 +135,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
     };
     const renderInto = (target, ...nodes) => { target.replaceChildren(...nodes.filter(Boolean)); };
-    const render = (...nodes) => { renderInto(panelEl, ...nodes); };
+    const render = (...nodes) => { githubRevision++; renderInto(panelEl, ...nodes); };
     const renderAscent = (...nodes) => { renderInto(ascentPanelEl, ...nodes); };
     const newRepositoryUrl = status => {
         const url = new URL('https://github.com/new');
@@ -121,10 +148,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // ---- phase renderers ---------------------------------------------------
 
-    const renderDisconnected = () => render(
-        el('p', { class: 'github-line', text: 'Connect a GitHub account, then choose one repository for Better Peakbagger backups and transfers.' }),
-        el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: ensureConnection })),
-    );
+    const renderDisconnected = () => {
+        choosingRepo = confirmingExistingRepo = false;
+        render(
+            el('p', { class: 'github-line', text: 'Connect a GitHub account, then choose one repository for Better Peakbagger backups and transfers.' }),
+            el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: ensureConnection })),
+        );
+    };
 
     const renderPermissionDenied = () => {
         stopTimers();
@@ -192,7 +222,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             const list = el('div', { class: 'github-repo-list', role: 'list' },
                 repos.map(repo => el('button', {
                     type: 'button', class: 'github-repo', role: 'listitem', text: repo.fullName,
-                    onclick: () => selectRepo(repo),
+                    onclick: () => withConnectionOperation(() => selectRepo(repo)),
                 })));
             return render(
                 el('p', { class: 'github-line', text: 'Choose a repository for Better Peakbagger. A dedicated repository keeps everything tidy.' }),
@@ -508,7 +538,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             if (state.phase === 'polling') return pollAuth();
             if (state.phase === 'idle') return renderError('no-token');
             if (state.phase === 'error') return renderError(state);
-            if (state.phase === 'authorized') return afterAuthorized();
+            if (state.phase === 'authorized') return withConnectionOperation(afterAuthorized);
             return pollAuth();
         }, 2000);
     };
@@ -601,11 +631,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     // Show the connection state for the current stored status.
-    const renderFromStatus = async () => {
+    const renderFromStatus = async ({ preserveSetup = false } = {}) => {
+        const revision = ++githubRevision;
         if (permissionError) return renderPermissionDenied();
         detailEl.hidden = false;
-        const permissionGranted = await hasGithubPermission(extensionApi);
-        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const [permissionGranted, status] = await Promise.all([
+            hasGithubPermission(extensionApi), send({ type: 'GITHUB_AUTH_STATUS' }),
+        ]);
+        if (revision !== githubRevision) return;
         if (!status || status.phase === 'error') {
             return renderError(status?.error || status, renderFromStatus);
         }
@@ -614,11 +647,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             stopTimers();
             return renderDisconnected();
         }
+        if (preserveSetup && (pollTimer || ((choosingRepo || confirmingExistingRepo) && next.hasToken))) return;
         if (next.connected) return renderConnected(next);
         if (next.hasToken) {
             const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
+            if (revision !== githubRevision) return;
             if (discovery && discovery.phase === 'error') return renderError(discovery, renderFromStatus);
             const after = await send({ type: 'GITHUB_AUTH_STATUS' });
+            if (revision !== githubRevision) return;
             if (!after || after.phase === 'error') {
                 return renderError(after?.error || after, renderFromStatus);
             }
@@ -684,8 +720,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (pollTimer || !awaitingGithubReturn) return;
         if (confirmingExistingRepo) return;
         awaitingGithubReturn = false;
-        if (choosingRepo) void refreshRepos({ choose: true });
+        if (choosingRepo) void withConnectionOperation(() => refreshRepos({ choose: true }));
         else void renderFromStatus();
+    });
+
+    observeGithubAccess(extensionApi, () => {
+        permissionError = false;
+        if (connectionOperations) { accessRefreshPending = true; return; }
+        void renderFromStatus({ preserveSetup: true });
     });
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible') return;

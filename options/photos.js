@@ -9,10 +9,9 @@
 // replaces a local record, so the confirmation is an in-page panel rather than
 // a confirm() the browser can suppress.
 
-import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
-import { hasGithubPermission } from './github.js';
+import { hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const plural = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -209,11 +208,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     });
 
     window.addEventListener('focus', () => { void refresh(); });
-    if (extensionApi.storage.onChanged) {
-        extensionApi.storage.onChanged.addListener((changes, area) => {
-            if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) void refresh();
-        });
-    }
+    observeGithubAccess(extensionApi, () => { void refresh(); });
 
     let painted = false;
     return {
