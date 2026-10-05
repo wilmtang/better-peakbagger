@@ -26,12 +26,12 @@ const mount = () => {
     const target = ascentReport(document);
     if (!target) { restoreStartup(); clearTimeout(recovery); observer.stop(); return; }
     reportStyle(document);
-    const { row, cell, cid } = target;
+    const { row, cell, cid, heading } = target;
     const display = row.style.display;
+    const headingAnchor = document.createComment('bpb-ascent-report-heading'); heading.before(headingAnchor);
     if (!cell.id) cell.id = 'bpb-ascent-report-content';
     const controls = document.createElement('tr');
     const controlCell = document.createElement('td'); controlCell.colSpan = 2; controls.append(controlCell); row.before(controls);
-    const title = document.createElement('h2'); title.textContent = 'Ascent Trip Report';
     const tools = document.createElement('div'); tools.className = 'bpb-report-tools'; tools.id = 'bpb-ascent-report-tools';
     const status = document.createElement('span'); status.setAttribute('role', 'status');
     const frames = new Map();
@@ -54,7 +54,7 @@ const mount = () => {
     const button = utilityButton(document, 'Show ignored · 1', () => { reveal = !reveal; render(); });
     button.setAttribute('aria-controls', cell.id);
     const retry = utilityButton(document, 'Retry', () => { void observer.refresh(); });
-    tools.append(status, button, retry); controlCell.append(title, tools);
+    tools.append(button, status, retry); controlCell.append(tools);
     render = () => {
         const ignored = !!state.list?.entries.some(entry => entry.cid === cid);
         const conceal = ignored && !reveal;
@@ -76,8 +76,12 @@ const mount = () => {
         }
         hidden = conceal; row.style.display = conceal ? 'none' : display;
         controls.hidden = !ignored && !state.error;
-        title.hidden = !conceal;
-        status.textContent = state.error || (conceal ? '1 report hidden · Ignored climber' : '0 hidden by ignore');
+        // Keep the original heading above the control in both disclosure states.
+        // Return it to the native report when there is no visibility control.
+        if (controls.hidden) {
+            if (heading.parentElement !== cell) headingAnchor.after(heading);
+        } else if (heading.parentElement !== controlCell) controlCell.prepend(heading);
+        status.textContent = state.error || 'Ignored climber';
         button.hidden = !ignored;
         button.textContent = reveal ? 'Hide ignored · 1' : 'Show ignored · 1';
         button.setAttribute('aria-label', `${reveal ? 'Hide' : 'Show'} 1 ignored report`);

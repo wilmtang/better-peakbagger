@@ -7,6 +7,40 @@ const list = { schemaVersion: 1, revision: 1, entries: [{ cid: 900002, name: 'Al
 const load = (options = {}) => loadPage('ascent-ignored-report.html', {
     url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', fixtures: PAGE_FIXTURES,
     bundles: ['content/ascent-report-visibility.js'], local: { bpbIgnoredClimbers: list }, ...options });
+test('the original heading and toggle stay together through reveal, hide, and unignore', async () => {
+    let heading;
+    const dom = await load({ prepare: page => {
+        heading = page.window.document.querySelector('td[colspan="2"] h2');
+        heading.id = 'original-report-heading';
+    } });
+    try {
+        const doc = dom.window.document;
+        await waitFor(dom, () => doc.querySelector('#bpb-ascent-report-content')?.parentElement.style.display === 'none');
+        const cell = doc.querySelector('#bpb-ascent-report-content');
+        const tools = doc.querySelector('#bpb-ascent-report-tools');
+        const button = tools.querySelector('button'), status = tools.querySelector('[role="status"]');
+        const parent = tools.parentElement;
+        for (let toggle = 0; toggle < 4; toggle++) {
+            assert.equal(doc.querySelectorAll('h2#original-report-heading').length, 1);
+            assert.equal(heading.parentElement, parent);
+            assert.equal(heading.nextElementSibling, tools);
+            assert.equal(heading.hidden, false);
+            assert.equal(tools.firstElementChild, button);
+            assert.equal(status.textContent, 'Ignored climber');
+            button.click();
+        }
+        await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { ...list, revision: 2, entries: [] } });
+        assert.equal(heading.parentElement, cell);
+        assert.equal(cell.firstElementChild, heading);
+        assert.equal(parent.parentElement.hidden, true);
+        assert.equal(cell.parentElement.style.display, '');
+        await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { ...list, revision: 3 } });
+        assert.equal(heading.parentElement, parent);
+        assert.equal(heading.nextElementSibling, tools);
+        assert.equal(parent.parentElement.hidden, false);
+        assert.equal(cell.parentElement.style.display, 'none');
+    } finally { dom.window.close(); }
+});
 test('detail hiding retains nodes and metadata; reveal suspends/restores media and recovers focus', async () => {
     let paused = 0;
     const dom = await load({ prepare: page => {

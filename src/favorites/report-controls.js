@@ -8,6 +8,7 @@ export const reportStyle = doc => {
 .bpb-report-tools button { min-height:32px; padding:5px 8px; border:0; border-radius:5px; background:transparent; color:#354c3c; font:inherit; cursor:pointer; }
 .bpb-report-tools button:focus-visible { outline:2px solid #2f6b3f; outline-offset:2px; }
 .bpb-report-tools button:disabled { cursor:wait; }
+#bpb-ascent-report-tools button[aria-controls] { min-inline-size:9em; flex-shrink:0; white-space:nowrap; }
 .bpb-report-tools .bpb-report-favorites { border:1px solid #9aa89e; background:#f6f8f6; }
 .bpb-report-tools .bpb-report-favorites[aria-pressed="true"] { background:#e7f1e9; border-color:#2f6b3f; color:#245332; }
 .bpb-report-status { color:#555e57; font-size:12px; }

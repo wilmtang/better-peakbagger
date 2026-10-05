@@ -4291,12 +4291,51 @@ try {
                     check(await page.locator('#bpb-ascent-report-content').isVisible() === false, 'ignored detail report remained visible');
                     check(await page.locator('#Gmap').isVisible(), 'ignored detail concealed the map');
                     check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === null, 'ignored detail retained a srcdoc player');
-                    await reveal.focus(); await page.keyboard.press('Enter');
-                    await page.locator('#bpb-ascent-report-content').waitFor({ state: 'visible' });
-                    check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === '<p>Synthetic player</p>', 'revealed detail lost its srcdoc player');
-                    await page.locator('#bpb-ascent-report-content a').first().focus();
-                    await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate(node => node.click());
-                    check(await page.evaluate(() => document.activeElement?.textContent === 'Show ignored · 1'), 'detail hiding stranded focus');
+                    await page.locator('#bpb-ascent-table-split').waitFor({ state: 'visible' });
+                    const readGeometry = () => page.evaluate(() => {
+                        const tools = document.getElementById('bpb-ascent-report-tools');
+                        const rect = element => {
+                            const { x, y, width, height } = element.getBoundingClientRect();
+                            return { x: x + scrollX, y: y + scrollY, width, height };
+                        };
+                        const table = tools.closest('table');
+                        return { button: rect(tools.querySelector('button[aria-controls]')),
+                            heading: rect(tools.parentElement.querySelector('h2')), header: rect(tools.parentElement),
+                            metadata: rect(table.rows[0]), tableWidth: table.getBoundingClientRect().width };
+                    });
+                    const checkStable = (before, after, label) => {
+                        for (const name of ['button', 'heading', 'header', 'metadata']) {
+                            check(['x', 'y', 'width', 'height'].every(key => Math.abs(before[name][key] - after[name][key]) < 1),
+                                `${label} moved ${name}: ${JSON.stringify({ before: before[name], after: after[name] })}`);
+                        }
+                        check(Math.abs(before.tableWidth - after.tableWidth) < 1, `${label} changed report table width`);
+                    };
+                    for (const theme of ['light', 'dark']) {
+                        await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                        for (const [width, height] of [[1440, 1000], [720, 900], [390, 844]]) {
+                            await page.setViewportSize({ width, height });
+                            await reveal.scrollIntoViewIfNeeded();
+                            const before = await readGeometry();
+                            const capture = async state => {
+                                if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) await page.screenshot({
+                                    path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `detail-${state}-${theme}-${width}.png`),
+                                });
+                            };
+                            await capture('hidden');
+                            await reveal.focus(); await page.keyboard.press('Enter');
+                            await page.locator('#bpb-ascent-report-content').waitFor({ state: 'visible' });
+                            checkStable(before, await readGeometry(), `${theme} ${width}px reveal`);
+                            check(await page.locator('#bpb-ascent-report-content iframe').getAttribute('srcdoc') === '<p>Synthetic player</p>', 'revealed detail lost its srcdoc player');
+                            check(await page.locator('h2').filter({ hasText: /^Ascent Trip Report$/ }).count() === 1,
+                                'revealed detail duplicated its heading');
+                            await capture('shown');
+                            await page.locator('#bpb-ascent-report-content a').first().focus();
+                            await page.getByRole('button', { name: 'Hide 1 ignored report', exact: true }).evaluate(node => node.click());
+                            await page.locator('#bpb-ascent-report-content').waitFor({ state: 'hidden' });
+                            checkStable(before, await readGeometry(), `${theme} ${width}px hide`);
+                            check(await page.evaluate(() => document.activeElement?.textContent === 'Show ignored · 1'), 'detail hiding stranded focus');
+                        }
+                    }
                 }
                 if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) {
                     for (const theme of ['light', 'dark']) {
