@@ -568,7 +568,16 @@ html[data-bpb-theme="dark"] {
 .pbaf-words input:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 1px; }
 .pbaf-spacer { flex: 1 1 auto; }
 .pbaf-status { color: var(--pbaf-muted); white-space: nowrap; }
-.pbaf-status b { color: var(--pbaf-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pbaf-status b { color: var(--pbaf-strong); font-weight: 600; font-variant-numeric: tabular-nums;
+    display:inline-block; inline-size:var(--pbaf-status-digits, auto); text-align:right; }
+.pbaf-results { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; align-self:flex-start;
+    gap:4px 8px; min-inline-size:0; max-inline-size:100%; }
+.pbaf-results > .pbaf-status { white-space:normal; }
+#pbaf-bar .pbaf-results > .bpb-report-tools { margin:0; }
+.pbaf-result-utilities { grid-column:1 / -1; }
+#pbaf-bar .pbaf-result-utilities[hidden] { display:none; }
+.pbaf-table-scroll { max-inline-size:calc(100vw - 24px); overflow-x:auto; }
+.pbaf-table-scroll:focus-visible { outline:2px solid var(--pbaf-focus); outline-offset:2px; }
 .pbaf-reset { appearance: none; border: none; background: none; padding: 0; font: inherit; color: var(--pbaf-reset-text);
     text-decoration: underline; text-underline-offset: 2px; cursor: pointer; white-space: nowrap; }
 .pbaf-reset:hover { color: var(--pbaf-hover-text); }
@@ -607,6 +616,15 @@ const buildBarShell = () => {
     return bar;
 };
 
+// A wide revealed row must not widen the legacy page's enclosing table and
+// rewrap the introduction above the toolbar. Keep overflow within the list.
+const containAscentTable = table => {
+    if (!isPeakAscentsPage) return;
+    const scroller = document.createElement('div'); scroller.className = 'pbaf-table-scroll';
+    scroller.tabIndex = 0; scroller.setAttribute('role', 'region'); scroller.setAttribute('aria-label', 'Ascent list');
+    table.before(scroller); scroller.append(table);
+};
+
 const cacheRenderedBuddyList = async () => {
     const pageCid = numericParam(location.href, 'cid', document.baseURI);
     const ownCid = ownerClimberId(document);
@@ -641,12 +659,14 @@ const renderCompactNotice = table => {
     note.appendChild(link);
     bar.appendChild(note);
     table.parentNode.insertBefore(bar, table);
+    containAscentTable(table);
 };
 
 const mountCompactIgnores = (table, records, sections) => {
     reportStyle(document);
     const tools = document.createElement('span'); tools.className = 'bpb-report-tools';
-    const status = document.createElement('span'); status.setAttribute('role', 'status');
+    const status = document.createElement('span'); status.className = 'pbaf-status'; status.setAttribute('role', 'status');
+    status.style.setProperty('--pbaf-status-digits', `${String(records.length).length}ch`);
     const detail = document.createElement('span'); detail.className = 'bpb-report-status';
     const error = document.createElement('span'); error.setAttribute('role', 'status');
     let reveal = false;
@@ -667,7 +687,9 @@ const mountCompactIgnores = (table, records, sections) => {
             section.visible = section.items.some(item => item.visible);
             section.row.style.display = section.visible ? '' : 'none';
         }
-        status.textContent = `${result.visible.length} of ${records.length} ascents shown`;
+        const shown = document.createElement('b'); shown.textContent = String(result.visible.length);
+        const total = document.createElement('b'); total.textContent = String(records.length);
+        status.replaceChildren(shown, ' of ', total, ' ascents shown');
         paintReveal(button, detail, result, reveal, 'ascents');
         error.textContent = ignoredState.error; retry.hidden = !ignoredState.error;
     };
@@ -996,6 +1018,7 @@ const init = async () => {
     const statusEl = document.createElement('span');
     statusEl.className = 'pbaf-status';
     statusEl.setAttribute('aria-live', 'polite');
+    if (isPeakAscentsPage) statusEl.style.setProperty('--pbaf-status-digits', `${String(total).length}ch`);
 
     const orderStatusEl = document.createElement('span');
     orderStatusEl.className = 'pbaf-order-status';
@@ -1326,7 +1349,14 @@ const init = async () => {
     const fullButton = utilityButton(document, 'View full list', () => { fullList = true; revealIgnored = true; render(); });
     const restoreFilters = utilityButton(document, 'Restore filters', () => { fullList = false; revealIgnored = false; render(); });
     const retryLists = utilityButton(document, 'Retry', () => { void ignoredReader?.refresh(); void favoriteSource?.retry(); });
-    ignoreTools.append(revealButton, ignoredStatus, ignoreError, retryLists, fullButton, restoreFilters);
+    ignoreTools.append(revealButton);
+    const resultUtilities = document.createElement('span'); resultUtilities.className = 'bpb-report-tools pbaf-result-utilities';
+    const auxiliaryControls = [resetButton, ignoredStatus, ignoreError, retryLists, fullButton, restoreFilters];
+    const results = document.createElement('span'); results.className = 'pbaf-results';
+    if (isPeakAscentsPage) {
+        resultUtilities.append(...auxiliaryControls);
+        results.append(statusEl, ignoreTools, resultUtilities);
+    }
     const emptyBody = document.createElement('tbody'); emptyBody.dataset.bpbEmpty = 'true';
     const emptyRow = document.createElement('tr'); const emptyCell = document.createElement('td');
     emptyCell.colSpan = headerRow.cells.length; emptyCell.setAttribute('role', 'status');
@@ -1334,7 +1364,7 @@ const init = async () => {
     if (isPeakAscentsPage) table.append(emptyBody);
     bar.append(
         ...state[orderKey].map(key => filterItems[key]).filter(Boolean),
-        spacer, statusEl, resetButton, ...(isPeakAscentsPage ? [ignoreTools] : []), orderStatusEl,
+        spacer, ...(isPeakAscentsPage ? [results] : [statusEl, resetButton]), orderStatusEl,
     );
     refreshBeta();
     refreshFavorites();
@@ -1376,9 +1406,12 @@ const init = async () => {
             emptyCell.textContent = ignoreError.textContent || (result.ignored.length === total && !revealIgnored
                 ? `All ${total} loaded ascents are from ignored climbers.` : 'No ascents match your filters.');
             for (const [key, chip] of Object.entries(chips)) {
-                const count = dataRows.filter(record => (revealIgnored || !ids.has(record.climberId))
-                    && (key === 'tr' ? record.words > 0 : record[key])).length;
+                const matches = dataRows.filter(record => key === 'tr' ? record.words > 0 : record[key]);
+                const count = matches.filter(record => revealIgnored || !ids.has(record.climberId)).length;
                 const badge = chip.querySelector('.pbaf-count');
+                // A revealed ascent can cross a digit boundary. Keep chip widths
+                // stable so the toolbar cannot wrap onto a different line.
+                badge.style.inlineSize = `calc(${String(matches.length).length}ch + 1px)`;
                 badge.hidden = key === 'fav' && !favoriteSourceState?.available;
                 badge.textContent = badge.hidden ? '' : String(count);
             }
@@ -1392,7 +1425,7 @@ const init = async () => {
         }
 
         const anyActive = state.beta || state.tr || state.gps || state.link
-                || state.fav || (isPeakAscentsPage && result.totalHidden > 0) || fullList;
+                || state.fav || (isPeakAscentsPage && result.ignored.length > 0) || fullList;
         statusEl.textContent = '';
         const strong = document.createElement('b');
         if (anyActive) {
@@ -1405,6 +1438,7 @@ const init = async () => {
             statusEl.append(strong, ` ascent${total === 1 ? '' : 's'}`);
         }
         resetButton.hidden = !(state.beta || state.tr || state.gps || state.link || state.fav || fullList);
+        resultUtilities.hidden = auxiliaryControls.every(control => control.hidden || !control.textContent);
     };
 
     const scheduleRender = () => {
@@ -1416,6 +1450,7 @@ const init = async () => {
     };
 
     table.parentNode.insertBefore(bar, table);
+    containAscentTable(table);
     render();
     if (state.fav) void refreshBuddyCache();
 

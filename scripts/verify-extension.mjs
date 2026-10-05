@@ -4299,6 +4299,41 @@ try {
             return previous;
         });
         const page = await context.newPage();
+        const verifyAscentToggleGeometry = async label => {
+            await page.waitForLoadState('load');
+            const toggle = page.locator('#pbaf-bar button[aria-controls]');
+            const readGeometry = () => toggle.evaluate(node => {
+                const { x, y, width, height } = node.getBoundingClientRect();
+                return { x: x + scrollX, y: y + scrollY, width, height };
+            });
+            const checkStable = (before, after, state) => check(
+                ['x', 'y', 'width', 'height'].every(key => Math.abs(before[key] - after[key]) < 1),
+                `${label} ${state} moved the ascent toggle: ${JSON.stringify({ before, after })}`);
+            for (const theme of ['light', 'dark']) {
+                await page.locator('html').evaluate((node, value) => node.dataset.bpbTheme = value, theme);
+                for (const [width, height] of [[1440, 1000], [1000, 760], [720, 900], [390, 844], [320, 760]]) {
+                    await page.setViewportSize({ width, height });
+                    await toggle.scrollIntoViewIfNeeded();
+                    const before = await readGeometry();
+                    const capture = async state => {
+                        if (process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR) await page.locator('#pbaf-bar').screenshot({
+                            path: path.join(process.env.BPB_VERIFY_IGNORED_SCREENSHOT_DIR, `${label}-${state}-${theme}-${width}.png`),
+                        });
+                    };
+                    await capture('hidden');
+                    await toggle.focus(); await page.keyboard.press('Enter');
+                    await page.getByRole('button', { name: /^Hide \d+ ignored ascents$/ }).waitFor({ state: 'visible' });
+                    checkStable(before, await readGeometry(), `${theme} ${width}px reveal`);
+                    check(await toggle.evaluate(node => document.activeElement === node), `${label} reveal lost keyboard focus`);
+                    await capture('shown');
+                    await page.keyboard.press('Enter');
+                    await page.getByRole('button', { name: /^Show \d+ ignored ascents$/ }).waitFor({ state: 'visible' });
+                    checkStable(before, await readGeometry(), `${theme} ${width}px hide`);
+                    const bounds = await toggle.boundingBox();
+                    check(bounds.x >= 0 && bounds.x + bounds.width <= width, `${label} ${width}px toggle overflowed the viewport`);
+                }
+            }
+        };
         try {
             for (const surface of ['list', 'compact', 'detail']) {
                 await page.goto(`https://www.peakbagger.com:${port}/climber/${surface === 'detail'
@@ -4306,6 +4341,7 @@ try {
                 { waitUntil: 'domcontentloaded' });
                 const reveal = page.getByRole('button', { name: /^Show \d+ ignored (ascents|report)$/ });
                 await reveal.waitFor({ state: 'visible' });
+                if (surface !== 'detail') await verifyAscentToggleGeometry(surface);
                 if (surface === 'detail') {
                     check(await page.locator('#bpb-ascent-report-content').isVisible() === false, 'ignored detail report remained visible');
                     check(await page.locator('#Gmap').isVisible(), 'ignored detail concealed the map');
@@ -4368,6 +4404,37 @@ try {
                 }
                 await page.getByRole('button', { name: /^Show \d+ ignored (ascents|report)$/ }).click();
                 await page.getByRole('button', { name: /^Hide \d+ ignored (ascents|report)$/ }).waitFor({ state: 'visible' });
+            }
+            // Exercise the reported four-digit counts, a digit boundary, and
+            // recovery controls disappearing when every loaded row is ignored.
+            for (const [label, count, compact, allIgnored] of [
+                ['list-ten', 10, false, false], ['list-1431', 1431, false, false],
+                ['list-all-hidden', 10, false, true], ['compact-ten', 10, true, false],
+            ]) {
+                const html = await readFile(path.join(root, 'test', 'fixtures', compact ? 'pages' : 'peakascents',
+                    compact ? 'ascent-ignored-compact.html' : '1039-default-full-columns.html'), 'utf8');
+                const fixtureHtml = await manager.evaluate(({ html, count, allIgnored }) => {
+                    const doc = new window.DOMParser().parseFromString(html, 'text/html');
+                    const table = doc.querySelector('table.gray');
+                    const rows = [...table.rows].filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD');
+                    const template = (rows.find(row => row.cells[4]?.textContent.startsWith('TR-')) || rows[0]).cloneNode(true);
+                    for (const row of [...table.rows]) if (row.cells[0]?.tagName === 'TD') row.remove();
+                    const body = doc.createElement('tbody');
+                    for (let index = 0; index < count; index++) {
+                        const row = template.cloneNode(true), author = row.querySelector('a[href*="climber.aspx?cid="]');
+                        author.href = `climber.aspx?cid=${allIgnored || index === 0 ? 900002 : 900003}`;
+                        author.textContent = 'Example climber'; body.append(row);
+                    }
+                    table.append(body); return `<!doctype html>${doc.documentElement.outerHTML}`;
+                }, { html, count, allIgnored });
+                await manager.evaluate(async () => chrome.storage.local.set({ bpbIgnoredClimbers: {
+                    schemaVersion: 1, revision: 201, entries: [{ cid: 900002, name: 'Example', addedAt: 1 }] } }));
+                const url = `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039&ignore-layout=${label}`;
+                await page.route(url, route => route.fulfill({ contentType: 'text/html', body: fixtureHtml }));
+                await page.goto(url, { waitUntil: 'domcontentloaded' });
+                await page.getByRole('button', { name: /^Show \d+ ignored ascents$/ }).waitFor({ state: 'visible' });
+                await verifyAscentToggleGeometry(label);
+                await page.unroute(url);
             }
         } finally {
             await page.close();

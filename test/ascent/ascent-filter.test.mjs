@@ -1198,6 +1198,73 @@ test('legacy orders migrate, synced orders win, and keyboard changes reach setti
 const ignoredStore = cids => ({ schemaVersion: 1, revision: 1,
     entries: cids.map(cid => ({ cid, name: 'Ignored', addedAt: 1 })) });
 const utility = (dom, text) => [...bar(dom).querySelectorAll('button')].find(button => button.textContent.startsWith(text));
+test('ignored ascent disclosure keeps the count format and filter-match detail stable', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL,
+        local: { bpbIgnoredClimbers: ignoredStore([customCids[0]]) } });
+    try {
+        const total = dataRows(dom).length, hidden = total - visibleRows(dom).length;
+        assert.ok(hidden > 0);
+        assert.equal(status(dom), `Showing ${total - hidden} of ${total} ascents`);
+        const button = utility(dom, 'Show ignored');
+        const detail = bar(dom).querySelector('.bpb-report-status');
+        assert.equal(detail.textContent, '');
+        button.click();
+        assert.equal(status(dom), `Showing ${total} of ${total} ascents`);
+        assert.equal(detail.textContent, '');
+        assert.equal(button.getAttribute('aria-description'), `${hidden} ignored ascents included; 0 hidden by ignore.`);
+        button.click();
+        assert.equal(status(dom), `Showing ${total - hidden} of ${total} ascents`);
+        chip(dom, 'Has beta').click();
+        const filterDetail = detail.textContent;
+        button.click();
+        assert.equal(detail.textContent, filterDetail);
+    } finally { dom.window.close(); }
+});
+test('count slots reserve the digits needed when a reveal crosses nine to ten ascents', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL,
+        local: { bpbIgnoredClimbers: ignoredStore([6723]) }, prepare: page => {
+            const rows = dataRows(page), ignored = rows.find(row => rowCid(row) === 6723);
+            assert.ok(ignored);
+            const keep = new Set([ignored, ...rows.filter(row => rowCid(row) !== 6723).slice(0, 9)]);
+            for (const row of rows) if (!keep.has(row)) row.remove();
+        } });
+    try {
+        assert.equal(status(dom), 'Showing 9 of 10 ascents');
+        const tableNode = table(dom), scroller = dom.window.document.querySelector('.pbaf-table-scroll');
+        assert.equal(scroller.firstElementChild, tableNode);
+        assert.equal(bar(dom).nextElementSibling, scroller);
+        assert.equal(scroller.tabIndex, 0);
+        assert.equal(scroller.getAttribute('aria-label'), 'Ascent list');
+        assert.equal(bar(dom).querySelector('.pbaf-status').style.getPropertyValue('--pbaf-status-digits'), '2ch');
+        const badgeWidths = [...bar(dom).querySelectorAll('.pbaf-count')].map(badge => badge.style.inlineSize);
+        utility(dom, 'Show ignored').click();
+        assert.equal(status(dom), 'Showing 10 of 10 ascents');
+        assert.deepEqual([...bar(dom).querySelectorAll('.pbaf-count')].map(badge => badge.style.inlineSize), badgeWidths);
+    } finally { dom.window.close(); }
+});
+test('an all-hidden list retains full-list recovery below the disclosure row', async () => {
+    const cids = [...new Set([...smallFixture.matchAll(/climber\.aspx\?cid=(\d+)/gi)].map(match => Number(match[1])))];
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL,
+        local: { bpbIgnoredClimbers: ignoredStore(cids) } });
+    try {
+        const total = dataRows(dom).length;
+        const recovery = bar(dom).querySelector('.pbaf-result-utilities');
+        const full = utility(dom, 'View full list'), toggle = utility(dom, 'Show ignored');
+        assert.equal(visibleRows(dom).length, 0);
+        assert.equal(full.hidden, false);
+        assert.equal(recovery.hidden, false);
+        toggle.click();
+        assert.equal(visibleRows(dom).length, total);
+        assert.equal(full.hidden, true);
+        assert.equal(recovery.hidden, true);
+        toggle.click(); full.click();
+        assert.equal(visibleRows(dom).length, total);
+        assert.equal(utility(dom, 'Restore filters').hidden, false);
+        utility(dom, 'Restore filters').click();
+        assert.equal(visibleRows(dom).length, 0);
+        assert.equal(full.hidden, false);
+    } finally { dom.window.close(); }
+});
 test('ignores compose with favorites, sorting, clear filters and temporary full-list recovery', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, settings: { favoritesSource: 'custom' },
         local: { bpbIgnoredClimbers: ignoredStore([customCids[0]]), [FAVORITES_KEY]: favoriteStore(customCids) } });
