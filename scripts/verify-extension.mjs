@@ -4185,7 +4185,7 @@ try {
             // as the source resolves, rather than racing that render.
             await reports.waitForFunction(() => document.querySelector('#bpb-selected-reports')?.style.visibility !== 'hidden'
                 && document.querySelector('#bpb-peak-report-tools').textContent.includes('Show ignored · 1')
-                && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorites · 0'
+                && document.querySelector('.bpb-report-favorites')?.textContent === '☆ Favorite climbers · 0'
                 && document.querySelector('.bpb-report-favorites')?.getAttribute('aria-pressed') === 'false');
             await reports.locator('.bpb-report-favorites').click();
             const activation = await reports.evaluate(() => window.__bpbReportActivationProbe);
@@ -4202,7 +4202,7 @@ try {
                 && document.querySelector('.bpb-report-empty')?.hidden === false);
             await captureReports('peak-overlap');
             await manager.evaluate(() => chrome.storage.local.set({ bpbFavoriteClimbers: { schemaVersion: 1, entries: [] } }));
-            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.includes('No selected reports from your favorites'));
+            await reports.waitForFunction(() => document.querySelector('.bpb-report-empty')?.textContent.includes('No selected reports from your favorite climbers'));
             await captureReports('peak-empty');
             const authorIds = await reports.locator('#bpb-selected-reports').evaluate(table => [...new Set(
                 [...table.querySelectorAll('a[href]')].flatMap(link => {

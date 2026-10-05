@@ -68,7 +68,7 @@ const mount = () => {
         } catch { preferenceError = "This view couldn't be remembered. Try again."; }
         finally { busy = false; render(); }
     };
-    const favorites = utilityButton(document, '☆ Favorites', () => { void savePreference(!preference?.favoritesOnly); });
+    const favorites = utilityButton(document, '☆ Favorite climbers', () => { void savePreference(!preference?.favoritesOnly); });
     favorites.className = 'bpb-report-favorites'; favorites.setAttribute('aria-controls', table.id);
     const revealButton = utilityButton(document, 'Show ignored', () => { full = false; reveal = !reveal; render(); });
     revealButton.setAttribute('aria-controls', table.id);
@@ -77,7 +77,7 @@ const mount = () => {
         if (preferenceError) void savePreference(preference?.favoritesOnly || false);
     });
     const showAll = utilityButton(document, 'Show all reports', () => { void savePreference(false); });
-    showAll.title = 'Turn off Favorites and remember this choice; ignored reports stay hidden.';
+    showAll.title = 'Turn off the climber filter and remember this choice; ignored reports stay hidden.';
     const fullButton = utilityButton(document, 'View full list', () => { full = true; reveal = true; render(); });
     fullButton.title = 'Temporarily include ignored reports and bypass filters on this page.';
     const restoreFilters = utilityButton(document, 'Restore filters', () => { full = false; reveal = false; render(); });
@@ -96,7 +96,7 @@ const mount = () => {
             || (!!sourceState?.available && sourceState.ids.has(record.climberId)), reveal);
         const visible = new Set(counts.visible);
         for (const record of records) record.row.style.display = visible.has(record) ? displays.get(record.row) : 'none';
-        const label = sourceState?.mode === 'custom' ? 'Favorites' : 'Climbing buddies';
+        const label = sourceState?.mode === 'custom' ? 'Favorite climbers' : 'Climbing buddies';
         const favoriteCount = records.filter(r => sourceState?.ids.has(r.climberId) && (reveal || !ids.has(r.climberId))).length;
         favorites.textContent = `${preference?.favoritesOnly ? '★' : '☆'} ${label} · ${favoriteCount}`;
         favorites.setAttribute('aria-pressed', String(preference?.favoritesOnly === true));
@@ -110,7 +110,7 @@ const mount = () => {
         empty.textContent = active && !sourceState?.available ? sourceState?.loading ? 'Loading climbing buddies…'
             : "Couldn't load your climber list." : counts.ignoreHidden === records.length
             ? `All ${records.length} selected reports are from ignored climbers.`
-            : active && counts.ignoredMatches > 0 ? "Your favorites' reports on this page are hidden."
+            : active && counts.ignoredMatches > 0 ? `Your ${label.toLowerCase()}' reports on this page are hidden.`
                 : `No selected reports from your ${label.toLowerCase()}.`;
         retry.hidden = !error.textContent || error.textContent === 'Loading climbing buddies…';
         showAll.hidden = !active || counts.visible.length > 0;

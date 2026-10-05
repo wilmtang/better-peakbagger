@@ -9,6 +9,24 @@ const load = local => loadPage('peak-rainier.html', { fixtures: PAGE_FIXTURES,
     settings: { favoritesSource: 'custom' }, local });
 const visible = dom => [...dom.window.document.querySelector('#bpb-selected-reports').rows]
     .slice(1).filter(row => row.cells.length === 6 && row.style.display !== 'none' && !row.hidden);
+test('peak filter names the selected climber source and preserves the count and pressed state', async () => {
+    const dom = await load({ bpbFavoriteClimbers: { schemaVersion: 1, entries: [{ ...entry(38769), source: 'manual' }] } });
+    try {
+        const button = dom.window.document.querySelector('.bpb-report-favorites');
+        await waitFor(dom, () => button.textContent === '☆ Favorite climbers · 1');
+        assert.match(button.title, /your favorite climbers/);
+        button.click();
+        await waitFor(dom, () => button.textContent === '★ Favorite climbers · 1' && button.disabled === false);
+        assert.equal(button.getAttribute('aria-pressed'), 'true');
+        await dom.chrome.storage.sync.set({ bpbSettings: { favoritesSource: 'buddies' } });
+        await waitFor(dom, () => button.textContent === '★ Climbing buddies · 0');
+        assert.match(button.title, /your climbing buddies/);
+        assert.equal(button.getAttribute('aria-pressed'), 'true');
+        await dom.chrome.storage.sync.set({ bpbSettings: { favoritesSource: 'custom' } });
+        await waitFor(dom, () => button.textContent === '★ Favorite climbers · 1');
+        assert.equal(button.getAttribute('aria-pressed'), 'true');
+    } finally { dom.window.close(); }
+});
 test('peak reports compose ignores, favorites and temporary reveal without changing membership', async () => {
     const dom = await load({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: [entry(38769)] },
         bpbFavoriteClimbers: { schemaVersion: 1, entries: [{ ...entry(38769), source: 'manual' }] } });
