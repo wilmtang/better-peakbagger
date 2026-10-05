@@ -1,17 +1,14 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as I from '../favorites/ignored-climbers.js';
+import { climberListLane, assertIgnoredMembership } from './climber-list-policy.js';
 
 const failure = (code, message) => ({ ok: false, error: { code, message } });
 export const createIgnoredStore = ({ storage } = {}) => {
-    let queue = Promise.resolve();
     // Sync uses this same lane for snapshot reconciliation and atomic storage
     // commits. Network work never holds it, so offline edits remain available.
-    const run = operation => {
-        const pending = queue.then(operation, operation);
-        queue = pending.catch(() => {});
-        return pending;
-    };
+    const run = climberListLane(storage);
+    const assertAllowed = entries => assertIgnoredMembership(storage, entries);
     const read = async () => {
         const stored = await storage.get(I.IGNORED_KEY);
         const list = I.readList(stored[I.IGNORED_KEY]);
@@ -26,6 +23,7 @@ export const createIgnoredStore = ({ storage } = {}) => {
         case 'add': {
             const entry = I.cleanEntry(mutation.entry);
             if (!entry) return failure('invalid', 'Invalid climber.');
+            await assertAllowed([entry]);
             const existing = entries.find(candidate => candidate.cid === entry.cid);
             if (mutation.expectedEntry !== undefined
                 && mutation.expectedEntry !== I.entrySignature(existing)) {
@@ -51,6 +49,7 @@ export const createIgnoredStore = ({ storage } = {}) => {
                 || mutation.expectedSignature !== I.signature(current.entries)) {
                 return failure('stale', 'Ignored climbers changed. Review the updated list and try again.');
             }
+            await assertAllowed(entries);
             break;
         default: return failure('invalid', 'Invalid list change.');
         }
@@ -61,12 +60,12 @@ export const createIgnoredStore = ({ storage } = {}) => {
         const list = changed ? { schemaVersion: 1, revision: current.revision + 1, entries } : current;
         if (changed) await storage.set({ [I.IGNORED_KEY]: list });
         return { ok: true, changed, list, previous: current };
-    }).catch(error => failure('storage', error.message || 'Ignored climbers could not be saved. Try again.'));
+    }).catch(error => failure(error.code || 'storage', error.message || 'Ignored climbers could not be saved. Try again.'));
     const preference = favoritesOnly => run(async () => {
         if (typeof favoritesOnly !== 'boolean') return failure('invalid', 'Invalid report preference.');
         const value = { schemaVersion: 1, favoritesOnly };
         await storage.set({ [I.PEAK_FILTER_KEY]: value });
         return { ok: true, preference: value };
     }).catch(() => failure('storage', 'This view could not be remembered. Try again.'));
-    return { run, read, mutate, preference };
+    return { run, read, mutate, preference, assertAllowed };
 };

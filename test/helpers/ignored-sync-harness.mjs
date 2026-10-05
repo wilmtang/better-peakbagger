@@ -13,8 +13,9 @@ export const harness = ({ local = [entry(1)], remote = null, syncEnabled = false
     if (syncEnabled !== null) values[I.SYNC_KEY] = { ...readIgnoredSyncState(undefined), enabled: syncEnabled };
     const h = { values, remote: remote === null ? null : I.serializeBackup(remote), reads: 0, writes: 0,
         epoch: 1, readHook: null, commitHook: null, retryHook: null, failGet: false, failReconcile: false };
-    h.storage = { get: async key => { if (h.failGet) throw new Error('Storage unavailable'); return { [key]: structuredClone(values[key]) }; },
-        set: async patch => { if (h.failReconcile && patch[I.IGNORED_KEY]) throw new Error('Storage unavailable after commit'); Object.assign(values, structuredClone(patch)); } };
+    h.storage = { get: async key => { if (h.failGet) throw new Error('Storage unavailable');
+        return Object.fromEntries((Array.isArray(key) ? key : [key]).map(name => [name, structuredClone(values[name])])); },
+    set: async patch => { if (h.failReconcile && patch[I.IGNORED_KEY]) throw new Error('Storage unavailable after commit'); Object.assign(values, structuredClone(patch)); } };
     h.store = createIgnoredStore({ storage: h.storage });
     h.client = {
         readRootFile: async (path, options) => { assert.equal(path, I.BACKUP_PATH); assert.equal(options.maxBytes, I.MAX_BYTES);

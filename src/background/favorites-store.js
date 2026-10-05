@@ -9,6 +9,7 @@
 // destructive replacements require the signature the user reviewed.
 
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
+import { climberListLane, assertFavoriteMembership } from './climber-list-policy.js';
 
 const publicError = (code, message) => ({ code, message });
 
@@ -141,11 +142,17 @@ export const createFavoritesStore = ({ storage, now = Date.now } = {}) => {
     if (!storage?.get || !storage?.set) {
         throw new TypeError('Favorites storage must provide get() and set().');
     }
-    let queue = Promise.resolve();
+    const run = climberListLane(storage);
 
     const execute = async mutation => {
         const stored = await storage.get(F.FAVORITES_KEY);
         const result = applyFavoritesMutation(stored[F.FAVORITES_KEY], mutation, now());
+        if (result.ok && ['add', 'merge-buddies', 'replace'].includes(mutation.kind)) {
+            const currentIds = new Set(F.cleanFavorites(stored[F.FAVORITES_KEY]).entries.map(entry => entry.cid));
+            const candidates = mutation.kind === 'add' ? [mutation.entry] : mutation.kind === 'replace'
+                ? result.favorites.entries : result.favorites.entries.filter(entry => !currentIds.has(entry.cid));
+            await assertFavoriteMembership(storage, candidates);
+        }
         if (result.ok && result.changed) {
             await storage.set({ [F.FAVORITES_KEY]: result.favorites });
         }
@@ -153,11 +160,10 @@ export const createFavoritesStore = ({ storage, now = Date.now } = {}) => {
     };
 
     const mutate = mutation => {
-        const operation = queue.then(() => execute(mutation), () => execute(mutation));
-        queue = operation.catch(() => {});
-        return operation.catch(() => ({
+        return run(() => execute(mutation)).catch(error => ({
             ok: false,
-            error: publicError('storage', 'Favorite climbers are unavailable. Try again.'),
+            error: publicError(error.code || 'storage', error.code === 'list-conflict'
+                ? error.message : 'Favorite climbers are unavailable. Try again.'),
         }));
     };
 

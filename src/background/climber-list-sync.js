@@ -88,7 +88,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
         catch (error) {
             // Retain the journal on any uncertain network/storage outcome.
             try { await saveState(state => ({ ...state,
-                phase: state.pending || ['invalid', 'stale', 'limit', 'superseded', 'missing', 'conflict', 'setup', 'review'].includes(error.code) ? 'review' : 'offline',
+                phase: state.pending || ['invalid', 'stale', 'limit', 'superseded', 'missing', 'conflict', 'list-conflict', 'setup', 'review'].includes(error.code) ? 'review' : 'offline',
                 error: error.message, lastChecked: now(),
                 retryAt: error.retryAfterSeconds ? now() + error.retryAfterSeconds * 1000 : state.retryAt || 0 })); }
             catch { /* never report success when storage is unavailable */ }
@@ -140,6 +140,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
                 Object.assign(rebased, I.mergeLists(pending.local, current.entries, pending.result, choices));
             }
             if (rebased.overLimit) fail('limit', 'The merged list exceeds 1,500 climbers. Review the lists.');
+            await store.assertAllowed(rebased.entries);
             const changed = I.signature(current.entries) !== I.signature(rebased.entries);
             if (changed && current.revision === Number.MAX_SAFE_INTEGER) fail('storage', 'The list revision cannot be advanced.');
             const list = changed ? { schemaVersion: 1, revision: current.revision + 1, entries: rebased.entries } : current;
@@ -173,6 +174,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
                 const changed = I.signature(current.entries) !== I.signature(remote);
                 if (changed && current.revision === Number.MAX_SAFE_INTEGER) fail('storage', 'The list revision cannot be advanced.');
                 const replacement = changed ? { schemaVersion: 1, revision: current.revision + 1, entries: remote } : current;
+                await store.assertAllowed(replacement.entries);
                 const next = { ...latest, review: null, phase: latest.enabled ? 'pending' : 'restored', error: '',
                     ...(!latest.enabled ? { scope: review.scope, base: remote } : {}) };
                 await guard(review.scope);
@@ -197,6 +199,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
                 await store.run(async () => {
                     const current = await store.read(), latest = await readState(); assertReviewed(review, current);
                     if (latest.review?.id !== review.id) fail('stale', 'Review the lists again.');
+                    await store.assertAllowed(merged.entries);
                     pending = { id: id(), kind: review.kind, enable: review.kind === 'setup' || latest.enabled, scope: review.scope, local: current.entries,
                         revision: current.revision, remote, result: merged.entries, controlRevision: latest.controlRevision, targetBranch: metadata.branch || null };
                     await storage.set({ [I.SYNC_KEY]: { ...latest, pending, review: null, phase: 'working', error: '' } });
@@ -205,6 +208,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
             }, 'Reconcile ignored climbers', { maxBytes: I.MAX_BYTES, beforeCommit: async () => {
                 await guard(review.scope);
                 const current = await snapshot(); assertReviewed(review, current.list);
+                await store.assertAllowed(pending.result);
             } });
         });
         return reconcile(pending, result, guard);
@@ -290,6 +294,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
                     const current = await store.read(), latest = await readState();
                     if (!latest.enabled || latest.scope !== scope || current.revision !== list.revision
                         || I.signature(current.entries) !== I.signature(list.entries)) fail('stale', 'The list changed before upload. Sync again.');
+                    await store.assertAllowed(merged.entries);
                     pending = { id: id(), kind: 'sync', enable: true, scope, local: list.entries,
                         revision: list.revision, remote, result: merged.entries, controlRevision: latest.controlRevision,
                         observedHead: metadata.head || null, targetBranch: metadata.branch || null };
@@ -300,6 +305,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
             }, 'Sync ignored climbers', { maxBytes: I.MAX_BYTES, beforeCommit: async () => {
                 await guard(scope);
                 const current = await snapshot();
+                await store.assertAllowed(pending.result);
                 if (!current.state.enabled || current.state.controlRevision !== pending.controlRevision
                     || current.list.revision !== pending.revision || I.signature(current.list.entries) !== I.signature(pending.local)) {
                     fail('stale', 'The list changed before upload. Sync again.');
