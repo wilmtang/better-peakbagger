@@ -21,10 +21,14 @@ The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
   ambiguous or unsupported page gets no calculator.
 - In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the chart so
   opening or updating the calculator cannot move the chart point under the
-  pointer. Before selection, its compact disclosure remains openable and prompts
-  for a chart point without reserving the populated calculator's height. Chart
-  hover previews the Sun and Moon at the hovered route point, then restores the deliberate
-  selection when the pointer leaves; click, touch, or keyboard selection fixes
+  pointer. Its collapsed card shows level-horizon sunrise and sunset, each with
+  the event's timezone, in a fixed-height two-column row. Before selection, the
+  first valid route coordinate supplies a clearly labelled trailhead context,
+  using its recorded date/time or the complete saved ascent date with a noon
+  preview. This does not select a chart point or enable copying coordinates.
+  Chart hover updates these times and the Sun and Moon at the hovered route
+  point, then restores the deliberate selection (or trailhead context) when
+  the pointer leaves; click, touch, or keyboard selection fixes
   the route point. Replacing the native map keeps a still-valid chart selection,
   while loading, failure, or route invalidation clears the old subject.
 - Full Screen maps, activity capture, editors, lists, the popup, and Settings do

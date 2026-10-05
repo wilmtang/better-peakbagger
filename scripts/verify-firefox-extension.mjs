@@ -1302,6 +1302,7 @@ async function main() {
             noDateInput: !calculator?.querySelector('input[type="date"]'),
             collapsed: calculator?.querySelector(".bpb-sun-calculator__panel")?.hidden === true,
             summary: calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
+            events: calculator?.querySelector(".bpb-sun-calculator__header-events")?.textContent || "",
             disabled: calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === true,
             placed: coordinates?.nextElementSibling === legend
               && canvasContainer?.nextElementSibling === calculator,
@@ -1320,7 +1321,8 @@ async function main() {
           && state.chart?.breakCounts?.join("|") === "0|0"
           && state.chart?.animation === false
           && state.sun.exists && state.sun.noDateInput && state.sun.collapsed
-          && !state.sun.disabled && state.sun.summary === "Select a chart point"
+          && !state.sun.disabled && /Trailhead/.test(state.sun.summary)
+          && /Sunrise.*\\d{2}:\\d{2} AM.*Sunset.*\\d{2}:\\d{2} PM/.test(state.sun.events)
           && state.sun.placed && state.sun.borderStyle === "solid",
       };
     `, 'the Firefox MAIN-world analyzer stats', 15_000, state => state?.ready);
@@ -1565,8 +1567,8 @@ async function main() {
     `);
         assertState(firefoxSunHeaderHeights?.belowHorizon === firefoxSunHeaderHeights?.aboveHorizon
             && firefoxSunHeaderHeights?.aboveHorizon === firefoxSunHeaderHeights?.prompt
-            && firefoxSunHeaderHeights?.layoutState === 'placeholder',
-        'Firefox changed the GPX Sun header height across prompt and horizon summaries',
+            && firefoxSunHeaderHeights?.layoutState === '',
+        'Firefox changed the GPX Sun header height across trailhead and horizon summaries',
         firefoxSunHeaderHeights);
         const analyzerCanvas = await driver.findElement(By.css('#bpb-gpx-analysis canvas'));
         await analyzerCanvas.sendKeys(Key.ARROW_RIGHT);

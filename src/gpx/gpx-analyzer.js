@@ -332,7 +332,16 @@ const run = async () => {
             hoverSunPoint = null;
             hoverSunState = null;
         };
-        const renderSun = state => sunCalculator?.render(state);
+        const renderSun = (state, contextLabel = selectedCoordinateIndex < 0 ? 'Trailhead' : 'Selected point') => {
+            const recorded = state.timeSource === 'Recorded at selected GPX point';
+            sunCalculator?.render({
+                ...state, contextLabel,
+                dateSource: state.dateSource === 'GPX point' && contextLabel !== 'Selected point'
+                    ? `GPX ${contextLabel.toLowerCase()}` : state.dateSource,
+                timeSource: recorded && contextLabel !== 'Selected point'
+                    ? `Recorded at ${contextLabel.toLowerCase()}` : state.timeSource,
+            });
+        };
         const setSunBearing = bearing => {
             const nextBearing = Number.isFinite(bearing) ? bearing : 0;
             const selectedState = sunState.setMapBearing(nextBearing);
@@ -346,10 +355,16 @@ const run = async () => {
             sunState.resetSubject();
             sunCalculator?.setUnavailable(message || 'Sun position is unavailable.');
         };
-        const promptSunSelection = () => {
+        const showDefaultSun = () => {
             clearHoverSunPreview();
+            const mapBearing = sunState.get().mapBearing;
             sunState.resetSubject();
-            sunCalculator?.setPrompt(SUN_SELECTION_PROMPT);
+            sunState.setMapBearing(mapBearing);
+            const point = metrics.routePoints?.find(isCoordinatePoint);
+            if (point) renderSun(sunState.selectRoutePoint(
+                selectedPointForSun(point), ascentDate, mountainZone
+            ), 'Trailhead');
+            else sunCalculator?.setPrompt(SUN_SELECTION_PROMPT);
         };
         const selectedPointForSun = point => metrics.timeQuality?.reason === 'not-progressing'
             ? { ...point, timeState: 'suspect' }
@@ -371,7 +386,7 @@ const run = async () => {
             }
             hoverSunPoint = point;
             hoverSunState = preview;
-            renderSun(previewState);
+            renderSun(previewState, 'Hovered point');
         };
         const previewSunPoint = point => {
             if (point === hoverSunPoint && hoverSunState) return;
@@ -572,7 +587,7 @@ const run = async () => {
                     ? 'No chart point with coordinates is available.'
                     : COORDINATE_HINT);
                 if (unavailable) resetSun('No selected track point is available.');
-                else promptSunSelection();
+                else showDefaultSun();
             }
             canvas.setAttribute('aria-label', hasSelection
                 ? `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
@@ -580,8 +595,8 @@ const run = async () => {
         };
         const restoreSelectedSun = () => {
             clearHoverSunPreview();
-            if (isCoordinatePoint(chartData[selectedCoordinateIndex])) renderSun(sunState.get());
-            else promptSunSelection();
+            if (sunState.get().subject) renderSun(sunState.get());
+            else showDefaultSun();
         };
         const selectCoordinateIndex = (index, series = 'distance') => {
             if (!isCoordinatePoint(chartData[index])) return false;
@@ -899,7 +914,7 @@ const run = async () => {
             if (reason === 'identity') {
                 const selectedPoint = chartData[selectedCoordinateIndex];
                 if (isCoordinatePoint(selectedPoint)) selectSunPoint(selectedPoint);
-                else promptSunSelection();
+                else showDefaultSun();
                 viewport.attach(frame);
                 mapViewport = viewport.element;
                 attachMapControls();
@@ -1138,7 +1153,7 @@ const run = async () => {
                 ? chartData.indexOf(selectedBeforeRebuild)
                 : -1;
             clearHoverSunPreview();
-            if (selectedBeforeRebuild) promptSunSelection();
+            if (selectedBeforeRebuild) showDefaultSun();
             const p = panelPalette();
             applyPanelTheme();
             controlsContainer.hidden = false;

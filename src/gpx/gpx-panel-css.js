@@ -141,20 +141,6 @@ export const gpxPanelCss = `
     margin-block-start: 0 !important;
 }
 @container bpb-route-analysis (max-width: 680px) {
-    #bpb-route-explorer .bpb-sun-calculator__toggle {
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        grid-template-rows: 1.6rem 2.7rem;
-        block-size: 6.35rem;
-    }
-    #bpb-route-explorer .bpb-sun-calculator__summary {
-        grid-column: 1 / -1;
-        grid-row: 2;
-        text-align: start;
-    }
-    #bpb-route-explorer .bpb-sun-calculator__chevron {
-        grid-column: 3;
-        grid-row: 1;
-    }
     #bpb-route-explorer .bpb-sun-calculator__panel {
         block-size: calc(42.15rem + 1px);
     }

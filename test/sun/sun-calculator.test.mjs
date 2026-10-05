@@ -335,7 +335,7 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     calculator.render(ordinaryState({ elevationDeg: -4.6, moonElevationDeg: -2.4 }));
     frames.shift()();
     assert.equal(calculator.element.querySelector('input[type="date"]'), null);
-    assert.match(calculator.element.textContent, /Sun & Moon at selected point/);
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__title').textContent, 'Sun & Moon');
     assert.match(calculator.element.textContent, /5° below horizon/);
     assert.match(calculator.element.textContent, /GPX point/);
     assert.match(calculator.element.textContent,
@@ -350,6 +350,36 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
     assert.match(calculator.element.textContent, /does not rise.*polar night/i);
     assert.equal(calculator.element.dataset.daylight, 'polar-night');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__event-marker').hidden, true);
+}));
+
+test('collapsed GPX rise/set summary retains event timezones and clears polar or unavailable clocks', () => withDom(dom => {
+    const calculator = SunCalculator.create({
+        mount: dom.window.document.getElementById('mount'), mode: 'gpx',
+        requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
+    });
+    const state = ordinaryState({ date: '2026-03-08', minute: 30 });
+    calculator.render({ ...state, contextLabel: 'Trailhead' });
+    const header = calculator.element.querySelector('.bpb-sun-calculator__header-events');
+    assert.equal(calculator.element.querySelector('.bpb-sun-calculator__panel').hidden, true);
+    assert.match(header.textContent, /Sunrise · MDT05:30 AMSunset · MDT08:30 PM/,
+        'rise/set own their timezone even when the trailhead clock is still on standard time');
+    assert.match(calculator.element.querySelector('.bpb-sun-calculator__summary').textContent, /Mar 8 · Trailhead/);
+
+    calculator.render({ ...state, result: { ...state.result, sunsetDayRelation: 'next-day' } });
+    assert.match(header.textContent, /Sunset \(next day\) · MDT08:30 PM/);
+    assert.match(header.querySelectorAll('.bpb-sun-calculator__header-event')[1].title, /next day.*level horizon/);
+
+    for (const daylightState of ['polar-day', 'polar-night', 'unavailable']) {
+        calculator.render(ordinaryState({ daylightState }));
+        assert.equal(header.querySelector('.bpb-sun-calculator__header-message').hidden, false);
+        assert.ok([...header.querySelectorAll('.bpb-sun-calculator__header-event')].every(item => item.hidden));
+        assert.ok([...header.querySelectorAll('.bpb-sun-calculator__header-time')].every(time => time.textContent === ''));
+    }
+    calculator.render(ordinaryState());
+    calculator.render({ unavailable: 'No track or ascent date is available.' });
+    assert.doesNotMatch(header.textContent, /\d{2}:\d{2}/, 'a missing date cannot retain stale event clocks');
+    assert.match(css, /bpb-sun-calculator--gpx \.bpb-sun-calculator__toggle\s*\{[^}]*block-size:\s*7\.65rem/);
+    assert.match(css, /bpb-sun-calculator__header-time\s*\{[^}]*font-variant-numeric:\s*tabular-nums/);
 }));
 
 test('daylight progress is visible only from exact sunrise through exact sunset', () => withDom(dom => {

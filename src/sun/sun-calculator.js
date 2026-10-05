@@ -59,6 +59,11 @@ const DAYLIGHT_ARC_RADIUS = 37;
 const MOON_VISIBILITY_ARC_RADIUS = 28;
 const eventDaySuffix = relation => relation === 'previous-day' ? ' (previous day)'
     : relation === 'next-day' ? ' (next day)' : '';
+const compactDate = date => {
+    const [, month, day] = date.split('-').map(Number);
+    const name = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1];
+    return `${name} ${day}`;
+};
 
 const compassPoint = (azimuth, radius) => {
     const radians = (SunPosition.normalizeDegrees(azimuth) - 90) * Math.PI / 180;
@@ -198,11 +203,41 @@ export function createSunCalculator({
     toggle.setAttribute('aria-expanded', 'false');
     toggle.setAttribute('aria-controls', id);
     const icon = sunIcon();
-    const title = element('span', 'bpb-sun-calculator__title',
-        mode === 'peak' ? 'Sun & Moon' : 'Sun & Moon at selected point');
+    const title = element('span', 'bpb-sun-calculator__title', 'Sun & Moon');
     const summary = element('span', 'bpb-sun-calculator__summary', 'Unavailable');
     const chevron = chevronIcon();
     toggle.append(icon, title, summary, chevron);
+    const headerEvents = mode === 'gpx' ? element('span', 'bpb-sun-calculator__header-events') : null;
+    const headerMessage = element('span', 'bpb-sun-calculator__header-message');
+    const headerTimes = ['Sunrise', 'Sunset'].map(name => {
+        const item = element('span', 'bpb-sun-calculator__header-event');
+        const label = element('span', 'bpb-sun-calculator__header-label', name);
+        const time = element('span', 'bpb-sun-calculator__header-time');
+        item.append(label, time);
+        return { item, label, time, name };
+    });
+    if (headerEvents) {
+        headerEvents.append(...headerTimes.map(({ item }) => item), headerMessage);
+        toggle.append(headerEvents);
+    }
+    const setHeaderEvents = (state, message = '') => {
+        if (!headerEvents) return;
+        const displays = state?.result?.daylightState === 'ordinary'
+            ? [eventDisplay(state.zone, state.result.sunriseMs, state.result.sunriseDayRelation),
+                eventDisplay(state.zone, state.result.sunsetMs, state.result.sunsetDayRelation)]
+            : [];
+        const available = displays.length === 2 && displays.every(Boolean);
+        headerMessage.hidden = available;
+        headerMessage.textContent = available ? '' : message;
+        headerTimes.forEach(({ item, label, time, name }, index) => {
+            item.hidden = !available;
+            const display = displays[index];
+            label.textContent = available ? `${name}${display.daySuffix} · ${display.label}` : '';
+            time.textContent = available ? display.clock : '';
+            if (available) item.title = `${name} ${display.clock}${display.daySuffix} (${display.label}), level horizon`;
+            else item.removeAttribute('title');
+        });
+    };
 
     const panel = element('div', 'bpb-sun-calculator__panel');
     panel.id = id;
@@ -501,6 +536,8 @@ export function createSunCalculator({
         const text = message || 'Sun position is unavailable.';
         const reserveLayout = mode === 'gpx' && expandable;
         summary.textContent = summaryText;
+        summary.removeAttribute('title');
+        setHeaderEvents(null, 'Rise and set times unavailable');
         setLayoutPresentation({ hidden: !reserveLayout, placeholder: reserveLayout });
         controls.hidden = false;
         reading.hidden = false;
@@ -542,6 +579,8 @@ export function createSunCalculator({
 
     const showRecoverable = (state, message = 'Sun position is unavailable for this date and time.') => {
         summary.textContent = 'Unavailable for this date and time';
+        summary.removeAttribute('title');
+        setHeaderEvents(null, 'Rise and set times unavailable');
         toggle.disabled = false;
         applyInitialExpansion();
         setLayoutPresentation();
@@ -627,7 +666,12 @@ export function createSunCalculator({
         root.dataset.daylight = state.result.daylightState;
         sun.classList.toggle('bpb-sun-calculator__sun--below-horizon',
             !state.result.isAboveHorizon);
-        summary.textContent = `${azimuth} ${state.result.directionLabel} · ${elevation}`;
+        const positionSummary = `${azimuth} ${state.result.directionLabel} · ${elevation}`;
+        const dateSummary = mode === 'gpx' ? compactDate(state.date) : '';
+        summary.textContent = mode === 'gpx'
+            ? `${dateSummary} · ${state.contextLabel || 'Selected point'} · ${positionSummary}`
+            : positionSummary;
+        summary.title = mode === 'gpx' ? `${state.date} · ${summary.textContent}` : positionSummary;
         directionValue.textContent = `${azimuth} ${state.result.directionLabel}`;
         elevationFact.hidden = false;
         elevationValue.textContent = elevation;
@@ -674,6 +718,7 @@ export function createSunCalculator({
             if (!eventDetails) {
                 events.classList.add('bpb-sun-calculator__events--text');
                 eventsText.textContent = 'Rise and set times unavailable for this date.';
+                setHeaderEvents(null, eventsText.textContent);
                 scheduleCompass(state);
                 announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${moonEventsAnnouncement} ${eventsText.textContent}`);
                 return;
@@ -691,6 +736,7 @@ export function createSunCalculator({
             eventMarker.hidden = !inDaylight;
             eventsVisual.hidden = false;
         }
+        setHeaderEvents(state, eventsText.textContent);
         scheduleCompass(state);
         announce(`${summary.textContent}. ${moonPositionAnnouncement}. ${moonPhaseAnnouncement}. ${moonEventsAnnouncement} ${eventsText.textContent}`);
     };

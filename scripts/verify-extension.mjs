@@ -2204,8 +2204,9 @@ try {
                     && document.getElementById('bpb-ascent-table-resize-handle')
                     && toggle?.disabled === false
                     && sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === false
-                    && sun?.querySelector('.bpb-sun-calculator__summary')?.textContent
-                        === 'Select a chart point';
+                    && sun?.querySelector('.bpb-sun-calculator__summary')?.textContent.includes('Trailhead')
+                    && /Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/.test(
+                        sun?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '');
             }, null, { timeout: 15_000 });
         } catch (error) {
             const domState = await page.evaluate(() => ({
@@ -2814,6 +2815,7 @@ try {
             hasDateInput: Boolean(sun?.querySelector('input[type="date"]')),
             collapsed: sun?.querySelector('.bpb-sun-calculator__panel')?.hidden === true,
             summary: sun?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
+            events: sun?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '',
             disabled: sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true,
             coordinatesBeforeLegend: coordinates?.nextElementSibling === legend,
             afterChart: canvasContainer?.nextElementSibling === sun,
@@ -2824,7 +2826,8 @@ try {
     });
     check(analyzerSunState.exists && !analyzerSunState.hasDateInput
         && analyzerSunState.collapsed && !analyzerSunState.disabled
-        && analyzerSunState.summary === 'Select a chart point'
+        && /Trailhead/.test(analyzerSunState.summary)
+        && /Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/.test(analyzerSunState.events)
         && analyzerSunState.coordinatesBeforeLegend && analyzerSunState.afterChart
         && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
     `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
@@ -2861,7 +2864,9 @@ try {
     const hoveredPromptSunState = promptHoverTarget ? await offPage.waitForFunction(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
-        if (summary === 'Select a chart point') return false;
+        if (!summary.includes('Hovered point')) return false;
+        const events = calculator?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '';
+        if (!/Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/.test(events)) return false;
         return { summary, layoutState: calculator?.dataset.layoutState || '' };
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
     const hoveredPromptSunGeometry = hoveredPromptSunState ? await readOpenSunGeometry() : null;
@@ -2869,7 +2874,7 @@ try {
     const restoredPromptSunState = promptHoverTarget ? await offPage.waitForFunction(() => {
         const calculator = document.querySelector('.bpb-sun-calculator');
         const summary = calculator?.querySelector('.bpb-sun-calculator__summary')?.textContent || '';
-        if (summary !== 'Select a chart point') return false;
+        if (!summary.includes('Trailhead')) return false;
         return { summary, layoutState: calculator?.dataset.layoutState || '' };
     }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null) : null;
     const restoredPromptSunGeometry = restoredPromptSunState ? await readOpenSunGeometry() : null;
@@ -2884,11 +2889,11 @@ try {
     check(summaryHeightVariants.belowHorizon === summaryHeightVariants.aboveHorizon
         && summaryHeightVariants.aboveHorizon === summaryHeightVariants.prompt
         && hoveredPromptSunGeometry?.layoutState === ''
-        && restoredPromptSunGeometry?.layoutState === 'placeholder'
+        && restoredPromptSunGeometry?.layoutState === ''
         && geometryMatches(promptSunGeometry, hoveredPromptSunGeometry,
             stableCalculatorGeometryKeys)
         && geometryMatches(promptSunGeometry, restoredPromptSunGeometry, stableCalculatorGeometryKeys),
-    `the fixed GPX Sun panel moved between prompt and hover states: ${JSON.stringify({
+    `the fixed GPX Sun panel moved between trailhead and hover states: ${JSON.stringify({
         summaryHeightVariants,
         promptSunGeometry,
         hoveredPromptSunGeometry,

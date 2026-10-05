@@ -1869,21 +1869,31 @@ test('GPX Sun previews chart hover and restores timed selections across mountain
     assert.equal(canvasContainer.nextElementSibling, calculator,
         'the Sun card follows the chart so expanding a hover preview cannot move its pointer target');
     assert.equal(button.disabled, false, 'the disclosure explains how to choose its route subject');
-    assert.equal(calculator.querySelector('.bpb-sun-calculator__summary').textContent,
-        'Select a chart point');
+    const initialSummary = calculator.querySelector('.bpb-sun-calculator__summary').textContent;
+    const initialEvents = calculator.querySelector('.bpb-sun-calculator__header-events').textContent;
+    assert.match(initialSummary, /Jul 9 · Trailhead/);
+    assert.match(initialEvents, /Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/);
+    assert.equal(calculator.querySelector('.bpb-sun-calculator__panel').hidden, true);
+    assert.equal(window.document.getElementById('bpb-gpx-copy-coordinates').disabled, true);
 
     const distance = chartConfig().data.datasets[0].data;
     const firstIndex = distance.findIndex(point => point._raw?.lat === 47.1);
     const lastIndex = distance.findIndex(point => point._raw?.lat === 47.3);
 
-    chartConfig().options.onHover(null, [{ datasetIndex: 0, index: firstIndex }]);
-    await waitFor(dom, () => slider.value === String(23 * 60 + 30)
-        && /2026-07-09/.test(calculator.textContent));
+    chartConfig().options.onHover(null, [{ datasetIndex: 0, index: lastIndex }]);
+    await waitFor(dom, () => slider.value === String(1 * 60 + 30)
+        && /2026-07-11/.test(calculator.textContent));
+    assert.match(calculator.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 11 · Hovered point/);
+    assert.notEqual(calculator.querySelector('.bpb-sun-calculator__header-events').textContent, initialEvents);
+    assert.equal(calculator.querySelector('.bpb-sun-calculator__panel').hidden, true,
+        'hover exposes rise/set times without opening the disclosure');
+    assert.equal(window.document.getElementById('bpb-gpx-copy-coordinates').disabled, true);
     assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: distance[firstIndex] }), 0,
         'hover previews the Sun without replacing deliberate chart selection');
     canvas.dispatchEvent(new window.Event('mouseleave'));
     await waitFor(dom, () => calculator.querySelector('.bpb-sun-calculator__summary').textContent
-        === 'Select a chart point');
+        === initialSummary);
+    assert.equal(calculator.querySelector('.bpb-sun-calculator__header-events').textContent, initialEvents);
 
     setActiveElements([{ datasetIndex: 0, index: firstIndex }]);
     canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
@@ -1998,6 +2008,10 @@ test('GPX Sun admits valid timestamps point by point but rejects all-equal gener
         const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
         const data = chartConfig().data.datasets[0].data;
         const calculator = window.document.querySelector('.bpb-sun-calculator');
+        assert.match(calculator.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 4 · Trailhead/);
+        assert.match(calculator.querySelector('.bpb-sun-calculator__header-events').textContent, /Sunrise.*Sunset/);
+        assert.equal(calculator.querySelector('input[type="range"]').value, '720',
+            'an untimed trailhead uses the saved ascent date and noon before any selection');
         setActiveElements([{ datasetIndex: 0, index: data.findIndex(point => point._raw?.lat === 47.1) }]);
         canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
         assert.match(calculator.textContent, /Peakbagger ascent date/);
@@ -2017,6 +2031,9 @@ test('GPX Sun admits valid timestamps point by point but rejects all-equal gener
         const { dom, chartConfig } = await loadElevationAnalyzer(source, { ascentDate: 'Jul 4, 2025' });
         const { window } = dom;
         await waitFor(dom, () => chartConfig() !== null);
+        assert.match(window.document.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 4 · Trailhead/);
+        assert.equal(window.document.querySelector('.bpb-sun-calculator__time').value, '720',
+            'generated timestamps must not become the default sunrise/sunset date or clock');
         window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
             new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
         );
@@ -2246,7 +2263,8 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.match(css, /#bpb-route-explorer > #bpb-gpx-analysis\s*\{[\s\S]*flex:\s*1 1 400px/);
     assert.match(css, /container:\s*bpb-route-analysis \/ inline-size/);
     assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__layout\s*\{\s*grid-template-columns:\s*1fr/);
-    assert.match(css, /@container bpb-route-analysis \(max-width: 680px\)[\s\S]*bpb-sun-calculator__summary\s*\{[\s\S]*grid-row:\s*2/);
+    assert.doesNotMatch(css, /bpb-sun-calculator__toggle\s*\{/,
+        'the split view must not override the fixed rise/set disclosure layout');
     assert.match(css, /#bpb-route-explorer\[data-layout="side"\] > \.bpb-route-explorer__map-column\s*\{[\s\S]*position:\s*sticky/);
     assert.match(css, /#bpb-map-resize-handle\s*\{[\s\S]*background:\s*transparent !important;[\s\S]*outline:\s*none !important/);
     assert.match(css, /#bpb-map-resize-handle \.bpb-map-resize-grip\s*\{[\s\S]*opacity:\s*0\.58/);
@@ -2325,7 +2343,7 @@ test('suspect segments are reversible across metrics, source identities, overlay
         assert.match(stats.textContent, /Time: 12h 32m/);
         assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls button').disabled, true);
         assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
-        assert.match(panel.querySelector('.bpb-sun-calculator').textContent, /Select a chart point/);
+        assert.match(panel.querySelector('.bpb-sun-calculator').textContent, /Trailhead/);
         assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
         for (let i = 0; i < 4; i++) toggle.click();
         assert.match(details.textContent, /56 points used; 57 points excluded/);
