@@ -45,6 +45,7 @@ import {
 } from './browser-verification-fixtures.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
+import { verifySettingsNavigation } from './verify-settings-navigation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
@@ -1559,6 +1560,24 @@ try {
         // off this page, but the page stays tall enough (map, backup, about) to
         // exercise an instant long-distance jump to the drafts anchor.
         await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const settingsNavigationViewport = optionsPage.viewportSize();
+        try {
+            await verifySettingsNavigation({
+                navigate: hash => optionsPage.goto(`chrome-extension://${extensionId}/options/options.html${hash}`),
+                evaluate: fn => optionsPage.evaluate(fn),
+                resize: (width, height) => optionsPage.setViewportSize({ width, height }),
+                click: selector => optionsPage.locator(selector).click(),
+                back: () => optionsPage.goBack(),
+                forward: () => optionsPage.goForward(),
+                wait: fn => optionsPage.waitForFunction(fn, null, { timeout: 5000 }),
+                screenshot: process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR ? name => optionsPage.screenshot({
+                    path: path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR, `${name}.png`),
+                }) : null,
+            });
+        } finally {
+            await optionsPage.setViewportSize(settingsNavigationViewport);
+            await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        }
         const longDistanceNavigation = await optionsPage.evaluate(() => {
             const content = document.querySelector('.content');
             const target = document.getElementById('drafts');

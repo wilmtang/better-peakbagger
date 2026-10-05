@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Sidebar section navigation. Native anchors already scroll and deep-link;
-// this only tracks which link is the active one. The whole feature is inert
-// if the sidebar markup is absent, so options.js keeps working without it.
+// track the active link and reconcile nested-pane scrolling on hash changes.
+// The feature is inert without sidebar markup, so options.js works without it.
 export const initSectionNav = () => {
     const nav = document.querySelector('.side-nav');
     const content = document.querySelector('.content');
@@ -158,7 +158,16 @@ export const initSectionNav = () => {
     window.addEventListener('hashchange', () => {
         finishInitialScroll(false);
         const target = entries.find(entry => entry.link.hash === location.hash);
-        if (target) lockTo(target.link);
+        if (target) {
+            // History can restore only the document's scroll position and
+            // leave a nested pane at the previous fragment. Align this pane
+            // explicitly; the outer app frame must never be scrolled.
+            prepareAnchorScroll(target.section);
+            const margin = parseFloat(getComputedStyle(target.section).scrollMarginTop) || 0;
+            content.scrollTop += target.section.getBoundingClientRect().top
+                - content.getBoundingClientRect().top - margin;
+            lockTo(target.link);
+        }
     });
 
     // Initial state: honor a deep-link hash, otherwise the first section.

@@ -1060,6 +1060,26 @@ test('hash navigation moves the active sidebar link', async () => {
     assert.equal(active[0].getAttribute('href'), '#beta');
 });
 
+test('hash navigation aligns the content pane when history leaves it at the previous fragment', async () => {
+    const dom = await loadOptions({}, {
+        prepareWindow: window => {
+            const content = window.document.querySelector('.content');
+            const about = window.document.getElementById('about');
+            content.getBoundingClientRect = () => ({ top: 100 });
+            about.getBoundingClientRect = () => ({ top: 450 - content.scrollTop });
+            const nativeStyle = window.getComputedStyle.bind(window);
+            window.getComputedStyle = element => element === about
+                ? { scrollMarginTop: '24px' }
+                : nativeStyle(element);
+        },
+    });
+    dom.window.location.hash = '#about';
+    dom.window.dispatchEvent(new dom.window.Event('hashchange'));
+    assert.equal(dom.window.document.querySelector('.content').scrollTop, 326);
+    assert.equal(dom.window.document.documentElement.scrollTop, 0);
+    assert.equal(activeLinks(dom)[0].getAttribute('href'), '#about');
+});
+
 test('sidebar navigation animates nearby jumps and makes long jumps instant', async () => {
     let draftsTop = 0;
     const dom = await loadOptions({}, {

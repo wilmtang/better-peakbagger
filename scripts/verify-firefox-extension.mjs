@@ -42,6 +42,7 @@ import {
 } from './firefox-verifier-processes.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
+import { verifySettingsNavigation } from './verify-settings-navigation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
@@ -215,6 +216,42 @@ async function main() {
         const optionsUrl = new URL('options/options.html', baseUrl).href;
         const favoritesUrl = new URL('options/favorites.html', baseUrl).href;
         await driver.get(optionsUrl);
+        try {
+            await verifySettingsNavigation({
+                navigate: hash => driver.get(`${optionsUrl}${hash}`),
+                evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                resize: (width, height) => driver.manage().window().setRect({ width, height }),
+                click: async selector => {
+                    const link = await driver.findElement(By.css(selector));
+                    // Firefox's overlay horizontal scrollbar can cover a
+                    // chip's center just after scrolling. Use an exposed
+                    // point inside the link for a real pointer click.
+                    await driver.executeScript(
+                        'arguments[0].scrollIntoView({ block: "nearest", inline: "center" });', link,
+                    );
+                    const point = await driver.executeScript(element => {
+                        const rect = element.getBoundingClientRect();
+                        const x = rect.left + rect.width / 2;
+                        const y = rect.top + rect.height / 4;
+                        if (!element.contains(document.elementFromPoint(x, y))) {
+                            throw new Error('Settings navigation link has no exposed click target');
+                        }
+                        return { x: Math.round(x), y: Math.round(y) };
+                    }, link);
+                    await driver.actions({ async: true }).move({ origin: 'viewport', ...point }).click().perform();
+                },
+                back: () => driver.navigate().back(),
+                forward: () => driver.navigate().forward(),
+                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox settings navigation'),
+                screenshot: process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR ? async name => {
+                    await writeFile(path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR,
+                        `firefox-${name}.png`), await driver.takeScreenshot(), 'base64');
+                } : null,
+            });
+        } finally {
+            await driver.manage().window().setRect(verificationViewport);
+            await driver.get(optionsUrl);
+        }
         const runtimeProbe = await driver.executeAsyncScript(done => {
             const api = globalThis.browser || globalThis.chrome;
             api.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: -1 })

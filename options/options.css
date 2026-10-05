@@ -11,7 +11,10 @@
  * .content scrolls, so the sidebar stays put and the scroll-spy has a single,
  * stable scroll container at every width. */
 html, body { height: 100%; }
-body { display: flex; overflow: hidden; }
+/* Hidden overflow still permits native fragment navigation to scroll the root
+ * document. Pin the outer frame so a short final section cannot move the
+ * sidebar and content pane out of the viewport. */
+body { position: fixed; inset: 0; display: flex; overflow: hidden; }
 
 .content { padding: 32px 20px; }
 
