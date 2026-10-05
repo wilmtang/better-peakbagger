@@ -4,6 +4,72 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.js';
 import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
+
+test('fresh connected sync defaults on and initializes by preserving both lists', async () => {
+    for (const remote of [null, [], [entry(2)]]) {
+        const h = harness({ remote, syncEnabled: null });
+        assert.equal((await h.engine.status()).state.enabled, true);
+        const result = await h.engine.start();
+        assert.equal(result.ok, true);
+        assert.equal(result.state.phase, 'synced');
+        assert.deepEqual(new Set(result.list.entries.map(e => e.cid)), new Set([1, ...(remote || []).map(e => e.cid)]));
+        assert.deepEqual(I.parseBackup(h.remote), result.list.entries);
+    }
+});
+test('fresh sync requires a connected repository and preserves explicit opt-outs across connection changes', async () => {
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const fresh = harness({ syncEnabled: null });
+    const offline = createClimberListSync({ ...fresh.engineOptions, getAccess: async () => ({ error: { code: 'not-connected' } }) });
+    assert.equal((await offline.start()).skipped, true);
+    assert.equal(fresh.reads, 0); assert.equal(fresh.writes, 0);
+    const disabled = harness();
+    await disabled.engine.connectionChanged();
+    assert.equal((await disabled.engine.status()).state.enabled, false);
+    assert.equal(disabled.reads, 0); assert.equal(disabled.writes, 0);
+});
+test('fresh metadata conflicts keep sync enabled and pause without writing or replacing either list', async () => {
+    const h = harness({ remote: [entry(1, 'Other name')], syncEnabled: null });
+    const result = await h.engine.start();
+    assert.equal(result.preview.conflicts.length, 1);
+    assert.equal((await h.engine.status()).state.enabled, true);
+    assert.equal(h.writes, 0);
+    assert.deepEqual((await h.store.read()).entries, [entry(1)]);
+    await h.engine.action({ action: 'check' });
+    assert.equal(h.reads, 1, 'a pending review must not repeat the setup');
+});
+test('turning sync on persists immediately and new connections retain the preference', async () => {
+    const h = harness({ remote: [entry(2)] });
+    const result = await h.engine.action({ action: 'enable' });
+    assert.equal(result.state.enabled, true);
+    assert.equal(h.reads, 0); assert.equal(h.writes, 0);
+    await h.engine.connectionChanged();
+    assert.equal((await h.engine.status()).state.enabled, true);
+    assert.deepEqual(new Set((await h.store.read()).entries.map(e => e.cid)), new Set([1,2]));
+    await h.engine.action({ action: 'disable' });
+    await h.engine.connectionChanged();
+    assert.equal((await h.engine.status()).state.enabled, false);
+});
+test('disabling during first automatic setup prevents an upload and retains the opt-out', async () => {
+    const h = harness({ syncEnabled: null });
+    h.readHook = () => h.engine.action({ action: 'disable' });
+    assert.equal((await h.engine.start()).ok, false);
+    assert.equal(h.writes, 0);
+    assert.equal((await h.engine.status()).state.enabled, false);
+});
+test('disabling between automatic setup and confirmation cannot re-enable sync', async () => {
+    const h = harness({ syncEnabled: null });
+    const save = h.storage.set;
+    let disabled;
+    h.storage.set = async patch => {
+        await save(patch);
+        if (patch[I.SYNC_KEY]?.review?.kind === 'setup' && !disabled) disabled = h.engine.action({ action: 'disable' });
+    };
+    assert.equal((await h.engine.start()).ok, false);
+    await disabled;
+    assert.equal(h.writes, 0);
+    assert.equal((await h.engine.status()).state.enabled, false);
+});
+
 test('new-file backup is explicit and allowlisted; existing remote needs a reviewed replacement', async () => {
     const h = harness(); assert.equal((await h.engine.action({ action: 'backup' })).ok, true);
     assert.deepEqual(I.parseBackup(h.remote), [entry(1)]);

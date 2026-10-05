@@ -10,7 +10,7 @@ const remoteSignature = entries => entries === null ? null : I.signature(entries
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
 export const IGNORED_SYNC_ALARM = 'bpb-ignored-sync';
 export const IGNORED_CHANGE_ALARM = 'bpb-ignored-sync-changes';
-const initialState = () => ({ schemaVersion: 1, enabled: false, controlRevision: 0,
+const initialState = () => ({ schemaVersion: 1, enabled: true, controlRevision: 0,
     scope: null, base: null, pending: null, review: null, phase: 'local', error: '',
     lastBackup: null, lastSuccess: null, lastChecked: 0, retryAt: 0, head: null });
 const entriesValid = entries => I.validateEntries(entries) !== null;
@@ -20,7 +20,7 @@ export const readIgnoredSyncState = value => {
         || !Number.isSafeInteger(value.controlRevision) || value.controlRevision < 0
         || (value.scope !== null && typeof value.scope !== 'string')
         || (value.base !== null && !entriesValid(value.base))
-        || (value.enabled && (typeof value.scope !== 'string' || value.base === null))
+        || (value.enabled && value.base !== null && typeof value.scope !== 'string')
         || !['local', 'review', 'offline', 'backed-up', 'restored', 'pending', 'synced', 'working'].includes(value.phase)
         || typeof value.error !== 'string') return null;
     for (const key of ['pending', 'review']) {
@@ -245,6 +245,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
         throw Object.assign(new Error('The interrupted upload could not be confirmed. Review the current lists.'), { code: 'review', preview: review });
     };
     const syncOperation = () => network(async ({ signal, guard }) => {
+        const token = generation;
         let observed = await snapshot();
         if (observed.state.retryAt > now()) fail('rate-limit', 'GitHub asked us to wait before retrying. Changes remain saved on this device.');
         if (observed.state.pending) {
@@ -252,7 +253,18 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
             if (recovered) return recovered;
             observed = await snapshot();
         }
-        if (!observed.state.enabled || observed.state.base === null) return prepare('setup');
+        if (!observed.state.enabled) return prepare('setup');
+        if (observed.state.base === null) {
+            // Establish a fresh baseline by keeping both lists. Ambiguous
+            // metadata and oversized unions still require an explicit review.
+            const prepared = await prepare('setup');
+            const merged = I.mergeLists([], prepared.preview.local, prepared.preview.remote || []);
+            if (merged.conflicts.length || merged.overLimit) return prepared;
+            // Confirmation starts a new network stage. It must not adopt a
+            // newer generation after this automatic setup was cancelled.
+            if (token !== generation || signal?.aborted) fail('cancelled', 'This action was cancelled.');
+            return confirm(prepared.preview.id, 'merge');
+        }
         const scope = observed.state.scope;
         let pending;
         const result = await writeQueue.run(async () => {
@@ -305,6 +317,8 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
     const automatic = async () => {
         const { state } = await snapshot();
         if (!state.enabled || (state.phase === 'review' && (state.review || !state.pending))) return { ok: true, skipped: true };
+        const access = await getAccess({});
+        if (access.error && ['not-connected', 'no-repo'].includes(access.error.code)) return { ok: true, skipped: true };
         if (state.retryAt > now()) { armChanges(Math.max(0.5, (state.retryAt - now()) / 60000)); return { ok: true, skipped: true }; }
         const response = await sync();
         if (!response.ok && (await readState()).phase !== 'review') {
@@ -324,11 +338,26 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
             controlRevision: state.controlRevision + 1, review: null,
             phase: state.pending ? 'review' : 'local', error: state.pending ? 'An interrupted upload needs review.' : '' })) }));
     };
+    const enable = () => {
+        const token = generation;
+        return serial(() => safely(async () => {
+            const state = await saveState(current => {
+                if (token !== generation) fail('cancelled', 'This action was cancelled.');
+                return { ...current, enabled: true, phase: current.review || current.pending ? 'review' : 'pending', error: '' };
+            });
+            armPeriodic();
+            armChanges();
+            return { ok: true, state };
+        }));
+    };
     const connectionChanged = () => {
         cancel();
-        void saveState(state => ({ ...state, enabled: false, controlRevision: state.controlRevision + 1,
-            review: null, phase: 'review', error: 'The GitHub connection changed. Set up sync again.' })).catch(() => {});
         if (alarms?.clear) { void alarms.clear(IGNORED_SYNC_ALARM); void alarms.clear(IGNORED_CHANGE_ALARM); }
+        return saveState(state => ({ ...state, controlRevision: state.controlRevision + 1,
+            scope: null, base: null, targetBranch: null, review: null,
+            phase: state.pending ? 'review' : state.enabled ? 'pending' : 'local',
+            error: state.pending ? 'An interrupted upload needs review.' : '' }))
+            .then(() => start()).catch(() => {});
     };
     const localChanged = async () => {
         const token = generation;
@@ -342,7 +371,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
     };
     const start = async ({ startup = false } = {}) => {
         const { state } = await snapshot();
-        if (state.enabled) { armPeriodic(); if (startup || state.pending) return automatic(); return { ok: true, skipped: true }; }
+        if (state.enabled) { armPeriodic(); if (startup || state.pending || state.base === null) return automatic(); return { ok: true, skipped: true }; }
         // Setup was confirmed, but the worker stopped before reconciliation.
         if (state.pending?.enable && state.pending.controlRevision === state.controlRevision) return sync();
         return { ok: true, skipped: true };
@@ -353,6 +382,7 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
         return automatic();
     };
     const action = message => {
+        if (message.action === 'enable') return enable();
         if (message.action === 'disable') return disable();
         if (message.action === 'sync') return sync();
         if (message.action === 'check') return safely(check);

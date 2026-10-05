@@ -73,7 +73,9 @@ const DEFAULTS = {
     // Deliberately independent of enableGithubBackup (that gate belongs to
     // ascent and TR backup); inert without a device-local token/repository.
     autoSettingsBackup: false,
-    autoFavoritesBackup: false,
+    // Climber-list transfer defaults on, but needs a device-local GitHub
+    // connection. An explicitly saved false remains an opt-out.
+    autoFavoritesBackup: true,
     // Metadata-only photo-library recovery. Independent of ascent and TR backup;
     // the ImgBB key, deletion URLs, and pixels never enter this setting.
     autoPhotoLibraryBackup: false,

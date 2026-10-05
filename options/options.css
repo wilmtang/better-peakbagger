@@ -646,11 +646,13 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .order-settings-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 #ignored-github { margin-top: 12px; }
+.climber-sync-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+.climber-sync-row .desc { margin: 0; max-width: 62ch; }
+.climber-sync-privacy { margin: 10px 2px 0; max-width: 70ch; }
 .ignored-review-content { min-width: 0; flex: 1; }
 .ignored-review-content select { max-width: 100%; }
 .ignored-conflict { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; overflow-wrap: anywhere; }
 #ignored-github .desc { overflow-wrap: anywhere; }
-#ignored-github > .desc { margin: 0; padding: 0 18px 16px; }
 #ignored-review { margin: 0 18px 16px; background: var(--bg); border-color: var(--border); flex-direction: column; align-items: stretch; }
 #ignored-review-title { color: var(--text); }
 #ignored-review .favorites-mirror-confirmation-actions { justify-content: flex-end; flex-wrap: wrap; }

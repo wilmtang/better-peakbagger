@@ -1228,7 +1228,7 @@ export function createGithubRoutes({
         stateKey: FAVORITES_BACKUP_STATE_KEY,
         path: FAVORITE_CLIMBERS_BACKUP_PATH,
         commitMessage: 'Back up favorite climbers',
-        enabled: async () => (await Settings.get()).autoFavoritesBackup,
+        enabled: async () => (await Settings.requireCurrent().catch(() => null))?.autoFavoritesBackup === true,
         build: buildFavoritesBackup
     });
 

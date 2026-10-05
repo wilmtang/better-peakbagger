@@ -241,8 +241,10 @@ date. That happens entirely locally.
   report/ascent presentations; it does not block network requests. Native pages
   and remote media may load before the local preference is applied. Concealed
   players are suspended, and iframe players can restart on reveal.
-- GitHub backup/restore is explicit. Two-way sync has a separate device-local
-  opt-in, off by default, using the connected repository's `ignored-climbers.json`.
+- GitHub backup/restore is explicit. Two-way sync defaults on once GitHub is
+  connected, using the repository's `ignored-climbers.json`. Its toggle is
+  device-local; an explicit opt-out is preserved. Initial sync keeps both lists,
+  and conflicting changes require review before transfer.
   Browser startup, rate-limited manager checks, trailing local-change alarms and
   periodic alarms check only when enabled. Visiting a peak does not request sync.
   `autoFavoritesBackup` does not enable ignored-list transfer.
@@ -361,6 +363,9 @@ all are off by default. Backup never blocks or changes Peakbagger Save.
   time. Existing repository folders act as resume checkpoints.
 - **Settings and favorites:** after an explicit backup, or after a change when
   that data type's automatic-backup toggle is enabled.
+  Favorites backup defaults on once GitHub is connected; explicit opt-outs are
+  preserved. It includes buddies saved to custom favorites, not the native
+  Peakbagger Buddy List cache. Restoring favorites remains a manual action.
 - **Photo metadata:** after an explicit backup, or after a catalog change when
   its separate automatic toggle is enabled.
 - **Restore:** always requires an explicit Settings action and confirmation.

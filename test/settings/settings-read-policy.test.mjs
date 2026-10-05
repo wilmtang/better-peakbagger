@@ -19,7 +19,7 @@ const FAIL_SOFT = Object.freeze({
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
     'src/background/github-routes.js': [
-        { count: 9, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
+        { count: 8, kind: 'safe-gate', reason: 'status, default-off GitHub and photo-recovery gates, and backup scheduling' },
         { count: 1, kind: 'display', reason: 'render the default-off photo-recovery status' },
     ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
@@ -40,6 +40,7 @@ const AUTHORITATIVE = Object.freeze({
     'src/background/background.js': [{ count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' }],
     'src/background/github-routes.js': [
         { count: 3, kind: 'preservation', reason: 'keep GitHub writes and coordinated deletion fail closed on unreadable settings' },
+        { count: 1, kind: 'privacy', reason: 'default-on favorites transfer requires an authoritative sync preference' },
     ],
     'src/background/settings-file-routes.js': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },

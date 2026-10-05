@@ -3,11 +3,14 @@
 import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.js';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { createClimberListSync } from '../../src/background/climber-list-sync.js';
+import { createClimberListSync, readIgnoredSyncState } from '../../src/background/climber-list-sync.js';
 import { githubWriteQueue } from '../../src/github/github-write-queue.js';
 export const entry = (cid, name = `Climber ${cid}`) => ({ cid, name, addedAt: 1 });
-export const harness = ({ local = [entry(1)], remote = null } = {}) => {
+export const harness = ({ local = [entry(1)], remote = null, syncEnabled = false } = {}) => {
     const values = { [I.IGNORED_KEY]: { schemaVersion: 1, revision: 1, entries: local } };
+    // Existing coverage exercises explicit backup and reviewed setup. null
+    // represents a fresh installation with no saved sync preference.
+    if (syncEnabled !== null) values[I.SYNC_KEY] = { ...readIgnoredSyncState(undefined), enabled: syncEnabled };
     const h = { values, remote: remote === null ? null : I.serializeBackup(remote), reads: 0, writes: 0,
         epoch: 1, readHook: null, commitHook: null, retryHook: null, failGet: false, failReconcile: false };
     h.storage = { get: async key => { if (h.failGet) throw new Error('Storage unavailable'); return { [key]: structuredClone(values[key]) }; },

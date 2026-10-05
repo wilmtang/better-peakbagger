@@ -113,14 +113,15 @@ test('automatic settings backup is opt-in and independent of ascent and TR backu
     assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, false);
 });
 
-test('automatic favorites backup is opt-in and independent of ascent and TR backup', () => {
-    assert.equal(Schema.DEFAULTS.autoFavoritesBackup, false);
-    assert.equal(Schema.clean({}).autoFavoritesBackup, false);
+test('automatic favorites backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
+    assert.equal(Schema.DEFAULTS.autoFavoritesBackup, true);
+    assert.equal(Schema.clean({}).autoFavoritesBackup, true);
     assert.equal(Schema.clean({
         enableGithubBackup: false,
         autoFavoritesBackup: true
     }).autoFavoritesBackup, true);
-    assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, false);
+    assert.equal(Schema.clean({ autoFavoritesBackup: false }).autoFavoritesBackup, false);
+    assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, true);
 });
 
 test('automatic photo-library metadata backup is opt-in and independent of ascent and TR backup', () => {

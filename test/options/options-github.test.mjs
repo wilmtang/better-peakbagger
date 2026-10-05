@@ -15,7 +15,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
         enabled: true, connected: true, hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
-    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: false }, {
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: false, autoFavoritesBackup: false }, {
         local: { [favoriteKey]: favoriteStore([original]) },
         prepareChrome: chrome => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
@@ -90,7 +90,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
         && el(dom, 'favorites-restore-undo').hidden === false);
     assert.equal(el(dom, 'favorites-restore-undo').hidden, false);
     assert.match(el(dom, 'favorites-restore-undo').textContent, /restored from GitHub/);
-    assert.match(el(dom, 'favorites-github-status').textContent, /stored as favorite-climbers\.json/,
+    assert.match(el(dom, 'favorites-github-status').textContent, /Backs up to ada\/peaks/,
         'the prior commit result must not imply that a changed local list is current');
     assert.equal(el(dom, 'favorites-github-status').querySelector('a'), null);
 
@@ -215,6 +215,16 @@ test('the favorites auto-backup checkbox populates from synced settings', async 
     assert.equal(el(dom, 'favorites-auto-backup').checked, true);
 });
 
+test('favorites sync defaults on and an explicit opt-out survives reloading settings', async () => {
+    const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ connected: true, repo: { owner: 'me', name: 'backup' } }) });
+    await waitFor(dom, () => !el(dom, 'favorites-auto-backup').disabled);
+    assert.equal(el(dom, 'favorites-auto-backup').checked, true);
+    el(dom, 'favorites-auto-backup').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.autoFavoritesBackup === false);
+    const reloaded = await loadOptions(dom.chrome._store.bpbSettings);
+    assert.equal(el(reloaded, 'favorites-auto-backup').checked, false);
+});
+
 test('favorites restore fails closed on an unknown backup schema', async () => {
     const original = { cid: 900002, name: 'Keep Me', addedAt: 10, source: 'manual' };
     const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
@@ -285,7 +295,10 @@ test('favorites points disconnected users to the GitHub connection above it', as
     });
     await waitFor(dom, () => /Connect GitHub above to back up your custom favorites/
         .test(el(dom, 'favorites-github-status').textContent));
-    assert.equal(el(dom, 'favorites-github-actions').hidden, true);
+    assert.equal(el(dom, 'favorites-github-actions').hidden, false);
+    assert.equal(el(dom, 'favorites-backup').disabled, true);
+    assert.equal(el(dom, 'favorites-restore').disabled, true);
+    assert.equal(el(dom, 'favorites-auto-backup').disabled, true);
     // The connection subsection is the first thing above this one in Backup & sync.
     const section = dom.window.document.getElementById('github-favorites-backup');
     assert.equal(section.previousElementSibling.id, 'github-settings-backup');

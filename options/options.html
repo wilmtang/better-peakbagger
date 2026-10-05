@@ -542,22 +542,25 @@
 
             <div class="subsection" id="github-favorites-backup" role="group" aria-labelledby="github-favorites-backup-heading">
                 <h3 class="subsection-title" id="github-favorites-backup-heading">Climber lists backup &amp; sync</h3>
-                <div class="card">
+                <div class="card" id="favorites-github">
                     <div class="row">
                         <div class="label">
-                            <span class="title">GitHub favorites backup</span>
+                            <span class="title">Favorite climbers &amp; climbing buddies</span>
                             <span class="desc" id="favorites-github-status" role="status">Checking connection…</span>
                         </div>
-                        <div class="control favorites-github-actions" id="favorites-github-actions" hidden>
+                        <div class="control favorites-github-actions" id="favorites-github-actions">
                             <div class="favorites-github-buttons">
-                                <button id="favorites-backup" class="secondary" type="button">Back up favorites</button>
-                                <button id="favorites-restore" class="secondary" type="button">Restore from backup</button>
+                                <button id="favorites-backup" class="secondary" type="button">Back up now</button>
+                                <button id="favorites-restore" class="secondary" type="button">Restore…</button>
                             </div>
-                            <label class="check" for="favorites-auto-backup">
-                                <input type="checkbox" id="favorites-auto-backup">
-                                <span>Keep favorites backed up automatically</span>
-                            </label>
                         </div>
+                    </div>
+                    <div class="row climber-sync-row">
+                        <label class="check" for="favorites-auto-backup">
+                            <input type="checkbox" id="favorites-auto-backup">
+                            <span>Sync favorite climbers with GitHub</span>
+                        </label>
+                        <p class="desc">Automatically backs up favorites, including buddies saved to your list. Restore to bring them back to this device.</p>
                     </div>
                     <!-- Restore's own confirm-then-undo, beside its trigger. The
                          mirror action on the Favorite climbers page has the same
@@ -592,10 +595,12 @@
                             <button id="ignored-restore" class="secondary" type="button">Restore…</button>
                         </div>
                     </div>
-                    <div class="row"><label class="check" for="ignored-sync-enable">
-                        <input type="checkbox" id="ignored-sync-enable"><span>Sync ignored climbers with GitHub</span>
-                    </label></div>
-                    <p class="desc">Backup and sync upload climber IDs and names to your connected repository. Public repositories and prior Git history may expose this list.</p>
+                    <div class="row climber-sync-row">
+                        <label class="check" for="ignored-sync-enable">
+                            <input type="checkbox" id="ignored-sync-enable"><span>Sync ignored climbers with GitHub</span>
+                        </label>
+                        <p class="desc">Keeps this device and GitHub in sync. Conflicting changes require review.</p>
+                    </div>
                     <div class="favorites-mirror-confirmation" id="ignored-review" role="alertdialog"
                         aria-labelledby="ignored-review-title" aria-describedby="ignored-review-impact" tabindex="-1" hidden>
                         <div class="ignored-review-content">
@@ -614,7 +619,7 @@
                     </div>
                     <button id="ignored-restore-undo" class="favorite-undo" type="button" hidden>Undo list replacement</button>
                 </div>
-
+                <p class="desc climber-sync-privacy">Backup and sync upload climber IDs and names to your connected repository. Public repositories and prior Git history may expose these lists.</p>
             </div>
 
             <div class="subsection" id="github-photos-backup" role="group" aria-labelledby="github-photos-backup-heading">

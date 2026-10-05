@@ -74,10 +74,9 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
         const showBackupResult = connected
             && backupResult?.repo === githubRepoName()
             && backupResult?.signature === signatureOf();
-        actionsEl.hidden = !connected;
-        backupEl.disabled = githubBusy;
-        restoreEl.disabled = githubBusy;
-        autoBackupEl.disabled = githubBusy;
+        actionsEl.hidden = false;
+        backupEl.disabled = restoreEl.disabled = githubBusy || !connected;
+        autoBackupEl.disabled = githubBusy || !connected;
         statusEl.classList.remove('favorites-github-success');
         statusEl.textContent = '';
         if (githubBusy) {
@@ -94,7 +93,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
                 }));
             }
         } else if (connected) {
-            statusEl.textContent = `Your custom list is stored as favorite-climbers.json in ${githubRepoName()}.`;
+            statusEl.textContent = `Backs up to ${githubRepoName()}`;
         } else {
             statusEl.textContent = 'Connect GitHub above to back up your custom favorites.';
         }

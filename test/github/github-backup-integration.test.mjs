@@ -16,6 +16,9 @@ import { settingsSchema as Schema } from '../../src/settings/settings-schema.js'
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
 import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.js';
+import { readIgnoredSyncState } from '../../src/background/climber-list-sync.js';
+import { SYNC_KEY as IGNORED_SYNC_KEY, IGNORED_KEY, serializeBackup as serializeIgnoredBackup,
+    parseBackup as parseIgnoredBackup } from '../../src/favorites/ignored-climbers.js';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
@@ -46,12 +49,17 @@ const settleQuietly = () =>
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
     local: sharedLocal = null, failLocalGetAfterClear = false, localGetHook = null,
-    localSetHook = null, syncReadFailures = [],
+    localSetHook = null, syncReadFailures = [], ignoredSync = false,
     fastAscentOperationTimeout = false, clockNow = null,
     peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
     const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
+    // These worker fixtures isolate ascent/favorites/settings transactions.
+    // Model an existing ignored-list opt-out unless a test requests defaults.
+    if (ignoredSync === false && local[IGNORED_SYNC_KEY] === undefined) {
+        local[IGNORED_SYNC_KEY] = { ...readIgnoredSyncState(undefined), enabled: false };
+    }
     const area = (values, { failGetAfterClear = false, getHook = null, setHook = null } = {}) => {
         let cleared = false;
         return {
@@ -671,6 +679,44 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
 
     const forbidden = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, PEAK_SENDER);
     assert.equal(forbidden.error, 'forbidden');
+});
+
+test('connected worker defaults sync both climber lists without the ascent backup gate', async () => {
+    const backend = gitDataBackend();
+    const ignored = cid => ({ cid, name: `Climber ${cid}`, addedAt: 1 });
+    const favorites = [{ cid: 3, name: 'Buddy', addedAt: 1, source: 'buddy' }];
+    const worker = createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, ignoredSync: null,
+        local: { bpbGithubAuth: structuredClone(AUTH),
+            [IGNORED_KEY]: { schemaVersion: 1, revision: 1, entries: [ignored(1)] },
+            [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries: favorites } },
+        github: (method, path, body) => {
+            if (method === 'GET' && path === '/repos/me/backup/git/trees/T0') return respond(200, { tree: [
+                { path: 'ignored-climbers.json', type: 'blob', mode: '100644', sha: 'ignored-remote' },
+            ] });
+            if (method === 'GET' && path === '/repos/me/backup/git/blobs/ignored-remote') return respond(200, serializeIgnoredBackup([ignored(2)]));
+            return backend.handler(method, path, body);
+        } });
+    await waitFor(() => worker.local[IGNORED_SYNC_KEY]?.phase === 'synced');
+    assert.equal(worker.local[IGNORED_SYNC_KEY].enabled, true);
+    assert.deepEqual(new Set(parseIgnoredBackup(backend.state.contents['ignored-climbers.json']).map(e => e.cid)), new Set([1,2]));
+    worker.fireStorageChange({ bpbGithubAuth: { newValue: structuredClone(AUTH) } }, 'local');
+    await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'));
+    worker.fireAlarm('bpb-favorites-backup');
+    await waitFor(() => worker.local.bpbFavoritesBackupState?.syncedAt);
+    assert.deepEqual(Favorites.parseBackup(backend.state.contents['favorite-climbers.json']).favorites.entries, favorites);
+});
+
+test('favorites default-on backup fails closed on an unreadable settings gate and retries safely', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: {}, auth: AUTH, github: backend.handler,
+        syncReadFailures: [new Error('favorites gate unavailable')] });
+    worker.fireAlarm('bpb-favorites-backup');
+    await settleQuietly();
+    assert.equal(backend.state.commits, 0);
+    assert.equal(worker.local.bpbFavoritesBackupState, undefined);
+    worker.fireAlarm('bpb-favorites-backup');
+    await waitFor(() => worker.local.bpbFavoritesBackupState?.syncedAt);
+    assert.equal(backend.state.commits, 1);
 });
 
 test('an empty favorite list is a valid worker-built backup', async () => {

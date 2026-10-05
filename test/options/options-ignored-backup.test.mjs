@@ -8,6 +8,26 @@ import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
 import { createGithubRoutes } from '../../src/background/github-routes.js';
 import * as I from '../../src/favorites/ignored-climbers.js';
 registerCleanup();
+test('fresh connected settings default both climber toggles on and preserve an ignored opt-out on reload', async () => {
+    const h = harness({ syncEnabled: null });
+    const prepareChrome = chrome => {
+        h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
+        chrome.permissions = { contains: async () => true };
+        chrome.runtime.sendMessage = async message => {
+            if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
+            if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
+            return { ok: true };
+        };
+    };
+    const dom = await loadOptions({}, { local: h.values, prepareChrome });
+    await waitFor(dom, () => el(dom, 'ignored-sync-enable').checked && !el(dom, 'favorites-auto-backup').disabled);
+    assert.equal(el(dom, 'favorites-auto-backup').checked, true);
+    el(dom, 'ignored-sync-enable').click();
+    await waitFor(dom, () => !el(dom, 'ignored-sync-enable').checked && !el(dom, 'ignored-github').hasAttribute('aria-busy'));
+    const reloaded = await loadOptions({}, { local: dom.chrome._localStore, prepareChrome });
+    await waitFor(reloaded, () => !el(reloaded, 'ignored-sync-enable').disabled);
+    assert.equal(el(reloaded, 'ignored-sync-enable').checked, false);
+});
 test('backup preview describes both sides, restore uses replacement counts and guarded Undo', async () => {
     const h = harness({ remote: [entry(2)] });
     const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
@@ -47,7 +67,7 @@ test('ignored GitHub routes accept only exact packaged settings and manager page
     assert.equal(h.writes, 0);
 });
 
-test('sync setup waits for confirmation, labels actual sync, and can be disabled during upload', async () => {
+test('sync checkbox stays checked immediately and can be disabled during upload', async () => {
     const h = harness({ remote: [entry(2)] });
     const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
@@ -59,12 +79,12 @@ test('sync setup waits for confirmation, labels actual sync, and can be disabled
         };
     } });
     await waitFor(dom, () => !el(dom, 'ignored-sync-enable').disabled);
-    el(dom, 'ignored-sync-enable').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
-    assert.equal(el(dom, 'ignored-sync-enable').checked, false);
-    assert.equal((await h.engine.status()).state.enabled, false);
-    el(dom, 'ignored-review-confirm').click();
+    el(dom, 'ignored-sync-enable').click();
     await waitFor(dom, () => el(dom, 'ignored-backup').textContent === 'Sync now');
     assert.equal(el(dom, 'ignored-sync-enable').checked, true);
+    assert.equal((await h.engine.status()).state.enabled, true);
+    assert.equal(el(dom, 'ignored-review').hidden, true);
+    await h.engine.action({ action: 'sync' });
     let release; const gate = new Promise(resolve => { release = resolve; }); h.commitHook = () => gate;
     el(dom, 'ignored-backup').click(); await waitFor(dom, () => dom.window.document.getElementById('ignored-github').getAttribute('aria-busy') === 'true');
     assert.equal(el(dom, 'ignored-sync-enable').disabled, false);
@@ -86,7 +106,9 @@ test('metadata conflicts expose both names and do not accept an undecided versio
         };
     } });
     await waitFor(dom, () => !el(dom, 'ignored-sync-enable').disabled);
-    el(dom, 'ignored-sync-enable').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
+    el(dom, 'ignored-sync-enable').click(); await waitFor(dom, () => el(dom, 'ignored-sync-enable').checked);
+    await h.engine.action({ action: 'sync' });
+    await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
     assert.match(el(dom, 'ignored-review-conflicts').textContent, /Device: Climber 1/);
     assert.match(el(dom, 'ignored-review-conflicts').textContent, /GitHub: Remote name/);
     el(dom, 'ignored-review-confirm').click(); await waitFor(dom, () => /Choose a version/.test(el(dom, 'ignored-github-status').textContent));

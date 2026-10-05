@@ -83,6 +83,7 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
         mode.disabled = true; syncToggle.disabled = !enabled; status.textContent = enabled ? 'Syncing…' : 'Working with GitHub…';
         try {
             const response = await operation();
+            if (response.state) { enabled = response.state.enabled; syncToggle.checked = enabled; }
             if (response.preview) paintPreview(response.preview);
             else {
                 panel.hidden = true; pending = null; trigger.focus({ preventScroll: true });
@@ -103,13 +104,14 @@ export const initIgnoredBackup = ({ extensionApi } = {}) => {
     };
     backup.addEventListener('click', () => { trigger = backup; void run(() => request({ action: enabled ? 'sync' : 'backup' })); });
     syncToggle.addEventListener('change', () => {
-        const next = syncToggle.checked; syncToggle.checked = enabled; trigger = syncToggle;
+        const next = syncToggle.checked; trigger = syncToggle;
         if (busy && enabled && !next) {
             status.textContent = 'Cancelling sync…';
             void request({ action: 'disable' }).then(() => { enabled = false; syncToggle.checked = false; }).catch(error => { status.textContent = error.message; });
             return;
         }
-        void run(() => request({ action: next ? 'setup' : 'disable' }));
+        if (busy) { syncToggle.checked = enabled; return; }
+        void run(() => request({ action: next ? 'enable' : 'disable' }));
     });
     restore.addEventListener('click', () => { trigger = restore; void run(() => request({ action: 'restore' })); });
     mode.addEventListener('change', paintImpact);
