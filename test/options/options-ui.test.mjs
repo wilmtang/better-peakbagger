@@ -276,7 +276,7 @@ test('settings are grouped by the surface they affect', async () => {
     const favorites = beta.querySelector('#favorites');
     assert.equal(beta.children[1], favorites, 'climber lists comes before the other beta settings');
     assert.equal(favorites.querySelector('.desc').textContent,
-        'Special filter to show users constantly making high quality TRs, with an option to hide users constantly making low effort TRs');
+        'Special filter to highlight users constantly making high quality TRs, with an option to hide users constantly making low effort TRs');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
     assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
         ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
