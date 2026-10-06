@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import yaml from 'js-yaml';
 import { evaluateAudit } from '../../scripts/check-npm-audit.mjs';
 
 const baseline = {
@@ -30,15 +32,24 @@ const lock = JSON.parse(await readFile(new URL('../../package-lock.json', import
 const options = () => ({ allowReviewedDevelopmentAdvisory: true,
     lockfile: structuredClone(lock), now: Date.parse('2026-10-04T00:00:00Z') });
 
-test('only ordinary CI opts into the reviewed advisory; default and release audits stay strict', async () => {
+test('ordinary CI and only release 3.9.0 opt into the reviewed advisory; the default stays strict', async () => {
     const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(pkg.scripts['audit:ci'], 'node scripts/check-npm-audit.mjs');
     const ci = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
     assert.match(ci, /run: npm run audit:ci -- --allow-reviewed-development-advisory/);
-    for (const file of ['release.yml', 'retry-firefox-release.yml']) {
-        const workflow = await readFile(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8');
-        assert.doesNotMatch(workflow, /allow-reviewed-development-advisory/, file);
+    const release = yaml.load(await readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'));
+    const auditStep = release.jobs.verify.steps.find(step => step.name === 'Check dependency advisories');
+    assert.equal(auditStep.env.RELEASE_AUDIT_VERSION, '${{ steps.metadata.outputs.version }}');
+    for (const version of ['3.9.0', '3.8.0', '3.9.1', '3.10.0', '', 'v3.9.0']) {
+        const command = execFileSync('bash', ['-c', `npm() { printf '%s\\n' "$*"; }\n${auditStep.run}`], {
+            encoding: 'utf8', env: { ...process.env, RELEASE_AUDIT_VERSION: version },
+        }).trim();
+        assert.equal(command, version === '3.9.0'
+            ? 'run audit:ci -- --allow-reviewed-development-advisory'
+            : 'run audit:ci', version);
     }
+    const recovery = await readFile(new URL('../../.github/workflows/retry-firefox-release.yml', import.meta.url), 'utf8');
+    assert.doesNotMatch(recovery, /allow-reviewed-development-advisory/);
 });
 
 test('strict default rejects the advisory and explicit review accepts only the recorded development path', () => {

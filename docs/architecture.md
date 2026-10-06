@@ -1802,15 +1802,18 @@ No single green command proves the extension works:
   notice fails. Generated line and column numbers are not pinned, because every
   vendored warning's position is a byte offset into a bundle. Both lint stages
   run in CI and in release CI. Neither establishes runtime behavior.
-- `npm run audit:ci` requires zero advisories. The development-only
+- `npm run audit:ci` requires zero advisories by default. The development-only
   `web-ext` 10.7.0 / `addons-linter` 10.13.0 path uses patched `image-size` 2.0.4;
   the former time-limited exception has been removed. The older
   `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
   `minimatch@^3` path on patched 1.1.21 through a scoped override.
   Ordinary Test CI explicitly accepts one owner-reviewed node-forge advisory
   through its exact development dependency path until October 17, 2026.
-  Default and release audits remain strict; new findings, changed paths or
-  versions, production resolutions, and expiry fail closed. See the
+  The release gate also opts into that exact exception for release 3.9.0 only;
+  the release workflow gates its opt-in on the validated version. The default
+  command and other release versions remain strict; new findings, changed paths
+  or versions, production resolutions, and expiry fail closed. See
+  [releasing](releasing.md) and the original
   [integration ledger](archive/mainline-dependency-integration-2026-10-03.md).
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,

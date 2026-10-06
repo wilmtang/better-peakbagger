@@ -199,7 +199,7 @@ script is added or removed without updating it.
 | `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
-| `npm run audit:ci` | Requires zero advisories, including development dependencies. Ordinary Test CI explicitly opts into one owner-reviewed, exact-path node-forge exception until October 17, 2026; default and release commands remain strict. See the [integration ledger](archive/mainline-dependency-integration-2026-10-03.md). |
+| `npm run audit:ci` | Requires zero advisories by default, including development dependencies. Ordinary Test CI and release 3.9.0 explicitly opt into one owner-reviewed, exact-path node-forge exception until October 17, 2026; other release versions remain strict. See [releasing](releasing.md) for the version gate and the [integration ledger](archive/mainline-dependency-integration-2026-10-03.md) for the original review. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
 | `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |

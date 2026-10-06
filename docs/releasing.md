@@ -178,7 +178,7 @@ visible in the AMO Developer Hub.
 
    ```sh
    npm ci
-   npm run audit:ci
+   npm run audit:ci -- --allow-reviewed-development-advisory # 3.9.0 only; see below
    npm test
    npm run test:scale
    npm run lint
@@ -201,9 +201,18 @@ visible in the AMO Developer Hub.
    store credit, before publication. If a new root-level development file is copied
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
-   `audit:ci` requires zero advisories, including development dependencies.
+   `audit:ci` requires zero advisories by default, including development dependencies.
+   For 3.9.0 only, the release gate opts into the same exact-path, development-only
+   `node-forge` exception used by main CI. Pass
+   `--allow-reviewed-development-advisory` for that release's local check;
+   the release workflow gates the flag on version 3.9.0. The exception expires
+   at 00:00 October 17, 2026 in Los Angeles (07:00 UTC), and rejects new advisories,
+   changed dependency versions or paths, and production resolutions. Raw npm
+   audit still reports the three high findings in the `web-ext` chain. This is
+   an accepted tooling risk, not a patched dependency or a clean raw audit.
+   Every other version uses the strict command without the flag.
    The patched `web-ext`/`addons-linter` toolchain no longer needs the former
-   `image-size` exception. Do not weaken the gate during release rehearsal.
+   `image-size` exception. Rehearsals use the same version-gated policy as publication.
    `npm run lint`
    likewise permits only the owner-annotated warnings checked into
    `scripts/check-web-ext-lint.mjs`, up to the reviewed per-file occurrence limits

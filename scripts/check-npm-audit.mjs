@@ -12,7 +12,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // All previously accepted advisories now have patched development-tool releases.
 // A clean functional suite is not a substitute for a clean dependency graph.
 // The owner-approved node-forge exception is explicit, development-only,
-// exact-path and time-limited. Default and release audits remain strict.
+// exact-path and time-limited. The default stays strict; the 3.9.0 release
+// explicitly opts into the same exception without changing its scope or expiry.
 export const DEVELOPMENT_ADVISORY = Object.freeze({
     url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
     expiresAt: '2026-10-17T07:00:00Z',
@@ -94,7 +95,7 @@ async function main() {
         ? JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8')) : undefined;
     const result = evaluateAudit(JSON.parse(auditRun.stdout), { allowReviewedDevelopmentAdvisory, lockfile });
     if (result.status === 'clean') console.log('npm audit passed with no vulnerabilities.');
-    else console.log(`Accepted development-only advisory ${result.url} until ${result.expiresAt}. Raw npm audit still reports three high findings; release checks remain strict.`);
+    else console.log(`Accepted development-only advisory ${result.url} until ${result.expiresAt}. Raw npm audit still reports three high findings; the default audit remains strict.`);
 }
 
 const isCli = process.argv[1]
