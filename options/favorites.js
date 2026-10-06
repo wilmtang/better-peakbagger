@@ -276,6 +276,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     };
 
     const renderList = () => {
+        const restoreFocus = OptionsUtils.listFocusRestorer(listEl, 'cid', () =>
+            customPanelEl.hidden ? sourceEls.find(radio => radio.checked) : searchEl);
         const compare = sortEl.value === 'name' ? F.byName : F.byAddedAtDesc;
         const query = searchEl.value.trim();
         const matchesSource = entry => sourceFilter === 'all' || entry.source === sourceFilter;
@@ -338,6 +340,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 : 'No favorite climbers yet.';
         emptyEl.hidden = rows.length > 0;
         undoAllEl.hidden = !pendingBulk;
+        restoreFocus();
     };
 
     const renderPanels = () => {

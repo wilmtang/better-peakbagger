@@ -13,7 +13,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | F3 | P2 | Photo replacement ends old route/drawing/drag sessions | Fixed locally |
 | F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Fixed locally |
 | F5 | P2 | Favorite Climbers follows authoritative settings changes | Fixed locally |
-| F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Open |
+| F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Fixed locally |
 | F7 | P2 | Report controls fit naturally narrow native forms | Open |
 | B1 | P3 | Assess a safe boundary for the always-loaded enhanced editor bundle | Open |
 
@@ -60,6 +60,14 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   rollback, and obsolete write replies. 66 focused favorites/options UI tests,
   scoped ESLint, and diff checks passed. Two hidden Chrome extension tabs at
   1024×900 stayed synchronized; the dark rendered panel was inspected.
+- F6: a shared options helper preserves logical row/action focus through
+  replacement and sorting, uses nearby controls or a meaningful empty/search
+  fallback for disappearing rows, and ignores focus outside the list. Draft
+  delete/restore completion no longer redirects focus from unrelated controls.
+  Five regressions cover removal/Undo, reordering, expiry/disappearance, empty
+  lists, and unrelated fields. 79 focused options tests, scoped ESLint, and diff
+  checks passed. Hidden Chrome retained Favorite Undo at 390×900 and draft Copy
+  after another tab's autosave at 1000×900; dark screenshots were inspected.
 
 ### Intentionally not changed
 

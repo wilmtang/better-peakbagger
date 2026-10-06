@@ -7,6 +7,35 @@ import {
 
 registerCleanup();
 
+test('draft refresh retains the focused action through reordering and handles row disappearance', async () => {
+    const first = 'bpbReportDraft:900001:a123';
+    const second = 'bpbReportDraft:900001:a456';
+    const stamp = Date.now();
+    const dom = await loadDraftsPage({}, { local: {
+        [first]: { text: 'First', savedAt: stamp }, [second]: { text: 'Second', savedAt: stamp - 1 },
+    } });
+    draftRow(dom, first).querySelector('[data-action="copy"]').focus();
+    await dom.chrome.storage.local.set({ [first]: { text: 'Updated first', savedAt: stamp - 2 } });
+    await waitFor(dom, () => draftRow(dom, first)?.textContent.includes('Updated first'));
+    assert.equal(dom.window.document.activeElement, draftRow(dom, first).querySelector('[data-action="copy"]'));
+    await dom.chrome.storage.local.remove(first);
+    await waitFor(dom, () => !draftRow(dom, first));
+    assert.equal(dom.window.document.activeElement, draftRow(dom, second).querySelector('[data-action="copy"]'));
+    await dom.chrome.storage.local.remove(second);
+    await waitFor(dom, () => !draftRow(dom, second));
+    assert.equal(dom.window.document.activeElement, el(dom, 'drafts-empty'));
+});
+
+test('draft refresh does not steal focus from a field outside the list', async () => {
+    const key = 'bpbReportDraft:900001:a123';
+    const dom = await loadDraftsPage({}, { local: { [key]: { text: 'Before', savedAt: Date.now() } } });
+    const field = el(dom, 'drafts-copy-fallback-value');
+    el(dom, 'drafts-copy-fallback').hidden = false; field.focus();
+    await dom.chrome.storage.local.set({ [key]: { text: 'After', savedAt: Date.now() } });
+    await waitFor(dom, () => draftRow(dom, key)?.textContent.includes('After'));
+    assert.equal(dom.window.document.activeElement, field);
+});
+
 test('expired manager snapshot cannot delete a newer editor save', async () => {
     const key = 'bpbReportDraft:900001:new';
     let releaseRead;

@@ -86,6 +86,10 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         .find(item => item.dataset.draftKey === key)
         ?.querySelector('[data-action="undo"]');
 
+    const ownsRowFocus = key => document.activeElement === document.body
+        || document.activeElement === listEl
+        || document.activeElement?.closest('.draft-item')?.dataset.draftKey === key;
+
     const undoDelete = async key => {
         const pending = pendingDeletes.get(key);
         if (!pending || pending.restoring) return;
@@ -105,16 +109,16 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             await refresh();
             if (result.restored) {
                 flash('Draft restored');
-                draftRowControl(key)?.focus();
+                if (ownsRowFocus(key)) draftRowControl(key)?.focus();
             } else {
                 flash('Newer edits already restored this draft');
-                draftRowControl(key)?.focus();
+                if (ownsRowFocus(key)) draftRowControl(key)?.focus();
             }
         } catch (error) {
             pending.restoring = false;
             render();
             flash('Couldn’t restore the draft. Try again.', { error: true });
-            undoControlFor(key)?.focus();
+            if (ownsRowFocus(key)) undoControlFor(key)?.focus();
         }
     };
 
@@ -143,7 +147,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
                 pendingDeletes.delete(draft.key);
                 await refresh();
                 flash('Newer edits kept this draft');
-                draftRowControl(draft.key)?.focus();
+                if (ownsRowFocus(draft.key)) draftRowControl(draft.key)?.focus();
                 return;
             }
             pending.record = result.record;
@@ -160,7 +164,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
                 }).catch(() => {});
             }, UNDO_MS);
             render();
-            undoControlFor(draft.key)?.focus();
+            if (ownsRowFocus(draft.key)) undoControlFor(draft.key)?.focus();
             await refresh();
         } catch (error) {
             globalThis.clearTimeout(pending.timer);
@@ -296,9 +300,11 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     };
 
     const render = () => {
-        const focusedUndoKey = document.activeElement?.dataset.action === 'undo'
-            ? document.activeElement.closest('.draft-item')?.dataset.draftKey
-            : null;
+        const restoreFocus = OptionsUtils.listFocusRestorer(listEl, 'draftKey', () => {
+            const target = listEl.hidden ? emptyEl : listEl;
+            target.tabIndex = -1;
+            return target;
+        });
         const bulkKeys = new Set(pendingBulk ? pendingBulk.records.keys() : []);
         const rows = currentDrafts
             .filter(draft => !pendingDeletes.has(draft.key) && !bulkKeys.has(draft.key))
@@ -329,7 +335,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         // Another tab may have emptied the list while the question was open;
         // never leave a confirmation for drafts that are no longer there.
         if (!confirmationEl.hidden && freshCount === 0) hideDeleteAllConfirmation({ restoreFocus: false });
-        if (focusedUndoKey) undoControlFor(focusedUndoKey)?.focus();
+        restoreFocus();
     };
 
     const refresh = async () => {

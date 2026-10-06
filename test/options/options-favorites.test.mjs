@@ -8,6 +8,60 @@ import {
 
 registerCleanup();
 
+test('favorite removal transfers focus to Undo and restoration to the same row', async () => {
+    const entries = [{ cid: 900002, name: 'First', addedAt: 2, source: 'manual' },
+        { cid: 900003, name: 'Second', addedAt: 1, source: 'manual' }];
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore(entries) },
+    });
+    const remove = favoriteRow(dom, 900002).querySelector('[data-action="delete"]');
+    remove.focus(); remove.click();
+    await waitFor(dom, () => favoriteRow(dom, 900002)?.querySelector('[data-action="undo"]'));
+    const undo = favoriteRow(dom, 900002).querySelector('[data-action="undo"]');
+    assert.equal(dom.window.document.activeElement, undo);
+    undo.click();
+    await waitFor(dom, () => favoriteRow(dom, 900002)?.querySelector('[data-action="delete"]'));
+    assert.equal(dom.window.document.activeElement, favoriteRow(dom, 900002).querySelector('a'));
+});
+
+test('favorite refresh retains the focused identity and leaves unrelated controls alone', async () => {
+    const first = { cid: 900002, name: 'First', addedAt: 2, source: 'manual' };
+    const second = { cid: 900003, name: 'Second', addedAt: 1, source: 'manual' };
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([first, second]) },
+    });
+    favoriteRow(dom, first.cid).querySelector('[data-action="delete"]').focus();
+    await dom.chrome.storage.local.set({ [favoriteKey]: favoriteStore([
+        { ...first, name: 'First renamed', addedAt: 0 }, second,
+    ]) });
+    await waitFor(dom, () => favoriteRow(dom, first.cid)?.textContent.includes('First renamed'));
+    assert.equal(dom.window.document.activeElement, favoriteRow(dom, first.cid).querySelector('[data-action="delete"]'));
+    const search = el(dom, 'favorites-search'); search.focus();
+    await dom.chrome.storage.local.set({ [favoriteKey]: favoriteStore([second]) });
+    await waitFor(dom, () => !favoriteRow(dom, first.cid));
+    assert.equal(dom.window.document.activeElement, search);
+});
+
+test('focused favorite Undo expiry moves to a nearby row or the search field', async () => {
+    let expire;
+    const entries = [{ cid: 900002, name: 'First', addedAt: 2, source: 'manual' },
+        { cid: 900003, name: 'Second', addedAt: 1, source: 'manual' }];
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore(entries) }, prepareWindow: win => {
+            const nativeSet = win.setTimeout.bind(win);
+            win.setTimeout = (fn, ms, ...args) => ms === 6000 ? (expire = fn, -1234) : nativeSet(fn, ms, ...args);
+        },
+    });
+    for (const cid of [900002, 900003]) {
+        const remove = favoriteRow(dom, cid).querySelector('[data-action="delete"]');
+        remove.focus(); remove.click();
+        await waitFor(dom, () => favoriteRow(dom, cid)?.querySelector('[data-action="undo"]'));
+        expire();
+        assert.equal(dom.window.document.activeElement, cid === 900002
+            ? favoriteRow(dom, 900003).querySelector('a') : el(dom, 'favorites-search'));
+    }
+});
+
 test('favorite manager follows external source and buddy-removal settings in both directions', async () => {
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' });
     for (const source of ['buddies', 'custom']) {
