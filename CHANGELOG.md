@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- **Choose whose reports and ascents you see.** Manage Favorites and Ignored
+  climbers together, filter selected peak reports by favorites or climbing
+  buddies, and temporarily reveal ignored content without changing either list.
+  Ignored reports conceal their media while preserving ascent details, GPX,
+  and maps. Conflicting favorite, buddy, and ignored additions explain which
+  membership to remove first. Optional GitHub backup and two-way ignored-list
+  sync preview replacements and conflicts before applying them.
+
+- **Update editor and map dependencies and strengthen release recovery.**
+  Refresh the compatible libraries, patch the development source-map tool,
+  and recover verified store packages across workflow attempts. Browser checks
+  wait for persisted state and retain failure evidence; store releases keep
+  their strict dependency and package-identity checks.
+
+- **Analyze longer GPX recordings.** Provider capture, local uploads, and saved
+  tracks now accept up to 100,000 track points and 64 MiB. Peakbagger draft
+  uploads retain their combined 3,000-point track-and-waypoint limit, and the
+  original saved GPX remains unchanged.
+
+- **Keep filters, Settings, and GitHub controls predictable.** Reveal controls
+  stay in place as ignored rows appear, and narrow Settings pages keep
+  navigation within reach. Climber-list sync preferences default to enabled
+  but wait for a GitHub connection and permission; saved opt-outs remain intact.
+  Backup controls follow access changes across tabs, reject outdated status
+  replies, and restore the confirmed preference when saving fails.
+
+- **See sunrise and sunset before selecting a chart point.** Saved ascents
+  initially use the route start for the Sun and Moon calculator, with
+  mountain-local event times and adjacent-day labels. Chart hover returns to
+  the prior route-start or selected-point view without changing the selection.
+
+- **Preserve the latest report drafts and photo edits.** Draft cleanup and
+  failed-Save recovery respect newer saves from another tab. Photo switches
+  finish outgoing gestures and settle autosave before replacing the project;
+  failed persistence keeps the edited photo available.
+
+- **Keep active controls aligned with current work.** Cancelled or replaced
+  captures ignore obsolete popup replies. Favorite preferences stay current
+  across tabs, climber and draft lists retain meaningful keyboard focus, and
+  report editing controls fit naturally narrow forms in every editing mode.
+
 ## 3.8.0 — 2026-09-30
 
 - **Keep Firefox submissions within Mozilla's reviewer-note limit.** Release
