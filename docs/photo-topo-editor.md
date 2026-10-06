@@ -98,6 +98,11 @@ an open project. A
 title is required — it is filled from the file name when available — and the
 alt text describing the image is optional. Drafts autosave to the browser
 profile.
+Choosing another file or **Edit as new version** first settles the outgoing
+gesture and waits for its edits to save. A route with at least two placed
+points finishes on the outgoing photo; incomplete single-point/freehand/resize
+previews end there. If persistence fails, the current edits stay open and the
+replacement stops. A new version uses the freshly saved title and caption.
 The standalone photo workflow uploads only when the user chooses **Upload and insert**.
 A photo pasted into a Rich text TR follows a deferred workflow: double-click opens
 an editable copy here, **Save and return** updates it locally, and saving the TR

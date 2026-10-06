@@ -768,6 +768,12 @@ whitespace-only stored `text`. It compares the remainder with Peakbagger's
 server-rendered `JournalText` after normalizing CRLF/CR line endings to LF and
 trimming both values.
 
+Expiry, empty-record cleanup, and recovery-panel Delete supply the observed
+saved time and storage generation. The worker compares them within its mutation
+queue, preserving any newer same-key save. Detaching a failed Save's metadata
+uses the same comparison; a successful rewrite returns the generation used by
+the recovery offer. Terminal Save/Delete handling keeps its separate semantics.
+
 - If the values match, no recovery prompt appears. For a Markdown draft, the
   exact `source` sidecar is adopted so a postback does not needlessly rewrite
   the user's Markdown spelling.
@@ -825,7 +831,9 @@ Deleting one or all drafts removes storage immediately and holds copies only in
 the open manager page for a six-second Undo window. Before bulk deletion, the
 button and the native confirmation both state the exact draft count; Cancel or
 Escape leaves storage unchanged. Live `storage.onChanged` refreshes preserve an
-active Undo row. An Undo snapshot is not discarded until `storage.local.set()`
+active Undo row and the focused row/action. If that row disappears, focus moves
+to a nearby available control or the empty-list state; refresh never takes
+focus from another field. An Undo snapshot is not discarded until `storage.local.set()`
 actually succeeds. A transient restoration failure therefore leaves an
 actionable Undo control for retry instead of losing the manager's only copy.
 If the window closes without Undo, or the manager itself closes, those
@@ -894,6 +902,11 @@ and cancels a matching pending intent by user choice.
   same-target tabs are last-writer-wins.
 
 ## Preview fidelity
+
+The extension editor's width is bounded by both its native form and the visible
+viewport. Its toolbar, mode controls, draft recovery, and conversion warning
+therefore reflow even when Peakbagger's surrounding table remains wider than
+the window. The native form and Plain textarea keep Peakbagger's own sizing.
 
 Markdown mode renders its preview live in a split pane beside the source
 (stacked below it when the form column is narrow), re-rendering as you pause

@@ -4,7 +4,14 @@ Baseline: `ced896c`, version 3.8.0. Follow-up to the 2026-10-05 findings-only
 audit. Repair each independent defect in a focused commit, preserve privacy
 and manual Save boundaries, and retain evidence gaps separately from fixes.
 
-## Findings and remaining work
+Local remediation completed on 2026-10-06: all seven reproduced defects have
+regression and hidden-browser evidence. The optional editor-bundle migration
+remains intentionally deferred, and native/live-service proof gaps remain below.
+Current behavior is maintained in [architecture](../architecture.md),
+[trip-report editor](../trip-report-editor.md), and
+[photo topo editor](../photo-topo-editor.md).
+
+## Finding dispositions
 
 | ID | Priority | Required outcome | Status |
 | --- | --- | --- | --- |
@@ -15,7 +22,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | F5 | P2 | Favorite Climbers follows authoritative settings changes | Fixed locally |
 | F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Fixed locally |
 | F7 | P2 | Report controls fit naturally narrow native forms | Fixed locally |
-| B1 | P3 | Assess a safe boundary for the always-loaded enhanced editor bundle | Open |
+| B1 | P3 | Assess a safe boundary for the always-loaded enhanced editor bundle | Assessed; split deferred |
 
 ## Closure ledger
 
@@ -85,9 +92,25 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   including draft recovery and lossy-conversion warnings. Narrow controls fit
   within a 358px editor without overflow. The native page/textarea can still be
   wider than the window; this fix deliberately scopes layout to extension UI.
+- Verification fixture: local-photo message delegates no longer re-enter their
+  captured routed dispatcher for unhandled messages. A new invalidation-route
+  regression failed with a stack overflow before repair; all nine local-photo
+  tests passed afterward without that error. This is a test-harness correction,
+  not an additional runtime defect.
 
 ### Intentionally not changed
 
+- B1: the final in-memory minified ascent-editor build measures 1,199,197 bytes,
+  before the separate Markdown vendor script. CodeMirror/ProseMirror/TipTap,
+  Lezer parsers, and the offline timezone raster dominate the dependency cost.
+  The measurement establishes loaded code, not startup or interaction latency.
+  `report-editor.js` installs native local-photo upload/Save protection before
+  the editor feature gate; it also owns synchronous postback flushing and
+  failed-Save recovery. Removing or delaying the whole manifest entry would
+  delay required native behavior. A safe lazy split needs a separate small
+  always-running controller, dependency-load failure behavior, and early-Save
+  proofs in both browser execution environments. That architectural migration
+  is deferred; this audit does not claim bundle-size reduction.
 - Shared validation, browser execution worlds, raw-provider privacy, offline
   timezone data, and final user-owned Peakbagger Save remain required boundaries.
 - Large file size alone does not justify a controller or worker rewrite.
@@ -99,10 +122,46 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 - Remote CI, browser stores, and release behavior require separate evidence;
   no push, release, store submission, or merge is part of this request.
 
+## Focused local commits
+
+| Commit | Completed unit |
+| --- | --- |
+| `07e44c0` | F1 snapshot-safe removal |
+| `f4d28ff` | F2 outgoing autosave preservation |
+| `cf8b378` | F3 outgoing gesture settlement |
+| `b15be0a` | F4 capture operation revisions |
+| `73949b1` | F5 authoritative favorite settings |
+| `cf2c79d` | F6 logical list focus |
+| `6608f12` | F7 natural narrow form sizing and browser regression |
+| `33ac723` | F1 failed-Save metadata/recovery generation follow-up |
+| `d2caf8e` | Local-photo verification fixture dispatch repair |
+
 ## Verification environment
 
-Initial full Chrome check: hidden Chrome for Testing 153.0.8010.12, isolated
-disposable profile, real `dist/`, masked HTTPS Peakbagger fixtures, base viewport
-1000×760 plus verifier responsive cases. This UI/extension check does not claim
-a hardware WebGL renderer result. Final browser/viewport evidence and teardown
-will be recorded as the remaining fixes land.
+- Final `npm test`: 2,280 passed, 0 failed/skipped; 31 regressions added over
+  the 2,249-test audit baseline. The fixture stack-overflow output is resolved.
+- Final `npm run lint`: ESLint/build passed; web-ext lint passed with the six
+  existing owned warnings for the cross-browser manifest and upstream libraries.
+- Final `npm run verify:chrome`: passed after the last worker change, hidden
+  Chrome for Testing 153.0.8010.12 in new headless, real unpacked `dist/`,
+  isolated disposable profile, masked HTTPS Peakbagger fixtures, base viewport
+  1000×760 plus responsive cases including the natural 390×760 report check.
+- Final `npm run verify:firefox`: passed after the last worker change, hidden
+  Firefox 157.0, isolated derived-extension profile, base 1000×760 plus its
+  responsive and 200%-text editor cases. This verifier covers real manifest,
+  worker, storage, form/editor, and trusted-action behavior; the targeted new
+  race probes and natural 390px screenshot matrix ran in Chrome only.
+- Targeted Chrome screenshots inspected: photo switches/routes at 1280×900;
+  popup cancellation at 400×650; Favorite Climbers settings at 1024×900 and
+  list focus at 390×900; draft focus at 1000×900; report Rich/Markdown/Plain,
+  draft recovery, and conversion at 390×900 and 1000×900 in both themes;
+  detached pending-Save recovery deletion at 390×900.
+- These UI/extension checks do not claim a hardware WebGL renderer result,
+  native window/focus behavior, browser chrome, prompts, or screen-reader speech.
+- Final process inspection found no matching owned verifier/browser process;
+  all matching disposable profile roots were absent. Targeted helpers closed
+  their contexts and HTTPS servers in `finally`. Evidence logs/screenshots are
+  intentionally retained as Codex task artifacts; the user's browsers were
+  never used or closed.
+- Documentation links and diff checks passed. Commits are local; no remote CI,
+  release, or store proof is claimed.

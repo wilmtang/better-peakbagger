@@ -1,8 +1,5 @@
 # Active plans
 
-- [UI state audit remediation](ui-state-audit-2026-10-06.md) — in progress;
-  draft/photo edit preservation, capture races, settings synchronization,
-  keyboard focus, narrow report controls, and editor bundle assessment.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.

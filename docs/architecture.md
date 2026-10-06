@@ -477,6 +477,11 @@ message, retry safety, and recovery kind; the popup maps that kind to at most
 one direct action such as reload, sign in, return to the provider, open the
 preserved Peakbagger check, wait, or use a shorter track.
 
+Popup start, cancellation, clearing, and draft opening advance an operation
+revision. Every awaited reply and scheduled status poll checks that revision
+before painting or scheduling more work, so an obsolete reply cannot revive
+progress after cancellation or replace a newer result.
+
 Successful and already-opened jobs can be reused, but terminal errors are not
 replayed after a new toolbar gesture: the worker rechecks the page and session.
 No-GPS and no-match results remain reusable until the user explicitly chooses
@@ -673,6 +678,11 @@ worker accepts it only from a Peakbagger tab and opens the extension-owned
 `options/drafts.html` page (an existing `options/options.html#drafts` link
 still lands on the same topic).
 
+Snapshot-based expiry and recovery deletion compare the observed saved time
+and storage generation inside the worker mutation queue. Failed-Save metadata
+rewrites use the same guard and return the generation used by the recovery
+offer. Explicit terminal removals retain their unconditional semantics.
+
 Save is a two-phase lifecycle rather than an optimistic deletion. The editor
 retains the local record and registers a 30-minute pending intent bound to its
 form identity and source tab. `src/ascent/ascent-saved.js` recognizes
@@ -698,7 +708,11 @@ result from that exact photo page can return; it may include one separately
 validated, width-only report display hint. Successful ImgBB upload remains
 committed if the report tab is gone or rejects insertion.
 
-`photos/photos.js` owns the UI and local transaction orchestration.
+`photos/photos.js` owns the UI and local transaction orchestration. Project
+replacement settles outgoing gestures, locks mutations, awaits in-flight
+autosave, and flushes any newer dirty state before reading or installing the
+replacement. A failed save keeps the outgoing editor available. New versions
+derive their metadata from the freshly saved bundle rather than a stale card.
 `src/photos/photo-project.js` owns the bounded annotation schema — including
 each object's opacity and a route's smooth-curve intent, whose control points
 the model derives rather than the page storing them —
@@ -1222,6 +1236,14 @@ operation, merge is additive, and mirror and GitHub restore are complete
 replacements with a brief local Undo snapshot. The manager's
 Buddy/manual counts describe entry provenance in the authoritative custom list,
 and its source filter composes with the name/id search without changing storage.
+
+The standalone manager subscribes through shared settings so source selection
+and Buddy-removal preferences follow changes in other tabs. Revision checks
+prevent delayed startup reads or write replies from replacing newer confirmed
+values; failed writes roll back to that latest confirmed state.
+`options/options-utils.js` supplies keyed row/action focus restoration shared
+with the report-draft manager. Refresh, sorting, and Undo expiry retain a
+meaningful nearby control without redirecting focus from unrelated fields.
 
 Both content scripts use the default isolated extension world, not Peakbagger's
 MAIN world. They can read the rendered DOM and extension storage without exposing

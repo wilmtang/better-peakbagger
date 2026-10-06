@@ -8,6 +8,11 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [UI state audit remediation — 2026-10-06](ui-state-audit-2026-10-06.md) —
+  seven reproduced defects fixed, including draft/photo edit loss, stale popup
+  replies, settings drift, keyboard focus, and naturally narrow report controls.
+  Local Chrome/Firefox proof, the deferred editor-bundle migration, and native
+  and live-service verification gaps remain explicit in its closure ledger.
 - [Mainline and dependency integration — 2026-10-03](mainline-dependency-integration-2026-10-03.md) —
   real branch merges, the repeated unpatched development-tool advisory, and
   an owner-approved CI-only exception with an October 17 expiry. Release
