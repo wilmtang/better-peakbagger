@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/* global document, location, innerWidth, innerHeight */
+/* global document, location, innerWidth, innerHeight, requestAnimationFrame */
 
 import assert from 'node:assert/strict';
 
@@ -37,6 +37,8 @@ const readFrame = () => {
         content: rect(content),
         scrollTop: content.scrollTop,
         scrollMax: content.scrollHeight - content.clientHeight,
+        scrollBehavior: content.style.scrollBehavior,
+        verificationScrolling: content.dataset.verificationScrolling,
         target: rect(document.querySelector(location.hash || '#general')),
         hash: location.hash,
         current: document.querySelector('.side-nav [aria-current]')?.getAttribute('href'),
@@ -103,11 +105,17 @@ export async function verifySettingsNavigation({ navigate, evaluate, resize, cli
             await navigate('');
             await evaluate(() => {
                 const content = document.querySelector('.content');
-                // History uses native smooth scrolling. Reaching within two
-                // pixels of the target can precede its last animation tick;
-                // don't send the next history action until scrollend.
-                content.addEventListener('scroll', () => { content.dataset.verificationScrolling = 'true'; });
-                content.addEventListener('scrollend', () => { content.dataset.verificationScrolling = 'false'; });
+                // Reaching the target can precede the final animation tick.
+                // Chrome 128 can omit scrollend after fragment/history jumps,
+                // so wait for two rendered frames without another scroll event.
+                let scrollRevision = 0;
+                content.addEventListener('scroll', () => {
+                    content.dataset.verificationScrolling = 'true';
+                    const revision = ++scrollRevision;
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        if (revision === scrollRevision) content.dataset.verificationScrolling = 'false';
+                    }));
+                });
             });
             await evaluate(theme === 'dark'
                 ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
