@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Keep excluded GPX selections understandable.** After switching from all
+  source segments to the interpreted view, the explanation for an excluded
+  selected point survives chart resizing and changes to units or theme. A new
+  selection or view change clears the old explanation; coordinate copying
+  remains unavailable for excluded points.
+
 ## 3.9.0 — 2026-10-06
 
 - **Choose whose reports and ascents you see.** Manage Favorites and Ignored
