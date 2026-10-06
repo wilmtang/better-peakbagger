@@ -16,7 +16,9 @@
     margin: 2px 0 6px;
     font-family: Tahoma, Geneva, sans-serif;
     font-size: small;
-    max-width: 99%;
+    /* The native form can be wider than the window. Keep extension controls
+       inside the viewport so container queries see the actual narrow surface. */
+    max-width: min(99%, calc(100vw - 32px));
     position: relative;
     container-type: inline-size;
 }

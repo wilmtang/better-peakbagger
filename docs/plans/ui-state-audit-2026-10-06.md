@@ -14,7 +14,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Fixed locally |
 | F5 | P2 | Favorite Climbers follows authoritative settings changes | Fixed locally |
 | F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Fixed locally |
-| F7 | P2 | Report controls fit naturally narrow native forms | Open |
+| F7 | P2 | Report controls fit naturally narrow native forms | Fixed locally |
 | B1 | P3 | Assess a safe boundary for the always-loaded enhanced editor bundle | Open |
 
 ## Closure ledger
@@ -68,6 +68,15 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   lists, and unrelated fields. 79 focused options tests, scoped ESLint, and diff
   checks passed. Hidden Chrome retained Favorite Undo at 390×900 and draft Copy
   after another tab's autosave at 1000×900; dark screenshots were inspected.
+- F7: the extension-owned editor is bounded by the viewport as well as its
+  native form. Container queries now see the natural narrow surface; the browser
+  verifier no longer injects a width that masked the defect, and checks the
+  editor and mode buttons against the viewport. The full hidden Chrome verifier,
+  scoped ESLint, build, and diff checks passed. Targeted screenshots and geometry
+  checks covered Rich, Markdown, and Plain at 390×900 and 1000×900 in both themes,
+  including draft recovery and lossy-conversion warnings. Narrow controls fit
+  within a 358px editor without overflow. The native page/textarea can still be
+  wider than the window; this fix deliberately scopes layout to extension UI.
 
 ### Intentionally not changed
 

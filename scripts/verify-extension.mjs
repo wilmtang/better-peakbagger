@@ -5138,20 +5138,10 @@ try {
             }
             if (process.env.BPB_VERIFY_DRAFT_MANAGER_NARROW_SCREENSHOT) {
                 const previousViewport = editorPage.viewportSize();
-                const previousEditorStyle = await editorPage.locator('#bpb-report-editor')
-                    .getAttribute('style');
-                await editorPage.setViewportSize({ width: 480, height: 760 });
-                await editorPage.locator('#bpb-report-editor').evaluate(editor => {
-                    editor.style.width = '440px';
-                    editor.style.maxWidth = '440px';
-                });
+                await editorPage.setViewportSize({ width: 390, height: 760 });
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_DRAFT_MANAGER_NARROW_SCREENSHOT,
                 });
-                await editorPage.locator('#bpb-report-editor').evaluate((editor, style) => {
-                    if (style == null) editor.removeAttribute('style');
-                    else editor.setAttribute('style', style);
-                }, previousEditorStyle);
                 if (previousViewport) await editorPage.setViewportSize(previousViewport);
             }
 
@@ -5285,12 +5275,17 @@ try {
                     visible: getComputedStyle(guard).display !== 'none',
                     withinEditor: guardRect.left >= editorRect.left - 1
                         && guardRect.right <= editorRect.right + 1,
+                    withinViewport: editorRect.left >= -1 && editorRect.right <= innerWidth + 1,
                     noOverlap: copyRect.right <= actionRect.left + 1
                         || copyRect.bottom <= actionRect.top + 1,
                     noHorizontalOverflow: editor.scrollWidth <= editor.clientWidth + 1,
                     actionVisible: actionRect.width > 0 && actionRect.height > 0,
                     modeButtonsSingleLine: modeButtons.every(button => button.scrollHeight <= button.clientHeight + 1
                         && button.scrollWidth <= button.clientWidth + 1),
+                    modeButtonsWithinViewport: modeButtons.every(button => {
+                        const rect = button.getBoundingClientRect();
+                        return rect.left >= -1 && rect.right <= innerWidth + 1;
+                    }),
                 } : null;
             });
             const wideConversion = await readConversionLayout();
@@ -5309,27 +5304,19 @@ try {
                 });
             }
             const guardViewport = editorPage.viewportSize();
-            const guardEditorStyle = await editorPage.locator('#bpb-report-editor').getAttribute('style');
-            await editorPage.setViewportSize({ width: 480, height: 760 });
-            await editorPage.locator('#bpb-report-editor').evaluate(editor => {
-                editor.style.width = '440px';
-                editor.style.maxWidth = '440px';
-            });
+            await editorPage.setViewportSize({ width: 390, height: 760 });
             const narrowConversion = await readConversionLayout();
             check(narrowConversion?.mode === 'plain' && narrowConversion.visible
                 && narrowConversion.withinEditor && narrowConversion.noOverlap
                 && narrowConversion.noHorizontalOverflow && narrowConversion.actionVisible
-                && narrowConversion.modeButtonsSingleLine,
+                && narrowConversion.modeButtonsSingleLine && narrowConversion.withinViewport
+                && narrowConversion.modeButtonsWithinViewport,
             `the narrow lossy-conversion guard was clipped: ${JSON.stringify(narrowConversion)}`);
             if (process.env.BPB_VERIFY_EDITOR_CONVERSION_NARROW_SCREENSHOT) {
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_EDITOR_CONVERSION_NARROW_SCREENSHOT,
                 });
             }
-            await editorPage.locator('#bpb-report-editor').evaluate((editor, style) => {
-                if (style == null) editor.removeAttribute('style');
-                else editor.setAttribute('style', style);
-            }, guardEditorStyle);
             if (guardViewport) await editorPage.setViewportSize(guardViewport);
             await editorPage.getByRole('button', { name: 'Markdown', exact: true }).click();
             check(await editorPage.locator('#bpb-report-editor').getAttribute('data-mode') === 'plain',
