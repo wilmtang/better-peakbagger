@@ -10,7 +10,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | --- | --- | --- | --- |
 | F1 | P1 | Stale report-draft cleanup preserves newer same-key saves | Fixed locally |
 | F2 | P1 | Photo project switches settle outgoing autosave before replacement | Fixed locally |
-| F3 | P2 | Photo replacement ends old route/drawing/drag sessions | Open |
+| F3 | P2 | Photo replacement ends old route/drawing/drag sessions | Fixed locally |
 | F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Open |
 | F5 | P2 | Favorite Climbers follows authoritative settings changes | Open |
 | F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Open |
@@ -37,6 +37,15 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   photo tests, scoped ESLint, and diff checks passed. Hidden Chrome at 1280×900
   preserved both the edited original and its revision in IndexedDB; the rendered
   editor screenshot was inspected.
+- F3: the two photo replacement entry points settle gestures before locking
+  mutations and flushing the outgoing draft. Two-point routes and moved objects
+  remain saved on the outgoing photo; single-point/freehand/resize previews end
+  without crossing the project boundary. Six new regressions cover file/library
+  replacement and late pointer events. 110 focused photo tests passed; the final
+  pointer-capture guard also passed the six transition regressions after rebuild.
+  Scoped ESLint/diff checks passed. Hidden Chrome at 1280×900 kept the new portrait
+  project at 600×800 after Escape, with no route preview or false save conflict;
+  its rendered screenshot was inspected.
 
 ### Intentionally not changed
 

@@ -1860,6 +1860,17 @@ const cancelTextResize = () => {
     return true;
 };
 
+const settleEditorGestures = () => {
+    cancelDrawing();
+    if (routeSession) finishRoute(false);
+    const pointerId = dragSession?.pointerId;
+    if (!cancelTextResize()) endDrag();
+    if (pointerId != null && ui.overlay.hasPointerCapture?.(pointerId)) ui.overlay.releasePointerCapture(pointerId);
+    spacePan = false;
+    endPan();
+    endCoalescing();
+};
+
 const onPointerDown = event => {
     if (!project || editorMutationLocked() || event.button !== 0) return;
     const resizeNode = activeTool === 'select' ? event.target.closest?.('[data-text-resize]') : null;
@@ -2088,6 +2099,7 @@ const chooseFile = async file => {
         );
         return;
     }
+    settleEditorGestures();
     setBusy(true, 'Reading photo…');
     let shouldPersist = false;
     let bitmap = null;
@@ -2575,6 +2587,7 @@ const editAsNewVersion = async (item, control = null) => {
     if (busy || newVersionTransaction) return;
     const owner = {};
     newVersionTransaction = owner;
+    settleEditorGestures();
     setBusy(true, 'Opening new version…');
     if (control) {
         control.disabled = true;

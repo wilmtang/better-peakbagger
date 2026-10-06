@@ -709,6 +709,72 @@ test('photo replacement waits for an in-flight save and persists edits made afte
     assert.deepEqual(page.errors, []);
 });
 
+for (const destination of ['new file', 'new version']) {
+    for (const points of [1, 2]) {
+        test(`${destination} ends an outgoing ${points}-point route before project replacement`, async t => {
+            const page = await loadEditor({ onStoreReady: ({ win }) => { win.Blob = Blob; win.File = File; } });
+            t.after(() => page.dom.window.close());
+            await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+            page.tool('route'); page.pointer('pointerdown', 100, 100);
+            if (points === 2) page.pointer('pointerdown', 200, 200);
+            if (destination === 'new file') {
+                page.win.createImageBitmap = async () => ({ width: 600, height: 800, close() {} });
+                pickReplacementPhoto(page);
+                await waitFor(page.dom, () => page.doc.getElementById('photo-title').value === 'second');
+            } else {
+                page.click(page.doc.getElementById('show-library'));
+                await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
+                [...page.doc.querySelectorAll('.photo-card button')]
+                    .find(button => button.textContent === 'Edit as new version').click();
+                await waitFor(page.dom, () => page.doc.getElementById('photo-title').value.endsWith(' revision'));
+            }
+            assert.equal(page.drawing(), false);
+            page.pointer('pointerdown', 300, 300);
+            page.key('keydown', { key: 'Escape' });
+            await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+            const photos = await readPhotoStore(page.win, 'photos');
+            const projects = await readPhotoStore(page.win, 'projects');
+            const outgoing = photos.find(photo => photo.title === 'north-face');
+            assert.equal(projects.find(project => project.localId === outgoing.localId).objects.length,
+                points === 2 ? 1 : 0, 'placed routes are saved; a single-point preview is discarded');
+            if (destination === 'new file') {
+                assert.match(page.doc.getElementById('export-summary').textContent, /600 × 800/);
+                assert.equal(page.markCount(), 0);
+            } else {
+                const child = photos.find(photo => photo.lineage.parentLocalId);
+                assert.equal(projects.find(project => project.localId === child.localId).objects.length,
+                    points === 2 ? 1 : 0, 'Escape after replacement stays scoped to the new project');
+            }
+            assert.deepEqual(page.errors, []);
+        });
+    }
+}
+
+for (const gesture of ['freehand', 'object drag']) {
+    test(`file replacement settles the outgoing ${gesture} and ignores its late pointer release`, async t => {
+        const page = await loadEditor();
+        t.after(() => page.dom.window.close());
+        await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+        if (gesture === 'freehand') {
+            page.tool('drawing'); page.pointer('pointerdown', 100, 100);
+        } else {
+            page.tool('bolt'); page.pointer('pointerdown', 100, 100); page.tool('select');
+            page.pointer('pointerdown', 100, 100, page.overlay.querySelector('[data-bpb-object]'));
+        }
+        page.pointer('pointermove', 150, 150);
+        pickReplacementPhoto(page);
+        await waitFor(page.dom, () => page.doc.getElementById('photo-title').value === 'second');
+        page.pointer('pointerup', 200, 200);
+        assert.equal(page.markCount(), 0);
+        assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+        const projects = await readPhotoStore(page.win, 'projects');
+        const outgoing = projects.find(project => project.objects.length);
+        if (gesture === 'object drag') assert.equal(outgoing.objects[0].geometry.x, 300);
+        else assert.equal(outgoing, undefined, 'an uncommitted freehand preview is not transferred');
+        assert.deepEqual(page.errors, []);
+    });
+}
+
 test('Edit as new version has one owner across rapid same-card and cross-card actions', async t => {
     const indexedDB = new IDBFactory();
     await seedUploadedLibraryPhoto(indexedDB, { localId: 'first-version' });
