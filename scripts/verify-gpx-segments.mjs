@@ -46,6 +46,7 @@ export async function verifyGpxSegments({ navigate, evaluate, resize, click, pre
     await wait(() => /Time: 12h 32m/.test(document.querySelector('.bpb-gpx-stats').textContent));
     assert.ok(await evaluate(() => document.querySelector('.bpb-gpx-coordinate-controls button').disabled));
     assert.match(await evaluate(() => document.querySelector('.bpb-gpx-hint').textContent), /excluded/);
+    await screenshot?.('excluded-selection');
     for (let i = 0; i < 4; i++) await click('.bpb-gpx-segment-view');
     assert.match(await evaluate(() => document.querySelector('#bpb-gpx-segment-details').textContent), /56 points used; 57 points excluded/);
     await click('.bpb-gpx-segment-disclosure');

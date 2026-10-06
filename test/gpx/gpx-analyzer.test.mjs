@@ -2345,6 +2345,22 @@ test('suspect segments are reversible across metrics, source identities, overlay
         assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
         assert.match(panel.querySelector('.bpb-sun-calculator').textContent, /Trailhead/);
         assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
+        window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
+            data: bridgeSnapshot(window, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
+        await waitFor(dom, () => /miles/.test(stats.textContent));
+        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/,
+            'rebuilding the chart must preserve why its selection was cleared');
+        selectId('1:20');
+        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /Selected point/);
+        assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls button').disabled, false);
+        toggle.click();
+        selectId('2:20');
+        toggle.click();
+        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
+        toggle.click();
+        assert.doesNotMatch(panel.querySelector('.bpb-gpx-hint').textContent, /excluded/,
+            'a new analysis view must clear the prior exclusion explanation');
+        toggle.click();
         for (let i = 0; i < 4; i++) toggle.click();
         assert.match(details.textContent, /56 points used; 57 points excluded/);
         assert.equal(doc.querySelectorAll('.bpb-gpx-segment-disclosure').length, 1);

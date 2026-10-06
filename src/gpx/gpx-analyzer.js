@@ -516,6 +516,7 @@ const run = async () => {
         let chartMode = 'elevation';
         let hasTimeSeries = false;
         let selectedCoordinateIndex = -1;
+        let selectedCoordinateExcluded = false;
         let selectedCoordinateSeries = 'distance';
         let selectedChartValues = () => [];
         let coordinateFeedbackTimer = null;
@@ -585,7 +586,9 @@ const run = async () => {
                 coordinateFallback.value = '';
                 setCoordinateStatus(unavailable
                     ? 'No chart point with coordinates is available.'
-                    : COORDINATE_HINT);
+                    : selectedCoordinateExcluded
+                        ? 'The selected point is excluded in this view. Select another chart point.'
+                        : COORDINATE_HINT);
                 if (unavailable) resetSun('No selected track point is available.');
                 else showDefaultSun();
             }
@@ -603,6 +606,7 @@ const run = async () => {
             clearHoverSunPreview();
             clearCoordinateFeedbackTimer();
             selectedCoordinateIndex = index;
+            selectedCoordinateExcluded = false;
             selectedCoordinateSeries = series === 'time' && hasTimeSeries ? 'time' : 'distance';
             coordinateFallback.hidden = true;
             coordinateFallback.value = '';
@@ -1054,6 +1058,7 @@ const run = async () => {
             timeChartData = [];
             hasTimeSeries = false;
             selectedCoordinateIndex = -1;
+            selectedCoordinateExcluded = false;
             selectedCoordinateSeries = 'distance';
             selectedChartValues = () => [];
             metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
@@ -1810,9 +1815,9 @@ const run = async () => {
             }
             const pointSource = chartMode === 'elevation' ? metrics.points : metrics.routePoints;
             const survivingPoint = selectedId ? pointSource.find(p => p.sourcePointId === selectedId) : null;
+            selectedCoordinateExcluded = Boolean(selectedId && !survivingPoint);
             renderData({ selectedPoint: survivingPoint });
             if (survivingPoint) selectCoordinateIndex(chartData.indexOf(survivingPoint), selectedSeries);
-            else if (selectedId) setCoordinateStatus('The selected point is excluded in this view. Select another chart point.');
             if (restartTerrain) terrainCoordinator.start();
         };
         segmentViewButton.addEventListener('click', () => {
