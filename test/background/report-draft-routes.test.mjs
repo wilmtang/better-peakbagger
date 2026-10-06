@@ -106,6 +106,36 @@ test('snapshot cleanup preserves a newer draft, including a same-timestamp gener
     assert.ok(h.local.values[key].deletedGeneration);
 });
 
+test('pending Save metadata rewrites cannot replace a newer same-timestamp generation', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const h = harness();
+    const first = await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: { text: 'submitted snapshot', savedAt: CLOCK, pendingSave: { attemptId: ADD_ATTEMPT } },
+    }, editSender);
+    const detached = { ...first.record };
+    delete detached.pendingSave;
+    const expectation = { expectedSavedAt: first.record.savedAt, expectedGeneration: first.record.storageGeneration };
+    const current = await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: detached, ...expectation,
+    }, editSender);
+    assert.equal(current.written, true);
+    assert.equal(current.record.pendingSave, undefined);
+
+    await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: { text: 'newer report from another tab', savedAt: CLOCK },
+    }, editSender);
+    const stale = await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: detached, ...expectation,
+    }, editSender);
+    assert.equal(stale.written, false);
+    assert.equal(h.local.values[key].text, 'newer report from another tab');
+    const malformed = await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: detached, expectedSavedAt: CLOCK, expectedGeneration: 'malformed',
+    }, editSender);
+    assert.equal(malformed.ok, false);
+    assert.equal(h.local.values[key].text, 'newer report from another tab');
+});
+
 test('malformed cleanup expectations cannot become an unconditional removal', async () => {
     const key = 'bpbReportDraft:22:a778899';
     const h = harness({ localInitial: { [key]: { text: 'keep me', savedAt: CLOCK } } });

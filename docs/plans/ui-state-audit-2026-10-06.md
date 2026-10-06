@@ -29,6 +29,14 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   malformed expectations. 88 focused worker/options/editor tests passed,
   scoped ESLint and diff checks passed, and the full hidden Chrome verifier
   passed using the real unpacked extension and masked HTTPS fixtures.
+  Final review also found that a failed-Save metadata rewrite renewed the
+  generation without renewing its recovery offer. That rewrite now compares
+  its read snapshot and the offer uses the returned generation, so Delete works
+  without consuming another tab's newer record. Both new regressions failed
+  before repair; 47 worker/editor tests and scoped ESLint passed afterward.
+  A targeted hidden Chrome check at 390×900 deleted the detached recovery copy
+  while preserving native text; its screenshot was inspected, and the complete
+  Chrome extension verifier passed again after the worker change.
 - F2: file selection and Edit as new version freeze mutations, await in-flight
   writes, and flush the outgoing dirty draft before reading/replacing projects.
   Failed saves keep the outgoing editor available; new versions read the fresh

@@ -1048,7 +1048,14 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 type: 'REPORT_DRAFT_SAVE_CANCEL',
                 draftKey,
             });
-            void mutateDraft({ type: 'REPORT_DRAFT_WRITE', record: retained }).catch(() => {});
+            const write = await mutateDraft({
+                type: 'REPORT_DRAFT_WRITE', record: retained,
+                expectedGeneration: retained[ReportDrafts.GENERATION_FIELD] ?? null,
+                expectedSavedAt: retained.savedAt,
+            });
+            // The recovery offer must target our metadata rewrite's generation,
+            // while a superseded rewrite keeps its old snapshot expectation.
+            if (write?.written && write.record) stored = write.record;
         }
         if (storedText === normalized(textarea.value)) {
             // Same content the server rendered — keep the markdown source so a

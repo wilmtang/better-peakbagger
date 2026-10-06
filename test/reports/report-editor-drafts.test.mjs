@@ -500,6 +500,27 @@ test('a server validation round-trip offers the still-pending recovery copy', as
     returned.window.close();
 });
 
+test('Delete draft removes the recovery copy after pending Save metadata is detached', async () => {
+    const dom = await loadEditor({
+        report: 'server copy after validation failure',
+        drafts: { [DRAFT_KEY]: {
+            text: 'locally submitted report', mode: 'rich', savedAt: Date.now() - 1000,
+            pendingSave: { attemptId: 'previous-save' },
+        } },
+    });
+    await editorReady(dom);
+    await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
+    const doc = dom.window.document;
+    await waitFor(dom, () => !doc.querySelector('.bpb-re-draft').hidden);
+    [...doc.querySelectorAll('.bpb-re-draft button')]
+        .find(button => button.textContent === 'Delete draft').click();
+    await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, undefined);
+    assert.ok(dom.chrome._localStore[DRAFT_KEY].deletedGeneration);
+    assert.equal(doc.getElementById('JournalText').value, 'server copy after validation failure');
+    dom.window.close();
+});
+
 test('a Save flushes a pending autosave and even a late callback retains recovery', async () => {
     const AUTOSAVE_TIMER_ID = 8675309;
     let autosaveCallback;

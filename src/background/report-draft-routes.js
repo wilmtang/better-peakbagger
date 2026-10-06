@@ -120,6 +120,17 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
             return { ok: false, error: { code: 'invalid-draft-write' } };
         }
         const current = (await ext.storage.local.get(draftKey))[draftKey];
+        if (message.expectedSavedAt !== undefined || message.expectedGeneration !== undefined) {
+            const expectedGeneration = message.expectedGeneration == null
+                ? null : cleanGeneration(message.expectedGeneration);
+            if (!Number.isFinite(message.expectedSavedAt)
+                || (message.expectedGeneration != null && !expectedGeneration)) {
+                return { ok: false, error: { code: 'invalid-draft-write' } };
+            }
+            if (!expectedRecordMatches(current, expectedGeneration, message.expectedSavedAt)) {
+                return { ok: true, draftKey, written: false, reason: 'changed' };
+            }
+        }
         if ((ReportDrafts.validRecord(current) && current.savedAt > message.record.savedAt)
             || (isTombstone(current) && current.deletedAt >= message.record.savedAt)) {
             return { ok: true, draftKey, written: false, reason: 'superseded' };
