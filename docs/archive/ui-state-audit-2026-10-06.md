@@ -165,3 +165,15 @@ Current behavior is maintained in [architecture](../architecture.md),
   never used or closed.
 - Documentation links and diff checks passed. Commits are local; no remote CI,
   release, or store proof is claimed.
+
+## Bloat follow-up
+
+At `b4147fd`, replacing Markdown's full HTML authoring initializer with upstream
+GFM, key bindings, and URL paste reduced the minified ascent-editor bundle from
+1,199,197 to 1,012,146 bytes: 187,051 bytes (15.6%) removed. HTML/CSS/JavaScript
+authoring parsers no longer contribute to that bundle. All 165 report tests,
+scoped lint, documentation checks, and full hidden Chrome 153/Firefox 157 checks
+passed; rendered Chrome Markdown and narrow controls were inspected. Raw HTML
+block tags no longer auto-close; supported report conversion remains unchanged.
+Lazy loading the remaining Rich/Markdown libraries is still deferred; no
+startup-latency improvement is inferred from the byte reduction.

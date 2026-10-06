@@ -167,7 +167,10 @@ spelling merely because they visited another mode without editing it.
 ### Editing Markdown mode
 
 CodeMirror only edits and highlights text. It does not parse, sanitize, or
-render the report. The extension sends its string through two sibling outputs:
+render the report. The source pane uses GFM, list key bindings, and URL paste without the full
+HTML authoring plugins. Raw HTML block tags are no longer automatically closed;
+supported inline HTML still passes through the same report conversion pipeline.
+The extension sends its string through two sibling outputs:
 
 ```text
 CodeMirror Markdown string

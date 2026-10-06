@@ -53,6 +53,36 @@ test('the live Markdown preview keeps adversarial raw HTML inert at the render b
     assert.match(preview.textContent, /<script>/);
 });
 
+test('Markdown retains list continuation, undo, and context-aware URL paste', async () => {
+    const dom = await loadEditor();
+    await editorReady(dom);
+    modeButton(dom.window.document, 'Markdown').click();
+    const { view } = editors(dom).markdown;
+    const key = (name, keyCode, extra = {}) => view.contentDOM.dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', { key: name, keyCode, bubbles: true, cancelable: true, ...extra }));
+    for (const [source, expected] of [['- tent', '- tent\n- '], ['1. peak', '1. peak\n2. '], ['> Windy', '> Windy\n> ']]) {
+        typeMarkdown(dom, source);
+        view.dispatch({ selection: { anchor: source.length } });
+        key('Enter', 13);
+        assert.equal(view.state.doc.toString(), expected);
+        key('z', 90, { ctrlKey: true });
+        assert.equal(view.state.doc.toString(), source);
+    }
+    for (const [source, from, to, expected] of [
+        ['route', 0, 5, '[route](https://example.com/)'],
+        ['`route`', 1, 6, '`https://example.com/`'],
+        ['<span>route</span>', 6, 11, '<span>https://example.com/</span>'],
+    ]) {
+        typeMarkdown(dom, source);
+        view.dispatch({ selection: { anchor: from, head: to } });
+        const paste = new dom.window.Event('paste', { bubbles: true, cancelable: true });
+        Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'https://example.com/' } });
+        view.contentDOM.dispatchEvent(paste);
+        assert.equal(view.state.doc.toString(), expected);
+    }
+    dom.window.close();
+});
+
 test('the editor reports a mode-preference persistence failure', async () => {
     const dom = await loadEditor({
         prepare: d => {

@@ -16,7 +16,7 @@
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { markdown, markdownLanguage, markdownKeymap } from '@codemirror/lang-markdown';
+import { markdownLanguage, markdownKeymap, pasteURLAsLink } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 
@@ -41,7 +41,10 @@ export const createMarkdownEditor = ({ parent, placeholder: placeholderText, ari
             history(),
             EditorView.lineWrapping,
             placeholder(placeholderText),
-            markdown({ base: markdownLanguage }),
+            // Full HTML authoring also pulls in JavaScript/CSS parsers. This
+            // source pane needs GFM; report-markup owns supported HTML conversion.
+            markdownLanguage,
+            pasteURLAsLink,
             syntaxHighlighting(mdHighlight),
             // markdownKeymap first so Enter continues lists/quotes before the
             // default newline binding sees it.
