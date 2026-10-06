@@ -11,7 +11,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | F1 | P1 | Stale report-draft cleanup preserves newer same-key saves | Fixed locally |
 | F2 | P1 | Photo project switches settle outgoing autosave before replacement | Fixed locally |
 | F3 | P2 | Photo replacement ends old route/drawing/drag sessions | Fixed locally |
-| F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Open |
+| F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Fixed locally |
 | F5 | P2 | Favorite Climbers follows authoritative settings changes | Open |
 | F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Open |
 | F7 | P2 | Report controls fit naturally narrow native forms | Open |
@@ -46,6 +46,13 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   Scoped ESLint/diff checks passed. Hidden Chrome at 1280×900 kept the new portrait
   project at 600×800 after Escape, with no route preview or false save conflict;
   its rendered screenshot was inspected.
+- F4: popup operations invalidate pending status/start replies and deferred
+  units-result painting. Poll scheduling and success/error handlers check their
+  operation revision; cancel failure with a worker job resumes status checks.
+  Four regressions cover obsolete progress/failure after cancellation and late
+  start results after Clear/Open. 40 popup tests, scoped ESLint, and diff checks
+  passed. Hidden Chrome at 400×650 retained the cancellation card and Start again
+  after delayed replies, without a spinner; its screenshot was inspected.
 
 ### Intentionally not changed
 

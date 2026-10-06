@@ -34,9 +34,18 @@ import { units as Units } from '../src/ui/units.js';
     let displayUnitsReady = false;
     let pendingUnitsJob = null;
     let pollTimer = null;
+    let captureRevision = 0;
     let capturePending = false;
     let popupCaptureStartedAt = null;
     let popupDiagnosticReported = false;
+
+    const replaceOperation = () => {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+        capturePending = false;
+        pendingUnitsJob = null;
+        return ++captureRevision;
+    };
 
     const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
     const reportPopupDiagnostic = job => {
@@ -197,14 +206,13 @@ import { units as Units } from '../src/ui/units.js';
     };
 
     const cancelCapture = async () => {
-        clearTimeout(pollTimer);
-        pollTimer = null;
-        capturePending = false;
+        const revision = replaceOperation();
         stateCard('Cancelling capture…', 'Removing this in-progress capture from the extension.', { loading: true });
         try {
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CANCEL', tabId: activeTab.id });
+            if (revision !== captureRevision) return;
             if (!response?.ok) {
-                if (response?.job) return render(response.job);
+                if (response?.job) { render(response.job); void poll(revision); return; }
                 throw reportedFailure('The capture could not be cancelled.');
             }
             currentJob = null;
@@ -214,6 +222,7 @@ import { units as Units } from '../src/ui/units.js';
                 { action: { label: 'Start again', primary: true, onClick: () => beginCapture(true) } }
             );
         } catch (error) {
+            if (revision !== captureRevision) return;
             stateCard('Couldn’t cancel capture', publicMessage(error), {
                 kind: 'error', action: { label: 'Try again', onClick: cancelCapture }
             });
@@ -347,21 +356,23 @@ import { units as Units } from '../src/ui/units.js';
     const POLL_FAILURE_TOLERANCE = 5;
     let pollFailures = 0;
 
-    const poll = async () => {
-        if (!activeTab) return;
+    const poll = async (revision = captureRevision) => {
+        if (!activeTab || revision !== captureRevision) return;
         try {
             const job = await ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id });
+            if (revision !== captureRevision) return;
             pollFailures = 0;
             if (job) render(job);
             if ((!job && capturePending) || (job && !CapturePhases.isTerminal(job.phase))) {
-                pollTimer = setTimeout(poll, 450);
+                pollTimer = setTimeout(() => void poll(revision), 450);
             } else {
                 pollTimer = null;
             }
         } catch (error) {
+            if (revision !== captureRevision) return;
             console.warn('Better Peakbagger: capture status poll failed', error);
             if (++pollFailures < POLL_FAILURE_TOLERANCE) {
-                pollTimer = setTimeout(poll, 450);
+                pollTimer = setTimeout(() => void poll(revision), 450);
                 return;
             }
             pollTimer = null;
@@ -379,7 +390,8 @@ import { units as Units } from '../src/ui/units.js';
     };
 
     const beginCapture = force => {
-        clearTimeout(pollTimer);
+        const revision = replaceOperation();
+        currentJob = null;
         popupCaptureStartedAt = globalThis.BPB_CAPTURE_DIAGNOSTICS === true ? monotonicNow() : null;
         popupDiagnosticReported = false;
         capturePending = true;
@@ -389,6 +401,7 @@ import { units as Units } from '../src/ui/units.js';
         });
         void ext.runtime.sendMessage({ type: 'CAPTURE_START', tabId: activeTab.id, force })
             .then(job => {
+                if (revision !== captureRevision) return;
                 capturePending = false;
                 if (job) render(job);
                 if (!job || CapturePhases.isTerminal(job.phase)) {
@@ -397,6 +410,7 @@ import { units as Units } from '../src/ui/units.js';
                 }
             })
             .catch(error => {
+                if (revision !== captureRevision) return;
                 // A rejection here is the messaging layer, not the capture:
                 // the worker reports its own failures as a phase: 'error' job.
                 console.warn('Better Peakbagger: capture start failed', error);
@@ -412,16 +426,17 @@ import { units as Units } from '../src/ui/units.js';
                     }
                 );
             });
-        void poll();
+        void poll(revision);
     };
 
     clearCaptureButton.addEventListener('click', async () => {
-        clearTimeout(pollTimer);
+        const revision = replaceOperation();
         openButton.disabled = true;
         clearCaptureButton.disabled = true;
         clearCaptureButton.textContent = 'Deleting…';
         try {
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab.id });
+            if (revision !== captureRevision) return;
             if (!response?.ok) throw reportedFailure(response?.error?.message || 'The captured track data could not be deleted.');
             currentJob = null;
             stateCard(
@@ -430,6 +445,7 @@ import { units as Units } from '../src/ui/units.js';
                 { action: { label: 'Capture again', primary: true, onClick: () => beginCapture(false) } }
             );
         } catch (error) {
+            if (revision !== captureRevision) return;
             stateCard('Couldn’t delete captured track data', publicMessage(error), {
                 kind: 'error',
                 action: { label: 'Back to results', onClick: () => renderResults(currentJob) }
@@ -440,6 +456,7 @@ import { units as Units } from '../src/ui/units.js';
     settingsButton.addEventListener('click', openSettings);
 
     openButton.addEventListener('click', async () => {
+        const revision = replaceOperation();
         openButton.disabled = true;
         openButton.textContent = 'Opening drafts…';
         try {
@@ -448,6 +465,7 @@ import { units as Units } from '../src/ui/units.js';
                 tabId: activeTab.id,
                 selectedIds: selectedIds()
             });
+            if (revision !== captureRevision) return;
             if (response?.phase === 'error') throw reportedFailure(response.error?.message || 'Drafts could not be opened.');
             // Re-render from the worker's own state so the selection lock engages
             // in this turn. Patching only the label leaves a "ready" card offering
@@ -462,6 +480,7 @@ import { units as Units } from '../src/ui/units.js';
             }
             openButton.disabled = false;
         } catch (error) {
+            if (revision !== captureRevision) return;
             refreshSelection();
             stateCard('Draft opening stopped', publicMessage(error), { kind: 'error', action: { label: 'Back to results', onClick: () => renderResults(currentJob) } });
         }

@@ -1129,6 +1129,86 @@ test('popup can cancel an in-progress capture without retaining track data', asy
     dom.window.close();
 });
 
+for (const obsoleteReply of ['progress', 'failure']) {
+    test(`cancelled capture ignores obsolete status and start ${obsoleteReply} replies`, async t => {
+        const dom = new JSDOM(html, {
+            url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
+        });
+        t.after(() => dom.window.close());
+        const nativeSet = dom.window.setTimeout.bind(dom.window);
+        let scheduledPolls = 0;
+        dom.window.setTimeout = (fn, delay, ...args) => {
+            if (delay === 450) scheduledPolls++;
+            return nativeSet(fn, delay === 450 ? 1 : delay, ...args);
+        };
+        let finishStart, failStart, finishPoll, failPoll;
+        const start = new Promise((resolve, reject) => { finishStart = resolve; failStart = reject; });
+        const status = new Promise((resolve, reject) => { finishPoll = resolve; failPoll = reject; });
+        const progress = { phase: 'exporting-gpx', provider: 'garmin' };
+        let polls = 0;
+        dom.window.chrome = {
+            tabs: { query: async () => [{ id: 9 }] },
+            runtime: { sendMessage: message => {
+                if (message.type === 'CAPTURE_START') return start;
+                if (message.type === 'CAPTURE_STATUS') return ++polls === 1
+                    ? Promise.resolve(progress) : status;
+                return Promise.resolve({ ok: true });
+            } },
+        };
+        dom.window.eval(source);
+        await waitFor(() => polls === 2);
+        assert.equal(polls, 2);
+        [...dom.window.document.querySelectorAll('#state button')]
+            .find(button => button.textContent === 'Cancel').click();
+        await waitFor(() => /Capture cancelled/.test(stateText(dom)));
+        if (obsoleteReply === 'failure') {
+            failStart(new Error('old start unavailable')); failPoll(new Error('old status unavailable'));
+        } else { finishStart(unitsJob); finishPoll(progress); }
+        await Promise.allSettled([start, status]);
+        await new Promise(resolve => nativeSet(resolve, 0));
+        assert.match(stateText(dom), /Capture cancelled/);
+        assert.equal(dom.window.document.querySelector('.spinner'), null);
+        assert.equal(scheduledPolls, 1, 'obsolete responses cannot restart polling');
+    });
+}
+
+for (const action of ['clear', 'open']) {
+    test(`${action} results cannot be overwritten by a late capture-start result`, async t => {
+        let finishStart;
+        const start = new Promise(resolve => { finishStart = resolve; });
+        const dom = new JSDOM(html, {
+            url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
+        });
+        t.after(() => dom.window.close());
+        dom.window.chrome = {
+            tabs: { query: async () => [{ id: 9 }] },
+            runtime: { sendMessage: async message => {
+                if (message.type === 'CAPTURE_START') return start;
+                if (message.type === 'CAPTURE_STATUS') return unitsJob;
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') return { job: { ...unitsJob, phase: 'opened' } };
+                return { ok: true };
+            } },
+        };
+        dom.window.eval(source);
+        const doc = dom.window.document;
+        await waitFor(() => doc.querySelector('.peak-row'));
+        doc.getElementById(action === 'clear' ? 'clear-capture' : 'open-drafts').click();
+        await waitFor(() => action === 'clear'
+            ? /Captured track data deleted/.test(stateText(dom))
+            : doc.getElementById('open-drafts').textContent === 'Show opened drafts');
+        finishStart(unitsJob);
+        await start;
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        if (action === 'clear') {
+            assert.match(stateText(dom), /Captured track data deleted/);
+            assert.equal(doc.getElementById('results').hidden, true);
+        } else {
+            assert.equal(doc.getElementById('open-drafts').textContent, 'Show opened drafts');
+            assert.equal(doc.querySelector('.peak-row input').disabled, true);
+        }
+    });
+}
+
 // Every popup action reaches the worker through runtime messaging, and that
 // transport rejects with browser-internal text when the MV3 worker is not
 // reachable ("Could not establish connection. Receiving end does not exist.").
