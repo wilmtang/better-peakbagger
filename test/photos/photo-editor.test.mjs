@@ -603,6 +603,112 @@ const failNextDraftTransactionWithQuota = indexedDB => {
     };
 };
 
+const holdPhotoAutosave = (page, t) => {
+    const { win } = page;
+    const nativeSet = win.setTimeout.bind(win);
+    const nativeClear = win.clearTimeout.bind(win);
+    const held = new Set();
+    let next = 987600;
+    win.setTimeout = (callback, delay, ...args) => {
+        if (delay !== 500) return nativeSet(callback, delay, ...args);
+        held.add(++next);
+        return next;
+    };
+    win.clearTimeout = timer => { if (!held.delete(timer)) nativeClear(timer); };
+    t.after(() => { win.setTimeout = nativeSet; win.clearTimeout = nativeClear; });
+};
+
+const pickReplacementPhoto = (page, name = 'second.jpg') => {
+    const file = new page.win.File(['second pixels'], name, { type: 'image/jpeg' });
+    const input = page.doc.getElementById('photo-file');
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new page.win.Event('change'));
+};
+
+for (const destination of ['new file', 'new version']) {
+    test(`switching to ${destination} saves outgoing edits before replacing the project`, async t => {
+        const page = await loadEditor({
+            onStoreReady: ({ win }) => {
+                // Native blobs survive fake-indexeddb's structured clone.
+                win.Blob = Blob;
+                win.File = File;
+            },
+        });
+        t.after(() => page.dom.window.close());
+        await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+            === 'Saved on this device');
+        holdPhotoAutosave(page, t);
+        const title = page.doc.getElementById('photo-title');
+        title.value = 'important outgoing edit';
+        page.emit(title, 'input');
+        page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+        if (destination === 'new file') {
+            pickReplacementPhoto(page);
+            await waitFor(page.dom, () => title.value === 'second');
+        } else {
+            page.click(page.doc.getElementById('show-library'));
+            await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
+            [...page.doc.querySelectorAll('.photo-card button')]
+                .find(button => button.textContent === 'Edit as new version').click();
+            await waitFor(page.dom, () => title.value === 'important outgoing edit revision');
+        }
+        const photos = await readPhotoStore(page.win, 'photos');
+        const outgoing = photos.find(photo => photo.title === 'important outgoing edit');
+        assert.ok(outgoing, 'the outgoing title remains durable');
+        const projects = await readPhotoStore(page.win, 'projects');
+        assert.equal(projects.find(project => project.localId === outgoing.localId).objects.length, 1);
+        assert.deepEqual(page.errors, []);
+    });
+
+    test(`a failed outgoing save blocks switching to ${destination}`, async t => {
+        const indexedDB = new IDBFactory();
+        const page = await loadEditor({ indexedDB });
+        t.after(() => page.dom.window.close());
+        await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+            === 'Saved on this device');
+        holdPhotoAutosave(page, t);
+        const title = page.doc.getElementById('photo-title');
+        title.value = 'keep this unsaved title'; page.emit(title, 'input');
+        const failure = failNextDraftTransactionWithQuota(indexedDB);
+        t.after(failure.restore);
+        if (destination === 'new file') pickReplacementPhoto(page);
+        else {
+            page.click(page.doc.getElementById('show-library'));
+            await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
+            [...page.doc.querySelectorAll('.photo-card button')]
+                .find(button => button.textContent === 'Edit as new version').click();
+        }
+        await waitFor(page.dom, () => /Resolve the save problem/.test(
+            page.doc.getElementById('toast-message').textContent));
+        assert.equal(title.value, 'keep this unsaved title');
+        assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+        assert.match(page.doc.getElementById('save-status').textContent, /Not saved/);
+        assert.equal(page.doc.getElementById('photo-file').disabled, false);
+        assert.deepEqual(page.errors, []);
+    });
+}
+
+test('photo replacement waits for an in-flight save and persists edits made after its snapshot', async t => {
+    const indexedDB = new IDBFactory();
+    let deferred;
+    const page = await loadEditor({
+        indexedDB, onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
+    });
+    t.after(() => { deferred.restore(); deferred.release(); page.dom.window.close(); });
+    await deferred.started;
+    holdPhotoAutosave(page, t);
+    const title = page.doc.getElementById('photo-title');
+    title.value = 'edit after first snapshot'; page.emit(title, 'input');
+    pickReplacementPhoto(page);
+    assert.equal(title.value, 'edit after first snapshot');
+    assert.equal(title.disabled, true, 'replacement freezes mutations while the save settles');
+    deferred.restore(); deferred.release();
+    await waitFor(page.dom, () => title.value === 'second');
+    assert.ok((await readPhotoStore(page.win, 'photos'))
+        .some(photo => photo.title === 'edit after first snapshot'));
+    assert.deepEqual(page.errors, []);
+});
+
 test('Edit as new version has one owner across rapid same-card and cross-card actions', async t => {
     const indexedDB = new IDBFactory();
     await seedUploadedLibraryPhoto(indexedDB, { localId: 'first-version' });

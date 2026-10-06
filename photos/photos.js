@@ -1086,6 +1086,18 @@ const flushDraftPersistence = () => {
     return draftDirty ? persistDraft() : draftWriteQueue;
 };
 
+// Call while editor mutations are locked, before reading or installing the
+// replacement project. An in-flight save may restore draftDirty on failure.
+const settleOutgoingDraft = async () => {
+    await draftWriteQueue;
+    if (draftDirty && !await flushDraftPersistence()) {
+        toast('This photo could not be saved. Your edits are still open. '
+            + 'Resolve the save problem before opening another photo.', { duration: 9000 });
+        return false;
+    }
+    return true;
+};
+
 const updateHistoryButtons = () => {
     ui.undo.disabled = !(drawingSession || routeSession?.points.length || history.length) || busy;
     ui.redo.disabled = (routeSession ? !routeSession.removedPoints.length : !future.length)
@@ -2012,7 +2024,6 @@ const nudgeSelected = (dx, dy) => {
 };
 
 const loadBundle = async bundle => {
-    if (busy) return false;
     if (!bundle?.photo || !bundle.project || !bundle.original) {
         toast('The editable original is not available on this device.');
         return false;
@@ -2051,7 +2062,6 @@ const loadBundle = async bundle => {
     initializeUploadSettings();
     renderProject();
     setSaveStatus('Saved on this device');
-    setView('editor');
     return true;
 };
 
@@ -2083,6 +2093,7 @@ const chooseFile = async file => {
     let bitmap = null;
     let phase = 'storage';
     try {
+        if (!await settleOutgoingDraft()) return;
         await preflightSourceStorage(file.size);
         phase = 'decode';
         bitmap = await decodeBlob(file);
@@ -2564,15 +2575,18 @@ const editAsNewVersion = async (item, control = null) => {
     if (busy || newVersionTransaction) return;
     const owner = {};
     newVersionTransaction = owner;
+    setBusy(true, 'Opening new version…');
     if (control) {
         control.disabled = true;
         control.setAttribute('aria-busy', 'true');
     }
     let decodedBitmap = null;
     let committed = false;
+    let opened = false;
     try {
+        if (!await settleOutgoingDraft()) return;
         const bundle = await store.getBundle(item.localId);
-        if (!bundle.original || !bundle.project) {
+        if (!bundle.photo || !bundle.original || !bundle.project) {
             toast('The original photo is not available on this device.');
             return;
         }
@@ -2585,9 +2599,9 @@ const editAsNewVersion = async (item, control = null) => {
         });
         const nextPhoto = Library.createDraft({
             localId,
-            title: `${item.title} revision`.slice(0, Library.TITLE_LIMIT),
-            alt: item.alt, caption: item.caption || '',
-            source: item.source,
+            title: `${bundle.photo.title} revision`.slice(0, Library.TITLE_LIMIT),
+            alt: bundle.photo.alt, caption: bundle.photo.caption || '',
+            source: bundle.photo.source,
             parentLocalId: item.localId,
             now,
         });
@@ -2606,6 +2620,7 @@ const editAsNewVersion = async (item, control = null) => {
         notifyBackupChanged();
         const savedBundle = await store.getBundle(localId);
         if (!await loadBundle(savedBundle)) throw new Error('saved draft could not be loaded');
+        opened = true;
         toast('Editing a new version. The existing image will stay unchanged.');
     } catch {
         if (committed) {
@@ -2619,6 +2634,8 @@ const editAsNewVersion = async (item, control = null) => {
     } finally {
         decodedBitmap?.close?.();
         if (newVersionTransaction === owner) newVersionTransaction = null;
+        setBusy(false);
+        if (opened || draftDirty) setView('editor');
         if (control) {
             control.disabled = false;
             control.setAttribute('aria-busy', 'false');

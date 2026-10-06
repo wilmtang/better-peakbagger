@@ -9,7 +9,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | ID | Priority | Required outcome | Status |
 | --- | --- | --- | --- |
 | F1 | P1 | Stale report-draft cleanup preserves newer same-key saves | Fixed locally |
-| F2 | P1 | Photo project switches settle outgoing autosave before replacement | Open |
+| F2 | P1 | Photo project switches settle outgoing autosave before replacement | Fixed locally |
 | F3 | P2 | Photo replacement ends old route/drawing/drag sessions | Open |
 | F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Open |
 | F5 | P2 | Favorite Climbers follows authoritative settings changes | Open |
@@ -29,6 +29,14 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   malformed expectations. 88 focused worker/options/editor tests passed,
   scoped ESLint and diff checks passed, and the full hidden Chrome verifier
   passed using the real unpacked extension and masked HTTPS fixtures.
+- F2: file selection and Edit as new version freeze mutations, await in-flight
+  writes, and flush the outgoing dirty draft before reading/replacing projects.
+  Failed saves keep the outgoing editor available; new versions read the fresh
+  saved title/caption/project. Five regressions cover both switch destinations,
+  failure retention, and edits newer than an in-flight snapshot. 104 focused
+  photo tests, scoped ESLint, and diff checks passed. Hidden Chrome at 1280×900
+  preserved both the edited original and its revision in IndexedDB; the rendered
+  editor screenshot was inspected.
 
 ### Intentionally not changed
 
