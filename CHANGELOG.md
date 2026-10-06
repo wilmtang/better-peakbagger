@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.9.0 — 2026-10-06
+
 - **Choose whose reports and ascents you see.** Manage Favorites and Ignored
   climbers together, filter selected peak reports by favorites or climbing
   buddies, and temporarily reveal ignored content without changing either list.
