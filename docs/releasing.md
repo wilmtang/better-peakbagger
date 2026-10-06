@@ -178,7 +178,7 @@ visible in the AMO Developer Hub.
 
    ```sh
    npm ci
-   npm run audit:ci -- --allow-reviewed-development-advisory # 3.9.0 only; see below
+   npm run audit:ci -- --allow-reviewed-development-advisory # exact exception until Oct 17
    npm test
    npm run test:scale
    npm run lint
@@ -202,17 +202,19 @@ visible in the AMO Developer Hub.
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
    `audit:ci` requires zero advisories by default, including development dependencies.
-   For 3.9.0 only, the release gate opts into the same exact-path, development-only
-   `node-forge` exception used by main CI. Pass
-   `--allow-reviewed-development-advisory` for that release's local check;
-   the release workflow gates the flag on version 3.9.0. The exception expires
+   The owner approved the same exact-path, development-only `node-forge`
+   exception for main CI and store releases through October 17, 2026, without
+   a version-specific approval. Pass `--allow-reviewed-development-advisory`
+   for the local check; the release workflow opts into the same evaluator.
+   The exception expires
    at 00:00 October 17, 2026 in Los Angeles (07:00 UTC), and rejects new advisories,
    changed dependency versions or paths, and production resolutions. Raw npm
    audit still reports the three high findings in the `web-ext` chain. This is
    an accepted tooling risk, not a patched dependency or a clean raw audit.
-   Every other version uses the strict command without the flag.
+   Every other advisory remains rejected, and the flag cannot accept this
+   advisory at or after the expiry.
    The patched `web-ext`/`addons-linter` toolchain no longer needs the former
-   `image-size` exception. Rehearsals use the same version-gated policy as publication.
+   `image-size` exception. Rehearsals use the same policy as publication.
    `npm run lint`
    likewise permits only the owner-annotated warnings checked into
    `scripts/check-web-ext-lint.mjs`, up to the reviewed per-file occurrence limits

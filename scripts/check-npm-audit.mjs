@@ -12,8 +12,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // All previously accepted advisories now have patched development-tool releases.
 // A clean functional suite is not a substitute for a clean dependency graph.
 // The owner-approved node-forge exception is explicit, development-only,
-// exact-path and time-limited. The default stays strict; the 3.9.0 release
-// explicitly opts into the same exception without changing its scope or expiry.
+// exact-path and time-limited. The default stays strict; CI and store releases
+// explicitly opt into the same exception without changing its scope or expiry.
 export const DEVELOPMENT_ADVISORY = Object.freeze({
     url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
     expiresAt: '2026-10-17T07:00:00Z',

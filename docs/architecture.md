@@ -1809,9 +1809,9 @@ No single green command proves the extension works:
   `minimatch@^3` path on patched 1.1.21 through a scoped override.
   Ordinary Test CI explicitly accepts one owner-reviewed node-forge advisory
   through its exact development dependency path until October 17, 2026.
-  The release gate also opts into that exact exception for release 3.9.0 only;
-  the release workflow gates its opt-in on the validated version. The default
-  command and other release versions remain strict; new findings, changed paths
+  The owner approved the release gate's opt-in to that same exact exception
+  through the expiry without version-specific approval. The default command
+  remains strict; new findings, changed paths
   or versions, production resolutions, and expiry fail closed. See
   [releasing](releasing.md) and the original
   [integration ledger](archive/mainline-dependency-integration-2026-10-03.md).

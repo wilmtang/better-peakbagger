@@ -68,18 +68,12 @@ jobs:
       # The test workflow runs this too, but nothing makes a release wait for
       # that workflow, and test/project/dependency-audit.test.mjs only exercises
       # evaluateAudit() against synthetic reports — it never calls npm audit. The
-      # gate requires zero advisories by default. Only 3.9.0 opts into
-      # the exact dev-only node-forge exception, expiring October 17;
-      # every other version remains strict, and new findings still fail.
+      # The default requires zero advisories. The owner accepts the exact
+      # dev-only node-forge advisory for releases
+      # until October 17. The audit evaluator enforces its dependency graph
+      # and expiry; every other finding still fails.
       - name: Check dependency advisories
-        env:
-          RELEASE_AUDIT_VERSION: ${{ steps.metadata.outputs.version }}
-        run: |
-          if [ "$RELEASE_AUDIT_VERSION" = "3.9.0" ]; then
-            npm run audit:ci -- --allow-reviewed-development-advisory
-          else
-            npm run audit:ci
-          fi
+        run: npm run audit:ci -- --allow-reviewed-development-advisory
 
       - name: Run tests
         run: npm test
