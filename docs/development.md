@@ -607,7 +607,9 @@ add it to the merge-step condition, for example
   Scale files run sequentially so their timing gates do not compete with other
   CPU-heavy fixtures in the same runner.
   The capture case checks summit identities and protected reduction anchors,
-  internal cancellation checkpoints, and a generous total CPU ceiling; it still
+  internal cancellation checkpoints, and a generous process CPU ceiling. It
+  reports wall time separately, because cooperative timer waits and runner
+  descheduling are not CPU consumption. It still
   cannot prove native renderer responsiveness or the live MV3 message scheduler.
 - `npm run verify:provider-performance` measures native `DOMParser` and
   extraction for synthetic 1,000-, 5,000-, 20,000-, and 100,000-point GPX,

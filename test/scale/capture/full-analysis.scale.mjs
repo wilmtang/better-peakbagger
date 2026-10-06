@@ -48,9 +48,10 @@ const cooperativeScheduler = () => {
     return { checkpoint, result: () => ({ yields }) };
 };
 
-test('production-scale full analysis remains exact, bounded, and cooperative', async () => {
+test('production-scale full analysis remains exact, bounded, and cooperative', async t => {
     const scheduler = cooperativeScheduler();
     const startedAt = performance.now();
+    const startedCpu = process.cpuUsage();
     const cooperativeMatches = await Core.detectPeaksAsync([route], peaks, 0.95, {
         checkpoint: scheduler.checkpoint,
     });
@@ -82,8 +83,11 @@ test('production-scale full analysis remains exact, bounded, and cooperative', a
     assert.ok(draftFields.every(fields => Number.isFinite(fields.upDistanceM)));
 
     const elapsedMs = performance.now() - startedAt;
+    const cpu = process.cpuUsage(startedCpu);
+    const cpuMs = (cpu.user + cpu.system) / 1_000;
     const scheduling = scheduler.result();
-    assert.ok(elapsedMs < 15_000, `full analysis took ${elapsedMs.toFixed(1)} ms`);
+    t.diagnostic(`full analysis: ${cpuMs.toFixed(1)} ms CPU, ${elapsedMs.toFixed(1)} ms wall, ${scheduling.yields} yields`);
+    assert.ok(cpuMs < 15_000, `full analysis used ${cpuMs.toFixed(1)} ms CPU (${elapsedMs.toFixed(1)} ms wall)`);
     assert.ok(scheduling.yields > 10, 'production analysis must yield repeatedly');
 });
 
