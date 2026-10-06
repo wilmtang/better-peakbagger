@@ -19,6 +19,7 @@ const run = async ({
     gpx = GPX,
     inputLabel = 'hidden file upload',
     delayedInput = false,
+    inputDelayMs = 25,
     duplicateInput = false,
     portal = false,
     portalClass = 'dz-hidden-input',
@@ -30,6 +31,18 @@ const run = async ({
         pretendToBeVisual: true,
     });
     const win = dom.window;
+    // Measure fixture deadlines against scheduled timer time. A busy runner
+    // can resume a 100 ms poll after the entire 150 ms fixture budget passes.
+    let clockMs = 0;
+    const schedule = win.setTimeout.bind(win);
+    win.Date.now = () => clockMs;
+    win.setTimeout = (callback, delay) => {
+        const dueAt = clockMs + delay;
+        return schedule(() => {
+            clockMs = Math.max(clockMs, dueAt);
+            callback();
+        }, delay);
+    };
     win.HTMLElement.prototype.getClientRects = () => [{ width: 1, height: 1 }];
     win.DataTransfer = class {
         constructor() {
@@ -68,7 +81,7 @@ const run = async ({
             parent.append(input);
             if (duplicateInput) parent.append(input.cloneNode());
         };
-        if (delayedInput) win.setTimeout(mount, 25);
+        if (delayedInput) win.setTimeout(mount, inputDelayMs);
         else mount();
     });
     const result = await win.eval(
@@ -111,6 +124,14 @@ for (const options of [
         assert.equal(uploadClicks, 0);
     });
 }
+
+test('AllTrails fixture still rejects an input mounted beyond its polling deadline', async () => {
+    const { result, handoffs, uploadClicks } = await run({ delayedInput: true, inputDelayMs: 250 });
+    assert.equal(result.code, 'importer-unavailable');
+    assert.equal(result.supplied, false);
+    assert.equal(handoffs, 0);
+    assert.equal(uploadClicks, 0);
+});
 
 test('AllTrails does not supply an ambiguous or non-GPX file control', async () => {
     for (const options of [{ duplicateInput: true }, { accept: 'image/*' },
