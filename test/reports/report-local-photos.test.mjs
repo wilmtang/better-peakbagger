@@ -11,7 +11,6 @@ const setup = async upload => {
     const messages = [];
     let submissions = 0;
     const dom = await loadEditor({ report: `[img src="${src}" alt="Mountain"]`, prepare: d => {
-        const original = d.chrome.runtime.sendMessage.bind(d.chrome.runtime);
         d.chrome.runtime.sendMessage = async message => {
             messages.push(message);
             if (message.type === 'PHOTO_REPORT_READ') return { ok: true, dataUrl: 'data:image/png;base64,eA==' };
@@ -19,7 +18,7 @@ const setup = async upload => {
             if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
             if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
             if (message.type === 'PHOTO_REPORT_UPLOAD') return upload(message);
-            return original(message);
+            return undefined; // The shared fixture owns fallback worker routes.
         };
         d.window.document.getElementById('JournalText').form.requestSubmit = () => { submissions++; };
     } });
@@ -27,6 +26,17 @@ const setup = async upload => {
     await waitFor(dom, () => editors(dom).rich);
     return { dom, ui, messages, submissions: () => submissions };
 };
+
+test('local-photo fixtures delegate unhandled worker routes without recursive dispatch', async () => {
+    const h = await setup(async () => { throw new Error('must not upload'); });
+    const message = { type: 'GPX_PROCESS_INVALIDATE', pageSessionId: 'local-photo-page', selectionGeneration: 2 };
+    const response = await h.dom.chrome.runtime.sendMessage(message);
+    assert.equal(response.ok, true);
+    assert.equal(response.pageSessionId, message.pageSessionId);
+    assert.equal(response.selectionGeneration, message.selectionGeneration);
+    assert.equal(h.messages.filter(item => item.type === message.type).length, 1);
+    h.dom.window.close();
+});
 
 test('pending images show local state; synthetic Save cannot upload or submit', async () => {
     const h = await setup(async () => { throw new Error('must not upload'); });
@@ -124,7 +134,6 @@ test('a real image paste stays local and undo/redo keep its durable reference', 
         win.document.addEventListener('paste', event => Object.defineProperty(event, 'clipboardData', {
             value: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }] },
         }), true);
-        const original = d.chrome.runtime.sendMessage.bind(d.chrome.runtime);
         d.chrome.runtime.sendMessage = async message => {
             messages.push(message);
             if (message.type === 'PHOTO_REPORT_STATUS') return { ok: true, configured: true, permissionGranted: true };
@@ -133,7 +142,7 @@ test('a real image paste stays local and undo/redo keep its durable reference', 
                 createdId = message.localPhotoId;
                 return { ok: true, localPhotoId: createdId, url: `https://bpb-photo.invalid/${createdId}`, alt: '' };
             }
-            return original(message);
+            return undefined;
         };
     } });
     const ui = await editorReady(dom);
