@@ -38,19 +38,31 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
     // The two settings this page owns are optimistic; on a write failure restore
     // the confirmed value and report it, the way the Settings page does.
     let confirmed = null;
-    const save = patch => S.set(patch).then(
-        next => { confirmed = { ...next }; return next; },
-        error => {
+    let settingsRevision = 0;
+    const accept = next => {
+        settingsRevision++;
+        confirmed = { ...next };
+        favorites.populate(next);
+    };
+    const save = async patch => {
+        const revision = ++settingsRevision;
+        try {
+            const next = await S.set(patch);
+            if (revision === settingsRevision) accept(next);
+            return next;
+        } catch {
+            if (revision !== settingsRevision) return confirmed;
             if (confirmed) favorites.populate(confirmed);
             flash('That setting couldn’t be saved. Try again.', { error: true });
-            throw error;
-        },
-    );
+            return confirmed;
+        }
+    };
 
     const favorites = initFavorites({ extensionApi, flash, save });
     initIgnored(extensionApi);
+    S.subscribe(accept);
+    const initialRevision = settingsRevision;
     void S.get().then(settings => {
-        confirmed = { ...settings };
-        favorites.populate(settings);
+        if (initialRevision === settingsRevision) accept(settings);
     });
 }

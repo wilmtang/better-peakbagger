@@ -12,7 +12,7 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
 | F2 | P1 | Photo project switches settle outgoing autosave before replacement | Fixed locally |
 | F3 | P2 | Photo replacement ends old route/drawing/drag sessions | Fixed locally |
 | F4 | P2 | Obsolete capture replies cannot repaint cancelled/replaced UI | Fixed locally |
-| F5 | P2 | Favorite Climbers follows authoritative settings changes | Open |
+| F5 | P2 | Favorite Climbers follows authoritative settings changes | Fixed locally |
 | F6 | P2 | Favorite and report-draft list updates retain meaningful keyboard focus | Open |
 | F7 | P2 | Report controls fit naturally narrow native forms | Open |
 | B1 | P3 | Assess a safe boundary for the always-loaded enhanced editor bundle | Open |
@@ -53,6 +53,13 @@ and manual Save boundaries, and retain evidence gaps separately from fixes.
   start results after Clear/Open. 40 popup tests, scoped ESLint, and diff checks
   passed. Hidden Chrome at 400×650 retained the cancellation card and Start again
   after delayed replies, without a spinner; its screenshot was inspected.
+- F5: Favorite Climbers subscribes through shared settings and guards initial
+  reads/write replies against newer events. Failure rollback uses the latest
+  confirmed preferences and does not emit an unhandled fire-and-forget rejection.
+  Four regressions cover external updates in both directions, delayed startup,
+  rollback, and obsolete write replies. 66 focused favorites/options UI tests,
+  scoped ESLint, and diff checks passed. Two hidden Chrome extension tabs at
+  1024×900 stayed synchronized; the dark rendered panel was inspected.
 
 ### Intentionally not changed
 

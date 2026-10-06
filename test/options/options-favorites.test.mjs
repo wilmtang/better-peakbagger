@@ -8,6 +8,75 @@ import {
 
 registerCleanup();
 
+test('favorite manager follows external source and buddy-removal settings in both directions', async () => {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' });
+    for (const source of ['buddies', 'custom']) {
+        await dom.chrome.storage.sync.set({ bpbSettings: {
+            ...dom.chrome._store.bpbSettings, favoritesSource: source,
+            removeFavoriteWhenBuddyRemoved: source === 'buddies',
+        } });
+        const selected = dom.window.document.querySelector('input[name="favorites-source"]:checked');
+        assert.equal(selected.value, source);
+        assert.equal(el(dom, 'favorites-custom-panel').hidden, source !== 'custom');
+        assert.equal(el(dom, 'favorites-remove-with-buddy').checked, source === 'buddies');
+    }
+});
+
+test('a stale initial settings read cannot overwrite an external favorite-source change', async () => {
+    let releaseRead;
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        prepareChrome: chrome => {
+            const get = chrome.storage.sync.get;
+            let reads = 0;
+            chrome.storage.sync.get = async key => {
+                const snapshot = await get(key);
+                if (++reads === 2) await new Promise(resolve => { releaseRead = resolve; });
+                return snapshot;
+            };
+        },
+    });
+    assert.equal(typeof releaseRead, 'function');
+    await dom.chrome.storage.sync.set({ bpbSettings: {
+        favoritesSource: 'buddies', removeFavoriteWhenBuddyRemoved: true,
+    } });
+    releaseRead();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.equal(dom.window.document.querySelector('input[name="favorites-source"]:checked').value, 'buddies');
+    assert.equal(el(dom, 'favorites-remove-with-buddy').checked, true);
+});
+
+test('favorite setting rollback uses the latest external confirmed values', async () => {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' });
+    await dom.chrome.storage.sync.set({ bpbSettings: {
+        favoritesSource: 'buddies', removeFavoriteWhenBuddyRemoved: true,
+    } });
+    dom.chrome.storage.sync.set = async () => { throw new Error('storage unavailable'); };
+    const custom = dom.window.document.querySelector('input[name="favorites-source"][value="custom"]');
+    custom.checked = true; custom.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /couldn’t be saved/.test(el(dom, 'status-error-text').textContent));
+    assert.equal(dom.window.document.querySelector('input[name="favorites-source"]:checked').value, 'buddies');
+    assert.equal(el(dom, 'favorites-remove-with-buddy').checked, true);
+});
+
+test('an old setting write reply cannot replace a newer external preference', async () => {
+    const dom = await loadFavoritesPage({ favoritesSource: 'buddies' });
+    let finishWrite;
+    const nativeSend = dom.chrome.runtime.sendMessage;
+    Object.defineProperty(dom.chrome.runtime, 'sendMessage', { value: message =>
+        message.type === 'SETTINGS_PATCH' ? new Promise(resolve => { finishWrite = resolve; }) : nativeSend(message),
+    });
+    const custom = dom.window.document.querySelector('input[name="favorites-source"][value="custom"]');
+    custom.checked = true; custom.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => finishWrite);
+    await dom.chrome.storage.sync.set({ bpbSettings: {
+        favoritesSource: 'buddies', removeFavoriteWhenBuddyRemoved: true,
+    } });
+    finishWrite({ ok: true, settings: { favoritesSource: 'custom' } });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.equal(dom.window.document.querySelector('input[name="favorites-source"]:checked').value, 'buddies');
+    assert.equal(el(dom, 'favorites-remove-with-buddy').checked, true);
+});
+
 test('favorite Undo explains an intervening ignore and preserves both lists', async () => {
     const entry = { cid: 900002, name: 'Casey Alpine', addedAt: 1, source: 'manual' };
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
