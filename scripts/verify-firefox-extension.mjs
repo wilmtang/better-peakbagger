@@ -1207,9 +1207,23 @@ async function main() {
         });
         const buddyMutationBaseline = { ...fixture.requests };
         const otherClimberUrl = `https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`;
+        const waitForBuddyAdditionReady = () => waitForScript(driver, `
+      const native = document.getElementById("BuddyButton");
+      const favorite = document.getElementById("bpb-climber-favorite");
+      const state = {
+        value: native?.value,
+        decorated: native?.classList.contains("bpb-native-buddy-action"),
+        blocked: native?.getAttribute("aria-disabled"),
+        disabled: native?.disabled,
+        favorite: favorite?.textContent,
+      };
+      return { ...state, ready: /^Add\\b/.test(state.value || "")
+        && state.decorated && state.blocked !== "true" && !state.disabled && !!favorite };
+    `, 'the enabled Firefox Buddy addition', 15_000, state => state?.ready);
         await driver.get(otherClimberUrl);
         await driver.wait(until.elementLocated(By.id('BuddyButton')), 10_000);
         await driver.wait(until.elementLocated(By.id('bpb-climber-favorite')), 10_000);
+        await waitForBuddyAdditionReady();
         await driver.findElement(By.id('BuddyButton')).click();
         const buddyAdded = await waitForScript(driver, `
       const nativeButton = document.getElementById("BuddyButton");
@@ -1248,6 +1262,7 @@ async function main() {
         assertState(removalPreferenceSaved, 'Firefox did not persist the Buddy removal preference');
         await driver.get(otherClimberUrl);
         await driver.wait(until.elementLocated(By.id('BuddyButton')), 10_000);
+        await waitForBuddyAdditionReady();
         await driver.findElement(By.id('BuddyButton')).click();
         await waitForScript(driver, `
       return /^Remove\\b/.test(document.getElementById("BuddyButton")?.value || "")
