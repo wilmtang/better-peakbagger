@@ -339,13 +339,16 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             const now = Date.now();
             const validEntries = Object.entries(everything || {})
                 .filter(([key, record]) => key.startsWith(Drafts.PREFIX) && Drafts.validRecord(record));
-            const expiredKeys = validEntries
-                .filter(([, record]) => now - record.savedAt > Drafts.TTL_MS)
-                .map(([key]) => key);
-            if (expiredKeys.length) {
-                await Promise.all(expiredKeys.map(draftKey => sendMutation({
+            if (revision !== refreshRevision) return;
+            const expiredEntries = validEntries
+                .filter(([, record]) => now - record.savedAt > Drafts.TTL_MS);
+            const expiredKeys = expiredEntries.map(([key]) => key);
+            if (expiredEntries.length) {
+                await Promise.all(expiredEntries.map(([draftKey, record]) => sendMutation({
                     type: 'REPORT_DRAFT_REMOVE',
                     draftKey,
+                    expectedGeneration: record[Drafts.GENERATION_FIELD] ?? null,
+                    expectedSavedAt: record.savedAt,
                 })));
             }
             if (revision !== refreshRevision) return;

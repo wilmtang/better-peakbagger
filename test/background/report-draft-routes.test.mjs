@@ -79,6 +79,47 @@ const registerAdd = h => h.routes.handlers.REPORT_DRAFT_SAVE_PENDING({
     attemptId: ADD_ATTEMPT,
 }, addSender);
 
+test('snapshot cleanup preserves a newer draft, including a same-timestamp generation', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const h = harness();
+    const first = await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: { text: 'old snapshot', savedAt: CLOCK },
+    }, editSender);
+    await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key, record: { text: 'newer work', savedAt: CLOCK },
+    }, editSender);
+    for (const sender of [editSender, extensionSender]) {
+        const result = await h.routes.handlers.REPORT_DRAFT_REMOVE({
+            draftKey: key,
+            expectedSavedAt: first.record.savedAt,
+            expectedGeneration: first.record.storageGeneration,
+        }, sender);
+        assert.equal(result.removed, false);
+        assert.equal(h.local.values[key].text, 'newer work');
+    }
+    const current = h.local.values[key];
+    const removed = await h.routes.handlers.REPORT_DRAFT_REMOVE({
+        draftKey: key, expectedSavedAt: current.savedAt,
+        expectedGeneration: current.storageGeneration,
+    }, extensionSender);
+    assert.equal(removed.removed, true);
+    assert.ok(h.local.values[key].deletedGeneration);
+});
+
+test('malformed cleanup expectations cannot become an unconditional removal', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const h = harness({ localInitial: { [key]: { text: 'keep me', savedAt: CLOCK } } });
+    for (const patch of [
+        { expectedSavedAt: null }, { expectedSavedAt: '0' },
+        { expectedGeneration: null }, { expectedSavedAt: CLOCK, expectedGeneration: 'invalid' },
+    ]) {
+        assert.equal((await h.routes.handlers.REPORT_DRAFT_REMOVE({
+            draftKey: key, ...patch,
+        }, extensionSender)).ok, false);
+        assert.equal(h.local.values[key].text, 'keep me');
+    }
+});
+
 test('pending Save accepts only the exact ascent editor identity and source tab', async () => {
     const h = harness();
     assert.equal((await registerAdd(h)).ok, true);

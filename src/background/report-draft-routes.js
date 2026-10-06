@@ -136,9 +136,27 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         }
         const marker = tombstone();
         await ext.storage.local.set({ [draftKey]: marker });
-        return { ok: true, draftKey, generation: marker[TOMBSTONE_FIELD] };
+        return { ok: true, draftKey, removed: true, generation: marker[TOMBSTONE_FIELD] };
     };
-    const remove = (message, sender) => serialize(() => removeOne(cleanDraftKey(message?.draftKey), sender));
+    const remove = (message, sender) => serialize(async () => {
+        const draftKey = cleanDraftKey(message?.draftKey);
+        // Cleanup and recovery offers act on a snapshot. Keep explicit terminal
+        // removals unconditional, but never let an old snapshot consume a newer save.
+        if (message?.expectedSavedAt !== undefined || message?.expectedGeneration !== undefined) {
+            const expectedGeneration = message.expectedGeneration == null
+                ? null : cleanGeneration(message.expectedGeneration);
+            if (!draftKey || !mutationSender(sender, draftKey)
+                || !Number.isFinite(message.expectedSavedAt)
+                || (message.expectedGeneration != null && !expectedGeneration)) {
+                return { ok: false, error: { code: 'invalid-draft-remove' } };
+            }
+            const current = (await ext.storage.local.get(draftKey))[draftKey];
+            if (!expectedRecordMatches(current, expectedGeneration, message.expectedSavedAt)) {
+                return { ok: true, draftKey, removed: false, reason: 'changed' };
+            }
+        }
+        return removeOne(draftKey, sender);
+    });
 
     const deleteOne = async (entry, sender) => {
         const draftKey = cleanDraftKey(entry?.draftKey);

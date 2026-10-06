@@ -6,6 +6,35 @@ import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 
+test('editor expiry cleanup cannot remove a save newer than its read', async () => {
+    let releaseRead;
+    let reads = 0;
+    const fresh = { text: 'newer report from another tab', mode: 'rich', savedAt: Date.now() };
+    const dom = await loadEditor({
+        drafts: { [DRAFT_KEY]: { text: 'expired report', savedAt: Date.now() - 15 * 86400000 } },
+        prepare: d => {
+            const get = d.chrome.storage.local.get;
+            let held = false;
+            d.chrome.storage.local.get = async keys => {
+                const result = await get(keys);
+                if (keys === DRAFT_KEY) reads++;
+                if (keys === DRAFT_KEY && !held) {
+                    held = true;
+                    await new Promise(resolve => { releaseRead = resolve; });
+                }
+                return result;
+            };
+        },
+    });
+    await waitFor(dom, () => releaseRead);
+    await dom.chrome.storage.local.set({ [DRAFT_KEY]: fresh });
+    releaseRead();
+    await waitFor(dom, () => reads >= 2);
+    // Drain the worker mutation queue after cleanup has re-read its expectation.
+    await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, fresh.text);
+});
+
 test('edits autosave a local draft keyed to this climber and form', async () => {
     const dom = await loadEditor({
         accelerateAutosave: true,

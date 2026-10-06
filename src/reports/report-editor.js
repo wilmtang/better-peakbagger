@@ -861,7 +861,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         state.autosaveTimer = globalThis.setTimeout(() => { void saveDraftNow(); }, AUTOSAVE_DEBOUNCE_MS);
     };
 
-    const clearDraft = () => {
+    const clearDraft = (stored = null) => {
         if (state.autosaveTimer !== null) {
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
@@ -871,7 +871,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             type: 'REPORT_DRAFT_SAVE_CANCEL',
             draftKey,
         });
-        void mutateDraft({ type: 'REPORT_DRAFT_REMOVE' }).then(result => {
+        void mutateDraft({
+            type: 'REPORT_DRAFT_REMOVE',
+            ...(stored ? {
+                expectedGeneration: stored[ReportDrafts.GENERATION_FIELD] ?? null,
+                expectedSavedAt: stored.savedAt,
+            } : {}),
+        }).then(result => {
             if (!result?.ok) throw new Error('draft removal failed');
         }).catch(() => {
             if (!state.terminalSubmission) {
@@ -1007,7 +1013,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             setDraftManagerStatus('Draft restored');
         });
         discard.addEventListener('click', () => {
-            clearDraft();
+            clearDraft(stored);
             draftBar.hidden = true;
         });
         manage.addEventListener('click', openDraftsManager);
@@ -1025,6 +1031,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             stored = (await localStore.get(draftKey))[draftKey];
         } catch (error) { return; }
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;
+        const storedText = normalized(stored.text);
+        if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS || !storedText) {
+            clearDraft(stored);
+            return;
+        }
         if (stored.pendingSave && typeof stored.pendingSave === 'object') {
             // Reaching the editor again means the previous Save did not reach
             // the success surface in this document. Retain the recovery copy,
@@ -1039,9 +1050,6 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             });
             void mutateDraft({ type: 'REPORT_DRAFT_WRITE', record: retained }).catch(() => {});
         }
-        if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS) { clearDraft(); return; }
-        const storedText = normalized(stored.text);
-        if (!storedText) { clearDraft(); return; }
         if (storedText === normalized(textarea.value)) {
             // Same content the server rendered — keep the markdown source so a
             // postback doesn't cost the user their original markdown.

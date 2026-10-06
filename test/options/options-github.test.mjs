@@ -7,6 +7,39 @@ import {
 
 registerCleanup();
 
+test('expired manager snapshot cannot delete a newer editor save', async () => {
+    const key = 'bpbReportDraft:900001:new';
+    let releaseRead;
+    let chrome;
+    let signalRead;
+    const readStarted = new Promise(resolve => { signalRead = resolve; });
+    const fresh = { text: 'newer editor content', mode: 'rich', savedAt: Date.now() };
+    const page = loadDraftsPage({}, {
+        local: { [key]: { text: 'expired snapshot', savedAt: Date.now() - 15 * 86400000 } },
+        prepareChrome: api => {
+            chrome = api;
+            const get = api.storage.local.get;
+            let held = false;
+            api.storage.local.get = async keys => {
+                const result = await get(keys);
+                if (keys === null && !held) {
+                    held = true;
+                    await new Promise(resolve => { releaseRead = resolve; signalRead(); });
+                }
+                return result;
+            };
+        },
+    });
+    await readStarted;
+    await chrome.storage.local.set({ [key]: fresh });
+    releaseRead();
+    const dom = await page;
+    await waitFor(dom, () => dom.window.document.querySelector('.draft-excerpt')?.textContent
+        === fresh.text);
+    assert.equal(chrome._localStore[key].text, fresh.text);
+    assert.equal(chrome._localStore[key].deletedGeneration, undefined);
+});
+
 test('connected GitHub actions work with ascent and TR backup off and restore with Undo', async () => {
     const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
