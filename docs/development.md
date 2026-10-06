@@ -604,6 +604,8 @@ add it to the merge-step condition, for example
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
   100,000-point GPX completeness case, 100,000-point/5,000-peak analysis, and
   1,500-entry favorite render/search/backup path out of the fast local loop.
+  Scale files run sequentially so their timing gates do not compete with other
+  CPU-heavy fixtures in the same runner.
   The capture case checks summit identities and protected reduction anchors,
   internal cancellation checkpoints, and a generous total CPU ceiling; it still
   cannot prove native renderer responsiveness or the live MV3 message scheduler.

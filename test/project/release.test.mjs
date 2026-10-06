@@ -515,7 +515,7 @@ test('release and browser development commands use the dist build', async () => 
     assert.match(packageJson.scripts.package, /build:release.*--source-dir dist/);
     assert.equal(packageJson.scripts.start, 'node scripts/run-development.mjs');
     assert.match(packageJson.scripts.test, /^npm run build && node --test /);
-    assert.match(packageJson.scripts['test:scale'], /^npm run build && node --test /);
+    assert.match(packageJson.scripts['test:scale'], /^npm run build && node --test --test-concurrency=1 /);
     assert.match(
         workflow,
         /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
