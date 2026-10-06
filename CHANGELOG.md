@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.9.1 — 2026-10-06
+
 - **Keep excluded GPX selections understandable.** After switching from all
   source segments to the interpreted view, the explanation for an excluded
   selected point survives chart resizing and changes to units or theme. A new
