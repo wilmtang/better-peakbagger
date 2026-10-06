@@ -177,3 +177,11 @@ passed; rendered Chrome Markdown and narrow controls were inspected. Raw HTML
 block tags no longer auto-close; supported report conversion remains unchanged.
 Lazy loading the remaining Rich/Markdown libraries is still deferred; no
 startup-latency improvement is inferred from the byte reduction.
+
+Draft mutations now share one snapshot validator and no longer use a redundant
+removal wrapper: nine source lines and 442 minified worker bytes removed.
+Final verification passed 2,282 tests, full lint with six existing owned
+warnings, and hidden Chrome 153/Firefox 157 checks at the verifier viewports.
+All 16 malformed snapshot probes preserved the draft. These two changes remove
+six net production source lines and 187,493 shipped bytes; tests and the concise
+verification record remain. Native/live-service proof limits above still apply.

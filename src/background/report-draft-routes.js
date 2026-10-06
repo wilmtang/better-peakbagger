@@ -71,10 +71,16 @@ const cleanGeneration = value => typeof value === 'string'
     && /^\d+:[1-9]\d*:[a-zA-Z0-9_-]{8,100}$/.test(value) ? value : null;
 const isTombstone = value => !!value && typeof value === 'object'
     && cleanGeneration(value[TOMBSTONE_FIELD]) && Number.isFinite(value.deletedAt);
-const expectedRecordMatches = (current, expectedGeneration, expectedSavedAt) => {
-    if (!ReportDrafts.validRecord(current) || current.savedAt !== expectedSavedAt) return false;
+const cleanExpectedRecord = entry => {
+    if (!Number.isFinite(entry?.expectedSavedAt)) return null;
+    const generation = entry.expectedGeneration == null ? null : cleanGeneration(entry.expectedGeneration);
+    return entry.expectedGeneration != null && !generation
+        ? null : { generation, savedAt: entry.expectedSavedAt };
+};
+const expectedRecordMatches = (current, expected) => {
+    if (!ReportDrafts.validRecord(current) || current.savedAt !== expected.savedAt) return false;
     const currentGeneration = cleanGeneration(current[GENERATION_FIELD]);
-    return expectedGeneration == null ? !currentGeneration : currentGeneration === expectedGeneration;
+    return expected.generation == null ? !currentGeneration : currentGeneration === expected.generation;
 };
 
 export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtensionPage, mutateMap }) => {
@@ -121,13 +127,11 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         }
         const current = (await ext.storage.local.get(draftKey))[draftKey];
         if (message.expectedSavedAt !== undefined || message.expectedGeneration !== undefined) {
-            const expectedGeneration = message.expectedGeneration == null
-                ? null : cleanGeneration(message.expectedGeneration);
-            if (!Number.isFinite(message.expectedSavedAt)
-                || (message.expectedGeneration != null && !expectedGeneration)) {
+            const expected = cleanExpectedRecord(message);
+            if (!expected) {
                 return { ok: false, error: { code: 'invalid-draft-write' } };
             }
-            if (!expectedRecordMatches(current, expectedGeneration, message.expectedSavedAt)) {
+            if (!expectedRecordMatches(current, expected)) {
                 return { ok: true, draftKey, written: false, reason: 'changed' };
             }
         }
@@ -141,45 +145,36 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         return { ok: true, draftKey, written: true, record };
     });
 
-    const removeOne = async (draftKey, sender) => {
+    const remove = (message, sender) => serialize(async () => {
+        const draftKey = cleanDraftKey(message?.draftKey);
         if (!draftKey || !mutationSender(sender, draftKey)) {
             return { ok: false, error: { code: 'invalid-draft-remove' } };
+        }
+        // Cleanup and recovery offers act on a snapshot. Keep explicit terminal
+        // removals unconditional, but never let an old snapshot consume a newer save.
+        if (message?.expectedSavedAt !== undefined || message?.expectedGeneration !== undefined) {
+            const expected = cleanExpectedRecord(message);
+            if (!expected) {
+                return { ok: false, error: { code: 'invalid-draft-remove' } };
+            }
+            const current = (await ext.storage.local.get(draftKey))[draftKey];
+            if (!expectedRecordMatches(current, expected)) {
+                return { ok: true, draftKey, removed: false, reason: 'changed' };
+            }
         }
         const marker = tombstone();
         await ext.storage.local.set({ [draftKey]: marker });
         return { ok: true, draftKey, removed: true, generation: marker[TOMBSTONE_FIELD] };
-    };
-    const remove = (message, sender) => serialize(async () => {
-        const draftKey = cleanDraftKey(message?.draftKey);
-        // Cleanup and recovery offers act on a snapshot. Keep explicit terminal
-        // removals unconditional, but never let an old snapshot consume a newer save.
-        if (message?.expectedSavedAt !== undefined || message?.expectedGeneration !== undefined) {
-            const expectedGeneration = message.expectedGeneration == null
-                ? null : cleanGeneration(message.expectedGeneration);
-            if (!draftKey || !mutationSender(sender, draftKey)
-                || !Number.isFinite(message.expectedSavedAt)
-                || (message.expectedGeneration != null && !expectedGeneration)) {
-                return { ok: false, error: { code: 'invalid-draft-remove' } };
-            }
-            const current = (await ext.storage.local.get(draftKey))[draftKey];
-            if (!expectedRecordMatches(current, expectedGeneration, message.expectedSavedAt)) {
-                return { ok: true, draftKey, removed: false, reason: 'changed' };
-            }
-        }
-        return removeOne(draftKey, sender);
     });
 
     const deleteOne = async (entry, sender) => {
         const draftKey = cleanDraftKey(entry?.draftKey);
-        const expectedGeneration = entry?.expectedGeneration == null
-            ? null : cleanGeneration(entry.expectedGeneration);
-        const expectedSavedAt = entry?.expectedSavedAt;
-        if (!draftKey || !isExtensionPage(sender) || !Number.isFinite(expectedSavedAt)
-            || (entry?.expectedGeneration != null && !expectedGeneration)) {
+        const expected = cleanExpectedRecord(entry);
+        if (!draftKey || !isExtensionPage(sender) || !expected) {
             return { ok: false, error: { code: 'invalid-draft-delete' } };
         }
         const current = (await ext.storage.local.get(draftKey))[draftKey];
-        if (!expectedRecordMatches(current, expectedGeneration, expectedSavedAt)) {
+        if (!expectedRecordMatches(current, expected)) {
             return { ok: true, draftKey, deleted: false, reason: 'changed' };
         }
         const marker = tombstone();
@@ -218,20 +213,16 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         }
         const entries = message.entries.map(entry => ({
             draftKey: cleanDraftKey(entry?.draftKey),
-            expectedGeneration: entry?.expectedGeneration == null
-                ? null : cleanGeneration(entry.expectedGeneration),
-            expectedSavedAt: entry?.expectedSavedAt,
-            hadGeneration: entry?.expectedGeneration != null,
+            expected: cleanExpectedRecord(entry),
         }));
-        if (entries.some(entry => !entry.draftKey || !Number.isFinite(entry.expectedSavedAt)
-            || (entry.hadGeneration && !entry.expectedGeneration))) {
+        if (entries.some(entry => !entry.draftKey || !entry.expected)) {
             return { ok: false, error: { code: 'invalid-draft-delete-many' } };
         }
         const current = await ext.storage.local.get(entries.map(entry => entry.draftKey));
         const patch = {};
         const results = entries.map(entry => {
             const record = current[entry.draftKey];
-            if (!expectedRecordMatches(record, entry.expectedGeneration, entry.expectedSavedAt)) {
+            if (!expectedRecordMatches(record, entry.expected)) {
                 return { ok: true, draftKey: entry.draftKey, deleted: false, reason: 'changed' };
             }
             const marker = tombstone();
