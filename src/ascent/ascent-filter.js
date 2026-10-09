@@ -1084,7 +1084,7 @@ const init = async () => {
         betaSettingsLink.title = 'Reload this page if Settings still will not open.';
     };
     betaSettingsLink.addEventListener('click', event => {
-        if (suppressKeyboardClick) {
+        if (suppressKeyboardClick && event.detail === 0) {
             suppressKeyboardClick = false;
             event.preventDefault();
             return;
@@ -1094,6 +1094,7 @@ const init = async () => {
     betaSettingsLink.addEventListener('auxclick', event => { void openBetaSettings(event); });
     betaSettingsLink.addEventListener('keydown', event => {
         if (event.isTrusted !== true || event.repeat
+            || !['Enter', ' '].includes(event.key)
             || (!event.shiftKey && !event.ctrlKey && !event.metaKey)) return;
         suppressKeyboardClick = true;
         globalThis.setTimeout(() => { suppressKeyboardClick = false; }, 0);

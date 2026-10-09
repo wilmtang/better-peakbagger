@@ -139,7 +139,8 @@ including teardown, against archives whose identity was verified at that commit.
   exception. Raw npm audit still reports three high findings; the default audit
   remains strict. New advisories are valid release blockers.
 - Published 3.9.2 tags and store submissions were not changed or repeated.
-  The newly discovered ignored-climber worker race is recorded under Unreleased;
+  The newly discovered ignored-climber worker and Settings input races are
+  recorded under Unreleased;
   manifests, package versions, and runtime privacy boundaries remain unchanged.
 - Native browser focus, live provider exports, and asynchronous store review
   remain separate evidence boundaries. These checks ran hidden/headless with
@@ -148,6 +149,20 @@ including teardown, against archives whose identity was verified at that commit.
 
 ### Changed but not fully proven
 
+- Settings keydown handling armed duplicate-click suppression for modifier
+  keys alone, although those keys cannot activate the button. The click handler
+  then swallowed a real pointer click until a zero-delay timer ran; it also
+  swallowed a separate pointer action after modified keyboard activation.
+  Suppression now requires Enter or Space and consumes only keyboard-generated
+  clicks (`detail === 0`). Two controlled delayed-timer regressions failed
+  against the old shipped bundle and both passed after rebuilding; all 57
+  ascent-filter tests passed. The full suite passed 2342/2342; full lint passed
+  with six existing owned warnings, and the live audit passed under the exact
+  existing advisory exception. Trust checks and native
+  tab/window intent are preserved. Both exact minified packages passed hidden
+  Chrome 153.0.8010.12 and Firefox 157.0.1, including trusted Settings actions
+  and owned-process teardown. Remote verification of this runtime correction
+  remains pending.
 - [Rehearsal 37906237779](https://github.com/wilmtang/better-peakbagger/actions/runs/37906237779)
   stopped during its first Firefox run on an unlabelled five-second Selenium
   condition. The error did not identify a caller and its artifact omitted
@@ -158,8 +173,10 @@ including teardown, against archives whose identity was verified at that commit.
   The evidence regression failed before the correction; all 12 focused evidence
   and fixture tests and scoped ESLint passed. Five hidden Firefox 157.0.1 runs
   against an isolated build of the failed source passed with these diagnostics;
-  the original timeout remains unresolved, and those passes are not credited as
-  proving its repair.
+  the original caller remains unknown, and those passes are not credited as
+  proving its repair. The source-confirmed Settings suppression race above can
+  fail the same short activation wait, but the old log cannot establish that it
+  caused this historical timeout.
 - Both browser verifiers now wait for the exact drafts-manager URL, complete
   document, heading, list surface, and extension storage before seeding a draft.
   Firefox previously read `about:blank` immediately after the new window handle;
@@ -178,7 +195,10 @@ including teardown, against archives whose identity was verified at that commit.
   preserves the separately committed captured-trip date-name change in
   `138f3180ab6fea33cc5b85ef67d026f2edf1ce5e`; this task did not modify its files.
   [Three-pass rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37906237779)
-  remains pending.
+  failed on the separate unlabelled Firefox wait described above. Diagnostic
+  [main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37909225092)
+  subsequently passed, including all browser and GPU jobs; its separate
+  three-pass rehearsal is not yet terminal.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,

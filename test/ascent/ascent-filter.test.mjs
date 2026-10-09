@@ -213,6 +213,73 @@ test('trusted Settings activations preserve background-tab and new-window intent
     assert.equal((await activate('click', { button: 0, detail: 0 })).disposition, 'foreground-tab');
 });
 
+test('modifier key presses cannot swallow trusted Settings pointer clicks while timers are delayed', async () => {
+    const messages = [];
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+        prepare: page => {
+            page.chrome.runtime.sendMessage = async message => {
+                messages.push(message);
+                return message.type === 'TRUSTED_ACTION_ISSUE'
+                    ? { ok: true, token: `activation-${messages.length}` }
+                    : { ok: true };
+            };
+        },
+    });
+    const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
+    const nativeTimeout = dom.window.setTimeout.bind(dom.window);
+    const delayed = [];
+    dom.window.setTimeout = (callback, delay, ...args) => delay === 0
+        ? delayed.push(() => callback(...args))
+        : nativeTimeout(callback, delay, ...args);
+    for (const [key, modifier, disposition] of [
+        ['Control', 'ctrlKey', 'background-tab'],
+        ['Meta', 'metaKey', 'background-tab'],
+        ['Shift', 'shiftKey', 'new-window'],
+    ]) {
+        const before = messages.length;
+        fireTrustedEvent(settingsLink, 'keydown', { bubbles: true, cancelable: true, key, [modifier]: true });
+        assert.equal(messages.length, before, 'a modifier key alone must not open Settings');
+        fireTrustedEvent(settingsLink, 'click', {
+            bubbles: true, cancelable: true, button: 0, detail: 1, [modifier]: true,
+        });
+        assert.equal(messages[before]?.type, 'TRUSTED_ACTION_ISSUE', `${key} must not suppress the pointer activation`);
+        await waitFor(dom, () => messages.length === before + 2);
+        assert.equal(messages.at(-1).disposition, disposition);
+        for (const callback of delayed.splice(0)) callback();
+    }
+});
+
+test('modified keyboard activation suppresses only its default click and preserves a subsequent pointer action', async () => {
+    const messages = [];
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+        prepare: page => {
+            page.chrome.runtime.sendMessage = async message => {
+                messages.push(message);
+                return message.type === 'TRUSTED_ACTION_ISSUE'
+                    ? { ok: true, token: `activation-${messages.length}` }
+                    : { ok: true };
+            };
+        },
+    });
+    const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
+    const nativeTimeout = dom.window.setTimeout.bind(dom.window);
+    dom.window.setTimeout = (callback, delay, ...args) => delay === 0
+        ? 0 : nativeTimeout(callback, delay, ...args);
+    fireTrustedEvent(settingsLink, 'keydown', {
+        bubbles: true, cancelable: true, key: 'Enter', shiftKey: true,
+    });
+    await waitFor(dom, () => messages.length === 2);
+    assert.equal(messages.at(-1).disposition, 'new-window');
+    fireTrustedEvent(settingsLink, 'click', { bubbles: true, cancelable: true, button: 0, detail: 1, ctrlKey: true });
+    assert.equal(messages[2]?.type, 'TRUSTED_ACTION_ISSUE', 'a real pointer action must survive keyboard suppression');
+    fireTrustedEvent(settingsLink, 'click', { bubbles: true, cancelable: true, button: 0, detail: 0 });
+    await waitFor(dom, () => messages.length === 4);
+    assert.equal(messages.at(-1).disposition, 'background-tab');
+    assert.equal(messages.length, 4, 'the keyboard default click must not mint a third activation');
+});
+
 test('remembered filter order keeps dependent controls with their chips', async () => {
     const dom = await loadPageWithBar(SMALL, {
         url: SMALL_URL,

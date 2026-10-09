@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Open Settings reliably with modifier keys.** Ctrl, Command, and Shift clicks
+  keep their usual tab or window behavior even when keyboard events overlap.
 - **Keep ignored-climber previews valid.** Background sync preserves a review
   opened while it was waiting and skips queued work after sync is turned off.
 
