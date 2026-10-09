@@ -27,7 +27,7 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 | ID | Priority | User-visible consequence | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Changed; final visual check pending |
-| F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Open |
+| F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Changed; final panel sweep pending |
 | F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Changed; final browser check pending |
 | F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Open |
 | F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Open |
@@ -326,6 +326,13 @@ acceptance checks run.
   newer events/intents. A failed first save waits for a still-owned baseline
   before rollback. Build, 70 focused Settings/UI/read-policy tests, focused
   ESLint, and whitespace checks passed; final browser verification is pending.
+- F2: the shared panel owner subscribes to settings and system changes, guards
+  initial reconciliation, and preserves the mirror on failed authoritative
+  reads. Build, 74 theme/Settings/UI/read-policy tests, focused ESLint, and
+  documentation checks passed. Hidden Chrome 153 (including the previously
+  failing dark-Favorites branch) and hidden Firefox 157 extension verifiers
+  passed. The dark Favorites screenshot was inspected; the final open-panel
+  sweep remains pending.
 
 Keep native/live/platform proof gaps explicit when moving locally verified
 items to the first category. Preserve this ledger when the plan is archived.

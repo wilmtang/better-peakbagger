@@ -135,6 +135,15 @@ Keeping the CSS as a JS string (rather than a `.css` file) is what lets
 extension file's text from a content script, and a `<link>` to it would load
 asynchronously and reintroduce the flash.
 
+## Extension panels
+
+`src/theme/panel-theme.js` uses the same preference-mirror principle before
+panel styles paint. It reconciles through an authoritative read, preserves the
+mirror on read failure, and ignores a startup result after a newer preference
+has arrived. Its shared subscription updates already-open panels; system
+changes repaint only while the preference is `system`. The Settings controller
+separately guards startup control values and save responses by revision.
+
 ## Remaining edge cases (accepted)
 
 - **Very first visit** by a user whose explicit setting contradicts their OS

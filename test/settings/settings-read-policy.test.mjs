@@ -29,7 +29,6 @@ const FAIL_SOFT = Object.freeze({
     'src/reports/report-editor.js': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
     'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
     'src/terrain/terrain-map.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
-    'src/theme/panel-theme.js': [{ count: 1, kind: 'display', reason: 'paint passive panel theme' }],
 });
 
 const AUTHORITATIVE = Object.freeze({
@@ -47,6 +46,7 @@ const AUTHORITATIVE = Object.freeze({
     ],
     'src/terrain/terrain-frame.js': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
     'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
+    'src/theme/panel-theme.js': [{ count: 1, kind: 'preservation', reason: 'preserve the panel mirror on failed reconciliation' }],
 });
 
 const sourceFiles = async directory => {
