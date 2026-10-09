@@ -25,6 +25,7 @@ import {
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
+    readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
     storeUrls,
@@ -2652,7 +2653,16 @@ async function main() {
             return handles.find(handle => !handlesBeforeDraftManager.has(handle)) || false;
         }, 5_000);
         await driver.switchTo().window(draftsManagerHandle);
-        const draftsManagerUrl = await driver.getCurrentUrl();
+        // A new window handle can still point at about:blank. Wait for the
+        // requested extension document and its deferred bundle before seeding.
+        const draftsManagerReady = await waitForCondition(() => driver.executeScript(
+            webdriverScript(readDraftsManagerReadiness, `${baseUrl}options/drafts.html`),
+        ), {
+            description: 'the Firefox standalone drafts manager destination to finish loading',
+            timeoutMs: 5_000,
+            isReady: state => state.ready,
+        });
+        const draftsManagerUrl = draftsManagerReady.url;
         // The manager is its own page, so this also proves the standalone page
         // boots in Firefox: its own bundle and the shared theme bootstrap.
         // Seeding from the manager's own page proves the standalone page renders a

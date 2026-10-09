@@ -35,6 +35,7 @@ import {
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
+    readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
     storeUrls,
@@ -5046,18 +5047,23 @@ try {
             const draftsManagerPagePromise = context.waitForEvent('page', { timeout: 5000 }).catch(() => null);
             await editorPage.getByRole('button', { name: 'Manage TR drafts', exact: true }).click();
             const draftsManagerPage = await draftsManagerPagePromise;
-            const draftsManagerUrl = draftsManagerPage
-                ? await draftsManagerPage.waitForLoadState('domcontentloaded')
-                    .then(() => draftsManagerPage.url())
-                    .catch(() => draftsManagerPage.url())
-                : '';
+            const draftsManagerReady = draftsManagerPage
+                ? await waitForCondition(() => draftsManagerPage.evaluate(
+                    readDraftsManagerReadiness, `chrome-extension://${extensionId}/options/drafts.html`,
+                ), {
+                    description: 'the Chrome standalone drafts manager destination to finish loading',
+                    timeoutMs: 5_000,
+                    isReady: state => state.ready,
+                }).catch(error => { check(false, error.message); return null; })
+                : null;
+            const draftsManagerUrl = draftsManagerReady?.url || '';
             // The manager is its own page, so this also proves the standalone
             // page boots: its own bundle, the shared theme bootstrap, and the
             // draft this editor just saved rendered on it.
             // Seeding from the manager's own page proves two things at once: the
             // standalone page renders a draft, and it still picks up a write
             // made while it is open, which is how a second tab autosaving looks.
-            const draftsManagerState = draftsManagerPage
+            const draftsManagerState = draftsManagerReady
                 ? await draftsManagerPage.evaluate(async () => {
                     await chrome.storage.local.set({
                         'bpbReportDraft:900001:a4242': {

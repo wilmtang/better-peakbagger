@@ -4,7 +4,14 @@ Owner request: fix every problem identified in the 3.9.0–3.9.2 release diagnos
 Preserve store protections, published tags, runtime privacy boundaries, and the
 exact advisory exception and expiry. This work does not consume another version.
 
-Closed on 2026-10-09. The ledger was reopened after the documentation commit's
+Reopened again on 2026-10-09 after
+[final documentation CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37904401979)
+caught Firefox seeding the newly opened drafts-manager tab while it was still
+`about:blank`. Its new window handle had appeared before navigation completed.
+The previous three-pass rehearsal below remains successful evidence for its
+snapshot, rather than proof that this later failure is resolved.
+
+The ledger was previously reopened after the documentation commit's
 [CI run](https://github.com/wilmtang/better-peakbagger/actions/runs/37898123779)
 failed current Chrome with a stale ignored-climber sync preview. Prior verified
 implementation and workflow changes are included in
@@ -141,6 +148,19 @@ including teardown, against archives whose identity was verified at that commit.
 
 ### Changed but not fully proven
 
+- Both browser verifiers now wait for the exact drafts-manager URL, complete
+  document, heading, list surface, and extension storage before seeding a draft.
+  Firefox previously read `about:blank` immediately after the new window handle;
+  Chrome's load-state wait could likewise accept the initial blank document.
+  The worker already requests the correct URL; product code is unchanged.
+  A deterministic regression rejected the old truthiness-only condition wait
+  for an early blank window. Shared readiness tests exercise delayed navigation,
+  loading/interactive documents, missing extension APIs and list elements, and
+  live failure diagnostics; the timeout diagnostic uses a controlled clock.
+  The full suite passed 2336/2336, all six focused fixture tests and scoped
+  ESLint passed, and both minified packages passed hidden Chrome 153.0.8010.12
+  and Firefox 157.0.1, including teardown. Hosted CI/rehearsal proof remains
+  pending.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,

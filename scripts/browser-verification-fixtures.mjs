@@ -55,6 +55,7 @@ export async function waitForCondition(read, {
     description = 'condition',
     intervalMs = 100,
     timeoutMs = 10_000,
+    isReady = Boolean,
 } = {}) {
     const deadline = Date.now() + timeoutMs;
     let lastValue;
@@ -63,7 +64,7 @@ export async function waitForCondition(read, {
         try {
             lastValue = await read();
             lastError = undefined;
-            if (lastValue) return lastValue;
+            if (isReady(lastValue)) return lastValue;
         } catch (error) {
             lastError = error;
         }
@@ -92,6 +93,22 @@ export function webdriverScript(pageFunction, ...args) {
     if (typeof pageFunction !== 'function') throw new TypeError('A page function is required');
     const serializedArgs = args.map(value => JSON.stringify(value) ?? 'undefined').join(', ');
     return `return (${pageFunction.toString()})(${serializedArgs});`;
+}
+
+export function readDraftsManagerReadiness(expectedUrl) {
+    const api = globalThis.browser || globalThis.chrome;
+    const state = {
+        url: window.location.href,
+        readyState: document.readyState,
+        heading: document.querySelector('h1')?.textContent || '',
+        hasList: Boolean(document.querySelector('.drafts-list')),
+        hasStorage: typeof api?.storage?.local?.set === 'function',
+    };
+    return {
+        ...state,
+        ready: state.url === expectedUrl && state.readyState === 'complete'
+            && state.heading === 'Trip report drafts' && state.hasList && state.hasStorage,
+    };
 }
 
 export function installAnalyzerBfcacheProbe() {

@@ -11,8 +11,10 @@ import {
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
+    readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
+    waitForCondition,
     waitForPageCondition,
     webdriverScript,
 } from '../../scripts/browser-verification-fixtures.mjs';
@@ -51,6 +53,69 @@ test('page conditions await async false results and poll until the visible state
     assert.equal(reads, 3);
     await assert.rejects(waitForPageCondition(page, async () => false, null, { timeout: 1 }),
         /Timed out waiting for page condition.*last value: false/s);
+});
+
+test('condition polling rejects an early window and loading document before accepting readiness', async () => {
+    const expectedUrl = 'moz-extension://fixture/options/drafts.html';
+    const states = [
+        { ready: false, url: 'about:blank', readyState: 'complete' },
+        { ready: false, url: expectedUrl, readyState: 'loading' },
+        { ready: false, url: expectedUrl, readyState: 'interactive' },
+        { ready: true, url: expectedUrl, readyState: 'complete' },
+    ];
+    let reads = 0;
+    const state = await waitForCondition(async () => states[reads++], {
+        isReady: value => value.ready,
+        intervalMs: 1,
+        timeoutMs: 2000,
+    });
+    assert.deepEqual(state, states.at(-1));
+    assert.equal(reads, 4, 'a window handle must not substitute for the loaded destination');
+});
+
+test('draft-manager readiness requires its exact complete extension document and storage surface', async t => {
+    const expectedUrl = 'moz-extension://fixture/options/drafts.html';
+    const dom = new JSDOM('<h1>Trip report drafts</h1><ul class="drafts-list"></ul>', { url: expectedUrl });
+    try {
+        let readyState = 'loading';
+        Object.defineProperty(dom.window.document, 'readyState', { get: () => readyState });
+        const context = {
+            document: dom.window.document,
+            window: { location: { href: 'about:blank' } },
+            browser: { storage: { local: { set() {} } } },
+        };
+        const read = () => plain(executePageFunction(readDraftsManagerReadiness, context, expectedUrl));
+        const states = [];
+        const state = await waitForCondition(async () => {
+            const value = read();
+            states.push(value);
+            if (states.length === 1) context.window.location.href = expectedUrl;
+            else if (states.length === 2) readyState = 'interactive';
+            else readyState = 'complete';
+            return value;
+        }, { isReady: value => value.ready, intervalMs: 1, timeoutMs: 2000 });
+        assert.equal(states.length, 4);
+        assert.equal(state.ready, true);
+        assert.equal(state.url, expectedUrl);
+
+        context.browser = undefined;
+        assert.equal(read().ready, false, 'a static page cannot substitute for an extension storage surface');
+        context.chrome = { storage: { local: { set() {} } } };
+        assert.equal(read().ready, true, 'Chrome uses the same document readiness contract');
+        dom.window.document.querySelector('.drafts-list').remove();
+        assert.equal(read().ready, false, 'the manager surface must exist before writes');
+        let clock = 0;
+        t.mock.method(Date, 'now', () => clock);
+        await assert.rejects(waitForCondition(() => {
+            const value = read();
+            clock = 2;
+            return value;
+        }, {
+            description: 'draft-manager destination', isReady: value => value.ready, timeoutMs: 1, intervalMs: 1,
+        }), /draft-manager destination.*last value:.*"url":"moz-extension:\/\/fixture\/options\/drafts.html".*"hasList":false/s);
+    } finally {
+        dom.window.close();
+    }
 });
 
 const persistedEvent = (dom, type, persisted) => {
