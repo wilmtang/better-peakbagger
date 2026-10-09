@@ -8,6 +8,14 @@ exact advisory exception and expiry. This work does not consume another version.
 
 ### Fixed and verified
 
+- Capture scale verification records three complete samples, timing algorithm
+  phases separately from assertions. Every sample keeps all exactness, anchors,
+  point-budget, draft, and yielding checks. Median CPU must be below 15 seconds;
+  any 30-second sample fails, and the full test has a 120-second deadline. Both
+  workflow scale jobs pin Ubuntu 24.04 and shared Node 24. All 26 focused policy,
+  workflow, and documentation tests and all 14 real scale tests passed locally.
+  CPU samples were 4842.9/4615.2/4701.0 ms (median 4701.0 ms). Scoped ESLint and
+  diff checks passed. Remote reference-runner measurements remain pending.
 - Disposable Firefox profiles no longer issue add-on uninstall before QUIT.
   Both successful QUIT and the exact known lost response require confirmed
   profile-owned process exit. Unknown errors and extension assertion failures
@@ -42,9 +50,6 @@ exact advisory exception and expiry. This work does not consume another version.
   at the maintained fixture viewports, including 1000x760. Owned process checks
   were empty afterward. Remote action execution remains pending on the final
   commit.
-- Pending: replace a single noisy performance sample with repeated isolated
-  measurements, preserving exactness, cancellation, point limits, and the
-  15-second reference-runner CPU regression threshold.
 - Pending: run repeated exact-package checks and obtain terminal remote CI and
   read-only rehearsal evidence on the final commit. A green retry alone is not
   closure.

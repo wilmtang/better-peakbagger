@@ -47,6 +47,14 @@ the known lost QUIT-response error can be accepted after confirmed process
 exit. Disconnections during other commands, assertion failures, and lingering
 processes remain failures. The success message follows completed teardown.
 
+Scale gates run serially on the same explicit Ubuntu 24.04 runner and Node 24
+toolchain in CI and release. Full capture analysis keeps all three CPU samples,
+including the first; correctness, point budgets, and cooperative yielding must
+pass each time. The 15-second limit applies to the median, with a 30-second
+individual-sample guard and a 120-second overall test deadline. This tolerates
+one moderate measurement outlier while rejecting sustained or severe slowdown.
+It is a reference-runner regression gate, not a latency promise for every device.
+
 Verified artifacts contain the exact two ZIPs and `package-identity.json`, which
 records their version, source commit, and SHA-256 hashes. Each downstream job
 checks that identity before using the downloads. Artifact names include the

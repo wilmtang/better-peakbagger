@@ -19,7 +19,7 @@ jobs:
   scale:
     name: Release scale tests
     # Keep the CPU ceiling on the same runner class as ordinary scale CI.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
