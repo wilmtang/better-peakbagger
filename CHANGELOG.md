@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Patch Firefox release tooling.** Update the shell-quoting dependency used
+  by the development browser runner to fix a command-injection advisory and
+  restore the store-release audit gate.
+
 ## 3.9.1 — 2026-10-06
 
 - **Keep excluded GPX selections understandable.** After switching from all
