@@ -1612,7 +1612,7 @@ const addPointObject = (type, point) => {
             ...base,
             text: 'Label',
             geometry: { ...base.geometry, width: Object.hasOwn(toolPreferences.text, 'width')
-                ? toolPreferences.text.width : Math.max(1, Math.round(project.image.width * 0.28)) },
+                ? toolPreferences.text.width : null },
             style: base.style,
         };
     }

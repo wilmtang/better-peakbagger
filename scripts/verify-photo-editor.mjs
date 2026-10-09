@@ -143,6 +143,7 @@ try {
     });
     await page.locator('[data-tool="text"]').click();
     await page.locator('#add-at-center').click();
+    assert.equal(await page.locator('#text-width').inputValue(), '', 'new labels start at Auto width');
     const labelText = 'North ridge traverse\nKeep left above the gully';
     await page.locator('#object-text').fill(labelText);
     await page.locator('#object-color').selectOption('#ffffff');

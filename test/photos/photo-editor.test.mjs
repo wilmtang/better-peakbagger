@@ -3148,16 +3148,19 @@ test('malformed ImgBB success keeps the photo-page recovery journal and blocks a
     assert.deepEqual(page.errors, []);
 });
 
-test('text width reflows without editing the source and Auto keeps manual line breaks', async t => {
+test('text starts at Auto width and reflows without editing its source', async t => {
     const page = await loadEditor();
     t.after(() => page.dom.window.close());
     page.tool('text');
     page.click(page.doc.getElementById('add-at-center'));
     const input = page.doc.getElementById('object-text');
     const width = page.doc.getElementById('text-width');
-    assert.equal(width.value, '448');
+    assert.equal(width.value, '');
+    assert.equal(page.doc.getElementById('text-width-auto').getAttribute('aria-pressed'), 'true');
     input.value = 'North ridge traverse\nKeep left';
     page.emit(input, 'input');
+    assert.deepEqual([...page.overlay.querySelectorAll('text tspan')].map(node => node.textContent),
+        ['North ridge traverse', 'Keep left']);
     const fontSize = page.overlay.querySelector('text').getAttribute('font-size');
     width.value = '160'; page.emit(width, 'change');
     assert.ok(page.overlay.querySelectorAll('text tspan').length > 2);
@@ -3181,6 +3184,8 @@ test('text resize fixes the opposite edge at every alignment and rotation and is
     const { doc, overlay } = page;
     page.tool('select');
     page.click(doc.querySelector('#annotation-list button'));
+    doc.getElementById('text-width').value = '448';
+    page.emit(doc.getElementById('text-width'), 'change');
     const textGeometry = () => {
         const transform = overlay.querySelector('[data-bpb-object]').getAttribute('transform');
         return transform.match(/-?\d+(?:\.\d+)?/g).map(Number);
@@ -3226,6 +3231,7 @@ test('cancelled and no-op text resizes preserve the label and redo history', asy
     page.tool('text'); page.click(doc.getElementById('add-at-center'));
     page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
     const width = doc.getElementById('text-width');
+    width.value = '448'; page.emit(width, 'change');
     width.value = '300'; page.emit(width, 'change');
     page.click(doc.getElementById('undo'));
     const before = overlay.innerHTML;
@@ -3254,6 +3260,8 @@ test('autosave excludes text resize previews and persists the released width', a
     page.tool('text'); page.click(doc.getElementById('add-at-center'));
     const text = doc.getElementById('object-text');
     text.value = 'North ridge traverse\nKeep left'; page.emit(text, 'input');
+    doc.getElementById('text-width').value = '448';
+    page.emit(doc.getElementById('text-width'), 'change');
     page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
     page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
     page.pointer('pointermove', 100, 200);

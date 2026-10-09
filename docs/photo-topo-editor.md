@@ -18,8 +18,9 @@ API upload will appear in an ImgBB profile. See the
 All tools share the last chosen color and opacity, saved on this device under
 `bpbPhotoSharedStyle`. Other appearance preferences stay per tool under
 `bpbPhotoTool:<type>`. New text labels reuse the last label width, including Auto;
-the initial width is 28% of the photo. The project model validates the saved style; annotation
-text, pitch content, and coordinates are never stored as tool preferences.
+the initial width is Auto so labels grow with their text. The project model
+validates the saved style; annotation text, pitch content, and coordinates are
+never stored as tool preferences.
 
 While placing a route, Cmd/Ctrl+Z removes only its last point, including the
 first point. Shift+Cmd/Ctrl+Z restores points until a new point is placed.
