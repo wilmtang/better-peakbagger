@@ -51,18 +51,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
 
       - name: Check dependency advisories
         # Owner-reviewed exact dev-only node-forge chain; expires October 17.
-        # Release workflows intentionally use the strict default command.
+        # Release verification selects the same exact reviewed exception.
         run: npm run audit:ci -- --allow-reviewed-development-advisory
 
       - name: Check immutable release history
@@ -82,14 +76,8 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
 
       - name: Run scale tests
         run: npm run test:scale
@@ -108,29 +96,22 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Install Chrome for Testing and popup fixture Firefox
-        run: |
-          npx playwright install --with-deps chromium firefox
-          node scripts/verification-browser-identity.mjs --playwright-chromium >> "$GITHUB_ENV"
+          chrome-version: current
+          firefox-version: latest
+          popup-firefox: 'true'
 
       - name: Verify toolbar popup sizing and recovery layout
         run: |
           mkdir -p browser-evidence
           npm run verify:capture-popup 2>&1 | tee browser-evidence/verify-capture-popup.log
 
-      - name: Verify the real Chrome extension
+      - name: Verify the exact store packages
         run: |
           mkdir -p browser-evidence
-          npm run verify:chrome 2>&1 | tee browser-evidence/verify-chrome.log
+          npm run release:verify-packages 2>&1 | tee browser-evidence/verify-packages.log
 
       - name: Verify capture with pending page resources
         run: |
@@ -169,26 +150,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
         with:
-          node-version: 24
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Install Chrome 128 for Testing
-        id: chrome-floor
-        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
-        with:
-          chrome-version: 128
-          install-dependencies: true
+          chrome-version: '128'
 
       - name: Verify the real Chrome 128 extension
-        env:
-          CHROME_BIN: ${{ steps.chrome-floor.outputs.chrome-path }}
-          BPB_EXPECT_CHROME_VERSION: ${{ steps.chrome-floor.outputs.chrome-version }}
         run: |
           mkdir -p browser-evidence
           npm run verify:chrome 2>&1 | tee browser-evidence/verify-chrome.log
@@ -218,45 +185,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install locked dependencies
-        run: npm ci
-
-      - name: Install Firefox
-        # v1.7.2 — SHA-tracked by Dependabot, so this one is not auto-maintained.
-        id: firefox
-        uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
         with:
           firefox-version: ${{ matrix.firefox }}
 
-      - name: Install geckodriver
-        # Pinned to a commit on this action's `latest` branch, which is where its
-        # built index.js lives. Do not pin master or a source commit: they carry
-        # no bundle and fail with "File not found: index.js". Its only tag,
-        # v0.0.0, is a build that predates the `token` input, and without a token
-        # the geckodriver release lookup is unauthenticated and shares a GitHub
-        # API rate limit with every runner on the same IP.
-        uses: browser-actions/setup-geckodriver@fac5b0424c584257f32cf12c5eb4ba86014c34f8
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Verify the real Firefox extension
-        env:
-          FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
-          BPB_EXPECT_FIREFOX_VERSION: ${{ steps.firefox.outputs.firefox-version }}
         run: |
           mkdir -p browser-evidence
           npm run verify:firefox 2>&1 | tee browser-evidence/verify-firefox.log
 
       - name: Verify capture with pending page resources
-        env:
-          FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
-          BPB_EXPECT_FIREFOX_VERSION: ${{ steps.firefox.outputs.firefox-version }}
         run: |
           mkdir -p browser-evidence
           npm run verify:capture-readiness -- firefox 2>&1 | tee browser-evidence/verify-capture-readiness-firefox.log

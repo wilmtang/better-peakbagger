@@ -29,8 +29,12 @@ exact advisory exception and expiry. This work does not consume another version.
 
 ### Changed but not fully proven
 
-- Pending: share CI/release setup and packaged verification so configuration
-  differences cannot silently create weaker preflight evidence.
+- Shared setup and the common canonical-package command are implemented.
+  All 56 focused release/setup/package-order tests and scoped ESLint passed.
+  Real minified archives passed hidden Chrome 153.0.8010.12 and Firefox 157.0.1
+  at the maintained fixture viewports, including 1000x760. Owned process checks
+  were empty afterward. Remote action execution remains pending on the final
+  commit.
 - Pending: remove redundant temporary-add-on uninstall from disposable-profile
   teardown, prove owned process exit on successful QUIT too, and exercise
   assertion failure, protocol failure, and lingering-process boundaries.

@@ -218,6 +218,7 @@ script is added or removed without updating it.
 | `npm run release:metadata:firefox` | Converts the canonical store description into the AMO metadata JSON used for submission. |
 | `npm run release:sign:firefox` | Submits the prepared Firefox source to AMO with the release environment's credentials and metadata. |
 | `npm run release:verify-archive -- ARCHIVE.zip BROWSER` | Checks a Chrome or Firefox archive for required runtime files, licenses, browser-specific manifest policy, and forbidden development artifacts. |
+| `npm run release:verify-packages` | Builds, derives, validates, and executes both exact store archives through the shared CI/release gate. |
 | `npm run store:description:chrome` | Regenerates Chrome's checked-in plain-text listing from the canonical Markdown description. |
 
 Pushes and pull requests use one least-privilege workflow with independent

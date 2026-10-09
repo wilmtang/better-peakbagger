@@ -53,19 +53,18 @@ test('release package verification waits for scale tests on the ordinary CI runn
 
 test('exact-package verification launches the current Firefox installed by its setup step', () => {
     const steps = workflow.jobs.verify.steps;
-    const install = steps.find(step => step.uses?.startsWith('browser-actions/setup-firefox@'));
+    const install = steps.find(step => step.uses === './.github/actions/setup-verification');
     assert.equal(install.with['firefox-version'], 'latest');
-    assert.ok(install.id, 'the installed current browser must have an output reference');
-    const execute = steps.find(step => step.run?.includes('npm run verify:packages'));
-    assert.equal(execute.env?.FIREFOX_BIN, '${{ steps.' + install.id + '.outputs.firefox-path }}',
-        'Selenium must receive the installed binary instead of discovering a preinstalled Firefox');
+    assert.equal(install.with['chrome-version'], 'current');
+    assert.ok(steps.some(step => step.run?.includes('npm run release:verify-packages')));
 });
 
 test('floor and store jobs verify the same immutable archive identity before using it', () => {
     assert.match(workflow.jobs.verify.outputs['artifact-name'], /steps\.metadata\.outputs\.artifact-name/);
     const verify = workflow.jobs.verify.steps;
-    assert.ok(verify.findIndex(step => step.name === 'Record verified package identity')
-        > verify.findIndex(step => step.name === 'Execute store packages in both browsers'));
+    const execute = verify.findIndex(step => step.run?.includes('npm run release:verify-packages'));
+    assert.ok(execute >= 0);
+    assert.ok(verify.findIndex(step => step.name === 'Record verified package identity') > execute);
     for (const name of ['compatibility', 'chrome', 'firefox']) {
         const steps = workflow.jobs[name].steps;
         const download = steps.find(step => step.uses?.startsWith('actions/download-artifact@'));

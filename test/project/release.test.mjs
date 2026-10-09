@@ -516,10 +516,7 @@ test('release and browser development commands use the dist build', async () => 
     assert.equal(packageJson.scripts.start, 'node scripts/run-development.mjs');
     assert.match(packageJson.scripts.test, /^npm run build && node --test /);
     assert.match(packageJson.scripts['test:scale'], /^npm run build && node --test --test-concurrency=1 /);
-    assert.match(
-        workflow,
-        /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
-    );
+    assert.match(workflow, /npm run release:verify-packages/);
     assert.match(
         workflow,
         /verify:\s*\n\s+name: Verify release[\s\S]{0,400}runs-on: macos-15-intel/,
@@ -554,7 +551,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     // release callers from accidentally selecting only one half.
     assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm test[\s\S]*?run: npm run lint\n/);
     assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
-    assert.match(workflow, /chrome:\s*\n[\s\S]*?npm run verify:chrome/);
+    assert.match(workflow, /chrome:\s*\n[\s\S]*?npm run release:verify-packages/);
     assert.match(
         workflow,
         /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
@@ -563,11 +560,11 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow,
         /chrome-required:\s*\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?npm run verify:firefox/);
-    assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: 128/);
+    assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: '128'/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
-    assert.match(workflow, /CHROME_BIN: \$\{\{ steps\.chrome-floor\.outputs\.chrome-path \}\}/);
-    assert.match(workflow, /FIREFOX_BIN: \$\{\{ steps\.firefox\.outputs\.firefox-path \}\}/);
-    assert.equal(workflow.match(/run: npm ci/g)?.length, 7);
+    assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: '128'/);
+    assert.match(workflow, /firefox-version: \$\{\{ matrix\.firefox \}\}/);
+    assert.equal(workflow.match(/uses: \.\/\.github\/actions\/setup-verification/g)?.length, 5);
     assert.match(workflow, /permissions:\s*\n\s+contents: read/);
     assert.match(workflow, /fetch-depth: 0[\s\S]*?run: npm run release:check-history/);
     await assert.rejects(

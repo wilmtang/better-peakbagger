@@ -1,0 +1,66 @@
+name: Set up verification
+description: Shared locked toolchain and exact browser identities for CI and release
+inputs:
+  chrome-version:
+    description: none, current (locked Playwright), or an explicit Chrome floor
+    default: none
+  firefox-version:
+    description: none, latest, or an explicit Firefox version
+    default: none
+  popup-firefox:
+    description: Install Playwright Firefox for popup fixtures
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+        cache: npm
+    - name: Install locked dependencies
+      shell: bash
+      run: npm ci
+    - name: Install current Chrome for Testing
+      if: inputs.chrome-version == 'current'
+      shell: bash
+      env:
+        POPUP_FIREFOX: ${{ inputs.popup-firefox }}
+      run: |
+        npx playwright install --with-deps chromium
+        if [ "$POPUP_FIREFOX" = true ]; then npx playwright install --with-deps firefox; fi
+        node scripts/verification-browser-identity.mjs --playwright-chromium >> "$GITHUB_ENV"
+    - name: Install Chrome floor
+      if: inputs.chrome-version != 'none' && inputs.chrome-version != 'current'
+      id: chrome
+      uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
+      with:
+        chrome-version: ${{ inputs.chrome-version }}
+        install-dependencies: true
+    - name: Install Firefox
+      if: inputs.firefox-version != 'none'
+      id: firefox
+      uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795
+      with:
+        firefox-version: ${{ inputs.firefox-version }}
+    - name: Install geckodriver
+      if: inputs.firefox-version != 'none'
+      uses: browser-actions/setup-geckodriver@fac5b0424c584257f32cf12c5eb4ba86014c34f8
+      with:
+        token: ${{ github.token }}
+    - name: Export installed browser contracts
+      shell: bash
+      env:
+        CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        CHROME_VERSION: ${{ steps.chrome.outputs.chrome-version }}
+        FIREFOX_PATH: ${{ steps.firefox.outputs.firefox-path }}
+        FIREFOX_VERSION: ${{ steps.firefox.outputs.firefox-version }}
+      run: |
+        if [ -n "$CHROME_PATH" ]; then
+          echo "CHROME_BIN=$CHROME_PATH" >> "$GITHUB_ENV"
+          echo "BPB_EXPECT_CHROME_VERSION=$CHROME_VERSION" >> "$GITHUB_ENV"
+        fi
+        if [ -n "$FIREFOX_PATH" ]; then
+          echo "FIREFOX_BIN=$FIREFOX_PATH" >> "$GITHUB_ENV"
+          echo "BPB_EXPECT_FIREFOX_VERSION=$FIREFOX_VERSION" >> "$GITHUB_ENV"
+        fi

@@ -31,6 +31,15 @@ tests, lint, production packaging, archive validation, and current/floor browser
 checks used for publication. A rehearsal proves package readiness for its commit;
 a later tag still reruns the gates for its own commit.
 
+Ordinary CI's current-browser job and the release job use the same
+`.github/actions/setup-verification` action and `npm run release:verify-packages`
+command. The action installs Node 24 and locked dependencies, resolves browser
+paths, and exports exact expected versions. The command builds the canonical
+Chrome ZIP, derives and validates Firefox's ZIP from those bytes, and executes
+both archives. Browser capabilities must match the installed versions before
+extension assertions begin; an absent expectation is an error in CI. The
+additional ordinary Firefox matrix continues to cover Linux separately.
+
 Verified artifacts contain the exact two ZIPs and `package-identity.json`, which
 records their version, source commit, and SHA-256 hashes. Each downstream job
 checks that identity before using the downloads. Artifact names include the
@@ -185,11 +194,7 @@ visible in the AMO Developer Hub.
    npm run verify:browsers
    npm run terrain:verify
    npm run terrain:verify:firefox
-   npm run package
-   npm run build:firefox -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
-   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip chrome
-   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
-   npm run verify:packages -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
+   npm run release:verify-packages
    ```
 
    `package` creates a minified, sourcemap-free `dist/` and the canonical Chrome

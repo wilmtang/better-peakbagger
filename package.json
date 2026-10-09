@@ -34,6 +34,7 @@
     "verify:firefox": "npm run build && node scripts/verify-firefox-extension.mjs",
     "verify:browsers": "npm run build && node scripts/verify-extension.mjs && node scripts/verify-firefox-extension.mjs",
     "verify:packages": "node scripts/verify-packaged-extensions.mjs",
+    "release:verify-packages": "node scripts/verify-store-packages.mjs",
     "terrain:verify": "npm run build && node scripts/verify-terrain-visual.mjs",
     "terrain:verify:firefox": "npm run build && node scripts/verify-firefox-terrain.mjs",
     "terrain:verify:cache-owners": "npm run build && node scripts/verify-terrain-cache-owners.mjs",
