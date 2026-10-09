@@ -17,6 +17,16 @@ both completed successfully on that commit. Both store jobs were skipped.
 
 ### Fixed and verified
 
+- The sidebar fixture no longer assumes that native hash navigation and scroll
+  restoration finish within five milliseconds. The failed
+  [rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37900330405)
+  asserted before the asynchronous hash handler restored the inline override.
+  The fixture now waits for the hash event and final style, with a controlled
+  animation-frame case that asserts the override survives the first frame and
+  clears after the second. That frame case failed deterministically with the
+  old sleep; both cases and all 40 options tests passed after the correction.
+  Product navigation timing is unchanged. The full suite passed 2334/2334,
+  scoped ESLint and diff checks passed; hosted proof remains pending.
 - The Chrome helper-lease fixture now loads both probe tabs before durable
   worker adoption/release barriers and removes the adopted tab only after
   scratch cleanup. This removes direct fixture lease injection across queued
@@ -112,7 +122,10 @@ both completed successfully on that commit. Both store jobs were skipped.
   before the fix. All 25 sync tests, the 2333-test full suite, lint, and live audit
   under the existing exception passed afterward. The rebuilt minified archives
   passed three consecutive hidden Chrome 153.0.8010.12 / Firefox 157.0.1 pairs,
-  including teardown. Remote CI/rehearsal proof remains pending.
+  including teardown. [Main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37900162206)
+  passed the full suite, scale, current/floor browsers, and both GPU checks.
+  The three-pass rehearsal stopped at the unrelated sidebar unit-test race
+  above, before browser verification. Rehearsal proof remains pending.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,
@@ -129,7 +142,8 @@ both completed successfully on that commit. Both store jobs were skipped.
 | --- | --- |
 | Local full suite | 2330/2330 before the budget regression was added |
 | Prior hosted full suite (c569973) | 2331/2331 in main CI and rehearsal |
-| New worker fix, local full suite | 2333/2333; remote proof pending |
+| New worker fix, full suite | 2333/2333 locally and in main CI |
+| Sidebar fixture correction, local full suite | 2334/2334; hosted proof pending |
 | Scale | 14/14 locally and in both final workflows |
 | Lint | ESLint and extension lint passed; six existing owned warnings |
 | Live audit | Passed with the existing exact advisory exception |
@@ -142,4 +156,5 @@ also passed both copied-runtime GPU checks on Metal renderers. Chrome reported
 the Apple Paravirtual device; Firefox 155.0 reported the same hardware device at
 1000x760, hidden/headless. The subsequent budget correction changed only the
 release workflow, its focused test, and documentation, so those GPU jobs were
-correctly skipped on c569973. The subsequent worker fix is still under validation.
+correctly skipped on c569973. The subsequent worker fix passed both GPU jobs in
+main CI; its three-pass rehearsal remains pending after the sidebar fixture fix.

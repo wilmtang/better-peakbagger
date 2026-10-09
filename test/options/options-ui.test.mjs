@@ -1080,48 +1080,68 @@ test('hash navigation aligns the content pane when history leaves it at the prev
     assert.equal(activeLinks(dom)[0].getAttribute('href'), '#about');
 });
 
-test('sidebar navigation animates nearby jumps and makes long jumps instant', async () => {
-    let draftsTop = 0;
-    const dom = await loadOptions({}, {
-        prepareWindow: window => {
-            const content = window.document.querySelector('.content');
-            const drafts = window.document.getElementById('drafts');
-            Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
-            content.getBoundingClientRect = () => ({ top: 100 });
-            drafts.getBoundingClientRect = () => ({ top: draftsTop });
-            const nativeStyle = window.getComputedStyle.bind(window);
-            window.getComputedStyle = element => element === drafts
-                ? { scrollMarginTop: '24px' }
-                : nativeStyle(element);
+for (const visualFrames of [false, true]) {
+    test(`sidebar navigation animates nearby jumps and settles long jumps (${visualFrames ? 'frames' : 'timer fallback'})`, async () => {
+        let draftsTop = 0;
+        const frames = [];
+        let frameTime = 0;
+        const renderFrame = () => {
+            frameTime += 16;
+            for (const callback of frames.splice(0)) callback(frameTime);
+        };
+        const dom = await loadOptions({}, {
+            prepareWindow: window => {
+                if (visualFrames) window.requestAnimationFrame = callback => frames.push(callback);
+                const content = window.document.querySelector('.content');
+                const drafts = window.document.getElementById('drafts');
+                Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
+                content.getBoundingClientRect = () => ({ top: 100 });
+                drafts.getBoundingClientRect = () => ({ top: draftsTop });
+                const nativeStyle = window.getComputedStyle.bind(window);
+                window.getComputedStyle = element => element === drafts
+                    ? { scrollMarginTop: '24px' }
+                    : nativeStyle(element);
+            }
+        });
+        const doc = dom.window.document;
+        const content = doc.querySelector('.content');
+        const draftsLink = doc.querySelector('.side-nav a[href="#drafts"]');
+        let hashChanged = false;
+        dom.window.addEventListener('hashchange', () => { hashChanged = true; }, { once: true });
+
+        // 1,000 px is below both two viewports (1,600 px here) and the 1,200 px
+        // absolute cap, so the stylesheet keeps control.
+        draftsTop = 1124;
+        draftsLink.click();
+        assert.equal(content.style.scrollBehavior, '');
+
+        // The same target 1,400 px away is under two viewports but over the pixel
+        // cap, so it must bypass smooth scrolling. The inline override survives the
+        // native click action and its hash change, then clears after two frames
+        // (or the timer fallback in non-visual environments).
+        draftsTop = 1524;
+        draftsLink.click();
+        assert.equal(content.style.scrollBehavior, 'auto');
+        await waitFor(dom, () => hashChanged && dom.window.location.hash === '#drafts');
+        if (visualFrames) {
+            renderFrame();
+            assert.equal(content.style.scrollBehavior, 'auto', 'the override must span both rendering frames');
+            renderFrame();
         }
+        await waitFor(dom, () => content.style.scrollBehavior === '').catch(error => {
+            assert.fail(`${error.message}; scrollBehavior=${JSON.stringify(content.style.scrollBehavior)}, hash=${dom.window.location.hash}`);
+        });
+        assert.equal(content.style.scrollBehavior, '');
+
+        draftsLink.addEventListener('click', event => event.preventDefault(), { once: true });
+        draftsLink.dispatchEvent(new dom.window.MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: true,
+        }));
+        assert.equal(content.style.scrollBehavior, '', 'a modified click must not move the current page');
     });
-    const doc = dom.window.document;
-    const content = doc.querySelector('.content');
-    const draftsLink = doc.querySelector('.side-nav a[href="#drafts"]');
-
-    // 1,000 px is below both two viewports (1,600 px here) and the 1,200 px
-    // absolute cap, so the stylesheet keeps control.
-    draftsTop = 1124;
-    draftsLink.click();
-    assert.equal(content.style.scrollBehavior, '');
-
-    // The same target 1,400 px away is under two viewports but over the pixel
-    // cap, so it must bypass smooth scrolling. The inline override survives the
-    // native click action, then clears on the next task.
-    draftsTop = 1524;
-    draftsLink.click();
-    assert.equal(content.style.scrollBehavior, 'auto');
-    await new Promise(resolve => dom.window.setTimeout(resolve, 5));
-    assert.equal(content.style.scrollBehavior, '');
-
-    draftsLink.addEventListener('click', event => event.preventDefault(), { once: true });
-    draftsLink.dispatchEvent(new dom.window.MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        ctrlKey: true,
-    }));
-    assert.equal(content.style.scrollBehavior, '', 'a modified click must not move the current page');
-});
+}
 
 for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs', '#map-chart'], ['#favorites', '#beta']]) {
     test(`a deep link to ${hash} activates its sub-item and marks the parent`, async () => {
