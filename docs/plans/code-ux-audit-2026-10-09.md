@@ -1,8 +1,7 @@
 # Code and UX audit — 2026-10-09
 
-Status: audit complete; remediation proposed, not implemented or authorized by
-this audit. Six confirmed P2 findings remain open. No P0 or P1 finding was
-established. This is a source-grounded review with targeted reproductions, not a
+Status: remediation authorized and in progress. No P0 or P1 finding was
+established by the audit. This is a source-grounded review with targeted reproductions, not a
 claim that every runtime path or live integration is proven correct.
 
 ## Baseline and scope
@@ -27,7 +26,7 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 
 | ID | Priority | User-visible consequence | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Open |
+| F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Changed; final visual check pending |
 | F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Open |
 | F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Open |
 | F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Open |
@@ -296,7 +295,7 @@ live ownership signals or authenticated provider behavior.
 
 ## Proposed execution order and closure ledger
 
-Implement only after a remediation request. Suggested independent commits:
+The user authorized remediation after the audit. Independent commits:
 F1 backup acknowledgement; F3 Settings revision ownership; F2 shared theme
 lifecycle; F5 photo action errors; F4 library focus; F6 narrow label editing.
 Run focused regression coverage before each commit and the real extension
@@ -305,20 +304,24 @@ O1 can be accepted or declined separately without blocking the six defects.
 
 ### Fixed and verified
 
-None. This audit changed documentation only. All F1–F6 remain open.
+None yet. Focused runtime changes are listed below until their remaining
+acceptance checks run.
 
 ### Intentionally not changed
 
-- Runtime implementation, existing local commits, and the documented privacy
-  and final-Save boundaries were preserved within this audit-only scope.
+- Existing local commits and the documented privacy and final-Save boundaries
+  remain preserved throughout remediation.
 - The existing exact, expiring dependency exception remains owned by the prior
   active plan. This records current risk; it is not a fresh acceptance or closure.
 - O1 is deferred for product judgment and is not counted as a fixed defect.
 
 ### Changed but not fully proven
 
-No runtime change was made, so no runtime finding belongs in this category yet.
-When remediation starts, put any implemented item here until its acceptance
-checks have actually run. Keep native/live/platform proof gaps explicit when
-moving locally verified items to the first category. Preserve this ledger when
-the completed plan is archived.
+- F1: the worker now returns the written snapshot signature and repository;
+  both panels require that identity and reject superseded current-content
+  success. Focused options/worker coverage passed 144/144; build, focused
+  ESLint, and whitespace checks passed. Hidden Chrome 153 real-extension
+  verification passed; final status-copy visual inspection remains pending.
+
+Keep native/live/platform proof gaps explicit when moving locally verified
+items to the first category. Preserve this ledger when the plan is archived.

@@ -661,6 +661,8 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
     const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP' }, EXTENSION_SENDER);
     assert.equal(backup.ok, true);
     assert.equal(backup.result.path, 'favorite-climbers.json');
+    assert.equal(backup.result.repo, 'me/backup');
+    assert.equal(backup.result.signature, Favorites.backupSignature(local[Favorites.FAVORITES_KEY]));
     const exported = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
     assert.equal(exported.ok, true);
     assert.deepEqual(structuredClone(exported.favorites.entries), entries);
@@ -973,6 +975,8 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
     const backup = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
     assert.equal(backup.ok, true);
     assert.equal(backup.result.path, 'settings.json');
+    assert.equal(backup.result.repo, 'me/backup');
+    assert.equal(backup.result.signature, Transfer.signature(worker.sync.bpbSettings));
     const committed = JSON.parse(backend.state.contents['settings.json']);
     assert.equal(committed.kind, Transfer.KIND);
     assert.equal(committed.extensionVersion, '2.2.0');
@@ -1138,6 +1142,9 @@ test('a manual backup that overtakes a queued one still reports the repository s
     assert.equal(second.ok, true);
     assert.equal(backend.state.commits, 1, 'a repeated write to one path squashes into one commit');
     assert.equal(first.result.sha, second.result.sha);
+    assert.equal(first.result.superseded, true);
+    assert.equal(second.result.superseded, false);
+    assert.equal(second.result.signature, Transfer.signature(worker.sync.bpbSettings));
     assert.equal(first.result.path, 'settings.json');
     assert.equal(JSON.parse(backend.state.contents['settings.json']).settings.theme, 'dark');
     assert.equal(worker.local.bpbSettingsBackupState.signature,

@@ -225,6 +225,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         // connection, so it stays available whether or not GitHub is connected.
         // An export with nothing saved to include is simply credential-free.
         const showBackupResult = connected
+            && !githubBackupResult?.superseded
             && githubBackupResult?.repo === repoName()
             && githubBackupResult?.signature === settingsSignature;
         githubActionsEl.hidden = !connected;
@@ -249,7 +250,8 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 }));
             }
         } else if (connected) {
-            githubStatusEl.textContent = `Stored as settings.json in ${repoName()}.`;
+            githubStatusEl.textContent = githubBackupResult?.repo === repoName()
+                ? 'Newer changes need backup.' : `Stored as settings.json in ${repoName()}.`;
         } else {
             githubStatusEl.textContent = 'Connect GitHub above to back up settings.';
         }
@@ -272,8 +274,6 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     }, operation);
 
     githubBackupEl.addEventListener('click', () => {
-        const requestedRepo = repoName();
-        const requestedSignature = settingsSignature;
         githubOperation = 'backup';
         void withGithubBusy(async () => {
             const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });
@@ -282,12 +282,15 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 flash(GithubError.message(response?.error), { error: true });
                 return;
             }
-            githubBackupResult = {
-                ...(response.result || {}),
-                repo: requestedRepo,
-                signature: requestedSignature,
-            };
-            flash(`Settings backed up to ${requestedRepo}`);
+            const result = response.result;
+            if (typeof result?.repo !== 'string' || typeof result?.signature !== 'string') {
+                githubBackupResult = null;
+                flash('The backup could not be confirmed. Try again.', { error: true });
+                return;
+            }
+            githubBackupResult = result;
+            flash(result.superseded || result.signature !== settingsSignature
+                ? 'Newer changes need backup.' : `Settings backed up to ${result.repo}`);
         }).finally(() => {
             githubOperation = null;
             renderGithub();

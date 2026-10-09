@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
 import {
     loadOptions, loadDraftsPage, el, draftRow, waitFor,
     withGithubBackground, registerCleanup, favoriteKey, favoriteStore
@@ -88,6 +89,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
                 if (message.type === 'GITHUB_FAVORITES_BACKUP') reply = {
                     ok: true,
                     result: {
+                        repo: 'ada/peaks', signature: Favorites.backupSignature(favoriteStore([original])),
                         path: 'favorite-climbers.json',
                         commitUrl: 'https://github.com/ada/peaks/commit/favorite123',
                     },
@@ -152,7 +154,7 @@ test('connected GitHub actions work with ascent and TR backup off and restore wi
         && el(dom, 'favorites-restore-undo').hidden === false);
     assert.equal(el(dom, 'favorites-restore-undo').hidden, false);
     assert.match(el(dom, 'favorites-restore-undo').textContent, /restored from GitHub/);
-    assert.match(el(dom, 'favorites-github-status').textContent, /Backs up to ada\/peaks/,
+    assert.match(el(dom, 'favorites-github-status').textContent, /Newer changes need backup/,
         'the prior commit result must not imply that a changed local list is current');
     assert.equal(el(dom, 'favorites-github-status').querySelector('a'), null);
 

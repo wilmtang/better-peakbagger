@@ -1241,7 +1241,7 @@ export function createGithubRoutes({
                 path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings', scope: connectionScope(access),
             });
             if (!result.superseded) await settingsAutoBackup.markSynced(signature, access);
-            return { ok: true, result };
+            return { ok: true, result: { ...result, signature, repo: `${access.repo.owner}/${access.repo.name}` } };
         } catch (error) {
             if (PublicErrors.isPublic(error)) {
                 return { ok: false, error: PublicErrors.expose(error) };
@@ -1275,7 +1275,7 @@ export function createGithubRoutes({
                 path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers', scope: connectionScope(access),
             });
             if (!result.superseded) await favoritesAutoBackup.markSynced(signature, access);
-            return { ok: true, result };
+            return { ok: true, result: { ...result, signature, repo: `${access.repo.owner}/${access.repo.name}` } };
         } catch (error) {
             return { ok: false, error: writeError(error, 'The favorites backup failed.') };
         }

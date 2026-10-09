@@ -31,7 +31,7 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
                 if (message.type === 'GITHUB_SETTINGS_BACKUP') reply = {
                     ok: true,
-                    result: { path: 'settings.json', commitUrl: 'https://github.com/ada/peaks/commit/settings123' }
+                    result: { repo: 'ada/peaks', signature: settingsTransfer.signature({ theme: 'dark', units: 'imperial' }), path: 'settings.json', commitUrl: 'https://github.com/ada/peaks/commit/settings123' }
                 };
                 if (message.type === 'GITHUB_SETTINGS_RESTORE') reply = {
                     ok: true,
@@ -70,7 +70,7 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
     assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
     assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-github-restore'));
-    await waitFor(dom, () => /Stored as settings\.json/.test(el(dom, 'settings-backup-github-status').textContent));
+    await waitFor(dom, () => /Newer changes need backup/.test(el(dom, 'settings-backup-github-status').textContent));
     assert.equal(el(dom, 'settings-backup-github-status').querySelector('a'), null,
         'changing settings must clear the success state for the older payload');
 
@@ -108,7 +108,7 @@ test('settings backup reports in-row progress before its persistent success stat
 
     finishBackup({
         ok: true,
-        result: { path: 'settings.json', commitUrl: 'https://github.com/ada/peaks/commit/settings456' },
+        result: { repo: 'ada/peaks', signature: settingsTransfer.signature({ theme: 'dark' }), path: 'settings.json', commitUrl: 'https://github.com/ada/peaks/commit/settings456' },
     });
     await waitFor(dom, () => /Settings backed up ✓/.test(el(dom, 'settings-backup-github-status').textContent));
     assert.equal(el(dom, 'settings-backup-github-backup').disabled, false);

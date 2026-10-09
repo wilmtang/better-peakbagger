@@ -71,6 +71,7 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
     const renderGithub = () => {
         const connected = !!(githubStatus?.permissionGranted && githubStatus?.connected);
         const showBackupResult = connected
+            && !backupResult?.superseded
             && backupResult?.repo === githubRepoName()
             && backupResult?.signature === signatureOf();
         actionsEl.hidden = false;
@@ -92,7 +93,8 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
                 }));
             }
         } else if (connected) {
-            statusEl.textContent = `Backs up to ${githubRepoName()}`;
+            statusEl.textContent = backupResult?.repo === githubRepoName()
+                ? 'Newer changes need backup.' : `Backs up to ${githubRepoName()}`;
         } else {
             statusEl.textContent = 'Connect GitHub above to back up your custom favorites.';
         }
@@ -206,12 +208,15 @@ export const initFavoritesBackup = ({ extensionApi, flash, save } = {}) => {
             flash(GithubError.message(response?.error), { error: true });
             return;
         }
-        backupResult = {
-            ...(response.result || {}),
-            repo: githubRepoName(),
-            signature: signatureOf(),
-        };
-        flash(`Favorites backed up to ${githubRepoName()}`);
+        const result = response.result;
+        if (typeof result?.repo !== 'string' || typeof result?.signature !== 'string') {
+            backupResult = null;
+            flash('The backup could not be confirmed. Try again.', { error: true });
+            return;
+        }
+        backupResult = result;
+        flash(result.superseded || result.signature !== signatureOf()
+            ? 'Newer changes need backup.' : `Favorites backed up to ${result.repo}`);
     });
 
     const restoreFavorites = () => withGithubBusy(async () => {
