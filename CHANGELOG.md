@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 3.9.2 — 2026-10-09
+
 - **Patch Firefox release tooling.** Update the shell-quoting dependency used
   by the development browser runner to fix a command-injection advisory and
   restore the store-release audit gate.
