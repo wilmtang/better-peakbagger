@@ -17,6 +17,7 @@ import { units as Units } from '../ui/units.js';
     const { FEET_PER_METER, METERS_PER_MILE } = Units;
     const BANNER_ID = 'bpb-draft-banner';
     const BANNER_DISMISS_MS = 4000;
+    const SAVE_BUTTON_IDS = new Set(['SaveButton', 'SaveButton2']);
     const DRAFT_FAILURES = Object.freeze({
         'form-unavailable': 'Peakbagger’s ascent form has changed or did not load completely.',
         'privacy-check': 'The prepared upload failed its privacy check.',
@@ -26,6 +27,61 @@ import { units as Units } from '../ui/units.js';
     const draftError = code => Object.assign(new Error(DRAFT_FAILURES[code]), { code });
     let draftConnectionGeneration = 0;
     let activeApply = null;
+    let blockedSaveMessage = '';
+    let saveControlObserver = null;
+    const blockedSaveControls = new Map();
+
+    const blockSaveControls = () => {
+        for (const id of SAVE_BUTTON_IDS) {
+            const control = document.getElementById(id);
+            if (!control) continue;
+            if (!blockedSaveControls.has(control)) {
+                blockedSaveControls.set(control, { disabled: control.disabled, title: control.getAttribute('title') });
+            }
+            control.disabled = true;
+            control.title = blockedSaveMessage;
+            control.classList.add('bpb-draft-save-blocked');
+        }
+    };
+
+    const setSaveBlocked = message => {
+        const previousMessage = blockedSaveMessage;
+        blockedSaveMessage = message || '';
+        if (blockedSaveMessage) {
+            blockSaveControls();
+            if (!saveControlObserver && document.body) {
+                saveControlObserver = new MutationObserver(blockSaveControls);
+                saveControlObserver.observe(document.body, { childList: true, subtree: true });
+            }
+        } else {
+            saveControlObserver?.disconnect();
+            saveControlObserver = null;
+            for (const [control, original] of blockedSaveControls) {
+                control.disabled = original.disabled;
+                control.classList.remove('bpb-draft-save-blocked');
+                if (control.title !== previousMessage) continue;
+                if (original.title === null) control.removeAttribute('title');
+                else control.title = original.title;
+            }
+            blockedSaveControls.clear();
+        }
+    };
+
+    // A queued form has neither its suffix nor its shared trip yet. Guard
+    // implicit Enter submits and native postback clicks as well as disabling
+    // both Save buttons; Preview and Cancel remain available.
+    const guardUnpreparedSave = event => {
+        if (!blockedSaveMessage) return;
+        const saveClick = event.type === 'click' && SAVE_BUTTON_IDS.has(event.target?.closest?.('input, button')?.id);
+        const saveSubmit = event.type === 'submit' && event.target.contains(document.getElementById('DateText'))
+            && (!event.submitter || SAVE_BUTTON_IDS.has(event.submitter.id));
+        if (!saveClick && !saveSubmit) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        showBanner('waiting', blockedSaveMessage, { persistent: true });
+    };
+    document.addEventListener('click', guardUnpreparedSave, true);
+    document.addEventListener('submit', guardUnpreparedSave, true);
 
     const controlState = element => {
         if (element instanceof HTMLInputElement && element.type === 'file') {
@@ -489,7 +545,11 @@ import { units as Units } from '../ui/units.js';
                 ...ids,
                 previewResult: readPreviewResult()
             });
-            if (connectionGeneration !== draftConnectionGeneration || response?.action === 'ignore') return;
+            if (connectionGeneration !== draftConnectionGeneration) return;
+            if (response?.action === 'ignore') {
+                setSaveBlocked('');
+                return;
+            }
             if (!response || response.action === 'error') {
                 showBanner('error', response?.message || 'This ascent draft could not be prepared.');
                 return;
@@ -510,24 +570,30 @@ import { units as Units } from '../ui/units.js';
                         // retry while the short-lived draft is still present.
                     }
                 }
+                setSaveBlocked('');
                 showBanner(matchTone(response.classification),
                     `${matchLabel(response.classification)} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
                 return;
             }
             if (response.action === 'wait') {
+                setSaveBlocked(response.message || 'Save the previous ascent before saving this summit.');
                 showBanner('waiting', response.message || 'Waiting for the previous GPS Preview to finish.', {
                     persistent: true
                 });
                 return;
             }
             if (response.action === 'preview-error') {
+                setSaveBlocked('GPS Preview must succeed before saving this captured ascent.');
                 showBanner('error', response.message || 'Peakbagger did not accept GPS Preview. The draft was kept.', {
                     actionLabel: 'Retry GPS Preview',
                     onAction: () => initialize()
                 });
                 return;
             }
-            if (response.action === 'apply') await applyAndPreview(response);
+            if (response.action === 'apply') {
+                setSaveBlocked('Preparing GPS Preview. Review the result before saving.');
+                await applyAndPreview(response);
+            }
         } catch (error) {
             console.error('Better Peakbagger: draft preparation failed', error);
             showBanner('error', DRAFT_FAILURES[error?.code]
@@ -544,6 +610,7 @@ import { units as Units } from '../ui/units.js';
     ext.runtime.onMessage?.addListener(message => {
         if (message?.type === 'DRAFT_PROCEED') void initialize();
         if (message?.type === 'DRAFT_CLEARED') {
+            setSaveBlocked('');
             draftConnectionGeneration++;
             if (activeApply) {
                 activeApply.cancelled = true;

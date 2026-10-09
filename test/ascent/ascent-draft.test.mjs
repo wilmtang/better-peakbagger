@@ -626,6 +626,81 @@ test('ordinary Peakbagger editor tabs get only the fresh-form date autofill', as
         assert.equal(dom.window.document.getElementById(id).value, '', `${id} must stay untouched`);
     }
     assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(dom.window.document.getElementById('SaveButton').disabled, false);
+    dom.window.close();
+});
+
+test('queued summits cannot save until their suffix, shared trip, and GPS Preview are ready', async () => {
+    let readyCalls = 0;
+    let previews = 0;
+    let saves = 0;
+    const html = formHtml
+        .replace(/<select id="TripDD">.*?<\/select>/, '<select id="TripDD"><option value="0">**Single Ascent Trip</option><option value="44">2026-07-01</option></select>')
+        .replace('<button id="SaveButton" type="button">Save</button>', '<button id="SaveButton" type="submit">Save</button><button id="SaveButton2" type="submit">Save</button>');
+    const { dom, dispatchRuntimeMessage } = loadDraft(message => {
+        if (message.type !== 'DRAFT_READY') return { ok: true };
+        readyCalls++;
+        if (readyCalls === 1) return { action: 'wait', message: 'Save the previous ascent to prepare this summit with its GPX and trip.' };
+        if (readyCalls === 2) return {
+            action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+            fields: { date: '2026-07-01', suffix: 'b', fillAscentDetails: false,
+                tripInfo: { id: '44', sequence: 2, name: '2026-07-01', nightsOut: 0 } },
+            gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"/><trkpt lat="47.1" lon="-121.1"/></trkseg></trk></gpx>',
+        };
+        return { action: 'banner', classification: 'strong', confidence: 90 };
+    }, { html });
+    const doc = dom.window.document;
+    doc.getElementById('GPXPreview').addEventListener('click', () => previews++);
+    doc.querySelector('form').addEventListener('submit', event => { saves++; event.preventDefault(); });
+    await waitForCondition(() => doc.getElementById('SaveButton2').disabled);
+    assert.equal(doc.getElementById('SuffixText').value, '');
+    assert.equal(doc.getElementById('TripDD').value, '0');
+    for (const id of ['SaveButton', 'SaveButton2']) {
+        assert.equal(doc.getElementById(id).disabled, true);
+        doc.getElementById(id).click();
+        const click = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+        assert.equal(doc.getElementById(id).dispatchEvent(click), false, 'native postback clicks are intercepted');
+    }
+    const implicitSave = new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true });
+    assert.equal(doc.querySelector('form').dispatchEvent(implicitSave), false, 'Enter cannot bypass disabled Save');
+    assert.equal(saves, 0);
+
+    // An UpdatePanel may replace native controls while the draft is queued.
+    doc.getElementById('SaveButton2').outerHTML = '<button id="SaveButton2" type="submit">Save</button>';
+    await waitForCondition(() => doc.getElementById('SaveButton2').disabled);
+    assert.equal(doc.getElementById('SaveButton2').disabled, true);
+    dispatchRuntimeMessage({ type: 'DRAFT_PROCEED' });
+    await waitForCondition(() => previews === 1);
+    assert.equal(doc.getElementById('SuffixText').value, 'b');
+    assert.equal(doc.getElementById('TripDD').value, '44');
+    assert.equal(doc.getElementById('TripSeqText').value, '2');
+    assert.equal(doc.getElementById('SaveButton').disabled, true, 'sending Preview alone does not enable Save');
+    doc.getElementById('GPXStatusLabel').textContent = 'GPX file successfully uploaded.';
+    dispatchRuntimeMessage({ type: 'DRAFT_PROCEED' });
+    await waitForCondition(() => !doc.getElementById('SaveButton').disabled);
+    for (const id of ['SaveButton', 'SaveButton2']) {
+        assert.equal(doc.getElementById(id).disabled, false);
+        doc.getElementById(id).click();
+    }
+    assert.equal(saves, 2, 'both Save controls become available for manual review');
+    assert.equal(previews, 1);
+    dom.window.close();
+});
+
+test('disconnecting a queued capture restores native Save state and allows ordinary form submission', async () => {
+    const html = formHtml.replace('<button id="SaveButton" type="button">Save</button>',
+        '<button id="SaveButton" type="submit" title="Original title">Save</button><button id="SaveButton2" type="submit" disabled>Save</button>');
+    const { dom, dispatchRuntimeMessage } = loadDraft(() => ({ action: 'wait', message: 'Save the previous ascent first.' }), { html });
+    const doc = dom.window.document;
+    await waitForCondition(() => doc.getElementById('SaveButton').disabled);
+    dispatchRuntimeMessage({ type: 'DRAFT_CLEARED' });
+    assert.equal(doc.getElementById('SaveButton').disabled, false);
+    assert.equal(doc.getElementById('SaveButton').title, 'Original title');
+    assert.equal(doc.getElementById('SaveButton2').disabled, true, 'native disabled state is preserved');
+    let submitted = false;
+    doc.querySelector('form').addEventListener('submit', event => { submitted = true; event.preventDefault(); });
+    doc.getElementById('SaveButton').click();
+    assert.equal(submitted, true);
     dom.window.close();
 });
 

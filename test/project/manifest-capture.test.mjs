@@ -259,7 +259,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
         'the BigMap MAIN bundle must run before the isolated terrain bundle');
 });
 
-test('ascent editor integration is isolated to Peakbagger and runtime code never names a Save control', async () => {
+test('ascent editor integration is isolated to Peakbagger and capture never automates Save', async () => {
     const draftEntry = contentEntry('content/ascent-editor.js');
     assert.ok(draftEntry);
     assert.ok(draftEntry.matches.every(pattern => pattern.includes('peakbagger.com/climber/')));
@@ -282,7 +282,14 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
         'src/background/background.js',
         'popup/popup.js'
     ].map(path => fs.readFile(new URL(`../../${path}`, import.meta.url), 'utf8')));
-    assert.doesNotMatch(runtimeSource.join('\n'), /SaveButton|SaveButton2/);
+    // The draft surface may disable native Save controls while queued. Its
+    // only programmatic click must still be the acknowledged GPS Preview;
+    // worker and popup code have no reason to address Save controls at all.
+    const [draftSource, ...coordinators] = runtimeSource;
+    assert.doesNotMatch(coordinators.join('\n'), /SaveButton|SaveButton2/);
+    assert.deepEqual(draftSource.split('\n').map(line => line.trim()).filter(line => /\.click\s*\(/.test(line)),
+        ['preview.click();']);
+    assert.doesNotMatch(draftSource, /\.(?:submit|requestSubmit)\s*\(|__doPostBack/);
 });
 
 test('peak planning links are isolated to Peak.aspx in the extension world', () => {

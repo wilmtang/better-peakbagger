@@ -1026,6 +1026,8 @@
 
 /* --- prepared-draft notification -------------------------------------------------- */
 
+.bpb-draft-save-blocked:disabled { opacity: .55; cursor: default; }
+
 .bpb-draft-banner {
     --bpb-draft-color: #93370d;
     --bpb-draft-bg: #fffaeb;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden real-extension test of Preview -> manual Save -> persisted GPX/trip.
 // The fixture deliberately shares one temporary upload across ascent forms.
-/* global chrome, document */
+/* global chrome, document, getComputedStyle */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -81,7 +81,7 @@ try {
                 const id = String(800 + saved.size);
                 const tripId = post.get('TripDD') === '-1' ? '44' : post.get('TripDD');
                 tripExists = true;
-                saved.set(id, { pid, tripId, sequence: post.get('TripSeqText'), gpx: temporary });
+                saved.set(id, { pid, tripId, sequence: post.get('TripSeqText'), suffix: post.get('SuffixText'), gpx: temporary });
                 temporary = ''; // Saving consumes Peakbagger's temporary upload.
                 return send(`<div id="UpdatePanelAE"><h2><span id="SubTitle">Ascent Added/Saved Successfully!</span></h2><p><a href="Photo.aspx?aid=${id}&pid=${pid}&cid=900001">Add Photos</a><a href="climber.aspx?cid=900001">Go Back to Referring Page</a></p></div>`);
             }
@@ -114,6 +114,8 @@ try {
         chrome.tabs.onRemoved.addListener(id => record('removed', { id }));
     });
     for (const provider of ['strava', 'upload']) {
+        const theme = provider === 'upload' ? 'dark' : 'light';
+        await control.evaluate(theme => chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { theme } }), theme);
         const source = provider === 'upload' ? first : await context.newPage();
         if (provider === 'strava') await source.goto('https://www.peakbagger.com/Default.aspx');
         else await first.goto('https://www.peakbagger.com/climber/ascentedit.aspx?pid=2829&cid=900001');
@@ -121,8 +123,10 @@ try {
         const job = createSyntheticCaptureJob(sourceTabId);
         job.provider = provider;
         job.matches.push({ ...structuredClone(job.matches[0]), id: 2830, name: 'Second summit', confidence: 90 });
+        job.matches.push({ ...structuredClone(job.matches[0]), id: 2831, name: 'Third summit', confidence: 85 });
         job.matches[1].draftFields.upDistanceM += 100;
-        job.selectedIds = [2829, 2830];
+        job.matches[2].draftFields.upDistanceM += 200;
+        job.selectedIds = [2829, 2830, 2831];
         job.capturePreferences.fillTripInfo = true;
         job.tripName = '2026-07-01';
         Object.assign(job, { pageSessionId: 'browser-save-session', selectionGeneration: 1, selectionNonce: 'browser-save-selection' });
@@ -133,7 +137,7 @@ try {
             const [result] = await chrome.scripting.executeScript({ target: { tabId: job.sourceTabId }, func: async job => chrome.runtime.sendMessage({ type: 'GPX_PROCESS_APPLY', jobId: job.id, selectedIds: job.selectedIds, primaryId: 2829, pageSessionId: job.pageSessionId, selectionGeneration: job.selectionGeneration, selectionNonce: job.selectionNonce }), args: [job] });
             return result.result;
         }, { job, payload, provider });
-        if (opened.tabIds?.length !== 2) {
+        if (opened.tabIds?.length !== 3) {
             console.error('Draft opening diagnostics:', JSON.stringify({
                 provider,
                 pages: context.pages().map(page => page.url()),
@@ -143,9 +147,10 @@ try {
                 })),
             }));
         }
-        assert.ok(opened.tabIds?.length === 2, JSON.stringify(opened));
+        assert.ok(opened.tabIds?.length === 3, JSON.stringify(opened));
         const firstUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2829&cid=900001';
         const secondUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2830&cid=900001';
+        const thirdUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=2831&cid=900001';
         // Select the exact returned tab as a user would. An arbitrary blank
         // Playwright page may be either draft before its initial navigation;
         // forcing goto on it can interrupt the extension's own navigation.
@@ -153,16 +158,37 @@ try {
         const pages = await waitForCondition(() => {
             const a = context.pages().find(page => page !== first && page.url() === firstUrl) || (provider === 'upload' ? first : null);
             const b = context.pages().find(page => page.url() === secondUrl);
-            return a && b ? [a, b] : null;
+            const c = context.pages().find(page => page.url() === thirdUrl);
+            return a && b && c ? [a, b, c] : null;
         }).catch(async error => { console.log(context.pages().map(page => page.url()), await control.evaluate(()=>chrome.tabs.query({})));  throw error; });
         await pages[0].waitForFunction(() => document.getElementById('GPXStatusLabel')?.textContent.includes('successfully'));
         await pages[1].getByText('Save the previous ascent to prepare this summit with its GPX and trip.', { exact: true }).waitFor();
+        await pages[2].getByText('Save the previous ascent to prepare this summit with its GPX and trip.', { exact: true }).waitFor();
+        for (const page of pages) await page.waitForFunction(theme => document.documentElement.getAttribute('data-bpb-theme') === theme, theme);
         const before = saved.size;
         assert.equal(previews, before + 1);
         assert.equal(savePosts, before);
+        assert.equal(await pages[0].locator('#SuffixText').inputValue(), 'a');
+        for (const queued of pages.slice(1)) {
+            for (const id of ['SaveButton', 'SaveButton2']) {
+                assert.equal(await queued.locator(`#${id}`).isDisabled(), true);
+                assert.equal(await queued.locator(`#${id}`).evaluate(control => getComputedStyle(control).opacity), '0.55');
+            }
+            await queued.locator('#DateText').press('Enter');
+            await queued.evaluate(() => {
+                document.getElementById('SaveButton2').click();
+                document.getElementById('Form1').requestSubmit(document.getElementById('SaveButton'));
+            });
+        }
+        assert.equal(savePosts, before, 'queued forms cannot save without their suffix and shared trip');
         assert.equal(await pages[0].locator('#TripNameText').inputValue(), '2026-07-01');
         if (process.env.BPB_VERIFY_MULTI_READY_SCREENSHOT) await pages[0].screenshot({ path: process.env.BPB_VERIFY_MULTI_READY_SCREENSHOT, fullPage: true });
-        if (process.env.BPB_VERIFY_MULTI_SCREENSHOT) await pages[1].screenshot({ path: process.env.BPB_VERIFY_MULTI_SCREENSHOT });
+        if (process.env.BPB_VERIFY_MULTI_SCREENSHOT) {
+            await pages[1].screenshot({ path: process.env.BPB_VERIFY_MULTI_SCREENSHOT });
+            await pages[1].setViewportSize({ width: 650, height: 760 });
+            await pages[1].screenshot({ path: process.env.BPB_VERIFY_MULTI_SCREENSHOT.replace(/\.png$/, '-narrow.png') });
+            await pages[1].setViewportSize({ width: 1000, height: 760 });
+        }
         if (provider === 'upload') {
             const repairFile = path.join(root, 'repair.gpx');
             await writeFile(repairFile, payload.value.gpx);
@@ -177,16 +203,23 @@ try {
         await pages[1].waitForFunction(() => document.getElementById('GPXStatusLabel')?.textContent.includes('successfully'));
         assert.equal(await pages[1].locator('#TripDD').inputValue(), '44');
         assert.equal(await pages[1].locator('#TripSeqText').inputValue(), '2');
+        assert.equal(await pages[1].locator('#SuffixText').inputValue(), 'b');
         await pages[1].locator('#SaveButton').click();
-        await pages[1].getByText('All selected ascents and their GPX tracks have been checked.', { exact: true }).waitFor();
+        await pages[2].waitForFunction(() => document.getElementById('GPXStatusLabel')?.textContent.includes('successfully'));
+        assert.equal(await pages[2].locator('#TripDD').inputValue(), '44');
+        assert.equal(await pages[2].locator('#TripSeqText').inputValue(), '3');
+        assert.equal(await pages[2].locator('#SuffixText').inputValue(), 'c');
+        await pages[2].locator('#SaveButton2').click();
+        await pages[2].getByText('All selected ascents and their GPX tracks have been checked.', { exact: true }).waitFor();
         const results = [...saved.values()].slice(before);
-        assert.equal(results.length, 2);
+        assert.equal(results.length, 3);
         for (const ascent of results) { assert.equal(ascent.gpx, payload.value.gpx); assert.equal(ascent.tripId, '44'); }
-        assert.deepEqual(results.map(ascent => ascent.sequence), ['1', '2']);
+        assert.deepEqual(results.map(ascent => ascent.sequence), ['1', '2', '3']);
+        assert.deepEqual(results.map(ascent => ascent.suffix), ['a', 'b', 'c']);
         const remaining = await control.evaluate(async key => (await chrome.storage.session.get(key))[key], payload.key);
         assert.equal(remaining, undefined);
-        console.log(`${provider}: both manually saved ascents retain the complete GPX and one trip`);
-        await pages[0].close(); await pages[1].close();
+        console.log(`${provider}: three manually saved ascents retain a/b/c, the complete GPX, and one date-named trip`);
+        for (const page of pages) await page.close();
         if (provider === 'strava') await source.close();
     }
     console.log(`Hidden Chrome ${context.browser().version()}, 1000x760; native window/focus behavior untested.`);

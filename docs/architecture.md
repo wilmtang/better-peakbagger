@@ -630,8 +630,10 @@ selection, and its stored GPX. The complete ordered coordinates must match the
 retained upload. A missing/empty/different GPX or ambiguous trip keeps the queue
 pending with an explicit repair and recheck action. The first saved trip ID is
 reused by subsequent ascents; each next form is opened afresh so its native
-Trip dropdown and WebForms validation contain that trip. Closing a previewed
-tab before confirmation stops the remaining queue rather than guessing whether
+Trip dropdown and WebForms validation contain that trip. Queued or preparing
+forms disable both Save controls and block implicit Save submissions until
+GPS Preview is confirmed; disconnecting the capture restores native controls.
+Closing a previewed tab before confirmation stops the remaining queue rather than guessing whether
 it was saved. No Save action is automated.
 
 `src/ascent/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated
