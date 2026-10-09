@@ -266,6 +266,18 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.match(adoptionFlow,
         /adoptedHelper[\s\S]*'durable helper adoption'\);[\s\S]*chrome\.tabs\.update\(optionsTab/,
         'the helper must become durably adopted before the verifier leaves its tab');
+    const scratchCreation = helperLeaseProbe.indexOf('const scratch = await chrome.tabs.create(');
+    const firstLeaseInjection = helperLeaseProbe.indexOf('await chrome.storage.session.set(');
+    assert.ok(scratchCreation >= 0 && scratchCreation < firstLeaseInjection,
+        'both helper tabs must load before direct lease injection can race queued tab-event mutations');
+    assert.ok(helperLeaseProbe.indexOf("'scratch helper load'") < firstLeaseInjection,
+        'scratch navigation must settle before the durable worker adoption/release barriers');
+    assert.ok(helperLeaseProbe.indexOf('await chrome.tabs.remove(adoptedHelper.id);')
+        > helperLeaseProbe.indexOf("'unadopted helper removal'"),
+    'removing the adopted tab must not enqueue a map write across scratch lease injection');
+    assert.match(helperLeaseProbe,
+        /'unadopted helper removal', async \(\) => \(\{[\s\S]*lease:[\s\S]*alarm:/,
+        'cleanup timeouts must report the current tab, lease, and alarm');
     const buddyRemovalProbe = chromeVerifier.slice(
         chromeVerifier.indexOf('const syncedAdditionUi ='),
         chromeVerifier.indexOf('const buddyMutationsStayedInPlace ='),

@@ -2065,10 +2065,10 @@ try {
         const helperLeaseState = await optionsPage.evaluate(async loginUrl => {
             const leaseKey = 'bpbPeakbaggerHelperLeases';
             const cleanupAlarm = 'bpb-capture-cleanup';
-            const wait = async (predicate, description) => {
+            const wait = async (predicate, description, diagnostic = () => null) => {
                 const deadline = Date.now() + 5000;
                 while (!await predicate()) {
-                    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${description}`);
+                    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${description}; current: ${JSON.stringify(await diagnostic())}`);
                     await new Promise(resolve => setTimeout(resolve, 25));
                 }
             };
@@ -2096,6 +2096,19 @@ try {
             await wait(async () => (await chrome.tabs.get(adoptedHelper.id)).status === 'complete',
                 'adopted helper load');
             const loadedAdoptedHelper = await chrome.tabs.get(adoptedHelper.id);
+
+            // Complete both navigations before the durable adoption/release
+            // barriers below. Creating or removing tabs between direct lease
+            // injections queues worker map mutations outside this fixture's
+            // writes, which can silently replace the injected scratch lease.
+            const scratch = await chrome.tabs.create({
+                active: false,
+                windowId: optionsTab.windowId,
+                url: loginUrl,
+            });
+            await wait(async () => (await chrome.tabs.get(scratch.id)).status === 'complete',
+                'scratch helper load');
+            const loadedScratch = await chrome.tabs.get(scratch.id);
             await chrome.storage.session.set({
                 [leaseKey]: {
                     [adoptedHelper.id]: makeLease(
@@ -2138,16 +2151,6 @@ try {
             }, 'adopted helper lease release');
             const adoptedRetained = await chrome.tabs.get(adoptedHelper.id)
                 .then(() => true, () => false);
-            await chrome.tabs.remove(adoptedHelper.id);
-
-            const scratch = await chrome.tabs.create({
-                active: false,
-                windowId: optionsTab.windowId,
-                url: loginUrl,
-            });
-            await wait(async () => (await chrome.tabs.get(scratch.id)).status === 'complete',
-                'scratch helper load');
-            const loadedScratch = await chrome.tabs.get(scratch.id);
             await chrome.storage.session.set({
                 [leaseKey]: {
                     [scratch.id]: makeLease(
@@ -2164,9 +2167,17 @@ try {
                     chrome.storage.session.get(leaseKey).then(value => value[leaseKey] || {}),
                 ]);
                 return tabGone && !leases[scratch.id];
-            },
-            'unadopted helper removal');
+            }, 'unadopted helper removal', async () => ({
+                tab: await chrome.tabs.get(scratch.id).then(tab => ({
+                    active: tab.active,
+                    status: tab.status,
+                    urlMatches: tab.url === loadedScratch.url,
+                }), () => null),
+                lease: (await chrome.storage.session.get(leaseKey))[leaseKey]?.[scratch.id] || null,
+                alarm: await chrome.alarms.get(cleanupAlarm),
+            }));
             const leasesAfterCleanup = (await chrome.storage.session.get(leaseKey))[leaseKey] || {};
+            await chrome.tabs.remove(adoptedHelper.id);
             chrome.alarms.create(cleanupAlarm, { periodInMinutes: 5 });
             return {
                 adoptedRetained,

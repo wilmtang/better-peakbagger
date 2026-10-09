@@ -8,6 +8,17 @@ exact advisory exception and expiry. This work does not consume another version.
 
 ### Fixed and verified
 
+- The Chrome helper-lease fixture now loads both probe tabs before durable
+  worker adoption/release barriers and removes the adopted tab only after
+  scratch cleanup. This removes direct fixture lease injection across queued
+  tab creation/removal writes. Timeout diagnostics include the live tab, lease,
+  and alarm. The ordering regression failed before the change and all 15
+  resource-stack tests passed afterward, with scoped ESLint and diff checks.
+  Both unchanged minified archives then passed three consecutive hidden
+  Chrome 153.0.8010.12 / Firefox 157.0.1 runs, including teardown. No owned
+  browser or driver processes remained. The original timeout did not include
+  the missing lease state; the identified ordering hazard is source-confirmed,
+  rather than inferred from a captured failing payload.
 - Capture scale verification records three complete samples, timing algorithm
   phases separately from assertions. Every sample keeps all exactness, anchors,
   point-budget, draft, and yielding checks. Median CPU must be below 15 seconds;
@@ -50,8 +61,9 @@ exact advisory exception and expiry. This work does not consume another version.
   and fails immediately instead of retrying. All 72 focused repetition,
   release, and documentation tests passed, with scoped ESLint and diff checks.
   A real run passed repetition 1 and correctly stopped at repetition 2 on the
-  Chrome helper-lease fixture's unadopted-tab cleanup timeout. That previously
-  hidden fixture race must be diagnosed and repaired before closure.
+  Chrome helper-lease fixture's unadopted-tab cleanup timeout. After the ordering
+  repair above, all three consecutive exact-package runs passed locally. Remote
+  current/floor repetition proof remains pending.
 - Shared setup and the common canonical-package command are implemented.
   All 56 focused release/setup/package-order tests and scoped ESLint passed.
   Real minified archives passed hidden Chrome 153.0.8010.12 and Firefox 157.0.1
