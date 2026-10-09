@@ -221,6 +221,12 @@ script is added or removed without updating it.
 | `npm run release:verify-packages` | Builds, derives, validates, and executes both exact store archives through the shared CI/release gate. |
 | `npm run store:description:chrome` | Regenerates Chrome's checked-in plain-text listing from the canonical Markdown description. |
 
+Set `BPB_VERIFY_REPETITIONS=3` for consecutive exact-package verification with
+fresh profiles and the same archive bytes. All repetitions must pass, including
+teardown; a failed assertion stops the run rather than being retried. The manual
+release rehearsal defaults to three for current and floor browsers. CPU scale
+sampling is separate and always retains all three measured samples.
+
 Pushes and pull requests use one least-privilege workflow with independent
 jobs for Node tests/lint, the scale suite, current Chrome for Testing, Chrome
 128, and Firefox 152 plus latest. The desktop manifest promises those exact

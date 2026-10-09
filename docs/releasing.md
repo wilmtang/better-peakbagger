@@ -31,6 +31,13 @@ tests, lint, production packaging, archive validation, and current/floor browser
 checks used for publication. A rehearsal proves package readiness for its commit;
 a later tag still reruns the gates for its own commit.
 
+Manual rehearsals require three consecutive successes per browser by default,
+using the same archive bytes with fresh disposable profiles. Choose one or five
+with `-f repetitions=1` or `-f repetitions=5`. Every requested repetition must
+pass, including teardown; the first failure stops the check and stays failed.
+Current-browser checks verify archive hashes between runs. The floor jobs use
+the same repetition count. Published tag jobs run once after this preflight.
+
 Ordinary CI's current-browser job and the release job use the same
 `.github/actions/setup-verification` action and `npm run release:verify-packages`
 command. The action installs Node 24 and locked dependencies, resolves browser

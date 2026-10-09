@@ -580,8 +580,8 @@ test('release publication waits for packaged declared-browser-floor verification
     );
     assert.match(workflow, /compatibility:\s*\n[\s\S]*?browser: chrome\s+version: "128"/);
     assert.match(workflow, /browser: firefox\s+version: "152\.0"/);
-    assert.match(workflow, /BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts\/verify-extension\.mjs/);
-    assert.match(workflow, /node scripts\/verify-firefox-extension\.mjs/);
+    assert.match(workflow, /BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts\/verification-repetitions\.mjs chrome/);
+    assert.match(workflow, /node scripts\/verification-repetitions\.mjs firefox/);
     assert.equal(workflow.match(/needs: \[verify, compatibility\]/g)?.length, 2);
 });
 

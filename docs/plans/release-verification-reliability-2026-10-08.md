@@ -44,12 +44,20 @@ exact advisory exception and expiry. This work does not consume another version.
 
 ### Changed but not fully proven
 
+- Consecutive exact-package verification is implemented, defaults to three in
+  manual rehearsals, and applies to both current and floor browser jobs. It
+  fingerprints canonical archives between browser runs, uses fresh profiles,
+  and fails immediately instead of retrying. All 72 focused repetition,
+  release, and documentation tests passed, with scoped ESLint and diff checks.
+  A real run passed repetition 1 and correctly stopped at repetition 2 on the
+  Chrome helper-lease fixture's unadopted-tab cleanup timeout. That previously
+  hidden fixture race must be diagnosed and repaired before closure.
 - Shared setup and the common canonical-package command are implemented.
   All 56 focused release/setup/package-order tests and scoped ESLint passed.
   Real minified archives passed hidden Chrome 153.0.8010.12 and Firefox 157.0.1
   at the maintained fixture viewports, including 1000x760. Owned process checks
   were empty afterward. Remote action execution remains pending on the final
   commit.
-- Pending: run repeated exact-package checks and obtain terminal remote CI and
+- Pending: pass repeated exact-package checks and obtain terminal remote CI and
   read-only rehearsal evidence on the final commit. A green retry alone is not
   closure.

@@ -3,6 +3,12 @@ name: Release browser extensions
 on:
   # Read-only rehearsal: the same package gates run without store credentials.
   workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Consecutive successful checks required for each exact archive
+        type: choice
+        options: ['1', '3', '5']
+        default: '3'
   push:
     tags:
       - "v*"
@@ -46,6 +52,7 @@ jobs:
       artifact-name: ${{ steps.metadata.outputs.artifact-name }}
     env:
       BPB_VERIFY_ARTIFACTS: browser-evidence
+      BPB_VERIFY_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}
     permissions:
       contents: read
     steps:
@@ -130,6 +137,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.verify.outputs.version }}
       BPB_VERIFY_ARTIFACTS: browser-evidence
+      BPB_VERIFY_REPETITIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -169,10 +177,10 @@ jobs:
             BPB_VERIFY_EXTENSION_SOURCE="release-package/better_peakbagger-${version}.zip"
             mkdir floor-extension
             unzip -q "$BPB_VERIFY_EXTENSION_SOURCE" -d floor-extension
-            BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts/verify-extension.mjs 2>&1 | tee browser-evidence/floor.log
+            BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts/verification-repetitions.mjs chrome 2>&1 | tee browser-evidence/floor.log
           else
             BPB_VERIFY_EXTENSION_SOURCE="release-package/better_peakbagger-${version}-firefox.zip" \
-              node scripts/verify-firefox-extension.mjs 2>&1 | tee browser-evidence/floor.log
+              node scripts/verification-repetitions.mjs firefox 2>&1 | tee browser-evidence/floor.log
           fi
 
       - name: Retain floor failure evidence

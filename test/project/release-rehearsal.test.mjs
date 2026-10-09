@@ -28,6 +28,15 @@ test('manual rehearsals never authorize store jobs, including a dispatch on a re
     assert.equal(workflow.jobs.verify.environment, undefined);
 });
 
+test('read-only rehearsals require consecutive package and floor passes without retrying failures', () => {
+    assert.equal(workflow.on.workflow_dispatch.inputs.repetitions.default, '3');
+    assert.deepEqual(workflow.on.workflow_dispatch.inputs.repetitions.options, ['1','3','5']);
+    for (const job of [workflow.jobs.verify, workflow.jobs.compatibility]) {
+        assert.equal(job.env.BPB_VERIFY_REPETITIONS,
+            "${{ github.event_name == 'workflow_dispatch' && inputs.repetitions || '1' }}");
+    }
+});
+
 test('rehearsal validates metadata early and keeps the full tag gate on publication', () => {
     const steps = workflow.jobs.verify.steps;
     const metadata = steps.findIndex(step => step.id === 'metadata');
