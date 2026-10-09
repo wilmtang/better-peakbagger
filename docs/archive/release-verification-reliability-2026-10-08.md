@@ -1,8 +1,29 @@
 # Release verification reliability
 
+Closed on 2026-10-09 with the historical evidence limits below retained.
+
 Owner request: fix every problem identified in the 3.9.0–3.9.2 release diagnosis.
 Preserve store protections, published tags, runtime privacy boundaries, and the
 exact advisory exception and expiry. This work does not consume another version.
+
+The latest runtime corrections are included in
+`ac7df77d45ffc402239f9708231b566362dcf11f`.
+[Main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37910720275)
+completed successfully on that snapshot: 2342 tests, lint, live audit, scale,
+current/floor browsers, exact-package execution, and both hardware-GPU checks.
+The [replacement three-pass rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37910756804)
+also completed successfully. All three current Chrome/Firefox pairs and three
+repetitions of each browser floor passed with teardown and verified archive
+identity at that commit. Both store jobs were skipped. The earlier diagnostic rehearsal
+[37909228004](https://github.com/wilmtang/better-peakbagger/actions/runs/37909228004)
+was cancelled after two current-browser pairs passed and the third began,
+to replace its obsolete source snapshot. It is not counted as a passing
+rehearsal.
+
+The combined tree preserves the separately committed captured-trip date names
+(`138f3180ab6fea33cc5b85ef67d026f2edf1ce5e`) and summit-draft Save preparation
+guard (`62523d3cd1ca04cfd53b5a97f960b2ca236d82b3`). This task did not modify
+their files or bundle them into its focused commits.
 
 Reopened again on 2026-10-09 after
 [final documentation CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37904401979)
@@ -34,6 +55,38 @@ including teardown, against archives whose identity was verified at that commit.
 
 ### Fixed and verified
 
+- Settings keydown handling armed duplicate-click suppression for modifier
+  keys alone, although those keys cannot activate the button. The click handler
+  then swallowed a real pointer click until a zero-delay timer ran; it also
+  swallowed a separate pointer action after modified keyboard activation.
+  Suppression now requires Enter or Space and consumes only keyboard-generated
+  clicks (`detail === 0`). Two controlled delayed-timer regressions failed
+  against the old shipped bundle and both passed after rebuilding; all 57
+  ascent-filter tests passed. The full suite passed 2342/2342; full lint passed
+  with six existing owned warnings, and the live audit passed under the exact
+  existing advisory exception. Trust checks and native tab/window intent are
+  preserved. Both exact minified packages passed hidden Chrome 153.0.8010.12
+  and Firefox 157.0.1, including trusted Settings actions and owned-process
+  teardown. Main CI passed all 11 jobs at the repaired commit, followed by
+  the successful three-pass current/floor package rehearsal.
+- Both browser verifiers now wait for the exact drafts-manager URL, complete
+  document, heading, list surface, and extension storage before seeding a draft.
+  Firefox previously read `about:blank` immediately after the new window handle;
+  Chrome's load-state wait could likewise accept the initial blank document.
+  The worker already requests the correct URL; product code is unchanged.
+  A deterministic regression rejected the old truthiness-only condition wait
+  for an early blank window. Shared readiness tests exercise delayed navigation,
+  loading/interactive documents, missing extension APIs and list elements, and
+  live failure diagnostics; the timeout diagnostic uses a controlled clock.
+  The full suite passed 2336/2336, all six focused fixture tests and scoped
+  ESLint passed, and both minified packages passed hidden Chrome 153.0.8010.12
+  and Firefox 157.0.1, including teardown.
+  [Combined-tree CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37906234900)
+  passed at `1e04cb9770469bb2a9c0c415a031d329b82d755a`, including 2337 tests,
+  scale, lint, audit, all browser jobs, and both GPU checks. Main CI also passed
+  at the latest repaired snapshot above, as did its three-pass current/floor
+  package rehearsal. The failed rehearsal on the earlier
+  snapshot is recorded separately below.
 - Queued automatic ignored-climber sync now rechecks enabled and review state
   on entering its operation lane. The deterministic regression reproduced an
   upload that consumed a manual review before confirmation; a second regression
@@ -140,8 +193,8 @@ including teardown, against archives whose identity was verified at that commit.
   remains strict. New advisories are valid release blockers.
 - Published 3.9.2 tags and store submissions were not changed or repeated.
   The newly discovered ignored-climber worker and Settings input races are
-  recorded under Unreleased;
-  manifests, package versions, and runtime privacy boundaries remain unchanged.
+  recorded under Unreleased; manifests, package versions, and runtime privacy
+  boundaries remain unchanged.
 - Native browser focus, live provider exports, and asynchronous store review
   remain separate evidence boundaries. These checks ran hidden/headless with
   the maintained fixtures, including the 1000x760 base viewport and narrow
@@ -149,20 +202,6 @@ including teardown, against archives whose identity was verified at that commit.
 
 ### Changed but not fully proven
 
-- Settings keydown handling armed duplicate-click suppression for modifier
-  keys alone, although those keys cannot activate the button. The click handler
-  then swallowed a real pointer click until a zero-delay timer ran; it also
-  swallowed a separate pointer action after modified keyboard activation.
-  Suppression now requires Enter or Space and consumes only keyboard-generated
-  clicks (`detail === 0`). Two controlled delayed-timer regressions failed
-  against the old shipped bundle and both passed after rebuilding; all 57
-  ascent-filter tests passed. The full suite passed 2342/2342; full lint passed
-  with six existing owned warnings, and the live audit passed under the exact
-  existing advisory exception. Trust checks and native
-  tab/window intent are preserved. Both exact minified packages passed hidden
-  Chrome 153.0.8010.12 and Firefox 157.0.1, including trusted Settings actions
-  and owned-process teardown. Remote verification of this runtime correction
-  remains pending.
 - [Rehearsal 37906237779](https://github.com/wilmtang/better-peakbagger/actions/runs/37906237779)
   stopped during its first Firefox run on an unlabelled five-second Selenium
   condition. The error did not identify a caller and its artifact omitted
@@ -175,30 +214,8 @@ including teardown, against archives whose identity was verified at that commit.
   against an isolated build of the failed source passed with these diagnostics;
   the original caller remains unknown, and those passes are not credited as
   proving its repair. The source-confirmed Settings suppression race above can
-  fail the same short activation wait, but the old log cannot establish that it
+  fail a short Settings activation wait, but the old log cannot establish that it
   caused this historical timeout.
-- Both browser verifiers now wait for the exact drafts-manager URL, complete
-  document, heading, list surface, and extension storage before seeding a draft.
-  Firefox previously read `about:blank` immediately after the new window handle;
-  Chrome's load-state wait could likewise accept the initial blank document.
-  The worker already requests the correct URL; product code is unchanged.
-  A deterministic regression rejected the old truthiness-only condition wait
-  for an early blank window. Shared readiness tests exercise delayed navigation,
-  loading/interactive documents, missing extension APIs and list elements, and
-  live failure diagnostics; the timeout diagnostic uses a controlled clock.
-  The full suite passed 2336/2336, all six focused fixture tests and scoped
-  ESLint passed, and both minified packages passed hidden Chrome 153.0.8010.12
-  and Firefox 157.0.1, including teardown.
-  [Combined-tree CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37906234900)
-  passed at `1e04cb9770469bb2a9c0c415a031d329b82d755a`, including 2337 tests,
-  scale, lint, audit, all browser jobs, and both GPU checks. That snapshot also
-  preserves the separately committed captured-trip date-name change in
-  `138f3180ab6fea33cc5b85ef67d026f2edf1ce5e`; this task did not modify its files.
-  [Three-pass rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37906237779)
-  failed on the separate unlabelled Firefox wait described above. Diagnostic
-  [main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37909225092)
-  subsequently passed, including all browser and GPU jobs; its separate
-  three-pass rehearsal is not yet terminal.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,
@@ -213,15 +230,17 @@ including teardown, against archives whose identity was verified at that commit.
 
 | Check | Result |
 | --- | --- |
-| Final local full suite | 2334/2334 |
+| Latest local full suite | 2342/2342 |
 | Prior hosted full suite (c569973) | 2331/2331 in main CI and rehearsal |
 | New worker fix, full suite | 2333/2333 locally and in main CI |
-| Final hosted full suite (629875b) | 2334/2334 in main CI and rehearsal |
-| Scale | 14/14 locally and in both final workflows |
+| Prior hosted full suite (629875b) | 2334/2334 in main CI and rehearsal |
+| Latest hosted full suite (ac7df77) | 2342/2342 in main CI and rehearsal |
+| Scale | 14/14 in both latest workflows; CPU medians 8802.7 and 9490.3 ms, all three samples retained |
 | Lint | ESLint and extension lint passed; six existing owned warnings |
 | Live audit | Passed with the existing exact advisory exception |
-| Current packages | Three consecutive Chrome/Firefox pairs locally and remotely |
-| Packaged floors | Three Chrome 128 and three Firefox 152 repetitions remotely |
+| Latest local packages | One minified Chrome 153.0.8010.12 / Firefox 157.0.1 pair, including teardown |
+| Latest hosted current packages | Three consecutive Chrome 153.0.8010.12 / Firefox 157.0.1 pairs, including teardown |
+| Latest packaged floors | Three Chrome 128.0.6613.137 and three Firefox 152.0 repetitions, including teardown |
 | Wrong-browser regressions | Real hidden Chrome and Firefox rejected deliberately wrong expectations |
 
 The [first implementation CI run](https://github.com/wilmtang/better-peakbagger/actions/runs/37894425941)
@@ -234,3 +253,13 @@ main CI on the same Metal hardware renderer: full Chrome for Testing
 153.0.8010.12 and copied-runtime Firefox 155.0, hidden/headless at the maintained
 viewports (Firefox 1000x760). The final sidebar correction changed only its unit
 fixture and this ledger, so GPU jobs were correctly skipped on 629875b.
+
+Latest main CI at ac7df77 again passed both copied-runtime GPU checks. Chrome
+reported the ANGLE Metal Apple Paravirtual renderer at 798x448 wide and 448x448
+default frame sizes. Firefox 155.0 reported the same hardware renderer,
+hidden/headless at 1000x760. These copied-runtime terrain checks are separate
+from exact minified-extension checks in current Chrome 153 and Firefox 157.
+After the local exact-package run, process command-line inspection found no
+remaining test-owned Chrome, Firefox, or driver. No disposable verification
+profile or package-extraction directory remained. The completed isolated
+diagnostic source copy was removed; failure logs remain as task evidence.
