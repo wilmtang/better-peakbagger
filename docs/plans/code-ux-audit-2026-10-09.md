@@ -28,7 +28,7 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 | --- | --- | --- | --- | --- |
 | F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Changed; final visual check pending |
 | F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Open |
-| F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Open |
+| F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Changed; final browser check pending |
 | F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Open |
 | F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Open |
 | F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Open |
@@ -322,6 +322,10 @@ acceptance checks run.
   success. Focused options/worker coverage passed 144/144; build, focused
   ESLint, and whitespace checks passed. Hidden Chrome 153 real-extension
   verification passed; final status-copy visual inspection remains pending.
+- F3: Settings revisions now guard initial painting and save responses against
+  newer events/intents. A failed first save waits for a still-owned baseline
+  before rollback. Build, 70 focused Settings/UI/read-policy tests, focused
+  ESLint, and whitespace checks passed; final browser verification is pending.
 
 Keep native/live/platform proof gaps explicit when moving locally verified
 items to the first category. Preserve this ledger when the plan is archived.

@@ -110,6 +110,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     };
 
     let confirmedSettings = null;
+    let settingsRevision = 0;
     const populate = settings => {
         confirmedSettings = { ...settings };
         unitsEl.value = settings.units;
@@ -150,18 +151,27 @@ import { initSectionNav } from '../src/ui/section-nav.js';
 
     let saveQueue = Promise.resolve();
     const save = patch => {
+        const revision = ++settingsRevision;
         const operation = saveQueue.then(async () => {
             const next = await S.set(patch);
-            confirmedSettings = { ...next };
-            applyTheme(next.theme);
+            if (revision === settingsRevision) {
+                confirmedSettings = { ...next };
+                applyTheme(next.theme);
+            }
             flash();
             return next;
         });
         saveQueue = operation.catch(() => {});
         // Every control is optimistic. Restore the authoritative values and
         // report the failure instead of leaving a toggle that never persisted.
-        operation.catch(() => {
-            if (confirmedSettings) populate(confirmedSettings);
+        operation.catch(async () => {
+            // A first interaction can fail before startup finishes. Its baseline
+            // is useful for rollback only while no newer settings owner won.
+            if (!confirmedSettings) {
+                const initial = await initialSettings;
+                if (revision === settingsRevision && !confirmedSettings) confirmedSettings = { ...initial };
+            }
+            if (revision === settingsRevision && confirmedSettings) populate(confirmedSettings);
             flash('Settings couldn’t be saved. Try again.', { error: true });
         });
         return operation;
@@ -270,7 +280,10 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     betaSortDateDescEl.addEventListener('change', () => save({ betaSortDateDesc: betaSortDateDescEl.checked }));
 
     // Keep in sync if changed elsewhere (another tab / an inline control).
-    S.subscribe(settings => populate(settings));
+    S.subscribe(settings => {
+        settingsRevision++;
+        populate(settings);
+    });
     if (extensionApi.storage && extensionApi.storage.onChanged && TerrainCache) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
             if (area === 'local' && changes[TerrainCache.INDEX_KEY] && !terrainCacheRowEl.hidden) {
@@ -295,5 +308,9 @@ import { initSectionNav } from '../src/ui/section-nav.js';
 
     initSectionNav();
 
-    S.get().then(populate);
+    const initialRevision = settingsRevision;
+    const initialSettings = S.get();
+    initialSettings.then(settings => {
+        if (initialRevision === settingsRevision) populate(settings);
+    });
 })();
