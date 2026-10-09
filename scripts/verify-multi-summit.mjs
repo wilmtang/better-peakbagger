@@ -124,6 +124,7 @@ try {
         job.matches[1].draftFields.upDistanceM += 100;
         job.selectedIds = [2829, 2830];
         job.capturePreferences.fillTripInfo = true;
+        job.tripName = '2026-07-01';
         Object.assign(job, { pageSessionId: 'browser-save-session', selectionGeneration: 1, selectionNonce: 'browser-save-selection' });
         const payload = createSyntheticCapturePayload(job);
         const opened = await control.evaluate(async ({ job, payload, provider }) => {
@@ -159,6 +160,8 @@ try {
         const before = saved.size;
         assert.equal(previews, before + 1);
         assert.equal(savePosts, before);
+        assert.equal(await pages[0].locator('#TripNameText').inputValue(), '2026-07-01');
+        if (process.env.BPB_VERIFY_MULTI_READY_SCREENSHOT) await pages[0].screenshot({ path: process.env.BPB_VERIFY_MULTI_READY_SCREENSHOT, fullPage: true });
         if (process.env.BPB_VERIFY_MULTI_SCREENSHOT) await pages[1].screenshot({ path: process.env.BPB_VERIFY_MULTI_SCREENSHOT });
         if (provider === 'upload') {
             const repairFile = path.join(root, 'repair.gpx');

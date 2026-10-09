@@ -829,7 +829,7 @@ test('a multi-summit selection fills the current tab and opens grouped sibling d
     });
     assert.equal(ready.phase, 'ready');
     assert.equal(ready.matches.length, 2);
-    assert.equal(harness.values.bpbCaptureJobs['5'].tripName, 'Grand Traverse');
+    assert.equal(harness.values.bpbCaptureJobs['5'].tripName, '2026-07-01');
 
     const applied = await harness.send({
         type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
@@ -847,8 +847,8 @@ test('a multi-summit selection fills the current tab and opens grouped sibling d
     // ascent date, so track order assigns the alphabetical suffixes.
     assert.equal(current.suffix, 'a');
     assert.equal(sibling.suffix, 'b');
-    assert.deepEqual(JSON.parse(JSON.stringify(current.tripInfo)), { sequence: 1, name: 'Grand Traverse', nightsOut: 0 });
-    assert.deepEqual(JSON.parse(JSON.stringify(sibling.tripInfo)), { sequence: 2, name: 'Grand Traverse', nightsOut: 0 });
+    assert.deepEqual(JSON.parse(JSON.stringify(current.tripInfo)), { sequence: 1, name: '2026-07-01', nightsOut: 0 });
+    assert.deepEqual(JSON.parse(JSON.stringify(sibling.tripInfo)), { sequence: 2, name: '2026-07-01', nightsOut: 0 });
 
     assert.deepEqual(JSON.parse(JSON.stringify(harness.grouped)), [{ tabIds: [100], createProperties: { windowId: 9 } }]);
     assert.deepEqual(JSON.parse(JSON.stringify(harness.groupUpdates)), [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
@@ -1040,8 +1040,8 @@ test('a bound peak the track only brushes surfaces as an explicit closest-approa
     assert.ok(ready.boundFallback.closestApproachM > 150 && ready.boundFallback.closestApproachM < 300,
         `closest approach should be ~222 m, got ${ready.boundFallback.closestApproachM}`);
     assert.equal(ready.boundFallback.selected, false);
-    assert.equal(harness.values.bpbCaptureJobs['5'].tripName, 'Bound traverse',
-        'a selectable fallback must not make the worker discard the GPX track name');
+    assert.equal(harness.values.bpbCaptureJobs['5'].tripName, '2026-07-01',
+        'a selectable fallback must not make the worker discard the trip start date');
 
     // "Use ⟨peak⟩ anyway" fills the current page from the closest-approach
     // point and still opens the detected summit as a sibling draft.
@@ -1051,8 +1051,8 @@ test('a bound peak the track only brushes surfaces as an explicit closest-approa
     assert.equal(applied.ok, true);
     assert.equal(harness.values.bpbDraftTabs['5'].pid, 7);
     assert.equal(harness.values.bpbDraftTabs['100'].pid, 8);
-    assert.equal(harness.values.bpbDraftTabs['5'].tripInfo.name, 'Bound traverse');
-    assert.equal(harness.values.bpbDraftTabs['100'].tripInfo.name, 'Bound traverse');
+    assert.equal(harness.values.bpbDraftTabs['5'].tripInfo.name, '2026-07-01');
+    assert.equal(harness.values.bpbDraftTabs['100'].tripInfo.name, '2026-07-01');
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
     assert.equal(apply.action, 'apply');
     assert.ok(Number.isFinite(apply.fields.upDistanceM));

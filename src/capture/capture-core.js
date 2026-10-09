@@ -945,6 +945,12 @@ const formatEncounterDateTime = (time, providerMeta, referenceTime = null) => {
     };
 };
 
+const calculateTripDate = (segments, providerMeta = {}) => {
+    const firstTime = firstFinite(segments, 'time');
+    return formatEncounterDateTime(firstTime, providerMeta, firstTime).date
+        || (providerMeta.displayedLocalStart || '').slice(0, 10);
+};
+
 const calculateNightsOut = (segments, providerMeta = {}) => {
     const firstTime = firstFinite(segments, 'time');
     const lastTime = firstFinite(segments, 'time', true);
@@ -1132,6 +1138,7 @@ const API = {
     reduceTrackAsync,
     serializeUploadGpx,
     calculateDraftFields,
+    calculateTripDate,
     calculateNightsOut,
     calculateDayStats,
     assignDraftSuffixes,

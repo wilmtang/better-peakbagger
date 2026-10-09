@@ -619,9 +619,10 @@ ascent date and follow track encounter order. Singleton dates keep a blank
 suffix. Encounter time is analysis metadata and is never written to
 `SuffixText`.
 
-Multi-peak trip names prefer the first GPX track name, then the activity page
-heading, then selected summit names in track order. Every candidate is
-whitespace-normalized and limited to 200 characters.
+Multi-peak trip names use the activity-local start date in `YYYY-MM-DD` form,
+including for overnight tracks whose first summit is reached the next day.
+When no date is available, selected summit names in track order provide the
+fallback, limited to 200 characters.
 
 Multi-summit drafts advance after a confirmed manual Save, not after Preview.
 The save-success content script reads the owned saved ascent, its actual trip

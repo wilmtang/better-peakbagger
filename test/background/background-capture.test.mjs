@@ -3408,7 +3408,7 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     const first = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 } });
     const waiting = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
     assert.equal(first.allowWaypoints, true);
-    assert.deepEqual({ ...first.fields.tripInfo }, { sequence: 1, name: 'Afternoon Hike', nightsOut: 2 });
+    assert.deepEqual({ ...first.fields.tripInfo }, { sequence: 1, name: '2026-07-01', nightsOut: 2 });
     assert.equal(waiting.action, 'wait');
     assert.equal(await harness.send({
         type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 7, cid: 77,
@@ -3451,7 +3451,7 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.match(storedCaptureGpx(harness), /<gpx/);
 
     const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
-    assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2, id: '44' });
+    assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: '2026-07-01', nightsOut: 2, id: '44' });
     assert.equal(second.gpx, first.gpx, 'every summit receives the full identical GPX');
     assert.equal(first.fields.wildernessNightsOut, 2);
     assert.equal(second.fields.wildernessNightsOut, 2);

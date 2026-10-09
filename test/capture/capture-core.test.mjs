@@ -674,6 +674,14 @@ test('day statistics reject spans beyond Peakbagger’s supported row count', ()
     ]], { utcOffsetMinutes: 0 }), []);
 });
 
+test('trip names use the activity-local start date rather than the provider title', () => {
+    const segments = [[point(0, 0, 100, Date.UTC(2026, 6, 2, 2)), point(0, 0.001, 130, Date.UTC(2026, 6, 3, 2))]];
+    assert.equal(Core.calculateTripDate(segments, { utcOffsetMinutes: -420, title: 'Afternoon Hike' }), '2026-07-01');
+    assert.equal(Core.calculateTripDate(segments, { utcOffsetMinutes: 0 }), '2026-07-02');
+    assert.equal(Core.calculateTripDate([[point(0, 0)]], { displayedLocalStart: '2026-07-01T08:00:00' }), '2026-07-01');
+    assert.equal(Core.calculateTripDate([[point(0, 0)]], { title: 'Afternoon Hike' }), '');
+});
+
 test('same-day draft suffixes follow encounter order without mutating matches', () => {
     const matches = [
         { id: 1, draftFields: { date: '2026-07-01', upDistanceM: 300 } },
