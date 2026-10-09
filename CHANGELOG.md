@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep ignored-climber previews valid.** Background sync preserves a review
+  opened while it was waiting and skips queued work after sync is turned off.
+
 ## 3.9.2 — 2026-10-09
 
 - **Recover Garmin activity capture.** Wait for the activity's session to finish

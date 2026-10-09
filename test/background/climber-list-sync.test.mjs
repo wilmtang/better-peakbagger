@@ -37,6 +37,52 @@ test('fresh metadata conflicts keep sync enabled and pause without writing or re
     await h.engine.action({ action: 'check' });
     assert.equal(h.reads, 1, 'a pending review must not repeat the setup');
 });
+test('an automatic check delayed behind manual review preserves the reviewed preview', async () => {
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const h = harness({ remote: [entry(2)], syncEnabled: null });
+    let releaseCheck, checkReachedAccess;
+    const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
+    const reachedAccess = new Promise(resolve => { checkReachedAccess = resolve; });
+    let accessCalls = 0;
+    const engine = createClimberListSync({ ...h.engineOptions, getAccess: async options => {
+        if (++accessCalls === 1) { checkReachedAccess(); await heldCheck; }
+        return h.engineOptions.getAccess(options);
+    } });
+    const automatic = engine.action({ action: 'check' });
+    await reachedAccess;
+    const prepared = await engine.action({ action: 'setup' });
+    assert.equal(prepared.ok, true);
+    releaseCheck();
+    const checked = await automatic;
+    assert.equal(h.writes, 0, 'automatic work must not upload before manual confirmation');
+    assert.equal(checked.skipped, true, 'queued automatic work must yield to the new manual review');
+    assert.equal((await engine.status()).preview.id, prepared.preview.id);
+    const confirmed = await engine.action({ action: 'confirm', reviewId: prepared.preview.id, mode: 'merge' });
+    assert.equal(confirmed.ok, true);
+    assert.deepEqual(new Set(confirmed.list.entries.map(item => item.cid)), new Set([1,2]));
+});
+test('an automatic check delayed behind disabling sync retains the opt-out', async () => {
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const h = harness({ remote: [entry(2)], syncEnabled: null });
+    let releaseCheck, checkReachedAccess;
+    const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
+    const reachedAccess = new Promise(resolve => { checkReachedAccess = resolve; });
+    let accessCalls = 0;
+    const engine = createClimberListSync({ ...h.engineOptions, getAccess: async options => {
+        if (++accessCalls === 1) { checkReachedAccess(); await heldCheck; }
+        return h.engineOptions.getAccess(options);
+    } });
+    const automatic = engine.action({ action: 'check' });
+    await reachedAccess;
+    await engine.action({ action: 'disable' });
+    releaseCheck();
+    assert.equal((await automatic).skipped, true);
+    const status = await engine.status();
+    assert.equal(status.state.enabled, false);
+    assert.equal(status.preview, null);
+    assert.equal(h.reads, 0);
+    assert.equal(h.writes, 0);
+});
 test('turning sync on persists immediately and new connections retain the preference', async () => {
     const h = harness({ remote: [entry(2)] });
     const result = await h.engine.action({ action: 'enable' });

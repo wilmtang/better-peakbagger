@@ -4,7 +4,10 @@ Owner request: fix every problem identified in the 3.9.0–3.9.2 release diagnos
 Preserve store protections, published tags, runtime privacy boundaries, and the
 exact advisory exception and expiry. This work does not consume another version.
 
-Closed on 2026-10-09. All implementation and workflow changes are included in
+Reopened on 2026-10-09 after the documentation commit's
+[CI run](https://github.com/wilmtang/better-peakbagger/actions/runs/37898123779)
+failed current Chrome with a stale ignored-climber sync preview. Prior verified
+implementation and workflow changes are included in
 `c56997338ff3bb6a54b5fa53932b79b6d252d6ae`.
 [Main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37895780435)
 and the [three-pass read-only rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37895800141)
@@ -93,8 +96,8 @@ both completed successfully on that commit. Both store jobs were skipped.
   exception. Raw npm audit still reports three high findings; the default audit
   remains strict. New advisories are valid release blockers.
 - Published 3.9.2 tags and store submissions were not changed or repeated.
-  Runtime privacy boundaries, manifests, and product source remain unchanged
-  by this verification-reliability work.
+  The newly discovered ignored-climber worker race is recorded under Unreleased;
+  manifests, package versions, and runtime privacy boundaries remain unchanged.
 - Native browser focus, live provider exports, and asynchronous store review
   remain separate evidence boundaries. These checks ran hidden/headless with
   the maintained fixtures, including the 1000x760 base viewport and narrow
@@ -102,6 +105,14 @@ both completed successfully on that commit. Both store jobs were skipped.
 
 ### Changed but not fully proven
 
+- Queued automatic ignored-climber sync now rechecks enabled and review state
+  on entering its operation lane. The deterministic regression reproduced an
+  upload that consumed a manual review before confirmation; a second regression
+  reproduced automatic work continuing after sync was disabled. Both failed
+  before the fix. All 25 sync tests, the 2333-test full suite, lint, and live audit
+  under the existing exception passed afterward. The rebuilt minified archives
+  passed three consecutive hidden Chrome 153.0.8010.12 / Firefox 157.0.1 pairs,
+  including teardown. Remote CI/rehearsal proof remains pending.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,
@@ -117,7 +128,8 @@ both completed successfully on that commit. Both store jobs were skipped.
 | Check | Result |
 | --- | --- |
 | Local full suite | 2330/2330 before the budget regression was added |
-| Final hosted full suite | 2331/2331 in main CI and rehearsal |
+| Prior hosted full suite (c569973) | 2331/2331 in main CI and rehearsal |
+| New worker fix, local full suite | 2333/2333; remote proof pending |
 | Scale | 14/14 locally and in both final workflows |
 | Lint | ESLint and extension lint passed; six existing owned warnings |
 | Live audit | Passed with the existing exact advisory exception |
@@ -130,4 +142,4 @@ also passed both copied-runtime GPU checks on Metal renderers. Chrome reported
 the Apple Paravirtual device; Firefox 155.0 reported the same hardware device at
 1000x760, hidden/headless. The subsequent budget correction changed only the
 release workflow, its focused test, and documentation, so those GPU jobs were
-correctly skipped on the final fix commit.
+correctly skipped on c569973. The subsequent worker fix is still under validation.

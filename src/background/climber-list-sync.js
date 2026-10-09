@@ -13,6 +13,8 @@ export const IGNORED_CHANGE_ALARM = 'bpb-ignored-sync-changes';
 const initialState = () => ({ schemaVersion: 1, enabled: true, controlRevision: 0,
     scope: null, base: null, pending: null, review: null, phase: 'local', error: '',
     lastBackup: null, lastSuccess: null, lastChecked: 0, retryAt: 0, head: null });
+const automaticSyncBlocked = state => !state.enabled
+    || (state.phase === 'review' && (state.review || !state.pending));
 const entriesValid = entries => I.validateEntries(entries) !== null;
 export const readIgnoredSyncState = value => {
     if (value === undefined) return initialState();
@@ -248,9 +250,12 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
         const review = await storeReview('recovery', pending.scope, list, remote);
         throw Object.assign(new Error('The interrupted upload could not be confirmed. Review the current lists.'), { code: 'review', preview: review });
     };
-    const syncOperation = () => network(async ({ signal, guard }) => {
+    const syncOperation = ({ automatic = false } = {}) => network(async ({ signal, guard }) => {
         const token = generation;
         let observed = await snapshot();
+        // A check can wait behind a manual preview or opt-out. Revalidate on
+        // entering the operation lane before automatic work can replace review.
+        if (automatic && automaticSyncBlocked(observed.state)) return { ok: true, skipped: true };
         if (observed.state.retryAt > now()) fail('rate-limit', 'GitHub asked us to wait before retrying. Changes remain saved on this device.');
         if (observed.state.pending) {
             const recovered = await recover(observed.state, signal, guard);
@@ -314,19 +319,19 @@ export const createClimberListSync = ({ storage, store, writeQueue, getAccess,
         });
         return reconcile(pending, result, guard);
     });
-    const sync = () => {
+    const sync = options => {
         if (syncPromise) return syncPromise;
-        const operation = serial(() => safely(syncOperation)); syncPromise = operation;
+        const operation = serial(() => safely(() => syncOperation(options))); syncPromise = operation;
         void operation.finally(() => { if (syncPromise === operation) syncPromise = null; });
         return operation;
     };
     const automatic = async () => {
         const { state } = await snapshot();
-        if (!state.enabled || (state.phase === 'review' && (state.review || !state.pending))) return { ok: true, skipped: true };
+        if (automaticSyncBlocked(state)) return { ok: true, skipped: true };
         const access = await getAccess({});
         if (access.error && ['not-connected', 'no-repo'].includes(access.error.code)) return { ok: true, skipped: true };
         if (state.retryAt > now()) { armChanges(Math.max(0.5, (state.retryAt - now()) / 60000)); return { ok: true, skipped: true }; }
-        const response = await sync();
+        const response = await sync({ automatic: true });
         if (!response.ok && (await readState()).phase !== 'review') {
             armChanges(Math.max(1, (response.error?.retryAfterSeconds || 60) / 60));
         }
