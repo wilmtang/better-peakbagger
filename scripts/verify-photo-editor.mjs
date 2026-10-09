@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
 // no live site, user browser, API key, or upload is involved.
-/* global document, DataTransfer, chrome, innerWidth, HTMLCanvasElement, FileReader */
+/* global document, DataTransfer, chrome, innerWidth, HTMLCanvasElement, FileReader, navigator */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -158,6 +158,54 @@ try {
     assert.equal(await page.locator('#object-text').inputValue(), labelText);
     assert.equal(await page.locator('[data-tool][aria-pressed="true"]').getAttribute('data-tool'), 'text');
     await capture('text-auto-focused');
+    // Exercise actual browser copy/paste commands. Preserve the clipboard's
+    // supported formats for the duration of this synthetic-data check.
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate(async () => { globalThis.photoClipboardBackup = await navigator.clipboard.read(); });
+    await context.clearPermissions();
+    try {
+        await page.locator('[data-tool="select"]').click();
+        await page.locator('#photo-overlay g.selected [data-bpb-hit-target]').click();
+        const countBeforePaste = await page.locator('#annotation-list button').count();
+        const clipboardModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.press(`${clipboardModifier}+c`);
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.waitForFunction(async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (JSON.parse(text).kind !== 'better-peakbagger-annotation') return false;
+                globalThis.photoClipboardWritten = text;
+                return true;
+            }
+            catch { return false; }
+        });
+        await context.clearPermissions();
+        await page.keyboard.press(`${clipboardModifier}+v`);
+        await page.waitForFunction(count => document.querySelectorAll('#annotation-list button').length === count + 1,
+            countBeforePaste);
+        assert.equal(await page.locator('#object-text').inputValue(), labelText);
+        assert.equal(await page.locator('#text-width').inputValue(), '');
+        assert.equal(await page.locator('#photo-viewport').evaluate(view => document.activeElement === view), true);
+        await capture('text-pasted');
+        await page.locator('#undo').click();
+        assert.equal(await page.locator('#annotation-list button').count(), countBeforePaste);
+        await page.locator('#redo').click();
+        assert.equal(await page.locator('#annotation-list button').count(), countBeforePaste + 1);
+        await page.locator('#undo').click();
+        await page.locator('#annotation-list button').filter({ hasText: 'Text: North ridge' }).click();
+    } finally {
+        await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+        await page.evaluate(async () => {
+            // Do not overwrite a clipboard change from the user's own work.
+            if (globalThis.photoClipboardWritten === await navigator.clipboard.readText()) {
+                if (globalThis.photoClipboardBackup.length) await navigator.clipboard.write(globalThis.photoClipboardBackup);
+                else await navigator.clipboard.writeText('');
+            }
+            delete globalThis.photoClipboardBackup;
+            delete globalThis.photoClipboardWritten;
+        });
+        await context.clearPermissions();
+    }
     await page.locator('#object-color').selectOption('#ffffff');
     await page.locator('#label-background').check();
     await page.locator('#text-width').fill('300');

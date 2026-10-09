@@ -1460,7 +1460,7 @@ const setTool = tool => {
     // to be repainted when it changes.
     else if (project) renderProject();
     setEditorStatus(tool === 'select'
-        ? 'Select a mark to move or restyle it.'
+        ? 'Select a mark to move, restyle, or copy it.'
         : tool === 'drawing'
             ? 'Drag to draw. Each stroke is one Undo step. Esc cancels a stroke.'
             : tool === 'route'
@@ -1948,6 +1948,87 @@ const applyStyle = (patch, { coalesce = null, geometry = null } = {}) => {
         return;
     }
     rememberTool(inspectorType(), { style: patch });
+};
+
+const editorEventContext = event => {
+    const path = typeof event.composedPath === 'function'
+        ? event.composedPath()
+        : [event.target];
+    const active = document.activeElement;
+    const editing = [...path, active].some(node => {
+        if (!node || node.nodeType !== 1) return false;
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)) return true;
+        return node.isContentEditable === true
+            || node.closest?.('[contenteditable]:not([contenteditable="false"])');
+    });
+    const target = event.target;
+    const editorScoped = !ui.editorView.hidden && (
+        (target instanceof Node && ui.editorView.contains(target))
+        || ([document, document.body, document.documentElement].includes(target)
+            && (!active || active === document.body || active === document.documentElement
+                || ui.editorView.contains(active)))
+    );
+    return { editing, editorScoped };
+};
+
+// Clipboard events keep browser copy/paste commands working without adding
+// clipboard permissions. Only the selected annotation leaves the editor.
+const ANNOTATION_CLIPBOARD_KIND = 'better-peakbagger-annotation';
+const MAX_ANNOTATION_CLIPBOARD_LENGTH = 1024 * 1024;
+let lastAnnotationPaste = null;
+
+const annotationClipboardAvailable = event => {
+    const { editing, editorScoped } = editorEventContext(event);
+    return project && editorScoped && !editing && activeTool === 'select'
+        && !editorMutationLocked() && !routeSession && !drawingSession && !dragSession && !panSession;
+};
+
+const onAnnotationCopy = event => {
+    if (!annotationClipboardAvailable(event) || !event.clipboardData) return;
+    const object = selectedObject();
+    if (!object) return;
+    try {
+        event.clipboardData.setData('text/plain', JSON.stringify({
+            kind: ANNOTATION_CLIPBOARD_KIND, version: 1, object,
+        }));
+    } catch { return; }
+    event.preventDefault();
+    lastAnnotationPaste = null;
+    setEditorStatus(`${toolName(object.type)} copied. Paste to add another.`);
+};
+
+const onAnnotationPaste = event => {
+    if (!annotationClipboardAvailable(event) || !event.clipboardData) return;
+    let text;
+    let payload;
+    try {
+        text = event.clipboardData.getData('text/plain');
+        if (!text || text.length > MAX_ANNOTATION_CLIPBOARD_LENGTH) return;
+        payload = JSON.parse(text);
+    } catch { return; }
+    if (payload?.kind !== ANNOTATION_CLIPBOARD_KIND || payload.version !== 1) return;
+    event.preventDefault();
+    // Validate untrusted clipboard data through the project model before using
+    // its geometry. This also enforces the target project's object/point limits.
+    const validated = Project.addObject(project, { ...payload.object, id: crypto.randomUUID() });
+    if (!validated) {
+        toast('That annotation cannot be pasted into this photo.');
+        return;
+    }
+    const object = validated.objects.at(-1);
+    const count = lastAnnotationPaste?.text === text && lastAnnotationPaste.localId === project.localId
+        ? lastAnnotationPaste.count + 1 : 1;
+    const offset = 24 * count;
+    const copy = { ...object, geometry: translatedGeometry(object, offset, offset) };
+    // At a coordinate boundary, preserve the original position rather than
+    // dropping a valid annotation because the small paste offset does not fit.
+    const next = Project.addObject(project, copy) || validated;
+    selectedId = object.id;
+    selectedVertex = null;
+    if (!setProject(next)) return;
+    lastAnnotationPaste = { text, count, localId: project.localId };
+    ui.viewport.focus({ preventScroll: true });
+    setEditorStatus(`${toolName(object.type)} pasted. Use the arrow keys to move it.`);
 };
 
 const duplicateSelected = () => {
@@ -3318,6 +3399,8 @@ const bindEvents = () => {
     ui.editorEmpty.addEventListener('dragleave', onPhotoDragLeave);
     ui.editorEmpty.addEventListener('drop', onPhotoDrop);
     document.addEventListener('paste', onPhotoPaste);
+    document.addEventListener('copy', onAnnotationCopy);
+    document.addEventListener('paste', onAnnotationPaste);
     ui.title.addEventListener('input', schedulePersist);
     ui.caption.addEventListener('input', schedulePersist);
     ui.undo.addEventListener('click', undo);
@@ -3435,23 +3518,7 @@ const bindEvents = () => {
     bindInspector();
 
     document.addEventListener('keydown', event => {
-        const path = typeof event.composedPath === 'function'
-            ? event.composedPath()
-            : [event.target];
-        const active = document.activeElement;
-        const editing = [...path, active].some(node => {
-            if (!node || node.nodeType !== 1) return false;
-            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName)) return true;
-            return node.isContentEditable === true
-                || node.closest?.('[contenteditable]:not([contenteditable="false"])');
-        });
-        const target = event.target;
-        const editorScoped = !ui.editorView.hidden && (
-            (target instanceof Node && ui.editorView.contains(target))
-            || ([document, document.body, document.documentElement].includes(target)
-                && (!active || active === document.body || active === document.documentElement
-                    || ui.editorView.contains(active)))
-        );
+        const { editing, editorScoped } = editorEventContext(event);
         if (busy || !editorScoped) return;
         if (event.key === 'Escape' && cancelTextResize()) { event.preventDefault(); return; }
         if (dragSession?.resize || editing) return;

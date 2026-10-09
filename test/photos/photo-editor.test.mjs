@@ -974,6 +974,20 @@ const transferEvent = (win, type, property, transfer) => {
     return event;
 };
 
+const annotationTransfer = (text = '') => {
+    const values = new Map([['text/plain', text]]);
+    return {
+        getData: type => values.get(type) || '',
+        setData: (type, value) => values.set(type, value),
+    };
+};
+
+const dispatchClipboard = (page, type, transfer, node = page.doc) => {
+    const event = transferEvent(page.win, type, 'clipboardData', transfer);
+    node.dispatchEvent(event);
+    return event;
+};
+
 const photoTransfer = file => ({
     types: ['Files'],
     items: [{
@@ -2159,6 +2173,9 @@ test('export and upload hold one immutable snapshot behind every editor mutation
         records[0]?.title === 'Snapshot title' && records[0]?.caption === 'Snapshot caption');
     await waitForPhotoStore(win, 'projects', records => records[0]?.objects.length === 1);
 
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const snapshotClipboard = annotationTransfer(); dispatchClipboard(page, 'copy', snapshotClipboard);
+
     page.click(doc.getElementById('upload-insert'));
     await waitFor(page.dom, () => exportStarted && doc.getElementById('photo-viewport')
         .getAttribute('aria-busy') === 'true');
@@ -2226,6 +2243,11 @@ test('export and upload hold one immutable snapshot behind every editor mutation
         configurable: true,
     });
     input.dispatchEvent(new win.Event('change'));
+
+    for (const type of ['copy', 'paste']) {
+        assert.equal(dispatchClipboard(page, type, snapshotClipboard).defaultPrevented, false,
+            'clipboard commands cannot change a frozen export');
+    }
 
     releaseExport();
     await waitFor(page.dom, () => uploadStarted);
@@ -2687,6 +2709,169 @@ test('a finished route can insert and remove points without deleting the route',
     assert.equal(points().length, 3);
     page.click(remove);
     assert.equal(points().length, 2);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Select copies a snapshot and pastes independently selected, undoable annotations', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    const { doc } = page;
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer();
+    assert.equal(dispatchClipboard(page, 'copy', transfer).defaultPrevented, true);
+    const payload = JSON.parse(transfer.getData('text/plain'));
+    assert.deepEqual(Object.keys(payload).sort(), ['kind', 'object', 'version']);
+    assert.equal(payload.object.geometry.x, 200);
+    doc.getElementById('object-color').value = '#ffffff';
+    page.emit(doc.getElementById('object-color'), 'change');
+    page.click(doc.getElementById('delete-object'));
+    assert.equal(page.markCount(), 0);
+    const readSelection = () => {
+        const copied = annotationTransfer(); dispatchClipboard(page, 'copy', copied);
+        return JSON.parse(copied.getData('text/plain')).object;
+    };
+    assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, true);
+    assert.equal(page.markCount(), 1);
+    assert.equal(doc.getElementById('object-color').value, payload.object.style.color,
+        'clipboard content does not track edits or deletion of the original');
+    assert.equal(doc.activeElement, doc.getElementById('photo-viewport'));
+    // Inspect without another copy command, which would start a new paste run.
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform'), /translate\(224 224\)/);
+    assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, true);
+    assert.equal(page.markCount(), 2);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform'), /translate\(248 248\)/);
+    const second = readSelection();
+    assert.notEqual(second.id, payload.object.id);
+    page.click(doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1, 'one Undo removes one paste');
+    page.click(doc.getElementById('redo'));
+    assert.equal(page.markCount(), 2);
+    const buttons = [...doc.querySelectorAll('#annotation-list button')];
+    assert.equal(new Set(buttons.map(button => button.dataset.objectId)).size, 2);
+    assert.deepEqual(page.errors, []);
+});
+
+test('clipboard round trips text wrapping, route controls, and freehand geometry across editors', async t => {
+    for (const type of ['text', 'route', 'drawing']) {
+        const source = await loadEditor();
+        const target = await loadEditor();
+        t.after(() => { source.win.close(); target.win.close(); });
+        source.tool(type);
+        if (type === 'drawing') {
+            source.pointer('pointerdown', 100, 100);
+            source.pointer('pointermove', 180, 160); source.pointer('pointerup', 240, 190);
+        } else source.click(source.doc.getElementById('add-at-center'));
+        if (type === 'text') {
+            const text = source.doc.getElementById('object-text');
+            text.value = 'North ridge\nKeep left'; source.emit(text, 'input');
+            const width = source.doc.getElementById('text-width');
+            width.value = '275'; source.emit(width, 'change');
+            source.doc.getElementById('text-align').value = 'center';
+            source.emit(source.doc.getElementById('text-align'), 'change');
+        } else {
+            source.doc.getElementById('route-smooth').checked = true;
+            source.emit(source.doc.getElementById('route-smooth'), 'change');
+        }
+        source.tool('select'); source.doc.getElementById('photo-viewport').focus();
+        const transfer = annotationTransfer();
+        assert.equal(dispatchClipboard(source, 'copy', transfer).defaultPrevented, true);
+        const original = JSON.parse(transfer.getData('text/plain')).object;
+        // Each jsdom page otherwise restarts the same deterministic id counter.
+        target.win.crypto.randomUUID = () => `pasted-${type}`;
+        target.doc.getElementById('photo-viewport').focus();
+        assert.equal(dispatchClipboard(target, 'paste', transfer).defaultPrevented, true);
+        const pastedTransfer = annotationTransfer(); dispatchClipboard(target, 'copy', pastedTransfer);
+        const pasted = JSON.parse(pastedTransfer.getData('text/plain')).object;
+        assert.notEqual(pasted.id, original.id);
+        assert.equal(pasted.type, original.type);
+        assert.deepEqual(pasted.style, original.style);
+        if (type === 'text') {
+            assert.equal(pasted.text, original.text);
+            assert.equal(pasted.geometry.width, 275);
+            assert.equal(pasted.geometry.x, original.geometry.x + 24);
+        } else {
+            assert.deepEqual(pasted.geometry.points, original.geometry.points.map(([x, y]) => [x + 24, y + 24]));
+            assert.deepEqual(pasted.geometry.controls, original.geometry.controls.map(control => control && ({
+                in: control.in && control.in.map(value => value + 24),
+                out: control.out && control.out.map(value => value + 24),
+            })));
+        }
+        assert.equal(target.markCount(), 1);
+        assert.deepEqual([...source.errors, ...target.errors], []);
+    }
+});
+
+test('annotation clipboard leaves native text editing and Library commands alone', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    const { doc } = page;
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer(); dispatchClipboard(page, 'copy', transfer);
+    const editable = doc.createElement('div'); editable.contentEditable = 'true';
+    editable.setAttribute('contenteditable', 'true');
+    const nested = doc.createElement('span'); editable.append(nested); doc.getElementById('editor-view').append(editable);
+    for (const node of [doc.getElementById('object-text'), doc.getElementById('photo-title'),
+        doc.getElementById('photo-caption'), nested]) {
+        node.focus();
+        for (const type of ['copy', 'paste']) {
+            assert.equal(dispatchClipboard(page, type, transfer, node).defaultPrevented, false);
+        }
+        assert.equal(page.markCount(), 1);
+    }
+    doc.getElementById('photo-viewport').focus();
+    page.click(doc.getElementById('show-library'));
+    doc.getElementById('library-search').focus();
+    for (const type of ['copy', 'paste']) {
+        assert.equal(dispatchClipboard(page, type, transfer).defaultPrevented, false);
+    }
+    page.click(doc.getElementById('show-editor')); doc.getElementById('photo-viewport').focus();
+    assert.equal(page.markCount(), 1);
+    page.tool('route'); page.pointer('pointerdown', 300, 300);
+    assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, false);
+    assert.equal(page.markCount(), 1, 'paste cannot interrupt a pending route');
+    assert.deepEqual(page.errors, []);
+});
+
+test('untrusted annotation clipboard rejects invalid data without consuming redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    const { doc } = page;
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer(); dispatchClipboard(page, 'copy', transfer);
+    const payload = JSON.parse(transfer.getData('text/plain'));
+    page.click(doc.getElementById('undo'));
+    for (const text of ['plain text', '{bad json', 'x'.repeat(1024 * 1024 + 1),
+        JSON.stringify({ ...payload, version: 99 }), JSON.stringify({ ...payload, kind: 'unknown' }),
+        ...[null, { ...payload.object, type: 'unknown' },
+            { ...payload.object, style: { ...payload.object.style, color: 'url(javascript:bad)' } },
+            { ...payload.object, geometry: { x: 999999, y: 0 } },
+            { ...payload.object, type: 'route', geometry: { points: Array.from({ length: Project.MAX_ROUTE_POINTS + 1 }, () => [0, 0]) } },
+        ].map(object => JSON.stringify({ ...payload, object }))]) {
+        dispatchClipboard(page, 'paste', annotationTransfer(text));
+        assert.equal(page.markCount(), 0);
+        assert.equal(doc.getElementById('redo').disabled, false, 'rejected paste preserves history');
+    }
+    page.click(doc.getElementById('redo'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(dispatchClipboard(page, 'copy', { setData() { throw new Error('unavailable'); } }).defaultPrevented, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('pasting at a geometry boundary preserves a valid annotation without its offset', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100); page.tool('select');
+    page.doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer(); dispatchClipboard(page, 'copy', transfer);
+    const payload = JSON.parse(transfer.getData('text/plain'));
+    payload.object.geometry.x = IMAGE.width * 2;
+    payload.object.geometry.y = IMAGE.height * 2;
+    assert.equal(dispatchClipboard(page, 'paste', annotationTransfer(JSON.stringify(payload))).defaultPrevented, true);
+    assert.equal(page.markCount(), 2);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform'), /translate\(3200 2400\)/);
     assert.deepEqual(page.errors, []);
 });
 

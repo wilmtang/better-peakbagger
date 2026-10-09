@@ -22,6 +22,13 @@ the initial width is Auto so labels grow with their text. The project model
 validates the saved style; annotation text, pitch content, and coordinates are
 never stored as tool preferences.
 
+Select (`V`) supports Cmd/Ctrl+C and Cmd/Ctrl+V for one selected annotation,
+including routes, freehand strokes, symbols, and text. Paste selects a new copy
+with a small position offset, preserves its style, and adds one Undo step. The
+clipboard contains only a versioned annotation; paste validates it through the
+project model and its geometry and point limits. Text controls retain native
+copy/paste, and the editor adds no clipboard permissions.
+
 While placing a route, Cmd/Ctrl+Z removes only its last point, including the
 first point. Shift+Cmd/Ctrl+Z restores points until a new point is placed.
 Finishing the route makes it one project Undo step. Undo during a held freehand
