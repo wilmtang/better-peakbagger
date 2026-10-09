@@ -4,6 +4,14 @@
 
 ## 3.9.2 — 2026-10-09
 
+- **Recover Garmin activity capture.** Wait for the activity's session to finish
+  initializing and offer Reopen activity when its session or route download
+  fails. Recovery preserves the original tab and requires another toolbar
+  click before exporting the route.
+
+- **Keep capture working with sleeping tabs.** Leave sleeping Peakbagger tabs
+  untouched and use a live page or temporary helper for summit lookup.
+
 - **Patch Firefox release tooling.** Update the shell-quoting dependency used
   by the development browser runner to fix a command-injection advisory and
   restore the store-release audit gate.
