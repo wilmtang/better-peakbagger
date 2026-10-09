@@ -8,6 +8,13 @@ exact advisory exception and expiry. This work does not consume another version.
 
 ### Fixed and verified
 
+- Disposable Firefox profiles no longer issue add-on uninstall before QUIT.
+  Both successful QUIT and the exact known lost response require confirmed
+  profile-owned process exit. Unknown errors and extension assertion failures
+  remain failures; success is logged after teardown. All 68 focused lifecycle,
+  resource, and release tests passed. A real minified Firefox archive passed
+  hidden Firefox 157.0.1 at 1000x760, including teardown; process inspection
+  afterward found no owned browser/driver. Repeated remote proof is pending.
 - Browser identity now compares live capabilities with the exact installed
   version before extension installation/assertions. Missing contracts fail in
   CI. Current Chrome uses locked Playwright full-Chromium metadata; Firefox and
@@ -35,9 +42,6 @@ exact advisory exception and expiry. This work does not consume another version.
   at the maintained fixture viewports, including 1000x760. Owned process checks
   were empty afterward. Remote action execution remains pending on the final
   commit.
-- Pending: remove redundant temporary-add-on uninstall from disposable-profile
-  teardown, prove owned process exit on successful QUIT too, and exercise
-  assertion failure, protocol failure, and lingering-process boundaries.
 - Pending: replace a single noisy performance sample with repeated isolated
   measurements, preserving exactness, cancellation, point limits, and the
   15-second reference-runner CPU regression threshold.

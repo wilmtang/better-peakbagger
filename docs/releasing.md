@@ -40,6 +40,13 @@ both archives. Browser capabilities must match the installed versions before
 extension assertions begin; an absent expectation is an error in CI. The
 additional ordinary Firefox matrix continues to cover Linux separately.
 
+Firefox's temporary extension is owned by its disposable profile. Verification
+closes the session, confirms profile-owned processes exited, and removes the
+profile; it does not issue a separate add-on uninstall during shutdown. Only
+the known lost QUIT-response error can be accepted after confirmed process
+exit. Disconnections during other commands, assertion failures, and lingering
+processes remain failures. The success message follows completed teardown.
+
 Verified artifacts contain the exact two ZIPs and `package-identity.json`, which
 records their version, source commit, and SHA-256 hashes. Each downstream job
 checks that identity before using the downloads. Artifact names include the

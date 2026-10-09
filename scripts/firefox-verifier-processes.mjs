@@ -52,21 +52,25 @@ export async function stopOwnedFirefoxProcesses(profileRoot) {
 
 export async function quitFirefoxDriver(driver, profileRoot, {
     readOwnedPids = readOwnedFirefoxPids,
+    timeoutMs = 5_000,
 } = {}) {
+    let lostResponse = false;
     try {
         await quitWebDriver(driver);
     } catch (error) {
         // Firefox can exit before Marionette returns the QUIT response. Selenium
         // still kills geckodriver in its finally handler. Accept only this exact
         // teardown error, and only after the owned browser processes are gone.
-        // Errors from assertions, uninstall, or other protocol commands retain
+        // Errors from assertions or other protocol commands retain
         // their original failure; a live browser still fails this bounded wait.
         if (error?.message !== 'Failed to decode response from marionette') throw error;
-        await waitForCondition(() => readOwnedPids(profileRoot).length === 0, {
-            description: `Firefox processes owned by ${profileRoot} to exit after QUIT`,
-            intervalMs: 50,
-            timeoutMs: 5_000,
-        });
-        console.warn('Firefox QUIT response was lost; confirmed all verifier-owned browser processes exited.');
+        lostResponse = true;
     }
+    // A successful protocol response is not proof of process exit either.
+    await waitForCondition(() => readOwnedPids(profileRoot).length === 0, {
+        description: `Firefox processes owned by ${profileRoot} to exit after QUIT`,
+        intervalMs: 50,
+        timeoutMs,
+    });
+    if (lostResponse) console.warn('Firefox QUIT response was lost; confirmed all verifier-owned browser processes exited.');
 }

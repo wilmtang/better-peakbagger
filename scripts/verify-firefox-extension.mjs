@@ -214,7 +214,9 @@ async function main() {
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
         const addonId = await driver.installAddon(extensionSource, true);
-        resources.defer('temporary Firefox add-on', () => driver.uninstallAddon(addonId));
+        // This add-on exists only in the owned disposable profile. Closing the
+        // session and removing that profile releases it; a separate uninstall
+        // adds a needless Marionette round trip during shutdown.
         const baseUrl = await extensionBaseUrl(driver, addonId);
         if (!baseUrl?.startsWith('moz-extension://')) {
             throw new Error(`Firefox reported an invalid extension origin: ${JSON.stringify(baseUrl)}`);
@@ -3109,7 +3111,7 @@ async function main() {
         await driver.close();
         await driver.switchTo().window(controlHandle);
 
-        console.log('Firefox extension startup verification passed:');
+        console.log('Firefox extension runtime assertions passed (teardown pending):');
         console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
         console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
         console.log('  - real sync/local/session storage and storage.onChanged round-tripped');
@@ -3146,6 +3148,7 @@ async function main() {
         driver, fixtureOrigin: `https://${fixtureHost}:${fixture.port}`,
     });
     await resources.dispose(primaryError);
+    console.log('Firefox extension verification and owned-process teardown passed.');
 }
 
 main().catch(error => {

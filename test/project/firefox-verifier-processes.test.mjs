@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { quitFirefoxDriver } from '../../scripts/firefox-verifier-processes.mjs';
 import { createResourceStack } from '../../scripts/resource-stack.mjs';
 
@@ -29,13 +30,41 @@ test('unknown teardown errors and failed process inspection remain failures', as
     }), /unrelated transport failure/);
     await assert.rejects(quitFirefoxDriver(lostQuitResponse, '/tmp/owned-fixture', {
         readOwnedPids: () => { throw new Error('ps failed'); },
+        timeoutMs: 40,
     }), /ps failed/);
 });
 
 test('a lingering Firefox process still fails teardown', async () => {
     await assert.rejects(quitFirefoxDriver(lostQuitResponse, '/tmp/owned-fixture', {
         readOwnedPids: () => [123],
+        timeoutMs: 40,
     }), /Firefox processes owned by .* to exit after QUIT/);
+});
+
+test('successful QUIT still waits for owned process exit and rejects a leaked browser', async () => {
+    let probes = 0;
+    await quitFirefoxDriver({ quit: async () => {} }, '/tmp/owned-fixture', {
+        readOwnedPids: () => ++probes === 1 ? [123] : [],
+    });
+    assert.equal(probes, 2);
+    await assert.rejects(quitFirefoxDriver({ quit: async () => {} }, '/tmp/owned-fixture', {
+        readOwnedPids: () => [123], timeoutMs: 40,
+    }), /to exit after QUIT/);
+});
+
+test('a disconnected session is not treated as a successful lost QUIT response', async () => {
+    await assert.rejects(quitFirefoxDriver({ quit: async () => {
+        throw new Error('Tried to run command without establishing a connection');
+    } }, '/tmp/owned-fixture', {
+        readOwnedPids: () => [],
+    }), /without establishing a connection/);
+});
+
+test('disposable-profile verification avoids uninstall and reports success only after teardown', async () => {
+    const source = await readFile(new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /\.uninstallAddon\(/);
+    assert.ok(source.indexOf('await resources.dispose(primaryError)')
+        < source.indexOf('Firefox extension verification and owned-process teardown passed.'));
 });
 
 test('confirmed browser exit cannot suppress a failed extension assertion', async () => {
