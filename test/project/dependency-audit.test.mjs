@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import { satisfies } from 'semver';
 
@@ -72,6 +73,7 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
 const patchedTools = {
     'web-ext': '^10.7.0', 'addons-linter': '^10.13.0', 'image-size': '^2.0.4',
     'adm-zip': '^0.6.1', 'js-yaml': '^4.3.2', 'fast-uri': '^3.1.8',
+    'shell-quote': '^1.12.0',
 };
 const checkPatchedTools = lockfile => {
     for (const [name, range] of Object.entries(patchedTools)) {
@@ -110,5 +112,17 @@ test('maintained release guidance requires zero advisories', async () => {
         const source = await readFile(new URL(relative, import.meta.url), 'utf8');
         assert.match(source, /zero advisories/i, relative);
         assert.doesNotMatch(source, /2026-09-21|permits two exact high|accepts two exact high/i);
+    }
+});
+
+test('the Firefox runner resolves patched quoting and preserves ordinary command arguments', () => {
+    const require = createRequire(import.meta.url);
+    const runnerRequire = createRequire(require.resolve('fx-runner/package.json'));
+    const { parse, quote } = runnerRequire('shell-quote');
+    assert.deepEqual(parse('firefox --profile "/tmp/profile with spaces" --headless'),
+        ['firefox', '--profile', '/tmp/profile with spaces', '--headless']);
+    for (const terminator of ['\n', '\r', '\u2028', '\u2029']) {
+        assert.throws(() => quote(['echo', 'ok', { comment: 'x' }, `a${terminator}id;#`]),
+            TypeError, 'tokens after comments must not escape into shell input');
     }
 });
