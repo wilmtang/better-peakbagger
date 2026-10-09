@@ -24,7 +24,7 @@ gh run list --workflow release.yml --event workflow_dispatch --limit 1
 gh run watch RUN_ID --exit-status
 ```
 
-Use the returned run ID and confirm **Verify release**, packaged Chrome 128,
+Use the returned run ID and confirm **Release scale tests**, **Verify release**, packaged Chrome 128,
 and packaged Firefox 152 finish successfully, with both store jobs skipped.
 This checks listing metadata before expensive work, then runs the same audit,
 tests, lint, production packaging, archive validation, and current/floor browser
@@ -220,6 +220,9 @@ visible in the AMO Developer Hub.
    `scripts/check-web-ext-lint.mjs`, up to the reviewed per-file occurrence limits
    recorded there.
 
+   Release scale tests retain the 15-second capture CPU ceiling on the same
+   Ubuntu runner class as ordinary scale CI. Package verification waits for
+   that required job; its browser checks run separately on hosted macOS.
    Release CI also downloads the verified archives and executes them in hidden
    Chrome for Testing 128 and Firefox 152 before either store job becomes
    eligible. The ordinary package verifier separately covers current Chrome

@@ -40,6 +40,17 @@ test('rehearsal validates metadata early and keeps the full tag gate on publicat
     assert.match(ancestry.run, /"\$GITHUB_REF_NAME"/);
 });
 
+test('release package verification waits for scale tests on the ordinary CI runner class', async () => {
+    const ordinary = yaml.load(await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8'));
+    const scale = workflow.jobs.scale;
+    assert.equal(scale['runs-on'], ordinary.jobs.scale['runs-on']);
+    assert.ok(scale.steps.some(step => step.run === 'npm run test:scale'));
+    assert.equal(workflow.jobs.verify.needs, 'scale',
+        'failed scale tests must prevent verified package production and both store jobs');
+    assert.equal(scale.permissions['id-token'], undefined);
+    assert.equal(scale.environment, undefined);
+});
+
 test('exact-package verification launches the current Firefox installed by its setup step', () => {
     const steps = workflow.jobs.verify.steps;
     const install = steps.find(step => step.uses?.startsWith('browser-actions/setup-firefox@'));
