@@ -144,8 +144,20 @@ try {
     await page.locator('[data-tool="text"]').click();
     await page.locator('#add-at-center').click();
     assert.equal(await page.locator('#text-width').inputValue(), '', 'new labels start at Auto width');
+    assert.equal(await page.locator('#object-text').evaluate(input => document.activeElement === input), true);
+    await page.locator('#undo').click();
+    overlay = await page.locator('#photo-overlay').boundingBox();
+    await page.mouse.click(overlay.x + 100, overlay.y + 100);
+    assert.equal(await page.locator('#object-text').evaluate(input => document.activeElement === input
+        && input.selectionStart === 0 && input.selectionEnd === input.value.length), true,
+    'pointer placement keeps the placeholder selected in the text field');
     const labelText = 'North ridge traverse\nKeep left above the gully';
-    await page.locator('#object-text').fill(labelText);
+    await page.keyboard.type('North ridge traverse');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Keep left above the gully');
+    assert.equal(await page.locator('#object-text').inputValue(), labelText);
+    assert.equal(await page.locator('[data-tool][aria-pressed="true"]').getAttribute('data-tool'), 'text');
+    await capture('text-auto-focused');
     await page.locator('#object-color').selectOption('#ffffff');
     await page.locator('#label-background').check();
     await page.locator('#text-width').fill('300');

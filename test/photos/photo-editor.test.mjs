@@ -2690,6 +2690,38 @@ test('a finished route can insert and remove points without deleting the route',
     assert.deepEqual(page.errors, []);
 });
 
+test('placing text keeps the content selected and typing outside tool shortcuts', async t => {
+    for (const placement of ['photo', 'center']) {
+        const page = await loadEditor();
+        t.after(() => page.win.close());
+        const { doc, win, overlay } = page;
+        page.tool('text');
+        if (placement === 'photo') {
+            const press = new win.MouseEvent('pointerdown', {
+                bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: 100,
+            });
+            overlay.dispatchEvent(press);
+            assert.equal(press.defaultPrevented, true, 'placement suppresses native viewport focus');
+            page.pointer('pointerup', 100, 100);
+        } else page.click(doc.getElementById('add-at-center'));
+        const input = doc.getElementById('object-text');
+        assert.equal(doc.activeElement, input, `${placement} placement focuses text`);
+        assert.equal(input.selectionStart, 0);
+        assert.equal(input.selectionEnd, input.value.length);
+        for (const key of ['t', 'a', 'p', 'd', 'v', 'h', ' ', 'Delete', 'ArrowLeft', 'Enter']) {
+            const event = new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+            input.dispatchEvent(event);
+            assert.equal(event.defaultPrevented, false, `${key} belongs to text entry`);
+            assert.equal(page.armedTool(), 'text');
+            assert.equal(page.markCount(), 1);
+        }
+        input.value = 'North ridge'; page.emit(input, 'input');
+        assert.equal(overlay.querySelector('text').textContent, 'North ridge');
+        assert.equal(doc.activeElement, input, 'typing and rerender preserve text focus');
+        assert.deepEqual(page.errors, []);
+    }
+});
+
 test('a text label accepts a space between words without losing the input caret', async () => {
     const page = await loadEditor();
     const { doc } = page;

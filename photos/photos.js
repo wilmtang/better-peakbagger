@@ -1623,7 +1623,7 @@ const addPointObject = (type, point) => {
     setProject(next);
     setEditorStatus(`${toolName(type)} placed. Click or add at center to place another, or press V to select.`);
     if (type === 'text') {
-        ui.text.focus();
+        ui.text.focus({ preventScroll: true });
         ui.text.select();
     }
 };
@@ -1896,6 +1896,9 @@ const onPointerDown = event => {
         return;
     }
     if (activeTool !== 'select') {
+        // The default pointer press focuses the viewport after placement,
+        // stealing the label field's focus and turning typing into shortcuts.
+        if (activeTool === 'text') event.preventDefault();
         addPointObject(activeTool, pointerPoint(event));
         return;
     }
