@@ -7,11 +7,17 @@ import path from 'node:path';
 
 // Evidence belongs only to isolated fixture checks. Never retain query strings,
 // request bodies, storage, form values, or arbitrary pages in a live profile.
-export function fixtureEvidenceUrl(value, fixtureOrigin) {
+export function fixtureEvidenceUrl(value, fixtureOrigin, extensionBaseUrl = null) {
     try {
         const url = new URL(value);
-        if (url.origin !== fixtureOrigin) return null;
-        return `${url.origin}${url.pathname}`;
+        if (url.origin === fixtureOrigin) return `${url.origin}${url.pathname}`;
+        if (!extensionBaseUrl) return null;
+        const extension = new URL(extensionBaseUrl);
+        if (!['moz-extension:', 'chrome-extension:'].includes(extension.protocol)
+            || url.protocol !== extension.protocol || url.host !== extension.host) return null;
+        // Node reports extension URL origins as null; compare protocol and host
+        // explicitly and keep only the registered isolated extension's path.
+        return `${url.protocol}//${url.host}${url.pathname}`;
     } catch {
         return null;
     }
@@ -62,7 +68,7 @@ export function watchFixtureRequests(context, fixtureOrigin) {
 }
 
 export async function retainBrowserFailure({
-    context, driver, fixtureOrigin, requests = () => ({}),
+    context, driver, fixtureOrigin, extensionBaseUrl, requests = () => ({}),
     directory = process.env.BPB_VERIFY_ARTIFACTS,
     timeoutMs = 3000,
 }) {
@@ -74,18 +80,22 @@ export async function retainBrowserFailure({
         if (context) {
             evidence.browser = context.browser()?.version() ?? 'unknown';
             for (const page of context.pages().filter(page =>
-                fixtureEvidenceUrl(page.url(), fixtureOrigin)).slice(-3)) {
-                const entry = { url: fixtureEvidenceUrl(page.url(), fixtureOrigin) };
+                fixtureEvidenceUrl(page.url(), fixtureOrigin, extensionBaseUrl)).slice(-3)) {
+                const entry = { url: fixtureEvidenceUrl(page.url(), fixtureOrigin, extensionBaseUrl) };
                 try {
                     entry.state = await bounded(() => page.evaluate(readPageState), timeoutMs);
-                    const screenshot = `page-${evidence.pages.length + 1}.png`;
-                    await page.screenshot({
-                        path: path.join(directory, screenshot),
-                        fullPage: false,
-                        timeout: timeoutMs,
-                        mask: [page.locator('input,textarea,[contenteditable]')],
-                    });
-                    entry.screenshot = screenshot;
+                    // Extension lists may contain stored labels outside form
+                    // fields. Retain only their structural state, without images.
+                    if (fixtureEvidenceUrl(page.url(), fixtureOrigin)) {
+                        const screenshot = `page-${evidence.pages.length + 1}.png`;
+                        await page.screenshot({
+                            path: path.join(directory, screenshot),
+                            fullPage: false,
+                            timeout: timeoutMs,
+                            mask: [page.locator('input,textarea,[contenteditable]')],
+                        });
+                        entry.screenshot = screenshot;
+                    }
                 } catch {
                     entry.inaccessible = true;
                 }
@@ -94,7 +104,8 @@ export async function retainBrowserFailure({
         } else {
             evidence.browser = (await bounded(() => driver.getCapabilities(), timeoutMs))
                 .getBrowserVersion();
-            const url = fixtureEvidenceUrl(await bounded(() => driver.getCurrentUrl(), timeoutMs), fixtureOrigin);
+            const url = fixtureEvidenceUrl(await bounded(() => driver.getCurrentUrl(), timeoutMs),
+                fixtureOrigin, extensionBaseUrl);
             if (url) {
                 evidence.pages.push({ url, state: await bounded(() =>
                     driver.executeScript(readPageState), timeoutMs) });

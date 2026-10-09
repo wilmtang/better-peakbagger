@@ -20,6 +20,29 @@ test('failure evidence excludes other origins and URL credentials, queries, and 
     assert.equal(fixtureEvidenceUrl('not a URL', origin), null);
 });
 
+test('Firefox failure evidence includes only the identified isolated extension without URL secrets', async () => {
+    const extensionBaseUrl = 'moz-extension://verification-only/';
+    const target = `${extensionBaseUrl}options/options.html`;
+    assert.equal(fixtureEvidenceUrl(`${target}?token=secret#github`, origin, extensionBaseUrl), target);
+    assert.equal(fixtureEvidenceUrl('moz-extension://another-extension/options/options.html', origin, extensionBaseUrl), null);
+    assert.equal(fixtureEvidenceUrl('chrome-extension://verification-only/options/options.html', origin, extensionBaseUrl), null);
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-extension-evidence-'));
+    try {
+        await retainBrowserFailure({ directory, fixtureOrigin: origin, extensionBaseUrl, driver: {
+            getCapabilities: async () => ({ getBrowserVersion: () => '157' }),
+            getCurrentUrl: async () => `${target}?token=secret#github`,
+            executeScript: async () => ({ readyState: 'complete', formFields: 17 }),
+            takeScreenshot: () => assert.fail('unmasked extension screenshot'),
+        } });
+        const evidence = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'));
+        assert.equal(evidence.pages[0].url, target);
+        assert.equal(evidence.pages[0].state.formFields, 17);
+        assert.doesNotMatch(JSON.stringify(evidence), /secret|token|github/);
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
 test('pending and failed request evidence remains bounded without storing requests or bodies', () => {
     const context = new EventEmitter();
     const read = watchFixtureRequests(context, origin);

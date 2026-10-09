@@ -148,6 +148,18 @@ including teardown, against archives whose identity was verified at that commit.
 
 ### Changed but not fully proven
 
+- [Rehearsal 37906237779](https://github.com/wilmtang/better-peakbagger/actions/runs/37906237779)
+  stopped during its first Firefox run on an unlabelled five-second Selenium
+  condition. The error did not identify a caller and its artifact omitted
+  extension documents, retaining no page state. This is not the newly labelled
+  drafts-page readiness wait. Diagnostic changes now name the short waits and
+  retain structural state only for the explicitly registered isolated extension,
+  stripping credentials, queries and fragments and taking no extension images.
+  The evidence regression failed before the correction; all 12 focused evidence
+  and fixture tests and scoped ESLint passed. Five hidden Firefox 157.0.1 runs
+  against an isolated build of the failed source passed with these diagnostics;
+  the original timeout remains unresolved, and those passes are not credited as
+  proving its repair.
 - Both browser verifiers now wait for the exact drafts-manager URL, complete
   document, heading, list surface, and extension storage before seeding a draft.
   Firefox previously read `about:blank` immediately after the new window handle;
@@ -159,8 +171,14 @@ including teardown, against archives whose identity was verified at that commit.
   live failure diagnostics; the timeout diagnostic uses a controlled clock.
   The full suite passed 2336/2336, all six focused fixture tests and scoped
   ESLint passed, and both minified packages passed hidden Chrome 153.0.8010.12
-  and Firefox 157.0.1, including teardown. Hosted CI/rehearsal proof remains
-  pending.
+  and Firefox 157.0.1, including teardown.
+  [Combined-tree CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37906234900)
+  passed at `1e04cb9770469bb2a9c0c415a031d329b82d755a`, including 2337 tests,
+  scale, lint, audit, all browser jobs, and both GPU checks. That snapshot also
+  preserves the separately committed captured-trip date-name change in
+  `138f3180ab6fea33cc5b85ef67d026f2edf1ce5e`; this task did not modify its files.
+  [Three-pass rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37906237779)
+  remains pending.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,

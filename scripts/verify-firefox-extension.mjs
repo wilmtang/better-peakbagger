@@ -150,6 +150,7 @@ async function evaluatePageRealm(driver, expression) {
 async function main() {
     const resources = createResourceStack();
     let primaryError = null;
+    let extensionEvidenceBaseUrl;
     let driver;
     let fixture;
     let firefoxBfcacheResult = null;
@@ -222,6 +223,7 @@ async function main() {
         if (!baseUrl?.startsWith('moz-extension://')) {
             throw new Error(`Firefox reported an invalid extension origin: ${JSON.stringify(baseUrl)}`);
         }
+        extensionEvidenceBaseUrl = baseUrl;
 
         const optionsUrl = new URL('options/options.html', baseUrl).href;
         const favoritesUrl = new URL('options/favorites.html', baseUrl).href;
@@ -1267,7 +1269,7 @@ async function main() {
             const api = globalThis.browser || globalThis.chrome;
             api.storage.sync.get('bpbSettings')
                 .then(({ bpbSettings }) => done(bpbSettings?.removeFavoriteWhenBuddyRemoved === true));
-        }), 5_000);
+        }), 5_000, 'Firefox Buddy-removal preference to persist');
         assertState(removalPreferenceSaved, 'Firefox did not persist the Buddy removal preference');
         await driver.get(otherClimberUrl);
         await driver.wait(until.elementLocated(By.id('BuddyButton')), 10_000);
@@ -2049,7 +2051,8 @@ async function main() {
         if (process.env.BPB_VERIFY_FIREFOX_ANALYZER_NARROW_SCREENSHOT) {
             const previousRect = await driver.manage().window().getRect();
             await driver.manage().window().setRect({ width: 480, height: 900 });
-            await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000);
+            await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000,
+                'Firefox ascent viewport to become narrow');
             await writeElementScreenshot(
                 driver,
                 '#bpb-gpx-analysis',
@@ -2102,7 +2105,8 @@ async function main() {
         }, baseUrl, surfaceSelectors.terrainToggle);
         const forgedFrame = await driver.findElement(By.id('bpb-forged-terrain-frame'));
         await driver.wait(async () => driver.executeScript(
-            'return window.__bpbTerrainForgeryDrained === true && window.__bpbForgedTerrainReady === true;'), 5_000);
+            'return window.__bpbTerrainForgeryDrained === true && window.__bpbForgedTerrainReady === true;'), 5_000,
+        'Firefox forged terrain fixture to finish delivery');
         await driver.executeScript(`
           const direct = document.getElementById('bpb-forged-terrain-frame');
           direct.contentWindow.postMessage({
@@ -2125,7 +2129,7 @@ async function main() {
             return toggle?.getAttribute('aria-busy') !== 'true'
                 && toggle?.getAttribute('aria-pressed') === 'false'
                 && document.querySelectorAll('#bpb-terrain-frame').length === 0;
-        }, surfaceSelectors.terrainToggle), 5_000);
+        }, surfaceSelectors.terrainToggle), 5_000, 'Firefox terrain toggle to finish stopping');
         await terrainToggle.click();
         const activeTerrainState = await waitForScript(driver, `
           const frames = document.querySelectorAll('#bpb-terrain-frame');
@@ -2250,7 +2254,8 @@ async function main() {
         if (process.env.BPB_VERIFY_FIREFOX_PEAK_NARROW_SCREENSHOT) {
             const previousRect = await driver.manage().window().getRect();
             await driver.manage().window().setRect({ width: 480, height: 900 });
-            await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000);
+            await driver.wait(() => driver.executeScript('return innerWidth < 680;'), 5_000,
+                'Firefox peak viewport to become narrow');
             const narrowPeakSun = await driver.executeScript(`
       const calculator = document.querySelector('.bpb-sun-calculator');
       const rect = calculator?.getBoundingClientRect();
@@ -2429,10 +2434,11 @@ async function main() {
         const openedHandles = await driver.wait(async () => {
             const handles = await driver.getAllWindowHandles();
             return handles.length === initialHandles.length + 1 ? handles : false;
-        }, 10_000);
+        }, 10_000, 'Firefox Settings window to appear');
         const settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
         await driver.switchTo().window(settingsHandle);
-        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000);
+        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000,
+            'Firefox Settings destination to reach beta');
         const linkedSettingsState = await driver.executeScript(`return {
       href: location.href,
       heading: document.querySelector('#beta-settings-heading')?.textContent,
@@ -2451,15 +2457,17 @@ async function main() {
                     });
                 }, error => done({ error: String(error) }));
         });
-        const activateSettings = async activate => {
+        const activateSettings = async (activate, description) => {
             await driver.switchTo().window(settingsHandle);
             await driver.executeScript('location.hash = "github";');
-            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000);
+            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000,
+                `Firefox Settings reset before ${description}`);
             await driver.switchTo().window(filterHandle);
             const control = await driver.findElement(By.css('.pbaf-settings-link'));
             await activate(control);
             await driver.switchTo().window(settingsHandle);
-            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000);
+            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000,
+                `Firefox Settings beta destination after ${description}`);
             const topology = await readSettingsTopology();
             assertState(topology.options?.length === 1,
                 'Firefox Settings activation duplicated the exact options tab', topology);
@@ -2467,13 +2475,14 @@ async function main() {
         };
         const settingsModifier = process.platform === 'darwin' ? Key.COMMAND : Key.CONTROL;
         const shortcutTopology = await activateSettings(control => driver.actions({ async: true })
-            .keyDown(settingsModifier).click(control).keyUp(settingsModifier).perform());
+            .keyDown(settingsModifier).click(control).keyUp(settingsModifier).perform(), 'modifier click');
         const middleTopology = await activateSettings(control => driver.actions({ async: true })
-            .move({ origin: control }).press(Button.MIDDLE).release(Button.MIDDLE).perform());
-        const keyboardTopology = await activateSettings(control => control.sendKeys(Key.ENTER));
+            .move({ origin: control }).press(Button.MIDDLE).release(Button.MIDDLE).perform(), 'middle click');
+        const keyboardTopology = await activateSettings(control => control.sendKeys(Key.ENTER), 'Enter');
         await driver.switchTo().window(settingsHandle);
         await driver.executeScript('location.hash = "github";');
-        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000);
+        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000,
+            'Firefox Settings reset before Shift Enter');
         const beforeNewWindow = await readSettingsTopology();
         await driver.switchTo().window(filterHandle);
         const shiftControl = await driver.findElement(By.css('.pbaf-settings-link'));
@@ -2496,7 +2505,8 @@ async function main() {
       text: document.querySelector('.pbaf-settings-link')?.textContent,
     };`);
         await driver.switchTo().window(settingsHandle);
-        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000);
+        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000,
+            'Firefox Settings beta destination after Shift Enter');
         let newWindowTopology;
         try {
             newWindowTopology = await driver.wait(async () => {
@@ -2651,7 +2661,7 @@ async function main() {
         const draftsManagerHandle = await driver.wait(async () => {
             const handles = await driver.getAllWindowHandles();
             return handles.find(handle => !handlesBeforeDraftManager.has(handle)) || false;
-        }, 5_000);
+        }, 5_000, 'Firefox report-drafts manager window to appear');
         await driver.switchTo().window(draftsManagerHandle);
         // A new window handle can still point at about:blank. Wait for the
         // requested extension document and its deferred bundle before seeding.
@@ -3155,7 +3165,7 @@ async function main() {
         primaryError = error;
     }
     if (primaryError && fixture) await retainBrowserFailure({
-        driver, fixtureOrigin: `https://${fixtureHost}:${fixture.port}`,
+        driver, fixtureOrigin: `https://${fixtureHost}:${fixture.port}`, extensionBaseUrl: extensionEvidenceBaseUrl,
     });
     await resources.dispose(primaryError);
     console.log('Firefox extension verification and owned-process teardown passed.');
