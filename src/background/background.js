@@ -1088,7 +1088,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     error,
                 );
             }
-            tab = candidates.find(candidate => canonicalPeakbaggerTab(candidate));
+            // Memory-saving tabs still have a URL but cannot run the page
+            // helper. Leave them asleep and use a live tab or our own helper.
+            tab = candidates.find(candidate => canonicalPeakbaggerTab(candidate)
+                && !candidate.discarded && !candidate.frozen && candidate.status !== 'unloaded');
             if (!tab) {
                 try {
                     leaseCreatedAt = now();

@@ -1586,6 +1586,41 @@ test('activity capture creates and removes an inactive Peakbagger request tab wh
         'the provider tab remains active while the helper works in the background');
 });
 
+test('capture skips sleeping Peakbagger tabs without waking or changing them', async t => {
+    for (const state of [
+        { discarded: true, status: 'unloaded' },
+        { discarded: true, status: 'complete' },
+        { frozen: true, status: 'complete' },
+        { status: 'unloaded' },
+    ]) {
+        for (const liveTab of [true, false]) {
+            await t.test(`${JSON.stringify(state)}, live tab: ${liveTab}`, async () => {
+                const harness = createHarness({
+                    beforePeakbaggerScript: ({ details }) => {
+                        assert.equal(details.target.tabId, liveTab ? 6 : 100,
+                            'all page operations must use the live tab or the owned helper');
+                    },
+                });
+                Object.assign(harness.tabs.get(5), state);
+                const sleepingTab = structuredClone(harness.tabs.get(5));
+                if (liveTab) harness.tabs.set(6, {
+                    id: 6, windowId: 9, active: false, status: 'complete',
+                    url: 'https://www.peakbagger.com/Default.aspx',
+                });
+
+                const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+                assert.equal(ready.phase, 'ready');
+                assert.equal(harness.providerCaptureCalls.length, 1);
+                assert.deepEqual(harness.tabs.get(5), sleepingTab);
+                assert.equal(harness.tabs.get(1).active, true);
+                assert.deepEqual(harness.windowUpdates, []);
+                assert.deepEqual(harness.removedTabs, liveTab ? [] : [100]);
+            });
+        }
+    }
+});
+
 test('a new Peakbagger helper waits for its first committed URL before injection', async t => {
     for (const url of [undefined, 'about:blank']) {
         await t.test(String(url), async () => {
