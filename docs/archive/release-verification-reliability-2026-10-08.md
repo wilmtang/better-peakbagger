@@ -4,7 +4,7 @@ Owner request: fix every problem identified in the 3.9.0–3.9.2 release diagnos
 Preserve store protections, published tags, runtime privacy boundaries, and the
 exact advisory exception and expiry. This work does not consume another version.
 
-Reopened on 2026-10-09 after the documentation commit's
+Closed on 2026-10-09. The ledger was reopened after the documentation commit's
 [CI run](https://github.com/wilmtang/better-peakbagger/actions/runs/37898123779)
 failed current Chrome with a stale ignored-climber sync preview. Prior verified
 implementation and workflow changes are included in
@@ -13,10 +13,33 @@ implementation and workflow changes are included in
 and the [three-pass read-only rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37895800141)
 both completed successfully on that commit. Both store jobs were skipped.
 
+The subsequent worker and sidebar corrections are included in
+`629875bacc1cf52727a5e30b918ef980a9cdfbf7`.
+[Main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37902037015)
+completed successfully, including 2334 tests, lint, live audit, scale, and
+current/floor browser checks. Its
+[three-pass read-only rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37902040566)
+also completed successfully. Both store jobs were skipped. All three current
+Chrome/Firefox pairs and three repetitions of each browser floor passed,
+including teardown, against archives whose identity was verified at that commit.
+
 ## Work and closure ledger
 
 ### Fixed and verified
 
+- Queued automatic ignored-climber sync now rechecks enabled and review state
+  on entering its operation lane. The deterministic regression reproduced an
+  upload that consumed a manual review before confirmation; a second regression
+  reproduced automatic work continuing after sync was disabled. Both failed
+  before the fix. All 25 sync tests, the then-2333-test full suite, lint, and live
+  audit under the existing exception passed afterward. The rebuilt minified
+  archives passed three consecutive hidden Chrome 153.0.8010.12 / Firefox
+  157.0.1 pairs locally, including teardown.
+  [Worker-fix CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37900162206)
+  passed the full suite, scale, current/floor browsers, and both GPU checks.
+  Its first rehearsal stopped before browser checks on the sidebar fixture
+  below. After that fixture correction, final main CI and the replacement
+  three-pass rehearsal passed the 2334-test suite and current/floor browsers.
 - The sidebar fixture no longer assumes that native hash navigation and scroll
   restoration finish within five milliseconds. The failed
   [rehearsal](https://github.com/wilmtang/better-peakbagger/actions/runs/37900330405)
@@ -26,7 +49,8 @@ both completed successfully on that commit. Both store jobs were skipped.
   clears after the second. That frame case failed deterministically with the
   old sleep; both cases and all 40 options tests passed after the correction.
   Product navigation timing is unchanged. The full suite passed 2334/2334,
-  scoped ESLint and diff checks passed; hosted proof remains pending.
+  scoped ESLint and diff checks passed. Main CI and the replacement rehearsal
+  also passed 2334/2334, followed by successful real-package checks.
 - The Chrome helper-lease fixture now loads both probe tabs before durable
   worker adoption/release barriers and removes the adopted tab only after
   scratch cleanup. This removes direct fixture lease injection across queued
@@ -48,6 +72,8 @@ both completed successfully on that commit. Both store jobs were skipped.
   diff checks passed. Both remote scale jobs passed all 14 tests: main CI CPU
   samples were 10181.7/9176.4/9297.9 ms (median 9297.9 ms); rehearsal samples
   were 10171.1/9154.1/9384.2 ms (median 9384.2 ms).
+  The final main CI and rehearsal also passed 14/14 with CPU medians of
+  7051.8 ms and 9606.5 ms respectively; all three samples were retained.
 - Disposable Firefox profiles no longer issue add-on uninstall before QUIT.
   Both successful QUIT and the exact known lost response require confirmed
   profile-owned process exit. Unknown errors and extension assertion failures
@@ -82,7 +108,7 @@ both completed successfully on that commit. Both store jobs were skipped.
 - Consecutive exact-package verification is implemented, defaults to three in
   manual rehearsals, and applies to both current and floor browser jobs. It
   fingerprints canonical archives between browser runs, uses fresh profiles,
-  and fails immediately instead of retrying. All 72 focused repetition,
+  and stops on a verifier error without rerunning a failed repetition. All 72 focused repetition,
   release, and documentation tests passed, with scoped ESLint and diff checks.
   A real run passed repetition 1 and correctly stopped at repetition 2 on the
   Chrome helper-lease fixture's unadopted-tab cleanup timeout. After the ordering
@@ -115,17 +141,6 @@ both completed successfully on that commit. Both store jobs were skipped.
 
 ### Changed but not fully proven
 
-- Queued automatic ignored-climber sync now rechecks enabled and review state
-  on entering its operation lane. The deterministic regression reproduced an
-  upload that consumed a manual review before confirmation; a second regression
-  reproduced automatic work continuing after sync was disabled. Both failed
-  before the fix. All 25 sync tests, the 2333-test full suite, lint, and live audit
-  under the existing exception passed afterward. The rebuilt minified archives
-  passed three consecutive hidden Chrome 153.0.8010.12 / Firefox 157.0.1 pairs,
-  including teardown. [Main CI](https://github.com/wilmtang/better-peakbagger/actions/runs/37900162206)
-  passed the full suite, scale, current/floor browsers, and both GPU checks.
-  The three-pass rehearsal stopped at the unrelated sidebar unit-test race
-  above, before browser verification. Rehearsal proof remains pending.
 - The original helper timeout did not capture internal lease/alarm state.
   Its precise historical mechanism cannot be proven retroactively. The known
   source-ordering hazard was removed, its regression failed before the fix,
@@ -140,10 +155,10 @@ both completed successfully on that commit. Both store jobs were skipped.
 
 | Check | Result |
 | --- | --- |
-| Local full suite | 2330/2330 before the budget regression was added |
+| Final local full suite | 2334/2334 |
 | Prior hosted full suite (c569973) | 2331/2331 in main CI and rehearsal |
 | New worker fix, full suite | 2333/2333 locally and in main CI |
-| Sidebar fixture correction, local full suite | 2334/2334; hosted proof pending |
+| Final hosted full suite (629875b) | 2334/2334 in main CI and rehearsal |
 | Scale | 14/14 locally and in both final workflows |
 | Lint | ESLint and extension lint passed; six existing owned warnings |
 | Live audit | Passed with the existing exact advisory exception |
@@ -157,4 +172,7 @@ the Apple Paravirtual device; Firefox 155.0 reported the same hardware device at
 1000x760, hidden/headless. The subsequent budget correction changed only the
 release workflow, its focused test, and documentation, so those GPU jobs were
 correctly skipped on c569973. The subsequent worker fix passed both GPU jobs in
-main CI; its three-pass rehearsal remains pending after the sidebar fixture fix.
+main CI on the same Metal hardware renderer: full Chrome for Testing
+153.0.8010.12 and copied-runtime Firefox 155.0, hidden/headless at the maintained
+viewports (Firefox 1000x760). The final sidebar correction changed only its unit
+fixture and this ledger, so GPU jobs were correctly skipped on 629875b.
