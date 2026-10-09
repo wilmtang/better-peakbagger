@@ -37,6 +37,9 @@ with `-f repetitions=1` or `-f repetitions=5`. Every requested repetition must
 pass, including teardown; the first failure stops the check and stays failed.
 Current-browser checks verify archive hashes between runs. The floor jobs use
 the same repetition count. Published tag jobs run once after this preflight.
+The current-package job allows 25, 45, or 65 minutes for one, three, or five
+passes, including setup, tests, and lint. Individual assertion and performance
+deadlines stay unchanged.
 
 Ordinary CI's current-browser job and the release job use the same
 `.github/actions/setup-verification` action and `npm run release:verify-packages`

@@ -37,6 +37,18 @@ test('read-only rehearsals require consecutive package and floor passes without 
     }
 });
 
+test('current-package rehearsal budget grows with repetitions while tagged releases keep one-pass budget', () => {
+    const expression = workflow.jobs.verify['timeout-minutes'];
+    assert.equal(typeof expression, 'string', 'three and five complete hosted browser pairs need larger job budgets');
+    assert.match(expression, /^\$\{\{[\s\S]*\}\}$/);
+    const budget = new Function('github', 'inputs', `return (${expression.slice(3, -2)});`);
+    for (const [repetitions, minutes] of [['1',25], ['3',45], ['5',65]]) {
+        assert.equal(budget({ event_name: 'workflow_dispatch' }, { repetitions }), minutes);
+        assert.equal(budget({ event_name: 'push' }, { repetitions }), 25,
+            'a tag must keep the one-pass publication budget regardless of input values');
+    }
+});
+
 test('rehearsal validates metadata early and keeps the full tag gate on publication', () => {
     const steps = workflow.jobs.verify.steps;
     const metadata = steps.findIndex(step => step.id === 'metadata');

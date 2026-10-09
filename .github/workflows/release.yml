@@ -46,7 +46,9 @@ jobs:
     # exact-package verification on the less load-sensitive standard Intel
     # macOS runner; the declared browser floors still run separately on Linux.
     runs-on: macos-15-intel
-    timeout-minutes: 25
+    # A hosted current-browser pair takes about six minutes in addition to
+    # setup, tests, and lint. Allocate time for every requested consecutive pass.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && (inputs.repetitions == '5' && 65 || inputs.repetitions == '3' && 45) || 25 }}
     outputs:
       version: ${{ steps.metadata.outputs.version }}
       artifact-name: ${{ steps.metadata.outputs.artifact-name }}

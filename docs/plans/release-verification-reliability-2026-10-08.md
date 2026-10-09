@@ -55,6 +55,14 @@ exact advisory exception and expiry. This work does not consume another version.
 
 ### Changed but not fully proven
 
+- Hosted main CI's exact-package step passed in 6 minutes 21 seconds. The new
+  three/five-pass rehearsal modes could exceed the original 25-minute job
+  budget after setup, tests, and lint. The current-package job now allocates
+  25/45/65 minutes for one/three/five passes; tagged releases keep 25 minutes.
+  Assertion and CPU limits are unchanged. The workflow regression failed with
+  the old constant budget; all 59 focused release, shared-setup, and documentation
+  tests passed afterward, with scoped ESLint and diff checks. Hosted evaluation
+  of the new expression is pending.
 - Consecutive exact-package verification is implemented, defaults to three in
   manual rehearsals, and applies to both current and floor browser jobs. It
   fingerprints canonical archives between browser runs, uses fresh profiles,
