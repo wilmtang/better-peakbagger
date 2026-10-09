@@ -102,6 +102,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Install Firefox
+        id: firefox-current
         # v1.7.2 — SHA-tracked by Dependabot, so this one is not auto-maintained.
         uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795
         with:
@@ -119,6 +120,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Execute store packages in both browsers
+        env:
+          FIREFOX_BIN: ${{ steps.firefox-current.outputs.firefox-path }}
         run: |
           chrome_archive="web-ext-artifacts/better_peakbagger-${{ steps.metadata.outputs.version }}.zip"
           firefox_archive="${chrome_archive%.zip}-firefox.zip"

@@ -40,6 +40,16 @@ test('rehearsal validates metadata early and keeps the full tag gate on publicat
     assert.match(ancestry.run, /"\$GITHUB_REF_NAME"/);
 });
 
+test('exact-package verification launches the current Firefox installed by its setup step', () => {
+    const steps = workflow.jobs.verify.steps;
+    const install = steps.find(step => step.uses?.startsWith('browser-actions/setup-firefox@'));
+    assert.equal(install.with['firefox-version'], 'latest');
+    assert.ok(install.id, 'the installed current browser must have an output reference');
+    const execute = steps.find(step => step.run?.includes('npm run verify:packages'));
+    assert.equal(execute.env?.FIREFOX_BIN, '${{ steps.' + install.id + '.outputs.firefox-path }}',
+        'Selenium must receive the installed binary instead of discovering a preinstalled Firefox');
+});
+
 test('floor and store jobs verify the same immutable archive identity before using it', () => {
     assert.match(workflow.jobs.verify.outputs['artifact-name'], /steps\.metadata\.outputs\.artifact-name/);
     const verify = workflow.jobs.verify.steps;
