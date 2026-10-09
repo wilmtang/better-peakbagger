@@ -120,7 +120,9 @@ jobs:
           npm run release:verify-archive -- "$firefox_archive" firefox
 
       - name: Install Chrome for Testing
-        run: npx playwright install --with-deps chromium
+        run: |
+          npx playwright install --with-deps chromium
+          node scripts/verification-browser-identity.mjs --playwright-chromium >> "$GITHUB_ENV"
 
       - name: Install Firefox
         id: firefox-current
@@ -143,6 +145,7 @@ jobs:
       - name: Execute store packages in both browsers
         env:
           FIREFOX_BIN: ${{ steps.firefox-current.outputs.firefox-path }}
+          BPB_EXPECT_FIREFOX_VERSION: ${{ steps.firefox-current.outputs.firefox-version }}
         run: |
           chrome_archive="web-ext-artifacts/better_peakbagger-${{ steps.metadata.outputs.version }}.zip"
           firefox_archive="${chrome_archive%.zip}-firefox.zip"
@@ -237,6 +240,8 @@ jobs:
         env:
           CHROME_BIN: ${{ steps.chrome-floor.outputs.chrome-path }}
           FIREFOX_BIN: ${{ steps.firefox-floor.outputs.firefox-path }}
+          BPB_EXPECT_CHROME_VERSION: ${{ steps.chrome-floor.outputs.chrome-version }}
+          BPB_EXPECT_FIREFOX_VERSION: ${{ steps.firefox-floor.outputs.firefox-version }}
         run: |
           mkdir -p browser-evidence
           version="${RELEASE_VERSION}"

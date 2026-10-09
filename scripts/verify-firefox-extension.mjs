@@ -47,6 +47,7 @@ import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
+import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
@@ -205,6 +206,11 @@ async function main() {
 
         driver = await startFirefoxDriver(options, temporaryRoot);
         resources.defer('Firefox WebDriver', () => quitFirefoxDriver(driver, temporaryRoot));
+        const capabilities = await driver.getCapabilities();
+        console.log(`Verification browser: ${assertVerificationBrowser({
+            name: capabilities.getBrowserName(), version: capabilities.getBrowserVersion(),
+            expectedName: 'firefox', expectedVersion: process.env.BPB_EXPECT_FIREFOX_VERSION,
+        })}`);
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
         const addonId = await driver.installAddon(extensionSource, true);
@@ -3103,7 +3109,6 @@ async function main() {
         await driver.close();
         await driver.switchTo().window(controlHandle);
 
-        const capabilities = await driver.getCapabilities();
         console.log('Firefox extension startup verification passed:');
         console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
         console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);

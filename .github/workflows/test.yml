@@ -118,7 +118,9 @@ jobs:
         run: npm ci
 
       - name: Install Chrome for Testing and popup fixture Firefox
-        run: npx playwright install --with-deps chromium firefox
+        run: |
+          npx playwright install --with-deps chromium firefox
+          node scripts/verification-browser-identity.mjs --playwright-chromium >> "$GITHUB_ENV"
 
       - name: Verify toolbar popup sizing and recovery layout
         run: |
@@ -186,6 +188,7 @@ jobs:
       - name: Verify the real Chrome 128 extension
         env:
           CHROME_BIN: ${{ steps.chrome-floor.outputs.chrome-path }}
+          BPB_EXPECT_CHROME_VERSION: ${{ steps.chrome-floor.outputs.chrome-version }}
         run: |
           mkdir -p browser-evidence
           npm run verify:chrome 2>&1 | tee browser-evidence/verify-chrome.log
@@ -245,6 +248,7 @@ jobs:
       - name: Verify the real Firefox extension
         env:
           FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
+          BPB_EXPECT_FIREFOX_VERSION: ${{ steps.firefox.outputs.firefox-version }}
         run: |
           mkdir -p browser-evidence
           npm run verify:firefox 2>&1 | tee browser-evidence/verify-firefox.log
@@ -252,6 +256,7 @@ jobs:
       - name: Verify capture with pending page resources
         env:
           FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
+          BPB_EXPECT_FIREFOX_VERSION: ${{ steps.firefox.outputs.firefox-version }}
         run: |
           mkdir -p browser-evidence
           npm run verify:capture-readiness -- firefox 2>&1 | tee browser-evidence/verify-capture-readiness-firefox.log

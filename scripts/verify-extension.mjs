@@ -51,6 +51,7 @@ import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 
 assertChromeLaunchAllowed();
 
@@ -178,6 +179,10 @@ try {
         ]
     });
     resources.defer('Chrome verification context', () => context.close());
+    console.log(`Verification browser: ${assertVerificationBrowser({
+        name: context.browser().browserType().name(), version: context.browser().version(),
+        expectedName: 'chromium', expectedVersion: process.env.BPB_EXPECT_CHROME_VERSION,
+    })}`);
     requestEvidence = watchFixtureRequests(context, `https://www.peakbagger.com:${port}`);
     const terrainProviderHosts = new Set([
         'tiles.mapterhorn.com',
