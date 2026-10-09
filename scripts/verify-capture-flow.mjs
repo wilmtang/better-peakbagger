@@ -31,7 +31,9 @@ const gpx = '<?xml version="1.0"?><gpx version="1.1"><metadata><desc>PRIVATE_SOU
     + '</trkseg></trk></gpx>';
 const peaks = '<p><t i="2829" n="Fixture summit" a="0" o="0" e="426.509" r="1" l="Fixture range"/></p>';
 const state = { owner: true, signedIn: true, providerStatus: 200, providerBody: gpx, peakStatus: 200, peakBody: peaks,
+    sessionReady: true, downloadFailure: false,
     exports: 0, peakRequests: 0, previews: [], saves: 0, holdExport: false, releases: [] };
+let providerPageSerial = 0;
 try {
     const root = await mkdtemp(path.join(os.tmpdir(), 'bpb-capture-flow-'));
     resources.defer('capture flow root', () => rm(root, { recursive: true, force: true }));
@@ -64,7 +66,7 @@ try {
             } else if (url.hostname === 'connect.garmin.com' || url.hostname === 'www.strava.com') {
                 const garmin = url.hostname === 'connect.garmin.com';
                 const profile = garmin ? '/app/profile/' : '/athletes/';
-                send('<!doctype html><meta name="csrf-token" content="fixture-token"><script>window.USE_DI_SESSION=true</script>'
+                send(`<!doctype html><title>Capture fixture ${++providerPageSerial}</title><meta name="csrf-token" content="${state.sessionReady ? 'fixture-token' : ''}"><script>window.USE_DI_SESSION=true</script>`
                     + `<header id="${garmin ? 'garmin-header' : 'global-header'}"><a href="${profile}77">Me</a></header>`
                     + `<main><section data-testid="activity-header"><a href="${profile}${state.owner ? 77 : 88}">Author</a>`
                     + (garmin ? '<button aria-label="Edit an Activity">Edit</button>' : `<a href="${url.pathname}/edit">Edit</a>`)
@@ -90,7 +92,8 @@ try {
     const port = server.address().port;
     assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
-        channel: 'chromium', headless: true, viewport: { width: 1000, height: 760 },
+        ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chromium' }),
+        headless: true, viewport: { width: 1000, height: 760 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
         args: [...cert.chromeTrustArgs, '--enable-unsafe-extension-debugging', `--load-extension=${path.resolve('dist')}`, `--disable-extensions-except=${path.resolve('dist')}`,
             `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port},MAP connect.garmin.com 127.0.0.1:${port},MAP www.strava.com 127.0.0.1:${port}`],
@@ -99,6 +102,9 @@ try {
     resources.defer('held export responses', () => state.releases.splice(0).forEach(release => release()));
     await context.route('**/*', route => {
         const url = new URL(route.request().url());
+        if (state.downloadFailure && url.hostname === 'connect.garmin.com' && url.pathname.includes('/export')) {
+            return route.abort('failed');
+        }
         return ['www.peakbagger.com', 'connect.garmin.com', 'www.strava.com'].includes(url.hostname)
             ? route.continue() : route.abort('blockedbyclient');
     });
@@ -154,12 +160,17 @@ try {
     }, selector);
     const invoke = async page => {
         await closePopup();
-        const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: 'tab', exclude: false }] });
-        const target = targetInfos.find(item => item.url === page.url());
-        assert.ok(target, 'provider tab target exists');
+        // Reopening preserves the URL; each fixture document has a unique
+        // title so the toolbar gesture targets the actual fresh tab.
+        const title = await page.title();
+        const target = await waitForCondition(async () => {
+            const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: 'tab', exclude: false }] });
+            return targetInfos.find(item => item.url === page.url() && item.title === title);
+        }, Boolean, { message: 'provider tab target did not appear' });
         await cdp.send('Extensions.triggerAction', { id: extension.id, targetId: target.targetId });
         await waitForCondition(popupState, Boolean, { timeoutMs: 5000, message: 'toolbar popup did not open' });
-        return control.evaluate(async url => (await chrome.tabs.query({})).find(tab => tab.url === url)?.id, page.url());
+        return control.evaluate(async ({ url, title }) =>
+            (await chrome.tabs.query({})).find(tab => tab.url === url && tab.title === title)?.id, { url: page.url(), title });
     };
     const jobFor = tabId => control.evaluate(tabId => chrome.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId }), tabId);
     const terminal = tabId => waitForCondition(() => jobFor(tabId), job => ['ready', 'error', 'no-gps'].includes(job?.phase),
@@ -215,13 +226,16 @@ try {
     const cases = [
         { name: 'other owner', patch: { owner: false }, code: 'not-owner', exports: 0 },
         { name: 'Peakbagger signed out', patch: { signedIn: false }, code: 'peakbagger-signed-out', exports: 0 },
+        { name: 'Garmin session not ready', patch: { sessionReady: false }, code: 'provider-session-not-ready', exports: 0 },
+        { name: 'provider download failed', patch: { downloadFailure: true }, code: 'provider-download-failed', exports: 0 },
         { name: 'no GPS', patch: { providerBody: '<gpx/>' }, phase: 'no-gps', exports: 1 },
         { name: 'invalid GPX', patch: { providerBody: '<gpx><broken>' }, code: 'invalid-gpx', exports: 1 },
         { name: 'provider rate limit', patch: { providerStatus: 429 }, code: 'provider-rate-limited', exports: 1 },
         { name: 'summit unavailable', patch: { peakStatus: 503 }, code: 'peakbagger-unavailable', exports: 1 },
     ];
     for (const item of cases) {
-        Object.assign(state, { owner: true, signedIn: true, providerStatus: 200, providerBody: gpx, peakStatus: 200, peakBody: peaks }, item.patch);
+        Object.assign(state, { owner: true, signedIn: true, sessionReady: true, downloadFailure: false,
+            providerStatus: 200, providerBody: gpx, peakStatus: 200, peakBody: peaks }, item.patch);
         const before = state.exports;
         const source = await start();
         const job = await terminal(source.tabId);
@@ -230,6 +244,28 @@ try {
         assert.equal(state.exports - before, item.exports, `${item.name}: export gate`);
         await waitForCondition(popupState, ui => !!ui?.title && !/…$/.test(ui.title), { timeoutMs: 5000, message: `${item.name} popup stuck` });
         assert.equal(state.saves, 0);
+        if (['provider-session-not-ready', 'provider-download-failed'].includes(item.code)) {
+            const expectedTitle = item.code === 'provider-session-not-ready'
+                ? 'Activity session isn’t ready' : 'Couldn’t download the activity';
+            await waitForCondition(popupState, ui => ui?.title === expectedTitle && ui.text.includes('Reopen activity'),
+                { timeoutMs: 5000, message: `${item.name} recovery button did not appear` });
+            await screenshotPopup(item.code);
+            state.sessionReady = true;
+            state.downloadFailure = false;
+            const [reopened] = await Promise.all([
+                context.waitForEvent('page'), clickPopup('#state button'),
+            ]);
+            await reopened.waitForURL(source.page.url());
+            await reopened.waitForLoadState('load');
+            assert.equal(source.page.isClosed(), false, 'Reopen activity must preserve the source and any unsaved notes');
+            assert.equal(state.exports, before, 'reopening must not export without a new toolbar gesture');
+            const reopenedId = await invoke(reopened);
+            assert.notEqual(reopenedId, source.tabId, 'recovery must capture the fresh tab, even with the same URL');
+            const recovered = await terminal(reopenedId);
+            assert.equal(recovered.phase, 'ready', JSON.stringify(recovered.error));
+            assert.equal(state.exports, before + 1);
+            await reopened.close();
+        }
         if (item.name === 'summit unavailable') {
             assert.equal((await popupState()).title, 'Peakbagger is unavailable');
             await screenshotPopup('peakbagger-outage');
@@ -295,6 +331,7 @@ try {
     }
     if (artifacts) await writeFile(path.join(artifacts, 'result.json'), JSON.stringify({ browser: context.browser().version(),
         cases: ['garmin success', 'strava success', ...cases.map(item => item.name), 'cancel and restart', 'popup close and reopen', 'track deletion'] }, null, 2));
-    console.log(`Capture flow passed in hidden Chrome ${context.browser().version()}, 1000x760 pages; no WebGL or native focus proof.`);
+    const browserName = process.env.CHROME_BIN ? path.basename(process.env.CHROME_BIN) : 'Chrome for Testing';
+    console.log(`Capture flow passed in hidden ${browserName} ${context.browser().version()}, 1000x760 pages; no WebGL or native focus proof.`);
 } catch (error) { failure = error; }
 finally { await resources.dispose(failure); }

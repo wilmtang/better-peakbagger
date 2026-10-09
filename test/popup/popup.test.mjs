@@ -1095,6 +1095,53 @@ test('popup recovery actions match the shared capture error policy', async t => 
     }
 });
 
+test('export recovery reopens only the captured provider activity and preserves the source tab', async t => {
+    for (const provider of ['garmin', 'strava']) {
+        for (const code of ['provider-session-not-ready', 'provider-download-failed', 'provider-export-failed']) {
+            await t.test(`${provider}: ${code}`, async () => {
+                const dom = new JSDOM(html, {
+                    url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
+                });
+                const created = [];
+                const starts = [];
+                const destructive = [];
+                const job = { phase: 'error', provider, activityId: '777', error: { code } };
+                dom.window.chrome = {
+                    tabs: {
+                        query: async () => [{ id: 9, windowId: 4, index: 2, url: 'https://unrelated.example/?PRIVATE_QUERY' }],
+                        create: async details => { created.push(details); return { id: 10 }; },
+                        reload: async () => destructive.push('reload'),
+                        remove: async () => destructive.push('remove'),
+                        update: async () => destructive.push('update'),
+                    },
+                    runtime: {
+                        sendMessage: async message => {
+                            if (message.type === 'CAPTURE_START') starts.push(message);
+                            return job;
+                        },
+                    },
+                };
+                dom.window.eval(source);
+                const state = dom.window.document.getElementById('state');
+                await waitFor(() => state.querySelector('button')?.textContent === 'Reopen activity');
+                state.querySelector('button').click();
+                await waitFor(() => created.length === 1);
+                assert.deepEqual(JSON.parse(JSON.stringify(created)), [{
+                    url: provider === 'garmin' ? 'https://connect.garmin.com/app/activity/777'
+                        : 'https://www.strava.com/activities/777',
+                    windowId: 4, index: 3,
+                }]);
+                assert.deepEqual(destructive, [], 'the source may contain unsaved notes');
+                assert.equal(starts.length, 1, 'reopening does not export GPS without another toolbar gesture');
+                job.activityId = '777?PRIVATE_QUERY';
+                state.querySelector('button').click();
+                assert.equal(created.length, 1, 'unvalidated activity URLs must not be opened');
+                dom.window.close();
+            });
+        }
+    }
+});
+
 test('popup can cancel an in-progress capture without retaining track data', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

@@ -31,6 +31,9 @@ const shell = popupHtml
 const CASES = Object.freeze([
     { code: 'unsupported', provider: null, title: 'Open an activity to begin', action: 'Settings' },
     { code: 'provider-page-not-ready', provider: 'strava', title: 'Activity is still loading', action: 'Reload activity' },
+    { code: 'provider-session-not-ready', provider: 'garmin', title: 'Activity session isn’t ready', action: 'Reopen activity' },
+    { code: 'provider-download-failed', provider: 'garmin', title: 'Couldn’t download the activity', action: 'Reopen activity' },
+    { code: 'provider-export-failed', provider: 'garmin', title: 'The activity could not be exported', action: 'Reopen activity' },
     { code: 'provider-signed-out', provider: 'garmin', title: 'Sign in to your activity provider', action: 'Open Garmin sign in' },
     { code: 'provider-human-check', provider: 'strava', title: 'Your activity provider needs a human check', action: 'Return to Strava' },
     { code: 'provider-rate-limited', provider: 'strava', title: 'Your activity provider needs a pause', action: null, retryAt: Date.UTC(2030, 0, 1, 12) },
@@ -177,6 +180,7 @@ const renderCase = async (browser, browserName, item, variant) => {
             job: {
                 phase: 'error',
                 provider: item.provider,
+                activityId: '777',
                 error: { code: item.code, ...(item.retryAt ? { retryAt: item.retryAt } : {}) },
             },
         });

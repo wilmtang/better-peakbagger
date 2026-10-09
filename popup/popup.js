@@ -128,6 +128,19 @@ import { units as Units } from '../src/ui/units.js';
     const reloadProvider = async () => {
         await ext.tabs.reload(activeTab.id);
     };
+    const reopenProvider = () => {
+        const activityId = String(currentJob?.activityId || '');
+        if (!/^\d+$/.test(activityId)) return;
+        const url = currentJob?.provider === 'garmin'
+            ? `https://connect.garmin.com/app/activity/${activityId}`
+            : currentJob?.provider === 'strava'
+                ? `https://www.strava.com/activities/${activityId}` : null;
+        if (url) return ext.tabs.create({
+            url,
+            ...(Number.isInteger(activeTab.windowId) ? { windowId: activeTab.windowId } : {}),
+            ...(Number.isInteger(activeTab.index) ? { index: activeTab.index + 1 } : {}),
+        });
+    };
     const openProviderSignIn = () => ext.tabs.create({
         url: currentJob?.provider === 'garmin'
             ? 'https://connect.garmin.com/signin/'
@@ -139,6 +152,7 @@ import { units as Units } from '../src/ui/units.js';
         settings: { label: 'Settings', onClick: openSettings },
         'focus-provider': { label: `Return to ${providerName()}`, primary: true, onClick: focusProvider },
         'reload-provider': { label: 'Reload activity', primary: true, onClick: reloadProvider },
+        'reopen-provider': { label: 'Reopen activity', primary: true, onClick: reopenProvider },
         'provider-sign-in': { label: `Open ${providerName()} sign in`, primary: true, onClick: openProviderSignIn },
         'open-peakbagger': { label: 'Open Peakbagger', primary: true, onClick: openPeakbagger },
     }[recovery] || null);

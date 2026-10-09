@@ -32,6 +32,9 @@ const EXPORT_FAILURE_MESSAGE = captureErrorMessage('provider-export-failed');
 const EXPORT_TIMEOUT_MESSAGE = captureErrorMessage('provider-export-timeout');
 const activeCaptures = new Map();
 const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
+const garminSessionToken = () => document.querySelector('meta[name="csrf-token"]')
+    ?.getAttribute('content')?.trim() || '';
+const garminSessionReady = () => globalThis.USE_DI_SESSION !== true || !!garminSessionToken();
 
 const providerFailure = (code, details = {}) => Object.assign(new Error(code), { code, ...details });
 
@@ -197,20 +200,23 @@ const waitForOwnership = async (
             return;
         }
         const result = inspectExpectedOwnership(expectedActivity);
+        // Garmin can render the author and edit control before its session
+        // token. Wait for that same-page state without requesting GPS data.
+        if (result.ok && result.provider === 'garmin' && !garminSessionReady()) return;
         if (result.ok || result.terminal === true
             || ['unsupported', 'activity-changed'].includes(result.code)) {
             finish(publicOwnership(result));
         }
     };
     try {
-        const root = document.body || document.documentElement;
+        const root = document.documentElement || document.body;
         if (root && typeof MutationObserver === 'function') {
             observer = new MutationObserver(check);
             observer.observe(root, {
                 childList: true,
                 subtree: true,
                 attributes: true,
-                attributeFilter: ['href', 'aria-label', 'data-testid'],
+                attributeFilter: ['href', 'aria-label', 'data-testid', 'name', 'content'],
             });
         }
         deadline.signal?.addEventListener('abort', check, { once: true });
@@ -219,9 +225,11 @@ const waitForOwnership = async (
     } catch (error) {
         if (deadline.expired || Deadline.isTimeout(error)) {
             const current = providerFromUrl(location.href);
+            const ownership = inspectExpectedOwnership(expectedActivity);
             return {
                 ok: false,
-                code: 'provider-page-not-ready',
+                code: ownership.ok && ownership.provider === 'garmin' && !garminSessionReady()
+                    ? 'provider-session-not-ready' : 'provider-page-not-ready',
                 ...(current || cleanExpectedActivity(expectedActivity) || {}),
             };
         }
@@ -287,8 +295,8 @@ const garminExportRequest = activityId => {
         headers['X-app-ver'] = globalThis.URL_BUST_VALUE;
     }
     if (globalThis.USE_DI_SESSION === true) {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')?.trim();
-        if (!csrfToken) throw new Error('Garmin session verification is unavailable. Reload the activity and try again.');
+        const csrfToken = garminSessionToken();
+        if (!csrfToken) throw providerFailure('provider-session-not-ready');
         headers['Connect-Csrf-Token'] = csrfToken;
         return { endpoint: `/gc-api${path}`, headers };
     }
@@ -321,13 +329,15 @@ const capture = async (
     } : result;
     const ownership = inspectExpectedOwnership(expectedActivity);
     if (!ownership.ok) return withDiagnostics(ownership);
-    const request = ownership.provider === 'garmin'
-        ? garminExportRequest(ownership.activityId)
-        : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
     const captureKey = typeof generation === 'string' && generation ? generation : Symbol('capture');
     const deadline = Deadline.createRequestDeadline(timeoutMs);
     activeCaptures.set(captureKey, deadline);
+    let downloading = false;
     try {
+        const request = ownership.provider === 'garmin'
+            ? garminExportRequest(ownership.activityId)
+            : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
+        downloading = true;
         const response = await measure('headers', () => deadline.run(fetch(request.endpoint, {
             credentials: 'include',
             redirect: 'follow',
@@ -360,6 +370,7 @@ const capture = async (
             signal: deadline.signal,
             label: 'Provider GPX',
         })));
+        downloading = false;
         const bodyClass = classifyProviderBody(text);
         if (!bodyClass.ok) {
             throw bodyClass.code === 'no-gps-data'
@@ -397,7 +408,7 @@ const capture = async (
             : tooLarge ? 'gpx-too-large'
                 : timedOut ? 'provider-export-timeout'
                     : cancelled ? 'provider-export-cancelled'
-                        : classifiedCode || 'provider-export-failed';
+                        : classifiedCode || (downloading ? 'provider-download-failed' : 'provider-export-failed');
         return withDiagnostics({
             ok: false,
             code,

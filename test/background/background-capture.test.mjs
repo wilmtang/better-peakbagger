@@ -3593,7 +3593,7 @@ test('provider export failures discard page-world exception text without misrepo
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'provider-export-failed');
     assert.equal(result.error.message,
-        'Reload the activity and try the capture again.');
+        'Reopen the activity in a new tab, then select Better Peakbagger again.');
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(result.error.message, /ownership changed/i);
@@ -3721,7 +3721,7 @@ test('production-point analysis yields to status and cancellation messages', asy
     assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
 });
 
-test('successful captures are reused but recoverable errors are re-evaluated on the next gesture', async () => {
+test('successful captures are reused but recoverable errors are re-evaluated on the next gesture', async t => {
     const readyHarness = createHarness();
     const firstReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const reusedReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -3738,22 +3738,37 @@ test('successful captures are reused but recoverable errors are re-evaluated on 
             { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16, 0) },
         ]],
     };
+    for (const code of ['provider-unavailable', 'provider-session-not-ready', 'provider-download-failed', 'provider-export-failed']) {
+        await t.test(code, async () => {
+            const harness = createHarness({
+                ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+                captureResult: call => call.number === 1 ? {
+                    ok: false,
+                    code,
+                    provider: 'strava',
+                    activityId: '123',
+                } : successfulCapture,
+            });
+            const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(failed.error.code, code);
+            const recovered = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(recovered.phase, 'ready');
+            assert.notEqual(recovered.id, failed.id);
+            assert.equal(harness.providerCaptureCalls.length, 2,
+                'reopening the popup rechecks a recoverable failure without a hidden second click');
+        });
+    }
+});
+
+test('an uninitialized Garmin session stops before Peakbagger requests and GPS export', async () => {
     const harness = createHarness({
-        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
-        captureResult: call => call.number === 1 ? {
-            ok: false,
-            code: 'provider-unavailable',
-            provider: 'strava',
-            activityId: '123',
-        } : successfulCapture,
+        ownershipResult: { ok: false, provider: 'garmin', activityId: '123', code: 'provider-session-not-ready' },
     });
+    harness.tabs.get(1).url = 'https://connect.garmin.com/app/activity/123';
     const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-    assert.equal(failed.error.code, 'provider-unavailable');
-    const recovered = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-    assert.equal(recovered.phase, 'ready');
-    assert.notEqual(recovered.id, failed.id);
-    assert.equal(harness.providerCaptureCalls.length, 2,
-        'reopening the popup rechecks a recoverable failure without a hidden second click');
+    assert.equal(failed.error.code, 'provider-session-not-ready');
+    assert.equal(harness.providerCaptureCalls.length, 0);
+    assert.equal(harness.peakbaggerPageCalls.length, 0);
 });
 
 test('activity capture publishes truthful monotonic phases and throttled summit progress', async () => {

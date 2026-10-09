@@ -10,6 +10,7 @@ import {
 
 const REQUIRED_CODES = [
     'unsupported', 'activity-changed', 'provider-page-not-ready', 'provider-page-timeout',
+    'provider-session-not-ready', 'provider-download-failed',
     'provider-signed-out', 'provider-human-check', 'provider-rate-limited',
     'provider-forbidden', 'provider-unavailable', 'provider-response-changed',
     'provider-export-timeout', 'provider-export-failed', 'provider-export-cancelled',
@@ -31,7 +32,7 @@ test('every public capture failure has one complete recovery policy', () => {
         const entry = captureErrorPolicy(code);
         assert.match(entry.title, /\S/, `${code} title`);
         assert.match(entry.message, /\S/, `${code} message`);
-        assert.ok(['none', 'settings', 'focus-provider', 'reload-provider', 'provider-sign-in',
+        assert.ok(['none', 'settings', 'focus-provider', 'reload-provider', 'reopen-provider', 'provider-sign-in',
             'open-peakbagger', 'wait', 'retry', 'check-again'].includes(entry.recovery),
         `${code} recovery`);
         assert.ok(['never', 'after-user', 'after-wait', 'safe'].includes(entry.retry),

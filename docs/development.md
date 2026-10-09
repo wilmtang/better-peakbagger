@@ -400,6 +400,13 @@ values or arbitrary page text. The worker revalidates both result shapes.
 Neither API is a general fetch, DOM, or module seam. Do not generalize these
 exceptions.
 
+For Garmin's current-session flow, `waitForOwnership` also waits for the
+same-page CSRF token within its existing readiness deadline. The token stays
+in the provider page. Missing session state and failed downloads have distinct
+capture error codes; their **Reopen activity** action opens the canonical
+activity in a new tab and preserves the source tab. Export still requires a
+new toolbar gesture, with account and ownership checks repeated.
+
 `BPB_CAPTURE_DIAGNOSTICS` is a local developer/test switch, not telemetry. When
 set to the boolean `true` in the worker or popup realm, the capture path emits
 one allowlisted duration/count object to that realm's console. The worker asks

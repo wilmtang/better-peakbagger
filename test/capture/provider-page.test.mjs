@@ -405,6 +405,83 @@ test('Garmin unavailability returns bounded typed copy instead of page exception
     assert.doesNotMatch(capture.message, /ownership/i);
 });
 
+test('Garmin waits for session initialization in the document head without accessing GPS', async () => {
+    const dom = load(garminPage({ csrfToken: '' }), 'https://connect.garmin.com/app/activity/777');
+    dom.window.USE_DI_SESSION = true;
+    let fetches = 0;
+    dom.window.fetch = async () => { fetches++; throw new Error('must not fetch'); };
+    let settled = false;
+    const pending = dom.window.BPBProviderPage.waitForOwnership(
+        { provider: 'garmin', activityId: '777' }, 'session-init', 1000,
+    ).then(result => { settled = true; return result; });
+    await Promise.resolve();
+    assert.equal(settled, false, 'ownership cues alone do not make the Garmin session ready');
+    dom.window.document.querySelector('meta[name="csrf-token"]').setAttribute('content', 'PRIVATE_TOKEN');
+    const result = await pending;
+    assert.deepEqual({ ...result }, { ok: true, provider: 'garmin', activityId: '777' });
+    assert.equal(fetches, 0);
+    assert.doesNotMatch(JSON.stringify(result), /PRIVATE_TOKEN|csrf/i);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('session-init'), false);
+    dom.window.close();
+});
+
+test('missing Garmin session state returns a typed failure before export and can recover in the same page', async () => {
+    const dom = load(garminPage({ csrfToken: '' }), 'https://connect.garmin.com/app/activity/777');
+    dom.window.USE_DI_SESSION = true;
+    let fetches = 0;
+    dom.window.fetch = async () => {
+        fetches++;
+        return { ok: true, text: async () => '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>' };
+    };
+    const ownership = await dom.window.BPBProviderPage.waitForOwnership(
+        { provider: 'garmin', activityId: '777' }, 'missing-session', 5,
+    );
+    assert.equal(ownership.code, 'provider-session-not-ready');
+    const missing = await dom.window.BPBProviderPage.capture({}, 'missing-export');
+    assert.equal(missing.code, 'provider-session-not-ready');
+    assert.equal(fetches, 0);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('missing-export'), false);
+    dom.window.document.querySelector('meta[name="csrf-token"]').setAttribute('content', 'PRIVATE_TOKEN');
+    const recovered = await dom.window.BPBProviderPage.capture();
+    assert.equal(recovered.ok, true);
+    assert.equal(fetches, 1);
+    assert.doesNotMatch(JSON.stringify([missing, recovered]), /PRIVATE_TOKEN|csrf/i);
+    dom.window.close();
+});
+
+test('Garmin session wait remains cancellable and fails closed when ownership changes', async t => {
+    for (const outcome of ['cancel', 'not-owner']) {
+        await t.test(outcome, async () => {
+            const dom = load(garminPage({ csrfToken: '' }), 'https://connect.garmin.com/app/activity/777');
+            dom.window.USE_DI_SESSION = true;
+            const pending = dom.window.BPBProviderPage.waitForOwnership(
+                { provider: 'garmin', activityId: '777' }, 'session-wait', 1000,
+            );
+            if (outcome === 'cancel') dom.window.BPBProviderPage.cancelCapture('session-wait');
+            else dom.window.document.querySelector('[class*="ActivityHeaderContainer"] a')
+                .setAttribute('href', '/app/profile/foreign-owner');
+            assert.equal((await pending).code, outcome === 'cancel' ? 'provider-page-cancelled' : 'not-owner');
+            dom.window.close();
+        });
+    }
+});
+
+test('provider download failures distinguish fetch and body failures without exposing exception text', async t => {
+    for (const stage of ['fetch', 'body']) {
+        await t.test(stage, async () => {
+            const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
+            dom.window.USE_DI_SESSION = true;
+            const fail = () => { throw new TypeError('PRIVATE_NETWORK_EXCEPTION'); };
+            dom.window.fetch = stage === 'fetch' ? fail : async () => ({ ok: true, text: fail });
+            const result = await dom.window.BPBProviderPage.capture();
+            assert.equal(result.code, 'provider-download-failed');
+            assert.match(result.message, /Reopen it in a new tab/);
+            assert.doesNotMatch(JSON.stringify(result), /PRIVATE_NETWORK_EXCEPTION/);
+            dom.window.close();
+        });
+    }
+});
+
 test('provider export classifies response failures before GPX parsing', async t => {
     const now = Date.now();
     const cases = [
