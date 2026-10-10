@@ -44,6 +44,12 @@ plans.
   assert the live local-day values. Existing folder-name and valid-style-loader
   tests retain the other behavior. All 44 focused tests, scoped ESLint, and
   `git diff --check` passed; no test case was deleted.
+- R4: removed obsolete module-presence fallbacks in Settings cache usage,
+  ascent filtering, BigMap route limiting, terrain setup/consent, and theme
+  injection. Failed settings reads, feature-write confirmation, stale revisions,
+  runtime browser capabilities, and externally supplied MapLibre remain guarded.
+  The build, 353 focused options/filter/map/terrain/theme tests, scoped ESLint,
+  and `git diff --check` passed. Real-browser integration remains pending.
 
 ### Intentionally not changed
 

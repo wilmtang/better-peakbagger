@@ -243,9 +243,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         const backdrop = document.createElement('div');
         backdrop.id = 'bpb-terrain-consent';
         backdrop.className = 'bpb-terrain-consent-backdrop';
-        backdrop.dataset.theme = settings?.resolveTheme
-            ? settings.resolveTheme(terrainTheme)
-            : 'light';
+        backdrop.dataset.theme = settings.resolveTheme(terrainTheme);
 
         const dialog = document.createElement('section');
         dialog.className = 'bpb-terrain-consent-dialog';
@@ -315,7 +313,6 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             enable.textContent = 'Enabling…';
             error.textContent = '';
             try {
-                if (!settings) throw new Error('Settings are unavailable');
                 const next = await settings.set({ enable3dMap: true });
                 if (!next || next.enable3dMap !== true) throw new Error('Setting was not saved');
                 applySettings(next);
@@ -355,17 +352,15 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     };
 
     const initialSettingsRevision = settingsRevision;
-    const settingsReady = settings
-        ? settings.get().then(initial => {
-            // A storage push can beat the initial async read. Never let that
-            // stale read override the newer feature-gate value.
-            if (settingsRevision === initialSettingsRevision) applySettings(initial);
-        }, () => {
-            if (settingsRevision === initialSettingsRevision) terrainEnabled = false;
-        })
-        : Promise.resolve();
+    const settingsReady = settings.get().then(initial => {
+        // A storage push can beat the initial async read. Never let that
+        // stale read override the newer feature-gate value.
+        if (settingsRevision === initialSettingsRevision) applySettings(initial);
+    }, () => {
+        if (settingsRevision === initialSettingsRevision) terrainEnabled = false;
+    });
 
-    if (settings) settings.subscribe(changed => {
+    settings.subscribe(changed => {
         settingsRevision++;
         applySettings(changed);
     });

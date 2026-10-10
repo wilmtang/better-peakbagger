@@ -82,9 +82,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     const refreshCacheUsage = async () => {
         const revision = ++cacheUsageRevision;
         terrainCacheUsageEl.textContent = 'Checking current cache…';
-        const usage = TerrainCache && typeof TerrainCache.getUsage === 'function'
-            ? await TerrainCache.getUsage()
-            : null;
+        const usage = await TerrainCache.getUsage();
         if (revision !== cacheUsageRevision || terrainCacheRowEl.hidden) return;
 
         if (!usage || (usage.unmeasuredEntries > 0 && usage.bytes === 0)) {
