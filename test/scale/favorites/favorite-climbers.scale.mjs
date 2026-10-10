@@ -69,7 +69,11 @@ test('the favorites page renders the full 1,500-entry custom list; Settings back
             backupMessage = message;
             response = {
                 ok: true,
-                result: { commitUrl: 'https://github.com/scale/backup/commit/full-list' },
+                result: {
+                    repo: 'scale/backup',
+                    signature: F.backupSignature(favorites),
+                    commitUrl: 'https://github.com/scale/backup/commit/full-list',
+                },
             };
         }
         if (typeof callback === 'function') Promise.resolve().then(() => callback(response));
@@ -122,7 +126,7 @@ test('the favorites page renders the full 1,500-entry custom list; Settings back
     await evalBundle(optionsDom.window, 'options/options-head.js');
     await evalBundle(optionsDom.window, 'options/options.js');
 
-    await waitFor(optionsDom, () => !optionsDom.window.document.getElementById('favorites-github-actions').hidden);
+    await waitFor(optionsDom, () => !optionsDom.window.document.getElementById('favorites-backup').disabled);
     optionsDom.window.document.getElementById('favorites-backup').click();
     await waitFor(optionsDom, () => backupMessage != null);
     assert.equal(backupMessage.type, 'GITHUB_FAVORITES_BACKUP');

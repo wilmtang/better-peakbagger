@@ -215,12 +215,6 @@ export function localDayNumber(zone, ms, options) {
     return parsed ? parsed.ms / DAY_MS : null;
 }
 
-export function relativeLocalDay(zone, ms, startMs, options) {
-    const day = localDayNumber(zone, ms, options);
-    const startDay = localDayNumber(zone, startMs, options);
-    return day === null || startDay === null ? null : day - startDay + 1;
-}
-
 function offsetAt(timeZone, ms, DateTimeFormat) {
     const fields = dateParts(cachedFormatter(DateTimeFormat, 'en-CA', {
         timeZone,
@@ -324,8 +318,6 @@ export function civilToInstant(zone, date, minute, {
 
 export const mountainTime = Object.freeze({
     resolve: resolveMountainTime,
-    longitudeOffsetMs,
-    localFields,
     localDate,
     localMinute,
     zoneLabel,
@@ -333,6 +325,5 @@ export const mountainTime = Object.freeze({
     formatClock,
     formatCivilClock,
     localDayNumber,
-    relativeLocalDay,
     civilToInstant,
 });

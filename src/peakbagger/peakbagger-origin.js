@@ -71,11 +71,3 @@ export const isPeakbaggerPageOrigin = origin => {
             && !url.search && !url.hash;
     } catch { return false; }
 };
-
-export const peakbaggerOrigin = {
-    PEAKBAGGER_ORIGIN,
-    PEAKBAGGER_HOSTS,
-    isPeakbaggerUrl,
-    isPeakbaggerSenderUrl,
-    isPeakbaggerPageOrigin,
-};

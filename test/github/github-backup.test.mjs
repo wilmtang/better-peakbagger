@@ -44,7 +44,6 @@ const baseSnapshot = () => ({
 
 test('folder name is date-first with a stable a<ascentId> suffix', () => {
     assert.equal(Backup.folderName(baseSnapshot()), '2026-07-12-mount-rainier-a1234567');
-    assert.equal(Backup.folderPath(baseSnapshot()), '2026-07-12-mount-rainier-a1234567');
 });
 
 test('partial and undated dates degrade gracefully in the folder name', () => {

@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createMapImportHarness } from '../helpers/map-import-routes-harness.mjs';
 import { createAlltrailsRoutes } from '../../src/background/alltrails-routes.js';
 import { ALLTRAILS_IMPORT_URL, ALLTRAILS_PERMISSION } from '../../src/alltrails/alltrails-import.js';
 
@@ -19,48 +20,11 @@ const message = {
     grantToken: 'grant',
 };
 
-const harness = ({ outcome = { ok: true, supplied: true, code: 'prepared', message: 'Ready.' }, redirectUrl } = {}) => {
-    const tabs = new Map();
-    const created = [];
-    const injections = [];
-    const consumed = [];
-    let nextId = 20;
-    const ext = {
-        permissions: {
-            request: async request => { assert.deepEqual(request, ALLTRAILS_PERMISSION); return true; },
-            contains: async request => { assert.deepEqual(request, ALLTRAILS_PERMISSION); return true; },
-        },
-        runtime: { getURL: path => `moz-extension://test/${path}` },
-        tabs: {
-            create: async details => {
-                created.push(details);
-                const tab = {
-                    id: nextId++,
-                    windowId: details.windowId,
-                    url: redirectUrl || details.url,
-                    status: 'complete',
-                };
-                tabs.set(tab.id, tab);
-                return { ...tab };
-            },
-            get: async id => ({ ...tabs.get(id) }),
-            update: async () => {},
-        },
-        windows: { update: async () => {} },
-        scripting: {
-            executeScript: async details => { injections.push(details); return [{ result: outcome }]; },
-        },
-    };
-    const routes = createAlltrailsRoutes({
-        ext,
-        isPeakbaggerSender: value => value?.url?.startsWith('https://www.peakbagger.com/'),
-        trustedActions: {
-            consumeGrant: async (...args) => { consumed.push(args); return true; },
-        },
-        action: 'alltrails-import',
-    });
-    return { ext, routes, created, injections, consumed };
-};
+const harness = options => createMapImportHarness({
+    createRoutes: createAlltrailsRoutes,
+    permission: ALLTRAILS_PERMISSION,
+    action: 'alltrails-import',
+}, options);
 
 test('AllTrails route opens the exact custom route builder and consumes one-use authority', async () => {
     const h = harness();

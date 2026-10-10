@@ -28,5 +28,3 @@ export const MAX_MAP_ROUTE_POINTS = 3000;
 // overlay would bridge a gap it should show, which is what ties this bound to
 // half the point budget.
 export const MAX_MAP_ROUTE_SEGMENTS = MAX_MAP_ROUTE_POINTS / 2;
-
-export const mapRouteLimits = { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS };

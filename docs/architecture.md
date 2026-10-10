@@ -657,137 +657,49 @@ The field-level data disclosure is canonical in [PRIVACY.md](../PRIVACY.md).
 
 ## Deep dive: trip-report editor
 
-`src/reports/report-editor.js` keeps Peakbagger's native `JournalText` textarea as the
-form source of truth while offering Rich, Markdown, and Plain views. Rich mode
-uses a schema-locked TipTap editor; Markdown mode uses CodeMirror plus a
-structural preview; Plain mode exposes the exact native bracket source.
+`src/reports/report-editor.js` owns Rich, Markdown, and Plain views over
+Peakbagger's submitted `JournalText`. Conversions pass through the allowlisted
+model in `src/reports/report-markup.js`; the active view flushes before Preview,
+Save, postback, page exit, or feature disablement. Final Save remains native.
 
-All conversions pass through the allowlisted model in `src/reports/report-markup.js`.
-Opening a richer mode does not rewrite an untouched report. Before Preview,
-Save, implicit ASP.NET submission, or page exit, the active view flushes
-synchronously into the native textarea. Local drafts are keyed by ascent
-identity, bounded, expiring, and restored only after explicit user approval.
-Live feature disable is an explicit handoff: private Rich/Markdown state is
-discarded after its final flush, while later native edits remain authoritative
-for Save, page-exit recovery, and the optional GitHub snapshot.
-`src/reports/report-drafts.js` is the pure shared contract for those identities and
-lifetimes. The draft-manager owner in `options/drafts.js` uses it to list every
-device-local report draft, open the matching ascent form, copy Markdown, and
-offer reversible deletion without duplicating or bypassing the editor's
-restore gate. It runs on its own page, `options/drafts.html`, via the thin
-`options/drafts-page.js` entry; Settings keeps the `#drafts` anchor as a stub
-that links there. The editor's discovery link sends `OPEN_DRAFTS_MANAGER`; the
-worker accepts it only from a Peakbagger tab and opens the extension-owned
-`options/drafts.html` page (an existing `options/options.html#drafts` link
-still lands on the same topic).
+`src/reports/report-drafts.js` defines bounded, expiring recovery identities.
+The editor and `options/drafts.js` share that contract; restoration is explicit.
+The worker serializes generation-checked mutations and retains recovery data
+until `src/ascent/ascent-saved.js` confirms a matching pending Save intent.
 
-Snapshot-based expiry and recovery deletion compare the observed saved time
-and storage generation inside the worker mutation queue. Failed-Save metadata
-rewrites use the same guard and return the generation used by the recovery
-offer. Explicit terminal removals retain their unconditional semantics.
-
-Save is a two-phase lifecycle rather than an optimistic deletion. The editor
-retains the local record and registers a 30-minute pending intent bound to its
-form identity and source tab. `src/ascent/ascent-saved.js` recognizes
-Peakbagger's Add/Edit success view and sends the resulting ascent id through
-`src/background/report-draft-routes.js`; only a matching intent may remove the
-draft. Validation errors, failed navigation, mismatched identities, duplicate
-postbacks, and expired worker state therefore leave recovery data intact.
-
-The editor's representations, sanitization boundaries, media restrictions,
-round trips, guarded lossy-import conversion, and draft lifecycle are maintained
-in [trip-report-editor.md](trip-report-editor.md). That focused design note is
-the source of truth for markup behavior; this guide does not duplicate its tag
-matrix.
+See [trip-report-editor.md](trip-report-editor.md) for conversion paths,
+sanitization, lossy-import protection, media restrictions, and draft lifecycle.
 
 ## Deep dive: photo topo editor and local library
 
-The Rich editor's image popover has one photo action, which opens the
-extension-owned photo tab; that tab's own Editor/Library tabs cover both
-creating a topo and reusing an uploaded one. `src/background/photo-routes.js`
-creates a random, single-use return context bound to the source tab/frame,
-editor tab, report identity, and a two-hour expiry. Only a sanitized HTTPS image
-result from that exact photo page can return; it may include one separately
-validated, width-only report display hint. Successful ImgBB upload remains
-committed if the report tab is gone or rejects insertion.
+The report image popover opens the extension-owned photo tab. The worker binds
+its single-use return context to the source document, report identity, editor
+tab, and expiry; only a validated HTTPS image result may return. A failed
+insertion does not undo a successful upload.
 
-`photos/photos.js` owns the UI and local transaction orchestration. Project
-replacement settles outgoing gestures, locks mutations, awaits in-flight
-autosave, and flushes any newer dirty state before reading or installing the
-replacement. A failed save keeps the outgoing editor available. New versions
-derive their metadata from the freshly saved bundle rather than a stale card.
-`src/photos/photo-project.js` owns the bounded annotation schema — including
-each object's opacity and a route's smooth-curve intent, whose control points
-the model derives rather than the page storing them —
-`src/photos/photo-renderer.js` flattens a clean project into a newly encoded
-metadata-free JPEG or PNG and exports the single symbol geometry both the tool
-rail and the guide paint from, and `src/photos/photo-store.js` owns the
-authoritative IndexedDB catalog, projects, originals, thumbnails, operation
-journal, per-photo delete capabilities, and tombstones. Published edits are new
-lineaged versions, never in-place replacement of an existing remote URL.
-Rejected database opens close any connection that succeeds later; live
-connections close on `versionchange`, and the photo page becomes read-only and
-requests a reload so another tab's upgrade can complete.
-Every catalog record also carries a device-local monotonic revision. Whole
-draft, upload, reference, and deletion writes compare the revision they read
-inside the same IndexedDB transaction; a stale writer reports a conflict
-instead of replacing newer state. Deletion advances the same generation and
-only the explicit restore command may clear its tombstone. GitHub restore is
-bound to the revision snapshot used for its merge, while backup status uses a
-narrow field mutation so it cannot erase a concurrent editor or report change.
-Before any ImgBB request, the store begins the `uploading` state and its
-immutable recovery operation in one transaction. The provider response remains
-journaled until a second transaction commits the public URL, device-local
-deletion capability, and `catalog-committed` operation state together. A
-one-time compatibility scan resets only legacy `uploading` records that have no
-journal; the older flow never contacted ImgBB before that journal existed, so
-those records are definitely retryable rather than outcome-unknown.
-`src/photos/photo-archive.js` both writes and reads the CSP-safe stored-ZIP
-project bundle, so a downloaded original can be imported back.
-`src/photos/photo-report-size.js` resolves the contextual Small, Medium, Large,
-and Original report choices without participating in rendering or export.
-Photo Topos previews the choice by changing only the stage's CSS width and
-stores the preference in the shared settings schema; the canvas and ImgBB
-upload stay at the project's full dimensions. Fixed choices are maximums, so a
-small source is never upscaled. The catalog remains lifetime-sized, but the
-library UI reads thumbnails and renders them in 48-card pages, debounces search,
-and prunes expired deleted assets in bounded maintenance batches.
+`photos/photos.js` owns UI orchestration; the pure project and renderer modules
+own annotation validation and metadata-free export; `src/photos/photo-store.js`
+owns IndexedDB pixels, projects, revisions, upload journals, and tombstones.
+The pure `src/photos/photo-url.js` owns bounded HTTPS URL validation, reused
+independently by upload responses, catalog entries, and stored delete secrets.
+Replacement waits for outgoing saves, and concurrent writes compare revisions.
+Published edits create new versions. Report display size never resizes the
+full-resolution export.
 
-ImgBB is bring-your-own-key. Its API origin is an optional permission requested
-when the user saves a key in Settings or uploads from the editor. The saved key
-remains in device-local extension storage, in the dedicated `bpbImgbbAuth`
-record. It is never exposed to Peakbagger, another website, GitHub, browser
-sync, or status UI. A manual settings-file export can include it, but only
-after the user ticks **Include saved credentials** — one per-file decision
-that covers the ImgBB key and the GitHub connection together, so two
-device-local secrets in the same unencrypted download do not have two consent
-models. An export nobody opted in for is credential-free, which is what a
-settings file shared for troubleshooting should be. The write goes through an
-exact-options-page worker route and carries a keep-private warning. GitHub
-backup still excludes both credentials. The background worker otherwise
-provides it only to Better
-Peakbagger's exact packaged photo page immediately before that page sends a
-direct upload to ImgBB. The photo page and the options page can both configure
-it, each gated on its exact packaged page path. The client makes one direct
-multipart POST without imposing a local byte
-ceiling; ImgBB decides the upload limit for the user's key. The encoded source
-has its own 128 MiB processing and device-local storage ceiling. Source decode
-and canvas export are separately bounded to 64 megapixels and 16,384 pixels per
-side, while the symmetric project-archive writer/reader contract is 40 MiB. It
-never automatically retries an ambiguous outcome because that could duplicate
-a public upload. The local catalog supplies the searchable upload history; no
-ImgBB account-gallery read is assumed.
+The saved key remains in device-local extension storage and is never exposed to
+Peakbagger, another website, GitHub, browser sync, or status UI. The worker uses
+it for user-initiated TR photo uploads and provides it to the exact packaged
+photo page for a direct ImgBB upload. Manual settings-file export is a separate,
+explicit credential-transfer choice. Ambiguous uploads are not automatically retried.
 
-Optional GitHub photo recovery writes a deterministic root
-`photo-library.json`. It contains catalog metadata, public URLs, projects, and
-tombstones, but never the API key, ImgBB delete URL, source/thumbnail pixels, or
-operation journal. Restore is explicit and previewed, and cannot claim to
-recover pixels or remote deletion. Settings owns the full controls beside every
-other GitHub backup; the library keeps only **Back up now**. `photos/guide.html`
-is the packaged user-facing explanation of the whole workflow and is
-web-accessible to Peakbagger so the report popover can link to it. The complete
-contracts and failure states are maintained in
-[photo-topo-editor.md](photo-topo-editor.md).
+ImgBB decides upload size. Local source processing is bounded to 128 MiB encoded,
+64 megapixels decoded, and 16,384 pixels per side; project bundles have a 40 MiB limit.
+Optional GitHub recovery contains metadata and public URLs, excludes pixels and
+credentials, and cannot restore remote deletion capabilities.
+
+See [photo-topo-editor.md](photo-topo-editor.md) for transaction states, resource
+limits, credential transfer, library maintenance, and recovery contracts;
+`photos/guide.html` is the packaged user guide.
 
 ## Deep dive: GPX Analyzer and native 2D map integration
 
@@ -922,130 +834,25 @@ default untouched.
 
 ## Deep dive: opt-in 3D terrain
 
-The complete maintained protocol, state machine, validation caps, failure
-taxonomy, request table, verification matrix, and interview-style design
-rationale live in [3d-map.md](3d-map.md). This section is the architecture-level
-summary.
+MAIN-world surfaces own the native map and subject. The isolated terrain bridge
+owns consent and an extension-origin frame; packaged MapLibre owns rendering.
+Every message boundary revalidates bounded coordinate-only geometry and display
+metadata. Raw GPX, track times/elevations, and page credentials stay outside the
+frame.
 
-### Height and imagery are separate
+3D is disabled by default. Trusted activation enables it; only then may an idle
+toggle's hover/focus warm bounded DEM tiles. Mapterhorn elevation is required,
+while selected raster or OpenFreeMap imagery may fail independently.
 
-The terrain surface comes from Mapterhorn DEM tiles. Its visible map can be
-OpenFreeMap's vector style, a compatible raster layer selected in Peakbagger,
-or the renderer's terrain relief fallback. Elevation and basemap imagery have
-different providers, cache behavior, CORS constraints, and failure modes.
+Native 2D stays visible until terrain is usable and returns on fatal failure.
+Switching exchanges center and equivalent zoom; bearing and pitch remain 3D
+state. The bridge briefly parks a stopped frame for quick re-entry, with bounded
+GPU retention. The frame and worker share a bounded, lock-coordinated DEM cache;
+cache failure falls back to network.
 
-The original provider evaluation is archived in
-[archive/3d-vector-basemap-investigation.md](archive/3d-vector-basemap-investigation.md).
-Historical CORS and drape-resolution investigations live beside it; they
-explain past decisions but are not current runtime contracts.
-
-### Activation and browser boundaries
-
-The renderer is off by default. Choosing 3D while disabled opens an
-isolated-world consent dialog; only trusted user activation may enable the
-feature. No terrain or basemap request occurs merely because a page loaded.
-After the feature is enabled, hovering or focusing an idle 3D toggle may warm a
-bounded DEM tile set as an explicit intent signal.
-
-MapLibre 6 and its extension-owned module worker run in `terrain/terrain.html`,
-an extension-owned frame declared as a web-accessible resource. This avoids
-page-CSP and content-script-world differences between Chrome and Firefox. The isolated
-`src/terrain/terrain-map.js` bridge creates and tears down the frame, owns consent, and
-passes only validated messages between it and the MAIN-world coordinator.
-
-Route input is bounded coordinate-only geometry with segment boundaries and a
-validated style. Summit-only Peak pages pass a bounded focus instead. Source
-GPX, timestamps, GPX elevations, health/device fields, activity metadata, and
-page settings outside the allowlist never enter the frame.
-The frame rechecks all-or-nothing route/focus, style, basemap, link, peak, and
-camera payloads even though the page and bridge already narrowed them.
-
-### Camera, maps, and teardown
-
-The 2D and 3D renderers exchange validated center and equivalent zoom whenever
-the user switches. Bearing and pitch remain 3D-only. The shared coordinator
-waits at most one second for the final camera, and the page's 17-second startup
-backstop deliberately outlasts the frame's 15-second MapLibre timeout. Loading
-is cancelable. Every surface exposes the same continuous shortest-arc compass
-and reset-to-north action. Full Screen maps preserve their native multi-track
-colors; ascent maps use the configured route color and casing.
-
-Returning to 2D stops that session's tile activity. Rather than tearing the
-renderer down on every switch, the `src/terrain/terrain-map.js` bridge parks the loaded
-frame in the DOM at opacity 0 and tells `src/terrain/terrain-frame-runtime.js` to suspend its
-ambient work (peak debounce, popup, pointer tracking); a quick 2D→3D→2D→3D
-re-entry then resumes the live MapLibre map with a fresh route/camera/theme
-instead of rebuilding the map, its module worker, and the terrain mesh. The parked
-frame is fully destroyed and its WebGL context released after a five-minute
-keep-alive TTL, or immediately when 3D is disabled. Failed MapLibre startup,
-invalid input, missing WebGL, WebGL context loss, a source-less post-load
-renderer error, DEM failure, or a bounded load timeout removes the partial 3D
-surface, restores the native map, and shows a shared accessible failure. A
-source-specific tile gap remains recoverable, and a failed or incompatible
-selected raster falls back without taking down valid terrain.
-
-MapLibre is constructed with a DEM-only style. Route and peak layers attach on
-`load`, and the selected raster/vector presentation is applied afterward. A
-slow OpenTopoMap or other drape therefore streams progressively instead of
-gating the entire 3D boot; a picker change made during boot is queued and
-applied after the base style becomes ready.
-
-The optional OpenFreeMap style is a bounded, normalized transaction rather
-than a trusted MapLibre style. Its decoded document stops at 2 MiB; source,
-layer, identifier, URL, and parsed-structure limits are checked before any map
-mutation. Glyphs, sprites, TileJSON, inline tiles, and late TileJSON-derived
-tile requests must stay on `https://tiles.openfreemap.org` without credentials
-or fragments. Sources and layers are installed under extension-prefixed IDs;
-any failure independently rolls back every added layer and source and restores
-the prior glyph/sprite configuration before the picker can show Vector as
-active.
-
-### Bounded DEM cache
-
-Successful Mapterhorn responses may be kept in CacheStorage. Before MapLibre or
-the cache receives a tile, the loader requires `image/webp`, streams it through
-the shared request deadline, stops above a 1 MiB encoded-body ceiling, and
-validates the RIFF/WebP envelope. The ceiling is separate from the user-selected
-total cache budget: a 2026-08-09 live sample across zooms 10–14 measured
-277,870–402,962 bytes, so 1 MiB retains more than 2.5x headroom without trusting
-one provider response to size itself. An honest oversized `Content-Length` is
-rejected before reading; a missing or dishonest length remains bounded by the
-stream.
-
-A best-effort LRU index in `storage.local` tracks size and use; the configured
-byte budget is validated by the shared settings schema. Index reconciliation
-tolerates browser eviction and partial storage cleanup, and invalid legacy cache
-entries are purged on read. The extension does not request persistent storage,
-so cache loss simply returns to the network on the next 3D session.
-
-All extension-origin cache owners coordinate mutation with one
-storage-bucket-scoped Web Lock and reconcile current CacheStorage plus the
-persisted index inside that lock before trimming. This makes the configured
-budget shared across terrain frames and worker prefetch. A production context
-without Web Locks uses the network without populating this optional cache; the
-prefetcher also closes its old owner before applying a lower limit or disable.
-
-Only DEM response bytes are owned by this cache. OpenFreeMap and selected
-raster providers follow their own browser cache policies.
-
-### DEM prefetch on intent
-
-CacheStorage is origin-keyed, so only extension-origin contexts share the DEM
-cache — a Peakbagger content script cannot populate it. To make opening 3D paint
-from cache, hovering or focusing the idle 3D toggle (explicit intent, never page
-load) posts a bounded `prefetch` hint through the bridge, which the background
-worker turns into cache-warming tile fetches. The pure `src/terrain/terrain-tiles.js`
-mirrors the frame's fitBounds math (512-px tiles, `padding 46`, `maxZoom 15.5`)
-to enumerate the first-paint tiles for a route bounds or a peak center+zoom,
-plus their parent level, capped so a burst stays small. The worker fails closed
-unless 3D is enabled and the cache budget is non-zero (3D enablement is the
-consent gate for contacting Mapterhorn), accepts hints only from a Peakbagger
-tab, rate-limits each tab, dedupes recently-warmed tiles, and loads through the
-same bounded LRU cache the renderer reads. The head of `terrain/terrain.html`
-also preconnects to Mapterhorn so the first real tile request skips the TLS
-handshake. The bridge waits for its initial settings read before applying the
-feature gate, so the first intent hint is not lost to startup. Worker state is
-rate-limited per tab and pruned when that tab closes.
+[3d-map.md](3d-map.md) owns the lifecycle, protocol, validation limits, request
+policy, cache/prefetch rules, failure taxonomy, and verification matrix. Earlier
+provider and rendering investigations remain in [archive/](archive/).
 
 ## Deep dive: peak markers and non-ascent map surfaces
 
@@ -1669,74 +1476,25 @@ classification, or the live options/climber UI.
 
 ## Deep dive: GitHub ascent and TR backup
 
-GitHub backup is explicit and opt-in. The optional host permissions are
-requested only when the feature is enabled. GitHub device flow and repository
-selection run through the worker; the token and chosen repository live in
-`storage.local`, never synced storage, and never enter a content script. The
-exact packaged Settings page handles the token only while creating or importing
-a user-selected manual settings file whose **Include saved credentials** option
-was ticked. That file is unencrypted; import validates the token and repository
-live before transactionally replacing the local record.
+GitHub backup is opt-in. Worker-owned device flow and repository selection keep
+credentials in device-local storage. Content scripts read authenticated
+Peakbagger forms and published GPX; the worker validates messages and serializes
+atomic, non-forced GitHub writes. Provider GPX is never backup input.
 
-On Save, `src/ascent/ascent-snapshot.js` captures the submitted form and report
-sidecar into a short-lived, source-tab-namespaced `storage.session` snapshot.
-Peakbagger leaves Add and Edit on an `ascentedit.aspx` success view, so
-`src/ascent/ascent-saved.js` links both cases to the saved ascent and follows that route
-when automatic backup is enabled. There, `src/ascent/ascent-page.js` verifies owner
-identity and finds the stored GPX link, while `src/ascent/ascent-backup-source.js`
-fetches and validates the complete persisted edit form. The same shared source
-reader supplies profile backup. `src/ascent/ascent-backup.js` offers manual backup and,
-only with a fresh precise snapshot plus the separate opt-in, automatic backup.
-The backup uses Peakbagger's published track, never the raw provider GPX.
+Manual backup requires a complete persisted owner form. Automatic backup also
+requires a fresh matching Save snapshot; revisiting an ascent cannot trigger a
+commit. Deletion mirroring has separate consent and requires the authenticated
+owner list to prove the ascent absent before removing only extension-owned
+files. Unrelated repository paths and user files survive writes and renames.
 
-Deletion mirroring is a separate default-off transaction.
-`src/ascent/ascent-delete.js` records a source-tab-scoped intent before allowing
-either native Delete submitter to post. The same tab's complete authenticated
-My Ascents list must then prove the aid absent before the worker queues an
-atomic GitHub commit. The Git client removes only its owned report, JSON, and
-GPX blobs, preserving user-added files and history; the short-lived intent also
-blocks stale save/profile work from recreating the backup.
+Full-profile production runs in the owner tab with bounded buffering and one
+GitHub consumer. Failed batches remain retryable; committed repository folders
+are the resume checkpoint. Settings, climber lists, and photo metadata use the
+same worker write boundary with their own schemas and confirmation rules.
 
-`src/github/github-backup.js` builds a versioned `ascent.json`, `report.md`, and
-optional `track.gpx` under a stable `*-a<aid>` folder. `src/github/github-client.js`
-writes one atomic Git Data commit, preserves unrelated repository paths and
-user-added files, handles owned-folder renames, and rebuilds the whole commit
-after a bounded non-fast-forward conflict. On an owned individual ascent, the
-same modules also perform a read-only current-state comparison after the
-enabled-and-connected gate: the stable folder, structured page fields, report,
-and stored GPX must match, while sync timestamp and extension-version
-provenance are ignored. A match renders **Backed up ✓**; a difference or passive
-check failure leaves the ordinary backup action available. The worker
-serializes repository writes so per-save batches, profile batches, and the
-explicit settings, favorites, and photo-library root files cannot race each
-other. Root-file writes use the same marker validation, exact base tree,
-commit, non-forced ref update, and bounded conflict retry as ascent writes.
-Photo-library updates additionally rerun their semantic record merge after a
-branch conflict instead of replaying stale JSON; restores use the read-only
-Contents API before their explicit apply step.
-
-Full-profile backup runs its multi-minute producer in the owner’s
-`ClimbListC.aspx` tab, whose lifetime and authenticated Peakbagger session match
-the work. A bounded buffer decouples paced Peakbagger reads from a single GitHub
-consumer. Batches contain at most 10 ascents or 4 MiB; producer backpressure
-starts at 30 ascents or 32 MiB. A challenge or repeated transient failure pauses
-without consuming the affected ascent. A rejected GitHub batch remains ready
-for Resume. The repository tree is the checkpoint, so closing the tab requires
-no separate progress record. A worker transport failure while discovering
-availability keeps a compact **Try again** panel rather than removing the
-feature; a confirmed disabled/disconnected state remains distinct. If a
-Cloudflare check tab is blocked or throws, the exact validated Peakbagger URL
-and Resume/Retry/Cancel actions remain visible.
-
-The complete living contract is
-[github-ascent-backup.md](github-ascent-backup.md): the three ascent entry points,
-source acquisition, save-time correlation, repository layout, authorization,
-batching, backpressure, pause/resume, conflict handling, incident findings, and
-security boundaries.
-
-The original implementation records are archived in
-[archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and
-[archive/full-profile-backup.md](archive/full-profile-backup.md).
+[github-ascent-backup.md](github-ascent-backup.md) owns source completeness,
+Save correlation, repository schemas, credential transfer, batching,
+backpressure, conflict handling, recovery, and verification limits.
 
 ## Deep dive: site-wide theme startup
 

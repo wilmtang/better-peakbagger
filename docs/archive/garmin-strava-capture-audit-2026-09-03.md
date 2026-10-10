@@ -526,54 +526,6 @@ Keep a separately authorized, minimal, rate-limited manual live check for each
 provider and browser family. A fixture pass does not prove live selectors,
 exports, challenges, or native toolbar permission behavior.
 
-## Implementation sequence and commit boundaries
-
-Each numbered item is an independently verified commit unless implementation
-reveals an inseparable invariant. Do not bundle unrelated refactors.
-
-1. **Provider trust — F1.** Centralize exact provider/activity/profile host rules,
-   non-throwing identity normalization, and complete evidence aggregation.
-2. **Provider readiness — F2.** Add the generation-owned readiness observer and
-   terminal ownership states without starting coordinate work early.
-3. **Provider failure semantics — F3, then F7.** Classify bounded response
-   outcomes first; once codes are stable, centralize public copy and recovery
-   kinds across page, worker, and popup.
-4. **Deadline and page CPU — F4, then F9.** Establish native parse measurements,
-   give the provider operation one deadline, and change parser architecture only
-   if the measured browser budget requires it.
-5. **Origin traffic ownership — F5.** Add the global Peakbagger scheduler,
-   cooldown, and retry policy without weakening complete lookup.
-6. **Recovery and progress — F6, then F8.** Make new toolbar gestures re-evaluate
-   recoverable failures, then expose truthful phase/progress state with bounded
-   storage writes.
-7. **Measured speed and provider assurance — F10.** Add diagnostic timings and
-   the sanitized provider corpus before accepting any bridge batching, helper
-   reuse, scan reduction, or critical-path overlap.
-8. Update `docs/architecture.md`, `docs/development.md`, `PRIVACY.md`, and README
-   only for behavior that actually ships. Complete the closure ledger, move this
-   plan to `docs/archive/`, and remove its active index entry in the final
-   documentation commit.
-
-## Verification matrix
-
-`npm test` rebuilds `dist/`; directly running bundled provider or popup tests
-without a fresh build can exercise stale code.
-
-| Findings | Required proof | Still not proven |
-| --- | --- | --- |
-| F1–F3 | provider bundle tests against the full identity/readiness/response matrix; no provider network | current live provider DOM, response, or localization |
-| F4, F9 | fake-clock deadline permutations, `npm run test:scale`, hidden native Chrome/Firefox parse and event-loop budgets | slower devices outside the measured matrix |
-| F5 | cross-tab scheduler interleavings, request counts, cooldown clocks, cancellation, all-or-nothing results | future Peakbagger policy or production load |
-| F6–F8 | exhaustive error-policy tests, popup close/reopen behavior, 390×620 light/dark/200% visual inspection | native popup lifecycle unless run visibly in a dedicated profile; screen-reader speech |
-| F10 | sanitized HTTPS provider-shaped fixtures, component timing output, exact before/after comparison | live Garmin/Strava, native `activeTab`, real challenge passage |
-| bundle/worker/manifest changes | `npm run verify:browsers` in hidden isolated profiles, with exact versions/viewports and teardown inspection | native focus, permission UI, store acceptance |
-| all | nearest focused tests, `npm test`, `npm run lint`, `git diff --check` | legal approval or provider endorsement |
-
-Live checks must remain minimal, read-only, rate-limited, and separately
-authorized. If a provider presents a CAPTCHA or managed challenge, stop and let
-the user complete it normally; do not automate or weaken it. Report whether
-verification was hidden or visible and every surface that remained uninspected.
-
 ## Investigated and not reopened
 
 - Raw provider XML still stays on the provider page. Only allowlisted parsed

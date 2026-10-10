@@ -11,3 +11,9 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [code-removal audit](../archive/code-removal-audit-2026-10-09.md) is closed
+locally with its removal evidence, retained boundaries, and verification limits.
+The [CI, UI, and maintainability follow-up](../archive/ci-ux-maintainability-audit-2026-10-10.md)
+is closed locally with three consecutive packaged-browser pairs; hosted CI and
+external proof gaps remain explicit.

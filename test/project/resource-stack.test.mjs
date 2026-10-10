@@ -19,6 +19,7 @@ import {
     listenServer,
     manageChildProcess,
     quitWebDriver,
+    runChildProcess,
 } from '../../scripts/resource-stack.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -112,6 +113,16 @@ test('an invalid child path is contained and leaves other resources cleanable', 
     assert.match(childState.error?.message || '', /ENOENT/);
     await resources.dispose();
     assert.deepEqual(order, ['outer']);
+});
+
+test('shared command runner requires a closed successful child and preserves spawn, exit, and signal failures', async () => {
+    const options = { stdio: 'ignore', label: 'fixture command' };
+    await runChildProcess(process.execPath, ['-e', 'process.exit(0)'], options);
+    await assert.rejects(runChildProcess('/definitely-not-a-bpb-command', [], options), { code: 'ENOENT' });
+    await assert.rejects(runChildProcess(process.execPath, ['-e', 'process.exit(7)'], options),
+        /fixture command failed \(exit 7\)/);
+    await assert.rejects(runChildProcess(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"], options),
+        /fixture command failed \(SIGTERM\)/);
 });
 
 test('a child that ignores termination cannot skip later cleanup', async () => {

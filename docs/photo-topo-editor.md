@@ -372,7 +372,7 @@ page immediately before that page sends a direct upload to ImgBB. Removing the
 key clears the credential but does not alter prior uploads.
 
 Two extension-owned surfaces can configure that credential — the photo editor
-and **Settings → Activity creation → Trip report photos** — and the worker
+and **Settings → Capture & reports → Report photos** — and the worker
 gates them on the exact packaged page path, so an arbitrary extension page or
 content script fails closed. That gate compares protocol, host, and pathname
 outright: only special schemes are specified to produce a URL `origin`, so an

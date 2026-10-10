@@ -44,15 +44,17 @@ test('ownership fails closed without an edit link for this ascent', async () => 
     const doc = await loadDoc();
     // A visitor viewing someone else's ascent has no edit link.
     doc.querySelector('a[href*="ascentedit.aspx"]').remove();
-    assert.equal(AscentPage.ownsAscent(doc, 7654321), false);
     const info = AscentPage.read({ doc, search: '?aid=7654321' });
     assert.equal(info.isOwner, false);
+    assert.equal(info.editUrl, null);
 });
 
 test('an edit link for a different ascent does not confer ownership', async () => {
     const doc = await loadDoc();
     doc.querySelector('a[href*="ascentedit.aspx"]').setAttribute('href', '/climber/ascentedit.aspx?aid=999');
-    assert.equal(AscentPage.ownsAscent(doc, 7654321), false);
+    const info = AscentPage.read({ doc, search: '?aid=7654321' });
+    assert.equal(info.isOwner, false);
+    assert.equal(info.editUrl, null);
 });
 
 test('missing aid yields a null ascent id and no ownership', async () => {

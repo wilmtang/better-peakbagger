@@ -1750,7 +1750,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         routeHasTrackIds = Boolean(route && route.hasTrackIds);
         hoveredRouteTrack = null;
         const cacheLimitMb = settingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
-        if ((!route && !focus) || !maplibre || !TerrainCache || !globalThis.chrome?.runtime?.getURL) {
+        if ((!route && !focus) || !maplibre || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
             return;
         }

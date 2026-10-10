@@ -424,7 +424,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
                 try { pushLatLngs(layer.getLatLngs(), color, link, track); } catch (error) { /* layer may be mid-removal */ }
             });
         } catch (error) { /* a live Leaflet layer collection can change during iteration */ }
-        const limited = gpxMetrics ? gpxMetrics.limitMapRouteSegments(segments) : segments;
+        const limited = gpxMetrics.limitMapRouteSegments(segments);
         // The reducer keeps segment order 1:1, or returns [] when it drops the
         // whole overlay; only then do the parallel metadata arrays fall out of
         // alignment and must be discarded together.

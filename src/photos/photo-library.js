@@ -3,11 +3,12 @@
 //
 // Better Peakbagger — pure uploaded-photo catalog model and state transitions.
 
+import { cleanPhotoUrl as cleanHttpsUrl, PHOTO_URL_LIMIT as URL_LIMIT } from './photo-url.js';
+
 const SCHEMA_VERSION = 1;
 const TITLE_LIMIT = 200;
 const ALT_LIMIT = 500;
 const FILE_NAME_LIMIT = 255;
-const URL_LIMIT = 4096;
 const REFERENCE_LIMIT = 100;
 const DELETED_EDITING_RECOVERY_MS = 30 * 24 * 60 * 60 * 1000;
 const REMOTE_STATES = new Set(['draft', 'uploading', 'outcome-unknown', 'uploaded', 'unreachable']);
@@ -32,13 +33,6 @@ const cleanRevision = value => value == null
 const cleanHash = value => typeof value === 'string' && HASH.test(value.toLowerCase())
     ? value.toLowerCase()
     : null;
-const cleanHttpsUrl = value => {
-    if (typeof value !== 'string' || value.length > URL_LIMIT) return null;
-    try {
-        const url = new URL(value);
-        return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null;
-    } catch { return null; }
-};
 const cleanNullableUrl = value => value == null || value === '' ? null : cleanHttpsUrl(value);
 
 const cleanImageMetadata = (value, { fileName = false } = {}) => {
@@ -375,9 +369,7 @@ export const photoLibrary = {
     SCHEMA_VERSION,
     TITLE_LIMIT,
     ALT_LIMIT,
-    FILE_NAME_LIMIT,
     URL_LIMIT,
-    REFERENCE_LIMIT,
     DELETED_EDITING_RECOVERY_MS,
     cleanPhoto,
     createDraft,

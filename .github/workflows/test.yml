@@ -103,33 +103,8 @@ jobs:
           firefox-version: latest
           popup-firefox: 'true'
 
-      - name: Verify toolbar popup sizing and recovery layout
-        run: |
-          mkdir -p browser-evidence
-          npm run verify:capture-popup 2>&1 | tee browser-evidence/verify-capture-popup.log
-
-      - name: Verify the exact store packages
-        run: |
-          mkdir -p browser-evidence
-          npm run release:verify-packages 2>&1 | tee browser-evidence/verify-packages.log
-
-      - name: Verify capture with pending page resources
-        run: |
-          mkdir -p browser-evidence
-          npm run verify:capture-readiness -- chrome 2>&1 | tee browser-evidence/verify-capture-readiness-chrome.log
-
-      - name: Verify toolbar-to-draft capture
-        run: |
-          mkdir -p browser-evidence
-          npm run verify:capture-flow 2>&1 | tee browser-evidence/verify-capture-flow.log
-
-      - name: Verify sequential multi-summit drafts
-        shell: bash
-        env:
-          DEBUG: pw:browser
-        run: |
-          mkdir -p browser-evidence
-          npm run verify:multi-summit 2>&1 | tee browser-evidence/verify-multi-summit.log
+      - name: Verify packages and capture flows
+        uses: ./.github/actions/verify-package
 
       - name: Retain browser failure evidence
         if: failure()

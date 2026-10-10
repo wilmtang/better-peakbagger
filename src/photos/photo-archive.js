@@ -317,10 +317,8 @@ export const photoArchive = {
     ArchiveError,
     MAX_ARCHIVE_BYTES,
     crc32,
-    storedZipSize,
     projectArchiveSize,
     createStoredZip,
     createProjectArchive,
-    readStoredZip,
     readProjectArchive,
 };

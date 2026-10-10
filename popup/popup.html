@@ -25,7 +25,6 @@
 
     <section id="state" aria-live="polite"></section>
     <section id="results" hidden>
-      <div id="track-summary" class="summary"></div>
       <div class="result-heading">
         <h2>Detected peaks</h2>
         <span id="selection-count"></span>
@@ -36,6 +35,10 @@
       <p class="privacy-note">Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends the reduced GPX track with coordinates, elevation, and time to Preview. Save is always manual.</p>
       <button id="open-drafts" class="primary" type="button"></button>
       <button id="clear-capture" class="secondary" type="button" hidden>Delete captured track data</button>
+      <details class="track-details">
+        <summary>Track details</summary>
+        <div id="track-summary"></div>
+      </details>
     </section>
   </main>
   <script src="popup.js"></script>

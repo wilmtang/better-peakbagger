@@ -16,6 +16,7 @@ import {
     readSunCalculatorGeometry,
     waitForCondition,
     waitForPageCondition,
+    waitForWindowUrl,
     webdriverScript,
 } from '../../scripts/browser-verification-fixtures.mjs';
 
@@ -53,6 +54,38 @@ test('page conditions await async false results and poll until the visible state
     assert.equal(reads, 3);
     await assert.rejects(waitForPageCondition(page, async () => false, null, { timeout: 1 }),
         /Timed out waiting for page condition.*last value: false/s);
+});
+
+test('a moved tab is reacquired after its old handle closes and the new destination loads', async () => {
+    const url = 'moz-extension://fixture/options/options.html#beta';
+    let pass = 0;
+    let current;
+    const driver = {
+        getAllWindowHandles: async () => { pass++; return pass === 1 ? ['closed', 'moved', 'other'] : ['moved', 'other']; },
+        switchTo: () => ({ window: async handle => {
+            if (handle === 'closed') throw Object.assign(new Error('removed browsing context'), { name: 'NoSuchWindowError' });
+            current = handle;
+        } }),
+        getCurrentUrl: async () => current === 'moved'
+            ? pass === 1 ? 'about:blank' : url
+            : 'https://www.peakbagger.com/options/options.html#beta',
+    };
+    assert.equal(await waitForWindowUrl(driver, url, { intervalMs: 1 }), 'moved');
+    assert.equal(pass, 2);
+    assert.equal(current, 'moved', 'leave the driver in the exact destination, not the last inspected tab');
+});
+
+test('matching duplicate windows remain ambiguous and report their live destinations', async t => {
+    const url = 'moz-extension://fixture/options/options.html#beta';
+    let clock = 0;
+    t.mock.method(Date, 'now', () => clock);
+    const driver = {
+        getAllWindowHandles: async () => ['one', 'two'],
+        switchTo: () => ({ window: async () => {} }),
+        getCurrentUrl: async () => { clock = 2; return url; },
+    };
+    await assert.rejects(waitForWindowUrl(driver, url, { timeoutMs: 1, intervalMs: 1 }),
+        /Timed out waiting for window.*"matches":\[\{"handle":"one".*"handle":"two"/s);
 });
 
 test('condition polling rejects an early window and loading document before accepting readiness', async () => {

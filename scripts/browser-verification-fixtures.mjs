@@ -86,6 +86,27 @@ export function waitForPageCondition(page, predicate, arg = null, { timeout = 10
     });
 }
 
+// Moving a Firefox tab can replace its WebDriver handle while preserving the
+// extension tab ID. Reacquire the exact destination; ambiguous matches fail.
+export async function waitForWindowUrl(driver, expectedUrl, options = {}) {
+    const state = await waitForCondition(async () => {
+        const windows = [];
+        for (const handle of await driver.getAllWindowHandles()) {
+            try {
+                await driver.switchTo().window(handle);
+                windows.push({ handle, url: await driver.getCurrentUrl() });
+            } catch (error) {
+                if (error.name !== 'NoSuchWindowError') throw error;
+                windows.push({ handle, closed: true });
+            }
+        }
+        return { windows, matches: windows.filter(window => window.url === expectedUrl) };
+    }, { ...options, description: `window at ${expectedUrl}`, isReady: state => state.matches.length === 1 });
+    const handle = state.matches[0].handle;
+    await driver.switchTo().window(handle);
+    return handle;
+}
+
 // These probes run inside the page, through either Playwright or WebDriver.
 // Keep them browser-neutral and free of module-scope dependencies so the same
 // function can be serialized for Firefox without drifting from Chrome.

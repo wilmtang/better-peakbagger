@@ -42,11 +42,15 @@ passes, including setup, tests, and lint. Individual assertion and performance
 deadlines stay unchanged.
 
 Ordinary CI's current-browser job and the release job use the same
-`.github/actions/setup-verification` action and `npm run release:verify-packages`
-command. The action installs Node 24 and locked dependencies, resolves browser
-paths, and exports exact expected versions. The command builds the canonical
+`.github/actions/setup-verification` and `.github/actions/verify-package`
+actions. Setup installs Node 24 and locked dependencies, resolves browser
+paths, and exports exact expected versions. The package gate builds the canonical
 Chrome ZIP, derives and validates Firefox's ZIP from those bytes, and executes
-both archives. Browser capabilities must match the installed versions before
+both archives through `npm run release:verify-packages`. The shared gate then
+checks popup sizing/results, pending-resource capture, toolbar capture, and
+sequential summit drafts against the same minified `dist/`, without rebuilding
+development bundles. Popup failures retain targeted screenshots alongside logs.
+Browser capabilities must match the installed versions before
 extension assertions begin; an absent expectation is an error in CI. The
 additional ordinary Firefox matrix continues to cover Linux separately.
 

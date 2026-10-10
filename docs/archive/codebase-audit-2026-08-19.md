@@ -545,57 +545,6 @@ advisory/path match. Do not call the full graph clean, accept a broad range, or
 blindly take npm's proposed old `web-ext` downgrade without browser/build
 compatibility proof.
 
-## Implementation sequence
-
-Keep each independently verified unit in a focused commit. Shared foundations
-may land first, but do not bundle unrelated fixes merely because they appear in
-one audit.
-
-1. **Immediate authorization and mutation safety — F1 and F3.** Land a reusable
-   trusted-action capability, then migrate manual ascent backup, profile backup,
-   and Settings navigation in independently testable commits. Separately make
-   draft apply a leased, reversible transaction before touching other draft UX.
-2. **Capture lifecycle and privacy — F2 and F5.** First make every page-bridge
-   phase deadline/cancellation-owned, then persist helper leases and adoption.
-   Replace local filename metadata with opaque selection identity after the
-   lifecycle tests can reliably stop stale work.
-3. **Recovery reachability — F4.** Add the bounded raw root-file reader and
-   endpoint tests before routing photo update, preview, and restore through it.
-   Do not change the 8 MiB product limit without a separate capacity decision.
-4. **Terrain and mountain correctness — F6, F7, and F11.** Origin-authenticate
-   frame replies first. Fix route-start timezone ownership independently. Add
-   DEM in-flight ownership only after cancellation semantics are pinned.
-5. **Interaction truth and performance — F8, F9, F10, and F12.** These have
-   separate owners and should remain separate commits. Batch hidden browser and
-   visual inspection after focused behavior tests are green.
-6. **Build and review assurance — F13 and F14.** Make failed-generation
-   preservation testable before changing watch publication. Derive AMO source
-   roots from the build graph without changing release credentials or stores.
-7. **Dependency decision.** Resolve or explicitly renew the dated advisory
-   acceptance before the first CI/release run on or after 2026-08-22.
-
-## Verification matrix for remediation
-
-`npm test` rebuilds `dist/`; directly testing a shipped surface without a fresh
-build can exercise stale output.
-
-| Gate | Findings | What it establishes | What it does not establish |
-| --- | --- | --- | --- |
-| focused unit and fault-injection tests | all | tokens, leases, generation ownership, byte/origin bounds, rollback, cancellation, and stale-result rejection | real manifest lifecycle, native UI, live providers |
-| `npm run lint` and `npm test` | all | source/build hygiene and bundled behavior in the repository harness | browser interpretation, focus, store/provider state |
-| `npm run test:scale` with mutation instrumentation | F4, F12 | recovery-size boundaries and deterministic table-write bounds | real layout/paint or low-memory devices |
-| hidden `npm run verify:browsers` | F1–F3, F5, F8–F10 and load-boundary changes | real unpacked manifests, worker/content startup, DOM interaction in isolated profiles | visible focus, browser chrome, screen readers, touch |
-| hidden hardware-GPU terrain verification | F6, F11 | correct-origin frame lifecycle, request counts, MapLibre behavior, renderer identity | live future provider behavior or other physical GPU/driver combinations |
-| hidden real-browser GPX fixture | F7, F12 | timezone copy/day grouping and actual table interaction at production scale | every border/raster case or assistive technology |
-| watch failure-injection harness | F13 | last-good hashes, staging cleanup, one atomic publication/reload | OS crash at every filesystem boundary |
-| release metadata/package checks | F14 and dependency decision | complete authored-root notes, locked dependency metadata, reproducible package inventory | AMO acceptance or store publication |
-| separately authorized minimal live checks | F1, F4, F9 | GitHub read/write reconciliation and returned backup count against a controlled repository | every account, outage, or rate-limit state |
-
-Before handoff, inspect exact disposable browser profiles, certificates,
-archives, and helper processes and remove only confirmed test artifacts. Report
-browser, version, renderer, viewport, hidden/visible state, and every remaining
-native/live proof gap.
-
 ## Investigated and not reopened
 
 - The 2026-08-12 photo freshness, reconciliation, capacity-preflight, completion,

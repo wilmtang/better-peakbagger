@@ -15,11 +15,28 @@ test('ordinary and release package gates share setup, browsers, and their execut
         const setup = job.steps.find(step => step.uses === './.github/actions/setup-verification');
         assert.equal(setup.with['chrome-version'], 'current');
         assert.equal(setup.with['firefox-version'], 'latest');
-        assert.ok(job.steps.some(step => step.run?.includes('npm run release:verify-packages')));
+        assert.equal(setup.with['popup-firefox'], 'true');
+        assert.equal(job.steps.filter(step => step.uses === './.github/actions/verify-package').length, 1);
         assert.equal(job['runs-on'], 'macos-15-intel');
     }
     for (const job of [ordinary.jobs.node, ordinary.jobs.scale, release.jobs.scale]) {
         assert.ok(job.steps.some(step => step.uses === './.github/actions/setup-verification'));
+    }
+});
+
+test('shared package gate builds once and exercises capture against the production bundles', async () => {
+    const gate = await load('actions/verify-package/action.yml');
+    const steps = gate.runs.steps;
+    assert.match(steps[0].run, /npm run release:verify-packages/);
+    assert.equal(steps.filter(step => step.run.includes('npm run')).length, 1);
+    for (const script of ['capture-popup', 'capture-readiness', 'capture-flow', 'multi-summit']) {
+        assert.ok(steps.slice(1).some(step => step.run.includes(`node scripts/verify-${script}.mjs`)), script);
+    }
+    for (const step of steps) {
+        assert.equal(step.shell, 'bash', 'tee must not conceal a failed verifier');
+        assert.match(step.run, /2>&1 \| tee browser-evidence\//);
+        assert.equal(step['continue-on-error'], undefined);
+        assert.equal(step.if, undefined, 'tags and rehearsals must run every capture gate');
     }
 });
 

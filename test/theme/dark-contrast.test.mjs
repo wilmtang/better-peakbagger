@@ -336,12 +336,8 @@ test('the shared panel palette keeps its text contrast in both themes', async ()
             assert.ok(value, `the palette must declare ${theme} ${name}`);
             return value;
         };
-        // The confidence pair is declared once per theme rather than as
-        // --light-*/--dark-*, so read whichever block this theme resolves to.
-        const confidence = theme === 'dark'
-            ? { strong: '#7ac78d', strongBg: '#173322', probable: '#f7c66a', probableBg: '#332a18' }
-            : { strong: token('strong'), strongBg: token('strong-bg'),
-                probable: token('probable'), probableBg: token('probable-bg') };
+        const confidence = { strong: token('strong'), strongBg: token('strong-bg'),
+            probable: token('probable'), probableBg: token('probable-bg') };
         const pairs = [
             ['body text', token('text'), token('bg'), NORMAL],
             ['card text', token('text'), token('card'), NORMAL],

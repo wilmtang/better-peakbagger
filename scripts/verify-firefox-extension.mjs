@@ -32,6 +32,7 @@ import {
     surfaceSelectors,
     verificationViewport,
     waitForCondition,
+    waitForWindowUrl,
     webdriverScript,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
@@ -108,22 +109,9 @@ async function waitForScript(
     timeout = 15_000,
     isReady = Boolean,
 ) {
-    try {
-        return await driver.wait(async () => {
-            const value = await driver.executeScript(script);
-            return isReady(value) ? value : false;
-        }, timeout);
-    } catch (error) {
-        let current;
-        try {
-            current = await driver.executeScript(script);
-        } catch (readError) {
-            current = `unavailable: ${readError.message}`;
-        }
-        throw new Error(`Timed out waiting for ${description}; current value: ${JSON.stringify(current)}`, {
-            cause: error,
-        });
-    }
+    return waitForCondition(() => driver.executeScript(script), {
+        description, timeoutMs: timeout, isReady,
+    });
 }
 
 async function evaluatePageRealm(driver, expression) {
@@ -154,6 +142,7 @@ async function main() {
     let driver;
     let fixture;
     let firefoxBfcacheResult = null;
+    let verificationSummary;
     try {
         const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-firefox-verify-'));
         const stopOwnedProcesses = async () => {
@@ -2435,7 +2424,7 @@ async function main() {
             const handles = await driver.getAllWindowHandles();
             return handles.length === initialHandles.length + 1 ? handles : false;
         }, 10_000, 'Firefox Settings window to appear');
-        const settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
+        let settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
         await driver.switchTo().window(settingsHandle);
         await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000,
             'Firefox Settings destination to reach beta');
@@ -2504,9 +2493,7 @@ async function main() {
       event: window.__bpbSettingsShift,
       text: document.querySelector('.pbaf-settings-link')?.textContent,
     };`);
-        await driver.switchTo().window(settingsHandle);
-        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000,
-            'Firefox Settings beta destination after Shift Enter');
+        settingsHandle = await waitForWindowUrl(driver, `${baseUrl}options/options.html#beta`);
         let newWindowTopology;
         try {
             newWindowTopology = await driver.wait(async () => {
@@ -2529,7 +2516,8 @@ async function main() {
             .every(state => state.options?.length === 1);
         const modifierStayedInWindow = [shortcutTopology, middleTopology]
             .every(state => state.options[0]?.windowId === state.source?.windowId);
-        const shiftCreatedWindow = newWindowTopology.options[0]?.windowId !== newWindowTopology.source?.windowId
+        const shiftCreatedWindow = newWindowTopology.options[0]?.id === beforeNewWindow.options[0]?.id
+            && newWindowTopology.options[0]?.windowId !== newWindowTopology.source?.windowId
             && newWindowTopology.windowCount === beforeNewWindow.windowCount + 1;
         await driver.close();
         const [remainingFilterHandle] = await driver.getAllWindowHandles();
@@ -3131,36 +3119,10 @@ async function main() {
         await driver.close();
         await driver.switchTo().window(controlHandle);
 
-        console.log('Firefox extension runtime assertions passed (teardown pending):');
-        console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
-        console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
-        console.log('  - real sync/local/session storage and storage.onChanged round-tripped');
-        console.log('  - the photo library rendered its metadata-only recovery boundary and decoded/autosaved a PNG');
-        console.log('  - a 49-photo library stayed at 48 cards, fit desktop and narrow pagination, and opened page 2');
-        console.log('  - the topo tools drew a route from its first click, kept the smooth curve and the');
-        console.log('    armed tool, dimmed a mark to 40%, rasterized the overlay into an untainted canvas,');
-        console.log('    imported a project bundle back under its own record, and painted the guide legend');
-        console.log('  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant');
-        console.log('  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch');
-        console.log('  - four native Buddy actions refreshed/synced custom favorites under both removal policies');
-        console.log('  - ordered cross-tab settings pushes updated and restored the analyzer controls');
-        if (firefoxBfcacheResult?.restored) {
-            console.log('  - Firefox BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
-        } else {
-            console.log('  - Firefox cleanly remounted one analyzer, Sun, and map surface after history traversal');
-        }
-        console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
-        console.log('  - the full Capitol GPX rendered within its canvas budget with corrected metrics and zero breaks');
-        console.log('  - a 20,000-point route stayed pixel-bounded across narrow/wide resize with its selection intact');
-        console.log('  - short-window map keys and pointer pixels resize visible content and preserve only untouched preferred height');
-        console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
-        console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
-        console.log('  - forged page/frame messages, synthetic clicks, and direct embedding started no terrain work');
-        console.log('  - trusted keyboard/pointer Settings actions preserved modifiers and reused one exact tab');
-        console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and trusted 3D frame creation passed');
-        console.log('  - touch media resize committed, cleared, and undid through a 44px target outside native controls');
-        console.log('  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved');
-        console.log('  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested');
+        verificationSummary = {
+            verification: 'extension', browser: capabilities.getBrowserName(), version: capabilities.getBrowserVersion(),
+            hidden: true, viewport: verificationViewport, bfcache: firefoxBfcacheResult,
+        };
     } catch (error) {
         primaryError = error;
     }
@@ -3168,10 +3130,10 @@ async function main() {
         driver, fixtureOrigin: `https://${fixtureHost}:${fixture.port}`, extensionBaseUrl: extensionEvidenceBaseUrl,
     });
     await resources.dispose(primaryError);
-    console.log('Firefox extension verification and owned-process teardown passed.');
+    console.log(JSON.stringify({ ...verificationSummary, teardown: 'passed' }));
 }
 
 main().catch(error => {
-    console.error(`Firefox extension startup verification failed: ${error.stack || error.message}`);
+    console.error(`Firefox extension verification failed: ${error.stack || error.message}`);
     process.exitCode = 1;
 });

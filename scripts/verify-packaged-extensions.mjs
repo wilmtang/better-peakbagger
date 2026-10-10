@@ -1,7 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import JSZip from 'jszip';
 import { repeatVerification, verificationRepetitions } from './verification-repetitions.mjs';
-import { createResourceStack, manageChildProcess } from './resource-stack.mjs';
+import { runChildProcess } from './resource-stack.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -41,21 +40,11 @@ async function extractArchive(archivePath, destination) {
 }
 
 async function runVerifier(script, extensionSource) {
-    const resources = createResourceStack();
-    const child = spawn(process.execPath, [path.join(projectRoot, 'scripts', script)], {
+    await runChildProcess(process.execPath, [path.join(projectRoot, 'scripts', script)], {
         cwd: projectRoot,
         env: { ...process.env, BPB_VERIFY_EXTENSION_SOURCE: extensionSource },
-        stdio: 'inherit',
+        label: script,
     });
-    manageChildProcess(resources, child, 'package verifier');
-    await resources.guard(new Promise((resolve, reject) => {
-        child.once('error', reject);
-        child.once('exit', (code, signal) => {
-            if (code === 0 && !signal) resolve();
-            else reject(new Error(`${script} failed (${signal || `exit ${code}`})`));
-        });
-    }));
-    await resources.dispose();
 }
 
 const fingerprints = (files, read = readFile) => Promise.all(files.map(async file =>

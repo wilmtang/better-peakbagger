@@ -8,7 +8,7 @@
 
 /* The browser sizes the toolbar popup from this intrinsic width. A viewport
    cap (for example 100vw) feeds its initial narrow viewport back into sizing. */
-body { width: 390px; min-height: 180px; }
+body { width: 390px; min-height: 180px; max-height: 600px; overflow-y: auto; }
 
 main { padding: 16px; }
 
@@ -17,6 +17,8 @@ main { padding: 16px; }
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .brand > div { min-width: 0; }
@@ -25,9 +27,7 @@ h2, p { margin: 0; }
 h2 { font-size: 14px; }
 .brand p { margin-top: 2px; color: var(--sub); font-size: 12px; }
 
-/* .state-card, .summary, and .peak-row take the shared card surface; only the
-   density each one needs is set here. */
-.state-card { padding: 13px; }
+.state-card { padding: 14px; }
 
 /* A capture that failed or is locked reads as the panel's danger state, not as
    a second red. */
@@ -37,21 +37,7 @@ h2 { font-size: 14px; }
   border-color: var(--danger-border);
 }
 
-.state-title { font-size: 14px; font-weight: 700; }
-.state-card.empty .state-title::before {
-  content: "△";
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 8px;
-  border-radius: 7px;
-  /* --link, not --accent: this glyph sits on an accent tint, where the fill
-     colour itself is too close to its own wash to read in dark. */
-  color: var(--link);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  vertical-align: -4px;
-}
+.state-title { font-size: 15px; font-weight: 650; }
 .state-detail { margin-top: 5px; color: var(--sub); font-size: 12px; line-height: 1.45; }
 
 .spinner {
@@ -100,8 +86,10 @@ button.primary, button.secondary { width: 100%; }
   background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
-.summary { margin-bottom: 13px; padding: 10px 12px; color: var(--sub); font-size: 12px; }
-.summary strong { color: var(--text); }
+.track-details { margin-top: 12px; color: var(--sub); font-size: 11px; }
+.track-details summary { cursor: pointer; }
+#track-summary { margin-top: 6px; line-height: 1.45; }
+#track-summary strong { color: var(--text); }
 
 .result-heading {
   display: flex;
@@ -111,17 +99,29 @@ button.primary, button.secondary { width: 100%; }
 }
 
 #selection-count { color: var(--sub); font-size: 11px; }
-.peak-list { display: grid; gap: 8px; max-height: 330px; overflow-y: auto; }
+.peak-list {
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
 
 .peak-row {
   display: grid;
-  grid-template-columns: 19px 1fr auto;
+  grid-template-columns: 19px minmax(0, 1fr) auto;
   gap: 9px;
   align-items: start;
-  border-left-width: 4px;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
   padding: 10px;
   cursor: pointer;
 }
+.peak-row + .peak-row { border-top: 1px solid var(--border); }
+.peak-row > span { min-width: 0; overflow-wrap: anywhere; }
 
 /* Confidence is a status, not the accent: the same Strong and Probable pair the
    ascent form and the trip-report banner show. */
@@ -131,7 +131,7 @@ button.primary, button.secondary { width: 100%; }
 .peak-row.selection-locked { cursor: default; }
 .peak-name { display: block; font-size: 13px; font-weight: 700; }
 .peak-evidence { display: block; margin-top: 3px; color: var(--sub); font-size: 11px; line-height: 1.35; }
-.confidence { border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.confidence { border-radius: 4px; padding: 3px 6px; font-size: 10px; font-weight: 650; white-space: nowrap; }
 .strong .confidence { color: var(--strong); background: var(--strong-bg); }
 .probable .confidence { color: var(--probable); background: var(--probable-bg); }
 

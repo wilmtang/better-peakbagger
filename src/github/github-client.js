@@ -700,7 +700,6 @@ const createGithubClient = ({
 
 const API = {
     createGithubClient,
-    DEFAULT_INLINE_FILE_LIMIT_BYTES,
     REPOSITORY_MARKER_PATH,
 };
 

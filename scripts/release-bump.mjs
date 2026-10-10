@@ -10,7 +10,6 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 function die(msg) {
     console.error(msg);
     process.exitCode = 1;
-    return;
 }
 
 export function validateReleasePreflight({

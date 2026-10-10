@@ -927,51 +927,6 @@ region states it.
 
 ---
 
-## Proposed sequencing
-
-Each stage is independently shippable and independently verifiable. Commit per
-finding, not per stage.
-
-**Stage 1 — user-facing correctness (F1, F5, F9).** Start here: F1 is the only
-finding where the product tells the user something untrue. Add the missing
-popup transition test first, watch it fail, then fix both layers. Establish the
-Firefox `tabs.group` answer before rewriting F5's copy.
-
-**Stage 2 — the feedback channel (F2, F4, F7, F6).** F2 is one component change
-that repairs 28 paths, so it precedes the others; F4 then has a place to put its
-message, and F6/F7 are small once the confirmation and focus patterns are the
-ones already in use.
-
-**Stage 3 — dark mode (F13 first, then F10, F11, F12).** Do the custom-property
-consolidation *before* the individual fixes: done in the other order, F10–F12
-are three patches to a structure that is about to be replaced. Extend
-`dark-contrast.test.mjs` with a non-text-contrast section and a
-"every dark `.pbaf-*` selector matches a fixture element" assertion, so this
-class of defect cannot return.
-
-**Stage 4 — shared idioms (F15, F3, F14, F17, F8, F18).** F15 lands the units
-module; F3 immediately consumes it. F14 is the largest single item and should be
-several commits with the suite green at each — it is refactoring with no
-behavior change, so any test movement is a signal to stop.
-
-## Verification plan
-
-Per commit: `npm run lint:js` and `npm test`, run against **the commit**, not
-the working tree — the D7 failure in the 2026-07-23 round came from exactly that
-gap.
-
-Per stage:
-
-- Stages 1 and 2 touch the popup, worker routes, and the options page:
-  `npm run verify:chrome` and `npm run verify:firefox`.
-- Stage 3 touches the injected site theme: `npm test` covers the contrast and
-  grounding assertions, but a rendered dark PeakAscents page is the only thing
-  that proves F10's header controls actually look right. This needs a real
-  render; the hidden verifiers cannot establish it.
-- Stage 4 touches content scripts and `scripts/build-config.mjs`:
-  `npm run verify:extension` is mandatory (it is the only check that loads the
-  real manifest), plus `npm run terrain:verify` for F14.
-
 ## Closure ledger
 
 Three categories, per AGENTS.md. Read the "changed but not fully proven" and

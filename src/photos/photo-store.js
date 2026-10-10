@@ -5,6 +5,7 @@
 
 import { photoProject as Project } from './photo-project.js';
 import { photoLibrary as Library } from './photo-library.js';
+import { cleanPhotoUrl as cleanDeleteUrl } from './photo-url.js';
 
 const DATABASE_NAME = 'betterPeakbaggerPhotos';
 const DATABASE_VERSION = 4;
@@ -116,14 +117,6 @@ const cleanBlobRecord = (value, localId) => value instanceof Blob
 // `cleanPhoto` keeps `export` null. `outcome-unknown` belongs here: the editor
 // has to be able to re-save an ambiguous upload before retrying it.
 const EDITABLE_STATES = new Set(['draft', 'uploading', 'outcome-unknown']);
-
-const cleanDeleteUrl = value => {
-    if (typeof value !== 'string' || value.length > Library.URL_LIMIT) return null;
-    try {
-        const url = new URL(value);
-        return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null;
-    } catch { return null; }
-};
 
 const tombstoneRevision = value => Number.isSafeInteger(value?.revision) && value.revision >= 0
     ? value.revision

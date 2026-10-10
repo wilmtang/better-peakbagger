@@ -449,7 +449,6 @@ const API = {
     capture,
     cancelCapture
 };
-export const providerPage = API;
 
 // Deliberate page-world global (NOT a transitional bridge): background.js
 // injects this file with scripting.executeScript, then injects inline funcs

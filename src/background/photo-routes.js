@@ -449,7 +449,4 @@ export const photoRoutes = {
     RETURN_CONTEXTS_KEY,
     RETURN_TTL_MS,
     IMGBB_PERMISSION,
-    cleanDraftIdentity,
-    cleanSourceUrl,
-    cleanPublicInsertion,
 };

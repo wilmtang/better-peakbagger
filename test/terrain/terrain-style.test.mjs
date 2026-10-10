@@ -109,7 +109,6 @@ test('anything that is not a style document is refused before it reaches the map
         await assert.rejects(loader.load(), /Unexpected vector style shape/,
             `${JSON.stringify(body)} must not be treated as a style`);
     }
-    assert.equal(TerrainStyle.isStyleDocument(style()), true);
 });
 
 test('a non-ok response names its status for the frame’s notice', async () => {

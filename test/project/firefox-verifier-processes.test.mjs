@@ -63,8 +63,9 @@ test('a disconnected session is not treated as a successful lost QUIT response',
 test('disposable-profile verification avoids uninstall and reports success only after teardown', async () => {
     const source = await readFile(new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url), 'utf8');
     assert.doesNotMatch(source, /\.uninstallAddon\(/);
-    assert.ok(source.indexOf('await resources.dispose(primaryError)')
-        < source.indexOf('Firefox extension verification and owned-process teardown passed.'));
+    const cleanup = source.indexOf('await resources.dispose(primaryError)');
+    const success = source.indexOf("teardown: 'passed'");
+    assert.ok(cleanup >= 0 && success > cleanup, 'success must follow owned-resource teardown');
 });
 
 test('confirmed browser exit cannot suppress a failed extension assertion', async () => {

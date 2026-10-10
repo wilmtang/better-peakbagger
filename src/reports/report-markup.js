@@ -1379,7 +1379,6 @@ const breakTagsToNewlines = source => {
 // ---- Public surface ---------------------------------------------------
 
 const API = {
-    sanitizeHref,
     resolveLinkTarget,
     sanitizeImageSrc,
     sanitizeVideoSrc,
@@ -1387,11 +1386,8 @@ const API = {
     sanitizeReportDimension,
     parseBracket,
     parseBracketWithDiagnostics,
-    parseMarkdown,
-    domToAst,
     astToBracket,
     astToHtml,
-    astToMarkdown,
     breakTagsToNewlines,
     bracketToEditorHtml: source => astToHtml(parseBracket(source), { editor: true }),
     bracketToPreviewHtml: source => astToHtml(parseBracket(source)),

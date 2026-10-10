@@ -423,8 +423,5 @@ export const reportDraftRoutes = {
     TTL_MS,
     LIMIT,
     GENERATION_FIELD,
-    TOMBSTONE_FIELD,
-    cleanIdentity,
-    cleanAttemptId,
     createReportDraftRoutes,
 };

@@ -99,11 +99,3 @@ export async function prepareOnxImport({ gpx, filename, timeoutMs = 20_000 }) {
         );
     }
 }
-
-export const onxImport = {
-    ONX_ORIGIN,
-    ONX_IMPORT_URL,
-    ONX_PERMISSION,
-    MAX_ONX_GPX_BYTES,
-    prepareOnxImport,
-};

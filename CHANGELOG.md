@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Give extension panels an outdoor identity.** Warm paper and forest colors,
+  subtle contours, and simpler grouped results carry through Settings and Photo
+  Topos. Capture results wrap long summit names and keep draft actions visible;
+  optional track details sit in a disclosure.
+- **Use the same release checks before release.** CI and release share the
+  production package and capture gates. Firefox verification reacquires Settings
+  after moving it between windows, while preserving its extension tab identity.
+- **Reduce duplicated owners.** Photo URLs share one bounded HTTPS policy;
+  verifier child processes share cleanup; panel palettes use one theme mapping.
+
 - **Report the backup that actually completed.** Settings and Favorites show
   success for the acknowledged snapshot and flag newer changes that need backup.
 - **Keep Settings and open panels current.** Startup reads preserve newer

@@ -64,6 +64,38 @@ const frameHarnessBuild = await build({
 const frameBundle = frameHarnessBuild.outputFiles[0].text;
 const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
 
+// Share frame wiring, while each case retains its own renderer and failure model.
+const bootTerrainFrame = (window, MapStub, {
+    messages = [], popups, maplibre = {}, fetch = () => Promise.resolve()
+} = {}) => {
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.maplibregl = {
+        Map: MapStub,
+        NavigationControl: class NavigationControl {},
+        ScaleControl: class ScaleControl {},
+        AttributionControl: class AttributionControl {},
+        setWorkerUrl() {},
+        addProtocol() {},
+        removeProtocol() {},
+        ...(popups ? { Popup: class {
+            constructor(options) { this.options = options; popups.push(this); }
+            setLngLat(lngLat) { this.lngLat = lngLat; return this; }
+            setDOMContent(node) { this.node = node; return this; }
+            addTo(target) { this.target = target; return this; }
+            remove() { this.removedPopup = true; }
+        } } : {}),
+        ...maplibre
+    };
+    window.postMessage = message => { messages.push(message); };
+    window.fetch = fetch;
+    window.eval(frameBundle);
+    return data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
+    }));
+};
+
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
@@ -726,14 +758,6 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         remove() { this.removed = true; }
     }
 
-    class PopupStub {
-        constructor(options) { this.options = options; popups.push(this); }
-        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
-        setDOMContent(node) { this.node = node; return this; }
-        addTo(target) { this.target = target; return this; }
-        remove() { this.removedPopup = true; }
-    }
-
     class MarkerStub {
         constructor(options) { this.options = options; markers.push(this); }
         setLngLat(lngLat) { this.lngLat = lngLat; return this; }
@@ -752,29 +776,15 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         disconnect() { this.disconnected = true; }
     };
 
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        Marker: MarkerStub,
-        Popup: PopupStub,
-        NavigationControl: class NavigationControl {},
-        ScaleControl: class ScaleControl {},
-        AttributionControl: class AttributionControl {},
-        setWorkerUrl(url) { workerUrl = url; },
-        addProtocol(name, handler) { protocolHandlers.set(name, handler); },
-        removeProtocol(name) { protocolHandlers.delete(name); }
-    };
-    window.postMessage = message => { messages.push(message); };
-    // terrain-frame imports the real terrain-cache; its create() binds fetch
-    // (never invoked here, as no tiles load in jsdom), so provide a stub.
-    window.fetch = () => Promise.resolve();
-    window.eval(frameBundle);
-
-    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
-    }));
+    const dispatch = bootTerrainFrame(window, MapStub, {
+        messages, popups,
+        maplibre: {
+            Marker: MarkerStub,
+            setWorkerUrl(url) { workerUrl = url; },
+            addProtocol(name, handler) { protocolHandlers.set(name, handler); },
+            removeProtocol(name) { protocolHandlers.delete(name); }
+        }
+    });
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8, 1000], [48.71, -121.81, 1200]]] });
     assert.equal(maps.length, 0, 'points with extra elevation data must fail closed');
@@ -1199,21 +1209,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         remove() {}
     }
 
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        NavigationControl: class {},
-        ScaleControl: class {},
-        AttributionControl: class {},
-        setWorkerUrl() {},
-        addProtocol() {},
-        removeProtocol() {}
-    };
-    window.postMessage = () => {};
-    // terrain-frame imports the real terrain-cache; its create() binds fetch
-    // (never invoked here, as no tiles load in jsdom), so provide a stub.
-    window.fetch = () => Promise.resolve();
-    window.eval(frameBundle);
+    bootTerrainFrame(window, MapStub);
 
     const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
     const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
@@ -1344,20 +1340,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
             text: () => Promise.resolve(JSON.stringify(providerStyle)),
         });
     };
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        NavigationControl: class {},
-        ScaleControl: class {},
-        AttributionControl: class {},
-        setWorkerUrl() {},
-        addProtocol() {},
-        removeProtocol() {}
-    };
-    window.postMessage = () => {};
-    // This test sets its own recording fetch above; real terrain-cache binds it
-    // at create (tile loads never fire here), so keep it — do not overwrite.
-    window.eval(frameBundle);
+    bootTerrainFrame(window, MapStub, { fetch: window.fetch });
 
     // No page-offered raster layers: the vector entry must exist regardless.
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -1666,36 +1649,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         resize() {}
         remove() { this.removed = true; }
     }
-    class PopupStub {
-        constructor(options) { this.options = options; popups.push(this); }
-        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
-        setDOMContent(node) { this.node = node; return this; }
-        addTo(target) { this.target = target; return this; }
-        remove() { this.removedPopup = true; }
-    }
-
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        Popup: PopupStub,
-        NavigationControl: class {},
-        ScaleControl: class {},
-        AttributionControl: class {},
-        setWorkerUrl() {},
-        addProtocol() {},
-        removeProtocol() {}
-    };
-    window.postMessage = message => { messages.push(message); };
-    // terrain-frame imports the real terrain-cache; its create() binds fetch
-    // (never invoked here, as no tiles load in jsdom), so provide a stub.
-    window.fetch = () => Promise.resolve();
-    window.eval(frameBundle);
-
-    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
-    }));
+    const dispatch = bootTerrainFrame(window, MapStub, { messages, popups });
     const settle = () => new Promise(resolve => window.setTimeout(resolve, 320));
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
@@ -1929,28 +1883,7 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         remove() {}
     }
 
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        Popup: class { remove() {} },
-        NavigationControl: class {},
-        ScaleControl: class {},
-        AttributionControl: class {},
-        setWorkerUrl() {},
-        addProtocol() {},
-        removeProtocol() {}
-    };
-    window.postMessage = () => {};
-    // terrain-frame imports the real terrain-cache; its create() binds fetch
-    // (never invoked here, as no tiles load in jsdom), so provide a stub.
-    window.fetch = () => Promise.resolve();
-    window.eval(frameBundle);
-
-    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
-    }));
+    const dispatch = bootTerrainFrame(window, MapStub, { maplibre: { Popup: class { remove() {} } } });
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
     await new Promise(resolve => window.queueMicrotask(resolve));
@@ -2074,34 +2007,7 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
         resize() {}
         remove() { this.removed = true; }
     }
-    class PopupStub {
-        constructor(options) { this.options = options; popups.push(this); }
-        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
-        setDOMContent(node) { this.node = node; return this; }
-        addTo(target) { this.target = target; return this; }
-        remove() { this.removedPopup = true; }
-    }
-
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        Popup: PopupStub,
-        NavigationControl: class {},
-        ScaleControl: class {},
-        AttributionControl: class {},
-        setWorkerUrl() {},
-        addProtocol() {},
-        removeProtocol() {}
-    };
-    window.postMessage = message => { messages.push(message); };
-    window.fetch = () => Promise.resolve();
-    window.eval(frameBundle);
-
-    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
-    }));
+    const dispatch = bootTerrainFrame(window, MapStub, { messages, popups });
     const nextFrame = () => new Promise(resolve => window.requestAnimationFrame(() => resolve()));
     const routeStyle = { color: '#2457a7', width: 5, casingColor: '#ffffff', casingWidth: 9 };
     const groupInit = tracks => ({
@@ -2285,19 +2191,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         remove() { this.removed = true; }
     }
 
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.maplibregl = {
-        Map: MapStub,
-        Popup: class { setLngLat() { return this; } setDOMContent() { return this; } addTo() { return this; } remove() {} },
-        NavigationControl: class {},
-        ScaleControl: class {},
-        AttributionControl: class {},
-        setWorkerUrl() {},
-        addProtocol(name, handler) { protocol = handler; },
-        removeProtocol() { protocol = null; }
-    };
-    window.postMessage = message => { messages.push(message); };
-    window.fetch = async url => {
+    const fetch = async url => {
         requested.push(String(url));
         const status = tileStatus(String(url));
         if (status === 200) {
@@ -2307,7 +2201,14 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         }
         return new Response('Tile not found', { status });
     };
-    window.eval(frameBundle);
+    bootTerrainFrame(window, MapStub, {
+        messages, fetch,
+        maplibre: {
+            Popup: class { setLngLat() { return this; } setDOMContent() { return this; } addTo() { return this; } remove() {} },
+            addProtocol(name, handler) { protocol = handler; },
+            removeProtocol() { protocol = null; }
+        }
+    });
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,

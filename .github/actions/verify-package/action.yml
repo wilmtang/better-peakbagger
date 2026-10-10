@@ -1,0 +1,28 @@
+name: Verify packages and capture flows
+description: Shared production build, exact archives, and capture gates for CI and release
+runs:
+  using: composite
+  steps:
+    - name: Build and execute the exact store packages
+      shell: bash
+      run: |
+        mkdir -p browser-evidence
+        npm run release:verify-packages 2>&1 | tee browser-evidence/packages.log
+    # These consume the minified dist/ just packaged above. npm verify wrappers
+    # rebuild development bundles and would replace the artifact under test.
+    - name: Verify toolbar popup sizing and result layout
+      shell: bash
+      env:
+        BPB_CAPTURE_POPUP_ARTIFACTS: browser-evidence/popup
+      run: node scripts/verify-capture-popup.mjs 2>&1 | tee browser-evidence/verify-capture-popup.log
+    - name: Verify capture with pending page resources
+      shell: bash
+      run: node scripts/verify-capture-readiness.mjs chrome 2>&1 | tee browser-evidence/verify-capture-readiness-chrome.log
+    - name: Verify toolbar-to-draft capture
+      shell: bash
+      run: node scripts/verify-capture-flow.mjs 2>&1 | tee browser-evidence/verify-capture-flow.log
+    - name: Verify sequential multi-summit drafts
+      shell: bash
+      env:
+        DEBUG: pw:browser
+      run: node scripts/verify-multi-summit.mjs 2>&1 | tee browser-evidence/verify-multi-summit.log

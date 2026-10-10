@@ -14,11 +14,11 @@
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { cleanPhotoUrl as cleanHttpsUrl, PHOTO_URL_LIMIT as URL_LIMIT } from './photo-url.js';
 
 const API_ROOT = 'https://api.imgbb.com/1/upload';
 const KEY_LIMIT = 512;
 const NAME_LIMIT = 200;
-const URL_LIMIT = 4096;
 // Photos are megabytes over a consumer uplink, so this is deliberately far
 // longer than a page read — long enough for a slow upload to finish, short
 // enough that a dead connection still becomes a stated failure.
@@ -53,14 +53,6 @@ const cleanName = value => String(value ?? '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, NAME_LIMIT);
-
-const cleanHttpsUrl = value => {
-    if (typeof value !== 'string' || value.length > URL_LIMIT) return null;
-    try {
-        const url = new URL(value);
-        return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null;
-    } catch { return null; }
-};
 
 const positiveInteger = value => {
     const number = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
@@ -105,7 +97,7 @@ const providerMessage = payload => {
 // what the reader should do next, so each code we have actually observed adds
 // one remedy sentence and maps onto the caller's own error vocabulary.
 const PROVIDER_FAILURES = new Map([
-    [100, { code: 'not-configured', remedy: 'Add a working key under Settings → Activity creation → Trip report photos.' }],
+    [100, { code: 'not-configured', remedy: 'Add a working key under Settings → Capture & reports → Report photos.' }],
     [313, { code: 'too-large', remedy: 'Use a smaller photo, or crop it before drawing the topo.' }],
     [415, { code: 'invalid-image', remedy: 'Choose a JPEG or PNG photo.' }],
 ]);

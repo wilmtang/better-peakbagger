@@ -244,6 +244,6 @@ const build = ({ form, params, report = {}, extensionVersion = '' } = {}) => {
 const identityKey = ({ climberId, peakId, date }) =>
     `${climberId ?? ''}|${peakId ?? ''}|${date ?? ''}`;
 
-const API = { build, identityKey, normalizeDate, label };
+const API = { build, normalizeDate, label };
 
 export const ascentSnapshot = API;

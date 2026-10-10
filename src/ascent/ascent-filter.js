@@ -33,7 +33,7 @@ const isSorterOnlyPage = isBuddyListPage || isPeakListPage;
 // definition reuse it instead of adding a storage round-trip to the critical
 // path. Sorter-only pages do not need ascent settings. Resolves to the
 // cleaned settings, or null on any read failure.
-const settingsPromise = S && isAscentListPage
+const settingsPromise = isAscentListPage
     ? S.requireCurrent().catch(() => null)
     : Promise.resolve(null);
 let ignoredState = { list: null, error: '' }, favoriteSourceState = null;
@@ -896,15 +896,13 @@ const init = async () => {
     // in localStorage (state.minWords, above). The "has beta" definition is
     // centralized in extension settings.
     let currentSettings = null;
-    if (S) {
-        try {
-            const s = await settingsPromise;
-            if (s) {
-                currentSettings = s;
-                betaCfg = betaCfgFrom(s);
-            }
-        } catch (e) { /* fall back to defaults */ }
-    }
+    try {
+        const s = await settingsPromise;
+        if (s) {
+            currentSettings = s;
+            betaCfg = betaCfgFrom(s);
+        }
+    } catch (e) { /* fall back to defaults */ }
     const orderSetting = isPeakAscentsPage ? 'betaPeakFilterOrder' : 'betaPersonalFilterOrder';
     const localOrderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
     if (currentSettings?.[orderSetting]) state[localOrderKey] = [...currentSettings[orderSetting]];
@@ -1469,32 +1467,30 @@ const init = async () => {
 
     // Re-apply the beta definition if it changes in the options page /
     // another tab. (The Trip report word threshold is local UI state.)
-    if (S && S.subscribe) {
-        S.subscribe(settings => {
-            const nextOrder = settings[orderSetting] || (isPeakAscentsPage ? PEAK_FILTER_ORDER : PERSONAL_FILTER_ORDER);
-            if (nextOrder.some((key, index) => confirmedOrder[index] !== key)) {
-                confirmedOrder = [...nextOrder];
-                finishPointerReorder(true);
-                setFilterOrder(nextOrder, { persist: false });
-                saveState(state);
-            }
-            const nextBeta = betaCfgFrom(settings);
-            const nextSource = Schema.favoritesSource(settings.favoritesSource);
-            let changed = false;
-            if (JSON.stringify(nextBeta) !== JSON.stringify(betaCfg)) {
-                betaCfg = nextBeta;
-                refreshBeta();
-                changed = true;
-            }
-            if (nextSource !== favoritesSource) {
-                favoritesSource = nextSource;
-                refreshFavorites();
-                changed = true;
-            }
-            if (changed) render();
-            if (state.fav) void refreshBuddyCache();
-        });
-    }
+    S.subscribe(settings => {
+        const nextOrder = settings[orderSetting] || (isPeakAscentsPage ? PEAK_FILTER_ORDER : PERSONAL_FILTER_ORDER);
+        if (nextOrder.some((key, index) => confirmedOrder[index] !== key)) {
+            confirmedOrder = [...nextOrder];
+            finishPointerReorder(true);
+            setFilterOrder(nextOrder, { persist: false });
+            saveState(state);
+        }
+        const nextBeta = betaCfgFrom(settings);
+        const nextSource = Schema.favoritesSource(settings.favoritesSource);
+        let changed = false;
+        if (JSON.stringify(nextBeta) !== JSON.stringify(betaCfg)) {
+            betaCfg = nextBeta;
+            refreshBeta();
+            changed = true;
+        }
+        if (nextSource !== favoritesSource) {
+            favoritesSource = nextSource;
+            refreshFavorites();
+            changed = true;
+        }
+        if (changed) render();
+        if (state.fav) void refreshBuddyCache();
+    });
 };
 
 // Any unexpected failure after the click guard is installed must release

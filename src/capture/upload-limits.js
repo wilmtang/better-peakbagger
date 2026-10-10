@@ -19,5 +19,3 @@
 export const MAX_UPLOAD_POINTS = 3000;
 // <trkseg> elements in one uploaded GPX.
 export const MAX_TRACK_SEGMENTS = 50;
-
-export const uploadLimits = { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS };

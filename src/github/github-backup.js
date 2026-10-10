@@ -171,11 +171,6 @@ const folderName = snapshot => {
     return `${datePrefix(ascent.date)}-${peakSlug(peak.name)}-a${ascent.id}`;
 };
 
-// Backups are intentionally first-class folders at the repository root.
-// Keeping the stable ascent id in every leaf makes that flat layout safe to
-// scan and keeps a dedicated backup repository pleasant to browse.
-const folderPath = snapshot => folderName(snapshot);
-
 const BACKUP_FOLDER_PATTERN = /^(?:undated|\d{4}(?:-\d{2}){0,2})-[a-z0-9](?:[a-z0-9-]{0,59})-a\d+$/;
 const isBackupFolderName = name => typeof name === 'string' && BACKUP_FOLDER_PATTERN.test(name);
 
@@ -500,10 +495,8 @@ const buildBackup = (snapshot, options = {}) => {
 const API = {
     SCHEMA_VERSION,
     peakSlug,
-    datePrefix,
     isoDate,
     folderName,
-    folderPath,
     isBackupFolderName,
     matchExistingFolder,
     buildAscentJson,

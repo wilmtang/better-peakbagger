@@ -368,52 +368,6 @@ The audit also did not find a reason to move Sun code across the MAIN/isolated
 world boundary, widen settings messages, modify Peakbagger's native map layers,
 or couple manual Sun time back to chart position.
 
-## Execution sequence
-
-Each completed unit should be independently tested and committed before the
-next begins. Suggested commit boundaries are descriptive, not a requirement to
-force unrelated changes together:
-
-1. **Correct the pure event model (F1).** Select daily events by local solar
-   noon, preserve adjacent-date crossings, and decouple position availability.
-2. **Correct event formatting (F2).** Pair each event clock with its actual zone
-   and day relation.
-3. **Bound shared time conversion (part of F3).** Cache formatters and replace
-   minute-by-minute gap scanning without changing mountain-time semantics.
-4. **Coalesce preview work (remainder of F3).** Cache date-invariant solar data,
-   render at frame rate, and cancel pending work on teardown.
-5. **Add recoverable result states (F4).** Keep valid-subject Peak controls
-   interactive and retain all GPX selection behaviors.
-6. **Repair accessible interaction (F5).** Add formatted range semantics, fix
-   live-region ownership, and enlarge the target/focus geometry.
-7. **Align visual state (F6).** Represent below-horizon/nighttime/expansion
-   honestly and inspect the final render.
-8. **Update maintained contracts and verifiers.** Revise
-   `docs/sun-position.md` and, only if shared time behavior changes materially,
-   `docs/mountain-local-time.md`; update packaged-browser and terrain checks at
-   the same time as their product assertions.
-
-Do not update the archived implementation plan as though it were maintained
-runtime documentation. When every finding is closed or explicitly accepted,
-move this audit to `docs/archive/` and remove its active index entry.
-
-## Required verification before closure
-
-| Check | Required proof | Important limit |
-| --- | --- | --- |
-| Focused unit tests | Sun position/state/DOM, mountain time, Peak map, and GPX analyzer cases above | jsdom does not prove native control rendering or browser scheduling |
-| Structural/package tests | build composition, stylesheet inclusion, dependency notices, and maintained-document links | does not load the real manifest or worker lifecycle |
-| `npm test` | all shipped bundles rebuild and the complete suite passes | current green tests must first stop pinning the adjacent-day defect |
-| `npm run lint` | authored lint and owned `web-ext` warning policy pass | warnings are reviewed exceptions, not zero warnings |
-| `npm run verify:browsers` | hidden Chrome and Firefox load real `dist/`; Peak/GPX date, slider, recovery, and accessibility postconditions pass | hidden runs do not prove native focus, screen-reader speech, or touch |
-| `npm run terrain:verify` and `npm run terrain:verify:firefox` | hidden hardware renderer; absolute text remains fixed, compass follows bearing, and 2D resets north | showcase stubs do not exercise the real cross-world settings bridge |
-| Visual inspection | light/dark, Peak/GPX, wide/narrow, daylight/night/below-horizon/error states in both browsers | protocol screenshots do not prove physical-device ergonomics |
-
-Real-browser checks must follow the repository's hidden/offscreen policy,
-report browser, viewport, and renderer, and verify teardown. A live Peakbagger
-read is optional and must remain minimal, read-only, and rate-limited; the
-deterministic real-location vectors belong in fixtures and unit tests.
-
 ## Audit closure ledger
 
 ### Fixed and verified

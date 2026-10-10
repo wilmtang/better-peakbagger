@@ -547,64 +547,6 @@ fake points, nested segments, wrong-root elements, repeated legitimate points,
 multiple tracks, and waypoints in both valid and invalid locations. Assert the
 capture, analyzer, and serialized draft all see the same owned geometry.
 
-## Execution order and commit boundaries
-
-Each numbered item below is an independent, verified commit unless a failing
-test proves that two owners cannot safely be separated. Do not start the next
-unit with a knowingly incomplete previous one.
-
-1. **Repair release truth (F1).** Restore `Unreleased`, add immutable-section and
-   tag/HEAD tests, and prove a dry-run bump without creating a tag.
-2. **Close distribution gaps (F2, then F3).** Generate/package notices first;
-   then make the archive verifier consume the resulting exact build inventory.
-   Obtain owner/legal sign-off on the notice artifact before release.
-3. **Restore GPX truth (F21, F4, then F12).** Fix structural ownership first,
-   then land shared quality-aware draft metrics and timezone validation so one
-   parity matrix owns every admitted point and derived field.
-4. **Close terrain authorization (F5).** Treat this as a privacy-boundary change;
-   run unit, packaged-browser, and both hardware terrain suites before moving on.
-5. **Repair provider/lifecycle transactions (F20, F6, F7).** Canonicalize the
-   clicked identity, give capture/drafts one abortable generation owner, then
-   impose measured resource budgets through that owner.
-6. **Repair photo persistence (F8, F9, F14).** Add store revisions/tombstones,
-   make upload start atomic on that model, then remove presentation-driven
-   catalog mutation.
-7. **Repair report/settings recovery (F10, F11, F13).** Retain drafts through
-   confirmation, add lossy-conversion diagnostics, and make multi-store import
-   conflict-safe.
-8. **Complete keyboard equivalents (F16, F17).** Keep behavior and visual/
-   assistive-technology verification separate and explicit.
-9. **Harden verification and maintenance (F15, F18, F19).** Fault-test cleanup,
-   then update generated metadata/docs/dependency grouping and fixture scanning.
-10. **Release rehearsal.** Run all gates below from a clean tree, inspect fresh
-    packages and notice inventory, and do not tag until every release blocker is
-    fixed and fully proven or explicitly waived by the owner.
-
-## Final verification matrix
-
-The closeout required the following checks and explicit gap classification:
-
-- focused tests beside every changed owner, then `npm test`, `npm run lint:js`,
-  `npm run lint`, `npm run audit:ci`, and `npm run test:scale`;
-- `npm run verify:browsers` hidden against the real unpacked extension;
-- `npm run terrain:verify` and `npm run terrain:verify:firefox` hidden on a
-  reported hardware renderer, including forged-message/direct-frame negatives;
-- visible isolated-profile keyboard and screen-reader checks for F11, F16, and
-  F17 at the maintained narrow and wide viewports, without disturbing the
-  user's normal browser;
-- fresh Chrome and Firefox packages, exact recursive archive verification,
-  packaged execution, generated notice inspection, and AMO metadata review;
-- live, minimal, read-only Garmin/Strava and Peakbagger checks where credentials
-  are available, plus explicit confirmation that cancellation stops in-flight
-  lookup work; and
-- teardown inspection of exact disposable profile/certificate paths and
-  process command lines after success and injected failure.
-
-No hidden or fixture check can establish native permission-prompt appearance,
-toolbar focus, touch behavior, physical-device behavior, live provider
-availability, or store acceptance. Keep those as proof gaps unless they are
-actually exercised.
-
 ## Closure ledger
 
 ### Fixed and verified

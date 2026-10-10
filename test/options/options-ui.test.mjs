@@ -265,7 +265,7 @@ test('settings are grouped by the surface they affect', async () => {
     const sections = Array.from(dom.window.document.querySelectorAll('.settings-section'));
     assert.deepEqual(sections.map(section => section.querySelector('h2').textContent), [
         'General',
-        'Activity creation',
+        'Capture & reports',
         'Map & GPX chart',
         'Ascent beta filter',
         'Backup & sync',
@@ -276,7 +276,7 @@ test('settings are grouped by the surface they affect', async () => {
     const favorites = beta.querySelector('#favorites');
     assert.equal(beta.children[1], favorites, 'climber lists comes before the other beta settings');
     assert.equal(favorites.querySelector('.desc').textContent,
-        'Special filter to highlight users constantly making high quality TRs, with an option to hide users constantly making low effort TRs');
+        'Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.');
     assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
     assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
         ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
@@ -314,29 +314,29 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#enable-3d-map'));
     assert.equal(general.querySelector('#units'), null);
-    // The trip-report controls moved out of General into Activity creation.
+    // The trip-report controls moved out of General into Capture & reports.
     assert.equal(general.querySelector('#enable-report-editor'), null);
     assert.equal(general.querySelector('#add-report-credit'), null);
 
-    // Activity creation → GPX capture / TR editor
+    // Capture & reports → GPX capture / Report editor
     assert.deepEqual(
         [...capture.querySelectorAll('.subsection-title')].map(heading => heading.textContent),
-        ['GPX capture', 'TR editor', 'TR photos', 'TR drafts'],
+        ['GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
     );
     assert.deepEqual(
         [...dom.window.document.querySelectorAll('.side-nav a.nav-subitem[href^="#capture-"],'
             + ' .side-nav a.nav-subitem[href="#drafts"]')].map(link => link.textContent),
-        ['GPX capture', 'TR editor', 'TR photos', 'TR drafts'],
+        ['GPX capture', 'Report editor', 'Report photos', 'Report drafts'],
     );
-    assert.equal(capture.querySelector('#capture-report .title').textContent, 'TR editor');
+    assert.equal(capture.querySelector('#capture-report .title').textContent, 'Report editor');
     for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
         assert.ok(capture.querySelector(`#capture-gpx #${id}`), `${id} should belong to GPX capture`);
     }
     for (const id of ['enable-report-editor', 'add-report-credit']) {
-        assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to TR editor`);
+        assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to Report editor`);
     }
     assert.ok(capture.querySelector('#capture-photos #imgbb-key'),
-        'the ImgBB key should belong to TR photos');
+        'the ImgBB key should belong to Report photos');
     // Map & GPX chart → GPX chart / Map
     for (const id of ['units', 'chart-series']) {
         assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);
@@ -991,12 +991,12 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     );
     const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');
     const ascentBackup = doc.getElementById('github-backup');
-    assert.equal(ascentBackupLink.textContent, 'Ascent and TR backup');
-    assert.equal(ascentBackup.querySelector('h3').textContent, 'Ascent and TR backup');
+    assert.equal(ascentBackupLink.textContent, 'Ascent and report backup');
+    assert.equal(ascentBackup.querySelector('h3').textContent, 'Ascent and report backup');
     assert.match(ascentBackup.textContent, /Back up ascents and TRs to GitHub/);
     assert.match(ascentBackup.textContent, /Enable ascent and TR backup/);
     assert.equal(doc.getElementById('github-ascent-panel').getAttribute('aria-label'),
-        'Ascent and TR backup options');
+        'Ascent and report backup options');
 });
 
 const activeLinks = dom =>
@@ -1036,8 +1036,8 @@ test('a drafts deep link activates the TR-drafts manager', async () => {
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#drafts');
-    assert.equal(active[0].textContent, 'TR drafts');
-    // The manager moved under Activity creation; the worker's #drafts URL and
+    assert.equal(active[0].textContent, 'Report drafts');
+    // The manager moved under Capture & reports; the worker's #drafts URL and
     // this landing must survive that, and the parent gets the accent.
     assert.ok(active[0].classList.contains('nav-subitem'));
     assert.equal(dom.window.document.querySelector('.nav-item.nav-parent-active')?.getAttribute('href'),

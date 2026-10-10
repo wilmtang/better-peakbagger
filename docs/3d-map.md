@@ -196,7 +196,9 @@ Full Screen BigMap passes no callback and has no calculator.
 
 ## Lifecycle state machine
 
-The shared coordinator has three stored states plus one active-stop flag:
+The shared coordinator owns lifecycle mechanics; surface callbacks retain
+subject identity and native-map interpretation. It has three stored states
+plus one active-stop flag:
 
 ```mermaid
 stateDiagram-v2
@@ -412,6 +414,9 @@ Route parsing is all-or-nothing in the frame:
 
 The frame converts coordinates to GeoJSON `[lon, lat]` only after the complete
 route passes. It does not partially draw a malformed route.
+Antimeridian routes require a shared wrap model for bounds, camera fitting,
+prefetch, and segment interpretation. Guessing could create continent-wide
+views and tile bursts, so the current contract rejects them.
 
 ### Focus and peaks
 
@@ -860,142 +865,6 @@ to shared terrain bundle composition or load order.
 All browser verification must use an isolated hidden/headless profile unless
 the behavior under test is inherently native UI. Hardware terrain checks must
 fail closed on a software renderer; SwiftShader output is not product evidence.
-
-## Interview-style grilling questions
-
-### Why not put everything in one content script?
-
-Because no one execution world has all the right privileges. MAIN can inspect
-Peakbagger's Leaflet globals but cannot call extension APIs. Isolated code can
-use settings/runtime APIs but cannot trust page globals. An extension frame can
-run packaged MapLibre and share extension CacheStorage but must not inherit the
-page's authenticated session. The split is a least-privilege design, not a
-bundling accident.
-
-### Why does the shared coordinator accept callbacks instead of knowing each map?
-
-Lifecycle is invariant; eligibility is not. Every surface needs the same
-loading/cancel/error/camera mechanics, but only Full Screen code knows what a
-genuine native route layer looks like, and only Peak-page code can prove its
-subject identity. Callbacks centralize drift-prone mechanics without
-centralizing security-sensitive page interpretation.
-
-### Why keep native 2D visible during boot?
-
-An iframe existing is not evidence that terrain is usable. DEM parsing,
-MapLibre startup, WebGL allocation, and payload validation can still fail.
-`loaded` is the commit point: before it, native 2D remains authoritative; after
-it, the renderer is interactive and the page can hide native DOM reversibly.
-
-### Why not wait for the selected raster before reporting loaded?
-
-Imagery and elevation have different correctness roles. DEM is the geometry
-the feature promises. A drape is optional context from a potentially slow or
-volunteer provider. Coupling them made a pending OpenTopoMap tile block an
-otherwise complete surface. Progressive drape loading gives the user useful
-terrain sooner and isolates provider failure.
-
-### Why are ordinary source errors recoverable but source-less errors fatal?
-
-A source id identifies a bounded data dependency: one DEM, raster, vector, or
-GeoJSON source can have a transient network gap. A source-less MapLibre error
-after activation points at renderer/style machinery rather than an individual
-tile and can leave an untrustworthy canvas. WebGL context loss is likewise a
-renderer failure. The policy distinguishes missing data from a dead renderer.
-
-The same distinction applies before activation, where it used to be lost. A
-boot failure was reported as `maplibre` whatever caused it, so a provider that
-could not be reached was announced as a browser that could not render — sending
-the user to check a GPU that is working. A source id before `load` still names
-a data dependency, so it reports `elevation`; only a source-less boot failure
-is the browser's.
-
-### Why request a camera on stop if move events already stream camera updates?
-
-The last `moveend` message can lag the user's final interaction, and some
-camera changes may not have settled. The explicit request establishes a
-request-id-correlated final snapshot. The cached last valid camera and one-
-second timeout still guarantee exit if that handshake fails.
-
-### Why does camera transfer ignore bearing and pitch?
-
-Leaflet cannot represent them. Persisting them elsewhere would make the 2D map
-cease to be the single canonical handoff and would create surprising re-entry
-orientation. Center and ground coverage round-trip; 3D-only orientation resets
-predictably.
-
-### Why does the route reject an antimeridian span instead of wrapping it?
-
-MapLibre can render wrapped geometry, but route bounds, fit-camera math,
-prefetch tile enumeration, and segment interpretation would all need a shared
-explicit wrap model. Guessing creates continent-wide bounds and tile bursts.
-The current product fails closed with honest “unavailable for this map” copy.
-
-### Why is prefetch compatible with opt-in privacy?
-
-It is impossible while the feature gate is off. After consent, hover or focus
-on the idle toggle is a direct intent signal, and the worker rechecks the gate,
-sender, viewport, cache budget, tile cap, rate, and dedupe state. It warms only
-the DEM cache the upcoming frame would read and sends no route metadata beyond
-the tile coordinates implied by the view.
-
-### What happens if a tab closes after prefetching?
-
-The cache remains a bounded extension-owned performance cache, but the worker
-deletes that tab's rate-limit entry in `tabs.onRemoved`. The audit concern that
-`prefetchLastByTab` leaked per-tab state was stale by the time of implementation;
-the cleanup already existed and required no code change.
-
-### Why is the cache index not a source of truth?
-
-CacheStorage and `storage.local` can be evicted independently. Treating the
-index as authoritative would report phantom bytes or hide usable entries.
-Initialization intersects the index with actual cache keys and rebuilds missing
-metadata where possible; unresolved entries are discarded. Any failure
-degrades to a network miss.
-
-### Why can the frame not call the Peakbagger peak feed itself?
-
-Its origin is the extension, not Peakbagger. Giving it cookies or broader host
-access would cross a privacy boundary for no benefit. The page coordinator can
-make the same same-origin request the native map already makes, then relay only
-bounded marker records.
-
-### Why are peak clicks screen-space but route clicks can query a layer?
-
-Peak rings are constant-size billboards elevated by terrain. On a pitched
-camera, the cursor ray can hit ground far behind the visible ring, so MapLibre's
-terrain-ground feature query misses. A line lies on the terrain and remains
-appropriate for a rendered-layer query with a pixel tolerance.
-
-### Why park a frame for five minutes?
-
-MapLibre construction, CSP worker startup, DEM parsing, and mesh creation are
-the expensive parts of a quick 2D↔3D comparison. Parking makes re-entry fast
-while a TTL bounds GPU/resource retention. The frame is non-interactive and
-ambient page-driven work is canceled while parked; disabling the feature or a
-failed boot skips parking and tears down immediately.
-
-### Why is there both a frame validator and a bridge sanitizer?
-
-They defend different boundaries. The bridge narrows what the page can ask the
-extension to relay. The frame must still treat its cross-origin parent message
-as untrusted and validate the complete rendering contract. Removing either
-turns a future bridge or surface change into an implicit renderer privilege.
-
-### What test would catch a wrong `world: MAIN` declaration?
-
-Not jsdom and not the standalone terrain showcase. `npm run verify:chrome`
-or `npm run verify:browsers` must load the real manifest. The bundle-composition
-unit test catches configured source drift, while the real extension catches
-manifest execution-world and injection-order mistakes.
-
-### What test would catch a visually plausible software-rendered terrain run?
-
-The hardware-GPU harness reads `WEBGL_debug_renderer_info` and fails on a
-software fallback. A screenshot alone is insufficient because SwiftShader can
-produce plausible pixels while proving nothing about the product renderer and
-consuming extreme CPU.
 
 ## Troubleshooting by symptom
 

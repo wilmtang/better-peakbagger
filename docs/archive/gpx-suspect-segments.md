@@ -370,29 +370,6 @@ Intentionally preserve:
 A future "download cleaned GPX" feature would require its own explicit scope,
 provenance, serialization, and privacy review. It is not part of this remedy.
 
-## 8. Implementation sequence
-
-Complete, verify, and commit each independent unit before beginning the next.
-Do not ship a partial UI that suggests exclusions have occurred when they have not.
-
-1. **Reproduction and pure diagnostic contract.** Add synthetic fixtures for the
-   three-segment shape and each counterexample below. Define stable identities,
-   structured reasons, thresholds, and original-versus-active count semantics.
-   Establish baseline metrics before detector changes.
-2. **Exact degenerate-duplicate detection.** Implement Rule A and its bounded
-   matching/indexing strategy. Test conservative fallbacks and idempotence.
-3. **Isolated-point classification.** Implement and verify path distance and
-   Rule B, or explicitly choose the review-only fallback based on evidence.
-   Keep this decision distinct from the stronger duplicate fix.
-4. **Analyzer integration.** Derive the active view once per GPX/view choice;
-   recompute all dependent surfaces and prevent stale selection/overlay state.
-   Preserve existing shared-metrics and capture behavior.
-5. **Disclosure and source-view interaction.** Add the inline explanation and
-   reversible view switch. Exercise keyboard, narrow layouts, and failure states.
-6. **Closure.** Record completed checks and remaining gaps below. Archive this
-   plan only after the implementation has an honest disposition, updating the
-   maintained GPX/architecture documentation and plan indexes as appropriate.
-
 ## 9. Regression and verification matrix
 
 | Case | Required outcome |

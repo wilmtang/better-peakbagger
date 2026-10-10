@@ -1,31 +1,18 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildFirefoxPackage } from './build-firefox-package.mjs';
 import { verifyReleaseArchive } from './verify-release-archive.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack, manageChildProcess } from './resource-stack.mjs';
+import { runChildProcess } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-async function run(command, args) {
-    const resources = createResourceStack();
-    const child = spawn(command, args, { cwd: root, stdio: 'inherit' });
-    manageChildProcess(resources, child, command);
-    await resources.guard(new Promise((resolve, reject) => {
-        child.once('error', reject);
-        child.once('exit', (code, signal) => code === 0 && !signal
-            ? resolve() : reject(new Error(`${command} failed (${signal || `exit ${code}`})`)));
-    }));
-    await resources.dispose();
-}
-
 export async function verifyStorePackages(version, {
-    execute = run, read = readFile, write = writeFile,
+    execute = (command, args) => runChildProcess(command, args, { cwd: root }), read = readFile, write = writeFile,
     deriveFirefox = buildFirefoxPackage, verify = verifyReleaseArchive,
 } = {}) {
     if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Expected an exact package version');

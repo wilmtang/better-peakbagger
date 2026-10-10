@@ -292,6 +292,4 @@ export function createSettingsFileRoutes({
 }
 
 export const settingsFileRoutes = {
-    EXPORT_TYPE,
-    IMPORT_TYPE,
 };

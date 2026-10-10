@@ -241,12 +241,9 @@ const clean = raw => {
 };
 
 const API = {
-    MAP_LAYERS,
     MAP_PROVIDERS,
     PEAK_FILTER_ORDER,
     PERSONAL_FILTER_ORDER,
-    CHART_DEFAULT_SERIES,
-    FAVORITES_SOURCES,
     REPORT_EDITOR_MODES,
     ROUTE_STYLE,
     VIEWPORT,
@@ -258,9 +255,7 @@ const API = {
     reportEditorMode,
     betaDefinitionFromSettings,
     routeColor,
-    routeCasingColor,
     routeWidth,
-    routeCasingWidth,
     routeStyle,
     routeStyleFromSettings,
     viewportWidth,

@@ -225,9 +225,10 @@ test('map routes split at impossible coordinates and discard unusable fragments'
 });
 
 test('coordinate-only route distance preserves segment and invalid-coordinate gaps', () => {
-    const distanceM = GpxMetrics.computeRouteDistanceM([
-        [[0, 0], [0, 0.001], [91, 0.002], [0, 1], [0, 1.001]],
-        [[0, 2], [0, 2.001]],
+    const { distanceM } = GpxMetrics.computeMetricsForSegments([
+        [{ lat: 0, lon: 0 }, { lat: 0, lon: 0.001 }, { lat: 91, lon: 0.002 },
+            { lat: 0, lon: 1 }, { lat: 0, lon: 1.001 }],
+        [{ lat: 0, lon: 2 }, { lat: 0, lon: 2.001 }],
     ]);
 
     assert.ok(distanceM > 300 && distanceM < 360,
@@ -235,9 +236,9 @@ test('coordinate-only route distance preserves segment and invalid-coordinate ga
 });
 
 test('coordinate-only route distance joins nearby segment endpoints', () => {
-    const distanceM = GpxMetrics.computeRouteDistanceM([
-        [[0, 0], [0, 0.001]],
-        [[0, 0.0011], [0, 0.002]],
+    const { distanceM } = GpxMetrics.computeMetricsForSegments([
+        [{ lat: 0, lon: 0 }, { lat: 0, lon: 0.001 }],
+        [{ lat: 0, lon: 0.0011 }, { lat: 0, lon: 0.002 }],
     ]);
 
     assert.ok(distanceM > 220 && distanceM < 225,

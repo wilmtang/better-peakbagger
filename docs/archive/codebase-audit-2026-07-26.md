@@ -644,48 +644,6 @@ Every problem landed as an independent focused commit:
 | F14 | `9f78503` — own the remaining development advisory |
 | F15 | `e66d0c0` — own extension lint compatibility |
 
-The original execution sequence is retained below as the implementation record.
-
-1. **Remove the options timer leak (F13).** Deterministic options/jsdom
-   teardown and controller disposal. Prove the isolated test and full suite no
-   longer wait for device-code expiry on Node 24 and the current supported
-   major.
-2. **Split passive and authoritative settings reads (F1 API).** Add the strict
-   API and classification tests without changing consumers.
-3. **Establish typed public errors (F8).** Land error types and the outer
-   boundary before strict reads can throw from preservation/capture routes.
-4. **Fail closed for capture (F1 consumers).** Keep authoritative worker
-   re-reads, add the isolated-upload gate, run focused tests, then hidden
-   real-extension verification.
-5. **Make settings preservation authoritative (F2).** Local export, manual and
-   automatic GitHub backup, typed failure/retry tests.
-6. **Make draft opening transactional (F3).** Rollback and stale-reuse pruning;
-   verify toolbar and local-upload parity.
-7. **Create one analyzer frame lifecycle (F4).** Characterization tests first,
-   replace the fixed sleep, then lifecycle owner, viewport/overlay/terrain
-   subscribers, hidden extension and hardware-GPU terrain verification.
-8. **Adopt condition-based binding in BigMap (F5).** Keep this separate from F4
-   so Full Screen Map regressions bisect cleanly.
-9. **Bound analyzer writes (F6).** Timer/order tests and bridge verification.
-10. **Make favorites replacement explicitly busy (F7).** Real-browser
-    busy/Escape/focus behavior on the actual options page, then a rendered
-    Settings check in both themes.
-11. **Repair recovery affordances (F9, then F10).** Separate commits because
-    report-draft navigation and profile backup have different senders and trust
-    boundaries.
-12. **Finish small UX defects (F12, then F11).** The copy fix is independent.
-    Coordinate-copy accessibility gets its own behavioral and visual evidence.
-13. **Repair the development chain (F14).** Never mix dependency churn with
-    product changes.
-14. **Own linter warnings and Android compatibility (F15).** This may follow
-    F14 because a tool update can change warning locations/codes.
-
-After every unit: inspect `git diff`, run its focused tests and `npm run
-lint:js`, commit using the repository's explanatory Conventional Commit style,
-and inspect `git log -1 --format=raw`. Run the full suite at the end of every
-P0/P1 unit; F13 makes that gate materially faster but does not change whether
-the suite's result is trustworthy.
-
 ## Final verification evidence
 
 - `npm ci` completed from the lockfile.

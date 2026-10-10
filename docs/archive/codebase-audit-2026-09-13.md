@@ -294,34 +294,6 @@ while keeping cooperative checkpoint ownership explicit. Avoid a generic
 pipeline rewrite or per-point promise overhead. Retain the current implementation
 if extraction makes cancellation or correctness harder to reason about.
 
-## Execution order and completion contract
-
-1. **F6 — restore the baseline gate.** One small documentation commit; rerun the
-   documentation checker before runtime work.
-2. **F1 — protect report recovery.** Focused editor-state fix and regression
-   commit; include actual native-text ownership in backup verification.
-3. **F3 — contain photo shortcuts.** Independent interaction fix and tests.
-4. **F4 — repair database ownership.** Independent lifecycle fix and tests.
-5. **F5 — validate dates.** Shared parser fix with capture/analyzer regressions.
-6. **F2 — coordinate shared cache state.** Establish the cross-context design
-   and failure semantics before implementation; keep its commit focused.
-7. **I1/I2 — investigate selectively.** Record measurements or a justified
-   decision to leave the code unchanged. They do not block the correctness fixes.
-
-For each completed unit, run focused tests and relevant lint before committing.
-Run `npm test` and `npm run test:scale` at integration. Changes to content-script
-load dependencies or the worker also require the real-extension verifier;
-exercise both browsers for the editor/storage/cache changes. UI remediation
-requires rendered inspection at relevant sizes, including narrow/dark states.
-Record hidden/visible mode, browser, viewport, and renderer where applicable.
-Do not infer live provider or Peakbagger server compatibility from fixtures.
-
-Preserve manual Peakbagger Save ownership, explicit upload consent, fail-closed
-identity checks, MAIN/isolated-world boundaries, shared settings/math authority,
-and recovery after ambiguous remote outcomes. Update maintained subsystem guides
-only when implementation changes their contracts. Archive this audit only after
-each finding has a disposition; retain the separate caption compatibility gate.
-
 ## Remediation record
 
 The audit was remediated as seven focused implementation commits before this

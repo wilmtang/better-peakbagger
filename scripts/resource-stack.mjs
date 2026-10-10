@@ -5,6 +5,8 @@
 // after acquisition and released in reverse order. Every finalizer runs even if
 // an earlier one rejects; a product/assertion failure remains the thrown error.
 
+import { spawn } from 'node:child_process';
+
 const cleanupFailure = (label, error) => new Error(
     `Cleanup failed for ${label}: ${error?.message || error}`,
     { cause: error },
@@ -157,4 +159,16 @@ export function manageChildProcess(resources, child, label, options) {
     child.on('error', error => { state.error = error; });
     resources.defer(label, () => stopChildProcess(child, options));
     return state;
+}
+
+export async function runChildProcess(command, args, { label = command, ...options } = {}) {
+    const resources = createResourceStack();
+    await resources.guard(() => new Promise((resolve, reject) => {
+        const child = spawn(command, args, { stdio: 'inherit', ...options });
+        manageChildProcess(resources, child, label);
+        child.once('error', reject);
+        child.once('close', (code, signal) => code === 0 && !signal
+            ? resolve() : reject(new Error(`${label} failed (${signal || `exit ${code}`})`)));
+    }));
+    await resources.dispose();
 }

@@ -44,7 +44,7 @@ const STYLE_ID = 'bpb-site-dark';
 // (the GPX chart) dark on an otherwise-light page. `<head>` doesn't exist at
 // document_start, so fall back to `<html>`; once it exists we prefer it.
 const ensureSheet = () => {
-    if (!darkCss || document.getElementById(STYLE_ID)) return;
+    if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = darkCss;

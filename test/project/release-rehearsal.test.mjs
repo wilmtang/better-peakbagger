@@ -77,13 +77,13 @@ test('exact-package verification launches the current Firefox installed by its s
     const install = steps.find(step => step.uses === './.github/actions/setup-verification');
     assert.equal(install.with['firefox-version'], 'latest');
     assert.equal(install.with['chrome-version'], 'current');
-    assert.ok(steps.some(step => step.run?.includes('npm run release:verify-packages')));
+    assert.ok(steps.some(step => step.uses === './.github/actions/verify-package'));
 });
 
 test('floor and store jobs verify the same immutable archive identity before using it', () => {
     assert.match(workflow.jobs.verify.outputs['artifact-name'], /steps\.metadata\.outputs\.artifact-name/);
     const verify = workflow.jobs.verify.steps;
-    const execute = verify.findIndex(step => step.run?.includes('npm run release:verify-packages'));
+    const execute = verify.findIndex(step => step.uses === './.github/actions/verify-package');
     assert.ok(execute >= 0);
     assert.ok(verify.findIndex(step => step.name === 'Record verified package identity') > execute);
     for (const name of ['compatibility', 'chrome', 'firefox']) {
