@@ -123,7 +123,7 @@ test('an unusable key and an undecodable file each say what to do next', async (
         blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
     }), error => error.code === 'not-configured'
         && /Invalid API v1 key/.test(error.message)
-        && /Settings → Activity creation/.test(error.message));
+        && /Settings → Capture & reports → Report photos/.test(error.message));
     await assert.rejects(Client.upload({
         fetch: reject('Unsupported or unrecognized file format', 415),
         key: KEY,

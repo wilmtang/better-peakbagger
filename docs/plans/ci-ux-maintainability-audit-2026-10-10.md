@@ -39,6 +39,10 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
+- U2 follow-through: the ImgBB key recovery message and packaged guide now
+  point to the actual Capture & reports → Report photos labels. The guide's
+  backup setting name also matches Settings. All 28 upload/guide tests, scoped
+  ESLint, and diff checks passed.
 - Integration caught two stale source contracts requiring the removed CSS
   mapping blocks and old success prose. Updated the shared-palette assertions
   and strengthened the teardown guard to reject a missing cleanup marker.
