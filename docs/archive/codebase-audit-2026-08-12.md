@@ -584,57 +584,6 @@ stress check, then require a clean full `npm test` without selective reruns.
 
 ---
 
-## Implementation sequence
-
-Keep each independently verified unit in a focused commit. Do not bundle a
-mechanical cleanup or unrelated refactor into remediation.
-
-1. **Photo recovery foundation — F1, F7, F9, F12.** First fix F12's completion
-   postcondition so the backup UI test is a trustworthy gate. Then define
-   durable catalog and remote generations, journal remote confirmation, add
-   bounded store reconciliation, and make canonical capacity enforcement
-   consume that same snapshot. These
-   findings share one data invariant and should be designed together, though
-   schema/store, reconciliation, and user-facing capacity behavior can remain
-   separate commits.
-2. **Remote trust and resource budgets — F2, F4, F5.** Land bounded-response
-   primitives and endpoint limits first, then constrain the terrain style and
-   settings import at their additional trust boundaries. Keep the terrain
-   origin/rollback transaction independently reviewable.
-3. **Photo lifecycle and recovery UX — F6, F8, F10, F11.** These are separable
-   owners: new-version transaction, maintenance scheduler, copy fallback, and
-   profile cancellation state. Add behavior coverage with each owner; batch
-   visual checks into one isolated browser launch after the UI commits exist.
-4. **Release assurance — F3.** Add pure response/reconciliation tests before
-   changing the release script, then validate the workflow contract without
-   publishing. A live store mutation requires separate release authorization.
-
-Dependencies are constraints, not permission to combine commits. In
-particular, F1 should settle the generation semantics before F7 rewrites stamp
-reconciliation, and F4's bounded reader should be reused by F2 rather than
-copied.
-
-## Verification matrix for remediation
-
-For every finding, run the focused tests beside the changed owner before the
-full gates. `npm test` rebuilds `dist/`; directly testing bundled surfaces
-without rebuilding can exercise stale code.
-
-| Gate | Findings | What it establishes | What it does not establish |
-| --- | --- | --- | --- |
-| pure/unit and fault-injection tests | all | generations, budgets, rollback, cancellation, exact copy, adversarial interleavings, and final-state synchronization | manifest interpretation, native layout, live providers |
-| `npm run lint` and `npm test` | all | source/build hygiene and shipped-bundle behavior in the repository harness | real browser lifecycle or store/provider state |
-| `npm run test:scale` with new transaction instrumentation | F1, F7, F8, F9 | catalog-scale transaction/promise bounds and eventual maintenance | abrupt OS termination or low-memory devices |
-| hidden `npm run verify:browsers` | F1, F5, F6, F10, F11 and any load-boundary change | real unpacked manifests, worker/content startup, DOM interaction in isolated profiles | native focus, browser chrome, permission prompts, screen readers, touch |
-| hidden hardware-GPU `npm run terrain:verify` and Firefox counterpart | F2 | real MapLibre install/rollback, request allowlist, renderer, and visual fallback | live provider policy or native browser UI |
-| dry-run/fake-server release tests | F3 | deadlines, body caps, status reconciliation, retry decisions | a real Chrome Web Store submission |
-| minimal manual/live checks under release authorization | F2, F3, F4, F6, F10, F11 | reviewed live provider/store behavior and visual/native UX | legal sufficiency or every account/device configuration |
-
-Before handoff, inspect owned browser/profile processes and disposable
-artifacts. Report browser, renderer, viewport, hidden/visible state, and every
-remaining native/live proof gap rather than promoting protocol assertions into
-onscreen evidence.
-
 ## Closure ledger
 
 ### Fixed and verified
