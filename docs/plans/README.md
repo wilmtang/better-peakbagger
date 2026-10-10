@@ -1,5 +1,8 @@
 # Active plans
 
+- [Code-removal audit](code-removal-audit-2026-10-09.md) — in progress;
+  remove proven unused APIs and obsolete module-presence fallbacks while
+  preserving regression coverage and runtime boundaries.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.
