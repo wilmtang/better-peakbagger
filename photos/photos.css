@@ -960,6 +960,23 @@ kbd {
     height: var(--photo-viewport-height, clamp(360px, 60vh, 640px));
   }
 
+  .viewport-column.editing-text {
+    grid-template-rows: 44px minmax(0, 1fr) auto 66px;
+  }
+
+  .photo-text-editor {
+    padding: 12px;
+    border-top: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+  }
+
+  .photo-text-editor textarea {
+    height: 72px;
+    min-height: 72px;
+    max-height: 120px;
+  }
+
   .upload-options {
     grid-template-columns: minmax(150px, 0.8fr) minmax(190px, 1.2fr);
   }
@@ -1252,6 +1269,7 @@ kbd {
 .photo-viewport.is-panning,
 .photo-viewport.is-panning #photo-overlay [data-bpb-object] { cursor: grabbing; }
 .view-controls {
+  height: 44px;
   position: relative;
   z-index: 2;
   display: flex;
@@ -1308,7 +1326,9 @@ kbd {
 
 /* User-chosen widths can be narrower than the browser's media breakpoint. */
 .editor-workspace { container-type: inline-size; container-name: photo-editor; }
-.viewport-column { container-type: inline-size; container-name: photo-canvas; }
+/* Keep size containment on the toolbar: containing the image and movable
+   text field can retain stale SVG/hidden layout when crossing the breakpoint. */
+.view-controls-container { position: relative; z-index: 2; container-type: inline-size; container-name: photo-canvas; }
 @container photo-canvas (max-width: 360px) {
   .view-controls { gap: 2px; padding-inline: 6px; }
   .view-controls #fit-photo { display: none; }

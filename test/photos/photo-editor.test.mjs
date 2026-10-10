@@ -3849,3 +3849,46 @@ test('library pagination keeps a usable control when Next becomes disabled', asy
     assert.equal(page.doc.activeElement, page.doc.getElementById('library-previous'));
     assert.equal(page.doc.activeElement.disabled, false);
 });
+
+for (const placement of ['photo', 'center']) {
+    test(`narrow ${placement} label editing reuses one field and preserves focus across resizing`, async t => {
+        const page = await loadEditor(); t.after(() => page.dom.window.close());
+        Object.defineProperty(page.win, 'innerWidth', { value: 390, writable: true });
+        const input = page.doc.getElementById('object-text');
+        const inspector = input.closest('#inspector');
+        const dock = page.doc.getElementById('photo-text-editor');
+        let aligned = 0;
+        dock.scrollIntoView = options => { assert.equal(options.block, 'end'); aligned++; };
+        page.tool('text');
+        if (placement === 'photo') { page.pointer('pointerdown', 100, 100); page.pointer('pointerup', 100, 100); }
+        else page.click(page.doc.getElementById('add-at-center'));
+        assert.equal(dock.hidden, false);
+        assert.equal(dock.contains(input), true);
+        assert.equal(page.doc.activeElement, input);
+        assert.equal(input.selectionEnd, input.value.length);
+        assert.equal(aligned, 1);
+        input.value = 'North ridge\nUpper gully'; page.emit(input, 'input');
+        input.setSelectionRange(3, 8, 'backward');
+        assert.equal(page.doc.querySelectorAll('#object-text').length, 1);
+        assert.equal(page.doc.activeElement, input);
+        page.win.innerWidth = 1000; page.win.dispatchEvent(new page.win.Event('resize'));
+        assert.equal(inspector.contains(input), true);
+        assert.equal(dock.hidden, true);
+        assert.equal(page.doc.activeElement, input);
+        assert.deepEqual([input.selectionStart, input.selectionEnd, input.selectionDirection], [3, 8, 'backward']);
+        page.win.innerWidth = 520; page.win.dispatchEvent(new page.win.Event('resize'));
+        assert.equal(dock.contains(input), true);
+        assert.equal(page.doc.activeElement, input);
+        assert.equal(input.value, 'North ridge\nUpper gully');
+        assert.equal(page.doc.getElementById('text-width').value, '', 'automatic width remains selected');
+        page.click(page.doc.getElementById('delete-object'));
+        assert.equal(dock.hidden, true);
+        assert.equal(inspector.contains(input), true);
+        page.click(page.doc.getElementById('undo'));
+        assert.equal(page.markCount(), 1);
+        page.doc.querySelector('[data-object-id]').click();
+        assert.equal(dock.hidden, false);
+        assert.equal(input.value, 'North ridge\nUpper gully');
+        assert.deepEqual(page.errors, []);
+    });
+}

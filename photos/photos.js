@@ -108,6 +108,7 @@ const ui = {
     rotationValue: byId('object-rotation-value'),
     pitch: byId('pitch-number'),
     text: byId('object-text'),
+    textEditor: byId('photo-text-editor'),
     textWidth: byId('text-width'),
     textWidthAuto: byId('text-width-auto'),
     align: byId('text-align'),
@@ -1119,10 +1120,34 @@ const pixels = value => `${Math.round(value)} px`;
 const inspectorType = () => selectedObject()?.type
     || (activeTool === 'select' ? null : activeTool);
 
+const textField = ui.text.closest('label');
+const textHome = document.createComment('Text inspector position');
+textField.after(textHome);
+const narrowEditor = window.matchMedia?.('(max-width: 900px)');
+const syncTextEditor = () => {
+    const docked = (narrowEditor?.matches ?? window.innerWidth <= 900) && selectedObject()?.type === 'text';
+    const parent = docked ? ui.textEditor : textHome.parentNode;
+    const moved = textField.parentNode !== parent;
+    const focused = document.activeElement === ui.text;
+    const selection = [ui.text.selectionStart, ui.text.selectionEnd, ui.text.selectionDirection];
+    if (moved) {
+        if (docked) parent.append(textField);
+        else parent.insertBefore(textField, textHome);
+    }
+    ui.textEditor.hidden = !docked;
+    ui.textEditor.parentElement.classList.toggle('editing-text', docked);
+    if (focused && moved) {
+        ui.text.focus({ preventScroll: true });
+        ui.text.setSelectionRange(...selection);
+        if (docked) ui.textEditor.scrollIntoView?.({ block: 'end', inline: 'nearest' });
+    }
+};
+
 const renderInspector = () => {
     const object = selectedObject();
     const type = inspectorType();
     ui.inspector.hidden = !type;
+    syncTextEditor();
     if (!type) return;
     const route = ['route', 'drawing'].includes(type);
     const label = type === 'pitch' || type === 'text';
@@ -1626,6 +1651,7 @@ const addPointObject = (type, point) => {
     if (type === 'text') {
         ui.text.focus({ preventScroll: true });
         ui.text.select();
+        if (!ui.textEditor.hidden) ui.textEditor.scrollIntoView?.({ block: 'end', inline: 'nearest' });
     }
 };
 
@@ -3383,7 +3409,10 @@ const bindEvents = () => {
     if (typeof ResizeObserver !== 'undefined') {
         new ResizeObserver(applyReportWidthPreview).observe(ui.viewport);
     }
-    window.addEventListener('resize', applyViewportSize);
+    window.addEventListener('resize', () => {
+        syncTextEditor();
+        applyViewportSize();
+    });
     ui.zoomIn.addEventListener('click', () => zoomPhoto(camera.scale * 1.25));
     ui.zoomOut.addEventListener('click', () => zoomPhoto(camera.scale / 1.25));
     ui.fit.addEventListener('click', fitPhoto);

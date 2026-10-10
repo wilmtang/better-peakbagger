@@ -57,6 +57,13 @@ Viewport width and height are optional device-local preferences under
 height is 60vh bounded to 360–640 CSS pixels. Explicit widths are capped by the
 available window; container queries keep controls usable at user-chosen sizes.
 
+When a text label is selected below 900px, its existing text field moves beneath
+the photo so multiline typing keeps the composition and input visible together.
+Wider windows return the same field to the inspector, preserving keyboard focus
+and selection. Appearance and width controls remain in the inspector. Size
+containment is scoped to the view toolbar, keeping the image and contextual
+field outside that layout boundary.
+
 Focused hidden packaged-browser verification: build, then run
 `node scripts/verify-photo-editor.mjs`. Optional screenshots are written only
 when `BPB_PHOTO_SCREENSHOTS` names an output directory. This check exercises

@@ -31,7 +31,7 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 | F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Changed; final browser check pending |
 | F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Changed; final browser check pending |
 | F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Changed; final visual check pending |
-| F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Open |
+| F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Changed; final cross-browser check pending |
 
 ### F1 — Backup success lacks the identity of the committed snapshot
 
@@ -345,6 +345,18 @@ acceptance checks run.
   moved outside the list. Build, 28 photo-library/maintenance cases, all 180
   options tests, focused ESLint, and whitespace checks passed; final browser
   keyboard and visual verification is pending.
+
+- F6: the same label field moves into a compact dock beneath the photo below
+  900px, retaining focus, selection, multiline content, and existing bindings.
+  CSS size containment now belongs to the toolbar wrapper, avoiding stale
+  SVG/hidden layout during the narrow-to-wide transition while preserving
+  toolbar queries at user-chosen widths. Build, 35 focused photo-editor cases,
+  focused ESLint, and hidden packaged-photo verification passed. Native typing
+  and keyboard placement passed in both themes at 390 × 760, 520 × 800, and
+  1000 × 760; those screenshots were inspected. The maintained photo verifier
+  also passed Undo, autosave, source/project round trips, full-resolution
+  export, and the 280px toolbar with Chrome 153 and hardware Metal on Apple
+  M3 Pro. Final cross-browser extension acceptance is pending.
 
 Keep native/live/platform proof gaps explicit when moving locally verified
 items to the first category. Preserve this ledger when the plan is archived.

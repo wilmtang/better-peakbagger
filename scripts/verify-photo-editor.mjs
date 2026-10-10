@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
 // no live site, user browser, API key, or upload is involved.
-/* global document, DataTransfer, chrome, innerWidth, HTMLCanvasElement, FileReader, navigator */
+/* global document, DataTransfer, chrome, innerWidth, innerHeight, getComputedStyle, HTMLCanvasElement, FileReader, navigator */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -270,6 +270,58 @@ try {
     await page.setViewportSize({ width: 1440, height: 1100 });
     await page.evaluate(() => { document.documentElement.dataset.bpbTheme = 'dark'; });
     await capture('dark');
+    // Native typing, rather than fill(), must keep the label and its field
+    // visible together above the sticky header. Crossing 900px also exercises
+    // moving the focused field out of the contextual dock.
+    for (const theme of ['light', 'dark']) {
+        await page.evaluate(async value => {
+            const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+        }, theme);
+        await page.waitForFunction(value => document.documentElement.dataset.bpbTheme === value, theme);
+        for (const [width, height] of [[390, 760], [520, 800], [1000, 760]]) {
+            await page.setViewportSize({ width, height });
+            await page.locator('[data-tool="text"]').focus();
+            await page.keyboard.press('Enter');
+            await page.locator('#add-at-center').focus();
+            await page.keyboard.press('Enter');
+            // Select Auto on the first new label, preserving the earlier
+            // wrapped label and its saved width for the round-trip check.
+            if (theme === 'light' && width === 390) {
+                await page.locator('#text-width-auto').click();
+                await page.locator('#object-text').focus();
+                await page.locator('#photo-text-editor').evaluate(dock => dock.scrollIntoView({ block: 'end' }));
+            }
+            await page.keyboard.type(`Ridge ${theme} ${width}`);
+            await page.keyboard.press('Enter');
+            await page.keyboard.type('Upper gully');
+            const state = await page.waitForFunction(() => {
+                const header = document.querySelector('.app-header').getBoundingClientRect();
+                const input = document.getElementById('object-text');
+                const label = document.querySelector('#photo-overlay .selected text');
+                const dock = document.getElementById('photo-text-editor');
+                if (!label?.textContent.includes('Upper gully')) return false;
+                const visible = element => {
+                    const rect = element.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 && rect.top >= header.bottom
+                        && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth;
+                };
+                if (!visible(input) || !visible(label)) return false;
+                return {
+                    focused: document.activeElement === input,
+                    docked: !dock.hidden,
+                    dockHidden: !dock.hidden || getComputedStyle(dock).display === 'none',
+                    value: input.value,
+                    width: document.getElementById('text-width').value,
+                    tool: document.querySelector('[data-tool][aria-pressed="true"]').dataset.tool,
+                };
+            }, null, { timeout: 5000 }).then(handle => handle.jsonValue());
+            assert.deepEqual(state, { focused: true, docked: width <= 900, dockHidden: true,
+                value: `Ridge ${theme} ${width}\nUpper gully`, width: '', tool: 'text' });
+            if (screenshots) await page.screenshot({ path: path.join(screenshots, `label-${theme}-${width}.png`) });
+        }
+    }
+    await page.setViewportSize({ width: 1440, height: 1100 });
     // A real IndexedDB round trip also verifies original Blob retention, which
     // the jsdom/fake-indexeddb file-picking harness cannot faithfully clone.
     await page.waitForFunction(() => document.getElementById('save-status').textContent === 'Saved on this device');
@@ -327,7 +379,7 @@ try {
     assert.doesNotMatch(renderer, /swiftshader|llvmpipe|software/i);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser().version(), renderer, hidden: true,
-        viewports: ['1440×1100', '720×900', '390×844', '320×800'], profile, passed: true }));
+        viewports: ['1440×1100', '720×900', '390×844', '320×800', '390×760', '520×800', '1000×760'], profile, passed: true }));
 } finally {
     await context?.close();
     await rm(profile, { recursive: true, force: true });

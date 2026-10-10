@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep photo labels visible while typing.** Narrow windows place the text
+  field beneath the photo; resizing preserves focus and multiline content.
+
 - **Open Settings reliably with modifier keys.** Ctrl, Command, and Shift clicks
   keep their usual tab or window behavior even when keyboard events overlap.
 - **Keep ignored-climber previews valid.** Background sync preserves a review
