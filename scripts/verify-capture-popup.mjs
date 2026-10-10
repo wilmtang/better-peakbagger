@@ -265,6 +265,12 @@ const renderCase = async (browser, browserName, item, variant) => {
             cardBottom: Math.round(layout.card.bottom * 10) / 10,
             background: layout.background,
         };
+    } catch (error) {
+        if (artifactDir) await page.screenshot({
+            path: path.join(artifactDir, `${browserName}-${variant.name}-${item.code}-failure.png`),
+            fullPage: true,
+        }).catch(() => {});
+        throw error;
     } finally {
         await context.close();
     }

@@ -68,6 +68,7 @@ jobs:
         with:
           chrome-version: current
           firefox-version: latest
+          popup-firefox: 'true'
 
       - name: Validate version and listing metadata before package gates
         id: metadata
@@ -105,10 +106,8 @@ jobs:
       - name: Lint source and extension
         run: npm run lint
 
-      - name: Build and execute verified store packages
-        run: |
-          mkdir -p browser-evidence
-          npm run release:verify-packages 2>&1 | tee browser-evidence/packages.log
+      - name: Verify packages and capture flows
+        uses: ./.github/actions/verify-package
 
       - name: Record verified package identity
         run: node scripts/release-package-identity.mjs write web-ext-artifacts "${{ steps.metadata.outputs.version }}" "$GITHUB_SHA"

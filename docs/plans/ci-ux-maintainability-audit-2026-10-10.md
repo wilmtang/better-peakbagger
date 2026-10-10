@@ -12,6 +12,7 @@ outdoor visual identity. Each independent unit is verified and committed.
 | U1 | At 390×600, twelve matches place Open drafts at y=565–603 and Delete data below the viewport. An unbroken peak name extends to x=568 within a clipped card. The full confidence sentence squeezes normal names into narrow columns. Evidence: hidden Chrome 153.0.8010.12, shipped popup bundle/styles. | Long names wrap; semantic confidence and percent remain available; the bounded result list and review action fit. Verify ready/opening/opened and error states in both browsers, themes, and dense results. |
 | U2 | The panel vocabulary gives every popup datum its own rounded, shadowed card. The owner selected an outdoor identity. | A shared warm paper/forest palette, restrained contour detail, and flatter grouped rows improve hierarchy across extension panels. Inspect settings, popup, and photo workspace at narrow/desktop sizes in both themes. |
 | C2 | `scripts/verify-capture-popup.mjs` combines source HTML/CSS with the built script and tests only error states. Its mock layout can miss shipped asset drift and ready-result clipping. | Read all fixture assets from `dist/`, cover dense and long-name results, and require visible contained controls. Retain the real action-popup sizing test. |
+| C3 | Local packaged Firefox 155 verification fails with `NoSuchWindowError` after Shift+Enter moves the existing Settings tab into a new window. The old WebDriver handle is destroyed although extension tab identity survives. | Reacquire exactly one matching extension URL, tolerate disappearing handles while enumerating, and prove the moved tab retains its original extension tab ID. Cover delayed navigation and duplicate destinations deterministically. |
 | E1 | Photo catalog, upload response, and IndexedDB secrets repeat the same bounded HTTPS/credential validator. | Use one pure validator with the existing 4,096-character limit. Preserve optional-field semantics and every boundary's independent validation. Run photo and worker regressions plus real-extension checks. |
 | E2 | Three verification orchestrators repeat child spawning, exit rejection, registration, and cleanup. | Reuse the existing resource-stack owner through one runner. Test exit failure, spawn failure, and teardown; preserve fail-fast repetitions and canonical archive hashes. |
 
@@ -37,6 +38,17 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
+- C1/C3: ordinary CI and release use one five-step production package/capture
+  gate. Both install the popup fixture browser; auxiliary checks consume the
+  minified build instead of rebuilding development bundles. Bash pipefail and
+  failure artifacts remain mandatory. Firefox reacquires exactly one moved
+  Settings destination and asserts the original extension tab ID survived.
+  The real failure was reproduced before this correction. All 65 focused
+  release/fixture tests, scoped ESLint, and five Bash syntax checks passed.
+  The complete shared gate then passed locally: exact Chrome/Firefox archives,
+  popup, pending-resource capture, toolbar capture, and sequential summit
+  drafts, hidden Chrome 153.0.8010.12 / Playwright Firefox 155.0. No check was
+  retried into success without identifying and correcting its failure.
 - U1/U2/C2: warmer paper/forest palettes, contour navigation, flatter grouped
   popup rows, shorter confidence labels with full accessible descriptions,
   wrapped names, and a 240px result list. Technical track details use a native
@@ -59,6 +71,8 @@ store protections, browser floors, and existing advisory scope/expiry.
 
 ### Changed but not fully proven
 
-No changes yet. Remote CI, native browser chrome, screen-reader speech, live
+- New workflow wiring has local execution and YAML contract evidence; a hosted
+  run, declared-floor run, and three-pass rehearsal were not dispatched.
+- Remote CI, native browser chrome, screen-reader speech, live
 providers, store acceptance, and window-placement behavior require separate
 evidence. Hidden layout checks do not establish those outcomes.

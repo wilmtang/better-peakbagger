@@ -32,6 +32,7 @@ import {
     surfaceSelectors,
     verificationViewport,
     waitForCondition,
+    waitForWindowUrl,
     webdriverScript,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
@@ -2435,7 +2436,7 @@ async function main() {
             const handles = await driver.getAllWindowHandles();
             return handles.length === initialHandles.length + 1 ? handles : false;
         }, 10_000, 'Firefox Settings window to appear');
-        const settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
+        let settingsHandle = openedHandles.find(handle => !initialHandles.includes(handle));
         await driver.switchTo().window(settingsHandle);
         await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000,
             'Firefox Settings destination to reach beta');
@@ -2504,9 +2505,7 @@ async function main() {
       event: window.__bpbSettingsShift,
       text: document.querySelector('.pbaf-settings-link')?.textContent,
     };`);
-        await driver.switchTo().window(settingsHandle);
-        await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000,
-            'Firefox Settings beta destination after Shift Enter');
+        settingsHandle = await waitForWindowUrl(driver, `${baseUrl}options/options.html#beta`);
         let newWindowTopology;
         try {
             newWindowTopology = await driver.wait(async () => {
@@ -2529,7 +2528,8 @@ async function main() {
             .every(state => state.options?.length === 1);
         const modifierStayedInWindow = [shortcutTopology, middleTopology]
             .every(state => state.options[0]?.windowId === state.source?.windowId);
-        const shiftCreatedWindow = newWindowTopology.options[0]?.windowId !== newWindowTopology.source?.windowId
+        const shiftCreatedWindow = newWindowTopology.options[0]?.id === beforeNewWindow.options[0]?.id
+            && newWindowTopology.options[0]?.windowId !== newWindowTopology.source?.windowId
             && newWindowTopology.windowCount === beforeNewWindow.windowCount + 1;
         await driver.close();
         const [remainingFilterHandle] = await driver.getAllWindowHandles();
