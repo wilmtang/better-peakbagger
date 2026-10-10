@@ -38,6 +38,11 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
+- E1: one pure photo URL policy replaces the catalog, upload, and IndexedDB
+  copies. HTTPS normalization, rejection of credentials/other schemes, the
+  exact 4,096-character ceiling, nullable-field handling, and independent
+  boundary validation remain intact. All 331 photo/worker/manifest tests,
+  scoped ESLint, and diff checks passed, including the real bundled-worker boot.
 - C1/C3: ordinary CI and release use one five-step production package/capture
   gate. Both install the popup fixture browser; auxiliary checks consume the
   minified build instead of rebuilding development bundles. Bash pipefail and
