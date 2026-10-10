@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createMapImportHarness } from '../helpers/map-import-routes-harness.mjs';
 import { createCaltopoRoutes } from '../../src/background/caltopo-routes.js';
 import { CALTOPO_IMPORT_URL, CALTOPO_PERMISSION } from '../../src/caltopo/caltopo-import.js';
 
@@ -19,48 +20,11 @@ const message = {
     grantToken: 'grant',
 };
 
-const harness = ({ outcome = { ok: true, supplied: true, code: 'prepared', message: 'Ready.' }, redirectUrl } = {}) => {
-    const tabs = new Map();
-    const created = [];
-    const injections = [];
-    const consumed = [];
-    let nextId = 20;
-    const ext = {
-        permissions: {
-            request: async request => { assert.deepEqual(request, CALTOPO_PERMISSION); return true; },
-            contains: async request => { assert.deepEqual(request, CALTOPO_PERMISSION); return true; },
-        },
-        runtime: { getURL: path => `moz-extension://test/${path}` },
-        tabs: {
-            create: async details => {
-                created.push(details);
-                const tab = {
-                    id: nextId++,
-                    windowId: details.windowId,
-                    url: redirectUrl || details.url,
-                    status: 'complete',
-                };
-                tabs.set(tab.id, tab);
-                return { ...tab };
-            },
-            get: async id => ({ ...tabs.get(id) }),
-            update: async () => {},
-        },
-        windows: { update: async () => {} },
-        scripting: {
-            executeScript: async details => { injections.push(details); return [{ result: outcome }]; },
-        },
-    };
-    const routes = createCaltopoRoutes({
-        ext,
-        isPeakbaggerSender: value => value?.url?.startsWith('https://www.peakbagger.com/'),
-        trustedActions: {
-            consumeGrant: async (...args) => { consumed.push(args); return true; },
-        },
-        action: 'caltopo-import',
-    });
-    return { ext, routes, created, injections, consumed };
-};
+const harness = options => createMapImportHarness({
+    createRoutes: createCaltopoRoutes,
+    permission: CALTOPO_PERMISSION,
+    action: 'caltopo-import',
+}, options);
 
 test('CalTopo route opens the exact blank map and consumes one-use authority', async () => {
     const h = harness();
