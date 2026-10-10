@@ -537,32 +537,6 @@ Do not remove structural source tests that protect manifest/build/CSP
 boundaries. Add behavioral fault injection beside them for transaction,
 cancellation, and round-trip invariants.
 
-## Recommended execution order
-
-Each step should be a focused commit with appropriate checks:
-
-1. **F1 — upload transaction and journal recovery.** This protects an
-   irreversible remote side effect and is the highest data-integrity risk.
-2. **F2 — immutable upload snapshot/busy boundary.** Reuse the F1 orchestration
-   harness to prove mutation exclusion and committed-state consistency.
-3. **F3 — provider deadline and true cancellation.** Preserve ownership,
-   provider endpoint, privacy, and late-generation guards.
-4. **F4 + F5 — photo resource contracts.** Establish size/dimension invariants
-   together so archive, import, storage, decode, and render agree.
-5. **F6 — public disclosure repair.** Update every maintained/public consumer
-   from one canonical wording.
-6. **F7 — bounded library rendering.** Land only after correctness boundaries
-   are stable.
-7. **F8 — maintained-document repair and drift test.** Update the current docs
-   for the final runtime behavior, then archive this plan with its completed
-   closure ledger.
-
-After any change to manifest/build composition, content-script load, worker
-composition, or provider injection, run `npm run verify:browsers`. After
-graphics changes, run the hidden hardware-GPU terrain checks. Photo UI changes
-require real rendered inspection at the desktop and narrow viewports already
-used by the browser verifier.
-
 ## Closure ledger
 
 ### Fixed and verified

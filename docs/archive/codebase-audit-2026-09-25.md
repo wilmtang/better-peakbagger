@@ -265,25 +265,6 @@ checks affected by any tooling update. Record whether the result is a clean
 graph or an explicitly accepted development-only exception. Remote CI remains
 unproven until an authorized push and completed workflow.
 
-## Execution order and completion contract
-
-1. **F7:** resolve the already-failing dependency gate in an independent unit;
-   an unavailable patch must not delay preparing the runtime fixes below.
-2. **F1:** preserve upload uncertainty and its durable recovery journal.
-3. **F2:** tie exact report source and automatic backup to saved content.
-4. **F3:** add snapshot generations and conditional consumption.
-5. **F4:** bind queued root writes to their accepted connection.
-6. **F5:** scope automatic stamps and schedule destination changes.
-7. **F6:** restore cached-navigation state and verify the actual browser path.
-
-Commit each completed independent unit after focused tests and relevant lint.
-Do not absorb the pre-existing AllTrails work into audit fixes. At integration,
-run the full suite, scale checks, lint, dependency gate, and Chrome/Firefox
-extension checks. Use focused hidden-browser renders for changed UI and record
-browser, viewport, and renderer if graphics are exercised. Retain separate
-evidence limits for live providers, remote writes, native focus, screen-reader
-speech, packaging, and remote CI.
-
 ## Existing limitations and proof gaps
 
 - The documented same-target report draft policy remains last-writer-wins
