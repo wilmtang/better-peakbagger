@@ -30,7 +30,7 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 | F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Changed; final panel sweep pending |
 | F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Changed; final browser check pending |
 | F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Open |
-| F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Open |
+| F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Changed; final visual check pending |
 | F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Open |
 
 ### F1 — Backup success lacks the identity of the committed snapshot
@@ -333,6 +333,12 @@ acceptance checks run.
   failing dark-Favorites branch) and hidden Firefox 157 extension verifiers
   passed. The dark Favorites screenshot was inspected; the final open-panel
   sweep remains pending.
+- F5: library actions catch operational failures, expose focusable busy states,
+  and retain retryable Undo after failed restoration. Reference-bookkeeping
+  failure explicitly preserves the successful report insertion outcome.
+  Build, all 111 photo-editor tests at the initial checkpoint, and 14 focused
+  failure/retry/repeated-activation cases passed, alongside focused ESLint and
+  whitespace checks. Final rendered error-state inspection is pending.
 
 Keep native/live/platform proof gaps explicit when moving locally verified
 items to the first category. Preserve this ledger when the plan is archived.

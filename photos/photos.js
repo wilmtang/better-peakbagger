@@ -2625,6 +2625,39 @@ const makeButton = (label, handler, className = 'quiet-button') => {
     return button;
 };
 
+const runLibraryAction = async (control, operation, failureMessage, { retry = false } = {}) => {
+    if (control?.disabled || control?.getAttribute('aria-busy') === 'true') return;
+    const hadFocus = document.activeElement === control;
+    if (control) {
+        // Keep the action focusable while its storage transaction is pending.
+        // Native disabling drops browser focus before a library redraw can own it.
+        control.setAttribute('aria-disabled', 'true');
+        control.setAttribute('aria-busy', 'true');
+    }
+    try {
+        await operation(control);
+    } catch {
+        toast(failureMessage, {
+            duration: retry ? 0 : 9000,
+            ...(retry ? {
+                action: 'Undo',
+                onAction: event => void runLibraryAction(event.currentTarget, operation, failureMessage, { retry }),
+            } : {}),
+        });
+    } finally {
+        if (control) {
+            control.removeAttribute('aria-disabled');
+            control.removeAttribute('aria-busy');
+            if (hadFocus && control.isConnected && document.activeElement === document.body) {
+                control.focus({ preventScroll: true });
+            }
+        }
+    }
+};
+
+const makeLibraryButton = (label, operation, failureMessage, className) => makeButton(label,
+    event => void runLibraryAction(event.currentTarget, operation, failureMessage), className);
+
 const insertFromLibrary = async (item, control = null) => {
     if (!RETURN_TOKEN) {
         await copyTextWithFallback(item.remote.url, { control });
@@ -2660,7 +2693,10 @@ const insertFromLibrary = async (item, control = null) => {
             await renderLibrary();
             return;
         }
-        throw error;
+        toast('The photo was inserted, but its library record could not be saved. Reload the library before inserting again.', {
+            duration: 9000,
+        });
+        return;
     }
     notifyBackupChanged();
     toast('Photo inserted into the report. You can close this tab.');
@@ -2887,7 +2923,7 @@ const moveToDeleted = async item => {
     toast('Moved to Recently Deleted. Restorable with editing data for 30 days. '
         + 'The remote image was not deleted.', {
         action: 'Undo',
-        onAction: async () => {
+        onAction: event => void runLibraryAction(event.currentTarget, async () => {
             try {
                 await store.restorePhoto(Library.restoreDeleted(deleted));
             } catch (error) {
@@ -2900,7 +2936,7 @@ const moveToDeleted = async item => {
             undoDeleted = null;
             dismissToast();
             await renderLibrary();
-        },
+        }, 'The photo could not be restored. Try Undo again.', { retry: true }),
         duration: 10000,
     });
     await renderLibrary();
@@ -3010,23 +3046,26 @@ const cardFor = (item, thumbnail, objectUrls) => {
     if (deletedDetails) body.append(deletedDetails.container);
     const actions = element('div', 'card-actions');
     if (!item.deletedAt && ['uploaded', 'unreachable'].includes(item.remote.state)) {
-        actions.append(makeButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
-            event => void insertFromLibrary(item, event.currentTarget), 'secondary-button'));
+        actions.append(makeLibraryButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
+            control => insertFromLibrary(item, control), 'The image could not be inserted. Try again.', 'secondary-button'));
     }
     if (!item.deletedAt && item.assets.originalRetained && item.assets.projectRetained) {
         actions.append(makeButton('Edit as new version',
             event => void editAsNewVersion(item, event.currentTarget)));
-        actions.append(makeButton('Download project', () => void downloadProject(item)));
+        actions.append(makeLibraryButton('Download project', () => downloadProject(item),
+            'This project could not be downloaded. Try again.'));
     }
     if (!item.deletedAt && item.remote.viewerUrl) {
         actions.append(makeButton('Open on ImgBB',
             () => void ext.tabs.create({ url: item.remote.viewerUrl })));
     }
     actions.append(item.deletedAt
-        ? makeButton(deletedDetails?.recovery.editingDataRecoverable
+        ? makeLibraryButton(deletedDetails?.recovery.editingDataRecoverable
             ? 'Restore with editing data'
-            : 'Restore record only', () => void restoreLibraryItem(item), 'secondary-button')
-        : makeButton('Remove…', () => void moveToDeleted(item), 'danger-button'));
+            : 'Restore record only', () => restoreLibraryItem(item),
+        'The photo could not be restored. Try again.', 'secondary-button')
+        : makeLibraryButton('Remove…', () => moveToDeleted(item),
+            'The photo could not be moved to Recently Deleted. Try again.', 'danger-button'));
     body.append(actions);
     card.append(body);
     return card;

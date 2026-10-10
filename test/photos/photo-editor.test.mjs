@@ -3642,3 +3642,115 @@ test('undoing every pending route point preserves the previous project Redo', as
     assert.equal(page.drawing(), false);
     assert.match(page.doc.getElementById('annotation-list').textContent, /Bolt/);
 });
+
+// Fail the page's own transaction, leaving independent inspection reads usable.
+const failNextPhotoTransaction = (indexedDB, name, mode = 'readwrite') => {
+    const database = indexedDB._databases.get('betterPeakbaggerPhotos').connections
+        .find(connection => !connection._closed);
+    const transaction = database.transaction.bind(database);
+    let attempted = false;
+    database.transaction = (names, requestedMode, options) => {
+        const stores = typeof names === 'string' ? [names] : [...names];
+        if (!attempted && requestedMode === mode && stores.includes('photos')) {
+            attempted = true;
+            if (name === 'AbortError') {
+                const pending = transaction(names, requestedMode, options);
+                queueMicrotask(() => pending.abort());
+                return pending;
+            }
+            throw new DOMException('Injected storage failure', name);
+        }
+        return transaction(names, requestedMode, options);
+    };
+    return { restore: () => { database.transaction = transaction; }, attempted: () => attempted };
+};
+const libraryButton = (page, label) => [...page.doc.querySelectorAll('.photo-card button')]
+    .find(button => button.textContent === label);
+
+for (const errorName of ['QuotaExceededError', 'AbortError', 'InvalidStateError']) {
+    for (const action of ['Remove…', 'Restore with editing data', 'Undo', 'Download project']) {
+        test(`library ${action} reports ${errorName} and remains retryable`, async t => {
+            const indexedDB = new IDBFactory();
+            const photo = await seedUploadedLibraryPhoto(indexedDB);
+            if (action === 'Restore with editing data') {
+                const seed = await Store.createPhotoStore({ indexedDB });
+                await seed.putPhoto(Library.markDeleted(photo)); seed.close();
+            }
+            const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', confirmImpl: () => true });
+            t.after(() => page.dom.window.close());
+            if (action === 'Restore with editing data') {
+                page.doc.getElementById('library-filter').value = 'recently-deleted';
+                page.doc.getElementById('library-filter').dispatchEvent(new page.win.Event('change'));
+                await waitFor(page.dom, () => !!libraryButton(page, action));
+            }
+            if (action === 'Undo') {
+                libraryButton(page, 'Remove…').click();
+                await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 0);
+            }
+            const before = await readPhotoStore(page.win, 'photos');
+            const control = action === 'Undo' ? page.doc.getElementById('toast-action') : libraryButton(page, action);
+            const fault = failNextPhotoTransaction(indexedDB, errorName, action === 'Download project' ? 'readonly' : 'readwrite');
+            t.after(fault.restore);
+            control.focus(); control.click();
+            await waitFor(page.dom, () => /could not/.test(page.doc.getElementById('toast-message').textContent)
+                && !control.hasAttribute('aria-busy'));
+            assert.equal(fault.attempted(), true);
+            assert.deepEqual(await readPhotoStore(page.win, 'photos'), before, 'a failed write must preserve the catalog');
+            assert.equal(page.doc.activeElement, control);
+            assert.equal(control.disabled, false);
+            assert.equal(control.hasAttribute('aria-disabled'), false);
+            assert.deepEqual(page.errors, []);
+            if (action === 'Undo') {
+                assert.equal(control.hidden, false);
+                assert.equal(control.textContent, 'Undo');
+                control.click();
+                await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 1);
+                assert.equal((await readPhotoStore(page.win, 'photos'))[0].deletedAt, null);
+            } else if (action !== 'Download project') {
+                control.click();
+                await waitFor(page.dom, () => !control.isConnected);
+                const after = (await readPhotoStore(page.win, 'photos'))[0];
+                assert.equal(!!after.deletedAt, action === 'Remove…');
+            }
+        });
+    }
+}
+
+test('library bookkeeping failure preserves the successful report insertion outcome', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB);
+    let insertions = 0;
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', returnToReport: true,
+        runtimeHandler: async message => {
+            if (message.type === 'PHOTO_INSERT_COMMIT') {
+                insertions++;
+                return { ok: true, identity: { cid: 900001, aid: 1234567 } };
+            }
+            return { ok: true };
+        },
+    });
+    t.after(() => page.dom.window.close());
+    const fault = failNextPhotoTransaction(indexedDB, 'QuotaExceededError'); t.after(fault.restore);
+    const insert = libraryButton(page, 'Insert'); insert.focus(); insert.click();
+    await waitFor(page.dom, () => /was inserted, but its library record could not be saved/.test(
+        page.doc.getElementById('toast-message').textContent) && !insert.hasAttribute('aria-busy'));
+    assert.equal(insertions, 1);
+    assert.equal(page.doc.activeElement, insert);
+    assert.equal((await readPhotoStore(page.win, 'photos'))[0].references.length, 0);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a pending library action keeps focus and rejects repeated activation', async t => {
+    const indexedDB = new IDBFactory(); await seedUploadedLibraryPhoto(indexedDB);
+    let confirmations = 0;
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library',
+        confirmImpl: () => { confirmations++; return true; },
+    }); t.after(() => page.dom.window.close());
+    const remove = libraryButton(page, 'Remove…'); remove.focus(); remove.click(); remove.click();
+    assert.equal(confirmations, 1);
+    assert.equal(remove.getAttribute('aria-busy'), 'true');
+    assert.equal(remove.getAttribute('aria-disabled'), 'true');
+    assert.equal(page.doc.activeElement, remove);
+    await waitFor(page.dom, () => !remove.isConnected);
+    assert.deepEqual(page.errors, []);
+});
