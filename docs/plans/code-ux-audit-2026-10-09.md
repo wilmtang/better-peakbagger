@@ -29,7 +29,7 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 | F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Changed; final visual check pending |
 | F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Changed; final panel sweep pending |
 | F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Changed; final browser check pending |
-| F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Open |
+| F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Changed; final browser check pending |
 | F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Changed; final visual check pending |
 | F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Open |
 
@@ -339,6 +339,12 @@ acceptance checks run.
   Build, all 111 photo-editor tests at the initial checkpoint, and 14 focused
   failure/retry/repeated-activation cases passed, alongside focused ESLint and
   whitespace checks. Final rendered error-state inspection is pending.
+- F4: cards/actions have stable identities and use the shared list-focus owner
+  already used by Favorites and Drafts. Nearby/empty-state recovery, Undo, and
+  pagination keep a usable target, while asynchronous refresh respects focus
+  moved outside the list. Build, 28 photo-library/maintenance cases, all 180
+  options tests, focused ESLint, and whitespace checks passed; final browser
+  keyboard and visual verification is pending.
 
 Keep native/live/platform proof gaps explicit when moving locally verified
 items to the first category. Preserve this ledger when the plan is archived.

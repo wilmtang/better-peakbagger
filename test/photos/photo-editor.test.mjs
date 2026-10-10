@@ -3754,3 +3754,98 @@ test('a pending library action keeps focus and rejects repeated activation', asy
     await waitFor(page.dom, () => !remove.isConnected);
     assert.deepEqual(page.errors, []);
 });
+
+const photoCard = (page, localId) => [...page.doc.querySelectorAll('.photo-card')]
+    .find(card => card.dataset.localId === localId);
+
+test('library redraw retains the same photo and action after reordering', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'first' });
+    const second = await seedUploadedLibraryPhoto(indexedDB, { localId: 'second' });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    const old = photoCard(page, 'first').querySelector('[data-action="download"]'); old.focus();
+    const other = await Store.createPhotoStore({ indexedDB });
+    await other.putPhoto({ ...second, updatedAt: new Date().toISOString() }); other.close();
+    page.doc.getElementById('show-library').click();
+    await waitFor(page.dom, () => !old.isConnected);
+    assert.equal(page.doc.activeElement, photoCard(page, 'first').querySelector('[data-action="download"]'));
+});
+
+test('library removal chooses a nearby action, empty state, and restored Undo target', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'first' });
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'second' });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', confirmImpl: () => true });
+    t.after(() => page.dom.window.close());
+    const first = photoCard(page, 'first').querySelector('[data-action="remove"]'); first.focus(); first.click();
+    await waitFor(page.dom, () => !photoCard(page, 'first'));
+    const second = photoCard(page, 'second').querySelector('[data-action="remove"]');
+    assert.equal(page.doc.activeElement, second);
+    second.click();
+    await waitFor(page.dom, () => !photoCard(page, 'second'));
+    assert.equal(page.doc.activeElement, page.doc.getElementById('library-empty'));
+    const undo = page.doc.getElementById('toast-action'); undo.focus(); undo.click();
+    await waitFor(page.dom, () => !!photoCard(page, 'second'));
+    assert.equal(page.doc.activeElement, photoCard(page, 'second').querySelector('[data-action="remove"]'));
+});
+
+test('an asynchronous library redraw does not reclaim focus moved to Search', async t => {
+    const indexedDB = new IDBFactory(); await seedUploadedLibraryPhoto(indexedDB);
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    const old = page.doc.querySelector('.photo-card [data-action="remove"]'); old.focus();
+    const database = indexedDB._databases.get('betterPeakbaggerPhotos').connections.find(connection => !connection._closed);
+    const transaction = database.transaction.bind(database);
+    let release; let started = false;
+    let armed = true;
+    database.transaction = (names, mode, options) => {
+        const pending = transaction(names, mode, options);
+        if (armed && mode === 'readonly' && Array.isArray(names) && names.includes('photos') && names.includes('metadata')) {
+            armed = false;
+            const released = new Promise(resolve => { release = resolve; });
+            let completion;
+            Object.defineProperty(pending, 'oncomplete', {
+                configurable: true, get: () => completion,
+                set: handler => { completion = event => { started = true; void released.then(() => handler.call(pending, event)); }; },
+            });
+        }
+        return pending;
+    };
+    t.after(() => { database.transaction = transaction; release?.(); });
+    page.doc.getElementById('show-library').click();
+    await waitFor(page.dom, () => started);
+    const search = page.doc.getElementById('library-search'); search.focus(); release();
+    await waitFor(page.dom, () => !old.isConnected);
+    assert.equal(page.doc.activeElement, search);
+});
+
+test('expired-asset maintenance retains the focused restore action', async t => {
+    const indexedDB = new IDBFactory(); await seedDeletedLibraryPhotos(indexedDB, 1);
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    page.doc.getElementById('library-filter').value = 'recently-deleted';
+    page.doc.getElementById('library-filter').dispatchEvent(new page.win.Event('change'));
+    await waitFor(page.dom, () => page.doc.querySelector('[data-action="restore"]'));
+    const old = page.doc.querySelector('[data-action="restore"]'); old.focus();
+    await waitFor(page.dom, () => !old.isConnected);
+    assert.equal(page.doc.activeElement.dataset.action, 'restore');
+    assert.equal(page.doc.activeElement.closest('.photo-card').dataset.localId, 'expired-photo-000');
+});
+
+test('library pagination keeps a usable control when Next becomes disabled', async t => {
+    const indexedDB = new IDBFactory();
+    // Metadata-only entries keep this pagination fixture cheap and realistic.
+    const store = await Store.createPhotoStore({ indexedDB });
+    for (let index = 0; index < 49; index++) await store.putPhoto(Library.createDraft({
+        localId: `page-${index}`, title: `Topo ${index}`,
+        source: { fileName: 'photo.jpg', mime: 'image/jpeg', bytes: 6, width: 1600, height: 1200, sha256: 'a'.repeat(64) },
+    }));
+    store.close();
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    const next = page.doc.getElementById('library-next'); next.focus(); next.click();
+    await waitFor(page.dom, () => /Page 2 of 2/.test(page.doc.getElementById('library-page-status').textContent));
+    assert.equal(page.doc.activeElement, page.doc.getElementById('library-previous'));
+    assert.equal(page.doc.activeElement.disabled, false);
+});

@@ -12,6 +12,7 @@ import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.j
 import { reportPhoto as PendingPhoto } from '../src/photos/report-photo.js';
 import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.js';
 import { settings as Settings } from '../src/settings/settings.js';
+import { listFocusRestorer } from '../src/ui/list-focus.js';
 import { readPhotoSourceUrl } from '../src/photos/photo-source-url.js';
 
 const ext = globalThis.browser || globalThis.chrome;
@@ -2923,7 +2924,7 @@ const moveToDeleted = async item => {
     toast('Moved to Recently Deleted. Restorable with editing data for 30 days. '
         + 'The remote image was not deleted.', {
         action: 'Undo',
-        onAction: event => void runLibraryAction(event.currentTarget, async () => {
+        onAction: event => void runLibraryAction(event.currentTarget, async control => {
             try {
                 await store.restorePhoto(Library.restoreDeleted(deleted));
             } catch (error) {
@@ -2934,8 +2935,13 @@ const moveToDeleted = async item => {
             }
             notifyBackupChanged();
             undoDeleted = null;
+            const ownedFocus = document.activeElement === control;
             dismissToast();
             await renderLibrary();
+            if (ownedFocus && [document.body, control].includes(document.activeElement)) {
+                const card = [...ui.libraryList.children].find(candidate => candidate.dataset.localId === item.localId);
+                (card?.querySelector('[data-action="remove"]') || libraryFocusFallback()).focus({ preventScroll: true });
+            }
         }, 'The photo could not be restored. Try Undo again.', { retry: true }),
         duration: 10000,
     });
@@ -3013,6 +3019,7 @@ const deletedRecoveryDetails = item => {
 
 const cardFor = (item, thumbnail, objectUrls) => {
     const card = element('article', 'photo-card');
+    card.dataset.localId = item.localId;
     if (thumbnail) {
         const url = URL.createObjectURL(thumbnail);
         objectUrls.push(url);
@@ -3045,21 +3052,25 @@ const cardFor = (item, thumbnail, objectUrls) => {
     const deletedDetails = item.deletedAt ? deletedRecoveryDetails(item) : null;
     if (deletedDetails) body.append(deletedDetails.container);
     const actions = element('div', 'card-actions');
+    const appendAction = (action, button) => {
+        button.dataset.action = action;
+        actions.append(button);
+    };
     if (!item.deletedAt && ['uploaded', 'unreachable'].includes(item.remote.state)) {
-        actions.append(makeLibraryButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
+        appendAction(RETURN_TOKEN ? 'insert' : 'copy', makeLibraryButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
             control => insertFromLibrary(item, control), 'The image could not be inserted. Try again.', 'secondary-button'));
     }
     if (!item.deletedAt && item.assets.originalRetained && item.assets.projectRetained) {
-        actions.append(makeButton('Edit as new version',
+        appendAction('edit', makeButton('Edit as new version',
             event => void editAsNewVersion(item, event.currentTarget)));
-        actions.append(makeLibraryButton('Download project', () => downloadProject(item),
+        appendAction('download', makeLibraryButton('Download project', () => downloadProject(item),
             'This project could not be downloaded. Try again.'));
     }
     if (!item.deletedAt && item.remote.viewerUrl) {
-        actions.append(makeButton('Open on ImgBB',
+        appendAction('open', makeButton('Open on ImgBB',
             () => void ext.tabs.create({ url: item.remote.viewerUrl })));
     }
-    actions.append(item.deletedAt
+    appendAction(item.deletedAt ? 'restore' : 'remove', item.deletedAt
         ? makeLibraryButton(deletedDetails?.recovery.editingDataRecoverable
             ? 'Restore with editing data'
             : 'Restore record only', () => restoreLibraryItem(item),
@@ -3081,6 +3092,12 @@ const renderStorageEstimate = async () => {
     } catch {
         ui.storageSummary.textContent = '';
     }
+};
+
+const libraryFocusFallback = () => {
+    const target = ui.libraryEmpty.hidden ? ui.libraryList : ui.libraryEmpty;
+    target.tabIndex = -1;
+    return target;
 };
 
 async function drawLibrary() {
@@ -3106,6 +3123,9 @@ async function drawLibrary() {
         nextObjectUrls.forEach(url => URL.revokeObjectURL(url));
         throw error;
     }
+    const restoreFocus = listFocusRestorer(ui.libraryList, 'localId', libraryFocusFallback);
+    const paginationFocus = [ui.libraryPrevious, ui.libraryNext].includes(document.activeElement)
+        ? document.activeElement : null;
     const previousObjectUrls = libraryObjectUrls;
     libraryObjectUrls = nextObjectUrls;
     ui.libraryList.replaceChildren(...cards);
@@ -3117,6 +3137,11 @@ async function drawLibrary() {
     ui.libraryPageStatus.textContent = items.length
         ? `Page ${libraryPage + 1} of ${pageCount} · ${items.length} photos`
         : '';
+    restoreFocus();
+    if (paginationFocus?.disabled && [document.body, paginationFocus].includes(document.activeElement)) {
+        const next = [ui.libraryPrevious, ui.libraryNext].find(control => !control.disabled && !control.closest('[hidden]'));
+        (next || ui.libraryList.querySelector('button') || libraryFocusFallback()).focus({ preventScroll: true });
+    }
     await renderStorageEstimate();
 }
 
