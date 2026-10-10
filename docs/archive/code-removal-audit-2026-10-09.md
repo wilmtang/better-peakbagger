@@ -120,8 +120,13 @@ Each was committed after its focused checks passed.
 
 - Shortened overlapping guides and superseded archive instructions in
   `4b96b0d`, `b5b6032`, and `5a79840`; all six affected closure records are unchanged.
+- Removed completed execution instructions from 13 further archives in `6eaabd4`
+  and `eafafd1`; comparisons confirm retained closure, delivery, and verification
+  records. The distinct undo-transaction rationale and regression matrices remain.
 - Shared terrain setup and capture storage faults in `5c33c5e` and `f2a2f62`;
   all 1,213 assertion expressions in the affected suites remain unchanged.
+- Shared AllTrails/CalTopo/onX browser stubs in `5f1c779`; all 12 test bodies and
+  names remain unchanged. The shared stub retains provider-specific permission checks.
 - `npm test`: 2,385/2,385. Photo/documentation checks: 21/21. Lint passed with
   the same six owned warnings; documentation links/anchors and diff checks passed.
 
