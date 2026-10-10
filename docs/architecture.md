@@ -684,8 +684,14 @@ Replacement waits for outgoing saves, and concurrent writes compare revisions.
 Published edits create new versions. Report display size never resizes the
 full-resolution export.
 
-ImgBB uploads are explicit and use a device-local key available only to exact
-packaged extension pages. Ambiguous uploads are not automatically retried.
+The saved key remains in device-local extension storage and is never exposed to
+Peakbagger, another website, GitHub, browser sync, or status UI. The worker uses
+it for user-initiated TR photo uploads and provides it to the exact packaged
+photo page for a direct ImgBB upload. Manual settings-file export is a separate,
+explicit credential-transfer choice. Ambiguous uploads are not automatically retried.
+
+ImgBB decides upload size. Local source processing is bounded to 128 MiB encoded,
+64 megapixels decoded, and 16,384 pixels per side; project bundles have a 40 MiB limit.
 Optional GitHub recovery contains metadata and public URLs, excludes pixels and
 credentials, and cannot restore remote deletion capabilities.
 
