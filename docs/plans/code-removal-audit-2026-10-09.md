@@ -35,6 +35,10 @@ plans.
   exports with callers, internal implementations, and `BPBProviderPage` remain.
   All 2,385 unit tests and runtime ESLint passed; `git diff --check` passed.
   Real-extension startup remains part of final verification.
+- R2: deleted the unused route-distance implementation and moved both
+  coordinate-gap/join regressions onto the live `computeMetricsForSegments`
+  pipeline. All 84 focused metrics, capture, and full-analysis scale tests,
+  scoped ESLint, and `git diff --check` passed.
 
 ### Intentionally not changed
 

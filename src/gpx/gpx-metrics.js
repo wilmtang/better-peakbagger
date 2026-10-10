@@ -288,44 +288,6 @@ const computeAdjustedDistances = points => {
     return { distanceM, rawDistanceM, distMByIndex };
 };
 
-const computeRouteDistanceM = segments => {
-    let coordinateGroup = 0;
-    const points = [];
-    let previousSegmentEnd = null;
-
-    (segments || []).forEach((segment, segmentIndex) => {
-        const coordinates = segment || [];
-        const firstCoordinate = coordinates[0];
-        const firstPoint = {
-            lat: firstCoordinate?.[0],
-            lon: firstCoordinate?.[1],
-        };
-        if (segmentIndex > 0
-            && (!previousSegmentEnd
-                || !isValidCoordinate(firstPoint.lat, firstPoint.lon)
-                || haversineDistanceM(previousSegmentEnd, firstPoint) > MAX_SEGMENT_JOIN_DISTANCE_M)) {
-            coordinateGroup++;
-        }
-        coordinates.forEach(coordinate => {
-            const lat = coordinate?.[0];
-            const lon = coordinate?.[1];
-            if (!isValidCoordinate(lat, lon)) {
-                coordinateGroup++;
-                return;
-            }
-            points.push({ lat, lon, coordinateGroup });
-        });
-        const lastCoordinate = coordinates.at(-1);
-        const lastPoint = {
-            lat: lastCoordinate?.[0],
-            lon: lastCoordinate?.[1],
-        };
-        previousSegmentEnd = isValidCoordinate(lastPoint.lat, lastPoint.lon) ? lastPoint : null;
-    });
-
-    return computeAdjustedDistances(points).distanceM;
-};
-
 const calculateGrade = (index, distMByIndex, elevations, points) => {
     const centerDistM = distMByIndex[index];
     let baselineIndex = index;
@@ -1100,7 +1062,6 @@ const API = {
     isPlausibleElevationM,
     distanceM: haversineDistanceM,
     distanceToPathM,
-    computeRouteDistanceM,
     sampleChartPoints,
     computeMetrics,
     computeMetricsForSegments,
