@@ -1,8 +1,5 @@
 # Active plans
 
-- [Code-removal audit](code-removal-audit-2026-10-09.md) — in progress;
-  remove proven unused APIs and obsolete module-presence fallbacks while
-  preserving regression coverage and runtime boundaries.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.
@@ -14,3 +11,6 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [code-removal audit](../archive/code-removal-audit-2026-10-09.md) is closed
+locally with its removal evidence, retained boundaries, and verification limits.

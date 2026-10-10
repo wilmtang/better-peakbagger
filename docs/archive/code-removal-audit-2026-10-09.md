@@ -1,7 +1,8 @@
 # Code-removal audit — 2026-10-09
 
-Baseline: `c9a1a26`, clean main checkout. Work is isolated on
-`codex/code-removal-audit`; no push, merge, or release is included.
+Baseline: `c9a1a26`, clean main checkout. Completed locally on
+`codex/code-removal-audit`; no push, merge, or release occurred. This ledger
+records the audit begun on October 9 and closed on October 10.
 
 ## Scope and findings
 
@@ -22,10 +23,9 @@ simplification.
 | R5 | `scripts/release-bump.mjs` (line 13) explicitly returns at the end of `die`. | Remove the redundant return; release tests and lint. |
 | R6 | Final scale verification exposed an unchanged stale Favorites backup stub: it supplies only a commit URL, while the live UI requires the repository and content signature. Its readiness condition also watches a container that becomes visible before authentication finishes. | Match the worker acknowledgement, await the enabled Backup button, and rerun scale and acknowledgement tests. Preserve production confirmation checks. |
 
-Each independent removal receives its own focused commit after its checks pass.
-Finish with the full unit suite, lint, scale coverage, and hidden real-extension
-verification. Archive this ledger after disposition; preserve unrelated active
-plans.
+Implementation commits: `56897e5` (R1), `a312a52` (R2), `87f4040` (R3),
+`a7ed9cd` and `01f2e71` (R4), `d6499e3` (R5), and `65e1c12` (R6).
+Each was committed after its focused checks passed.
 
 ## Closure ledger
 
@@ -35,7 +35,7 @@ plans.
   and the obsolete peak-zoom constant exposed only by an unused entry. Named
   exports with callers, internal implementations, and `BPBProviderPage` remain.
   All 2,385 unit tests and runtime ESLint passed; `git diff --check` passed.
-  Real-extension startup remains part of final verification.
+  Final hidden Chrome and Firefox startup/integration checks also passed.
 - R2: deleted the unused route-distance implementation and moved both
   coordinate-gap/join regressions onto the live `computeMetricsForSegments`
   pipeline. All 84 focused metrics, capture, and full-analysis scale tests,
@@ -50,7 +50,7 @@ plans.
   injection. Failed settings reads, feature-write confirmation, stale revisions,
   runtime browser capabilities, and externally supplied MapLibre remain guarded.
   The build, 353 focused options/filter/map/terrain/theme tests, scoped ESLint,
-  and `git diff --check` passed. Real-browser integration remains pending.
+  and `git diff --check` passed. Final hidden Chrome/Firefox integration passed.
   A final scan also removed the initial filter-settings read's presence guard;
   its read/validation fallback remains. All 57 filter tests and scoped ESLint
   passed, and the presence-candidate scan now returns no matches.
@@ -84,5 +84,32 @@ plans.
 
 ### Changed but not fully proven
 
-- Pending final verification. Local tests cannot establish live-provider DOM,
-  native focus/window behavior, screen-reader speech, remote CI, or stores.
+- The removals are locally verified. Live-provider DOM, native browser chrome,
+  focus/window placement, screen-reader speech, remote CI, and store acceptance
+  remain outside this audit's evidence. No hosted workflow or store action ran.
+- Static scans and inspected candidates do not establish that every possible
+  simplification in the repository has been found, or identify code authorship.
+
+## Final verification and size
+
+- `npm test`: 2,385 passed, zero failed. No test case was removed.
+- `npm run test:scale`: 14 passed, zero failed after the R6 fixture repair.
+- `npm run lint`: passed with six owned web-ext warnings; no ESLint errors.
+- `npm run verify:browsers`: passed on the final runtime code in hidden Chrome
+  for Testing 153.0.8010.12 and Firefox 157.0.1, base viewport 1000×760 plus
+  their responsive cases. Real manifests, worker startup, cross-world settings,
+  form/draft identity, exactly-once Preview, and manual Save boundaries passed.
+- `node scripts/verify-terrain-visual.mjs` with a disposable output directory:
+  passed in hidden Chrome 155.0.8059.39 on ANGLE Metal / Apple M3 Pro. Wide
+  798×448 and default 448×448 maps, 1280×950 and 1000×900 page states, resize,
+  degraded DEM coverage, pending drape, and failure recovery passed. Light
+  wide and dark default screenshots were visually inspected. This fixture
+  check supplements the real-extension bridge check; it does not replace it.
+- Process command lines and all recorded disposable-profile paths were checked
+  after teardown. No owned browser/verifier process or profile remained;
+  disposable screenshots and the audit's temporary bookkeeping were removed.
+- `cloc 2.10`, with the same exclusions as the initial count: product source
+  is 178 physical lines / 158 effective lines smaller, from 52,027 to 51,869
+  effective lines. Tooling lost one effective line; the fixture repair adds
+  four test lines, for 155 fewer effective lines overall. Documentation is
+  recorded separately and excluded from that metric.
