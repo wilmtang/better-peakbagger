@@ -424,7 +424,6 @@ const authStore = createAuthStore();
 
 const API = {
     CLIENT_ID,
-    APP_SLUG,
     INSTALL_URL,
     APP_URL,
     VERIFICATION_URI,
@@ -432,7 +431,6 @@ const API = {
     EPOCH_KEY,
     DEVICE_RESPONSE_MAX_BYTES,
     DEVICE_STRUCTURE_LIMITS,
-    DISCOVERY_MAX_PAGES,
     DISCOVERY_MAX_ITEMS,
     createDeviceFlow,
     fetchAccount,

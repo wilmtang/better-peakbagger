@@ -172,6 +172,5 @@ export const createFavoritesStore = ({ storage, now = Date.now } = {}) => {
 
 export const favoritesStore = {
     MESSAGE_TYPE: F.MUTATION_MESSAGE_TYPE,
-    applyFavoritesMutation,
     createFavoritesStore,
 };

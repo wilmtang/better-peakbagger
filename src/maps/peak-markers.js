@@ -22,9 +22,6 @@
 
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 
-// The native 2D map hides all peak markers below this zoom ("the map
-// covers too big an area"). The 3D view mirrors the same cutoff.
-const MIN_PEAK_ZOOM = 12;
 // Defensive cap on rendered markers; when the feed returns more, the most
 // prominent peaks win. The native map draws everything, but a pitched 3D
 // camera can legitimately see more area than a 2D viewport ever would.
@@ -226,7 +223,6 @@ const createTerrainResponder = ({ getIframeSrc, post }) => {
 };
 
 export const peakMarkers = {
-    MIN_PEAK_ZOOM,
     MAX_PEAKS,
     RESPONSE_MAX_BYTES,
     MAX_SOURCE_PEAKS,

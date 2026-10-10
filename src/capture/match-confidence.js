@@ -46,5 +46,3 @@ export const matchLabel = classification =>
 // the component's light-mode defaults — from reaching the page.
 export const matchTone = classification =>
     TONES[classification] || BELOW_BAR_TONE;
-
-export const matchConfidence = { CLASSIFICATIONS, matchLabel, matchTone };

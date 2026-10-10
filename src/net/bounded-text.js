@@ -151,5 +151,4 @@ export const boundedText = {
     readBoundedBlobText,
     assertBoundedStructure,
     isLimitError: error => error?.name === 'ResourceLimitError',
-    isAbortError: error => error?.name === 'AbortError',
 };

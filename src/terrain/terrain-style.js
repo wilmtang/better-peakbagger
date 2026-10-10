@@ -219,11 +219,8 @@ const createVectorStyleLoader = ({
 export const terrainStyle = {
     DEFAULT_TIMEOUT_MS,
     STYLE_MAX_BYTES,
-    PROVIDER_ORIGIN,
     MAX_SOURCES,
-    MAX_LAYERS,
     MAX_ID_LENGTH,
-    STYLE_STRUCTURE_LIMITS,
     providerUrl,
     normalizeStyle,
     createVectorStyleLoader,

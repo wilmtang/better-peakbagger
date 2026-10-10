@@ -324,8 +324,6 @@ export function civilToInstant(zone, date, minute, {
 
 export const mountainTime = Object.freeze({
     resolve: resolveMountainTime,
-    longitudeOffsetMs,
-    localFields,
     localDate,
     localMinute,
     zoneLabel,

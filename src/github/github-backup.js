@@ -500,7 +500,6 @@ const buildBackup = (snapshot, options = {}) => {
 const API = {
     SCHEMA_VERSION,
     peakSlug,
-    datePrefix,
     isoDate,
     folderName,
     folderPath,

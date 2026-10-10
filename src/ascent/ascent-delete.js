@@ -19,10 +19,7 @@ const positiveAid = value => /^\d+$/.test(String(value || '')) && Number(value) 
 const isDeleteSubmitter = submitter => !!submitter && DELETE_BUTTON_IDS.has(submitter.id);
 
 export const ascentDeletion = {
-    DELETE_BUTTON_IDS,
     SUBMITTING_EVENT,
-    positiveAid,
-    isDeleteSubmitter,
 };
 
 (() => {

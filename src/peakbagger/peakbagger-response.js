@@ -33,5 +33,3 @@ export const classifyResponse = (status, headers, bodyText, { kind = 'edit' } = 
     if (status < 200 || status >= 300) return 'wrong-content';
     return matchesExpectedContent(body, kind) ? 'ok' : 'wrong-content';
 };
-
-export const peakbaggerResponse = { classifyResponse };

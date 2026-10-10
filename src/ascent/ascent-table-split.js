@@ -227,6 +227,5 @@ export const mountAscentTableSplit = ({
 
 export const ascentTableSplit = {
     mount: mountAscentTableSplit,
-    findTablePair,
     storageKey: STORAGE_KEY,
 };

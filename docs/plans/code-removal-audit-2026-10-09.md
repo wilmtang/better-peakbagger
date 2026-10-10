@@ -30,7 +30,11 @@ plans.
 
 ### Fixed and verified
 
-- Pending implementation.
+- R1: removed 11 unused namespace exports, 55 unconsumed internal API entries,
+  and the obsolete peak-zoom constant exposed only by an unused entry. Named
+  exports with callers, internal implementations, and `BPBProviderPage` remain.
+  All 2,385 unit tests and runtime ESLint passed; `git diff --check` passed.
+  Real-extension startup remains part of final verification.
 
 ### Intentionally not changed
 

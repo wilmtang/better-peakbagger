@@ -110,11 +110,3 @@ export async function prepareGaiaImport({ gpx, filename, timeoutMs = 20_000 }) {
         );
     }
 }
-
-export const gaiaImport = {
-    GAIA_ORIGIN,
-    GAIA_MAP_URL,
-    GAIA_PERMISSION,
-    MAX_GAIA_GPX_BYTES,
-    prepareGaiaImport,
-};

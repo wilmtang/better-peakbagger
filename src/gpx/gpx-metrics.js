@@ -1091,10 +1091,6 @@ const API = {
     // Geometry primitives shared with src/capture/capture-core.js, which loads
     // after this module in the background worker.
     EARTH_RADIUS_M,
-    MIN_PLAUSIBLE_ELEVATION_M,
-    MAX_PLAUSIBLE_ELEVATION_M,
-    MIN_UTC_OFFSET_MINUTES,
-    MAX_UTC_OFFSET_MINUTES,
     toRad,
     normalizeLonDelta,
     isValidCoordinate,
@@ -1105,7 +1101,6 @@ const API = {
     distanceM: haversineDistanceM,
     distanceToPathM,
     computeRouteDistanceM,
-    calculateConfirmedGainM,
     sampleChartPoints,
     computeMetrics,
     computeMetricsForSegments,

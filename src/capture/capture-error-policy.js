@@ -103,9 +103,3 @@ const POLICIES = Object.freeze({
 export const CAPTURE_ERROR_CODES = Object.freeze(Object.keys(POLICIES));
 export const captureErrorPolicy = code => POLICIES[code] || POLICIES['capture-failed'];
 export const captureErrorMessage = code => captureErrorPolicy(code).message;
-
-export const captureErrors = {
-    CAPTURE_ERROR_CODES,
-    captureErrorPolicy,
-    captureErrorMessage,
-};

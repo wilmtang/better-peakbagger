@@ -202,7 +202,6 @@ export const trustedActions = {
     END_TYPE,
     STORAGE_KEY,
     CAPABILITY_TTL_MS,
-    WORKFLOW_TTL_MS,
     ACTIONS,
     create: createTrustedActions,
 };

@@ -118,11 +118,3 @@ export async function prepareAlltrailsImport({ gpx, filename, timeoutMs = 20_000
         );
     }
 }
-
-export const alltrailsImport = {
-    ALLTRAILS_ORIGIN,
-    ALLTRAILS_IMPORT_URL,
-    ALLTRAILS_PERMISSION,
-    MAX_ALLTRAILS_GPX_BYTES,
-    prepareAlltrailsImport,
-};
