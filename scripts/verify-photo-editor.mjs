@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
 // no live site, user browser, API key, or upload is involved.
-/* global document, DataTransfer, chrome, innerWidth, innerHeight, getComputedStyle, HTMLCanvasElement, FileReader, navigator */
+/* global document, DataTransfer, chrome, innerWidth, innerHeight, scrollY, getComputedStyle, HTMLCanvasElement, FileReader, navigator */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -303,8 +303,16 @@ try {
                 if (!label?.textContent.includes('Upper gully')) return false;
                 const visible = element => {
                     const rect = element.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0 && rect.top >= header.bottom
-                        && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth;
+                    if (!(rect.width > 0 && rect.height > 0 && rect.top >= header.bottom
+                        && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth)) return false;
+                    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                        const style = getComputedStyle(parent);
+                        const bounds = parent.getBoundingClientRect();
+                        // scrollTop rounds to CSS pixels; tolerate the final fraction.
+                        if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowY)
+                            && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1)) return false;
+                    }
+                    return true;
                 };
                 if (!visible(input) || !visible(label)) return false;
                 return {
@@ -315,7 +323,22 @@ try {
                     width: document.getElementById('text-width').value,
                     tool: document.querySelector('[data-tool][aria-pressed="true"]').dataset.tool,
                 };
-            }, null, { timeout: 5000 }).then(handle => handle.jsonValue());
+            }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(async error => {
+                console.error(JSON.stringify(await page.evaluate(() => ({
+                    width: innerWidth, scrollY,
+                    nodes: [document.getElementById('object-text'), document.querySelector('#photo-overlay .selected text')].map(element => {
+                        const clips = [];
+                        for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+                            if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(parent).overflowY)) {
+                                clips.push({ name: parent.id || parent.className,
+                                    rect: parent.getBoundingClientRect().toJSON(), scroll: parent.scrollTop });
+                            }
+                        }
+                        return { rect: element.getBoundingClientRect().toJSON(), clips };
+                    }),
+                })), null, 2));
+                throw error;
+            });
             assert.deepEqual(state, { focused: true, docked: width <= 900, dockHidden: true,
                 value: `Ridge ${theme} ${width}\nUpper gully`, width: '', tool: 'text' });
             if (screenshots) await page.screenshot({ path: path.join(screenshots, `label-${theme}-${width}.png`) });

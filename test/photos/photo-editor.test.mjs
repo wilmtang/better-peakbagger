@@ -3857,6 +3857,8 @@ for (const placement of ['photo', 'center']) {
         const input = page.doc.getElementById('object-text');
         const inspector = input.closest('#inspector');
         const dock = page.doc.getElementById('photo-text-editor');
+        let wideAligned = 0;
+        input.scrollIntoView = options => { assert.equal(options.block, 'nearest'); wideAligned++; };
         let aligned = 0;
         dock.scrollIntoView = options => { assert.equal(options.block, 'end'); aligned++; };
         page.tool('text');
@@ -3874,6 +3876,7 @@ for (const placement of ['photo', 'center']) {
         page.win.innerWidth = 1000; page.win.dispatchEvent(new page.win.Event('resize'));
         assert.equal(inspector.contains(input), true);
         assert.equal(dock.hidden, true);
+        assert.equal(wideAligned, 1);
         assert.equal(page.doc.activeElement, input);
         assert.deepEqual([input.selectionStart, input.selectionEnd, input.selectionDirection], [3, 8, 'backward']);
         page.win.innerWidth = 520; page.win.dispatchEvent(new page.win.Event('resize'));

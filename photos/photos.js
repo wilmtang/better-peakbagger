@@ -1124,6 +1124,10 @@ const textField = ui.text.closest('label');
 const textHome = document.createComment('Text inspector position');
 textField.after(textHome);
 const narrowEditor = window.matchMedia?.('(max-width: 900px)');
+const revealTextEditor = () => {
+    const target = ui.textEditor.hidden ? ui.text : ui.textEditor;
+    target.scrollIntoView?.({ block: ui.textEditor.hidden ? 'nearest' : 'end', inline: 'nearest' });
+};
 const syncTextEditor = () => {
     const docked = (narrowEditor?.matches ?? window.innerWidth <= 900) && selectedObject()?.type === 'text';
     const parent = docked ? ui.textEditor : textHome.parentNode;
@@ -1139,7 +1143,7 @@ const syncTextEditor = () => {
     if (focused && moved) {
         ui.text.focus({ preventScroll: true });
         ui.text.setSelectionRange(...selection);
-        if (docked) ui.textEditor.scrollIntoView?.({ block: 'end', inline: 'nearest' });
+        revealTextEditor();
     }
 };
 
@@ -1651,7 +1655,7 @@ const addPointObject = (type, point) => {
     if (type === 'text') {
         ui.text.focus({ preventScroll: true });
         ui.text.select();
-        if (!ui.textEditor.hidden) ui.textEditor.scrollIntoView?.({ block: 'end', inline: 'nearest' });
+        revealTextEditor();
     }
 };
 
