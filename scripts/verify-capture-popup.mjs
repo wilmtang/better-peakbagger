@@ -63,6 +63,9 @@ const VARIANTS = Object.freeze([
     // Device scale is pixel density, not browser zoom. Native sizing below
     // separately checks opening the action popup over a tab at 200% zoom.
     { name: 'scale-2', theme: 'light', viewport: { width: 390, height: 600 }, deviceScaleFactor: 2 },
+    ...[['light', 'dark'], ['dark', 'light'], ['system', 'light'], ['system', 'dark']]
+        .map(([theme, scheme]) => ({ name: `${theme}-on-${scheme}`, theme, scheme,
+            viewport: { width: 390, height: 600 }, deviceScaleFactor: 1 })),
 ]);
 
 const verifyNativeSizing = async () => {
@@ -160,7 +163,7 @@ const renderCase = async (browser, browserName, item, variant) => {
     const context = await browser.newContext({
         viewport: variant.viewport,
         deviceScaleFactor: variant.deviceScaleFactor,
-        colorScheme: variant.theme,
+        colorScheme: variant.scheme || variant.theme,
     });
     const page = await context.newPage();
     try {
@@ -168,7 +171,7 @@ const renderCase = async (browser, browserName, item, variant) => {
         await page.addStyleTag({ content: panelCss });
         await page.addStyleTag({ content: popupCss });
         await page.evaluate(({ theme, job }) => {
-            globalThis.document.documentElement.setAttribute('data-bpb-theme', theme);
+            if (theme !== 'system') globalThis.document.documentElement.setAttribute('data-bpb-theme', theme);
             globalThis.chrome = {
                 tabs: {
                     query: async () => [{ id: 9 }],
@@ -203,7 +206,7 @@ const renderCase = async (browser, browserName, item, variant) => {
         await page.waitForFunction(({ title, action }) => title
             ? globalThis.document.querySelector('.state-title')?.textContent === title
             : globalThis.document.querySelector('#open-drafts')?.textContent === action, item);
-        const layout = await page.evaluate(() => {
+        const layout = await page.evaluate(theme => {
             const viewportWidth = globalThis.document.documentElement.clientWidth;
             const viewportHeight = globalThis.document.documentElement.clientHeight;
             const card = globalThis.document.querySelector('.state-card') || globalThis.document.querySelector('#results');
@@ -218,6 +221,11 @@ const renderCase = async (browser, browserName, item, variant) => {
                 return { left: rect.left, right: rect.right, rowRight: row.getBoundingClientRect().right,
                     overflow: name.scrollWidth > name.clientWidth + 1 };
             });
+            const swatch = globalThis.document.createElement('span');
+            swatch.style.backgroundColor = `var(--${theme}-bg)`;
+            globalThis.document.body.append(swatch);
+            const expectedBackground = globalThis.getComputedStyle(swatch).backgroundColor;
+            swatch.remove();
             return {
                 viewportWidth,
                 viewportHeight,
@@ -227,8 +235,12 @@ const renderCase = async (browser, browserName, item, variant) => {
                 buttons,
                 names,
                 background: globalThis.getComputedStyle(globalThis.document.body).backgroundColor,
+                expectedBackground,
             };
-        });
+        }, variant.theme === 'system' ? variant.scheme : variant.theme);
+        if (layout.background !== layout.expectedBackground) {
+            throw new Error(`${browserName} ${variant.name} resolved the wrong theme: ${JSON.stringify(layout)}`);
+        }
         const expectedLabels = item.action ? [item.action, ...(item.job ? ['Delete captured track data'] : [])] : [];
         const actualLabels = layout.buttons.map(button => button.label);
         if (JSON.stringify(actualLabels) !== JSON.stringify(expectedLabels)) {

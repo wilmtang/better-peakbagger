@@ -41,7 +41,10 @@
     --light-danger-bg: #fff4f4;
     --light-danger-border: #dfb1b1;
     --light-danger-fill: #912f2f;
-    --light-shadow: none;
+    --light-strong: #067647;
+    --light-strong-bg: #ecfdf3;
+    --light-probable: #93370d;
+    --light-probable-bg: #fffaeb;
 
     --dark-bg: #141e19;
     --dark-card: #1e2b23;
@@ -60,105 +63,42 @@
     --dark-danger-bg: #382326;
     --dark-danger-border: #704046;
     --dark-danger-fill: #9b353b;
-    --dark-shadow: none;
+    --dark-strong: #7ac78d;
+    --dark-strong-bg: #173322;
+    --dark-probable: #f7c66a;
+    --dark-probable-bg: #332a18;
 
-    /* Light is the resting state, so a panel still reads correctly if the theme
-       bootstrap cannot run at all. */
-    --bg: var(--light-bg);
-    --card: var(--light-card);
-    --border: var(--light-border);
-    --text: var(--light-text);
-    --sub: var(--light-sub);
-    --accent: var(--light-accent);
-    --accent-fg: var(--light-accent-fg);
-    --link: var(--light-link);
-    --input-bg: var(--light-input-bg);
-    --input-border: var(--light-input-border);
-    --experimental-bg: var(--light-experimental-bg);
-    --experimental-border: var(--light-experimental-border);
-    --experimental-text: var(--light-experimental-text);
-    --danger: var(--light-danger);
-    --danger-bg: var(--light-danger-bg);
-    --danger-border: var(--light-danger-border);
-    --danger-fill: var(--light-danger-fill);
-    --shadow: var(--light-shadow);
-
-    /* Summit-match confidence. These are the one Strong/Probable pair the
-       product already uses on the ascent form and the trip-report banner, so
-       they are semantic status colours rather than anything derived from the
-       accent, and they do not change when the accent does. The two injected
-       Peakbagger stylesheets keep their own copies because panel.css is not
-       loaded into a site page; change all three together. */
-    --strong: #067647;
-    --strong-bg: #ecfdf3;
-    --probable: #93370d;
-    --probable-bg: #fffaeb;
+    /* The declared Chrome 128 / Firefox 152 floors support light-dark().
+       color-scheme is the one selector for OS fallback and explicit preference;
+       native controls and authored surfaces therefore resolve the same theme. */
+    --bg: light-dark(var(--light-bg), var(--dark-bg));
+    --card: light-dark(var(--light-card), var(--dark-card));
+    --border: light-dark(var(--light-border), var(--dark-border));
+    --text: light-dark(var(--light-text), var(--dark-text));
+    --sub: light-dark(var(--light-sub), var(--dark-sub));
+    --accent: light-dark(var(--light-accent), var(--dark-accent));
+    --accent-fg: light-dark(var(--light-accent-fg), var(--dark-accent-fg));
+    --link: light-dark(var(--light-link), var(--dark-link));
+    --input-bg: light-dark(var(--light-input-bg), var(--dark-input-bg));
+    --input-border: light-dark(var(--light-input-border), var(--dark-input-border));
+    --experimental-bg: light-dark(var(--light-experimental-bg), var(--dark-experimental-bg));
+    --experimental-border: light-dark(var(--light-experimental-border), var(--dark-experimental-border));
+    --experimental-text: light-dark(var(--light-experimental-text), var(--dark-experimental-text));
+    --danger: light-dark(var(--light-danger), var(--dark-danger));
+    --danger-bg: light-dark(var(--light-danger-bg), var(--dark-danger-bg));
+    --danger-border: light-dark(var(--light-danger-border), var(--dark-danger-border));
+    --danger-fill: light-dark(var(--light-danger-fill), var(--dark-danger-fill));
+    --strong: light-dark(var(--light-strong), var(--dark-strong));
+    --strong-bg: light-dark(var(--light-strong-bg), var(--dark-strong-bg));
+    --probable: light-dark(var(--light-probable), var(--dark-probable));
+    --probable-bg: light-dark(var(--light-probable-bg), var(--dark-probable-bg));
+    --shadow: none;
     --strong-rule: #17b26a;
     --probable-rule: #f79009;
 }
 
-/* No stored preference: follow the OS. The panel bootstrap normally resolves
-   that into the attribute before first paint; this keeps the page readable when
-   blocked storage means it cannot. */
-@media (prefers-color-scheme: dark) {
-    :root:not([data-bpb-theme="light"]) {
-        color-scheme: dark;
-        --bg: var(--dark-bg);
-        --card: var(--dark-card);
-        --border: var(--dark-border);
-        --text: var(--dark-text);
-        --sub: var(--dark-sub);
-        --accent: var(--dark-accent);
-        --accent-fg: var(--dark-accent-fg);
-        --link: var(--dark-link);
-        --input-bg: var(--dark-input-bg);
-        --input-border: var(--dark-input-border);
-        --experimental-bg: var(--dark-experimental-bg);
-        --experimental-border: var(--dark-experimental-border);
-        --experimental-text: var(--dark-experimental-text);
-        --danger: var(--dark-danger);
-        --danger-bg: var(--dark-danger-bg);
-        --danger-border: var(--dark-danger-border);
-        --danger-fill: var(--dark-danger-fill);
-        --shadow: var(--dark-shadow);
-        --strong: #7ac78d;
-        --strong-bg: #173322;
-        --probable: #f7c66a;
-        --probable-bg: #332a18;
-    }
-}
-
-/* The explicit panel preference wins over the OS scheme, for the native
-   selects, checkboxes, ranges, and scrollbars too. */
-:root[data-bpb-theme="dark"] {
-    color-scheme: dark;
-    --bg: var(--dark-bg);
-    --card: var(--dark-card);
-    --border: var(--dark-border);
-    --text: var(--dark-text);
-    --sub: var(--dark-sub);
-    --accent: var(--dark-accent);
-    --accent-fg: var(--dark-accent-fg);
-    --link: var(--dark-link);
-    --input-bg: var(--dark-input-bg);
-    --input-border: var(--dark-input-border);
-    --experimental-bg: var(--dark-experimental-bg);
-    --experimental-border: var(--dark-experimental-border);
-    --experimental-text: var(--dark-experimental-text);
-    --danger: var(--dark-danger);
-    --danger-bg: var(--dark-danger-bg);
-    --danger-border: var(--dark-danger-border);
-    --danger-fill: var(--dark-danger-fill);
-    --shadow: var(--dark-shadow);
-    --strong: #7ac78d;
-    --strong-bg: #173322;
-    --probable: #f7c66a;
-    --probable-bg: #332a18;
-}
-
-:root[data-bpb-theme="light"] {
-    color-scheme: light;
-}
+:root[data-bpb-theme="dark"] { color-scheme: dark; }
+:root[data-bpb-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 

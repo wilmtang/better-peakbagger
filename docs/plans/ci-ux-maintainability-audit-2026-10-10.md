@@ -39,6 +39,16 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
+- E3: one `light-dark()` mapping per token replaces the duplicated OS/explicit
+  dark blocks. Explicit preferences, native controls, OS fallback when the
+  bootstrap cannot run, and Strong/Probable colors remain consistent. Browser
+  support predates our floors: [Chrome 123](https://developer.chrome.com/blog/new-in-chrome-123)
+  and [Firefox 120](https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/120).
+  All 76 focused theme/popup tests, scoped ESLint, and diff checks passed.
+  Hidden Chrome 153.0.8010.12 / Firefox 155.0 rendered 196 popup states at
+  390×600: both themes, DPR 2, opposite OS preferences, and both OS fallbacks.
+  Every case checked the resolved background and contained controls; final
+  light Chrome and system-dark Firefox screenshots were inspected.
 - E2: package building, archive execution, and repeated browser checks share
   one resource-owned child runner. It waits for child closure, rejects spawn,
   exit, and signal failures, and retains cleanup. Firefox uses the existing
