@@ -20,6 +20,7 @@ simplification.
 | R3 | Small test-only compatibility helpers expose behavior already available through the live APIs: ascent ownership, backup folder paths, style validity, and relative local days. | Remove wrappers and move assertions onto production readers, loaders, and local-day numbers. Preserve independent expected values and edge cases. |
 | R4 | Static imports still have presence checks and fallback branches from the former global-module loading arrangement. Examples: `src/terrain/terrain-map.js` (lines 246–248 and 358–374), `src/maps/big-map.js` (line 427), and `options/options.js` (lines 85–87). | Remove impossible missing-import branches. Retain failed reads, stale generations, external browser/MapLibre capabilities, consent, and identity gates. Focused tests and real-extension verification. |
 | R5 | `scripts/release-bump.mjs` (line 13) explicitly returns at the end of `die`. | Remove the redundant return; release tests and lint. |
+| R6 | Final scale verification exposed an unchanged stale Favorites backup stub: it supplies only a commit URL, while the live UI requires the repository and content signature. Its readiness condition also watches a container that becomes visible before authentication finishes. | Match the worker acknowledgement, await the enabled Backup button, and rerun scale and acknowledgement tests. Preserve production confirmation checks. |
 
 Each independent removal receives its own focused commit after its checks pass.
 Finish with the full unit suite, lint, scale coverage, and hidden real-extension
@@ -53,6 +54,10 @@ plans.
 - R5: removed the redundant end-of-function return in release error reporting.
   All 46 release tests, scoped ESLint with `no-useless-return`, and
   `git diff --check` passed.
+- R6: updated the stale scale acknowledgement with the repository and exact
+  favorites signature; await the enabled Backup button. All 10 focused
+  Favorites scale/backup-acknowledgement tests, scoped ESLint, and
+  `git diff --check` passed. The runtime confirmation boundary is unchanged.
 
 ### Intentionally not changed
 
