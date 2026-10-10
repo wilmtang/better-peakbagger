@@ -8,6 +8,11 @@ reasoning and background they captured, not as a description of current behavior
 For current behavior, see the top-level [`README.md`](../../README.md) and the
 living docs in [`docs/`](../).
 
+- [CI, UI, and maintainability follow-up — 2026-10-10](ci-ux-maintainability-audit-2026-10-10.md) —
+  shared production release/capture gates, Firefox moved-tab recovery, outdoor
+  extension panels, unclipped popup results, and reduced duplicate owners.
+  Three consecutive local packaged-browser pairs passed; hosted CI, browser
+  floors, dependency exception, and native/live proof limits remain explicit.
 - [UI state audit remediation — 2026-10-06](ui-state-audit-2026-10-06.md) —
   seven reproduced defects fixed, including draft/photo edit loss, stale popup
   replies, settings drift, keyboard focus, and naturally narrow report controls.

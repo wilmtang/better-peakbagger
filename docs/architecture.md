@@ -680,6 +680,8 @@ insertion does not undo a successful upload.
 `photos/photos.js` owns UI orchestration; the pure project and renderer modules
 own annotation validation and metadata-free export; `src/photos/photo-store.js`
 owns IndexedDB pixels, projects, revisions, upload journals, and tombstones.
+The pure `src/photos/photo-url.js` owns bounded HTTPS URL validation, reused
+independently by upload responses, catalog entries, and stored delete secrets.
 Replacement waits for outgoing saves, and concurrent writes compare revisions.
 Published edits create new versions. Report display size never resizes the
 full-resolution export.

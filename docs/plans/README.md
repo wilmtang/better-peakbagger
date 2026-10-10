@@ -1,8 +1,5 @@
 # Active plans
 
-- [CI, UI, and maintainability follow-up](ci-ux-maintainability-audit-2026-10-10.md) —
-  in progress; shared release gates, outdoor panel identity, popup layout,
-  and removal of duplicate validation and verification runners.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.
@@ -17,3 +14,6 @@ truth for shipped code.
 
 The [code-removal audit](../archive/code-removal-audit-2026-10-09.md) is closed
 locally with its removal evidence, retained boundaries, and verification limits.
+The [CI, UI, and maintainability follow-up](../archive/ci-ux-maintainability-audit-2026-10-10.md)
+is closed locally with three consecutive packaged-browser pairs; hosted CI and
+external proof gaps remain explicit.

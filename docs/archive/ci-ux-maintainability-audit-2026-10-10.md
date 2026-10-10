@@ -3,6 +3,8 @@
 Baseline: `2b7c859`, clean `codex/code-removal-audit` checkout. Preserve the
 existing code-removal work. The owner requests fixes, including a distinctive
 outdoor visual identity. Each independent unit is verified and committed.
+Local implementation is closed at `a3595ad`; hosted and external proof remains
+explicit below.
 
 ## Findings before implementation
 
@@ -29,7 +31,7 @@ outdoor visual identity. Each independent unit is verified and committed.
   succeeded at their snapshots. This is not remote proof for new local changes.
 - Keep the exact existing development-advisory exception and October 17 expiry.
   Historical-tag Firefox recovery has the separate limitations recorded in the
-  [October 3 ledger](ci-ux-maintainability-audit-2026-10-03.md).
+  [October 3 ledger](../plans/ci-ux-maintainability-audit-2026-10-03.md).
 - Existing audits already removed substantial dead/duplicated code. No whole
   runtime module is newly proven unused. Remove actual duplicate owners rather
   than compressing readable code or deleting correctness/privacy guards.
@@ -102,11 +104,77 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 Privacy, ownership, cancellation, settings schema, manual Save, package identity,
 store protections, browser floors, and existing advisory scope/expiry.
+Read-only registry checks still report node-forge 1.4.0, adbkit 3.3.9, and
+web-ext 10.7.0 as their latest versions. No patched dependency was available.
+The live audit accepted only the existing exact development-only advisory until
+2026-10-17T07:00:00Z; raw audit still has three high findings and the default
+remains strict. This is a real dependency limitation, not a timing flake.
 
 ### Changed but not fully proven
 
 - New workflow wiring has local execution and YAML contract evidence; a hosted
   run, declared-floor run, and three-pass rehearsal were not dispatched.
 - Remote CI, native browser chrome, screen-reader speech, live
-providers, store acceptance, and window-placement behavior require separate
-evidence. Hidden layout checks do not establish those outcomes.
+  providers, store acceptance, and window-placement behavior require separate
+  evidence. Hidden layout checks do not establish those outcomes.
+- Local Node is 26.11.1; the workflow uses Node 24. Actionlint was unavailable;
+  workflow contract tests and the five extracted Bash steps were checked.
+
+## Final local verification
+
+- `npm test`: 2,390 passed, zero failed. `npm run test:scale`: all 14 passed.
+  `npm run lint`: passed with the six existing owned web-ext warnings.
+  The subsequent label-only recovery correction passed all 28 upload/guide
+  tests and scoped ESLint. Documentation checks passed.
+- Executed the shared action's five exact Bash steps locally, with
+  `BPB_VERIFY_REPETITIONS=3`. The canonical minified Chrome archive and its
+  derived Firefox archive passed three consecutive pairs with fresh profiles,
+  unchanged SHA-256 hashes between checks, and teardown required every time.
+  Hidden Chrome 153.0.8010.12 / Firefox 155.0 used 1000×760 base viewports.
+  Chrome restored BFCache; Firefox safely remounted exactly one analyzer.
+- The same gate then passed real popup sizing, 196 shipped-asset popup layouts,
+  pending-resource capture, toolbar-to-draft privacy/recovery/cancellation,
+  and sequential summit drafts. Source bundles were never rebuilt over the
+  minified artifacts during these checks. No test failure was retried into
+  success without a correction.
+- Final Settings captures: hidden Chrome 153.0.8010.12, light/dark at 1024×900
+  and 390×844, keyboard/Undo/transfer states also checked. Final photo editor:
+  hidden hardware ANGLE Metal / Apple M3 Pro at seven sizes, including 1000×760
+  and 390×760. Inspected both target surfaces at desktop/light and narrow/dark,
+  plus popup previews in both themes at 390×600. Synthetic fixtures were used;
+  no live upload, GitHub write, or Save occurred.
+- Final process command-line inspection found no owned browser/driver/server;
+  exact verifier/profile directory prefixes were absent. Review previews and
+  logs are retained as task artifacts; disposable run output is removed.
+- Compared with `2b7c859`, runtime source is 54 lines smaller and verification
+  implementation/workflows are 47 lines smaller: **101 net implementation lines
+  removed**. Tests add 80 net lines; the ledger and maintained documentation
+  add lines overall. This count excludes generated bundles and avoids claiming
+  the entire checkout became smaller.
+- `npm run audit:ci -- --allow-reviewed-development-advisory` passed under the
+  exact existing exception; the raw graph remains three high findings. No
+  security waiver was added, expanded, or renewed.
+
+Verified archive SHA-256:
+
+```text
+Chrome  a85f1f5e0ea3b70c8fdf040ff64197091a3d4ec056c843a82685cb9e84e7d199
+Firefox fd7dd7617496b5f07eaf4c096f378784f7a597184f8737921e94272c5f6b48e4
+```
+
+## Focused commits
+
+| Commit | Independent unit |
+| --- | --- |
+| `3135e59` | Findings-first audit and index |
+| `ff8ee12` | Outdoor panels, popup layout, shipped-asset layout coverage |
+| `47f08fe` | Shared production gates and Firefox tab identity recovery |
+| `618854d` | Shared bounded photo URL policy |
+| `e40285c` | Resource-owned verifier runner and compact outcome records |
+| `898f114` | Single panel theme mapping and override/fallback coverage |
+| `07b3144` | Integration contract corrections |
+| `a3595ad` | Recovery and guide labels aligned with Settings |
+
+No push, merge, tag, workflow dispatch, or store submission occurred. The older
+October 3 audit stays active for its separate dependency, historical-tag recovery,
+and remote-evidence limitations.
