@@ -113,3 +113,23 @@ Each was committed after its focused checks passed.
   effective lines. Tooling lost one effective line; the fixture repair adds
   four test lines, for 155 fewer effective lines overall. Documentation is
   recorded separately and excluded from that metric.
+
+## Documentation and test consolidation — 2026-10-10
+
+### Fixed and verified
+
+- Shortened overlapping guides and superseded archive instructions in
+  `4b96b0d`, `b5b6032`, and `5a79840`; all six affected closure records are unchanged.
+- Shared terrain setup and capture storage faults in `5c33c5e` and `f2a2f62`;
+  all 1,213 assertion expressions in the affected suites remain unchanged.
+- `npm test`: 2,385/2,385. Photo/documentation checks: 21/21. Lint passed with
+  the same six owned warnings; documentation links/anchors and diff checks passed.
+
+### Intentionally not changed
+
+- Runtime source, distinct failure models, regression cases, and historical proof gaps.
+
+### Changed but not fully proven
+
+- This documentation/test-harness follow-up ran no new native UI, real-browser,
+  or live-provider checks; it does not extend the earlier browser evidence.
