@@ -11,6 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
 import { MAX_GPX_TRACK_POINTS } from '../../src/capture/capture-resource-limits.js';
 import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mjs';
 
@@ -52,7 +53,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     let syncGetCalls = 0;
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
-    let draftSetCalls = 0;
+    const checkSessionWrite = createCaptureWriteFaults(faults);
     const sessionSetPatches = [];
 
     const browser = {
@@ -62,38 +63,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
                     ? structuredClone(values)
                     : { [key]: structuredClone(values[key]) },
                 set: async patch => {
-                    const payloadKeys = Object.keys(patch)
-                        .filter(key => key.startsWith('bpbCapturePayload:'));
-                    if (payloadKeys.length && faults.payloadSet) {
-                        const message = faults.payloadSet;
-                        delete faults.payloadSet;
-                        throw new Error(message);
-                    }
-                    if (patch.bpbDraftTabs) {
-                        draftSetCalls++;
-                        if (faults.draftSet || faults.draftSetAt === draftSetCalls) {
-                            const message = faults.draftSet
-                                || faults.draftSetAtMessage
-                                || `draft write ${draftSetCalls} failed`;
-                            delete faults.draftSet;
-                            faults.draftSetAt = null;
-                            throw new Error(message);
-                        }
-                    }
-                    if (patch.bpbCaptureJobs
-                        && Object.values(patch.bpbCaptureJobs).some(job => job?.phase === 'opened')
-                        && faults.openedJobSet) {
-                        const message = faults.openedJobSet;
-                        delete faults.openedJobSet;
-                        throw new Error(message);
-                    }
-                    if (patch.bpbCaptureJobs
-                        && Object.values(patch.bpbCaptureJobs).some(job => job?.payloadKey)
-                        && faults.payloadMetadataSet) {
-                        const message = faults.payloadMetadataSet;
-                        delete faults.payloadMetadataSet;
-                        throw new Error(message);
-                    }
+                    checkSessionWrite(patch);
                     sessionSetPatches.push(structuredClone(patch));
                     Object.assign(values, structuredClone(patch));
                 },
