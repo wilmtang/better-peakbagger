@@ -317,7 +317,8 @@ import { units as Units } from '../src/ui/units.js';
             // holds visible matches. Resolve the name through the shared owner
             // anyway: a row whose classification changed would otherwise keep
             // reading "Probable" while saying nothing changed.
-            confidence.textContent = `${matchLabel(match.classification)} match · ${match.confidence}% confidence`;
+            confidence.textContent = `${matchLabel(match.classification)} · ${match.confidence}%`;
+            confidence.setAttribute('aria-label', `${matchLabel(match.classification)} match · ${match.confidence}% confidence`);
             row.append(checkbox, text, confidence);
             list.append(row);
         });

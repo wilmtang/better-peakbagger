@@ -11,7 +11,7 @@
  * with green and flat ones — so the shared vocabulary lives here and a page
  * stylesheet adds only what is genuinely its own layout.
  *
- * The scale: 12px surfaces, 8px controls, 999px pills, 14px/1.5 body text.
+ * The scale: 8px surfaces and controls, 14px/1.5 body text.
  *
  * Link this before the page stylesheet — page rules of equal specificity are
  * meant to win, and a page overrides by declaring the difference, never by
@@ -24,16 +24,16 @@
 :root {
     color-scheme: light dark;
 
-    --light-bg: #f4f4f2;
-    --light-card: #ffffff;
-    --light-border: #e2e2dc;
-    --light-text: #1c1c1a;
-    --light-sub: #6a6a63;
-    --light-accent: #2f6b3f;
+    --light-bg: #f1efdf;
+    --light-card: #fcfbf5;
+    --light-border: #d6dccb;
+    --light-text: #233629;
+    --light-sub: #5b685b;
+    --light-accent: #2c6244;
     --light-accent-fg: #ffffff;
-    --light-link: #2f6b3f;
-    --light-input-bg: #ffffff;
-    --light-input-border: #c8c8c2;
+    --light-link: #23593e;
+    --light-input-bg: #fffef9;
+    --light-input-border: #bec9b7;
     --light-experimental-bg: #f7ead0;
     --light-experimental-border: #e2c98f;
     --light-experimental-text: #68420b;
@@ -41,18 +41,18 @@
     --light-danger-bg: #fff4f4;
     --light-danger-border: #dfb1b1;
     --light-danger-fill: #912f2f;
-    --light-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+    --light-shadow: none;
 
-    --dark-bg: #181a1b;
-    --dark-card: #23262a;
-    --dark-border: #3a3f45;
-    --dark-text: #e6e1d8;
-    --dark-sub: #a29c92;
-    --dark-accent: #3c8450;
+    --dark-bg: #141e19;
+    --dark-card: #1e2b23;
+    --dark-border: #384a3e;
+    --dark-text: #eeeade;
+    --dark-sub: #a6b3a3;
+    --dark-accent: #408054;
     --dark-accent-fg: #ffffff;
     --dark-link: #7ac78d;
-    --dark-input-bg: #2b2f34;
-    --dark-input-border: #4a5058;
+    --dark-input-bg: #26362c;
+    --dark-input-border: #526752;
     --dark-experimental-bg: #3a2f20;
     --dark-experimental-border: #665235;
     --dark-experimental-text: #f0cd8d;
@@ -60,7 +60,7 @@
     --dark-danger-bg: #382326;
     --dark-danger-border: #704046;
     --dark-danger-fill: #9b353b;
-    --dark-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+    --dark-shadow: none;
 
     /* Light is the resting state, so a panel still reads correctly if the theme
        bootstrap cannot run at all. */
@@ -172,7 +172,16 @@ body {
     font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
+h1 { margin: 0; font-size: 19px; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; }
+
+/* A quiet contour drawing gives the navigation its outdoor identity without
+   a remote image, another asset, or decoration competing with the controls. */
+.side-nav, .brand, .app-header {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 180'%3E%3Cg fill='none' stroke='%237b906b' stroke-opacity='.16'%3E%3Cpath d='M90-20C30 25 220 45 160 105S55 150 100 200M110-20C50 25 240 45 180 105S75 150 120 200M130-20C70 25 260 45 200 105S95 150 140 200M150-20C90 25 280 45 220 105S115 150 160 200M170-20C110 25 300 45 240 105S135 150 180 200'/%3E%3C/g%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right top;
+    background-size: 240px 180px;
+}
 
 /* Link colour is declared once, on the element, rather than per context. Every
    context that styled its own left the browser default in place everywhere
@@ -209,7 +218,7 @@ a:focus-visible,
     height: 100%;
     overflow-y: auto;
     padding: 28px 16px;
-    background: var(--card);
+    background-color: var(--card);
     border-right: 1px solid var(--border);
 }
 
@@ -300,7 +309,7 @@ a:focus-visible,
 .peak-row {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 8px;
     box-shadow: var(--shadow);
     overflow: hidden;
 }

@@ -37,7 +37,20 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
-Pending implementation.
+- U1/U2/C2: warmer paper/forest palettes, contour navigation, flatter grouped
+  popup rows, shorter confidence labels with full accessible descriptions,
+  wrapped names, and a 240px result list. Technical track details use a native
+  disclosure; privacy copy stays visible. Settings use plain Report labels and
+  a descriptive climber-list explanation. All 103 focused popup/options/theme
+  tests, contrast checks, scoped ESLint, and diff checks passed.
+- The popup verifier reads shipped HTML/CSS/icons/scripts and checks 14 states
+  in hidden Chrome 153.0.8010.12 and Firefox 155.0 at 390×600, both themes and
+  DPR 2. Dense ready/opening/opened results and unbroken long names fit, with
+  the correct enabled/disabled controls. Real Chrome action sizing also passes
+  both themes and source-tab zoom 100%/200%. Settings screenshots inspected at
+  1024×900 and 390×844; photo editor screenshots inspected at 1000×760 and
+  390×760 with behavioral checks at seven sizes. Photo verification reports
+  hardware ANGLE Metal / Apple M3 Pro. Owned processes/profiles were removed.
 
 ### Intentionally not changed
 

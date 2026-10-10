@@ -34,11 +34,11 @@ body.standalone-page .content { height: 100%; }
 .settings-section { scroll-margin-top: 24px; }
 .subsection { scroll-margin-top: 24px; }
 
-.settings-section + .settings-section { margin-top: 22px; }
+.settings-section + .settings-section { margin-top: 28px; }
 .section-title {
     margin: 0 2px 9px;
     color: var(--text);
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 680;
     letter-spacing: -.01em;
 }

@@ -13,11 +13,11 @@ import { chromium, firefox } from 'playwright';
 import { createResourceStack } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
-const popupHtml = await fs.readFile(new URL('../popup/popup.html', import.meta.url), 'utf8');
-const panelCss = await fs.readFile(new URL('../src/theme/panel.css', import.meta.url), 'utf8');
-const popupCss = await fs.readFile(new URL('../popup/popup.css', import.meta.url), 'utf8');
+const popupHtml = await fs.readFile(new URL('../dist/popup/popup.html', import.meta.url), 'utf8');
+const panelCss = await fs.readFile(new URL('../dist/css/panel.css', import.meta.url), 'utf8');
+const popupCss = await fs.readFile(new URL('../dist/popup/popup.css', import.meta.url), 'utf8');
 const popupBundle = await fs.readFile(new URL('../dist/popup/popup.js', import.meta.url), 'utf8');
-const icon = await fs.readFile(new URL('../icons/icon-32.png', import.meta.url));
+const icon = await fs.readFile(new URL('../dist/icons/icon-32.png', import.meta.url));
 const artifactDir = process.env.BPB_CAPTURE_POPUP_ARTIFACTS
     ? path.resolve(process.env.BPB_CAPTURE_POPUP_ARTIFACTS)
     : null;
@@ -27,6 +27,17 @@ const shell = popupHtml
     .replace(/\s*<script\b[^>]*\bsrc=[^>]*><\/script>/gi, '')
     .replace(/\s*<link\b[^>]*rel=["']stylesheet["'][^>]*>/gi, '')
     .replace('../icons/icon-32.png', `data:image/png;base64,${icon.toString('base64')}`);
+
+const readyJob = phase => ({
+    phase, provider: 'garmin', activityId: '777', hasCachedGpx: true, selectedIds: [1, 2],
+    trackSummary: { originalPointCount: 6200, retainedPointCount: 3000, maxDeviationM: 2.4 },
+    matches: Array.from({ length: 12 }, (_, index) => ({
+        id: index + 1,
+        name: index === 0 ? 'Mount_' + 'Long_Summit_Name_'.repeat(5) : `North Ridge Summit ${index + 1}`,
+        classification: index % 2 ? 'probable' : 'strong', confidence: index % 2 ? 72 : 96,
+        evidence: { distanceM: 8, elevationDeltaM: 4, trackQuality: 0.98 },
+    })),
+});
 
 const CASES = Object.freeze([
     { code: 'unsupported', provider: null, title: 'Open an activity to begin', action: 'Settings' },
@@ -40,14 +51,18 @@ const CASES = Object.freeze([
     { code: 'cloudflare', provider: 'strava', title: 'Peakbagger needs a human check', action: 'Open Peakbagger' },
     { code: 'provider-unavailable', provider: 'strava', title: 'Your activity provider is unavailable', action: 'Try again' },
     { code: 'track-too-large', provider: 'strava', title: 'This route is too large', action: null },
+    ...['ready', 'opening', 'opened'].map(phase => ({
+        code: phase, job: readyJob(phase),
+        action: phase === 'ready' ? 'Open 2 drafts' : phase === 'opening' ? 'Opening drafts…' : 'Show opened drafts',
+    })),
 ]);
 
 const VARIANTS = Object.freeze([
-    { name: 'light', theme: 'light', viewport: { width: 390, height: 620 }, deviceScaleFactor: 1 },
-    { name: 'dark', theme: 'dark', viewport: { width: 390, height: 620 }, deviceScaleFactor: 1 },
+    { name: 'light', theme: 'light', viewport: { width: 390, height: 600 }, deviceScaleFactor: 1 },
+    { name: 'dark', theme: 'dark', viewport: { width: 390, height: 600 }, deviceScaleFactor: 1 },
     // Device scale is pixel density, not browser zoom. Native sizing below
     // separately checks opening the action popup over a tab at 200% zoom.
-    { name: 'scale-2', theme: 'light', viewport: { width: 390, height: 620 }, deviceScaleFactor: 2 },
+    { name: 'scale-2', theme: 'light', viewport: { width: 390, height: 600 }, deviceScaleFactor: 2 },
 ]);
 
 const verifyNativeSizing = async () => {
@@ -177,7 +192,7 @@ const renderCase = async (browser, browserName, item, variant) => {
             };
         }, {
             theme: variant.theme,
-            job: {
+            job: item.job || {
                 phase: 'error',
                 provider: item.provider,
                 activityId: '777',
@@ -185,16 +200,23 @@ const renderCase = async (browser, browserName, item, variant) => {
             },
         });
         await page.addScriptTag({ content: popupBundle });
-        await page.waitForFunction(expected =>
-            globalThis.document.querySelector('.state-title')?.textContent === expected, item.title);
+        await page.waitForFunction(({ title, action }) => title
+            ? globalThis.document.querySelector('.state-title')?.textContent === title
+            : globalThis.document.querySelector('#open-drafts')?.textContent === action, item);
         const layout = await page.evaluate(() => {
             const viewportWidth = globalThis.document.documentElement.clientWidth;
             const viewportHeight = globalThis.document.documentElement.clientHeight;
-            const card = globalThis.document.querySelector('.state-card');
+            const card = globalThis.document.querySelector('.state-card') || globalThis.document.querySelector('#results');
             const cardRect = card?.getBoundingClientRect();
-            const buttons = [...globalThis.document.querySelectorAll('.state-card button')].map(button => {
+            const buttons = [...card.querySelectorAll('button:not([hidden])')].map(button => {
                 const rect = button.getBoundingClientRect();
-                return { label: button.textContent, left: rect.left, right: rect.right };
+                return { label: button.textContent, left: rect.left, right: rect.right, bottom: rect.bottom, disabled: button.disabled };
+            });
+            const names = [...card.querySelectorAll('.peak-name')].map(name => {
+                const rect = name.getBoundingClientRect();
+                const row = name.closest('.peak-row');
+                return { left: rect.left, right: rect.right, rowRight: row.getBoundingClientRect().right,
+                    overflow: name.scrollWidth > name.clientWidth + 1 };
             });
             return {
                 viewportWidth,
@@ -203,10 +225,11 @@ const renderCase = async (browser, browserName, item, variant) => {
                 bodyWidth: globalThis.document.body.getBoundingClientRect().width,
                 card: cardRect ? { left: cardRect.left, right: cardRect.right, bottom: cardRect.bottom } : null,
                 buttons,
+                names,
                 background: globalThis.getComputedStyle(globalThis.document.body).backgroundColor,
             };
         });
-        const expectedLabels = item.action ? [item.action] : [];
+        const expectedLabels = item.action ? [item.action, ...(item.job ? ['Delete captured track data'] : [])] : [];
         const actualLabels = layout.buttons.map(button => button.label);
         if (JSON.stringify(actualLabels) !== JSON.stringify(expectedLabels)) {
             throw new Error(`${browserName} ${variant.name} ${item.code} actions: ${JSON.stringify(actualLabels)}`);
@@ -221,6 +244,11 @@ const renderCase = async (browser, browserName, item, variant) => {
         }
         if (layout.card.bottom > layout.viewportHeight + 1) {
             throw new Error(`${browserName} ${variant.name} ${item.code} clipped vertically: ${JSON.stringify(layout)}`);
+        }
+        if (item.job && (layout.buttons.some(button => button.bottom > layout.viewportHeight + 1)
+            || layout.names.some(name => name.right > name.rowRight || name.overflow)
+            || layout.buttons[0].disabled !== (item.code === 'opening'))) {
+            throw new Error(`${browserName} ${variant.name} ${item.code} results clipped or unusable: ${JSON.stringify(layout)}`);
         }
         if (artifactDir) {
             await page.screenshot({
@@ -258,7 +286,7 @@ const verifyBrowser = async ({ name, engine, launch }) => {
             browser: name,
             version: browser.version(),
             hidden: true,
-            cssViewport: '390x620',
+            cssViewport: '390x600',
             deviceScaleFactors: [1, 2],
             cases: CASES.length,
             variants,

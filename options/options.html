@@ -22,12 +22,12 @@
         <ul class="nav-list">
             <li><a class="nav-item" href="#general">General</a></li>
             <li>
-                <a class="nav-item" href="#capture">Activity creation</a>
+                <a class="nav-item" href="#capture">Capture &amp; reports</a>
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#capture-gpx">GPX capture</a></li>
-                    <li><a class="nav-subitem" href="#capture-report">TR editor</a></li>
-                    <li data-report-editor-dependent><a class="nav-subitem" href="#capture-photos">TR photos</a></li>
-                    <li data-report-editor-dependent><a class="nav-subitem" href="#drafts">TR drafts</a></li>
+                    <li><a class="nav-subitem" href="#capture-report">Report editor</a></li>
+                    <li data-report-editor-dependent><a class="nav-subitem" href="#capture-photos">Report photos</a></li>
+                    <li data-report-editor-dependent><a class="nav-subitem" href="#drafts">Report drafts</a></li>
                 </ul>
             </li>
             <li>
@@ -48,7 +48,7 @@
                 <a class="nav-item" href="#github">Backup &amp; sync</a>
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#github-connection">GitHub connection</a></li>
-                    <li><a class="nav-subitem" href="#github-backup">Ascent and TR backup</a></li>
+                    <li><a class="nav-subitem" href="#github-backup">Ascent and report backup</a></li>
                     <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
                     <li><a class="nav-subitem" href="#github-favorites-backup">Climber lists backup &amp; sync</a></li>
                     <li><a class="nav-subitem" href="#github-photos-backup">Photo library backup</a></li>
@@ -96,7 +96,7 @@
         </section>
 
         <section id="capture" class="settings-section" aria-labelledby="capture-settings-heading">
-            <h2 class="section-title" id="capture-settings-heading">Activity creation</h2>
+            <h2 class="section-title" id="capture-settings-heading">Capture &amp; reports</h2>
 
             <div class="subsection" id="capture-gpx" role="group" aria-labelledby="capture-gpx-heading">
                 <h3 class="subsection-title" id="capture-gpx-heading">GPX capture</h3>
@@ -169,11 +169,11 @@
             </div>
 
             <div class="subsection" id="capture-report" role="group" aria-labelledby="capture-report-heading">
-                <h3 class="subsection-title" id="capture-report-heading">TR editor</h3>
+                <h3 class="subsection-title" id="capture-report-heading">Report editor</h3>
                 <div class="card">
                     <div class="row">
                         <div class="label">
-                            <span class="title">TR editor</span>
+                            <span class="title">Report editor</span>
                             <span class="desc">Replace the ascent form’s trip report box with a rich text and Markdown editor that saves in Peakbagger’s own format, with drafts kept on this device. “Plain” mode inside the editor is the original textarea.</span>
                         </div>
                         <div class="control">
@@ -201,7 +201,7 @@
 
             <div class="subsection" id="capture-photos" role="group" aria-labelledby="capture-photos-heading"
                  data-report-editor-dependent>
-                <h3 class="subsection-title" id="capture-photos-heading">TR photos</h3>
+                <h3 class="subsection-title" id="capture-photos-heading">Report photos</h3>
                 <div class="card">
                     <div class="row">
                         <div class="label">
@@ -240,7 +240,7 @@
                  with the manager one click away. -->
             <div class="subsection" id="drafts" role="group" aria-labelledby="drafts-heading"
                  data-report-editor-dependent>
-                <h3 class="subsection-title" id="drafts-heading">TR drafts</h3>
+                <h3 class="subsection-title" id="drafts-heading">Report drafts</h3>
                 <div class="card">
                     <div class="row">
                         <div class="label">
@@ -393,7 +393,7 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">Climber lists</span>
-                            <span class="desc">Special filter to highlight users constantly making high quality TRs, with an option to hide users constantly making low effort TRs</span>
+                            <span class="desc">Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.</span>
                         </div>
                         <div class="control">
                             <a class="secondary" id="open-favorites" href="favorites.html">Manage climber lists</a>
@@ -470,7 +470,7 @@
             </div>
 
             <div class="subsection" id="github-backup" role="group" aria-labelledby="github-backup-heading">
-                <h3 class="subsection-title" id="github-backup-heading">Ascent and TR backup</h3>
+                <h3 class="subsection-title" id="github-backup-heading">Ascent and report backup</h3>
                 <div class="card">
                     <div class="row">
                         <div class="label">
@@ -486,7 +486,7 @@
                     </div>
 
                     <div class="row github-detail" id="github-ascent-detail" hidden>
-                        <div class="github-panel" id="github-ascent-panel" role="group" aria-label="Ascent and TR backup options"></div>
+                        <div class="github-panel" id="github-ascent-panel" role="group" aria-label="Ascent and report backup options"></div>
                     </div>
                 </div>
             </div>

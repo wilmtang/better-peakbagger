@@ -98,6 +98,10 @@ test('popup explains both match class and confidence percentage', async () => {
 
     assert.deepEqual(
         [...dom.window.document.querySelectorAll('.confidence')].map(element => element.textContent),
+        ['Strong · 96%', 'Probable · 72%']
+    );
+    assert.deepEqual(
+        [...dom.window.document.querySelectorAll('.confidence')].map(element => element.getAttribute('aria-label')),
         ['Strong match · 96% confidence', 'Probable match · 72% confidence']
     );
     assert.equal(dom.window.document.getElementById('clear-capture').hidden, false);
