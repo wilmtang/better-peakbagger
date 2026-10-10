@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Report the backup that actually completed.** Settings and Favorites show
+  success for the acknowledged snapshot and flag newer changes that need backup.
+- **Keep Settings and open panels current.** Startup reads preserve newer
+  choices, and open Favorites, Drafts, and Photos follow theme changes.
+- **Keep Photo Library actions recoverable.** Removal, Undo, refresh, and paging
+  preserve keyboard position; storage failures explain the problem and allow retry.
+
 - **Keep photo labels visible while typing.** Narrow windows place the text
   field beneath the photo; resizing preserves focus and multiline content.
 

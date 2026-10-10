@@ -1,8 +1,8 @@
 # Code and UX audit — 2026-10-09
 
-Status: remediation authorized and in progress. No P0 or P1 finding was
-established by the audit. This is a source-grounded review with targeted reproductions, not a
-claim that every runtime path or live integration is proven correct.
+Status: the six confirmed defects are fixed and locally verified in six focused
+commits plus one focused F6 follow-up. O1 remains deferred for product judgment.
+Native, live-service, and release proof gaps remain explicit below; this is not universal runtime proof.
 
 ## Baseline and scope
 
@@ -13,11 +13,12 @@ claim that every runtime path or live integration is proven correct.
   settings and theme ownership, GitHub backup acknowledgements, Photo Library
   transactions and keyboard behavior, photo annotation interaction, report
   editing, popup layout, test coverage, and dependency policy.
-- Read the [active CI/UX audit](ci-ux-maintainability-audit-2026-10-03.md) and
-  [recent UI-state closure ledger](../archive/ui-state-audit-2026-10-06.md).
+- Read the [active CI/UX audit](../plans/ci-ux-maintainability-audit-2026-10-03.md) and
+  [recent UI-state closure ledger](ui-state-audit-2026-10-06.md).
   Their completed fixes are not repeated as new findings. Existing dependency
   and release-recovery follow-ups keep their original owners and disposition.
-- Runtime files were not changed. The audit adds this plan and its index entry.
+- The audit phase changed only this plan and its index entry. Runtime changes
+  began after the user authorized remediation.
 
 P2 means a reproducible correctness or usability defect worth fixing in a
 normal focused change. O1 is a P3 design opportunity requiring product judgment.
@@ -26,12 +27,12 @@ normal focused change. O1 is a P3 design opportunity requiring product judgment.
 
 | ID | Priority | User-visible consequence | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Changed; final visual check pending |
-| F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Changed; final panel sweep pending |
-| F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Changed; final browser check pending |
-| F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Changed; final browser check pending |
-| F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Changed; final visual check pending |
-| F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Changed; final cross-browser check pending |
+| F1 | P2 | Backup success can describe local content that was never committed | Bundled UI probes and worker/queue contract | Fixed; local verification below |
+| F2 | P2 | Open Favorites, Drafts, and Photos keep the old theme | Real unpacked Chrome extension and bundled UI probe | Fixed; local verification below |
+| F3 | P2 | A delayed startup read paints obsolete Settings choices | Deferred-read bundled UI probe | Fixed; local verification below |
+| F4 | P2 | Removing a photo drops keyboard focus to the document body | Bundled photo UI and IndexedDB fixture | Fixed; local verification below |
+| F5 | P2 | A failed photo removal produces no visible explanation | Injected IndexedDB quota failure | Fixed; local verification below |
+| F6 | P2 | Typing a label in a narrow window hides the photo being annotated | Real Chrome typing, geometry, and screenshot | Fixed; local verification below |
 
 ### F1 — Backup success lacks the identity of the committed snapshot
 
@@ -234,7 +235,10 @@ the name while preserving the shared Strong/Probable semantics and complete
 accessible meaning. This is an owner-choice refinement, not a confirmed
 functional regression. Inspect the normal popup width before choosing a change.
 
-## Verification and evidence
+## Audit-phase verification and evidence
+
+These results describe the original audit baseline. Remediation acceptance is
+recorded in the closure ledger below.
 
 | Check actually run | Result and limits |
 | --- | --- |
@@ -293,70 +297,94 @@ user's exclusive ownership of final Peakbagger Save. This review found no reason
 to weaken those documented boundaries. Passing local tests is not proof of
 live ownership signals or authenticated provider behavior.
 
-## Proposed execution order and closure ledger
+## Execution and closure ledger
 
-The user authorized remediation after the audit. Independent commits:
-F1 backup acknowledgement; F3 Settings revision ownership; F2 shared theme
-lifecycle; F5 photo action errors; F4 library focus; F6 narrow label editing.
-Run focused regression coverage before each commit and the real extension
-verifier for load-time dependencies. Preserve unrelated working-tree changes.
-O1 can be accepted or declined separately without blocking the six defects.
+The user authorized remediation after the audit. Each completed independent
+unit was committed before starting the next: F1, F3, F2, F5, F4, F6. The six
+confirmed defects have local regression and browser evidence. Optional product
+choices and missing external evidence are recorded separately.
 
 ### Fixed and verified
 
-None yet. Focused runtime changes are listed below until their remaining
-acceptance checks run.
+| Finding | Focused commit | Result and focused regression evidence |
+| --- | --- | --- |
+| F1 | `4750ad1` | Worker replies identify the written signature and repository. Both panels reject superseded or mismatched current-content success. 144 options/worker cases passed, including edits, repository changes, missing identity, and later successful recovery. |
+| F3 | `a1e3dc5` | Settings revisions protect initial reads and save responses; failed first saves recover a still-owned baseline. 70 Settings/UI/read-policy cases passed, including delayed reads and failure recovery. |
+| F2 | `6083366` | Shared panel theme ownership follows settings and system changes, guards initial reconciliation, and preserves the mirror after failed reads. 74 theme/Settings/UI/read-policy cases passed. |
+| F5 | `f3a90bd` | Library actions catch operational failures, retain focusable busy/retry states, and accurately report successful insertion followed by failed bookkeeping. All 111 photo-editor cases passed at the initial checkpoint; 14 failure/retry/repeated-activation cases then passed. |
+| F4 | `198e6e9` | Stable card/action identities preserve a corresponding, nearby, empty-state, Undo, or pagination target. Async redraws respect focus moved outside the grid. 28 library/maintenance cases and all 180 options cases passed. |
+| F6 | `b2030ed`, `1952f08` | The existing text field docks beneath the photo below 900px and returns to the inspector with focus/selection intact. Toolbar-only size containment prevents stale SVG/hidden geometry during breakpoint transitions; wide placement also reveals the entire field within the sidebar. 35 focused photo-editor cases and the maintained packaged-photo verifier passed. |
+
+Final acceptance after all runtime changes:
+
+- `npm test`: **2,385 passed**, zero failures, cancellations, or skips. This
+  rebuilds and evaluates the shipped bundles; 37 cases were added over the
+  audit baseline.
+- `npm run lint`: ESLint, build, and web-ext policy passed. The six existing
+  owned warnings for the paired manifest and upstream libraries remain.
+- `node scripts/verify-extension.mjs`: passed after the final build, including
+  the dark-Favorites branch that failed during the audit. Hidden Chrome for
+  Testing **153.0.8010.12**, real unpacked `dist/`, masked HTTPS Peakbagger
+  fixtures, base viewport **1000 × 760** plus responsive verifier cases.
+- `node scripts/verify-firefox-extension.mjs`: passed with real derived
+  extension loading, hidden Firefox **157.0.1**, masked HTTPS fixtures, base
+  **1000 × 760** plus responsive/text-size cases. Owned-process teardown passed.
+- `node scripts/verify-photo-editor.mjs`: passed with hidden Chrome 153 and
+  **ANGLE Metal on Apple M3 Pro**. Native keyboard placement and multiline
+  typing keep the label and input visible above the sticky header in both
+  themes at **390 × 760, 520 × 800, and 1000 × 760**. Visibility checks
+  include clipping ancestors; the F6 follow-up corrected a wide inspector
+  whose field was partly hidden behind its scroll boundary. It also passed Undo,
+  autosave, original/project round trips, full-resolution export, and the
+  280px toolbar. Existing broader photo cases include 1440 × 1100, 720 × 900,
+  390 × 844, and 320 × 800. The new matrix screenshots were inspected.
+- A separate hidden real-extension Chrome probe rendered both backup panels'
+  superseded, matching, and missing-identity replies using controlled fixture
+  responses. Pending status has no misleading commit link; matching status
+  has one; missing identity gives a dismissible retryable error. Those rendered
+  states were visually inspected at **1000 × 760**.
+- The same probe updated already-open Favorites, Drafts, and Photos in explicit
+  light/dark modes and emulated system light/dark, activating only tabs inside
+  the headless test context for media-query delivery. It exercised native
+  keyboard removal after an injected quota failure, nearby/empty-state focus,
+  and Undo restoration focus. The catalog remained unchanged on the failed
+  write, retry succeeded, and no page error escaped. Its error screenshot was
+  inspected at **1000 × 760**.
+- Fresh `npm audit --json` still reports the exact **three high development-tool
+  findings** on the existing path. Strict policy rejects them; explicit
+  evaluation under the pre-existing reviewed exception accepts the unchanged
+  versions through **2026-10-17 07:00 UTC**. The graph is not clean.
+- Documentation links and whitespace checks passed. Final process inspection
+  found no audit-owned verifier/browser/driver remaining; exact disposable
+  profile patterns were absent in both temporary roots. Contexts, fixture
+  servers, certificates, and profiles were torn down. Logs, scripts, structured
+  results, and screenshots are retained as local task evidence; temporary
+  duplicate files were removed only after content-hash comparison.
 
 ### Intentionally not changed
 
-- Existing local commits and the documented privacy and final-Save boundaries
-  remain preserved throughout remediation.
+- O1 is deferred for product judgment. It is an optional confidence-copy
+  refinement, not one of the six confirmed defects and not reported as fixed.
 - The existing exact, expiring dependency exception remains owned by the prior
-  active plan. This records current risk; it is not a fresh acceptance or closure.
-- O1 is deferred for product judgment and is not counted as a fixed defect.
+  active CI audit. No second exception, deadline extension, or dependency-risk
+  closure was introduced. Its release-recovery follow-up retains that owner.
+- Existing user commits, raw-provider-GPX containment, schema/bridge validation,
+  ownership and draft identity gates, and the user's exclusive final Save
+  remain preserved. No push, merge, release, or store submission was performed.
 
 ### Changed but not fully proven
 
-- F1: the worker now returns the written snapshot signature and repository;
-  both panels require that identity and reject superseded current-content
-  success. Focused options/worker coverage passed 144/144; build, focused
-  ESLint, and whitespace checks passed. Hidden Chrome 153 real-extension
-  verification passed; final status-copy visual inspection remains pending.
-- F3: Settings revisions now guard initial painting and save responses against
-  newer events/intents. A failed first save waits for a still-owned baseline
-  before rollback. Build, 70 focused Settings/UI/read-policy tests, focused
-  ESLint, and whitespace checks passed; final browser verification is pending.
-- F2: the shared panel owner subscribes to settings and system changes, guards
-  initial reconciliation, and preserves the mirror on failed authoritative
-  reads. Build, 74 theme/Settings/UI/read-policy tests, focused ESLint, and
-  documentation checks passed. Hidden Chrome 153 (including the previously
-  failing dark-Favorites branch) and hidden Firefox 157 extension verifiers
-  passed. The dark Favorites screenshot was inspected; the final open-panel
-  sweep remains pending.
-- F5: library actions catch operational failures, expose focusable busy states,
-  and retain retryable Undo after failed restoration. Reference-bookkeeping
-  failure explicitly preserves the successful report insertion outcome.
-  Build, all 111 photo-editor tests at the initial checkpoint, and 14 focused
-  failure/retry/repeated-activation cases passed, alongside focused ESLint and
-  whitespace checks. Final rendered error-state inspection is pending.
-- F4: cards/actions have stable identities and use the shared list-focus owner
-  already used by Favorites and Drafts. Nearby/empty-state recovery, Undo, and
-  pagination keep a usable target, while asynchronous refresh respects focus
-  moved outside the list. Build, 28 photo-library/maintenance cases, all 180
-  options tests, focused ESLint, and whitespace checks passed; final browser
-  keyboard and visual verification is pending.
-
-- F6: the same label field moves into a compact dock beneath the photo below
-  900px, retaining focus, selection, multiline content, and existing bindings.
-  CSS size containment now belongs to the toolbar wrapper, avoiding stale
-  SVG/hidden layout during the narrow-to-wide transition while preserving
-  toolbar queries at user-chosen widths. Build, 35 focused photo-editor cases,
-  focused ESLint, and hidden packaged-photo verification passed. Native typing
-  and keyboard placement passed in both themes at 390 × 760, 520 × 800, and
-  1000 × 760; those screenshots were inspected. The maintained photo verifier
-  also passed Undo, autosave, source/project round trips, full-resolution
-  export, and the 280px toolbar with Chrome 153 and hardware Metal on Apple
-  M3 Pro. Final cross-browser extension acceptance is pending.
-
-Keep native/live/platform proof gaps explicit when moving locally verified
-items to the first category. Preserve this ledger when the plan is archived.
+- Hidden browser DOM focus and protocol screenshots do not prove native
+  window/focus placement, browser chrome or permission prompts, screen-reader
+  speech, physical touch behavior, or actual OS theme changes. System changes
+  were emulated; no visible browser window was opened.
+- The new race/failure probes, photo-library keyboard sequence, and detailed
+  photo-label matrix ran in Chrome. Firefox passed the full real-extension
+  verifier; the full new targeted matrix was not repeated there.
+- Controlled replies and storage failures prove the local acknowledgement and
+  recovery boundary, not live GitHub commits, actual disk exhaustion, or live
+  ImgBB/report delivery. Garmin, Strava, Peakbagger, and authenticated provider
+  ownership/export behavior require separate live evidence.
+- Remote CI, store packages/signing/acceptance, abrupt OS termination, and a
+  terrain-specific GPU sweep were not run for this remediation. The photo
+  verifier's hardware-renderer result is not terrain or release proof.

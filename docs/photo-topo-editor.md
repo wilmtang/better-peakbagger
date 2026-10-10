@@ -60,7 +60,9 @@ available window; container queries keep controls usable at user-chosen sizes.
 When a text label is selected below 900px, its existing text field moves beneath
 the photo so multiline typing keeps the composition and input visible together.
 Wider windows return the same field to the inspector, preserving keyboard focus
-and selection. Appearance and width controls remain in the inspector. Size
+and selection. Placement and returning to the wide inspector reveal the full
+field within its scrolling parent. Appearance and width controls remain in
+the inspector. Size
 containment is scoped to the view toolbar, keeping the image and contextual
 field outside that layout boundary.
 
@@ -462,6 +464,15 @@ succeeds.
 Removing a library item is a local action. It does not remove the image from
 ImgBB or from an already saved Peakbagger report. The item enters **Recently
 Deleted** with a tombstone and can be restored locally.
+
+Library refreshes preserve the focused action by photo ID, choosing a nearby
+item or stable empty-state target when it disappears. Pagination keeps a usable
+control, and Undo can return focus to the restored photo. A refresh never
+reclaims focus moved to Search or another control while its reads were pending.
+Library storage failures preserve the durable record, clear the busy state,
+and show retryable feedback; failed Undo keeps its retry action available.
+If report insertion succeeds before reference bookkeeping fails, feedback
+explicitly preserves that insertion outcome.
 
 After 30 days, local original, project, and thumbnail assets are eligible for
 pruning. The tombstone remains so a later recovery merge does not resurrect an

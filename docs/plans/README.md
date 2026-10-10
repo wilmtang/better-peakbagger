@@ -1,8 +1,5 @@
 # Active plans
 
-- [Code and UX audit](code-ux-audit-2026-10-09.md) — audit complete;
-  six confirmed findings await remediation, with source evidence, acceptance
-  checks, independent commit boundaries, and an explicit closure ledger.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.

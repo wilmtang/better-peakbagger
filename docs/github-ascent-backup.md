@@ -705,6 +705,11 @@ a write. Connection changes schedule enabled backups, and late completions from
 an old connection cannot stamp the replacement as backed up. Manual backup
 records the same scoped signature; timestamps do not defeat the content check.
 Local success/retry updates are serialized to preserve newer bookkeeping.
+Manual settings/favorites replies include the worker's snapshot signature and
+repository identity. Settings shows a current-content success and commit link
+only when both still match the displayed state and the queue did not supersede
+that write. A newer local snapshot needs another backup; an acknowledgement
+without identity produces a visible confirmation error instead of success.
 
 A failed automatic write records its attempt count and re-arms the same alarm
 after ten minutes, with at most two retry alarms for that change. A new change
