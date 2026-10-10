@@ -18,7 +18,7 @@
  * restating the token.
  */
 
-/* Each palette value is written once; the mapping blocks below only choose
+/* Each palette value is written once; the tokens below only choose
    between the two, so an explicit Light/Dark preference and the OS scheme
    cannot drift apart. */
 :root {

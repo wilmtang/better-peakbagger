@@ -39,6 +39,12 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
+- Integration caught two stale source contracts requiring the removed CSS
+  mapping blocks and old success prose. Updated the shared-palette assertions
+  and strengthened the teardown guard to reject a missing cleanup marker.
+  All 25 focused panel/Firefox-process tests, scoped ESLint, and diff checks
+  passed. The first full integration run had 2,388 passes and these two failures;
+  the final full run is recorded below rather than hiding that result.
 - E3: one `light-dark()` mapping per token replaces the duplicated OS/explicit
   dark blocks. Explicit preferences, native controls, OS fallback when the
   bootstrap cannot run, and Strong/Probable colors remain consistent. Browser

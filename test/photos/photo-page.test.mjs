@@ -86,12 +86,11 @@ test('every extension panel paints from the one shared design language', async (
     assert.doesNotMatch(styles, /:root\[data-bpb-theme/);
     assert.doesNotMatch(styles, /^\s*--(bg|card|border|text|sub|accent|link|danger|shadow):/m);
 
-    // Both mapping blocks pick from one palette, so an explicit preference and
-    // the OS scheme cannot drift apart.
-    assert.match(panelStyles, /:root\[data-bpb-theme="dark"\]\s*\{[^}]*--bg:\s*var\(--dark-bg\)/);
+    // One palette follows the root color scheme, including explicit overrides.
+    assert.match(panelStyles, /color-scheme:\s*light dark/);
+    assert.match(panelStyles, /--bg:\s*light-dark\(var\(--light-bg\),\s*var\(--dark-bg\)\)/);
+    assert.match(panelStyles, /:root\[data-bpb-theme="dark"\]\s*\{[^}]*color-scheme:\s*dark/);
     assert.match(panelStyles, /:root\[data-bpb-theme="light"\]\s*\{[^}]*color-scheme:\s*light/);
-    assert.match(panelStyles,
-        /@media \(prefers-color-scheme: dark\)\s*\{\s*:root:not\(\[data-bpb-theme="light"\]\)/);
     assert.match(panelStyles,
         /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
         'author layout rules must not override the native hidden state');
