@@ -158,7 +158,6 @@ const normalizeStyle = style => {
     return normalized;
 };
 
-const isStyleDocument = style => normalizeStyle(style) !== null;
 
 const createVectorStyleLoader = ({
     styleUrl,
@@ -224,5 +223,4 @@ export const terrainStyle = {
     providerUrl,
     normalizeStyle,
     createVectorStyleLoader,
-    isStyleDocument,
 };

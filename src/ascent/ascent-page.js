@@ -46,7 +46,6 @@ const ascentEditLink = (doc, ascentId) => {
     }
     return null;
 };
-const ownsAscent = (doc, ascentId) => ascentEditLink(doc, ascentId) != null;
 
 const readPeak = doc => {
     const link = findLink(doc, 'peak\\.aspx', 'pid');
@@ -118,6 +117,6 @@ const read = ({ doc = document, search = '' } = {}) => {
     };
 };
 
-const API = { read, ownsAscent, ascentEditLink, gpxLink, parseDate };
+const API = { read, ascentEditLink, gpxLink, parseDate };
 
 export const ascentPage = API;

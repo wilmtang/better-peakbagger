@@ -17,7 +17,7 @@ simplification.
 | --- | --- | --- |
 | R1 | Eleven unused namespace exports repeat already-consumed named exports; internal API objects also expose members with no outside reference. Examples: `src/capture/provider-timing.js` (lines 15–21), `src/peakbagger/peakbagger-origin.js` (lines 75–81), and `src/reports/report-markup.js` (lines 1379–1402). | Remove unconsumed exports, retain internally used implementations and the deliberate provider page-world global. Lint, focused tests, full integration, real-extension startup. |
 | R2 | `computeRouteDistanceM` in `src/gpx/gpx-metrics.js` (lines 291–327) has no production caller and duplicates segment preparation for the live metrics pipeline. | Remove it; move both gap/join regression cases onto `computeMetricsForSegments`. Verify invalid-coordinate splits, nearby joins, full metrics/capture suites, scale coverage. |
-| R3 | Small test-only compatibility helpers expose behavior already available through the live APIs: ascent ownership, backup folder paths, style validity, tile coordinates, and relative local days. | Remove wrappers and move assertions onto production readers, loaders, tile enumeration, and local-day numbers. Preserve independent expected values and edge cases. |
+| R3 | Small test-only compatibility helpers expose behavior already available through the live APIs: ascent ownership, backup folder paths, style validity, and relative local days. | Remove wrappers and move assertions onto production readers, loaders, and local-day numbers. Preserve independent expected values and edge cases. |
 | R4 | Static imports still have presence checks and fallback branches from the former global-module loading arrangement. Examples: `src/terrain/terrain-map.js` (lines 246–248 and 358–374), `src/maps/big-map.js` (line 427), and `options/options.js` (lines 85–87). | Remove impossible missing-import branches. Retain failed reads, stale generations, external browser/MapLibre capabilities, consent, and identity gates. Focused tests and real-extension verification. |
 | R5 | `scripts/release-bump.mjs` (line 13) explicitly returns at the end of `die`. | Remove the redundant return; release tests and lint. |
 
@@ -39,6 +39,11 @@ plans.
   coordinate-gap/join regressions onto the live `computeMetricsForSegments`
   pipeline. All 84 focused metrics, capture, and full-analysis scale tests,
   scoped ESLint, and `git diff --check` passed.
+- R3: removed four test-only compatibility wrappers. Ownership tests now
+  assert the production reader's owner flag and null edit URL; date-line tests
+  assert the live local-day values. Existing folder-name and valid-style-loader
+  tests retain the other behavior. All 44 focused tests, scoped ESLint, and
+  `git diff --check` passed; no test case was deleted.
 
 ### Intentionally not changed
 
@@ -51,6 +56,9 @@ plans.
 - Keep `markUnreachable` for the photo model's supported persisted state and
   recovery tests; the UI intentionally does not infer remote health from an
   image load failure.
+- Keep the two one-line tile-coordinate primitives: they support independent
+  Web Mercator reference tests. Replacing those test entry points with an
+  enumeration harness would add complexity for two deleted runtime lines.
 - Keep the stale-generation branch in the terrain message handler. Its return
   was flagged as syntactically redundant, but the branch protects later cases;
   deleting it would accept stale messages.

@@ -93,11 +93,10 @@ test('civil dates and local-day comparisons survive the international date line'
     const instant = MountainTime.civilToInstant(kiritimati, '2026-01-02', 15);
     assert.equal(instant.ms, Date.parse('2026-01-01T10:15:00Z'));
     assert.equal(MountainTime.localDate(kiritimati, instant.ms), '2026-01-02');
-    assert.equal(MountainTime.relativeLocalDay(
-        kiritimati,
-        Date.parse('2026-01-01T10:00:00Z'),
-        Date.parse('2026-01-01T09:59:00Z'),
-    ), 2);
+    assert.equal(MountainTime.localDayNumber(kiritimati, Date.parse('2026-01-01T10:00:00Z')),
+        Date.UTC(2026, 0, 2) / 86_400_000);
+    assert.equal(MountainTime.localDayNumber(kiritimati, Date.parse('2026-01-01T09:59:00Z')),
+        Date.UTC(2026, 0, 1) / 86_400_000);
 });
 
 test('unknown ICU zones and lookup failures use the labelled longitude fallback', () => {
