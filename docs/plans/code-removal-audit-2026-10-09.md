@@ -51,6 +51,9 @@ plans.
   runtime browser capabilities, and externally supplied MapLibre remain guarded.
   The build, 353 focused options/filter/map/terrain/theme tests, scoped ESLint,
   and `git diff --check` passed. Real-browser integration remains pending.
+  A final scan also removed the initial filter-settings read's presence guard;
+  its read/validation fallback remains. All 57 filter tests and scoped ESLint
+  passed, and the presence-candidate scan now returns no matches.
 - R5: removed the redundant end-of-function return in release error reporting.
   All 46 release tests, scoped ESLint with `no-useless-return`, and
   `git diff --check` passed.

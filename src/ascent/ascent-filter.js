@@ -896,15 +896,13 @@ const init = async () => {
     // in localStorage (state.minWords, above). The "has beta" definition is
     // centralized in extension settings.
     let currentSettings = null;
-    if (S) {
-        try {
-            const s = await settingsPromise;
-            if (s) {
-                currentSettings = s;
-                betaCfg = betaCfgFrom(s);
-            }
-        } catch (e) { /* fall back to defaults */ }
-    }
+    try {
+        const s = await settingsPromise;
+        if (s) {
+            currentSettings = s;
+            betaCfg = betaCfgFrom(s);
+        }
+    } catch (e) { /* fall back to defaults */ }
     const orderSetting = isPeakAscentsPage ? 'betaPeakFilterOrder' : 'betaPersonalFilterOrder';
     const localOrderKey = isPeakAscentsPage ? 'peakOrder' : 'personalOrder';
     if (currentSettings?.[orderSetting]) state[localOrderKey] = [...currentSettings[orderSetting]];
