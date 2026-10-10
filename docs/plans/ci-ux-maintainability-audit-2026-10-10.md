@@ -15,6 +15,7 @@ outdoor visual identity. Each independent unit is verified and committed.
 | C3 | Local packaged Firefox 155 verification fails with `NoSuchWindowError` after Shift+Enter moves the existing Settings tab into a new window. The old WebDriver handle is destroyed although extension tab identity survives. | Reacquire exactly one matching extension URL, tolerate disappearing handles while enumerating, and prove the moved tab retains its original extension tab ID. Cover delayed navigation and duplicate destinations deterministically. |
 | E1 | Photo catalog, upload response, and IndexedDB secrets repeat the same bounded HTTPS/credential validator. | Use one pure validator with the existing 4,096-character limit. Preserve optional-field semantics and every boundary's independent validation. Run photo and worker regressions plus real-extension checks. |
 | E2 | Three verification orchestrators repeat child spawning, exit rejection, registration, and cleanup. | Reuse the existing resource-stack owner through one runner. Test exit failure, spawn failure, and teardown; preserve fail-fast repetitions and canonical archive hashes. |
+| E3 | The shared panel repeats every dark palette mapping for the OS media query and explicit preference. | Let the supported browser color-scheme select one light/dark mapping per token. Preserve explicit overrides, blocked-storage OS fallback, native controls, contrast, and semantic status colors. |
 
 ## Current evidence and retained boundaries
 
@@ -38,6 +39,14 @@ outdoor visual identity. Each independent unit is verified and committed.
 
 ### Fixed and verified
 
+- E2: package building, archive execution, and repeated browser checks share
+  one resource-owned child runner. It waits for child closure, rejects spawn,
+  exit, and signal failures, and retains cleanup. Firefox uses the existing
+  bounded condition wait. Compact structured success records preserve browser,
+  viewport, BFCache evidence, and teardown; all assertion/failure diagnostics
+  remain. Success appears only after teardown and Firefox failures no longer
+  mislabel every stage as startup. All 28 focused ownership/repetition/archive
+  tests, scoped ESLint, and diff checks passed.
 - E1: one pure photo URL policy replaces the catalog, upload, and IndexedDB
   copies. HTTPS normalization, rejection of credentials/other schemes, the
   exact 4,096-character ceiling, nullable-field handling, and independent

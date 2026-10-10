@@ -1,11 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack, manageChildProcess } from './resource-stack.mjs';
+import { runChildProcess } from './resource-stack.mjs';
 
 export function verificationRepetitions(value = process.env.BPB_VERIFY_REPETITIONS ?? '1') {
     if (!/^[1-5]$/.test(String(value))) throw new Error('Verification repetitions must be an integer from 1 to 5');
@@ -28,19 +27,8 @@ async function main() {
     }
     if (browser === 'chrome') assertChromeLaunchAllowed();
     const script = browser === 'chrome' ? 'verify-extension.mjs' : 'verify-firefox-extension.mjs';
-    await repeatVerification(async () => {
-        const resources = createResourceStack();
-        const child = spawn(process.execPath, [path.join(path.dirname(fileURLToPath(import.meta.url)), script)], {
-            stdio: 'inherit', env: process.env,
-        });
-        manageChildProcess(resources, child, 'repeated browser verifier');
-        await resources.guard(new Promise((resolve, reject) => {
-            child.once('error', reject);
-            child.once('exit', (code, signal) => code === 0 && !signal
-                ? resolve() : reject(new Error(`${script} failed (${signal || `exit ${code}`})`)));
-        }));
-        await resources.dispose();
-    });
+    await repeatVerification(() => runChildProcess(process.execPath,
+        [path.join(path.dirname(fileURLToPath(import.meta.url)), script)], { label: script }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

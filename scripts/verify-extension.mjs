@@ -6431,64 +6431,8 @@ if (failures.length) {
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
 }
-console.log(`Real-extension verification passed (hidden Chrome for Testing ${
-    context.browser()?.version() || 'unknown'}, new headless):`);
-console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
-console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
-console.log('  - manual settings export/import round-tripped schema settings and the saved ImgBB API key');
-console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
-console.log('    decodes a real PNG, exposes keyboard annotation/point controls, draws a route,');
-console.log('    autosaves to IndexedDB, fits desktop and narrow');
-console.log('    viewports, and folds a real Route width slider drag into a single Undo');
-console.log('  - a 49-photo library stays at 48 cards, fits desktop and narrow pagination, and opens page 2');
-console.log('  - contextual report sizing stays synchronized in Editor and Library, caps only the');
-console.log('    stage display at desktop and narrow widths, and preserves the full project dimensions');
-console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
-console.log('  - the capture login/summit transport runs in a real Peakbagger MAIN world and refuses other endpoints');
-console.log('  - the worker persists selected helper-tab adoption and reclaims only expired exact scratch tabs');
-console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
-console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
-console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
-console.log('  - settings.js initialises in the isolated world and ordered cross-tab bridge pushes update analyzer controls');
-if (chromeBfcacheResult?.restored) {
-    console.log('  - Chrome BFCache restored the exact analyzer, Sun, and map document once and refreshed settings');
-} else {
-    console.log(`  - Chrome remounted after history traversal; BFCache resume remains unproven because Chrome excluded the fixture: ${JSON.stringify(chromeBfcacheResult?.explanations || [])}`);
-}
-console.log('  - the saved ascent report/summary split mounts, drags, and persists its bounded ratio');
-console.log('  - short-window map keys and pointer pixels resize visible content, label it exactly, and replace only interacted preferences');
-console.log('  - the GPX analyzer reproduces the full Capitol metrics within its canvas budget and with zero breaks,');
-console.log('    and a 20,000-point route stays pixel-bounded across narrow/wide resize with its selection intact');
-console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');
-console.log('    scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
-console.log('  - eight terminal Analyzer failures remove chart roles, shortcuts, controls, route state, and');
-console.log('    stale tab stops; retryable failure recovers into one packaged interactive chart');
-console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
-console.log('  - forged page/frame messages, synthetic clicks, and direct embedding start no terrain work');
-console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
-console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
-console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
-console.log('  - keyboard-opening Peak 3D creates the isolated frame with a route-free summit focus');
-console.log('  - the PeakAscents filter starts unfiltered, then filters and sorts by keyboard in place');
-console.log('  - trusted keyboard/pointer Settings actions preserve modifier disposition and reuse one exact tab');
-console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
-console.log('  - Peak Lists expose eight in-place sort controls, preserve the URL, and fit the viewport');
-console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
-console.log('  - a fresh ascent form autofills its date, swaps Preview for Process, and keeps local-GPX reads in that page');
-console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
-console.log('  - the report editor opens the standalone report-drafts manager page, which renders');
-console.log('    a seeded draft with no settings sidebar');
-console.log('  - the dark trip-report palette retains seven distinct text-color swatches');
-console.log('  - Plain report source naturalizes server break tags while Rich preserves line/paragraph structure');
-console.log('  - lossy report markup starts in Plain with an unclipped wide/narrow guard, and only');
-console.log('    the explicit Convert anyway action enters the requested Rich or Markdown mode');
-console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
-console.log('    submits Preview exactly once, and never submits Save');
-console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
-console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
-console.log('    with live toolbar states; selected Rich images/videos and YouTube players resize proportionally by');
-console.log('    pointer or keyboard through 44px targets outside native media controls; markdown mode shows a CodeMirror source beside a');
-console.log('    live preview that renders headings, quotes, tables, strike, code, rules,');
-console.log('    and Obsidian-style pipe-sized images, direct videos, and YouTube embeds;');
-console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');
-console.log('    and grows tables; and a reloaded page offers and restores the draft');
+console.log(JSON.stringify({
+    verification: 'extension', browser: 'chromium', version: context.browser()?.version() || 'unknown',
+    hidden: true, viewport: verificationViewport, bfcache: chromeBfcacheResult,
+    teardown: 'passed',
+}));
