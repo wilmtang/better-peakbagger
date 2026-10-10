@@ -290,77 +290,22 @@ product-voice call — the owner approved the rename in this plan revision
 
 ---
 
-## 4. Execution plan
+## Execution record
 
-Each numbered step is one focused commit (AGENTS.md discipline: run `npm
-test` before every commit; `npm run verify:extension` for any step touching
-`scripts/build-config.mjs`, the worker, or bundle composition; visual check
-at real popup/options sizes for UI steps, hidden per the real-browser rules).
+The completed audit is verified in [the follow-up](codebase-audit-2026-07-22-followup.md#verification-of-the-executed-2026-07-22-plan).
 
-### P0 — behavior contradictions (small, independent)
-1. **B2**: "Check again" action on the `no-matches` card; popup test.
-2. **B4 + B5**: draft-button label/state fixes (singular form; enabled
-   "Show opened drafts" while drafts exist); popup test for both.
-3. **B3**: permission gate in the settings-backup panel, matching favorites;
-   options test.
-4. **U1**: reduced-motion guard on the popup spinner.
+**Execution result (2026-07-22): deliberately not unified.** The two
+surfaces share presentation but not the same transaction. Drafts remove
+independent storage keys, clear a pending tombstone before a restore, and
+implement bulk undo as delete-all. Favorites rewrites one aggregate list,
+retains a pending undo until restoration succeeds, and uses bulk undo for
+arbitrary merge/mirror replacements that may supersede an earlier timer.
+Preserving those failure and retry semantics would require a callback-heavy
+framework with no common state transition beyond the six-second timer.
+The existing focused tests pin both behaviors, so extraction would add
+indirection without establishing a useful shared invariant.
 
-### P1 — popup theme (the one multi-file P0-adjacent feature)
-5. **B1**: shared panel-theme module + `popup-head` bundle + `data-bpb-theme`
-   overrides in popup.css + dark-contrast coverage. Verify with
-   `npm run verify:extension` (build-config change) and a visual pass in
-   OS-light/extension-dark and OS-dark/extension-light.
-
-### P2 — deduplication (order matters: dedupe before splitting)
-6. **E3**: `capture-phases.js` shared constant; update both bundles.
-7. **E4**: `connectedGithubClient` helper + reuse `mapWithConcurrency` in
-   `terrainPrefetch`.
-8. **E2**: extract shared draft-opening helpers; regression test that both
-   entry points produce identical draft records for the same selection
-   (this is the test that would have caught the `preserveExistingFields`
-   divergence).
-9. **E7**: export and import the storage-key constants.
-10. **E5**: options util module (`send`, `withBusy`, repo-name) and shared
-    DOM builder; migrate one surface per commit if the diff gets large.
-11. **E5 (undo machinery)**: unify the undoable-delete machinery between
-    favorites and drafts behind one helper, keeping observable behavior
-    identical (undo window, rollback on storage failure, bulk semantics);
-    if extraction forces behavior changes on either surface, stop and record
-    why in this plan instead of forcing it.
-
-    **Execution result (2026-07-22): deliberately not unified.** The two
-    surfaces share presentation but not the same transaction. Drafts remove
-    independent storage keys, clear a pending tombstone before a restore, and
-    implement bulk undo as delete-all. Favorites rewrites one aggregate list,
-    retains a pending undo until restoration succeeds, and uses bulk undo for
-    arbitrary merge/mirror replacements that may supersede an earlier timer.
-    Preserving those failure and retry semantics would require a callback-heavy
-    framework with no common state transition beyond the six-second timer.
-    The existing focused tests pin both behaviors, so extraction would add
-    indirection without establishing a useful shared invariant.
-12. **E6**: loud missing-id logging in the options section guards.
-
-### P3 — structure
-13. **E1**: split `background.js` into coordinator + domain modules via
-    `build-config.mjs`; `manifest-capture.test.mjs` and
-    `npm run verify:extension` in both browsers are the gates.
-14. **E8**: pure `theme-resolve.js` for MAIN-world surfaces, and extend the
-    schema-style guard test so a reintroduced hardcoded theme-resolution
-    copy fails the suite.
-15. **E10**: extract `options/section-nav.js`.
-16. **E9**: rename `github-error.js` to `github-error-copy.js` and update
-    its imports; mechanical, its own commit.
-
-### P4 — copy pass
-17. **U2 + U3**: one copy commit across options.html/github.js/favorites.js;
-    update any tests asserting the old strings.
-18. **U4**: rename "Sync for nerds" to "Backup & sync" in the sidebar and
-    section heading (owner-approved). Keep the `#github*` anchor ids stable
-    so deep links and the section-nav keep working; move any wanted
-    playfulness into the section description. Update tests asserting the
-    old title.
-
-### Explicitly out of scope
+## Explicitly out of scope
 - Popup/status polling architecture — closed in the 07-19 audit (E2) with
   rationale that still holds.
 - The capture privacy pipeline, detection scoring, and reduction — re-skimmed,

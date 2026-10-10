@@ -261,42 +261,6 @@ State the Git-history behavior beside GitHub setup
 and in the privacy documentation, especially for public repositories. No reasons
 or browsing history are exported. Local ignoring works without a GitHub account.
 
-## Delivery sequence and focused commits
-
-Each numbered step is a separately reviewable, complete unit. Run its focused
-checks before committing; record results rather than predicting them.
-
-1. **Validate fixtures and pure contracts.** Confirm author/section selectors in
-   minimal live read-only inspection; add masked full/compact/list/detail/media
-   fixtures. Implement model, strict backup parser, visibility/count functions
-   and three-way merge tests. Do not make report hiding depend on a guessed ID.
-2. **Implement local mutation boundary.** Add worker operations, concurrent-tab
-   guards, preference persistence and storage subscriptions. Test invalid sender,
-   replacement races, failed writes, stale initial reads and capacity limits.
-3. **Implement profile and manager UX.** Add reversible Ignore/Unignore in both
-   favorite modes; rename visible navigation to Climber lists; add the Ignored
-   tab with add/search/sort/remove/Undo. Preserve existing anchors and Buddy
-   semantics. Verify actual light/dark rendering before completing this step.
-4. **Implement peak selected-report UX.** Add isolated content bundle and scoped
-   CSS; integrate shared favorite-source loading and persistent local preference.
-   Cover counts, empty states, reveal composition, account/cache errors and
-   narrow column layouts. Confirm the target verifier loads this surface before
-   beginning implementation; add a masked fixture route if needed.
-5. **Implement ascent list and detail UX.** Integrate one visibility predicate
-   into the existing list renderer, including compact mode; add the dedicated
-   detail adapter. Verify sorting, group headings, focus, media, report-photo
-   enhancement, map layout and no changes to editors/personal lists.
-6. **Implement guarded manual GitHub transfer.** Add fixed-path backup/restore,
-   exact sender gates, strict parsing, previews and guarded Undo. Prove unrelated
-   root files/ascent folders survive and old favorites files still round-trip.
-7. **Implement opt-in two-way sync.** Add conditional client merge transaction,
-   per-device baseline/journal, durable scheduling and conflict UI. Exercise two
-   independent clients, worker restarts and connection changes. Do not ship an
-   upload-only switch under a Sync label.
-8. **Finish documentation and release evidence.** Update maintained guides only
-   to reflect implemented behavior, run integration checks, preserve proof gaps,
-   and archive this plan and the UX specification when complete.
-
 Wire every new bundle through `scripts/build-config.mjs` and `manifest.json` in
 the isolated world, supporting current www/bare-host and path-case variants.
 Keep the single bundled worker and stylesheet-before-theme startup unchanged.
