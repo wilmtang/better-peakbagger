@@ -293,7 +293,7 @@ try {
     const geometryForCard = () => {
         const card = document.getElementById('bpb-ascent-weather'), box = card.getBoundingClientRect();
         const header = card.querySelector('header'), headingBox = header.querySelector('h2').getBoundingClientRect();
-        const dateBox = header.querySelector('.bpb-weather-date').getBoundingClientRect();
+        const dateBox = header.querySelector('.bpb-weather-date-navigation').getBoundingClientRect();
         const dateStart = dateBox.top >= headingBox.bottom - 1 ? headingBox.left : headingBox.right + parseFloat(getComputedStyle(header).columnGap);
         const column = document.getElementById('bpb-ascent-summary-column'), columnBox = column.getBoundingClientRect();
         const summaryBox = column.querySelector('.bpb-ascent-table-split__summary').getBoundingClientRect();
@@ -355,6 +355,10 @@ try {
                     }
                     assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather h2').textContent), 'Weather archive');
                     assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Powered by Open-Meteo');
+                    assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.bpb-weather-day-button')].map(button => ({
+                        name: button.getAttribute('aria-label'), visible: !button.hidden, enabled: button.getAttribute('aria-disabled') === 'false',
+                        target: button.getBoundingClientRect().width >= 44 && button.getBoundingClientRect().height >= 44,
+                    }))), [{ name: 'Previous day', visible: true, enabled: true, target: true }, { name: 'Next day', visible: true, enabled: true, target: true }]);
                     assert.deepEqual(await evaluate(() => {
                         const button = document.querySelector('.bpb-weather-disclosure'), style = getComputedStyle(button);
                         return { label: button.firstElementChild.textContent, expanded: button.getAttribute('aria-expanded'),
@@ -421,6 +425,32 @@ try {
                         await resize(1440, 1100);
                         await evaluate(() => document.getElementById('bpb-ascent-table-split').scrollIntoView());
                         if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-right-column.png`));
+                    }
+                    if (kind === 'no-gpx') {
+                        for (const width of [1440, 375]) {
+                            await resize(width, 1100);
+                            await evaluate(() => document.querySelector('#bpb-ascent-weather header').scrollIntoView({ block: 'start' }));
+                            await click('[data-metric="conditions"]');
+                            const before = await evaluate(() => ({ date: document.querySelector('.bpb-weather-date').textContent,
+                                scroll: window.scrollY, cardTop: document.getElementById('bpb-ascent-weather').getBoundingClientRect().top }));
+                            await click('[aria-label="Previous day"]');
+                            await wait(() => document.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false'
+                                && document.querySelector('.bpb-weather-date').textContent.includes('July 11, 2024'), 'previous archive day and readings committed');
+                            assertPlacement(await evaluate(geometryForCard));
+                            assert.equal(await evaluate(() => document.activeElement.getAttribute('aria-label')), 'Previous day', 'archive navigation retains the button focus');
+                            assert.equal(await evaluate(() => document.querySelector('.bpb-weather-disclosure').getAttribute('aria-expanded')), 'true');
+                            assert.equal(await evaluate(() => document.querySelector('[data-metric="conditions"]').getAttribute('aria-selected')), 'true');
+                            assert.equal(await evaluate(() => document.querySelector('input[type="date"]')), null);
+                            const after = await evaluate(() => ({ scroll: window.scrollY, cardTop: document.getElementById('bpb-ascent-weather').getBoundingClientRect().top }));
+                            assert.ok(Math.abs(after.scroll - before.scroll) <= 1 && Math.abs(after.cardTop - before.cardTop) <= 1,
+                                `archive navigation moved the viewport: ${JSON.stringify({ before, after })}`);
+                            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-archive-previous-${width}.png`));
+                            await evaluate(() => document.querySelector('[aria-label="Next day"]').focus({ preventScroll: true }));
+                            await press(firefoxMode ? '\uE007' : 'Enter');
+                            await wait(() => document.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false'
+                                && document.querySelector('.bpb-weather-date').textContent.includes('July 12, 2024'), 'next day returns to saved ascent date');
+                            assert.equal(await evaluate(() => document.querySelector('.bpb-weather-date').textContent), before.date);
+                        }
                     }
                     if (kind === 'gpx' || kind === 'long-report') {
                     // Both column extremes must fit; also exercise the narrowest
@@ -501,6 +531,7 @@ try {
             await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('Open-Meteo request limit reached'), 'rate-limit recovery state');
             assert.ok(await evaluate(() => !document.querySelector('.bpb-weather-result').hidden));
             assert.equal(await evaluate(() => document.querySelector('.bpb-weather-retry').disabled), true);
+            assert.equal(await evaluate(() => [...document.querySelectorAll('.bpb-weather-day-button')].every(button => button.getAttribute('aria-disabled') === 'true')), true);
             assert.equal(await evaluate(() => document.querySelector('.bpb-weather-status').dataset.kind), 'rate-limit');
             for (const width of [1440, 375]) {
                 await resize(width, 1100);
@@ -512,7 +543,7 @@ try {
             await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
             assert.equal(evidence.length, before);
             assert.deepEqual(networkErrors, []);
-            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
+            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
         }
     }
 } catch (error) { primaryError = error; }

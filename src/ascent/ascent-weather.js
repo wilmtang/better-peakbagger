@@ -30,6 +30,9 @@ export function mountAscentWeather() {
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });
     const date = element('span', { class: 'bpb-weather-date', text: subject.date ? displayDate(subject.date) : 'Ascent date unavailable' });
+    const previousDay = element('button', { type: 'button', class: 'bpb-weather-day-button', 'aria-label': 'Previous day', text: '‹', hidden: '', 'aria-disabled': 'true' });
+    const nextDay = element('button', { type: 'button', class: 'bpb-weather-day-button', 'aria-label': 'Next day', text: '›', hidden: '', 'aria-disabled': 'true' });
+    const dateNavigation = element('div', { class: 'bpb-weather-date-navigation', role: 'group', 'aria-label': 'Archive day' }, [previousDay, date, nextDay]);
     const locationLabel = element('div', { class: 'bpb-weather-location', text: subject.peak ? `${subject.peak.name} · At the summit` : 'At the summit' });
     const status = element('div', { class: 'bpb-weather-status', role: 'status', 'aria-live': 'polite' });
     const retry = element('button', { type: 'button', class: 'bpb-weather-retry', text: 'Retry', hidden: '' });
@@ -82,7 +85,7 @@ export function mountAscentWeather() {
     const detailsArea = element('div', { hidden: '' }, [element('div', { class: 'bpb-weather-hourly' }, [disclosure, hourly]), sources]);
     modelRow.hidden = true;
     const attribution = element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' });
-    card.append(element('header', {}, [heading, date]), locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
+    card.append(element('header', {}, [heading, dateNavigation]), locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
         element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }),
             element('span', { class: 'bpb-weather-attribution' }, [document.createTextNode('Powered by '), attribution])]));
 
@@ -163,10 +166,33 @@ export function mountAscentWeather() {
     placementObserver.observe(mountParent, { childList: true, subtree: true });
 
     let summit = null, dayWindow = null, candidates = [], current = null;
+    let retryDate = subject.date;
     let metric = 'conditions', generation = 0, controller = null, started = false, visibilityObserver = null;
     const client = createWeatherClient();
     let lifecycle;
-    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; });
+    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; updateNavigation(); });
+    function adjacentDay(direction) {
+        if (!dayWindow) return null;
+        // Step by civil dates, not 24-hour instants. Skip a nonexistent civil
+        // day (such as Samoa's date-line change) without crossing model bounds.
+        for (let step = 1; step <= 2; step++) {
+            const target = new Date(Date.parse(`${dayWindow.date}T00:00:00Z`) + direction * step * 86400_000).toISOString().slice(0, 10);
+            if (target < '1940-01-01' || !eligibleWeatherModels(summit, target).some(model => model.id === select.value)) return null;
+            try { return weatherDayWindow(target, dayWindow.zone); } catch { /* Try the following civil date. */ }
+        }
+        return null;
+    }
+    function updateNavigation() {
+        for (const [button, direction] of [[previousDay, -1], [nextDay, 1]]) {
+            const target = adjacentDay(direction);
+            button.hidden = !dayWindow;
+            // Keep focus on the control while its request is pending or its
+            // archive boundary is reached. The click handler enforces this gate.
+            button.setAttribute('aria-disabled', String(!target || card.getAttribute('aria-busy') === 'true' || cooldown.active()));
+            button.title = target ? `${direction < 0 ? 'Previous' : 'Next'} day · ${displayDate(target.date)}`
+                : `No ${direction < 0 ? 'earlier' : 'later'} archived days for this model`;
+        }
+    }
     let cursorState = { hovering: false, hoverTime: null, selected: false, selectionTime: null };
     let cursorFrame = null, chartBounds = null, chartDescription = '';
     let conditionColumns = new Map(), activeConditionColumn = null;
@@ -182,7 +208,7 @@ export function mountAscentWeather() {
         let label = '';
         if (mode && dayWindow) {
             if (time === null) label = 'GPX time unavailable';
-            else if (time < dayWindow.start || time >= dayWindow.end) label = 'Outside ascent day';
+            else if (time < dayWindow.start || time >= dayWindow.end) label = dayWindow.date === subject.date ? 'Outside ascent day' : 'Outside displayed day';
             else {
                 label = `${mode === 'hover' ? 'Hover' : 'Selected'} · ${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
                 if (metric === 'conditions' && !hourly.hidden) {
@@ -368,7 +394,9 @@ export function mountAscentWeather() {
         resultArea.hidden = false; detailsArea.hidden = false;
         condition.textContent = day.condition.label;
         conditionIcon.textContent = WEATHER_ICONS[day.condition.icon];
-        conditionDetail.textContent = day.condition.complete && !dayWindow.partial ? 'Conditions during the ascent day' : 'Conditions in available hours';
+        conditionDetail.textContent = day.condition.complete && !dayWindow.partial
+            ? dayWindow.date === subject.date ? 'Conditions during the ascent day' : 'Conditions during this day'
+            : 'Conditions in available hours';
         readings.temperature.value.textContent = numeric(day.temperature.low) ? `${convert(day.temperature.low, 'temperature').toFixed(0)}–${convert(day.temperature.high, 'temperature').toFixed(0)}${unit('temperature')}`.replaceAll('-', '−') : '—';
         readings.precipitation.value.textContent = format(day.precipitation.total, 'precipitation');
         readings.wind.value.textContent = format(day.wind.high, 'wind'); readings.gust.value.textContent = format(day.gust.high, 'wind');
@@ -383,8 +411,16 @@ export function mountAscentWeather() {
         sourceText.textContent = `${model.label}, ${model.resolution}. ${model.type}. ${modelDetails} Summit timezone: ${dayWindow.zone.timeZone || zoneText.textContent}. Selected grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}. ${summit.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${data.grid.elevation.toFixed(0)} m.${day.precipitation.allocationEstimated ? ' Precipitation at fractional-hour day boundaries is proportionally allocated.' : ''} Model estimates cannot establish the climber’s summit time or route conditions.`;
         drawChart();
     }
-    const busy = value => { card.setAttribute('aria-busy', String(value)); retry.hidden = true; };
+    const busy = value => { card.setAttribute('aria-busy', String(value)); retry.hidden = true; updateNavigation(); };
     const cancel = () => { generation++; controller?.abort(); controller = null; busy(false); };
+    const updateModels = targetDate => {
+        const selected = select.value;
+        candidates = eligibleWeatherModels(summit, targetDate);
+        select.replaceChildren(...candidates.map(model => element('option', { value: model.id,
+            text: model === ARCHIVE_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}` })));
+        select.value = selected;
+        modelRow.hidden = false;
+    };
     const prepare = async signal => {
         if (summit) return;
         const response = await fetchPeakbaggerDocument(subject.peak.url, { kind: 'html', signal, init: { referrerPolicy: 'no-referrer' } });
@@ -392,56 +428,68 @@ export function mountAscentWeather() {
         summit = readWeatherSummit(response.document, subject, response.url);
         const zone = mountainTime.resolve(summit.latitude, summit.longitude);
         dayWindow = weatherDayWindow(subject.date, zone);
-        candidates = eligibleWeatherModels(summit, subject.date);
-        if (!candidates.length) throw new Error('No historical weather models cover this ascent date.');
-        for (const model of candidates) if (model !== ARCHIVE_BEST_MATCH) select.append(element('option', { value: model.id, text: `${model.label} · ${model.resolution}` }));
-        modelRow.hidden = false;
+        updateModels(subject.date);
     };
-    async function load() {
+    async function load(targetDate = dayWindow?.date || subject.date) {
         if (!enabled() || subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
         cancel(); const ownGeneration = generation; controller = new AbortController(); const signal = controller.signal;
+        retryDate = targetDate;
         busy(true); started = true;
         delete status.dataset.kind;
         if (!current) { resultArea.hidden = false; condition.textContent = 'Weather conditions'; conditionDetail.textContent = 'Ascent-day model estimate'; }
-        status.textContent = current ? `Showing ${current.model.label} while loading…` : 'Loading ascent-day weather…';
+        status.textContent = current ? targetDate === dayWindow.date ? `Showing ${current.model.label} while loading…`
+            : `Loading ${displayDate(targetDate)}… Showing ${displayDate(dayWindow.date)}.` : 'Loading ascent-day weather…';
         try {
             await prepare(signal);
             if (ownGeneration !== generation) return;
-            dayWindow = weatherDayWindow(subject.date, mountainTime.resolve(summit.latitude, summit.longitude));
-            const model = candidates.find(candidate => candidate.id === select.value);
-            if (!model) throw new Error('No historical weather model covers this ascent date.');
+            const requestedWindow = weatherDayWindow(targetDate, mountainTime.resolve(summit.latitude, summit.longitude));
+            const model = eligibleWeatherModels(summit, targetDate).find(candidate => candidate.id === select.value);
+            if (!model) throw new Error('This model does not cover the selected archive day. Choose another model.');
             let data;
-            try { data = await client.request(summit, dayWindow, model, { signal }); }
+            try { data = await client.request(summit, requestedWindow, model, { signal }); }
             catch (error) {
                 if (ownGeneration !== generation) return;
-                if (error.code === 'unavailable') {
+                if (error.code === 'unavailable' && targetDate === dayWindow.date) {
                     const option = [...select.options].find(candidate => candidate.value === model.id);
                     if (option) { option.disabled = true; option.textContent += ' — unavailable'; }
                 }
                 throw error;
             }
             if (ownGeneration !== generation) return;
-            const day = summarizeWeatherDay(data, dayWindow);
-            if (!day.useful) throw new Error('No weather data is available for this model and ascent day. Choose another model.');
+            const day = summarizeWeatherDay(data, requestedWindow);
+            if (!day.useful) throw new Error('No weather data is available for this model and archive day. Choose another model.');
+            if (targetDate !== dayWindow.date) {
+                readingSelected = readingHover = null;
+                conditions.scrollLeft = 0;
+                updateModels(targetDate);
+            }
+            dayWindow = requestedWindow;
+            date.textContent = displayDate(targetDate);
             current = { model, day, data }; renderResult(); status.textContent = dayWindow.partial ? 'Partial day · Weather so far' : day.partial ? 'Partial data · Some hours or measurements are unavailable' : '';
             retry.hidden = !day.partial && !dayWindow.partial;
         } catch (error) {
             if (ownGeneration !== generation || signal.aborted) return;
             if (!current) resultArea.hidden = true;
             if (error.code === 'rate-limit') { status.dataset.kind = 'rate-limit'; cooldown.set(error.retryAt); }
-            status.textContent = `${current ? `Showing ${current.model.label}. ` : ''}${error.message}`; retry.hidden = false;
+            status.textContent = `${current ? targetDate === dayWindow.date ? `Showing ${current.model.label}. `
+                : `Could not load ${displayDate(targetDate)}. Showing ${displayDate(dayWindow.date)}. ` : ''}${error.message}`; retry.hidden = false;
         } finally {
-            if (ownGeneration === generation) card.setAttribute('aria-busy', 'false');
+            if (ownGeneration === generation) { card.setAttribute('aria-busy', 'false'); updateNavigation(); }
         }
     }
-    select.addEventListener('change', load);
+    select.addEventListener('change', () => { void load(); });
+    for (const [button, direction] of [[previousDay, -1], [nextDay, 1]]) button.addEventListener('click', () => {
+        if (button.getAttribute('aria-disabled') === 'true') return;
+        const target = adjacentDay(direction);
+        if (target) void load(target.date);
+    });
     retry.addEventListener('click', () => {
         client.clear();
         for (const model of candidates) {
             const option = [...select.options].find(candidate => candidate.value === model.id);
             if (option) { option.disabled = false; option.textContent = model === ARCHIVE_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}`; }
         }
-        void load();
+        void load(retryDate);
     });
     disclosure.addEventListener('click', () => {
         hourly.hidden = !hourly.hidden;

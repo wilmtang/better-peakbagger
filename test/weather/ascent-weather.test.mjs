@@ -16,9 +16,10 @@ async function waitFor(predicate) {
     const until = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > until) throw new Error('Weather UI did not settle'); await pause(); }
 }
-const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings } = {}) => {
+const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings, now } = {}) => {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [];
+    if (now !== undefined) win.Date.now = () => now;
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     win.fetch = async (url, init) => {
@@ -43,6 +44,195 @@ const openChart = async env => {
     env.doc.querySelector('.bpb-weather-disclosure').click();
     env.doc.querySelector('[data-metric="temperature"]').click();
 };
+
+const archiveResponse = url => new Response(JSON.stringify(weatherFixture({
+    startDate: new URL(url).searchParams.get('start_date'),
+    hours: (Date.parse(new URL(url).searchParams.get('end_date')) - Date.parse(new URL(url).searchParams.get('start_date'))) / 3600_000 + 24,
+    fields: new URL(url).searchParams.get('hourly').split(','),
+})), { headers: { 'content-type': 'application/json' } });
+
+test('archive date buttons browse adjacent days without changing the saved ascent or hourly view', async () => {
+    const env = setup({ fetchWeather: archiveResponse });
+    try {
+        await openChart(env);
+        const date = env.doc.querySelector('.bpb-weather-date'), card = env.doc.querySelector('#bpb-ascent-weather');
+        const previous = card.querySelector('[aria-label="Previous day"]'), next = card.querySelector('[aria-label="Next day"]');
+        const saved = env.doc.querySelector('.bpb-ascent-table-split__summary').textContent;
+        assert.equal(card.querySelectorAll('input, [role="combobox"]').length, 0, 'no date picker or editable date');
+        assert.match(date.textContent, /July 12, 2024/);
+        env.doc.querySelector('.bpb-weather-chart-frame').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        assert.ok(env.doc.querySelector('.bpb-weather-reading-cursor'));
+        previous.click();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false' && /July 11, 2024/.test(date.textContent));
+        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('start_date'), '2024-07-10');
+        assert.equal(env.doc.querySelector('.bpb-weather-reading-cursor'), null, 'a pinned weather reading belongs to its old day');
+        assert.equal(env.doc.querySelector('[data-metric="temperature"]').getAttribute('aria-selected'), 'true');
+        assert.equal(env.doc.querySelector('.bpb-weather-disclosure').getAttribute('aria-expanded'), 'true');
+        assert.match(env.doc.querySelector('.bpb-weather-condition').textContent, /Conditions during this day/);
+        sendCursor(env, { selected: true, selectionTime: Date.parse('2024-07-12T19:00:00Z') });
+        await waitFor(() => env.doc.querySelector('.bpb-weather-cursor-label').textContent === 'Outside displayed day');
+        next.click();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false' && /July 12, 2024/.test(date.textContent));
+        assert.match(env.doc.querySelector('.bpb-weather-condition').textContent, /Conditions during the ascent day/);
+        next.click();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false' && /July 13, 2024/.test(date.textContent));
+        assert.equal(env.doc.querySelector('.bpb-ascent-table-split__summary').textContent, saved);
+        assert.equal(env.requests.filter(request => new URL(request.url).host === 'www.peakbagger.com').length, 1);
+        assert.ok(env.requests.slice(1).every(request => new URL(request.url).host === 'archive-api.open-meteo.com'));
+    } finally { env.close(); }
+});
+
+test('pending and failed archive navigation retain the old date, chart bounds and values; Retry targets the failed day', async () => {
+    let finish, available = false;
+    const env = setup({ fetchWeather: url => !available && new URL(url).searchParams.get('start_date') === '2024-07-10'
+        ? new Promise(resolve => { finish = () => resolve(new Response('', { status: 400 })); }) : archiveResponse(url) });
+    try {
+        await openChart(env);
+        const date = env.doc.querySelector('.bpb-weather-date'), card = env.doc.querySelector('#bpb-ascent-weather');
+        const previous = card.querySelector('[aria-label="Previous day"]');
+        const before = env.doc.querySelector('[data-weather-value="temperature"]').textContent;
+        previous.focus(); previous.click(); await waitFor(() => finish);
+        assert.equal(previous.getAttribute('aria-disabled'), 'true');
+        assert.equal(card.querySelector('[aria-label="Next day"]').getAttribute('aria-disabled'), 'true');
+        assert.equal(env.doc.activeElement, previous);
+        const pendingRequests = env.requests.length; previous.click(); await pause(); assert.equal(env.requests.length, pendingRequests);
+        assert.match(date.textContent, /July 12, 2024/);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        env.doc.querySelector('.bpb-weather-chart-frame').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        assert.match(env.doc.querySelector('.bpb-weather-readout').textContent, /12:00 AM PDT/);
+        finish();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false');
+        assert.match(date.textContent, /July 12, 2024/);
+        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Could not load July 11, 2024\. Showing July 12, 2024/);
+        assert.equal(previous.getAttribute('aria-disabled'), 'false');
+        assert.equal(env.doc.activeElement, previous);
+        assert.equal(env.doc.querySelector('option[value="best_match"]').disabled, false, 'refusal on another date does not disable the displayed day');
+        assert.notEqual(env.doc.querySelector('[data-weather-value="temperature"]').textContent, before, 'unit update renders the retained day');
+        available = true;
+        env.doc.querySelector('.bpb-weather-retry').click();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false' && /July 11, 2024/.test(date.textContent));
+        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('start_date'), '2024-07-10');
+    } finally { env.close(); }
+});
+
+test('a superseded archive-day response cannot replace the displayed day after a model change', async () => {
+    let finish;
+    const env = setup({ fetchWeather: url => new URL(url).searchParams.get('start_date') === '2024-07-10'
+        ? new Promise(resolve => { finish = () => resolve(archiveResponse(url)); }) : archiveResponse(url) });
+    try {
+        await openChart(env);
+        env.doc.querySelector('[aria-label="Previous day"]').click(); await waitFor(() => finish);
+        const select = env.doc.querySelector('.bpb-weather-model select');
+        select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using GFS'));
+        finish(); await pause();
+        assert.match(env.doc.querySelector('.bpb-weather-date').textContent, /July 12, 2024/);
+        assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using GFS/);
+        assert.equal(env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy'), 'false');
+    } finally { env.close(); }
+});
+
+test('archive navigation stops at summit-local today and excludes future hours, even when UTC is already tomorrow', async () => {
+    const env = setup({ now: Date.parse('2024-07-13T02:30:00Z'), fetchWeather: archiveResponse });
+    try {
+        await openChart(env);
+        const card = env.doc.querySelector('#bpb-ascent-weather'), next = card.querySelector('[aria-label="Next day"]');
+        assert.equal(next.getAttribute('aria-disabled'), 'true', 'Rainier is still on July 12');
+        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Partial day/);
+        env.doc.querySelector('.bpb-weather-chart-frame').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+        assert.match(env.doc.querySelector('.bpb-weather-readout').textContent, /7:00 PM PDT/);
+        const before = env.requests.length; next.click(); await pause();
+        assert.equal(env.requests.length, before);
+        card.querySelector('[aria-label="Previous day"]').click();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false' && /July 11, 2024/.test(env.doc.querySelector('.bpb-weather-date').textContent));
+        assert.equal(next.getAttribute('aria-disabled'), 'false');
+        next.click();
+        await waitFor(() => card.getAttribute('aria-busy') === 'false' && /July 12, 2024/.test(env.doc.querySelector('.bpb-weather-date').textContent));
+        assert.equal(next.getAttribute('aria-disabled'), 'true');
+    } finally { env.close(); }
+});
+
+test('archive buttons respect the first archive date and selected model coverage without fallback', async () => {
+    for (const [day, model, earliest] of [['January 1, 1940', 'best_match', true], ['March 23, 2021', 'gfs_global', true], ['July 7, 2024', 'era5', false]]) {
+        const env = setup({ html: ascent.replaceAll('Sunday, July 12, 2026', day), now: Date.parse('2024-07-13T02:30:00Z'), fetchWeather: archiveResponse });
+        try {
+            await openChart(env);
+            const select = env.doc.querySelector('.bpb-weather-model select');
+            select.value = model; select.dispatchEvent(new env.win.Event('change'));
+            await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+            const blocked = env.doc.querySelector(`[aria-label="${earliest ? 'Previous' : 'Next'} day"]`);
+            assert.equal(blocked.getAttribute('aria-disabled'), 'true', `${model} archive bound`);
+            const before = env.requests.length; blocked.click(); await pause(); assert.equal(env.requests.length, before);
+            env.doc.querySelector(`[aria-label="${earliest ? 'Next' : 'Previous'} day"]`).click();
+            await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+            assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), model, 'explicit selection stays selected');
+            assert.equal(select.value, model);
+        } finally { env.close(); }
+    }
+});
+
+test('archive navigation uses local civil days across DST and retains the displayed day on BFCache restore', async () => {
+    const env = setup({ html: ascent.replaceAll('Sunday, July 12, 2026', 'November 4, 2024'), fetchWeather: archiveResponse });
+    try {
+        await openChart(env);
+        env.doc.querySelector('[data-metric="conditions"]').click();
+        env.doc.querySelector('[aria-label="Previous day"]').click();
+        await waitFor(() => /November 3, 2024/.test(env.doc.querySelector('.bpb-weather-date').textContent)
+            && env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.querySelectorAll('.bpb-weather-hourly-table thead [data-weather-time]').length, 25);
+        assert.match(env.doc.querySelector('.bpb-weather-hourly-table').textContent, /PDT[\s\S]*PST/);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+        assert.match(env.doc.querySelector('.bpb-weather-date').textContent, /November 3, 2024/);
+        env.doc.querySelector('[aria-label="Next day"]').click();
+        await waitFor(() => /November 4, 2024/.test(env.doc.querySelector('.bpb-weather-date').textContent)
+            && env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.querySelectorAll('.bpb-weather-hourly-table thead [data-weather-time]').length, 24);
+    } finally { env.close(); }
+});
+
+test('archive navigation refreshes date-dependent choices and respects a finite model archive', async () => {
+    const env = setup({ html: ascent.replaceAll('Sunday, July 12, 2026', 'June 30, 2021'),
+        fetchPeak: () => new Response(peak.replace('46.851731, -121.760395 (Dec Deg)', '46, 7 (Dec Deg)'), { headers: { 'content-type': 'text/html' } }),
+        fetchWeather: async url => {
+            const body = await archiveResponse(url).json(); body.latitude = 46; body.longitude = 7;
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+    try {
+        await openChart(env);
+        const select = env.doc.querySelector('.bpb-weather-model select');
+        select.value = 'cerra'; select.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using CERRA'));
+        assert.equal(env.doc.querySelector('[aria-label="Next day"]').getAttribute('aria-disabled'), 'true');
+        select.value = 'best_match'; select.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+        env.doc.querySelector('[aria-label="Next day"]').click();
+        await waitFor(() => /July 1, 2021/.test(env.doc.querySelector('.bpb-weather-date').textContent));
+        assert.equal(select.querySelector('[value="cerra"]'), null);
+        env.doc.querySelector('[aria-label="Previous day"]').click();
+        await waitFor(() => /June 30, 2021/.test(env.doc.querySelector('.bpb-weather-date').textContent));
+        assert.ok(select.querySelector('[value="cerra"]'));
+        assert.equal(select.value, 'best_match');
+    } finally { env.close(); }
+});
+
+test('archive navigation skips a nonexistent summit-local day without requesting it', async () => {
+    const env = setup({ html: ascent.replaceAll('Sunday, July 12, 2026', 'December 29, 2011'),
+        fetchPeak: () => new Response(peak.replace('46.851731, -121.760395 (Dec Deg)', '-13.83, -171.76 (Dec Deg)'), { headers: { 'content-type': 'text/html' } }),
+        fetchWeather: async url => {
+            const body = await archiveResponse(url).json(); body.latitude = -13.83; body.longitude = -171.76;
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+    try {
+        await openChart(env);
+        env.doc.querySelector('[aria-label="Next day"]').click();
+        await waitFor(() => /December 31, 2011/.test(env.doc.querySelector('.bpb-weather-date').textContent));
+        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('start_date'), '2011-12-30');
+        env.doc.querySelector('[aria-label="Previous day"]').click();
+        await waitFor(() => /December 29, 2011/.test(env.doc.querySelector('.bpb-weather-date').textContent));
+    } finally { env.close(); }
+});
 
 test('hourly disclosure names its action and keeps the expanded state and target in sync', async () => {
     const env = setup();
@@ -576,6 +766,7 @@ test('rate limits preserve previous results without cascading, explicit selectio
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').disabled, true);
         assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');
+        assert.ok([...env.doc.querySelectorAll('.bpb-weather-day-button')].every(button => button.getAttribute('aria-disabled') === 'true'));
         assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Try again after/);
         select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
         await pause(); assert.equal(env.requests.length, before + 1);

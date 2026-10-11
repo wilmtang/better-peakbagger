@@ -61,6 +61,18 @@ including 23/25-hour days and repeated clock hours. A skipped date is rejected.
 The longitude fallback is labelled as estimated. Current-day output excludes
 future hours and is marked partial.
 
+**Previous day** and **Next day** buttons flank the archive date. There is no
+date picker or editable date. Navigation starts at the saved ascent date and
+steps through summit-local civil days, stopping at today's local date and the
+selected model's archive start, end and publication delay. It never switches to
+a forecast or silently changes the model. Available model choices are refreshed
+for each displayed date. A successful response updates the date and readings
+together; pending or failed requests retain the displayed day, and Retry requests
+the failed day. Navigation is disabled while loading or rate-limited, retaining
+keyboard focus on the button. The native ascent date stays unchanged. Hourly
+expansion and the selected tab are preserved; a weather reading from the old
+day is cleared.
+
 Instantaneous temperature, condition and wind samples belong to `[start, end)`.
 UTC padding is clipped at the model's archive boundaries; any missing part of
 the local day remains partial. Historical IFS and ERA5 gusts use instantaneous
@@ -119,10 +131,12 @@ are coalesced per animation frame and move a separate SVG overlay.
 
 Epochs map into the summit's historical local day, including repeated DST hours.
 Missing, suspect or constant track times show **GPX time unavailable**; points
-outside that day show **Outside ascent day**, with no cursor line. The saved
-ascent date and summit continue to own weather requests. The cursor requests no
-additional data and does not estimate weather along the route or interpolate
-hourly values. BFCache suspension clears hover and cancels pending updates;
+outside that day show **Outside ascent day**, or **Outside displayed day** when
+browsing another archive date, with no cursor line. The saved ascent supplies
+the initial day and summit; adjacent-day navigation changes only the archive
+view. The cursor requests no additional data and does not estimate weather along
+the route or interpolate hourly values. BFCache suspension clears hover and
+cancels pending updates;
 restore retains selection and requests the analyzer's current snapshot.
 
 ## Requests and lifecycle
