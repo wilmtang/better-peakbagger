@@ -12,7 +12,6 @@ import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs'
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
 
-assertChromeLaunchAllowed();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const temporaryRoot = await mkdtemp('/tmp/bpb-weather-audit-verify-');
 const output = process.env.BPB_WEATHER_AUDIT_OUTPUT;
@@ -21,6 +20,7 @@ const requests = [];
 try {
     if (output) await mkdir(output, { recursive: true });
     fixture = await createBrowserFixtureServer({ temporaryRoot });
+    assertChromeLaunchAllowed();
     context = await chromium.launchPersistentContext(temporaryRoot, {
         channel: 'chromium', headless: true, viewport: { width: 1440, height: 1000 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], args: [...fixture.chromeTrustArgs,
