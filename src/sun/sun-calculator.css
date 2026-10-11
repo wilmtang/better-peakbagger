@@ -701,6 +701,155 @@
     .bpb-sun-calculator__compass { inline-size: min(10rem, 70%); }
 }
 
+/* Peak pages open this panel by default. Share the lower rows across the
+   card and reserve compact, fixed tracks so date/time changes cannot move
+   the map or the content below it. GPX selection retains its own layout. */
+.bpb-sun-calculator--peak { container: bpb-sun-peak / inline-size; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__toggle {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: none;
+    block-size: 3rem;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__title { font-size: 1em; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__icon { inline-size: 1.35rem; block-size: 1.35rem; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__summary {
+    display: block;
+    grid-column: auto;
+    grid-row: auto;
+    block-size: 1.35rem;
+    font-size: 0.9em;
+    line-height: 1.35rem;
+    text-align: end;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__panel {
+    block-size: calc(19.9rem + 1px);
+    padding: 0.75rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__layout {
+    grid-template-columns: minmax(12rem, 0.9fr) minmax(9rem, 0.65fr) minmax(11rem, 1fr);
+    grid-template-rows: 11rem 4.1rem 2.5rem;
+    gap: 0.4rem 0.75rem;
+    block-size: 18.4rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__controls {
+    grid-template-rows: 4.1rem 6.4rem;
+    gap: 0.5rem;
+    block-size: 11rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__date {
+    min-block-size: 2.25rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 1em;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__field { gap: 0.3rem 0.5rem; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__label,
+.bpb-sun-calculator--peak .bpb-sun-calculator__clock { font-size: 0.95em; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__reading { display: contents; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__reading[hidden] { display: none; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__compass { inline-size: min(10rem, 100%); }
+.bpb-sun-calculator--peak .bpb-sun-calculator__facts {
+    grid-template-columns: 1fr;
+    grid-template-rows: 2.5rem 2.5rem 5.1rem;
+    gap: 0.4rem;
+    block-size: 11rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__moon { grid-column: auto; }
+.bpb-sun-calculator--peak :is(.bpb-sun-calculator__direction, .bpb-sun-calculator__elevation, .bpb-sun-calculator__moon) {
+    gap: 0.15rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__fact-label {
+    block-size: 1rem;
+    font-size: 0.85em;
+    line-height: 1rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__fact-value {
+    block-size: 1.35rem;
+    font-size: 1em;
+    line-height: 1.35rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__moon-icon { font-size: 1em; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__fact-detail {
+    block-size: 1.15rem;
+    font-size: 0.85em;
+    line-height: 1.15rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__events {
+    grid-template-rows: 1.9rem 2.2rem;
+    block-size: 4.1rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__event-line,
+.bpb-sun-calculator--peak .bpb-sun-calculator__events--text .bpb-sun-calculator__events-text { block-size: 1.9rem; }
+.bpb-sun-calculator--peak .bpb-sun-calculator__moon-events-text {
+    block-size: 2.2rem;
+    line-height: 1.1rem;
+}
+.bpb-sun-calculator--peak .bpb-sun-calculator__limitation {
+    block-size: 2.5rem;
+    padding-block-start: 0.25rem;
+    line-height: 1.1rem;
+}
+@container bpb-sun-peak (max-width: 680px) {
+    .bpb-sun-calculator--peak .bpb-sun-calculator__panel { block-size: calc(26.7rem + 1px); }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__layout {
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+        grid-template-rows: 6.4rem 11rem 4.1rem 2.5rem;
+        block-size: 25.2rem;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__controls {
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-rows: 6.4rem;
+        gap: 0.75rem;
+        block-size: 6.4rem;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__field { align-content: start; }
+}
+@container bpb-sun-peak (max-width: 440px) {
+    .bpb-sun-calculator--peak .bpb-sun-calculator__toggle {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-rows: 1.35rem 1.35rem;
+        block-size: 3.95rem;
+        gap: 0.25rem 0.5rem;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__summary {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        text-align: start;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__chevron { grid-column: 3; grid-row: 1; }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__panel { block-size: calc(30.8rem + 1px); }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__layout {
+        grid-template-rows: 10.5rem 11rem 4.1rem 2.5rem;
+        block-size: 29.3rem;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__controls {
+        grid-template-columns: 1fr;
+        grid-template-rows: 4rem 6rem;
+        gap: 0.5rem;
+        block-size: 10.5rem;
+    }
+}
+@container bpb-sun-peak (max-width: 340px) {
+    .bpb-sun-calculator--peak .bpb-sun-calculator__panel { block-size: calc(33.1rem + 1px); }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__layout {
+        grid-template-rows: 10.5rem 12.2rem 4.1rem 3.6rem;
+        block-size: 31.6rem;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__facts {
+        grid-template-rows: 2.5rem 2.5rem 6.25rem;
+        block-size: 12.2rem;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__moon-position {
+        block-size: 2.3rem;
+        white-space: normal;
+    }
+    .bpb-sun-calculator--peak .bpb-sun-calculator__limitation { block-size: 3.6rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .bpb-sun-calculator__cardinal,
     .bpb-sun-calculator__cardinal-label,
