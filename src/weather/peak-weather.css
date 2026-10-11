@@ -22,6 +22,7 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 #bpb-peak-weather p { margin: 8px 0; }
 #bpb-peak-weather .bpb-week-range { font-size: 14px; font-weight: 500; margin: 3px 0 0; }
 #bpb-peak-weather .bpb-week-sub, #bpb-peak-weather .bpb-week-help { color: var(--week-sub); font-size: 12px; }
+#bpb-peak-weather .bpb-week-accuracy { font-size: 12px; }
 #bpb-peak-weather .bpb-week-status { color: var(--week-sub); }
 #bpb-peak-weather .bpb-week-status:empty { display: none; }
 #bpb-peak-weather .bpb-week-status[data-kind="rate-limit"] { padding: 10px 12px; border-left: 3px solid #b47b26; background: var(--week-soft); border-radius: 4px; color: var(--week-text); }

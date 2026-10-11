@@ -337,8 +337,9 @@ viewable ascents. Invalid or incomplete dates make no weather request.
 
 On peak pages, **Summit weather** reads summit coordinates and elevation
 directly from the current Peakbagger page. One forecast-API request covers seven
-completed summit-local days and a seven-day forecast (today plus six days), with
-UTC padding for day boundaries, when the card approaches the viewport. Switching
+completed summit-local days and up to sixteen forecast days (today plus fifteen
+days), with UTC padding capped at the API's forecast horizon, when the card
+approaches the viewport. Switching
 periods or hourly graphs makes no additional request. The API selects regional
 models automatically; **Refresh** makes another request. Returning to a visible
 card after five minutes refreshes expired data unless the previous request failed.
@@ -347,7 +348,8 @@ Open-Meteo receives the summit latitude/longitude, summit elevation when
 available, date window and weather fields, IP address, and ordinary request
 metadata. Ascent weather uses a three-UTC-day window covering the local ascent
 date and a selected model. Peak weather uses a padded UTC window covering the
-seven completed local days and today plus six forecast days, with automatic
+seven completed local days and today plus fifteen forecast days, capped at the
+API's available horizon, with automatic
 regional model selection. Weather requests
 omit credentials and referrers. No ascent or climber ID, summit name, report,
 GPX, track times, account credentials, or page URL is sent to Open-Meteo.

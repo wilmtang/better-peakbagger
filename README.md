@@ -93,11 +93,14 @@ conditions along the route or the climber’s summit time. See the
 [historical weather design](docs/ascent-weather.md).
 
 Peak pages show **Summit weather** below the map in the right column. The
-**7-day forecast** covers today plus six days; **Past 7 days** shows seven
+**16-day forecast** covers today plus fifteen days, up to the API's available
+horizon; **Past 7 days** shows seven
 completed summit-local days. One Open-Meteo request supplies both views with
 conditions, temperature ranges, rain/snow water equivalent and maximum wind.
 Expand a day for hourly graphs with temperature, rain/snow, wind, gusts and
-conditions tabs. Open-Meteo chooses regional models automatically. See the
+conditions tabs. Incomplete final-day hours stay labelled. Open-Meteo chooses
+models automatically; **Models & source details** names possible sources, and
+the card warns that forecasts may be inaccurate, especially farther ahead. See the
 [recent weather design](docs/peak-weather.md).
 
 ### Send a saved track to another mapping app

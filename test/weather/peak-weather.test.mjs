@@ -46,7 +46,7 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
 const settled = async (env, { past = true } = {}) => {
-    await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 7 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+    await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === (env.doc.querySelector('[data-period="forecast"]').getAttribute('aria-selected') === 'true' ? 16 : 7) && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
     if (past) env.doc.querySelector('[data-period="past"]').click();
 };
 
@@ -343,14 +343,19 @@ test('BFCache cancels stale requests and resolves a new completed date range on 
     } finally { env.close(); }
 });
 
-test('forecast defaults to today plus six full days and both periods reuse one response', async () => {
+test('forecast defaults to sixteen days, labels the truncated final day and shares one response with the past week', async () => {
     const env = setup();
     try {
         await settled(env, { past: false });
         const dates = () => [...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date);
-        assert.deepEqual(dates(), ['2024-11-05', '2024-11-06', '2024-11-07', '2024-11-08', '2024-11-09', '2024-11-10', '2024-11-11']);
+        assert.equal(dates().length, 16); assert.equal(dates()[0], '2024-11-05'); assert.equal(dates().at(-1), '2024-11-20');
+        assert.ok(dates().every((date, index) => !index || date > dates()[index - 1]));
+        assert.equal(env.doc.querySelector('[data-period="forecast"]').textContent, '16-day forecast');
+        assert.equal(new URL(env.requests[0].url).searchParams.get('end_date'), '2024-11-20');
+        assert.match(env.doc.querySelector('.bpb-week-day:last-child .bpb-week-partial').textContent, /Incomplete hours/);
+        assert.match(env.doc.querySelector('.bpb-week-day:last-child .bpb-week-metrics').textContent, /\(partial\)/);
         assert.equal(env.doc.querySelector('.bpb-week-date strong').textContent, 'Today');
-        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 6 days/);
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 15 days/);
         assert.equal(env.doc.querySelector('[data-period="forecast"]').getAttribute('aria-selected'), 'true');
         const first = env.doc.querySelector('.bpb-week-day'); first.open = true;
         await waitFor(() => first.querySelector('.bpb-week-line'));
@@ -370,6 +375,28 @@ test('forecast defaults to today plus six full days and both periods reuse one r
         assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'precipitation');
         assert.equal(env.resizeObservers.filter(observer => !observer.disconnected).length, 1);
         assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('accuracy warning and accessible source disclosure explain possible models without claiming per-hour provenance', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const accuracy = env.doc.querySelector('.bpb-week-accuracy'), source = env.doc.querySelector('.bpb-week-source');
+        assert.equal(accuracy.hidden, false); assert.match(accuracy.textContent, /may be inaccurate.*farther ahead.*mountain summits/);
+        assert.equal(source.hidden, false); assert.equal(source.open, false);
+        assert.equal(source.querySelector('summary').textContent, 'Models & source details');
+        source.open = true;
+        const model = source.querySelector('.bpb-week-models').textContent;
+        for (const name of ['Best Match', 'NOAA HRRR', 'NOAA GFS', 'DWD ICON', 'ECMWF IFS']) assert.ok(model.includes(name));
+        assert.match(model, /may use/); assert.match(model, /does not identify the model behind each value/);
+        assert.match(source.textContent, /final day may have incomplete hours/);
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(accuracy.hidden, true); assert.equal(source.open, true);
+        assert.match(source.textContent, /not weather-station observations/);
+        assert.match(env.doc.querySelector('footer').textContent, /Estimates may be inaccurate/);
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(accuracy.hidden, false); assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
 
@@ -415,7 +442,7 @@ test('switching periods preserves the previous response and a known rate-limit w
         assert.equal(env.doc.querySelector('.bpb-week-status').textContent, warning);
         assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
         env.doc.querySelector('[data-period="forecast"]').click();
-        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
         assert.equal(env.requests.length, 2);
     } finally { env.close(); }
@@ -439,6 +466,6 @@ test('returning to a visible card refreshes an expired forecast without looping 
         env.setNow('2024-11-05T12:20:00Z');
         env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
         assert.equal(env.requests.length, 3);
-        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
     } finally { env.close(); }
 });

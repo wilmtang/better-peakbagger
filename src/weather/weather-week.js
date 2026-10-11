@@ -6,6 +6,7 @@ import { weatherDayWindow, summarizeWeatherDay } from './weather-day.js';
 
 const DAY = 86400_000, HOUR = 3600_000;
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
+export const PEAK_FORECAST_DAYS = 16;
 
 // Seven completed civil days at the summit, not seven UTC dates or 168 hours.
 // Request GMT/Unix timestamps and group locally: the API's fixed UTC offset
@@ -32,9 +33,12 @@ export function weatherPeakWindow(zone, now = Date.now()) {
     const today = mountainTime.localDate(zone, now);
     const midnight = Date.parse(`${today}T00:00:00Z`);
     const past = weatherWeekWindow(zone, now);
-    const days = Array.from({ length: 7 }, (_, offset) =>
+    const days = Array.from({ length: PEAK_FORECAST_DAYS }, (_, offset) =>
         weatherDayWindow(iso(midnight + offset * DAY), zone, now, { forecast: true }));
+    // The GMT request cannot exceed the API's sixteen UTC dates from today.
+    // Keep full civil-day expectations so truncated final hours stay partial.
+    const lastApiDate = Date.parse(`${iso(now)}T00:00:00Z`) + (PEAK_FORECAST_DAYS - 1) * DAY;
     const forecast = { zone, days, startDate: iso(days[0].start),
-        endDate: iso(Math.ceil(days.at(-1).end / HOUR) * HOUR), partial: true };
+        endDate: iso(Math.min(Math.ceil(days.at(-1).end / HOUR) * HOUR, lastApiDate)), partial: true };
     return { zone, today, past, forecast, startDate: past.startDate, endDate: forecast.endDate, partial: true };
 }

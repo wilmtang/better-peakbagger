@@ -8,7 +8,7 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPeakHourlyChart } from './peak-weather-hourly.js';
-import { weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
+import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
 
@@ -23,21 +23,23 @@ export function mountPeakWeather() {
     const zone = mountainTime.resolve(subject.latitude, subject.longitude);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
-    const periods = [['forecast', '7-day forecast'], ['past', 'Past 7 days']];
+    const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', 'Past 7 days']];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
     const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', text,
         id: `${ID}-${key}`, 'data-period': key, 'aria-controls': `${ID}-period` }));
     periodTabs.append(...periodButtons);
     const range = element('p', { class: 'bpb-week-range' });
     const locationLabel = element('p', { class: 'bpb-week-sub' });
+    const accuracy = element('p', { class: 'bpb-week-accuracy', text: 'Forecasts may be inaccurate, especially farther ahead or at mountain summits. Check local mountain forecasts before your climb.' });
     const status = element('p', { class: 'bpb-week-status', role: 'status', 'aria-live': 'polite' });
     const days = element('div', { class: 'bpb-week-days' });
     const help = element('p', { class: 'bpb-week-help', hidden: '', text: 'Select a day for hourly weather. Rain/snow is water equivalent; wind is the daily maximum.' });
     const sourceText = element('p');
-    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Source details' }), sourceText]);
-    const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [range, locationLabel, days, help]);
+    const modelText = element('p', { class: 'bpb-week-models', text: 'Open-Meteo Best Match selects models automatically. US coverage may use NOAA HRRR for short-range forecasts and NOAA GFS farther ahead, with DWD ICON as a fallback. Elsewhere, ECMWF IFS and regional models may be used. The mix varies by location, weather variable and forecast hour; the API does not identify the model behind each value.' });
+    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Models & source details' }), modelText, sourceText]);
+    const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [range, locationLabel, accuracy, days, help]);
     card.append(element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Summit weather' }), refresh]), periodTabs, status, periodPanel,
-        source, element('footer', {}, [element('span', { text: 'Model estimates · Route conditions may differ' }),
+        source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
             element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
     const row = element('tr', { id: `${ID}-row`, hidden: '' }, [cell]);
@@ -67,7 +69,7 @@ export function mountPeakWeather() {
         const first = week.days[0].date, last = week.days.at(-1).date;
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
         const interval = period === 'past' ? '7 completed days · Today excluded'
-            : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? 'Today + 6 days' : '7-day forecast · Previous dates';
+            : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? `Today + ${PEAK_FORECAST_DAYS - 1} days` : `${PEAK_FORECAST_DAYS}-day forecast · Previous dates`;
         locationLabel.textContent = `At the summit${subject.elevation === null ? '' : ` · ${units.formatElevation(subject.elevation, unitSystem())}`} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
     };
     const paintStatus = () => {
@@ -117,7 +119,7 @@ export function mountPeakWeather() {
             if (date === openDate) { detail.open = true; renderHours(day, detail, hourly); }
         }
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
-        sourceText.textContent = `Automatic regional model selection by Open-Meteo. ${forecast ? 'Forecast model estimates; today includes the whole local day.' : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${current.data.grid.elevation.toFixed(0)} m. Selected grid: ${current.data.grid.latitude.toFixed(4)}, ${current.data.grid.longitude.toFixed(4)}.`;
+        sourceText.textContent = `${forecast ? `Up to ${PEAK_FORECAST_DAYS} days of forecast model estimates; today includes the whole local day. The final day may have incomplete hours where the forecast ends.` : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${current.data.grid.elevation.toFixed(0)} m. Selected grid: ${current.data.grid.latitude.toFixed(4)}, ${current.data.grid.longitude.toFixed(4)}.`;
         paintStatus();
     }
     const choosePeriod = next => {
@@ -132,6 +134,7 @@ export function mountPeakWeather() {
             button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
         }
         periodPanel.setAttribute('aria-labelledby', `${ID}-${period}`);
+        accuracy.hidden = period !== 'forecast';
     };
     periodButtons.forEach(button => button.addEventListener('click', () => choosePeriod(button.dataset.period)));
     periodTabs.addEventListener('keydown', event => {

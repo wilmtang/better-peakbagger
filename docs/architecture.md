@@ -827,10 +827,13 @@ a row beneath the map in the native right-hand table, including when no map is
 present, without moving native content or waiting for the MAIN-world enhancer.
 It reuses the strict summit-coordinate reader, offline timezone, daily summary
 and private transport, but uses a fixed forecast endpoint and a separate
-384-hour response cap. One padded UTC request supplies both seven completed
-local days and today plus six forecast days. The ascent client's three-day/72-row
+576-hour response cap. One padded UTC request supplies both seven completed
+local days and today plus fifteen forecast days, capped at the API's sixteen
+UTC-day forecast horizon. The ascent client's three-day/72-row
 limits and future-date rejection remain unchanged. Forecast summaries use whole
-local days; past days exclude today. Both retain DST and missing-data semantics.
+local days; past days exclude today. Both retain DST and missing-data semantics,
+including incomplete final forecast days. A visible accuracy warning and model
+disclosure explain possible sources without inventing per-hour model provenance.
 Period tabs and tabbed hourly SVG graphs reuse the same response. The peak-owned
 renderer includes interval boundary semantics, keyboard sampling, resize cleanup,
 a five-minute memory cache and refresh on returning to a visible expired card.

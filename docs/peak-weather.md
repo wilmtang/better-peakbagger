@@ -14,11 +14,11 @@ coordinates fail closed rather than mounting a full-page fallback or guessing
 a location. Peak name, coordinates and elevation come from the current page;
 there is no geocoding or extra Peakbagger request.
 
-The card defaults to **7-day forecast**, covering today plus six days in forward
+The card defaults to **16-day forecast**, covering today plus fifteen days in forward
 order. **Past 7 days** shows seven completed local days, latest first, excluding
 today. Both views share one request; period tabs support arrow keys, Home and End
 and retain each view's expanded day. Forecast conditions use expected rather
-than past-tense rain/snow labels. Each of the seven compact rows has the
+than past-tense rain/snow labels. Each compact row has the
 day's most severe available condition, temperature low/high, precipitation
 water equivalent (rain, showers and snow), and maximum wind. Missing values
 remain unavailable and incomplete hours are labelled. A native keyboard-
@@ -30,7 +30,13 @@ reading; clicking or using arrow keys pins it, and Escape clears it. Data tabs
 support arrow keys, Home and End. Charts fit inside the card without widening
 the page; the conditions timeline scrolls vertically. Units follow the existing
 preference without another weather request.
-Source details explain model estimates, full-day forecasts, load time and
+The forecast view warns that estimates may be inaccurate, especially farther
+ahead or at mountain summits, and prompts users to check local mountain forecasts.
+**Models & source details** names possible sources: NOAA HRRR and GFS with DWD
+ICON fallback for US coverage, and ECMWF IFS or regional models elsewhere. The
+copy says these models may be used, not that a particular hour has a proven source.
+Examples were checked against Open-Meteo's [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
+It also explains full-day forecasts, incomplete final-day hours, load time and
 temperature adjustment for summit elevation. The footer credits **Powered by
 Open-Meteo**. An unavailable period does not hide usable data in the other view.
 
@@ -49,7 +55,11 @@ The packaged offline timezone lookup resolves the summit's civil days, including
 DST transitions and date-line offsets. A labelled longitude estimate remains
 the fallback. Requests use GMT and Unix timestamps: the provider's fixed UTC
 offset otherwise ignores DST changes across a date range. UTC padding includes
-the final midnight's preceding-hour precipitation and gust maximum. Fractional
+the final midnight's preceding-hour precipitation and gust maximum where the
+API horizon allows it. The request's last UTC date is capped at today UTC plus
+fifteen days: requesting padding beyond that limit would be rejected. Summaries
+still expect full civil-day coverage, so missing final-day hours or midnight
+accumulations remain incomplete, never filled with zero or extrapolated. Fractional
 boundary precipitation is proportionally allocated. Hourly rain/snow and gusts
 refer to the preceding hour; daily aggregation includes the ending midnight.
 Their graphs show the same intervals, including the ending midnight and excluding
@@ -58,7 +68,7 @@ rain as estimated. Gust maxima are not prorated; overlapping boundary hours are
 identified. Instantaneous fields exclude the ending midnight. Exact local times
 and timezone labels retain repeated hours on DST days.
 
-The separate peak client allows at most sixteen inclusive UTC dates and 384 rows,
+The separate peak client allows at most twenty-four inclusive UTC dates and 576 rows,
 with five fixed hourly fields. The ascent client retains its three-date/72-row
 contract. Both use a 128-KiB response bound, 15-second deadline, schema/grid/unit
 validation, omitted credentials/referrer, and no redirects. Results live only
@@ -74,9 +84,10 @@ See [PRIVACY.md](../PRIVACY.md#summit-weather).
 
 ## Verification
 
-Pure tests cover both seven-day periods across DST, date-line and fractional-hour
-zones, full future hours, midnight precipitation/gust boundaries, missing coverage and unchanged
-ascent limits. Built-bundle UI tests cover native placement with/without a map,
+Pure tests cover the seven completed days and sixteen forecast days across DST,
+date-line and fractional-hour zones, full future hours, the UTC forecast cap,
+midnight precipitation/gust boundaries, missing coverage and unchanged ascent
+limits. Built-bundle UI tests cover native placement with/without a map,
 lazy loading, hourly DST folds, line gaps, midnight intervals, tab and cursor
 keyboard behavior, unit changes, resize/disposal, failed refresh and stale BFCache
 requests. `npm run verify:peak-weather` loads the real manifest in hidden Chrome
@@ -101,3 +112,18 @@ teardown; a final process/profile inspection found no owned verification
 browser, server or disposable profile. Hidden checks do not establish native
 focus/window placement, screen-reader speech, the user's Brave session or
 forecast accuracy.
+
+The sixteen-day extension was verified on 2026-10-11: 74 focused weather tests
+and all 2,567 tests passed. Full lint passed with the same six owned warnings;
+the verifier's final wait change also passed ESLint. Real unpacked extension
+fixtures passed in hidden Chrome for Testing 153.0.8010.12 and Firefox 155.0
+at 375/768/1440 × 1100 in light and dark themes. Inspected the wide forecast,
+narrow warning, expanded model details and final-day graph. The first Chrome
+run read the remembered final-day graph while the first-day disclosure was
+settling; its wait now requires the specific first-day graph and one open day,
+and the rerun passed. One live public Rainier request accepted the maximum
+combined interval and rendered both views from exactly one HTTP request.
+The full `npm run verify:chrome` check passed, including BFCache restoration.
+Final process and disposable-profile checks found no owned verification
+browser or profile remaining. Hidden fixtures and the live CORS probe do not
+establish forecast accuracy, screen-reader speech or the user's Brave session.

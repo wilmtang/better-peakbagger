@@ -20,8 +20,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${kind}`);
         await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
-        await wait(() => document.querySelectorAll('.bpb-week-day').length === 7
-            && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'seven summit-local forecast days');
+        await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
+            && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'sixteen summit-local forecast days');
         assert.equal(await evaluate(() => document.querySelector('[data-period="forecast"]').getAttribute('aria-selected')), 'true');
         if (!live) await click(`${card} [data-period="past"]`);
     };
@@ -30,7 +30,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
-            overflow: [...card.querySelectorAll('summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
+            overflow: [...card.querySelectorAll('summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
             pageWidth: document.documentElement.scrollWidth, bg: getComputedStyle(card).backgroundColor,
@@ -42,13 +42,19 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         assert.equal(state.belowMap, true, JSON.stringify(state));
         assert.ok(state.left >= state.parentLeft - 1 && state.right <= state.parentRight + 1, JSON.stringify(state));
         assert.deepEqual(state.overflow, [], JSON.stringify(state));
-        assert.equal(new Set(state.days).size, 7);
+        assert.equal(new Set(state.days).size, state.period === 'forecast' ? 16 : 7);
         assert.ok(state.days.every((date, index) => !index || (state.period === 'past' ? date < state.days[index - 1] : date > state.days[index - 1])), JSON.stringify(state));
     };
     await setSettings({ theme: 'light', units: 'imperial' });
     await openPage(); await resize(1440, 1100);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-attribution').textContent), 'Powered by Open-Meteo');
+    const assertForecastInfo = async () => {
+        assert.equal(await evaluate(() => document.querySelector('.bpb-week-accuracy').hidden), false);
+        assert.ok(await evaluate(() => document.querySelector('.bpb-week-accuracy').textContent.includes('may be inaccurate')));
+        assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('does not identify the model behind each value')));
+    };
     if (live) {
+        await assertForecastInfo();
         assertGeometry(await evaluate(geometry));
         await click(`${card} [data-period="past"]`); assertGeometry(await evaluate(geometry));
         await click(`${card} [data-period="forecast"]`); assertGeometry(await evaluate(geometry));
@@ -96,10 +102,12 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             await click(`${card} [data-period="forecast"]`);
             assertGeometry(await evaluate(geometry));
             assert.equal(await evaluate(() => document.querySelector('.bpb-week-date strong').textContent), 'Today');
-            assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('Today + 6 days')));
+            assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('Today + 15 days')));
+            await assertForecastInfo();
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-${width}.png`));
             if (!await evaluate(() => document.querySelector('.bpb-week-day').open)) await click(`${card} .bpb-week-day:first-child > summary`);
-            await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'full-day forecast graph');
+            await wait(() => document.querySelector('.bpb-week-day:first-child[open] .bpb-week-line')
+                && document.querySelectorAll('.bpb-week-day[open]').length === 1, 'first forecast day replaces the remembered final-day graph');
             await assertHourlyTabOrder();
             assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 24);
             await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
@@ -107,6 +115,20 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assertGeometry(await evaluate(geometry));
             assert.equal(evidence.length, before, 'both periods and hourly graphs reuse one response');
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-hourly-${width}.png`));
+            await click(`${card} .bpb-week-source > summary`);
+            assert.equal(await evaluate(() => document.querySelector('.bpb-week-source').open), true);
+            assertGeometry(await evaluate(geometry));
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-models-${width}.png`));
+            await click(`${card} .bpb-week-source > summary`);
+            await click(`${card} .bpb-week-day:last-child > summary`);
+            await wait(() => document.querySelector('.bpb-week-day:last-child[open] .bpb-week-line'), 'last forecast day remains expandable');
+            assert.ok(await evaluate(() => {
+                const last = document.querySelector('.bpb-week-day:last-child');
+                return !last.querySelector('.bpb-week-metrics').textContent.includes('(partial)')
+                    || last.querySelector('.bpb-week-partial')?.textContent.includes('Incomplete hours');
+            }), 'truncated final-day totals must be labelled incomplete');
+            assert.equal(evidence.length, before, 'model disclosure and final-day expansion make no requests');
+            if (output && width === 375) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-last-day-${width}.png`));
             await click(`${card} [data-period="past"]`);
         }
         await resize(1440, 1100);
@@ -166,7 +188,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await wait(() => document.querySelector('.bpb-week-status').textContent.includes('Loading'), 'visible weekly loading feedback');
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-loading.png`));
     setMode('complete'); release();
-    await wait(() => document.querySelectorAll('.bpb-week-day').length === 7, 'held weekly response settles');
+    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'held weather response settles');
     assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && request.model === null));
     assert.deepEqual(networkErrors, []);
     return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
