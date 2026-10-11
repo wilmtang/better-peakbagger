@@ -12,9 +12,14 @@ Seven compact rows show the latest completed local day first. Each row has the
 day's most severe available condition, temperature low/high, precipitation
 water equivalent (rain, showers and snow), and maximum wind. Missing values
 remain unavailable and incomplete hours are labelled. A native keyboard-
-accessible disclosure opens one day's hourly readings; expanding another day
-closes the previous one. The hourly table scrolls inside the card, never widening
-the page. Temperatures and distances follow the existing units preference.
+accessible disclosure opens one day's hourly graphs; expanding another day
+closes the previous one and retains the chosen data tab. Temperature, rain/snow,
+wind and gusts use responsive line graphs; conditions use an hourly timeline.
+Missing values break the line rather than appearing as zero. Hover previews a
+reading; clicking or using arrow keys pins it, and Escape clears it. Data tabs
+support arrow keys, Home and End. Charts fit inside the card without widening
+the page; the conditions timeline scrolls vertically. Units follow the existing
+preference without another weather request.
 The date range excludes today's partial day. Source details explain model
 estimates and the footer credits **Powered by Open-Meteo**.
 
@@ -33,6 +38,11 @@ offset otherwise ignores DST changes across a date range. UTC padding includes
 the final midnight's preceding-hour precipitation and gust maximum. Fractional
 boundary precipitation is proportionally allocated. Hourly rain/snow and gusts
 refer to the preceding hour; daily aggregation includes the ending midnight.
+Their graphs show the same intervals, including the ending midnight and excluding
+the starting midnight. Readouts name the interval and label fractional boundary
+rain as estimated. Gust maxima are not prorated; overlapping boundary hours are
+identified. Instantaneous fields exclude the ending midnight. Exact local times
+and timezone labels retain repeated hours on DST days.
 
 The separate recent client allows at most nine inclusive UTC dates and 216 rows,
 with five fixed hourly fields. The ascent client retains its three-date/72-row
@@ -50,8 +60,10 @@ See [PRIVACY.md](../PRIVACY.md#summit-weather).
 Pure tests cover seven civil days across DST, date-line and fractional-hour
 zones, midnight precipitation/gust boundaries, missing coverage and unchanged
 ascent limits. Built-bundle UI tests cover native placement with/without a map,
-lazy loading, hourly DST folds, unit changes, failed refresh and stale BFCache
+lazy loading, hourly DST folds, line gaps, midnight intervals, tab and cursor
+keyboard behavior, unit changes, resize/disposal, failed refresh and stale BFCache
 requests. `npm run verify:peak-weather` loads the real manifest in hidden Chrome
 and Firefox over HTTPS Peakbagger fixtures with network interception, keyboard
-disclosure and screenshots at wide/narrow viewports. It proves those fixtures,
-not the user's live Brave profile or weather-provider accuracy.
+disclosure, data tabs, cursor interaction and screenshots at wide/narrow
+viewports. It proves those fixtures, not the user's live Brave profile or
+weather-provider accuracy.

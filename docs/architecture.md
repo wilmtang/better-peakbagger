@@ -829,7 +829,9 @@ It reuses the strict summit-coordinate reader, offline timezone, daily summary
 and private transport, but uses a fixed recent-weather endpoint and a separate
 216-hour response cap. The ascent client's three-day/72-row limits remain
 unchanged. Seven completed local days exclude today and retain DST and missing
-data semantics; selecting a day reveals hourly readings from the same response.
+data semantics; selecting a day reveals tabbed hourly SVG line graphs and a
+conditions timeline from the same response. The peak-owned renderer includes
+interval boundary semantics, keyboard sampling and resize cleanup.
 See [peak-weather.md](peak-weather.md).
 
 ### The fragile Leaflet seam

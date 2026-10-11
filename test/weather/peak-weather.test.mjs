@@ -20,7 +20,7 @@ const reply = url => {
 };
 function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z' } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = jsdom.window, requests = [], listeners = [], observers = [];
+    const win = jsdom.window, requests = [], listeners = [], observers = [], resizeObservers = [];
     win.Date.now = () => Date.parse(now);
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { units: 'imperial' } }) }, onChanged: {
@@ -30,9 +30,18 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
+    let chartWidth = 620;
+    win.HTMLElement.prototype.getBoundingClientRect = () => ({ width: chartWidth, height: 184, left: 0, top: 0 });
+    win.SVGElement.prototype.getBoundingClientRect = () => ({ width: chartWidth, height: 184, left: 0, top: 0 });
+    win.ResizeObserver = class {
+        constructor(callback) { this.callback = callback; this.disconnected = false; resizeObservers.push(this); }
+        observe() {} disconnect() { this.disconnected = true; }
+    };
     win.fetch = (url, init) => { requests.push({ url, init }); return fetchFn(url, init); };
     win.eval(bundle);
-    return { win, doc: win.document, requests, listeners, observers, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
+    return { win, doc: win.document, requests, listeners, observers, resizeObservers,
+        resize: width => { chartWidth = width; resizeObservers.filter(observer => !observer.disconnected).forEach(observer => observer.callback()); },
+        close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
 const settled = env => waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 7 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
 
@@ -72,16 +81,127 @@ test('hourly disclosure retains local DST folds, closes other days and changes u
     try {
         await settled(env);
         const fold = env.doc.querySelector('[data-date="2024-11-03"]'); fold.open = true;
-        await waitFor(() => fold.querySelectorAll('.bpb-week-hours > tbody > tr').length === 25);
+        await waitFor(() => fold.querySelectorAll('.bpb-week-point').length === 25);
         assert.match(fold.textContent, /01:00 AM PDT/); assert.match(fold.textContent, /01:00 AM PST/);
+        const conditions = fold.querySelector('[data-metric="code"]'); conditions.click();
+        assert.equal(fold.querySelectorAll('.bpb-week-conditions li').length, 25);
         assert.match(fold.textContent, /Light snow/);
         assert.equal(env.requests.length, 1);
         const previous = env.doc.querySelector('[data-date="2024-11-02"]'); previous.open = true;
-        await waitFor(() => !fold.open && previous.querySelectorAll('.bpb-week-hours > tbody > tr').length === 24);
+        await waitFor(() => !fold.open && previous.querySelectorAll('.bpb-week-conditions li').length === 24);
+        assert.equal(previous.querySelector('[aria-selected="true"]').dataset.metric, 'code');
+        previous.querySelector('[data-metric="temperature"]').click();
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
         const next = env.doc.querySelector('[data-date="2024-11-02"]');
         assert.equal(next.open, true); assert.match(next.textContent, /°C/); assert.match(next.textContent, /km\/h/);
+        assert.match(next.querySelector('svg').getAttribute('aria-label'), /°C/);
         assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('hourly tabs, keyboard sampling, hover and pinned readings reuse data and resize inside the card', async () => {
+    const env = setup();
+    try {
+        await settled(env);
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        const temperature = day.querySelector('[data-metric="temperature"]'), rain = day.querySelector('[data-metric="precipitation"]');
+        assert.equal(temperature.getAttribute('aria-selected'), 'true'); assert.equal(temperature.tabIndex, 0); assert.equal(rain.tabIndex, -1);
+        temperature.focus(); temperature.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.equal(env.doc.activeElement, rain); assert.equal(rain.getAttribute('aria-selected'), 'true');
+        assert.equal(day.querySelector('[role="tabpanel"]').getAttribute('aria-labelledby'), rain.id);
+        assert.equal(day.querySelector('.bpb-week-point title').textContent.includes('in'), true);
+        const frame = day.querySelector('.bpb-week-chart'), readout = day.querySelector('.bpb-week-readout');
+        frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+        assert.match(readout.textContent, /next midnight.*in/);
+        assert.equal(day.querySelectorAll('.bpb-week-cursor').length, 1);
+        frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 250 }));
+        assert.doesNotMatch(readout.textContent, /next midnight/);
+        frame.dispatchEvent(new env.win.MouseEvent('pointerleave'));
+        assert.match(readout.textContent, /next midnight/);
+        frame.dispatchEvent(new env.win.MouseEvent('click', { clientX: 250 }));
+        const pinned = readout.textContent;
+        frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 500 }));
+        assert.notEqual(readout.textContent, pinned);
+        frame.dispatchEvent(new env.win.MouseEvent('pointerleave')); assert.equal(readout.textContent, pinned);
+        frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.match(readout.textContent, /Low.*High/); assert.equal(day.querySelectorAll('.bpb-week-cursor').length, 0);
+        env.resize(300); assert.equal(day.querySelector('svg').getAttribute('viewBox'), '0 0 300 184');
+        assert.equal(env.requests.length, 1);
+        day.open = false; await waitFor(() => env.resizeObservers.every(observer => observer.disconnected));
+        env.resize(700); assert.equal(day.querySelector('.bpb-week-hourly').childElementCount, 0);
+    } finally { env.close(); }
+});
+
+test('missing hours break numeric lines and remain unavailable in conditions; missing rain never plots zero', async () => {
+    const env = setup({ fetchFn: async url => {
+        const body = await reply(url).json();
+        body.hourly.precipitation.fill(null);
+        const absent = body.hourly.time.indexOf(Date.parse('2024-11-04T16:00:00Z') / 1000);
+        for (const values of Object.values(body.hourly)) values.splice(absent, 1);
+        const missingTemperature = body.hourly.time.indexOf(Date.parse('2024-11-04T18:00:00Z') / 1000);
+        body.hourly.temperature_2m[missingTemperature] = null;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env);
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        assert.equal(day.querySelectorAll('.bpb-week-point').length, 22);
+        assert.equal((day.querySelector('.bpb-week-line').getAttribute('d').match(/M/g) || []).length, 3);
+        const frame = day.querySelector('.bpb-week-chart');
+        frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        for (let i = 0; i < 8; i++) frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.match(day.querySelector('.bpb-week-readout').textContent, /08:00 AM PST.*Unavailable/);
+        day.querySelector('[data-metric="code"]').click();
+        assert.equal(day.querySelectorAll('.bpb-week-conditions li').length, 24);
+        assert.match(day.querySelectorAll('.bpb-week-conditions li')[8].textContent, /Unavailable/);
+        day.querySelector('[data-metric="precipitation"]').click();
+        assert.equal(day.querySelector('.bpb-week-chart-empty').hidden, false);
+        assert.equal(day.querySelector('svg').hasAttribute('hidden'), true);
+        assert.equal(day.querySelectorAll('.bpb-week-line').length, 0);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('expanded graph observers suspend, restore the chosen tab and disconnect on disposal', async () => {
+    const env = setup();
+    try {
+        await settled(env);
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        day.querySelector('[data-metric="gust"]').click();
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(env.resizeObservers.every(observer => observer.disconnected), true);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await settled(env);
+        assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'gust');
+        assert.equal(env.resizeObservers.filter(observer => !observer.disconnected).length, 1);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide'));
+        assert.equal(env.resizeObservers.every(observer => observer.disconnected), true);
+        assert.equal(env.listeners.length, 0);
+    } finally { env.close(); }
+});
+
+test('a dry day plots a flat rain line with distinct axis labels in both unit systems', async () => {
+    const env = setup({ fetchFn: async url => {
+        const body = await reply(url).json(); body.hourly.precipitation.fill(0);
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env);
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        day.querySelector('[data-metric="precipitation"]').click();
+        const assertDry = () => {
+            const graph = env.doc.querySelector('.bpb-week-day[open]');
+            assert.equal(graph.querySelector('.bpb-week-chart-empty').hidden, true);
+            assert.equal(new Set([...graph.querySelectorAll('.bpb-week-point')].map(node => node.getAttribute('cy'))).size, 1);
+            assert.equal(new Set([...graph.querySelectorAll('.bpb-week-axis')].slice(0, 3).map(node => node.textContent)).size, 3);
+        };
+        assertDry();
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        assertDry(); assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
 

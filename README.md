@@ -94,7 +94,8 @@ conditions along the route or the climber’s summit time. See the
 
 Peak pages also show **Past week weather** below the map in the right column:
 seven completed summit-local days with conditions, temperature ranges,
-rain/snow water equivalent and maximum wind. Select a day for hourly readings.
+rain/snow water equivalent and maximum wind. Expand a day for hourly graphs,
+with tabs for temperature, rain/snow, wind, gusts and conditions.
 Today is excluded; Open-Meteo chooses regional models automatically. See the
 [recent weather design](docs/peak-weather.md).
 

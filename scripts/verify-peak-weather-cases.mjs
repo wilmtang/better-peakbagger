@@ -25,7 +25,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
-            overflow: [...card.querySelectorAll('summary, button, header, footer, .bpb-week-range, .bpb-week-help')].filter(node => {
+            overflow: [...card.querySelectorAll('summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
             pageWidth: document.documentElement.scrollWidth, bg: getComputedStyle(card).backgroundColor,
@@ -56,11 +56,24 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${width}.png`));
             const before = evidence.length;
             await click(`${card} .bpb-week-day:first-child > summary`);
-            await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-hours > tbody > tr'), 'selected day’s hourly readings');
+            await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'selected day’s hourly line graph');
+            await wait(() => {
+                const chart = document.querySelector('.bpb-week-day[open] .bpb-week-chart');
+                return Math.abs(Number(chart.querySelector('svg').getAttribute('viewBox').split(' ')[2]) - chart.getBoundingClientRect().width) < 1;
+            }, 'hourly graph adapts to the card width');
             const opened = await evaluate(geometry); assertGeometry(opened);
-            assert.ok(opened.pageWidth <= state.pageWidth + 1, 'hourly table must scroll inside the card without widening the peak page');
+            assert.ok(opened.pageWidth <= state.pageWidth + 1, 'hourly graph must fit inside the card without widening the peak page');
             assert.equal(evidence.length, before, 'hourly disclosure reuses the weekly response');
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-hourly-${width}.png`));
+            for (const metric of ['precipitation', 'wind', 'gust', 'code']) {
+                await click(`${card} .bpb-week-day[open] [data-metric="${metric}"]`);
+                await waitForCondition(async () => await evaluate(() => document.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric) === metric,
+                    { description: 'hourly data tab selection', timeoutMs: 20_000 });
+                assertGeometry(await evaluate(geometry));
+                assert.equal(evidence.length, before, 'data tabs must not fetch weather');
+                if (output && (width === 1440 || metric === 'code')) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${metric}-${width}.png`));
+            }
+            await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
             await click(`${card} .bpb-week-day:first-child > summary`);
         }
         await resize(1440, 1100);
@@ -70,11 +83,30 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     // Native summary disclosure is operable by keyboard in both engines.
     await evaluate(() => document.querySelector('#bpb-peak-weather .bpb-week-day > summary').focus());
     await press(firefoxMode ? '\uE007' : 'Enter');
-    await wait(() => document.querySelector('#bpb-peak-weather .bpb-week-day[open] .bpb-week-hours'), 'keyboard disclosure');
+    await wait(() => document.querySelector('#bpb-peak-weather .bpb-week-day[open] .bpb-week-line'), 'keyboard disclosure');
+    await evaluate(() => document.querySelector('.bpb-week-day[open] [data-metric="temperature"]').focus());
+    await press(firefoxMode ? '\uE014' : 'ArrowRight');
+    await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="precipitation"]').getAttribute('aria-selected') === 'true', 'keyboard data tab');
+    assert.equal(await evaluate(() => document.activeElement.dataset.metric), 'precipitation');
+    await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-chart').focus());
+    await press(firefoxMode ? '\uE010' : 'End');
+    await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-readout').textContent.includes('next midnight'), 'keyboard final precipitation interval');
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-cursor').length), 1);
+    await press(firefoxMode ? '\uE00C' : 'Escape');
+    await wait(() => !document.querySelector('.bpb-week-day[open] .bpb-week-cursor'), 'Escape clears hourly selection');
+    await click(`${card} .bpb-week-day[open] .bpb-week-chart`);
+    await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-cursor'), 'click pins an hourly reading');
+    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-cursor.png`));
     await openPage('no-map'); assertGeometry(await evaluate(geometry));
     setMode('partial'); await openPage();
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 7);
     assert.ok(await evaluate(() => [...document.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —'))));
+    await click(`${card} .bpb-week-day:first-child > summary`);
+    await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'partial day graph');
+    await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
+    await wait(() => !document.querySelector('.bpb-week-day[open] .bpb-week-chart-empty').hidden, 'missing hourly field has no fabricated zero line');
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-line').length), 0);
+    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-missing-rain.png`));
     setMode('error'); await click('.bpb-week-refresh');
     await wait(() => document.querySelector('.bpb-week-status').textContent.includes('temporarily limited'), 'rate limit explains failed refresh');
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 7);
@@ -91,5 +123,5 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 7, 'held weekly response settles');
     assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && request.model === null));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'hourly', 'keyboard', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
 }

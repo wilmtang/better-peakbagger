@@ -6,7 +6,7 @@ import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { hourlyWeatherCondition } from './weather-day.js';
+import { createPeakHourlyChart } from './peak-weather-hourly.js';
 import { weatherWeekWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createRecentWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
@@ -39,7 +39,7 @@ export function mountPeakWeather() {
 
     const client = createRecentWeatherClient();
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
-    let started = false, pending = false;
+    let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
     const unitSystem = () => units.resolveUnits(preference, () => {
         const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));
         return /Elevation:\s*[\d,.]+\s*m\b/i.test(heading?.textContent || '') ? 'metric' : 'imperial';
@@ -57,31 +57,19 @@ export function mountPeakWeather() {
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
         locationLabel.textContent = `At the summit${subject.elevation === null ? '' : ` · ${units.formatElevation(subject.elevation, unitSystem())}`} · 7 completed days · Today excluded${zone.estimated ? ' · Estimated local time' : ''}`;
     };
-    const renderHours = (day, container) => {
-        const table = element('table', { class: 'bpb-week-hours' });
-        const caption = element('caption', { text: `Hourly readings · ${dateLabel(day.window.date, { month: 'long', day: 'numeric' })} · Summit local time` });
-        const head = element('tr');
-        for (const label of ['Time', 'Conditions', 'Temp.', 'Rain/snow', 'Wind', 'Gusts']) head.append(element('th', { scope: 'col', text: label }));
-        const body = element('tbody');
-        // Raw rain and gust samples describe the preceding hour. Daily totals
-        // independently include the ending midnight in summarizeWeatherDay.
-        const byTime = new Map(current.data.samples.map(sample => [sample.time, sample]));
-        for (const sample of day.hourly) {
-            const condition = hourlyWeatherCondition(sample.code);
-            const values = [`${mountainTime.formatClock(zone, sample.time)} ${mountainTime.zoneLabel(zone, sample.time)}`, condition.label,
-                format(sample.temperature, 'temperature'), format(byTime.get(sample.time)?.precipitation, 'precipitation'), format(sample.wind, 'wind'), format(sample.gust, 'wind')];
-            body.append(element('tr', {}, values.map((value, i) => element(i === 0 ? 'th' : 'td', { ...(i === 0 ? { scope: 'row' } : {}), text: value }))));
-        }
-        if (!day.hourly.length) { container.replaceChildren(element('p', { class: 'bpb-week-sub', text: 'Hourly readings are unavailable for this day.' })); return; }
-        table.append(caption, element('thead', {}, [head]), body);
-        container.replaceChildren(element('p', { class: 'bpb-week-sub', text: 'Rain/snow and gusts describe the preceding hour.' }),
-            element('div', { class: 'bpb-week-hour-scroll', tabindex: '0', role: 'region', 'aria-label': 'Scrollable hourly weather readings' }, [table]));
+    const clearChart = () => { hourlyChart?.dispose(); hourlyChart = null; activeDay = null; };
+    const renderHours = (day, detail, container) => {
+        if (activeDay === detail && hourlyChart) return;
+        clearChart(); activeDay = detail;
+        hourlyChart = createPeakHourlyChart({ container, day, samples: current.data.samples, zone, metric: hourlyMetric, format,
+            onMetric: metric => { hourlyMetric = metric; } });
     };
     function renderResult() {
         if (!current) return;
         help.hidden = false; source.hidden = false;
         const openDate = days.querySelector('details[open]')?.dataset.date;
         renderLabels(current.window);
+        clearChart();
         days.replaceChildren();
         for (const day of [...current.days].reverse()) {
             const date = day.window.date;
@@ -98,12 +86,13 @@ export function mountPeakWeather() {
             const hourly = element('div', { class: 'bpb-week-hourly' });
             detail.append(summary, hourly);
             detail.addEventListener('toggle', () => {
-                if (!detail.open || lifecycle.state !== 'active') return;
+                if (!detail.isConnected || lifecycle.state !== 'active') return;
+                if (!detail.open) { if (activeDay === detail) clearChart(); return; }
                 days.querySelectorAll('details[open]').forEach(other => { if (other !== detail) other.open = false; });
-                renderHours(day, hourly);
+                renderHours(day, detail, hourly);
             });
             days.append(detail);
-            if (date === openDate) { detail.open = true; renderHours(day, hourly); }
+            if (date === openDate) { detail.open = true; renderHours(day, detail, hourly); }
         }
         sourceText.textContent = `Automatic regional model selection by Open-Meteo. Recent model estimates, not weather-station observations. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window.days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${current.days.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${current.data.grid.elevation.toFixed(0)} m. Selected grid: ${current.data.grid.latitude.toFixed(4)}, ${current.data.grid.longitude.toFixed(4)}.`;
     }
@@ -148,9 +137,9 @@ export function mountPeakWeather() {
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const unsubscribe = settings.subscribe(next => { preference = next; if (lifecycle.state === 'active') renderResult(); });
     settings.get().then(next => { preference = next; if (lifecycle.state === 'active') renderResult(); });
-    const stop = () => { cancel(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { cancel(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { document.addEventListener('visibilitychange', visibility); beginWhenVisible(); },
+        onResume: () => { document.addEventListener('visibilitychange', visibility); renderResult(); beginWhenVisible(); },
         onDispose: () => { stop(); unsubscribe(); client.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
