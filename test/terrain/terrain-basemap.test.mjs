@@ -92,6 +92,18 @@ test('active fails closed when there is no map or no selected option', () => {
     assert.equal(B.active({}, { _layers: {} }, null), null);
 });
 
+test('the custom Leaflet Sentinel choice starts the matching 3D provider, not its native fallback tiles', () => {
+    const select = makeSelect([option('BPB_SENTINEL', 'Sentinel-2 (experimental)')]);
+    const native = { _url: 'https://native.example/{z}/{x}/{y}.png' };
+    assert.deepEqual(load().active({}, { _layers: { native } }, select), { kind: 'sentinel', name: 'Sentinel-2 (experimental)' });
+    const capture = { time: Date.parse('2026-10-03T19:02:31Z'), platform: 'Sentinel-2C', orbit: '13' };
+    select.options[0].dataset = { bpbSentinelCapture: JSON.stringify({ ...capture, tiles: ['https://evil.example/'] }) };
+    assert.deepEqual(load().active({}, { _layers: { native } }, select).capture, capture,
+        'only the validated capture identity crosses into the 3D renderer');
+    select.options[0].dataset.bpbSentinelCapture = '{bad';
+    assert.equal(load().active({}, { _layers: { native } }, select).capture, undefined);
+});
+
 test('fromLayer rejects WMS and reprojected layers, expands subdomains and retina, and absolutizes', () => {
     const B = load();
     const mapWin = { L: { Browser: { retina: true } }, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } };

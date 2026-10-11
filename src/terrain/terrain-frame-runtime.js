@@ -10,6 +10,8 @@ import { terrainStyle as TerrainStyle } from './terrain-style.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
+import { SENTINEL_NAME, SENTINEL_ATTRIBUTION, sentinelTileUrl, sentinelTarget } from '../maps/sentinel-core.js';
+import { createSentinelLayer } from '../maps/sentinel-layer.js';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
@@ -202,6 +204,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let basemapContentLoaded = false;
     let basemapChecked = false;
     let pickerElement = null;
+    let sentinelActive = false;
+    let initialSentinelCapture = null;
+    let sentinelLayer = null;
+    let sentinelSourceIds = [];
+    let sentinelSourceRevision = 0;
     // True once the user chose a drape in the 3D picker. A resume then keeps
     // their choice; otherwise it re-resolves the drape from the page so a 2D
     // layer change is reflected.
@@ -392,6 +399,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }
         rendererCanvas = null;
         contextLostHandler = null;
+        sentinelLayer?.dispose();
+        sentinelLayer = null;
+        sentinelActive = false;
         if (map) {
             // Clear the identity before remove(): teardown may itself emit a
             // final MapLibre error, which must not recurse through fail().
@@ -442,6 +452,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // and DOM alive so a resume is instant. An idle MapLibre at opacity 0 renders
     // nothing.
     const suspendTerrain = () => {
+        sentinelLayer?.deactivate();
         if (peaksDebounceTimer !== null) {
             clearTimeout(peaksDebounceTimer);
             peaksDebounceTimer = null;
@@ -851,11 +862,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         const vectorOption = document.createElement('option');
         vectorOption.value = 'vector';
         vectorOption.textContent = VECTOR_BASEMAP.name;
+        const sentinelOption = document.createElement('option');
+        sentinelOption.value = 'sentinel';
+        sentinelOption.textContent = SENTINEL_NAME;
         const terrainOption = document.createElement('option');
         terrainOption.value = 'terrain';
         terrainOption.textContent = 'Terrain only';
-        pickerElement.replaceChildren(...options, vectorOption, terrainOption);
-        pickerElement.value = vectorActive
+        pickerElement.replaceChildren(...options, vectorOption, sentinelOption, terrainOption);
+        pickerElement.value = sentinelActive ? 'sentinel' : vectorActive
             ? 'vector'
             : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
     };
@@ -889,6 +903,29 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (typeof map.getLayer === 'function' && map.getLayer('basemap')) map.removeLayer('basemap');
             if (map.getSource('basemap') && typeof map.removeSource === 'function') map.removeSource('basemap');
         } catch (error) { /* A failed raster source may already be absent. */ }
+    };
+
+    const clearSentinelScenes = () => {
+        for (const id of sentinelSourceIds) {
+            if (map?.getLayer(id)) map.removeLayer(id);
+            if (map?.getSource(id)) map.removeSource(id);
+        }
+        sentinelSourceIds = [];
+    };
+
+    const replaceSentinelScenes = scenes => {
+        clearSentinelScenes();
+        const revision = ++sentinelSourceRevision;
+        for (const [index, scene] of scenes.entries()) {
+            const id = `bpb-sentinel-${revision}-${index}`;
+            sentinelSourceIds.push(id);
+            map.addSource(id, { type: 'raster', tiles: [sentinelTileUrl(scene.id)], tileSize: 256,
+                maxzoom: 14, attribution: SENTINEL_ATTRIBUTION,
+                ...(scene.bounds[0] >= -180 && scene.bounds[2] <= 180 ? { bounds: scene.bounds } : {}) });
+            map.addLayer({ id, type: 'raster', source: id,
+                paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+            map.getLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
+        }
     };
 
     // Bounded fetch, shape validation, and per-lifetime memoization all live in
@@ -995,8 +1032,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
     // selects the extension-provided vector basemap. Each swap re-arms the
     // one-shot CORS check so the new layer is judged on its own.
-    const swapBasemap = selection => {
+    const swapBasemap = (selection, capture) => {
         if (!map || !loaded) return false;
+        sentinelLayer?.deactivate();
+        sentinelActive = selection === 'sentinel';
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;
@@ -1005,6 +1044,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         basemapChecked = false;
         activeBasemapIndex = -1;
         activeBasemap = null;
+        if (sentinelActive) {
+            renderPicker();
+            sentinelLayer?.activate(capture);
+            return true;
+        }
         if (selection === 'vector') {
             renderPicker();
             showNotice(`Loading ${VECTOR_BASEMAP.name}…`);
@@ -1048,6 +1092,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // per-drape CORS-check flags so the resolved layer is judged fresh. Used by
     // the initial boot and by resume (to reflect a 2D layer change).
     const resolveBasemaps = data => {
+        sentinelActive = data.basemap?.kind === 'sentinel';
+        initialSentinelCapture = sentinelTarget(data.basemap?.capture);
         const initialBasemap = validateBasemap(data.basemap);
         const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
         availableBasemaps = [];
@@ -1790,7 +1836,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             showNotice('');
             const selection = pickerElement.value === 'terrain'
                 ? -1
-                : pickerElement.value === 'vector' ? 'vector' : Number(pickerElement.value);
+                : ['vector', 'sentinel'].includes(pickerElement.value) ? pickerElement.value : Number(pickerElement.value);
             if (!loaded) {
                 pendingBasemapSelection = selection;
                 return;
@@ -1798,6 +1844,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (swapBasemap(selection)) userPickedBasemap = true;
         });
         controls.appendChild(pickerElement);
+        sentinelLayer = createSentinelLayer({ document,
+            readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() + 1 }),
+            replaceScenes: replaceSentinelScenes, clearScenes: clearSentinelScenes });
+        controls.append(sentinelLayer.element);
         const notice = document.createElement('p');
         notice.className = 'bpb-terrain-notice';
         notice.setAttribute('role', 'status');
@@ -1895,6 +1945,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 if (map !== terrainMap) return;
                 if (event && event.sourceId === 'basemap') {
                     basemapErrored = true;
+                    return;
+                }
+                if (event?.sourceId?.startsWith('bpb-sentinel-')) {
+                    if (map.getSource(event.sourceId)) sentinelLayer?.tileError();
                     return;
                 }
                 if (event?.sourceId?.startsWith(VECTOR_PREFIX)) {
@@ -2022,6 +2076,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 });
                 terrainMap.on('moveend', () => {
                     if (map !== terrainMap) return;
+                    sentinelLayer?.refresh();
                     const camera = terrainCamera.fromMapLibre(terrainMap);
                     if (camera) post('camera', { camera });
                     schedulePeaksRequest();
@@ -2037,6 +2092,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                 try {
                     if (pendingBasemapSelection !== null) {
                         if (swapBasemap(pendingBasemapSelection)) userPickedBasemap = true;
+                    } else if (sentinelActive) {
+                        swapBasemap('sentinel', initialSentinelCapture);
                     } else if (activeBasemap) {
                         addBasemapLayer(activeBasemap);
                     }
@@ -2127,7 +2184,9 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // so a 2D layer change made while in 2D is reflected.
         if (!userPickedBasemap) {
             resolveBasemaps(data);
-            swapBasemap(activeBasemapIndex);
+            swapBasemap(sentinelActive ? 'sentinel' : activeBasemapIndex, initialSentinelCapture);
+        } else if (sentinelActive) {
+            sentinelLayer?.activate();
         }
 
         // Camera: the live 2D camera wins; else frame the route; else center the

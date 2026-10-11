@@ -14,6 +14,8 @@ Data leaves the browser only when a feature requires it:
 - **Peakbagger** receives summit lookups and user-approved GPS Preview data.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
+- **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
+  date range, and satellite tile requests when Sentinel-2 is selected in 2D or 3D.
 - **GitHub** receives only the data types the user explicitly or automatically
   backs up or opts to synchronize to their selected repository.
 - **ImgBB** receives a flattened image only when the user uploads it.
@@ -329,6 +331,18 @@ developer account.
 
 ## Optional 3D terrain
 
+The **Sentinel-2 (experimental)** layer is also available in the native 2D map.
+Selecting it requests the visible map bounds and the last 30 days of capture
+metadata from Microsoft Planetary Computer, then natural-color Sentinel-2 tiles
+for a selected satellite pass. Map movements repeat that bounded search. The
+capture picker can select another pass within that window. No route, GPX,
+Peakbagger identity, or account credentials are sent. Catalog results remain in
+memory; the extension does not persist satellite imagery or capture metadata.
+Browser-managed HTTP caching may retain tiles. Switching away cancels catalog
+requests and removes the extension-owned imagery. Footprint coverage is an
+estimate of the rendered scenes' geographic footprints, and cloud cover is
+scene-wide metadata, not an assessment of clear pixels in the viewport.
+
 3D is off by default. The first click shows a provider and privacy confirmation;
 declining keeps it off.
 
@@ -350,7 +364,7 @@ Missing, expired, reused, mismatched, or disabled authorizations start no
 renderer or prefetch.
 
 The renderer receives coordinate segments or a summit focus and a bounded map
-layer descriptor. It does not receive source GPX, timestamps, elevation samples,
+layer descriptor. It does not receive source GPX, track timestamps, elevation samples,
 activity metadata, or Peakbagger identity. DEM responses may be reused from a
 bounded local cache. Returning to 2D stops tile activity; the renderer may stay
 parked and idle for a few minutes before release, and the cache is not cleared.
@@ -434,6 +448,7 @@ The user can export and import settings without GitHub:
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
+| Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | CalTopo | The saved Peakbagger GPX after **Send to CalTopo**, including server-side parsing; object review, Import, and map Save remain manual. |
 | Gaia GPS | The saved Peakbagger GPX after the user clicks **Send to Gaia**; Gaia's review and Save remain manual. |

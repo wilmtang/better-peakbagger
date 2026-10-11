@@ -6,6 +6,27 @@ change must preserve. Historical investigations and completed audits under
 `docs/archive/` explain how individual decisions were reached, but they are
 not runtime specifications.
 
+The **Sentinel-2 (experimental)** imagery option is offered both by the native
+Leaflet map (`src/maps/sentinel-map.js`, injected into MasterMap) and the 3D
+picker. Both use the bounded catalog and pass-selection logic in
+`src/maps/sentinel-core.js` and the capture/status UI in `sentinel-layer.js`.
+Microsoft Planetary Computer serves natural-color imagery directly over CORS;
+no account, proxy, new host permission, or persistent imagery cache is needed.
+Only a selected layer starts requests. Searches cover the last 30 days, split
+at the dateline, time out after 15 seconds including body reads, and refuse
+truncated or oversized catalogs. Up to eight scenes from the same satellite
+pass cover the view; selecting a dated capture keeps that pass through pans.
+Opening 3D from a dated Leaflet capture preserves that choice using a validated
+pass identity; it never forwards page-owned tile URLs or catalog responses.
+The latest choice prioritizes a pass covering the viewport center, then time.
+The layer's 11-by-11 footprint sample reports estimated geographic coverage of
+the scenes actually rendered. Scene-wide cloud metadata is averaged separately
+and never presented as viewport cloud cover or clear-pixel coverage. Tiles are
+limited to native zoom 14, with overzoom allowed; Sentinel-2 visible bands have
+10-metre resolution. Switching away, suspension, and teardown cancel searches
+and remove only extension-owned imagery. The Leaflet layer leaves the native
+basemap underneath and never passes its custom code to Peakbagger's handler.
+
 The short mental model is:
 
 > A Peakbagger page owns the subject and native 2D map, an isolated extension
@@ -365,6 +386,7 @@ The 3D picker contains:
 
 - terrain relief with no imagery;
 - the extension-provided experimental OpenFreeMap vector style;
+- the extension-provided experimental Sentinel-2 imagery and capture picker;
 - compatible known choices from Peakbagger's current layer menu;
 - the active live Leaflet layer when it can be converted safely.
 

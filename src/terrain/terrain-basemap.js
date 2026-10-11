@@ -7,6 +7,8 @@
 // 2D layer menu and the 3D drape picker cannot diverge. Pure with respect to
 // the extension: it only reads the same-origin page/frame that owns Leaflet.
 
+import { SENTINEL_CODE, SENTINEL_NAME, sentinelTarget } from '../maps/sentinel-core.js';
+
 
 // Peakbagger builds each 2D basemap on demand inside its MasterMap
 // MapChange() switch, so there is no per-layer global to read and only the
@@ -134,6 +136,11 @@ const active = (mapWin, map, select) => {
     try {
         const option = select && select.options && select.options[select.selectedIndex];
         if (!mapWin || !map || !option) return null;
+        if (select.value === SENTINEL_CODE) {
+            let capture = null;
+            try { capture = sentinelTarget(JSON.parse(option.dataset?.bpbSentinelCapture || 'null')); } catch { /* Page-owned metadata is optional. */ }
+            return { kind: 'sentinel', name: SENTINEL_NAME, ...(capture ? { capture } : {}) };
+        }
 
         // A well-known active layer reuses its shared drape spec so it
         // dedupes cleanly against the picker list.

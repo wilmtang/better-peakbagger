@@ -42,6 +42,11 @@ interactive 3D at true vertical scale. Better Peakbagger combines open
 compatible basemaps and an experimental OpenFreeMap style. 3D is opt-in and
 uses a small, bounded terrain cache to make return visits faster.
 
+**Sentinel-2 (experimental)** adds recent satellite imagery to both the native
+2D map and 3D view through Microsoft Planetary Computer. Choose a capture from
+the last 30 days and see its date, estimated footprint coverage, and scene-wide
+cloud cover. Coverage describes scene footprints, not cloud-free pixels.
+
 > Special thanks to [Mapterhorn](https://mapterhorn.com/) for providing
 > free, open-access global elevation data that makes this possible.
 

@@ -277,6 +277,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         };
         addProvider('Mapterhorn', 'Elevation tiles', 'https://mapterhorn.com/privacy-policy/');
         addProvider('OpenFreeMap', 'OSM vector tiles, when selected', 'https://openfreemap.org/privacy/');
+        addProvider('Microsoft Planetary Computer', 'Sentinel-2 imagery and capture search, when selected', 'https://privacy.microsoft.com/privacystatement');
 
         const selectedProvider = createTextElement('p', 'bpb-terrain-consent-detail',
             'Your selected 2D map layer may also be requested from the provider named in the layer menu.');

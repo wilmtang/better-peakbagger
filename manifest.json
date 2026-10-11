@@ -47,6 +47,19 @@
   },
   "content_scripts": [
     {
+      "matches": [
+        "https://www.peakbagger.com/*MasterMap.aspx*",
+        "https://peakbagger.com/*MasterMap.aspx*",
+        "https://www.peakbagger.com/*mastermap.aspx*",
+        "https://peakbagger.com/*mastermap.aspx*"
+      ],
+      "js": ["content/sentinel-map.js"],
+      "css": ["css/sentinel.css"],
+      "run_at": "document_end",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
       "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
       "js": ["content/climber-hover-card.js"],
       "css": ["css/climber-hover-card.css"],

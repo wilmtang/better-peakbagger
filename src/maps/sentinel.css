@@ -1,0 +1,46 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+.bpb-sentinel {
+    box-sizing: border-box;
+    width: 268px;
+    max-width: calc(100vw - 20px);
+    padding: 9px 11px;
+    border: 1px solid rgb(0 0 0 / 15%);
+    border-radius: 9px;
+    background: rgb(255 255 255 / 94%);
+    color: #253128;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+    font: 12px/1.45 system-ui, sans-serif;
+}
+.bpb-sentinel[hidden], .bpb-sentinel [hidden] { display: none; }
+.bpb-sentinel select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 30px;
+    padding: 3px 5px;
+    border: 1px solid #aeb7b0;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+.bpb-sentinel p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.bpb-sentinel-stats { font-size: 11px; }
+.bpb-sentinel button {
+    margin-top: 6px;
+    padding: 3px 8px;
+    border: 1px solid #aeb7b0;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.bpb-sentinel :is(select, button):focus-visible { outline: 2px solid #27764d; outline-offset: 2px; }
+[data-theme="dark"] .bpb-sentinel,
+html[data-bpb-theme="dark"] .bpb-sentinel {
+    background: rgb(30 38 32 / 96%);
+    color: #e0e9e1;
+    border-color: #657269;
+}
+.bpb-sentinel option { color: #253128; background: #fff; }
