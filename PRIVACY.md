@@ -23,6 +23,8 @@ Data leaves the browser only when a feature requires it:
   **Send to Gaia**.
 - **onX Backcountry** receives the saved Peakbagger GPX only when the user
   clicks **Send to onX**.
+- **AllTrails** receives the saved Peakbagger GPX in its upload preview only
+  when the user clicks **Send to AllTrails**. Final **Upload** remains manual.
 - **CalTopo** receives the saved Peakbagger GPX for parsing only when the user
   clicks **Send to CalTopo**. Object import and map saving remain manual.
 - **Media hosts** receive ordinary browser requests when remote report media is
@@ -451,8 +453,10 @@ The user can export and import settings without GitHub:
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
+| AllTrails | The saved Peakbagger GPX supplied to its upload preview after **Send to AllTrails**; review and final **Upload** remain manual. |
 | CalTopo | The saved Peakbagger GPX after **Send to CalTopo**, including server-side parsing; object review, Import, and map Save remain manual. |
 | Gaia GPS | The saved Peakbagger GPX after the user clicks **Send to Gaia**; Gaia's review and Save remain manual. |
+| onX Backcountry | The saved Peakbagger GPX supplied to its import preview after **Send to onX**; review and final **Import** remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
 | GitHub | User-triggered or separately enabled automatic backups to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
