@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { peakHourlySeries, peakHourlyConditions } from '../../src/weather/peak-weather-hourly.js';
+import { hourlyWeatherSeries as peakHourlySeries, hourlyWeatherColumns as peakHourlyConditions, hourlyWeatherColumns } from '../../src/weather/weather-hourly-table.js';
 import { weatherDayWindow } from '../../src/weather/weather-day.js';
 import { mountainTime } from '../../src/time/mountain-time.js';
 
@@ -67,5 +67,19 @@ test('horizontal conditions align intervals with their start and preserve fracti
         assert.equal(rows.at(-1).rain.value, lon === 85.3 ? 2 : 8);
         assert.equal(rows.reduce((sum, row) => sum + row.rain.value, 0), peakHourlySeries(window, samples, 'precipitation').reduce((sum, row) => sum + row.value, 0));
         if (lon === 85.3) { assert.equal(rows[0].sample, undefined); assert.equal(rows[0].rain.partialInterval, true); }
+    }
+});
+
+test('shared hourly columns retain instantaneous archive gusts at DST and fractional boundaries', () => {
+    for (const [lat, lon, date] of [[46.85, -121.75, '2024-11-03'], [46.85, -121.75, '2024-03-10'], [27.7, 85.3, '2024-11-04']]) {
+        const zone = mountainTime.resolve(lat, lon), window = weatherDayWindow(date, zone, now), samples = series(window);
+        samples.find(sample => sample.time === Math.ceil(window.end / HOUR) * HOUR).gust = 999;
+        const rows = hourlyWeatherColumns(window, samples, 'instant');
+        assert.ok(rows.every(row => row.gust?.value !== 999));
+        for (const row of rows) {
+            assert.equal(row.gust?.value ?? null, row.sample?.gust ?? null);
+            if (row.gust) assert.equal(row.gust.start, row.gust.time);
+        }
+        if (lon === 85.3) { assert.equal(rows[0].gust, undefined); assert.equal(rows[0].rain.value, .75); }
     }
 });

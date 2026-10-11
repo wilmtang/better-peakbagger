@@ -3,53 +3,16 @@
 
 import { dom } from '../ui/dom.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { hourlyWeatherCondition } from './weather-day.js';
+import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.js';
 
 const HOUR = 3600_000, element = dom.element;
 const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts']];
-const icons = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const svgElement = (tag, attrs = {}, text) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
     for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
     if (text !== undefined) node.textContent = text;
     return node;
 };
-
-// Match daily-summary boundaries: instantaneous fields exclude ending midnight;
-// accumulations and gusts include it, and exclude starting midnight. Explicit
-// missing slots keep both line gaps and the conditions timeline honest.
-export function peakHourlySeries(window, samples, metric) {
-    const byTime = new Map(samples.map(sample => [sample.time, sample]));
-    const interval = metric === 'precipitation' || metric === 'gust';
-    const rows = [];
-    const first = interval ? Math.floor(window.start / HOUR) * HOUR + HOUR : Math.ceil(window.start / HOUR) * HOUR;
-    const limit = interval ? Math.ceil(window.cutoff / HOUR) * HOUR : window.cutoff - 1;
-    for (let time = first; time <= limit; time += HOUR) {
-        if (interval && window.partial && time > window.cutoff) continue;
-        const start = interval ? Math.max(time - HOUR, window.start) : time;
-        const end = interval ? Math.min(time, window.cutoff) : time;
-        const partialInterval = interval && end - start !== HOUR;
-        let value = byTime.get(time)?.[metric] ?? null;
-        if (metric === 'precipitation' && Number.isFinite(value)) value *= (end - start) / HOUR;
-        rows.push({ time: end, sourceTime: time, start, value, partialInterval });
-    }
-    return rows;
-}
-
-// Put accumulations under the start of their actual interval, alongside
-// instantaneous readings at that instant. Never borrow ending-midnight
-// temperature or invent a reading at a fractional-hour civil-day boundary.
-export function peakHourlyConditions(window, samples) {
-    const instant = peakHourlySeries(window, samples, 'code');
-    const rain = peakHourlySeries(window, samples, 'precipitation');
-    const gust = peakHourlySeries(window, samples, 'gust');
-    const byTime = new Map(samples.map(sample => [sample.time, sample]));
-    const rainByStart = new Map(rain.map(row => [row.start, row]));
-    const gustByStart = new Map(gust.map(row => [row.start, row]));
-    return [...new Set([...instant.map(row => row.time), ...rain.map(row => row.start)])].sort((a, b) => a - b).map(time => ({
-        time, sample: byTime.get(time), rain: rainByStart.get(time), gust: gustByStart.get(time),
-    }));
-}
 
 export function createPeakHourlyChart({ container, day, samples, zone, metric = 'temperature', format, onMetric, state }) {
     const id = `bpb-week-${day.window.date}`;
@@ -65,7 +28,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     const svg = svgElement('svg', { role: 'img', preserveAspectRatio: 'xMidYMid meet' });
     const empty = element('p', { class: 'bpb-week-chart-empty', hidden: '' });
     frame.append(svg, empty);
-    const conditions = element('div', { class: 'bpb-week-conditions', tabindex: '0', role: 'region', 'aria-label': 'Hourly weather in summit local time. Scroll horizontally for all hours.' });
+    const conditions = element('div', { class: 'bpb-week-conditions bpb-weather-hourly-scroll', tabindex: '0', role: 'region', 'aria-label': 'Hourly weather in summit local time. Scroll horizontally for all hours.' });
     const note = element('p', { class: 'bpb-week-sub', id: `${id}-hint` });
     panel.append(readout, frame, conditions, note);
     container.replaceChildren(tabs, panel);
@@ -136,7 +99,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     }
     function choose(next) {
         metric = next; hover = -1; selected = -1; onMetric(metric);
-        rows = peakHourlySeries(day.window, samples, metric);
+        rows = hourlyWeatherSeries(day.window, samples, metric);
         for (const button of buttons) {
             const active = button.dataset.metric === metric;
             button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
@@ -145,39 +108,8 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const isConditions = metric === 'code';
         conditions.hidden = !isConditions; frame.hidden = isConditions; readout.hidden = isConditions;
         if (isConditions) {
-            const hours = peakHourlyConditions(day.window, samples);
-            const table = element('table', { class: 'bpb-week-hourly-table', 'aria-label': 'Hourly weather' });
-            const head = element('tr', {}, [element('th', { scope: 'col', text: 'Hours' })]);
-            for (const row of hours) head.append(element('th', { scope: 'col', class: 'bpb-week-conditions-hour', 'data-time': row.time }, [
-                element('time', { datetime: new Date(row.time).toISOString(), title: localTime(row.time), text: mountainTime.formatClock(zone, row.time).replace(/^0/, '').replace(':00', '') }),
-                element('span', { class: 'bpb-week-hour-zone', text: mountainTime.zoneLabel(zone, row.time) }),
-            ]));
-            table.append(element('thead', {}, [head]));
-            const body = element('tbody');
-            for (const [key, label] of [['code', 'Conditions'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']]) {
-                const line = element('tr', { 'data-weather-row': key }, [element('th', { scope: 'row', text: label })]);
-                for (const row of hours) {
-                    const interval = key === 'precipitation' ? row.rain : key === 'gust' ? row.gust : null;
-                    const value = interval ? interval.value : key === 'precipitation' || key === 'gust' ? null : row.sample?.[key];
-                    const cell = element('td');
-                    if (key === 'code') {
-                        const condition = hourlyWeatherCondition(value);
-                        const icon = row.sample?.isDay === 0 && ['sun', 'partly'].includes(condition.icon) ? condition.icon === 'partly' ? '☁☾' : '☾' : icons[condition.icon];
-                        cell.append(element('span', { class: `bpb-week-hour-icon bpb-week-hour-icon-${condition.icon}`, role: 'img', 'aria-label': condition.label, title: `${localTime(row.time)} · ${condition.label}`, text: icon }));
-                    } else if (key === 'direction' && Number.isFinite(value)) {
-                        const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(value / 45) % 8];
-                        cell.title = `Wind from ${compass} (${Math.round(value)}°)`;
-                        cell.append(element('span', { class: 'bpb-week-wind-arrow', 'aria-hidden': 'true', style: `transform: rotate(${value}deg)`, text: '↓' }), element('span', { text: compass }));
-                    } else {
-                        cell.textContent = format(value, key === 'apparent' ? 'temperature' : key === 'gust' ? 'wind' : key);
-                        if (interval) cell.title = `${localTime(interval.start)} – ${localTime(interval.time)}${interval.partialInterval ? key === 'precipitation' ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
-                        if ((key === 'wind' || key === 'gust') && Number.isFinite(value)) cell.dataset.strength = value < 20 ? 'calm' : value < 40 ? 'breezy' : value < 60 ? 'strong' : 'high';
-                    }
-                    line.append(cell);
-                }
-                body.append(line);
-            }
-            table.append(body); conditions.replaceChildren(table);
+            const { table } = createWeatherHourlyTable({ window: day.window, samples, zone, format });
+            conditions.replaceChildren(table);
             note.textContent = 'Summit local time · Scroll for all hours. Rain/snow and gusts cover the hour starting at the shown time; rain/snow is water equivalent.';
         } else {
             const boundary = rows.some(row => row.partialInterval);

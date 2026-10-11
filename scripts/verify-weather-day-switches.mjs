@@ -88,12 +88,12 @@ export async function verifyWeatherConditions(evaluate) {
     const state = await evaluate(() => {
         const grid = document.querySelector('.bpb-week-day[open] .bpb-week-conditions');
         const pageWidth = document.documentElement.scrollWidth;
-        const label = grid.querySelector('.bpb-week-hourly-table > tbody > tr > th'), before = label.getBoundingClientRect().left;
+        const label = grid.querySelector('.bpb-weather-hourly-table > tbody > tr > th'), before = label.getBoundingClientRect().left;
         grid.scrollLeft = 600;
         const result = { pageWidth, afterWidth: document.documentElement.scrollWidth, scroll: grid.scrollLeft,
             labelDisplacement: label.getBoundingClientRect().left - before, height: grid.clientHeight, scrollHeight: grid.scrollHeight,
-            rowLabels: [...grid.querySelectorAll('.bpb-week-hourly-table > tbody > tr > th')].map(node => node.textContent),
-            hours: grid.querySelectorAll('.bpb-week-conditions-hour').length };
+            rowLabels: [...grid.querySelectorAll('.bpb-weather-hourly-table > tbody > tr > th')].map(node => node.textContent),
+            hours: grid.querySelectorAll('.bpb-weather-conditions-hour').length };
         grid.scrollLeft = 0; return result;
     });
     assert.ok(state.scroll > 0, `hourly grid did not scroll: ${JSON.stringify(state)}`);

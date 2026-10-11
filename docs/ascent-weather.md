@@ -21,7 +21,7 @@ terrain, ownership, backup, or a page-world settings bridge.
 
 The strict subject reader uses the native saved date and heading peak link,
 rejects partial/impossible dates and conflicting identity, and reads summit
-coordinates, nation and elevation from the matching Peakbagger peak page.
+coordinates and elevation from the matching Peakbagger peak page.
 Backup’s existing best-effort reader is intentionally unchanged. Native report
 weather fields are never written or used as observations.
 
@@ -74,12 +74,17 @@ Coarse native models expose provider-interpolated hourly values, disclosed in
 Source details; the card does not count them as independent measurements.
 Condition precedence is explicit, so a clear majority cannot erase rain/snow.
 
-Hourly weather also offers a **Conditions** tab with a scrollable list of local
-times, packaged icons and code-specific descriptions (including rain/snow
-intensity). It uses the existing hourly weather codes and makes no extra request.
-Missing codes or missing hours show **Unavailable**; models without weather codes
-explain that limitation. Repeated DST clocks retain their distinct timezone
-labels. The four tabs share keyboard arrow/Home/End navigation.
+The bordered **Show hourly weather** control expands the hourly panel and changes
+to **Hide hourly weather**. **Conditions** is the first and initially selected
+tab. Its horizontal table shares the peak card's renderer and styles, with local
+hours across the top, sticky row labels, packaged condition icons, temperature,
+rain/snow, wind and gusts where the selected model provides them. Icons expose
+code-specific descriptions including rain/snow intensity. No extra request is
+made. Missing codes or hours remain **Unavailable**; models without weather codes
+explain that limitation while keeping their other readings visible. Repeated DST
+clocks retain distinct timezone labels. Rain/snow appears under its interval's
+starting time, while gusts retain the selected model's instantaneous or interval
+contract. The four tabs share keyboard arrow/Home/End navigation.
 
 Numeric graphs have their own hourly reading explorer, including on ascents
 without GPX. Tab enters the graph; arrows/Home/End select a returned hour or an
@@ -93,9 +98,9 @@ The General weather display preference gates both requests and weather-owned
 native GPS placement. Initial opt-out leaves GPS blocks in place; disabling
 weather restores the original notes/download/send nodes and their handlers.
 
-The GPX cursor highlights the corresponding hourly row in Conditions. An explicit
-tab switch reveals the selected hour inside the list; GPX hover never scrolls
-the list or page. The recorded point time stays separate from the hourly sample,
+The GPX cursor highlights the corresponding hourly column in Conditions. An explicit
+tab switch reveals the selected hour inside the table; GPX hover never scrolls
+the table or page. The recorded point time stays separate from the hourly sample,
 and returning to a numeric graph restores its cursor line. The daily headline
 continues to use condition precedence rather than the most frequent hourly code.
 

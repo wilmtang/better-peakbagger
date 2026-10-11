@@ -151,6 +151,7 @@ export const COPY_FILES = [
     ['src/ascent/ascent-layout.css', 'css/ascent-layout.css'],
     ['src/ascent/ascent-weather.css', 'css/ascent-weather.css'],
     ['src/weather/peak-weather.css', 'css/peak-weather.css'],
+    ['src/weather/weather-hourly-table.css', 'css/weather-hourly-table.css'],
     ['src/profile/profile-backup.css', 'css/profile-backup.css'],
     ['src/terrain/terrain-map.css', 'css/terrain-map.css'],
     ['src/maps/peak-links.css', 'css/peak-links.css'],

@@ -213,6 +213,9 @@ try {
         await movePointer(1, 1);
         await wait(() => document.querySelector('.bpb-weather-cursor-label').textContent.startsWith('Selected'), 'clicked GPX time survives pointer exit');
         await click('.bpb-weather-disclosure');
+        assert.equal(await evaluate(() => document.querySelector('[role="tab"]').getAttribute('aria-selected')), 'true');
+        assert.equal(await evaluate(() => document.querySelector('[role="tab"]').dataset.metric), 'conditions');
+        await click('[data-metric="temperature"]');
         assert.equal(Number(await evaluate(() => document.querySelector('.bpb-weather-cursor').dataset.time)), targets[0].time);
         // The weather disclosure may scroll in WebDriver. Re-read chart geometry
         // before the next physical pointer gesture.
@@ -298,6 +301,9 @@ try {
         const stacked = getComputedStyle(document.getElementById('bpb-ascent-table-split')).display !== 'grid';
         const overflow = [...card.querySelectorAll('*')].filter(node => {
             if (node.closest('details:not([open])') && !node.closest('summary')) return false;
+            // Hour columns deliberately extend inside their clipped scroll
+            // region. Check the region itself against the card, not its cells.
+            if (node.parentElement?.closest('.bpb-weather-hourly-scroll')) return false;
             const bounds = node.getBoundingClientRect(); return bounds.width > 0 && !node.closest('[hidden]') && (bounds.left < box.left - 1 || bounds.right > box.right + 1);
         }).map(node => node.tagName + '.' + node.className);
         const gps = document.getElementById('bpb-ascent-gpx-details'), gpsBox = gps?.getBoundingClientRect();
@@ -359,7 +365,12 @@ try {
                         await checkGpxCursor();
                         await checkExplorerReflow(output);
                     }
-                    else await click('.bpb-weather-disclosure');
+                    else {
+                        await click('.bpb-weather-disclosure');
+                        assert.equal(await evaluate(() => document.querySelector('[role="tab"]').dataset.metric), 'conditions');
+                        assert.equal(await evaluate(() => document.querySelector('[role="tab"]').getAttribute('aria-selected')), 'true');
+                        await click('[data-metric="temperature"]');
+                    }
                     assert.equal(await evaluate(() => document.querySelector('.bpb-weather-disclosure').firstElementChild.textContent), 'Hide hourly weather');
                     for (const width of [1440, 768, 375]) {
                         await resize(width, 1100);
@@ -380,9 +391,14 @@ try {
                         await click('[data-metric="conditions"]');
                         await verifyWeatherTabStyles(evaluate, '.bpb-weather-tabs button');
                         await wait(() => !document.querySelector('.bpb-weather-conditions').hidden
-                        && document.querySelectorAll('.bpb-weather-conditions li').length === 24, 'hourly condition descriptions');
+                        && document.querySelectorAll('.bpb-weather-conditions thead th[data-weather-time]').length === 24, 'horizontal hourly conditions');
                         assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden')), true);
-                        assert.ok(await evaluate(() => document.querySelector('.bpb-weather-conditions').textContent.includes('Light snow')));
+                        assert.ok(await evaluate(() => !!document.querySelector('.bpb-weather-conditions [aria-label="Light snow"]')));
+                        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.bpb-weather-hourly-table tbody th')].map(cell => cell.textContent)), ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
+                        assert.ok(await evaluate(() => {
+                            const grid = document.querySelector('.bpb-weather-conditions');
+                            return grid.scrollWidth > grid.clientWidth && grid.scrollHeight <= grid.clientHeight + 1;
+                        }), 'all metric rows fit without vertical scrolling');
                         if (kind === 'gpx') {
                             const selection = await evaluate(() => {
                                 const row = document.querySelector('.bpb-weather-conditions [aria-current="time"]');
@@ -393,8 +409,11 @@ try {
                             assert.equal(selection.hour, Math.floor(selection.time / 3600_000) * 3600_000);
                         }
                         assertPlacement(await evaluate(geometryForCard));
+                        if (kind !== 'gpx') await evaluate(() => { document.querySelector('.bpb-weather-conditions').scrollLeft = 0; });
                         if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-conditions-${width}.png`));
                         assert.equal(evidence.length, requestsBeforeConditions, 'the condition tab uses the same response');
+                        await evaluate(() => { document.querySelector('.bpb-weather-conditions').scrollLeft = 320; });
+                        assert.equal(await evaluate(() => getComputedStyle(document.querySelector('.bpb-weather-hourly-table tbody th')).position), 'sticky');
                         await click('[data-metric="temperature"]');
                         await wait(() => !document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden'), 'return to the numeric graph');
                     }
@@ -436,7 +455,8 @@ try {
             assert.equal(await evaluate(() => document.querySelector('[data-weather-value="precipitation"]').textContent), '—');
             await click('.bpb-weather-disclosure');
             await click('[data-metric="conditions"]');
-            await wait(() => document.querySelector('[role="tabpanel"]').textContent.includes('This model does not provide hourly conditions'), 'model condition field limitation');
+            await wait(() => document.querySelector('[role="tabpanel"]').textContent.includes('This model does not provide hourly conditions')
+                && !!document.querySelector('.bpb-weather-conditions [data-weather-row="temperature"]'), 'model condition field limitation retains other readings');
             await click('.bpb-weather-sources summary');
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-long-model.png`));
             mode = 'complete'; await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);

@@ -41,6 +41,7 @@ const openChart = async env => {
     await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
     env.doc.querySelector('.bpb-weather-chart').getBoundingClientRect = () => ({ width: 500 });
     env.doc.querySelector('.bpb-weather-disclosure').click();
+    env.doc.querySelector('[data-metric="temperature"]').click();
 };
 
 test('hourly disclosure names its action and keeps the expanded state and target in sync', async () => {
@@ -57,6 +58,9 @@ test('hourly disclosure names its action and keeps the expanded state and target
         assert.equal(label(), 'Hide hourly weather');
         assert.equal(button.getAttribute('aria-expanded'), 'true');
         assert.equal(panel.hidden, false);
+        assert.equal(env.doc.querySelector('[role="tab"]').dataset.metric, 'conditions');
+        assert.equal(env.doc.querySelector('[role="tab"]').getAttribute('aria-selected'), 'true');
+        assert.equal(env.doc.querySelector('.bpb-weather-conditions').hidden, false);
         assert.equal(env.doc.activeElement, button);
         button.click();
         assert.equal(label(), 'Show hourly weather');
@@ -91,6 +95,11 @@ test('fractional-zone rain bars and interval tooltips agree with the daily total
         const labels = [...env.doc.querySelectorAll('.bpb-weather-hover title')].map(node => node.textContent);
         assert.match(labels[0], /12:00 AM.*12:45 AM.*0.8 mm.*Estimated boundary interval/);
         assert.match(labels.at(-1), /11:45 PM.*12:00 AM.*next midnight.*0.3 mm.*Estimated boundary interval/);
+        env.doc.querySelector('[data-metric="conditions"]').click();
+        sendCursor(env, { selected: true, selectionTime: Date.parse('2024-07-11T18:20:00Z') });
+        await waitFor(() => env.doc.querySelector('.bpb-weather-conditions [aria-current="time"]'));
+        assert.equal(env.doc.querySelector('.bpb-weather-conditions [aria-current="time"]').dataset.weatherTime, String(Date.parse('2024-07-11T18:15:00Z')));
+        assert.equal(env.doc.querySelector('[data-weather-row="precipitation"] td').textContent, '0.8 mm');
     } finally { env.close(); }
 });
 
@@ -284,7 +293,7 @@ test('BFCache restore clears transient hover, retains selection and requests a f
     } finally { env.close(); }
 });
 
-test('hourly Conditions shows each sample and GPX highlights the corresponding hour without scrolling on hover', async () => {
+test('horizontal Conditions shows measurements and GPX highlights the column without scrolling on hover', async () => {
     const env = setup();
     try {
         await openChart(env);
@@ -292,18 +301,23 @@ test('hourly Conditions shows each sample and GPX highlights the corresponding h
         sendCursor(env, { selected: true, selectionTime });
         await waitFor(() => env.doc.querySelector('.bpb-weather-cursor')?.dataset.time === String(selectionTime));
         env.doc.querySelector('[data-metric="conditions"]').click();
-        const list = env.doc.querySelector('.bpb-weather-conditions'), rows = [...list.children];
+        const list = env.doc.querySelector('.bpb-weather-conditions'), rows = [...list.querySelectorAll('thead th[data-weather-time]')];
+        const icons = [...list.querySelectorAll('[data-weather-row="code"] [role="img"]')];
         assert.equal(rows.length, 24);
+        assert.deepEqual([...list.querySelectorAll('tbody th')].map(cell => cell.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
         assert.equal(env.doc.querySelector('svg').hasAttribute('hidden'), true);
-        assert.match(rows[0].textContent, /12:00 AMPDT.*Overcast/);
-        assert.match(rows[8].textContent, /8:00 AMPDT.*Light snow/);
+        assert.match(rows[0].textContent, /12 AMPDT/);
+        assert.equal(icons[0].getAttribute('aria-label'), 'Overcast');
+        assert.match(rows[8].textContent, /8 AMPDT/);
+        assert.equal(icons[8].getAttribute('aria-label'), 'Light snow');
         assert.equal(rows[10].getAttribute('aria-current'), 'time');
         assert.equal(rows[10].dataset.mode, 'selected');
-        list.scrollTop = 100;
+        assert.equal(list.querySelectorAll(`[data-weather-time="${rows[10].dataset.weatherTime}"][data-mode="selected"]`).length, 6);
+        list.scrollLeft = 100;
         sendCursor(env, { hovering: true, hoverTime: selectionTime + 3600_000, selected: true, selectionTime });
         await waitFor(() => rows[11].dataset.mode === 'hover');
         assert.equal(rows[10].hasAttribute('aria-current'), false);
-        assert.equal(list.scrollTop, 100, 'GPX hover never scrolls the hourly list');
+        assert.equal(list.scrollLeft, 100, 'GPX hover never scrolls the hourly table');
         sendCursor(env, { selected: true, selectionTime });
         await waitFor(() => rows[10].dataset.mode === 'selected');
         assert.equal(env.requests.length, before);
@@ -311,6 +325,33 @@ test('hourly Conditions shows each sample and GPX highlights the corresponding h
         assert.equal(list.hidden, true);
         assert.equal(env.doc.querySelector('svg').hasAttribute('hidden'), false);
         assert.equal(env.doc.querySelector('.bpb-weather-cursor').dataset.time, String(selectionTime));
+    } finally { env.close(); }
+});
+
+test('horizontal archive values retain their time contract and scroll when units change', async () => {
+    const env = setup({ fetchWeather: async () => {
+        const body = weatherFixture();
+        body.hourly.precipitation.fill(1);
+        body.hourly.precipitation[31] = 100; body.hourly.precipitation[55] = 5;
+        body.hourly.wind_gusts_10m[31] = 60; body.hourly.wind_gusts_10m[55] = 500;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
+        env.doc.querySelector('.bpb-weather-disclosure').click();
+        const grid = env.doc.querySelector('.bpb-weather-conditions');
+        const rain = [...grid.querySelectorAll('[data-weather-row="precipitation"] td')];
+        const gusts = [...grid.querySelectorAll('[data-weather-row="gust"] td')];
+        assert.match(rain[0].title, /12:00 AM PDT.*01:00 AM PDT/);
+        assert.match(rain.at(-1).textContent, /0\.20 in/);
+        assert.match(gusts[0].textContent, /37 mph/);
+        assert.match(gusts[0].title, /12:00 AM PDT.*Instantaneous gust estimate/);
+        assert.ok(gusts.every(cell => !cell.textContent.includes('311 mph')), 'closing midnight gust is excluded');
+        grid.scrollLeft = 340; grid.focus();
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        assert.equal(grid.scrollLeft, 340); assert.equal(env.doc.activeElement, grid);
+        assert.equal(grid.querySelector('[data-weather-row="gust"] td').textContent, '60 km/h');
+        assert.equal(env.requests.length, 2);
     } finally { env.close(); }
 });
 
@@ -326,20 +367,23 @@ test('hourly Conditions preserves missing hours and repeated clocks with distinc
     try {
         await openChart(env);
         env.doc.querySelector('[data-metric="conditions"]').click();
-        const rows = [...env.doc.querySelector('.bpb-weather-conditions').children];
+        const rows = [...env.doc.querySelectorAll('.bpb-weather-conditions thead th[data-weather-time]')];
+        const icons = [...env.doc.querySelectorAll('[data-weather-row="code"] [role="img"]')];
         assert.equal(rows.length, 25);
-        assert.match(rows[1].textContent, /1:00 AMPDT/);
-        assert.match(rows[2].textContent, /1:00 AMPST.*Unavailable/);
-        assert.match(rows[3].textContent, /2:00 AMPST.*Unavailable/);
+        assert.match(rows[1].textContent, /1 AMPDT/);
+        assert.match(rows[2].textContent, /1 AMPST/);
+        assert.equal(icons[2].getAttribute('aria-label'), 'Unavailable');
+        assert.match(rows[3].textContent, /2 AMPST/);
+        assert.equal(icons[3].getAttribute('aria-label'), 'Unavailable');
         assert.notEqual(rows[1].dataset.weatherTime, rows[2].dataset.weatherTime);
         const thirdTime = rows[3].dataset.weatherTime;
         sendCursor(env, { selected: true, selectionTime: Number(thirdTime) + 20 * 60_000 });
         await waitFor(() => rows[3].getAttribute('aria-current') === 'time');
-        assert.match(rows[3].textContent, /Unavailable/);
+        assert.equal(icons[3].getAttribute('aria-label'), 'Unavailable');
     } finally { env.close(); }
 });
 
-test('models with no condition field keep Conditions available with a clear empty state', async () => {
+test('models without condition fields retain their other measurements with a clear explanation', async () => {
     const env = setup({ fetchWeather: url => Promise.resolve(new Response(JSON.stringify(weatherFixture({ fields: new URL(url).searchParams.get('hourly').split(',') })), { headers: { 'content-type': 'application/json' } })) });
     try {
         await openChart(env);
@@ -347,7 +391,8 @@ test('models with no condition field keep Conditions available with a clear empt
         model.value = 'ecmwf_ifs_analysis_long_window'; model.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using IFS Assimilation'));
         env.doc.querySelector('[data-metric="conditions"]').click();
-        assert.equal(env.doc.querySelector('.bpb-weather-conditions').hidden, true);
+        assert.equal(env.doc.querySelector('.bpb-weather-conditions').hidden, false);
+        assert.match(env.doc.querySelector('[data-weather-row="temperature"]').textContent, /°F/);
         assert.match(env.doc.querySelector('[role="tabpanel"]').textContent, /This model does not provide hourly conditions/);
         assert.equal(env.doc.querySelector('[data-metric="conditions"]').getAttribute('aria-selected'), 'true');
     } finally { env.close(); }
@@ -480,7 +525,9 @@ test('hourly tabs have one keyboard stop and arrow navigation preserves the acti
     const env = setup();
     try {
         await openChart(env);
+        env.doc.querySelector('[data-metric="conditions"]').click();
         const tabs = [...env.doc.querySelectorAll('[role="tab"]')];
+        assert.equal(tabs[0].textContent, 'Conditions');
         assert.deepEqual(tabs.map(tab => tab.tabIndex), [0, -1, -1, -1]);
         tabs[0].focus(); tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
         assert.equal(env.doc.activeElement, tabs[1]);
