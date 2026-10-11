@@ -43,7 +43,7 @@ export const climberCardState = ({ cid, ownerCid, settings, membership, busy = f
             ? 'Remove from both lists to ignore' : favorite ? 'Remove from favorites to ignore'
                 : protectedBuddy ? (buddy ? 'Remove from your Buddy List to ignore' : 'Refresh your Buddy List before ignoring')
                     : membership?.ignored?.entries.length >= I.LIMIT ? 'Ignored climbers can hold up to 1,500 entries.'
-                        : 'Hide their reports on this device',
+                        : 'Hide their reports',
         favoriteLimit: !favorite && membership?.favorites?.entries.length >= F.LIMIT,
     };
 };

@@ -50,7 +50,7 @@ small accessible Close button. The three actions remain in a stable order:
 | --- | --- | --- |
 | Add climbing buddy | Filled green button; primary action | Remove climbing buddy; quieter button |
 | Add favorite climber | Secondary button; custom mode only | Remove favorite climber |
-| Ignore climber | Quiet separated row; “Hide their reports on this device” | Unignore climber; “Show their reports again” |
+| Ignore climber | Quiet separated row; “Hide their reports” | Unignore climber; “Show their reports again” |
 
 The compact alternative places the two positive actions next to each other,
 with Ignore below. Prefer the stacked design: labels and conflict guidance
