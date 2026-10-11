@@ -26,7 +26,7 @@ const displayDate = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([],
 export function mountAscentWeather() {
     if (document.getElementById(ID)) return;
     const subject = readWeatherSubject(document, location.href);
-    const card = element('section', { id: ID, 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
+    const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });
     const date = element('span', { class: 'bpb-weather-date', text: subject.date ? displayDate(subject.date) : 'Ascent date unavailable' });
     const locationLabel = element('div', { class: 'bpb-weather-location', text: subject.peak ? `${subject.peak.name} · At the summit` : 'At the summit' });
@@ -139,6 +139,8 @@ export function mountAscentWeather() {
     placementObserver.observe(mountParent, { childList: true, subtree: true });
 
     let preference = settings.DEFAULTS, summit = null, dayWindow = null, candidates = [], current = null;
+    let settingsReady = false;
+    const enabled = () => settingsReady && preference.showWeather;
     let metric = 'temperature', generation = 0, controller = null, started = false, visibilityObserver = null;
     const failed = new Set(), client = createWeatherClient();
     let lifecycle;
@@ -194,7 +196,7 @@ export function mountAscentWeather() {
     const format = (value, key) => numeric(value) ? `${convert(value, key).toFixed(key === 'precipitation' ? (unitSystem() === 'imperial' ? 2 : 1) : 0).replace('-', '−')}${key === 'temperature' ? '' : ' '}${unit(key)}` : '—';
 
     function drawChart() {
-        if (!current || hourly.hidden || lifecycle?.state !== 'active') return;
+        if (!enabled() || !current || hourly.hidden || lifecycle?.state !== 'active') return;
         const showConditions = metric === 'conditions';
         chart.toggleAttribute('hidden', showConditions); conditions.hidden = !showConditions; conditionsEmpty.hidden = true;
         if (showConditions) {
@@ -311,7 +313,7 @@ export function mountAscentWeather() {
         modelRow.hidden = false;
     };
     async function load() {
-        if (subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
+        if (!enabled() || subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
         cancel(); const ownGeneration = generation; controller = new AbortController(); const signal = controller.signal;
         busy(true); started = true;
         delete status.dataset.kind;
@@ -382,26 +384,40 @@ export function mountAscentWeather() {
     });
     const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(drawChart) : null;
     resizeObserver?.observe(chart);
-    const unsubscribe = settings.subscribe(next => { preference = next; renderResult(); });
-    settings.get().then(next => { preference = next; if (lifecycle?.state === 'active') renderResult(); });
     const beginWhenVisible = () => {
-        if (subject.reason || subject.date < '1940-01-01') return;
+        if (!enabled() || lifecycle.state !== 'active' || subject.reason || subject.date < '1940-01-01') return;
         if (typeof IntersectionObserver !== 'function') { void load(); return; }
         visibilityObserver?.disconnect();
         visibilityObserver = new IntersectionObserver(entries => {
-            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver.disconnect(); visibilityObserver = null; void load(); }
+            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver?.disconnect(); visibilityObserver = null; void load(); }
         }, { rootMargin: '200px' });
         visibilityObserver.observe(card);
     };
+    const applyPreference = next => {
+        const wasEnabled = enabled();
+        preference = next; settingsReady = true;
+        card.hidden = !enabled();
+        if (!enabled()) {
+            cooldown.suspend(); stopCursor(); cancel();
+            visibilityObserver?.disconnect(); visibilityObserver = null;
+        } else if (lifecycle.state === 'active') {
+            cooldown.resume(); renderResult();
+            if (!wasEnabled) { listenForCursor(); beginWhenVisible(); }
+        }
+    };
+    const unsubscribe = settings.subscribe(applyPreference);
     lifecycle = createPageLifecycle({
         onSuspend: () => { cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
-        onResume: () => { cooldown.resume(); listenForCursor(); drawChart(); place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (!current || started) beginWhenVisible(); },
+        onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (enabled()) { cooldown.resume(); listenForCursor(); drawChart(); if (!current || started) beginWhenVisible(); } },
         onDispose: () => { cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
+    // Preserve an already-published GPX selection while the initial settings
+    // read is pending. An opt-out removes this listener before any request.
     listenForCursor();
     if (subject.reason) status.textContent = subject.reason;
     else if (subject.date < '1940-01-01') status.textContent = 'Historical weather is available from 1940.';
-    else beginWhenVisible();
+    // A newer sync notification owns the preference if startup's read is late.
+    settings.requireCurrent().then(next => { if (!settingsReady && lifecycle.state !== 'disposed') applyPreference(next); }).catch(() => {});
     return { card, lifecycle };
 }
 

@@ -954,7 +954,7 @@ test('the built worker validates an imported GitHub token and repository before 
 
 test('settings backup and restore stay extension-only and ignore the ascent-backup gate', async () => {
     const backend = gitDataBackend();
-    const restorePayload = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
+    const restorePayload = Transfer.buildPayload({ theme: 'light', units: 'metric', showSunMoon: false, showWeather: false }, {
         extensionVersion: '2.1.0',
         exportedAt: '2026-07-21T12:00:00.000Z',
     });
@@ -968,7 +968,7 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
         return backend.handler(method, path, body);
     };
     const worker = createWorker({
-        settings: { enableGithubBackup: false, theme: 'dark' },
+        settings: { enableGithubBackup: false, theme: 'dark', showSunMoon: false, showWeather: false },
         local: {
             bpbGithubAuth: structuredClone(AUTH),
             bpbImgbbAuth: { key: 'must-not-reach-github' },
@@ -985,18 +985,22 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
     assert.equal(committed.kind, Transfer.KIND);
     assert.equal(committed.extensionVersion, '2.2.0');
     assert.equal(committed.settings.theme, 'dark');
+    assert.equal(committed.settings.showSunMoon, false);
+    assert.equal(committed.settings.showWeather, false);
     assert.deepEqual(Object.keys(committed.settings), Object.keys(Schema.DEFAULTS));
     assert.equal('apiKeys' in committed, false,
         'GitHub settings backup must remain credential-free even when a local API key exists');
     assert.equal('githubConnection' in committed, false,
         'GitHub settings backup must never write its own bearer token into the repository');
     assert.equal(worker.local.bpbSettingsBackupState.signature,
-        Transfer.signature(Schema.clean({ enableGithubBackup: false, theme: 'dark' })));
+        Transfer.signature(Schema.clean({ enableGithubBackup: false, theme: 'dark', showSunMoon: false, showWeather: false })));
     assert.equal('token' in backup, false);
 
     const restore = await worker.send({ type: 'GITHUB_SETTINGS_RESTORE' }, EXTENSION_SENDER);
     assert.equal(restore.ok, true);
     assert.equal(restore.content, restoreContent);
+    assert.equal(Transfer.parse(restore.content).settings.showSunMoon, false);
+    assert.equal(Transfer.parse(restore.content).settings.showWeather, false);
     assert.equal('token' in restore, false);
 
     const forbidden = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, PEAK_SENDER);
@@ -1097,7 +1101,7 @@ test('settings auto backup fails closed on an unreadable default-on gate', async
 test('settings auto backup debounces changes, commits once, and skips an equal signature', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({
-        settings: { enableGithubBackup: false, autoSettingsBackup: true, theme: 'dark' },
+        settings: { enableGithubBackup: false, autoSettingsBackup: true, theme: 'dark', showSunMoon: false, showWeather: false },
         auth: AUTH,
         github: backend.handler,
     });
@@ -1116,6 +1120,8 @@ test('settings auto backup debounces changes, commits once, and skips an equal s
     const payload = JSON.parse(backend.state.contents['settings.json']);
     assert.equal(payload.settings.theme, 'dark');
     assert.equal(payload.settings.autoSettingsBackup, true);
+    assert.equal(payload.settings.showSunMoon, false);
+    assert.equal(payload.settings.showWeather, false);
 
     worker.fireAlarm('bpb-settings-backup');
     await settleQuietly();

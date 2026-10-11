@@ -1,5 +1,11 @@
 # Summit weather on peak pages
 
+**Settings → General → Show weather cards** controls both summit weather and
+the ascent weather archive. It is on by default, saved in `storage.sync`, and
+included in settings export/import and GitHub settings backup. Turning it off
+hides both cards on open pages and cancels pending weather work. Disabled pages
+make no weather requests; summit lookup for the archive is also skipped.
+
 The isolated `content/peak-weather.js` bundle adds **Summit weather** below
 the native map, in a new row of the right-hand table. The existing map, Sun &
 Moon panel, links and left-column metadata remain in their native flow. A peak

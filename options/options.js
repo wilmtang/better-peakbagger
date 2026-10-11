@@ -25,6 +25,8 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     } catch { /* the worker will discover or create the tab on demand */ }
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
+    const showSunMoonEl = document.getElementById('show-sun-moon');
+    const showWeatherEl = document.getElementById('show-weather');
     const enable3dMapEl = document.getElementById('enable-3d-map');
     const enableReportEditorEl = document.getElementById('enable-report-editor');
     const reportEditorDependentEls = document.querySelectorAll('[data-report-editor-dependent]');
@@ -113,6 +115,8 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         confirmedSettings = { ...settings };
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
+        showSunMoonEl.checked = settings.showSunMoon;
+        showWeatherEl.checked = settings.showWeather;
         enable3dMapEl.checked = settings.enable3dMap;
         enableReportEditorEl.checked = settings.enableReportEditor;
         syncReportEditorDependentVisibility(settings.enableReportEditor);
@@ -198,6 +202,8 @@ import { initSectionNav } from '../src/ui/section-nav.js';
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
+    showSunMoonEl.addEventListener('change', () => save({ showSunMoon: showSunMoonEl.checked }));
+    showWeatherEl.addEventListener('change', () => save({ showWeather: showWeatherEl.checked }));
     enable3dMapEl.addEventListener('change', () => {
         syncTerrainCacheVisibility(enable3dMapEl.checked);
         save({ enable3dMap: enable3dMapEl.checked });

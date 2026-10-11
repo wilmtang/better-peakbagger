@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Narrow read-only settings bridge for the MAIN-world Peak-page 3D
-// coordinator. The page receives only the feature gate, theme preference, and
+// coordinator. The page receives only the feature gates, theme preference, and
 // terrain cache budget it needs; storage and write access stay isolated.
 
 import { settings as S } from '../settings/settings.js';
@@ -11,6 +11,7 @@ const send = settings => window.postMessage({
     __bpbPeakMap: true,
     dir: 'toPage',
     enable3dMap: settings.enable3dMap === true,
+    showSunMoon: settings.showSunMoon,
     theme: settings.theme,
     terrainCacheLimitMb: settings.terrainCacheLimitMb
 }, location.origin);

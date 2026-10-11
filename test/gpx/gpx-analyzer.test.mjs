@@ -1888,6 +1888,25 @@ test('GPX analyzer announces only trustworthy active values across a time gap', 
     dom.window.close();
 });
 
+test('GPX Sun display preference hides only the calculator and updates without rebuilding the chart', async () => {
+    const { dom, chartConfig, chartInstance, chartConstructions } = await loadElevationAnalyzer(gpx, { settings: { showSunMoon: false } });
+    const { window } = dom;
+    try {
+        await waitFor(dom, () => chartConfig() !== null);
+        const calculator = window.document.querySelector('.bpb-sun-calculator'), chart = chartInstance();
+        assert.equal(calculator.hidden, true);
+        for (const showSunMoon of [true, false, true]) {
+            window.dispatchEvent(new window.MessageEvent('message', {
+                source: window, origin: window.location.origin,
+                data: bridgeSnapshot(window, { units: 'metric', theme: 'light', showSunMoon }),
+            }));
+            await waitFor(dom, () => calculator.hidden === !showSunMoon);
+            assert.equal(chartInstance(), chart); assert.equal(chartConstructions(), 1);
+        }
+        assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+});
+
 test('GPX Sun previews chart hover and restores timed selections across mountain-local midnight', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele><time>2026-07-10T06:30:00Z</time></trkpt>

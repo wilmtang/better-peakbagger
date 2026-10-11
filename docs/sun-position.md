@@ -6,6 +6,10 @@ Sun and Moon azimuth and elevation, level-horizon sunrise and sunset, Moon phase
 and illuminated percentage, and a compass that stays aligned with the visible
 2D or 3D map.
 
+**Settings → General → Show Sun & Moon** hides the section on both supported
+surfaces and updates open pages. It is on by default, saved in `storage.sync`,
+and included in settings export/import and GitHub settings backup.
+
 It does **not** predict whether nearby terrain blocks either object, cast
 shadows, clouds, smoke, or actual direct light on a slope. Its Moon visibility
 band uses astronomical, level-horizon moonrise and moonset. GPX elevation is

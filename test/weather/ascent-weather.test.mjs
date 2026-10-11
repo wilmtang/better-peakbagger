@@ -16,11 +16,11 @@ async function waitFor(predicate) {
     const until = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > until) throw new Error('Weather UI did not settle'); await pause(); }
 }
-const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true } = {}) => {
+const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings } = {}) => {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [];
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { units: 'imperial' } }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
+    win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     win.fetch = async (url, init) => {
         requests.push({ url, init });
         if (new URL(url).host === 'www.peakbagger.com' && fetchPeak) return fetchPeak(url, init);
@@ -42,6 +42,56 @@ const openChart = async env => {
     env.doc.querySelector('.bpb-weather-chart').getBoundingClientRect = () => ({ width: 500 });
     env.doc.querySelector('.bpb-weather-disclosure').click();
 };
+
+test('weather opt-out hides the archive and skips summit lookup until enabled, including BFCache', async () => {
+    const env = setup({ storedSettings: { showWeather: false } });
+    const update = showWeather => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));
+    try {
+        await pause();
+        const card = env.doc.getElementById('bpb-ascent-weather');
+        assert.equal(card.hidden, true); assert.equal(env.requests.length, 0);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        assert.equal(env.requests.length, 0);
+        update(true); await openChart(env);
+        assert.equal(card.hidden, false);
+        const count = env.requests.length;
+        update(false); assert.equal(card.hidden, true);
+        card.querySelector('.bpb-weather-retry').click();
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        assert.equal(env.requests.length, count);
+        update(true); await waitFor(() => card.getAttribute('aria-busy') === 'false');
+        assert.equal(card.hidden, false); assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
+    } finally { env.close(); }
+});
+
+test('disabling the archive aborts its lookup before any weather-provider request', async () => {
+    let finish;
+    const env = setup({ fetchPeak: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await waitFor(() => env.requests.length === 1);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        assert.equal(env.requests[0].init.signal.aborted, true);
+        finish(new Response(peak, { headers: { 'content-type': 'text/html' } })); await pause();
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true); assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('a late startup read cannot override the archive opt-out and failed settings skip all requests', async () => {
+    let finish;
+    const env = setup({ readSettings: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        finish({ bpbSettings: { showWeather: true } }); await pause();
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true); assert.equal(env.requests.length, 0);
+    } finally { env.close(); }
+    const failed = setup({ readSettings: async () => { throw new Error('Sync unavailable'); } });
+    try {
+        await pause();
+        assert.equal(failed.doc.getElementById('bpb-ascent-weather').hidden, true); assert.equal(failed.requests.length, 0);
+    } finally { failed.close(); }
+});
 
 test('weather cursor previews GPX hover and restores selection without rebuilding data or fetching', async () => {
     const env = setup();

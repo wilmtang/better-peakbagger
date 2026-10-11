@@ -106,6 +106,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
     });
     if (sunCalculator) {
+        sunCalculator.element.hidden = true;
         // create() appends safely; move the root beside the validated map so it
         // cannot cover native controls or attribution inside the viewport.
         mount.after(sunCalculator.element);
@@ -272,6 +273,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         if (!data || data.__bpbPeakMap !== true || data.dir !== 'toPage') return;
         const settings = Schema.clean({
             enable3dMap: data.enable3dMap,
+            showSunMoon: data.showSunMoon,
             theme: data.theme,
             terrainCacheLimitMb: data.terrainCacheLimitMb
         });
@@ -279,6 +281,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         terrainThemePref = settings.theme;
         terrainCacheLimitMb = settings.terrainCacheLimitMb;
         sunCalculator?.setTheme(effectiveTheme());
+        if (sunCalculator) sunCalculator.element.hidden = !settings.showSunMoon;
         if (!terrainEnabled && !terrainCoordinator.isIdle()) terrainCoordinator.stop();
         if (terrainCoordinator.isActive()) postTerrain('update', { theme: effectiveTheme() });
         terrainCoordinator.update();

@@ -18,8 +18,6 @@ const FAIL_SOFT = Object.freeze({
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
-    'src/ascent/ascent-weather.js': [{ count: 1, kind: 'display', reason: 'render passive weather units; settings do not authorize weather requests' }],
-    'src/weather/peak-weather.js': [{ count: 1, kind: 'display', reason: 'render passive recent-weather units; settings do not authorize weather requests' }],
     'src/background/github-routes.js': [
         { count: 3, kind: 'display', reason: 'render connection, ascent-backup and photo-recovery status' },
         { count: 2, kind: 'safe-gate', reason: 'return connection status and gate default-off ascent snapshots' },
@@ -34,6 +32,8 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
+    'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
     'src/favorites/favorite-source.js': [{ count: 1, kind: 'preservation', reason: 'resolve the selected source without substituting defaults after a failed settings read' }],
     'src/favorites/climber-hover-card.js': [{ count: 1, kind: 'preservation', reason: 'enable favorite actions only after resolving the selected source authoritatively' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],

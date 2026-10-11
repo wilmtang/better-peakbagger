@@ -1,5 +1,11 @@
 # Historical ascent weather
 
+**Settings → General → Show weather cards** controls this archive and peak-page
+summit weather together. The default is on. The preference uses `storage.sync`
+and travels with settings files and GitHub settings backup. Turning it off
+hides the card on open pages, cancels pending work, and prevents summit lookup
+and weather requests until enabled again.
+
 The independent isolated-world `content/ascent-weather.js` bundle mounts in the
 right-hand column beneath Summary Total Data, beside the trip report. It follows
 the existing divider width and stacks with the summary on narrow screens. Its

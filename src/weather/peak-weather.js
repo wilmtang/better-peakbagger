@@ -21,7 +21,7 @@ export function mountPeakWeather() {
     const subject = readPeakWeatherSubject(document, location.href);
     if (!subject) return;
     const zone = mountainTime.resolve(subject.latitude, subject.longitude);
-    const card = element('section', { id: ID, 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
+    const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
     const periods = [['forecast', '7-day forecast'], ['past', 'Past 7 days']];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
@@ -40,11 +40,13 @@ export function mountPeakWeather() {
         source, element('footer', {}, [element('span', { text: 'Model estimates · Route conditions may differ' }),
             element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
-    const row = element('tr', { id: `${ID}-row` }, [cell]);
+    const row = element('tr', { id: `${ID}-row`, hidden: '' }, [cell]);
     subject.table.tBodies[0].append(row);
 
     const client = createPeakWeatherClient();
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
+    let settingsReady = false;
+    const enabled = () => settingsReady && preference.showWeather;
     let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
     let period = 'forecast', notice = null, requestedWindow = null;
     const openDates = new Map();
@@ -106,7 +108,7 @@ export function mountPeakWeather() {
             const hourly = element('div', { class: 'bpb-week-hourly' });
             detail.append(summary, hourly);
             detail.addEventListener('toggle', () => {
-                if (!detail.isConnected || lifecycle.state !== 'active') return;
+                if (!enabled() || !detail.isConnected || lifecycle.state !== 'active') return;
                 if (!detail.open) { if (activeDay === detail) clearChart(); return; }
                 days.querySelectorAll('details[open]').forEach(other => { if (other !== detail) other.open = false; });
                 renderHours(day, detail, hourly);
@@ -143,7 +145,7 @@ export function mountPeakWeather() {
     choosePeriod(period);
     const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); refresh.disabled = cooldown.active(); };
     async function load({ clear = false } = {}) {
-        if (lifecycle.state !== 'active' || pending) return;
+        if (!enabled() || lifecycle.state !== 'active' || pending) return;
         visibilityObserver?.disconnect(); visibilityObserver = null;
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
@@ -169,27 +171,40 @@ export function mountPeakWeather() {
     }
     const beginWhenVisible = () => {
         visibilityObserver?.disconnect();
+        if (!enabled() || lifecycle.state !== 'active') return;
         if (typeof IntersectionObserver !== 'function') { void load(); return; }
         visibilityObserver = new IntersectionObserver(entries => {
-            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver.disconnect(); visibilityObserver = null; void load(); }
+            if (entries.some(entry => entry.isIntersecting)) { visibilityObserver?.disconnect(); visibilityObserver = null; void load(); }
         }, { rootMargin: '200px' });
         visibilityObserver.observe(card);
     };
     const visibility = () => {
-        if (document.visibilityState !== 'visible' || lifecycle.state !== 'active' || !started || pending || notice?.kind) return;
+        if (!enabled() || document.visibilityState !== 'visible' || lifecycle.state !== 'active' || !started || pending || notice?.kind) return;
         const today = mountainTime.localDate(zone, Date.now());
         if (!current || today !== current.window.today || Date.now() - current.loadedAt >= 5 * 60_000) beginWhenVisible();
     };
     refresh.addEventListener('click', () => { void load({ clear: true }); });
-    const unsubscribe = settings.subscribe(next => { preference = next; if (lifecycle.state === 'active') renderResult(); });
-    settings.get().then(next => { preference = next; if (lifecycle.state === 'active') renderResult(); });
+    const applyPreference = next => {
+        const wasEnabled = enabled();
+        preference = next; settingsReady = true;
+        row.hidden = card.hidden = !enabled();
+        if (!enabled()) {
+            cooldown.suspend(); cancel(); clearChart();
+            visibilityObserver?.disconnect(); visibilityObserver = null;
+        } else if (lifecycle.state === 'active') {
+            cooldown.resume(); renderResult();
+            if (!wasEnabled) beginWhenVisible();
+        }
+    };
+    const unsubscribe = settings.subscribe(applyPreference);
     const stop = () => { cooldown.suspend(); cancel(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { cooldown.resume(); document.addEventListener('visibilitychange', visibility); renderResult(); beginWhenVisible(); },
+        onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); renderResult(); beginWhenVisible(); } },
         onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
-    beginWhenVisible();
+    // A newer sync notification owns the preference if startup's read is late.
+    settings.requireCurrent().then(next => { if (!settingsReady && lifecycle.state !== 'disposed') applyPreference(next); }).catch(() => {});
     return { card, lifecycle };
 }
 

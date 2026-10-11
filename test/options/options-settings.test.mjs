@@ -11,6 +11,25 @@ import {
 
 registerCleanup();
 
+test('General display controls default on and save independent synced preferences', async () => {
+    const dom = await loadOptions({});
+    for (const [id, key] of [['show-sun-moon', 'showSunMoon'], ['show-weather', 'showWeather']]) {
+        const control = el(dom, id);
+        assert.equal(control.closest('section').id, 'general');
+        assert.equal(control.labels.length, 1, 'the checkbox has one concise accessible name');
+        assert.equal(control.checked, true);
+        control.checked = false; control.dispatchEvent(new dom.window.Event('change'));
+        await waitFor(dom, () => dom.chrome._store.bpbSettings[key] === false);
+    }
+    const restored = await loadOptions({ showSunMoon: false, showWeather: false });
+    assert.equal(el(restored, 'show-sun-moon').checked, false);
+    assert.equal(el(restored, 'show-weather').checked, false);
+    el(restored, 'show-weather').checked = true;
+    el(restored, 'show-weather').dispatchEvent(new restored.window.Event('change'));
+    await waitFor(restored, () => restored.chrome._store.bpbSettings.showWeather === true);
+    assert.equal(restored.chrome._store.bpbSettings.showSunMoon, false);
+});
+
 test('settings GitHub controls back up, confirm restore, and persist automatic backup', async () => {
     const messages = [];
     const status = {

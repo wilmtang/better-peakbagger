@@ -18,13 +18,13 @@ const reply = url => {
     const hours = (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24;
     return new Response(JSON.stringify(weatherFixture({ startDate: query.get('start_date'), hours })), { headers: { 'content-type': 'application/json' } });
 };
-function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z' } = {}) {
+function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [], observers = [], resizeObservers = [];
     let clock = Date.parse(now);
     win.Date.now = () => clock;
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { units: 'imperial' } }) }, onChanged: {
+    win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
         addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1),
     } } };
     if (lazy) win.IntersectionObserver = class {
@@ -49,6 +49,58 @@ const settled = async (env, { past = true } = {}) => {
     await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 7 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
     if (past) env.doc.querySelector('[data-period="past"]').click();
 };
+
+test('weather opt-out hides the whole table row, skips requests and updates live across BFCache', async () => {
+    const env = setup({ storedSettings: { showWeather: false } });
+    const update = showWeather => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));
+    try {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const card = env.doc.getElementById('bpb-peak-weather'), row = card.closest('tr');
+        assert.equal(card.hidden, true); assert.equal(row.hidden, true); assert.equal(env.requests.length, 0);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        assert.equal(env.requests.length, 0);
+        update(true); await settled(env);
+        assert.equal(card.hidden, false); assert.equal(row.hidden, false);
+        const count = env.requests.length;
+        update(false); assert.equal(card.hidden, true); assert.equal(row.hidden, true);
+        card.querySelector('.bpb-week-refresh').click();
+        env.win.dispatchEvent(new env.win.Event('visibilitychange'));
+        assert.equal(env.requests.length, count);
+        update(true); await settled(env);
+        assert.equal(env.doc.querySelectorAll('#bpb-peak-weather').length, 1);
+    } finally { env.close(); }
+});
+
+test('disabling weather aborts an in-flight forecast and ignores a late result', async () => {
+    let finish;
+    const env = setup({ fetchFn: url => new Promise(resolve => { finish = () => resolve(reply(url)); }) });
+    try {
+        await waitFor(() => env.requests.length === 1);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        assert.equal(env.requests[0].init.signal.aborted, true);
+        finish(); await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(env.doc.getElementById('bpb-peak-weather').hidden, true);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 0);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('a late startup read cannot override a weather opt-out and a failed read starts no request', async () => {
+    let finish;
+    const env = setup({ readSettings: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        finish({ bpbSettings: { showWeather: true } });
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(env.doc.getElementById('bpb-peak-weather').hidden, true); assert.equal(env.requests.length, 0);
+    } finally { env.close(); }
+    const failed = setup({ readSettings: async () => { throw new Error('Sync unavailable'); } });
+    try {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(failed.doc.getElementById('bpb-peak-weather').hidden, true); assert.equal(failed.requests.length, 0);
+    } finally { failed.close(); }
+});
 
 test('peak identity and unique native coordinates fail closed without remote geocoding', () => {
     const doc = new JSDOM(peak).window.document;
@@ -225,6 +277,7 @@ test('missing map retains right-column card; lazy loading never starts before vi
     try {
         assert.ok(env.doc.getElementById('bpb-peak-weather')); assert.equal(env.requests.length, 0);
         assert.equal(env.doc.getElementById('bpb-peak-weather').closest('table').getAttribute('align'), 'right');
+        await waitFor(() => env.observers.length === 1);
         env.observers[0].callback([{ isIntersecting: true }]);
         await settled(env); assert.equal(env.requests.length, 1);
     } finally { env.close(); }

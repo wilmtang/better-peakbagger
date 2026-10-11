@@ -38,6 +38,8 @@ const BOUNDS = {
 
 const DEFAULTS = {
     units: 'auto', theme: 'system',
+    showSunMoon: true,
+    showWeather: true,
     enable3dMap: false,
     retainWaypoints: true,
     fillAscentDetails: true,
@@ -205,7 +207,7 @@ const clean = raw => {
     const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-    for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
     // One ascent-backup choice controls automatic saves. Keep the legacy field

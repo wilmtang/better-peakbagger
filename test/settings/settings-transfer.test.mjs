@@ -6,6 +6,18 @@ import assert from 'node:assert/strict';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 
+test('display opt-outs survive settings files and affect backup signatures; older files keep sections visible', () => {
+    const payload = Transfer.buildPayload({ showSunMoon: false, showWeather: false });
+    const restored = Transfer.parse(Transfer.serialize(payload)).settings;
+    assert.equal(restored.showSunMoon, false);
+    assert.equal(restored.showWeather, false);
+    assert.notEqual(Transfer.signature({}), Transfer.signature({ showSunMoon: false }));
+    assert.notEqual(Transfer.signature({}), Transfer.signature({ showWeather: false }));
+    delete payload.settings.showSunMoon; delete payload.settings.showWeather;
+    const legacy = Transfer.parse(Transfer.serialize(payload)).settings;
+    assert.equal(legacy.showSunMoon, true); assert.equal(legacy.showWeather, true);
+});
+
 test('settings transfer payload round-trips known cleaned settings', () => {
     const payload = Transfer.buildPayload({
         theme: 'dark',

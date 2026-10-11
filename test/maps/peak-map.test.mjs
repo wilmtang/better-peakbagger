@@ -29,6 +29,7 @@ const peakHtml = ({ mapPid = 2829, mapType = 'P', includeCoordinates = true,
 </body>`;
 
 const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
+    showSunMoon = true,
     includeCoordinates = true, fullMapOrigin = 'https://www.peakbagger.com',
     nowMs = Date.parse('2026-08-25T18:45:00Z') } = {}) => {
     const dom = new JSDOM(peakHtml({ mapPid, mapType, includeCoordinates, fullMapOrigin }), {
@@ -41,6 +42,7 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
     const messages = [];
     window.chrome = makeChromeStub({ bpbSettings: {
         enable3dMap: enabled,
+        showSunMoon,
         theme: 'dark',
         terrainCacheLimitMb: 384
     } });
@@ -58,6 +60,25 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
     window.eval(peakMapBundle);
     return { dom, window, messages };
 };
+
+test('Sun display opt-out updates live independently of terrain, including BFCache', async () => {
+    const { dom, window } = loadPeakMap({ showSunMoon: false, enabled: false });
+    try {
+        const sun = window.document.querySelector('.bpb-sun-calculator');
+        await waitFor(dom, () => sun.dataset.theme === 'dark');
+        assert.equal(sun.hidden, true);
+        const iframe = window.document.getElementById('Gmap');
+        await window.chrome.storage.sync.set({ bpbSettings: { showSunMoon: true, enable3dMap: false } });
+        await waitFor(dom, () => sun.hidden === false);
+        await window.chrome.storage.sync.set({ bpbSettings: { showSunMoon: false } });
+        await waitFor(dom, () => sun.hidden === true);
+        window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+        window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitFor(dom, () => sun.hidden === true);
+        assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+        assert.equal(window.document.getElementById('Gmap'), iframe);
+    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+});
 
 test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summit-focused view', async () => {
     const { dom, window, messages } = loadPeakMap();
@@ -108,8 +129,8 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(sun.dataset.theme, 'dark');
     const settingsReply = messages.find(message => message.__bpbPeakMap === true && message.dir === 'toPage');
     assert.deepEqual(Object.keys(settingsReply).sort(),
-        ['__bpbPeakMap', 'dir', 'enable3dMap', 'terrainCacheLimitMb', 'theme'],
-        'the Peak-page bridge exposes only the three read-only terrain settings');
+        ['__bpbPeakMap', 'dir', 'enable3dMap', 'showSunMoon', 'terrainCacheLimitMb', 'theme'],
+        'the Peak-page bridge exposes only the read-only terrain and Sun display settings');
 
     toggle.click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));

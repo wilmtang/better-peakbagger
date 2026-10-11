@@ -23,6 +23,8 @@
     font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.bpb-sun-calculator[hidden] { display: none !important; }
+
 .bpb-sun-calculator[data-theme="dark"] {
     --bpb-sun-bg: #24272b;
     --bpb-sun-panel: #24272b;

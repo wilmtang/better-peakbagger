@@ -404,6 +404,7 @@ const run = async () => {
             mode: 'gpx',
             onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
         });
+        if (sunCalculator) sunCalculator.element.hidden = !BPB.get().showSunMoon;
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
         if (fullScreenMapLink) {
             fullScreenMapLink.before(container);
@@ -1763,6 +1764,9 @@ const run = async () => {
         // Live updates are scoped by setting owner. In particular, changing a
         // map layer must not needlessly rebuild the chart or route overlay.
         BPB.subscribe((settings, changed) => {
+            if (changed(['showSunMoon']) && sunCalculator) {
+                sunCalculator.element.hidden = !settings.showSunMoon;
+            }
 
             if (changed(['mapViewportWidth', 'mapViewportHeight'])) {
                 applyMapViewportSize(resolveMapViewportSize(settings));

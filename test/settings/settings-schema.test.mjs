@@ -22,6 +22,16 @@ import { walkFiles } from '../helpers/walk-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+test('display preferences default on, retain explicit opt-outs and reject non-booleans', () => {
+    for (const key of ['showSunMoon', 'showWeather']) {
+        assert.equal(Schema.DEFAULTS[key], true);
+        assert.equal(Schema.clean({})[key], true);
+        assert.equal(Schema.clean({ [key]: false })[key], false);
+        assert.equal(Schema.clean(Schema.clean({ [key]: false }))[key], false);
+        for (const value of [null, 0, 'false', [], {}]) assert.equal(Schema.clean({ [key]: value })[key], true);
+    }
+});
+
 test('clean() clamps oversized values but resets a sub-minimum viewport width to the default', () => {
     // Width is asymmetric on purpose: values under the pixel minimum also cover
     // the short-lived pre-release percentage schema, so "100" must not be read
@@ -209,6 +219,7 @@ test('known route, viewport, and theme defaults and bounds stay schema-owned', a
         { pattern: /casingWidth:\s*9\b/, what: 'the default casing width' },
         { pattern: /\b(?:1,\s*12|3,\s*20|240,\s*720)\b/, what: 'a route/viewport bound pair' },
         { pattern: /\blet\s+pref\s*=\s*['"]system['"]/, what: 'the default theme preference' },
+        { pattern: /\b(?:showSunMoon|showWeather)\s*:\s*(?:true|false)\b/, what: 'a section display default' },
     ];
 
     const leaks = [];
