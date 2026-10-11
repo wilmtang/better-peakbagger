@@ -18,7 +18,9 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
         await wait(() => document.querySelectorAll('.bpb-week-day').length === 7
-            && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'seven completed summit-local weather days');
+            && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'seven summit-local forecast days');
+        assert.equal(await evaluate(() => document.querySelector('[data-period="forecast"]').getAttribute('aria-selected')), 'true');
+        if (!live) await click(`${card} [data-period="past"]`);
     };
     const geometry = () => {
         const card = document.getElementById('bpb-peak-weather'), right = card.closest('table'), frame = document.getElementById('Gmap');
@@ -29,6 +31,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
             pageWidth: document.documentElement.scrollWidth, bg: getComputedStyle(card).backgroundColor,
+            period: card.querySelector('[data-period][aria-selected="true"]').dataset.period,
             days: [...card.querySelectorAll('.bpb-week-day')].map(node => node.dataset.date) };
     };
     const assertGeometry = state => {
@@ -37,12 +40,23 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         assert.ok(state.left >= state.parentLeft - 1 && state.right <= state.parentRight + 1, JSON.stringify(state));
         assert.deepEqual(state.overflow, [], JSON.stringify(state));
         assert.equal(new Set(state.days).size, 7);
-        assert.ok(state.days.every((date, index) => !index || date < state.days[index - 1]), JSON.stringify(state));
+        assert.ok(state.days.every((date, index) => !index || (state.period === 'past' ? date < state.days[index - 1] : date > state.days[index - 1])), JSON.stringify(state));
     };
     await setSettings({ theme: 'light', units: 'imperial' });
     await openPage(); await resize(1440, 1100);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-attribution').textContent), 'Powered by Open-Meteo');
-    if (live) return { liveCors: 'passed', viewport: { width: 1440, height: 1100 } };
+    if (live) {
+        assertGeometry(await evaluate(geometry));
+        await click(`${card} [data-period="past"]`); assertGeometry(await evaluate(geometry));
+        await click(`${card} [data-period="forecast"]`); assertGeometry(await evaluate(geometry));
+        await click(`${card} .bpb-week-day:first-child > summary`);
+        await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'live forecast hourly graph');
+        await click(`${card} .bpb-week-source > summary`);
+        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-live-forecast.png`));
+        assert.equal(evidence.length, 1, 'live past and forecast views must share one HTTP request');
+        assert.deepEqual(networkErrors, []);
+        return { liveCors: 'passed', weatherRequests: evidence.length, viewport: { width: 1440, height: 1100 } };
+    }
     const widths = [1440, 768, 375], shapes = [];
     for (const theme of ['light', 'dark']) {
         await setSettings({ theme, units: theme === 'dark' ? 'metric' : 'imperial' });
@@ -75,6 +89,20 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             }
             await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
             await click(`${card} .bpb-week-day:first-child > summary`);
+            await click(`${card} [data-period="forecast"]`);
+            assertGeometry(await evaluate(geometry));
+            assert.equal(await evaluate(() => document.querySelector('.bpb-week-date strong').textContent), 'Today');
+            assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('Today + 6 days')));
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-${width}.png`));
+            if (!await evaluate(() => document.querySelector('.bpb-week-day').open)) await click(`${card} .bpb-week-day:first-child > summary`);
+            await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'full-day forecast graph');
+            assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 24);
+            await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
+            await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="precipitation"]').getAttribute('aria-selected') === 'true', 'forecast precipitation tab');
+            assertGeometry(await evaluate(geometry));
+            assert.equal(evidence.length, before, 'both periods and hourly graphs reuse one response');
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-hourly-${width}.png`));
+            await click(`${card} [data-period="past"]`);
         }
         await resize(1440, 1100);
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
@@ -112,6 +140,12 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 7);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-refresh').disabled), true);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-status').dataset.kind), 'rate-limit');
+    const limitedRequests = evidence.length;
+    await click(`${card} [data-period="forecast"]`);
+    assertGeometry(await evaluate(geometry));
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-status').dataset.kind), 'rate-limit');
+    assert.equal(evidence.length, limitedRequests, 'period switching during a cooldown must not request weather');
+    await click(`${card} [data-period="past"]`);
     for (const width of [1440, 375]) {
         await resize(width, 1100);
         await evaluate(() => document.querySelector('.bpb-week-status').scrollIntoView({ block: 'center' }));
@@ -130,5 +164,5 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 7, 'held weekly response settles');
     assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && request.model === null));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
 }

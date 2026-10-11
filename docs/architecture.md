@@ -160,7 +160,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; no GPX or worker dependency |
-| Recent peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, seven completed civil days, automatic regional model blend, bounded requests and tab-memory results |
+| Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, seven completed days and seven forecast days from one request, automatic regional model blend, bounded requests and tab-memory results |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -826,12 +826,14 @@ Peak pages use a separate isolated `content/peak-weather.js` bundle. It appends
 a row beneath the map in the native right-hand table, including when no map is
 present, without moving native content or waiting for the MAIN-world enhancer.
 It reuses the strict summit-coordinate reader, offline timezone, daily summary
-and private transport, but uses a fixed recent-weather endpoint and a separate
-216-hour response cap. The ascent client's three-day/72-row limits remain
-unchanged. Seven completed local days exclude today and retain DST and missing
-data semantics; selecting a day reveals tabbed hourly SVG line graphs and a
-conditions timeline from the same response. The peak-owned renderer includes
-interval boundary semantics, keyboard sampling and resize cleanup.
+and private transport, but uses a fixed forecast endpoint and a separate
+384-hour response cap. One padded UTC request supplies both seven completed
+local days and today plus six forecast days. The ascent client's three-day/72-row
+limits and future-date rejection remain unchanged. Forecast summaries use whole
+local days; past days exclude today. Both retain DST and missing-data semantics.
+Period tabs and tabbed hourly SVG graphs reuse the same response. The peak-owned
+renderer includes interval boundary semantics, keyboard sampling, resize cleanup,
+a five-minute memory cache and refresh on returning to a visible expired card.
 See [peak-weather.md](peak-weather.md).
 
 ### The fragile Leaflet seam

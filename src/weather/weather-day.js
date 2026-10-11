@@ -5,16 +5,16 @@ import { mountainTime } from '../time/mountain-time.js';
 
 const HOUR = 3600_000, DAY = 24 * HOUR;
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
-export function weatherDayWindow(date, zone, now = Date.now()) {
+export function weatherDayWindow(date, zone, now = Date.now(), { forecast = false } = {}) {
     const midnight = Date.parse(`${date}T00:00:00Z`);
     if (!Number.isFinite(midnight) || iso(midnight) !== date) throw new Error('Invalid ascent date.');
     const start = mountainTime.civilToInstant(zone, date, 0);
     const next = mountainTime.civilToInstant(zone, iso(midnight + DAY), 0);
     if (!start || start.date !== date || !next || next.ms <= start.ms) throw new Error('This date does not exist in the summit’s timezone.');
-    if (start.ms > now) throw new Error('Weather is unavailable for a future ascent date.');
+    if (!forecast && start.ms > now) throw new Error('Weather is unavailable for a future ascent date.');
     return {
-        date, zone, start: start.ms, end: next.ms, cutoff: Math.min(now, next.ms),
-        partial: now < next.ms,
+        date, zone, start: start.ms, end: next.ms, cutoff: forecast ? next.ms : Math.min(now, next.ms),
+        partial: !forecast && now < next.ms,
         startDate: iso(midnight - DAY), endDate: iso(midnight + DAY),
     };
 }

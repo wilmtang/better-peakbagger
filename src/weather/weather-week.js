@@ -24,3 +24,17 @@ export const summarizeWeatherWeek = (data, window) => window.days.map(day => {
     return { window: day, ...summary,
         useful: summary.useful || Number.isFinite(summary.precipitation.total) || Number.isFinite(summary.gust.high) };
 });
+
+// One padded UTC request covers both views. Forecast summaries use complete
+// local days, including all of today; historical ascent dates still reject
+// future days and cut off unfinished hours by default.
+export function weatherPeakWindow(zone, now = Date.now()) {
+    const today = mountainTime.localDate(zone, now);
+    const midnight = Date.parse(`${today}T00:00:00Z`);
+    const past = weatherWeekWindow(zone, now);
+    const days = Array.from({ length: 7 }, (_, offset) =>
+        weatherDayWindow(iso(midnight + offset * DAY), zone, now, { forecast: true }));
+    const forecast = { zone, days, startDate: iso(days[0].start),
+        endDate: iso(Math.ceil(days.at(-1).end / HOUR) * HOUR), partial: true };
+    return { zone, today, past, forecast, startDate: past.startDate, endDate: forecast.endDate, partial: true };
+}

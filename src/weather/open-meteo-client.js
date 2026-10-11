@@ -26,6 +26,10 @@ const RECENT_MODEL = { endpoint: 'https://api.open-meteo.com/v1/forecast', since
 export function recentWeatherRequestUrl(summit, window) {
     return requestUrl(summit, window, RECENT_MODEL, 8);
 }
+// Fourteen civil days plus UTC padding; do not widen historical ascent bounds.
+export function peakWeatherRequestUrl(summit, window) {
+    return requestUrl(summit, window, RECENT_MODEL, 15);
+}
 
 function requestUrl(summit, window, model, maxDays) {
     if (!Number.isFinite(summit.latitude) || Math.abs(summit.latitude) > 90
@@ -57,6 +61,9 @@ export function validateWeatherResponse(body, summit, window, model) {
 }
 export function validateRecentWeatherResponse(body, summit, window) {
     return validateResponse(body, summit, window, RECENT_MODEL, 216);
+}
+export function validatePeakWeatherResponse(body, summit, window) {
+    return validateResponse(body, summit, window, RECENT_MODEL, 384);
 }
 
 function validateResponse(body, summit, window, model, maxRows) {
@@ -99,6 +106,10 @@ export function createWeatherClient(options = {}) {
 }
 export function createRecentWeatherClient(options = {}) {
     const client = createClient(options, recentWeatherRequestUrl, validateRecentWeatherResponse);
+    return { request: (summit, window, requestOptions) => client.request(summit, window, RECENT_MODEL, requestOptions), clear: client.clear };
+}
+export function createPeakWeatherClient(options = {}) {
+    const client = createClient(options, peakWeatherRequestUrl, validatePeakWeatherResponse);
     return { request: (summit, window, requestOptions) => client.request(summit, window, RECENT_MODEL, requestOptions), clear: client.clear };
 }
 function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000 }, buildUrl, validate) {

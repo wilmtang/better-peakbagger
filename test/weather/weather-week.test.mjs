@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.js';
-import { weatherWeekWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
-import { createRecentWeatherClient, recentWeatherRequestUrl, validateRecentWeatherResponse, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.js';
+import { weatherWeekWindow, weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
+import { weatherDayWindow } from '../../src/weather/weather-day.js';
+import { createRecentWeatherClient, createPeakWeatherClient, recentWeatherRequestUrl, peakWeatherRequestUrl,
+    validateRecentWeatherResponse, validatePeakWeatherResponse, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.js';
 import { WEATHER_MODELS } from '../../src/weather/weather-models.js';
 
 const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391 };
@@ -108,4 +110,64 @@ test('weekly transport has bounded caching, private requests, errors and cancell
     const controller = new AbortController(), pending = hanging.request(summit, window, { signal: controller.signal });
     controller.abort(); await assert.rejects(pending, { name: 'AbortError' });
     await assert.rejects(createRecentWeatherClient({ fetchFn: async () => new Response('', { status: 400 }) }).request(summit, window), /Recent weather is unavailable/);
+});
+
+test('one peak window covers seven completed days and today plus six full forecast days across local boundaries', () => {
+    for (const [lat, lon, clock, first, last, hours] of [
+        [46.85, -121.76, '2024-03-09T12:00:00Z', '2024-03-09', '2024-03-15', 167],
+        [46.85, -121.76, '2024-11-02T12:00:00Z', '2024-11-02', '2024-11-08', 169],
+        [-43.6, 170.14, '2024-07-12T12:30:00Z', '2024-07-13', '2024-07-19', 168],
+        [27.7, 85.3, '2024-07-12T12:30:00Z', '2024-07-12', '2024-07-18', 168],
+    ]) {
+        const now = Date.parse(clock), zone = mountainTime.resolve(lat, lon), peak = weatherPeakWindow(zone, now);
+        assert.equal(peak.forecast.days.length, 7); assert.equal(peak.past.days.length, 7);
+        assert.equal(peak.today, first); assert.equal(peak.forecast.days.at(-1).date, last);
+        assert.equal(peak.past.days.at(-1).end, peak.forecast.days[0].start);
+        assert.equal((peak.forecast.days.at(-1).end - peak.forecast.days[0].start) / 3600_000, hours);
+        assert.ok(peak.forecast.days.every(day => day.cutoff === day.end && !day.partial));
+        assert.ok(peak.past.days.every(day => day.end <= now && !day.partial));
+        assert.ok(Date.parse(peak.startDate) <= peak.past.days[0].start);
+        assert.ok(Date.parse(peak.endDate) + 86400_000 > peak.forecast.days.at(-1).end);
+        assert.equal(peak.partial, true);
+        assert.throws(() => weatherDayWindow(peak.forecast.days[1].date, zone, now), /future ascent/);
+    }
+});
+
+test('combined request validates padded future data without widening ascent or past-only bounds', () => {
+    const peak = weatherPeakWindow(zone, Date.parse('2024-11-05T12:00:00Z'));
+    const url = new URL(peakWeatherRequestUrl(summit, peak));
+    assert.equal(url.origin + url.pathname, 'https://api.open-meteo.com/v1/forecast');
+    assert.equal(url.searchParams.has('models'), false);
+    assert.equal(url.searchParams.get('start_date'), peak.startDate);
+    assert.equal(url.searchParams.get('end_date'), peak.endDate);
+    assert.equal(url.searchParams.get('elevation'), '4391');
+    const body = responseBody(peak), data = validatePeakWeatherResponse(body, summit, peak);
+    const forecast = summarizeWeatherWeek(data, peak.forecast);
+    assert.ok(forecast.every(day => day.coreComplete && day.precipitation.total === 24 && day.hourly.length === 24));
+    assert.ok(forecast[0].hourly.some(row => row.time > Date.parse('2024-11-05T12:00:00Z')));
+    assert.throws(() => weatherRequestUrl(summit, peak, WEATHER_MODELS[0]));
+    assert.throws(() => recentWeatherRequestUrl(summit, peak));
+    assert.throws(() => validateRecentWeatherResponse(body, summit, peak), { code: 'invalid-response' });
+    assert.throws(() => peakWeatherRequestUrl(summit, { ...peak, endDate: '2024-12-01' }));
+    const oversized = responseBody({ startDate: '2024-11-01', endDate: '2024-11-17' });
+    assert.throws(() => validatePeakWeatherResponse(oversized, summit, { startDate: '2024-11-01', endDate: '2024-11-17' }), { code: 'invalid-response' });
+});
+
+test('past and forecast share one private request with a five-minute cache and known limit cooldown', async () => {
+    const peak = weatherPeakWindow(zone, Date.parse('2024-11-05T12:00:00Z'));
+    let calls = 0, now = Date.parse('2024-11-05T12:00:00Z'), limited = false;
+    const client = createPeakWeatherClient({ now: () => now, fetchFn: async (_, init) => {
+        calls++; assert.equal(init.credentials, 'omit'); assert.equal(init.referrerPolicy, 'no-referrer');
+        assert.equal(init.redirect, 'error');
+        return limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } })
+            : new Response(JSON.stringify(responseBody(peak)), { headers: { 'content-type': 'application/json' } });
+    } });
+    const [past, forecast] = await Promise.all([client.request(summit, peak), client.request(summit, peak)]);
+    assert.equal(past, forecast); assert.equal(calls, 1);
+    assert.equal(summarizeWeatherWeek(past, peak.past).length, 7);
+    assert.equal(summarizeWeatherWeek(forecast, peak.forecast).length, 7);
+    now += 299_999; await client.request(summit, peak); assert.equal(calls, 1);
+    now += 1; await client.request(summit, peak); assert.equal(calls, 2);
+    limited = true; client.clear(); await assert.rejects(client.request(summit, peak), { code: 'rate-limit' });
+    client.clear(); await assert.rejects(client.request(summit, peak), { code: 'rate-limit' }); assert.equal(calls, 3);
 });

@@ -37,7 +37,7 @@ try {
             hours: (Date.parse(requested.searchParams.get('end_date')) - Date.parse(requested.searchParams.get('start_date'))) / 3600_000 + 24,
             latitude: Number(requested.searchParams.get('latitude')), longitude: Number(requested.searchParams.get('longitude')), elevation: Number(requested.searchParams.get('elevation')) });
         if (peakMode) body.hourly.time.forEach((_, index) => {
-            const day = Math.floor(index / 24), code = [0, 2, 3, 61, 71, 2, 0, 45, 3][day];
+            const day = Math.floor(index / 24), codes = [0, 2, 3, 61, 71, 2, 0, 45, 3], code = codes[day % codes.length];
             body.hourly.weather_code[index] = code;
             body.hourly.temperature_2m[index] += day - 4;
             body.hourly.precipitation[index] = [61, 71].includes(code) && index % 24 >= 15 && index % 24 <= 18 ? .3 : 0;
@@ -99,6 +99,15 @@ try {
                 { type: 'pattern', protocol: 'https', hostname: 'historical-forecast-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'api.open-meteo.com' },
             ] } });
+        } else {
+            await bidi.subscribe('network.beforeRequestSent');
+            const listener = params => {
+                if (/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(params.request.url) && params.request.method === 'GET') {
+                    checkRequest(params.request.url, params.request.headers.map(header => ({ name: header.name, value: header.value.value })));
+                }
+            };
+            bidi.on('network.beforeRequestSent', listener);
+            resources.defer('weather live BiDi listener', () => bidi.off('network.beforeRequestSent', listener));
         }
         evaluate = (fn, ...args) => driver.executeScript(webdriverScript(fn, ...args));
         navigate = url => driver.get(url);
@@ -145,6 +154,12 @@ try {
             if (mode === 'loading') await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
             await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
+        });
+        else page.on('request', request => {
+            if (/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(request.url()) && request.method() === 'GET') {
+                void request.allHeaders().then(headers => checkRequest(request.url(), Object.entries(headers).map(([name, value]) => ({ name, value }))))
+                    .catch(error => networkErrors.push(error.message));
+            }
         });
         page.on('pageerror', error => networkErrors.push(error.message));
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');

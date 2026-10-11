@@ -21,7 +21,8 @@ const reply = url => {
 function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z' } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [], observers = [], resizeObservers = [];
-    win.Date.now = () => Date.parse(now);
+    let clock = Date.parse(now);
+    win.Date.now = () => clock;
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { units: 'imperial' } }) }, onChanged: {
         addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1),
@@ -40,10 +41,14 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
     win.fetch = (url, init) => { requests.push({ url, init }); return fetchFn(url, init); };
     win.eval(bundle);
     return { win, doc: win.document, requests, listeners, observers, resizeObservers,
+        setNow: next => { clock = Date.parse(next); },
         resize: width => { chartWidth = width; resizeObservers.filter(observer => !observer.disconnected).forEach(observer => observer.callback()); },
         close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
-const settled = env => waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 7 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+const settled = async (env, { past = true } = {}) => {
+    await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 7 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+    if (past) env.doc.querySelector('[data-period="past"]').click();
+};
 
 test('peak identity and unique native coordinates fail closed without remote geocoding', () => {
     const doc = new JSDOM(peak).window.document;
@@ -272,5 +277,104 @@ test('BFCache cancels stale requests and resolves a new completed date range on 
         assert.equal(env.doc.querySelector('.bpb-week-day').dataset.date, '2024-11-05');
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide'));
         assert.equal(env.listeners.length, 0);
+    } finally { env.close(); }
+});
+
+test('forecast defaults to today plus six full days and both periods reuse one response', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const dates = () => [...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date);
+        assert.deepEqual(dates(), ['2024-11-05', '2024-11-06', '2024-11-07', '2024-11-08', '2024-11-09', '2024-11-10', '2024-11-11']);
+        assert.equal(env.doc.querySelector('.bpb-week-date strong').textContent, 'Today');
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 6 days/);
+        assert.equal(env.doc.querySelector('[data-period="forecast"]').getAttribute('aria-selected'), 'true');
+        const first = env.doc.querySelector('.bpb-week-day'); first.open = true;
+        await waitFor(() => first.querySelector('.bpb-week-line'));
+        assert.equal(first.querySelectorAll('.bpb-week-point').length, 24);
+        assert.ok([...first.querySelectorAll('.bpb-week-point')].some(point => Number(point.dataset.time) > env.win.Date.now()));
+        first.querySelector('[data-metric="precipitation"]').click();
+        assert.equal(first.querySelectorAll('.bpb-week-point').length, 24);
+        const past = env.doc.querySelector('[data-period="past"]');
+        env.doc.querySelector('[data-period="forecast"]').focus();
+        env.doc.activeElement.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.equal(env.doc.activeElement, past); assert.equal(past.getAttribute('aria-selected'), 'true');
+        assert.equal(env.doc.querySelector('#bpb-peak-weather-period').getAttribute('aria-labelledby'), past.id);
+        assert.equal(dates()[0], '2024-11-04'); assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today excluded/);
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(env.doc.querySelector('.bpb-week-day[open]').dataset.date, '2024-11-05');
+        assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'precipitation');
+        assert.equal(env.resizeObservers.filter(observer => !observer.disconnected).length, 1);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('forecast weather uses expected language and missing forecast hours cannot fabricate future conditions', async () => {
+    const snowy = setup({ fetchFn: async url => {
+        const body = await reply(url).json(); body.hourly.weather_code.fill(71);
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(snowy, { past: false });
+        assert.equal(snowy.doc.querySelector('.bpb-week-condition').textContent, 'Snow expected');
+        snowy.doc.querySelector('[data-period="past"]').click();
+        assert.equal(snowy.doc.querySelector('.bpb-week-condition').textContent, 'Snow occurred');
+    } finally { snowy.close(); }
+    const absent = setup({ fetchFn: async url => {
+        const body = await reply(url).json();
+        for (let index = 0; index < body.hourly.time.length; index++) {
+            if (body.hourly.time[index] * 1000 >= Date.parse('2024-11-05T08:00:00Z')) {
+                for (const [key, values] of Object.entries(body.hourly)) if (key !== 'time') values[index] = null;
+            }
+        }
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await waitFor(() => absent.doc.querySelector('.bpb-week-status').textContent.includes('Forecast is unavailable'));
+        assert.equal(absent.doc.querySelectorAll('.bpb-week-day').length, 0);
+        absent.doc.querySelector('[data-period="past"]').click();
+        assert.equal(absent.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(absent.requests.length, 1);
+    } finally { absent.close(); }
+});
+
+test('switching periods preserves the previous response and a known rate-limit warning', async () => {
+    let limited = false;
+    const env = setup({ fetchFn: url => limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : reply(url) });
+    try {
+        await settled(env, { past: false });
+        limited = true; env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').dataset.kind === 'rate-limit');
+        const warning = env.doc.querySelector('.bpb-week-status').textContent;
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelector('.bpb-week-status').textContent, warning);
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
+        assert.equal(env.requests.length, 2);
+    } finally { env.close(); }
+});
+
+test('returning to a visible card refreshes an expired forecast without looping after a limit', async () => {
+    let limited = false;
+    const env = setup({ fetchFn: url => limited ? new Response('', { status: 429 }) : reply(url) });
+    try {
+        await settled(env, { past: false });
+        env.setNow('2024-11-05T12:04:59Z');
+        env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
+        assert.equal(env.requests.length, 1);
+        env.setNow('2024-11-05T12:05:00Z');
+        env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
+        await waitFor(() => env.requests.length === 2);
+        await settled(env, { past: false });
+        limited = true; env.setNow('2024-11-05T12:10:00Z');
+        env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').dataset.kind === 'rate-limit');
+        env.setNow('2024-11-05T12:20:00Z');
+        env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
+        assert.equal(env.requests.length, 3);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
     } finally { env.close(); }
 });

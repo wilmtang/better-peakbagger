@@ -92,11 +92,12 @@ detail. A GPX is not required. These are model estimates; they cannot establish
 conditions along the route or the climber’s summit time. See the
 [historical weather design](docs/ascent-weather.md).
 
-Peak pages also show **Past week weather** below the map in the right column:
-seven completed summit-local days with conditions, temperature ranges,
-rain/snow water equivalent and maximum wind. Expand a day for hourly graphs,
-with tabs for temperature, rain/snow, wind, gusts and conditions.
-Today is excluded; Open-Meteo chooses regional models automatically. See the
+Peak pages show **Summit weather** below the map in the right column. The
+**7-day forecast** covers today plus six days; **Past 7 days** shows seven
+completed summit-local days. One Open-Meteo request supplies both views with
+conditions, temperature ranges, rain/snow water equivalent and maximum wind.
+Expand a day for hourly graphs with temperature, rain/snow, wind, gusts and
+conditions tabs. Open-Meteo chooses regional models automatically. See the
 [recent weather design](docs/peak-weather.md).
 
 ### Send a saved track to another mapping app
