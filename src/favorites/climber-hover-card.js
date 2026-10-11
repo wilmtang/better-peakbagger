@@ -11,6 +11,7 @@ import { favoriteClimbers as F } from './favorite-climbers.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { mutateIgnored } from './ignored-client.js';
 import { climberCardTarget, climberCardState } from './climber-card-state.js';
+import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
 
 const OPEN_DELAY = 1000, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
@@ -32,7 +33,9 @@ const mount = () => {
     const title = D.element('div', { id: 'bpb-climber-card-name', class: 'bpb-climber-card-name' });
     const profile = D.element('a', { text: 'View profile ↗', class: 'bpb-climber-card-profile' });
     const closeButton = button('×', { class: 'bpb-climber-card-close', 'aria-label': 'Close climber actions' });
-    const buddy = D.element('a', { class: 'bpb-climber-card-action bpb-climber-card-buddy', text: 'Manage buddies on profile ↗' });
+    const buddy = button('Add climbing buddy', { id: 'bpb-climber-card-buddy', class: 'bpb-climber-card-action bpb-climber-card-buddy' });
+    const signIn = D.element('a', { class: 'bpb-climber-card-action bpb-climber-card-buddy',
+        text: 'Sign in to add a climbing buddy ↗', href: `${location.origin}/Default.aspx`, hidden: '' });
     const favorite = button('Add favorite climber', { id: 'bpb-climber-card-favorite', class: 'bpb-climber-card-action' });
     const sourceText = D.element('span', { text: 'Favorites follow your Buddy List.' });
     const sourceSettings = button('Use custom favorites…', { class: 'bpb-climber-card-settings' });
@@ -45,7 +48,7 @@ const mount = () => {
     const card = D.element('div', { id: 'bpb-climber-card', role: 'dialog', popover: 'manual', hidden: '',
         'data-bpb-climber-ui': '', 'aria-labelledby': title.id }, [
         D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, profile]), closeButton]),
-        buddy, favorite, source,
+        buddy, signIn, favorite, source,
         D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore, detail]), feedback, retry,
     ]);
     const announcement = D.element('div', { id: 'bpb-climber-card-announcement', role: 'status',
@@ -73,10 +76,15 @@ const mount = () => {
         const view = viewState();
         title.textContent = current.target.name;
         profile.href = current.target.url;
-        buddy.hidden = view.self;
-        buddy.textContent = ownerClimberId(document) == null ? 'Sign in to manage climbing buddies ↗' : 'Manage buddies on profile ↗';
-        buddy.href = ownerClimberId(document) == null ? `${location.origin}/Default.aspx` : current.target.url;
-        buddy.setAttribute('aria-disabled', String(view.buddyBlocked || !!operation));
+        const signedOut = ownerClimberId(document) == null;
+        buddy.hidden = view.self || signedOut;
+        signIn.hidden = view.self || !signedOut;
+        buddy.textContent = operation?.kind === 'buddy' ? operation.checkOnly ? 'Checking…'
+            : operation.removing ? 'Removing…' : 'Adding…' : view.buddyIntent && view.buddyIntent.status !== 'confirmed' ? 'Check buddy status'
+            : view.buddy ? 'Remove climbing buddy' : 'Add climbing buddy';
+        buddy.disabled = !!operation || (!view.buddyIntent && view.buddyBlocked);
+        buddy.setAttribute('aria-busy', String(operation?.kind === 'buddy'));
+        buddy.setAttribute('aria-pressed', String(view.buddy));
         favorite.hidden = view.self || view.custom !== true;
         favorite.textContent = operation?.kind === 'favorite' ? 'Saving…'
             : view.favorite ? 'Remove favorite climber' : 'Add favorite climber';
@@ -93,7 +101,7 @@ const mount = () => {
         feedback.textContent = error || settingsError || view.note || (view.favoriteLimit
             ? 'Favorites can hold up to 1,500 climbers.' : notice);
         feedback.hidden = !feedback.textContent;
-        retry.hidden = !(error || settingsError || membership?.error);
+        retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed');
         card.setAttribute('aria-busy', String(!!operation));
         schedulePosition();
     };
@@ -156,7 +164,7 @@ const mount = () => {
         if (explicit) {
             explicitOpen = true;
             suppressed = null;
-            const first = [buddy, favorite, ignore, profile].find(control => !control.hidden
+            const first = [buddy, signIn, favorite, ignore, profile].find(control => !control.hidden
                 && !control.disabled && control.getAttribute('aria-disabled') !== 'true');
             first?.focus({ preventScroll: true });
         }
@@ -273,9 +281,33 @@ const mount = () => {
     };
     listen(favorite, 'click', event => { void mutate('favorite', event); });
     listen(ignore, 'click', event => { void mutate('ignore', event); });
-    listen(buddy, 'click', event => {
-        if (buddy.getAttribute('aria-disabled') === 'true') event.preventDefault();
-    });
+    const mutateBuddy = async (event, checkOnly = false) => {
+        if (event.isTrusted !== true || !current || operation || !active || buddy.disabled) return;
+        const view = viewState(), target = { ...current.target }, owner = ownerClimberId(document);
+        if (owner == null || view.self) return;
+        checkOnly ||= !!view.buddyIntent && view.buddyIntent.status !== 'confirmed';
+        operation = { kind: 'buddy', cid: target.cid, removing: view.buddy, checkOnly };
+        error = notice = ''; paint();
+        try {
+            const result = await changeBuddy({ api: chrome, target, ownerCid: owner, origin: location.origin,
+                currentOwner: () => ownerClimberId(document), action: view.buddy ? 'remove' : 'add', checkOnly });
+            // The native profile DOM may still reflect the old relationship.
+            if (climberCardTarget(location.href, 'Viewed climber', document.baseURI)?.cid === target.cid) {
+                applyBuddyProfileState(document, result.buddy);
+            }
+            notice = result.warning || `${target.name} ${result.buddy ? 'is now a climbing buddy' : 'is no longer a climbing buddy'}.`;
+            announcement.textContent = notice;
+            await observer?.refresh();
+        } catch (failure) {
+            announcement.textContent = failure.message;
+            if (current?.target.cid === target.cid) error = failure.message;
+            await observer?.refresh();
+        } finally {
+            operation = null;
+            if (current?.target.cid === target.cid) paint();
+        }
+    };
+    listen(buddy, 'click', event => { void mutateBuddy(event); });
     listen(sourceSettings, 'click', async event => {
         if (event.isTrusted !== true || !active) return;
         const generation = `climber-card-${Date.now()}`;
@@ -287,6 +319,7 @@ const mount = () => {
     });
     listen(retry, 'click', event => {
         if (event.isTrusted !== true || operation) return;
+        if (viewState().buddyIntent) { void mutateBuddy(event, true); return; }
         error = ''; notice = ''; void observer?.refresh(); void refreshSettings(); paint();
     });
     listen(closeButton, 'click', () => close({ restore: true, suppress: true }));

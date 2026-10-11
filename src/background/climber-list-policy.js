@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import * as I from '../favorites/ignored-climbers.js';
+import { BUDDY_INTENTS_KEY, readBuddyIntents } from '../favorites/buddy-state.js';
 
 // Both lists, including sync reconciliation, share one short storage lane.
 // A check in a separate queue could let concurrent favorite/ignore adds win.
@@ -46,7 +47,10 @@ export const assertFavoriteMembership = async (storage, entries) => {
 
 export const assertIgnoredMembership = async (storage, entries) => {
     if (!entries.length) return;
-    const values = await storage.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]);
+    const values = await storage.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY, BUDDY_INTENTS_KEY]);
+    const intents = readBuddyIntents(values[BUDDY_INTENTS_KEY]);
+    const unresolved = entries.filter(entry => intents.some(intent => intent.cid === entry.cid));
+    if (unresolved.length) conflict(unresolved, 'Check the pending buddy change before ignoring.');
     const raw = values[F.FAVORITES_KEY];
     const favorites = F.cleanFavorites(raw);
     if (raw !== undefined && (!raw || raw.schemaVersion !== F.SCHEMA_VERSION

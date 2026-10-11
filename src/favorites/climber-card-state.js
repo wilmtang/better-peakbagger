@@ -24,21 +24,22 @@ export const climberCardState = ({ cid, ownerCid, settings, membership, busy = f
     // saved cache, without calling those people the current account's buddies.
     const protectedBuddy = nativeBuddy || savedBuddy;
     const pending = !!membership?.pendingIds?.has(cid);
+    const buddyIntent = membership?.buddyIntents?.find(entry => entry.cid === cid);
     const unavailable = !membership?.ignored || !!membership.error;
     const self = ownerCid != null && cid === ownerCid;
     const blocked = unavailable || ignored || pending;
     const custom = settings ? settings.favoritesSource === 'custom' : null;
     let note = membership?.error || (!membership?.ignored ? 'Loading climber lists…' : '');
-    if (!note && buddyPending) note = 'Buddy change pending. Refresh the profile before ignoring.';
+    if (!note && (buddyPending || (buddyIntent && buddyIntent.status !== 'confirmed'))) note = 'Check the pending buddy change before ignoring.';
     if (!note && ignored) note = 'Unignore to add to your lists.';
     if (!note && pending) note = 'Finish the pending ignored-climber sync before adding to favorites.';
     return {
-        self, custom, favorite, ignored, buddy, pending, note,
+        self, custom, favorite, ignored, buddy, pending, note, buddyIntent,
         buddyBlocked: !buddy && (blocked || buddyPending),
         favoriteDisabled: self || busy || !settings || (favorite ? false : blocked
             || membership.favorites.entries.length >= F.LIMIT),
         ignoreDisabled: self || busy || (ignored ? false : unavailable || favorite || protectedBuddy
-            || buddyPending || membership.ignored.entries.length >= I.LIMIT),
+            || buddyPending || !!buddyIntent || membership.ignored.entries.length >= I.LIMIT),
         ignoreDetail: ignored ? 'Show their reports again' : favorite && protectedBuddy
             ? 'Remove from both lists to ignore' : favorite ? 'Remove from favorites to ignore'
                 : protectedBuddy ? (buddy ? 'Remove from your Buddy List to ignore' : 'Refresh your Buddy List before ignoring')

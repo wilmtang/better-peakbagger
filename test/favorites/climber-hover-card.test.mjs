@@ -7,6 +7,7 @@ import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent, accelerateTimeout }
 
 const favoritesKey = 'bpbFavoriteClimbers', ignoredKey = 'bpbIgnoredClimbers';
 const buddies = await readFile(new URL('../fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
+const buddyForm = await readFile(new URL('../fixtures/pages/climber-buddy-form.html', import.meta.url), 'utf8');
 const buddyDocument = entries => buddies.replace(/(<table[^>]*id="RGridView"[^>]*>)[\s\S]*?(<\/table>)/i,
     `$1<tr><th>Climber</th></tr>${entries.map(cid => `<tr><td><a href="/climber/climber.aspx?cid=${cid}">Casey Alpine</a></td></tr>`).join('')}$2`);
 const load = async ({ settings = { favoritesSource: 'custom' }, local = {}, prepare } = {}) => {
@@ -115,16 +116,44 @@ test('favorite and Ignore changes use operation APIs and confirmed reverse actio
     assert.deepEqual(dom.chrome._localStore[ignoredKey].entries, []);
 });
 
-test('Buddy fallback is honest; source mode never silently creates ineffective custom favorites', async t => {
+test('Buddy action is inline; source mode never silently creates ineffective custom favorites', async t => {
     const dom = await load({ settings: { favoritesSource: 'buddies' } }); t.after(() => dom.window.close());
     const card = await open(dom);
     await waitFor(dom, () => !card.querySelector('.bpb-climber-card-source').hidden);
     assert.equal(card.querySelector('#bpb-climber-card-favorite').hidden, true);
-    assert.equal(card.querySelector('.bpb-climber-card-buddy').textContent, 'Manage buddies on profile ↗');
-    assert.equal(card.querySelector('.bpb-climber-card-buddy').href, 'https://www.peakbagger.com/climber/climber.aspx?cid=900002');
+    assert.equal(card.querySelector('.bpb-climber-card-buddy').textContent, 'Add climbing buddy');
+    assert.equal(card.querySelector('.bpb-climber-card-buddy').tagName, 'BUTTON');
     await dom.chrome.storage.sync.set({ bpbSettings: { favoritesSource: 'custom' } });
     await waitFor(dom, () => !card.querySelector('#bpb-climber-card-favorite').hidden);
     assert.equal(card.querySelector('.bpb-climber-card-source').hidden, true);
+});
+
+test('inline Buddy saves wait for confirmation, reject synthetic activation and offer status-only recovery', async t => {
+    const dom = await load(); t.after(() => dom.window.close());
+    let included = false, posts = 0, failedConfirmation = false, gets = 0;
+    const form = () => included ? buddyForm.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
+        .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : buddyForm;
+    dom.window.fetch = async (url, init) => {
+        if (init.method === 'POST') { posts++; included = new URLSearchParams(init.body).has('AddBuddy'); }
+        else if (++gets === 2 && failedConfirmation) throw new Error('offline');
+        return { status: 200, headers: {}, url: String(url), text: async () => form() };
+    };
+    const card = await open(dom), buddy = card.querySelector('#bpb-climber-card-buddy');
+    await waitFor(dom, () => !buddy.disabled);
+    buddy.click(); assert.equal(posts, 0);
+    failedConfirmation = true;
+    fireTrustedEvent(buddy, 'click');
+    assert.equal(buddy.textContent, 'Adding…');
+    await waitFor(dom, () => buddy.textContent === 'Check buddy status' && !buddy.disabled);
+    assert.equal(card.querySelector('#bpb-climber-card-ignore').disabled, true);
+    assert.match(card.querySelector('.bpb-climber-card-feedback').textContent, /not confirmed/);
+    fireTrustedEvent(buddy, 'click');
+    await waitFor(dom, () => buddy.textContent === 'Remove climbing buddy' && !buddy.disabled);
+    assert.equal(posts, 1, 'checking uncertain state cannot send another POST');
+    assert.equal(card.querySelector('#bpb-climber-card-favorite').textContent, 'Remove favorite climber');
+    fireTrustedEvent(buddy, 'click');
+    await waitFor(dom, () => buddy.textContent === 'Add climbing buddy' && !buddy.disabled);
+    assert.equal(posts, 2);
 });
 
 test('Ignore rechecks live Buddy membership and never treats a failed read as empty', async t => {

@@ -77,7 +77,7 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
     await key('#hover-climber + .bpb-climber-actions-trigger', 'Enter');
     await wait(() => !document.getElementById('bpb-climber-card').hidden
         && document.getElementById('bpb-climber-card-favorite')?.disabled === false);
-    assert.equal(await evaluate(() => document.querySelector('.bpb-climber-card-buddy').textContent), 'Manage buddies on profile ↗');
+    assert.equal(await evaluate(() => document.querySelector('.bpb-climber-card-buddy').textContent), 'Add climbing buddy');
     assert.equal(await evaluate(() => document.activeElement?.matches('.bpb-climber-card-buddy')), true,
         'explicit keyboard opening must focus the first action');
     await capture('available');

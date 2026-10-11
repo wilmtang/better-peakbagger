@@ -550,6 +550,7 @@ export async function createBrowserFixtureServer({
     analyzerGpx = gpx,
     analyzerGpxByCase = {},
     analyzerDelayMs = 0,
+    inlineBuddies = false,
 } = {}) {
     const resources = createResourceStack();
     const certificate = await resources.guard(() =>
@@ -590,6 +591,8 @@ export async function createBrowserFixtureServer({
         ),
     ]));
     const gpxPath = path.join(temporaryRoot, 'browser-verification.gpx');
+    const inlineBuddyHtml = inlineBuddies ? await resources.guard(readFile(
+        path.join(projectRoot, 'test', 'fixtures', 'pages', 'climber-buddy-form.html'), 'utf8')) : '';
     const ignoredPeakHtml = await resources.guard(readFile(
         path.join(projectRoot, 'test', 'fixtures', 'pages', 'peak-rainier.html'), 'utf8'));
     const ignoredDetailHtml = await resources.guard(readFile(path.join(projectRoot, 'test', 'fixtures', 'pages', 'ascent-ignored-report.html'), 'utf8'));
@@ -633,7 +636,9 @@ export async function createBrowserFixtureServer({
       document.getElementById('UpdatePanel2').replaceWith(next.getElementById('UpdatePanel2'));
     });
   </script>`;
-    const renderOtherClimber = () => otherClimberBaseHtml
+    const renderOtherClimber = () => inlineBuddies ? (otherClimberIsBuddy ? inlineBuddyHtml
+        .replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
+        .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : inlineBuddyHtml) : otherClimberBaseHtml
         .replace(
             /<div id="UpdatePanel2">[\s\S]*?<\/div>/,
             `<div id="UpdatePanel2">
@@ -724,9 +729,14 @@ export async function createBrowserFixtureServer({
         if (/\/climber\/climber\.aspx/i.test(url.pathname)) {
             if (request.method === 'POST') {
                 const body = new URLSearchParams(await readRequestBody(request));
+                if (inlineBuddies && (body.has('ContactTextBox') || body.has('ContactButton')
+                    || body.get('__VIEWSTATE') !== 'synthetic-viewstate' || body.get('__EVENTVALIDATION') !== 'synthetic-validation'
+                    || body.has('AddBuddy') === body.has('RemoveBuddy'))) {
+                    return send('text/plain', 'Invalid Buddy postback', { status: 400 });
+                }
                 const action = body.get('BuddyButton') || '';
-                if (/^Add\b/i.test(action)) otherClimberIsBuddy = true;
-                else if (/^Remove\b/i.test(action)) otherClimberIsBuddy = false;
+                if (inlineBuddies ? body.has('AddBuddy') : /^Add\b/i.test(action)) otherClimberIsBuddy = true;
+                else if (inlineBuddies ? body.has('RemoveBuddy') : /^Remove\b/i.test(action)) otherClimberIsBuddy = false;
                 requests.buddyMutations += 1;
             }
             const html = renderOtherClimber();

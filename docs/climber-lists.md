@@ -7,7 +7,7 @@ Settings `#favorites` link remain valid; `favorites.html#ignored` opens Ignored.
 
 ## Quick actions on climber names
 
-Hover over a visible climber-name link for a moment to open a compact card.
+Hover over a visible climber-name link for one second to open a compact card.
 The adjacent **⋯** button opens it explicitly with keyboard or touch input.
 The name itself keeps its normal profile-link behavior. Escape, Close, or an
 outside click dismisses the card; Escape returns focus to the actions button.
@@ -18,12 +18,16 @@ and links to Settings to choose custom favorites. **Ignore climber** and
 **Unignore climber** work in either mode, subject to the membership rules below.
 The labels change after a confirmed save. A failed save stays visible with Retry.
 
-**Manage buddies on profile** opens Peakbagger's native profile controls.
-Inline Buddy writes are not implemented: the authenticated native form contract
-has not been verified. Hovering never fetches a profile or Buddy List. An explicit
+**Add climbing buddy** and **Remove climbing buddy** save directly from the card.
+An explicit action fetches a fresh authenticated profile, submits only the chosen
+native Buddy control, and checks the resulting profile before showing success.
+An uncertain result offers **Check buddy status**, which never repeats the write.
+Supported native profile controls use this same confirmation path. Signed-out
+users get a sign-in link; unsupported forms show an error beside the profile link.
+Hovering never fetches a profile or Buddy List. An explicit
 Ignore addition, when signed in, first verifies the current account's Buddy List;
-an unsuccessful read leaves the ignored list unchanged. No new setting or list
-schema is introduced. Your own name shows only profile navigation.
+an unsuccessful read leaves the ignored list unchanged. Your own name shows
+only profile navigation.
 
 ## Favorite and ignored membership
 
@@ -46,7 +50,11 @@ Unignore, Remove favorite, and Remove buddy remain available to resolve existing
 overlaps. Nothing is silently deleted or moved between lists. Ignore still takes
 precedence for visibility when an old overlap exists. Conflicting actions wait
 while a profile save or native Buddy addition is pending. If a Buddy change
-cannot be confirmed, refresh the profile before ignoring.
+cannot be confirmed, use **Check buddy status** before ignoring. Pending changes
+remain protected across tabs and browser restarts until reconciled. If a Buddy
+change succeeds but custom favorites cannot be updated, the card reports that
+partial result; Retry checks status and retries the local update. Buddy removal
+remains available after that partial success.
 
 Imports, replacements, GitHub restores, sync merges, and Undo enforce the same
 rule. A conflicting bulk operation leaves the lists unchanged and identifies

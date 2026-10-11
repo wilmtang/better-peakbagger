@@ -18,6 +18,8 @@ import {
     PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
 } from '../capture/provider-timing.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
+import { createBuddyStore } from './buddy-store.js';
+import { BUDDY_MESSAGE } from '../favorites/buddy-state.js';
 import { createIgnoredStore } from './ignored-store.js';
 import * as Ignored from '../favorites/ignored-climbers.js';
 import { createGithubRoutes } from './github-routes.js';
@@ -3434,6 +3436,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         verifyGithubConnection: githubRoutes.validateImportedConnection,
     });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
+    const buddyMutations = createBuddyStore({ storage: ext.storage.local, settings: () => Settings.requireCurrent(), now });
 
     const openDraftsManager = async (message, sender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
@@ -3609,6 +3612,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const onxHandler = onxRoutes.handlers[type];
             if (onxHandler) return onxHandler(message, sender);
             switch (type) {
+            case BUDDY_MESSAGE:
+                if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
+                    return { ok: false, error: { code: 'forbidden', message: 'Use a Peakbagger climber action to change buddies.' } };
+                }
+                return buddyMutations.action(message, sender);
             case Ignored.MUTATE_MESSAGE:
             case Ignored.PREFERENCE_MESSAGE:
                 if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {

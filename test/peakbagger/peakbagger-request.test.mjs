@@ -55,6 +55,20 @@ test('the shared request sends the authenticated no-cache policy and returns onl
     assert.ok(request.init.signal instanceof AbortSignal);
 });
 
+test('native postbacks can reject redirects while retaining authenticated no-cache and deadline policy', async () => {
+    let request;
+    const result = await fetchPeakbaggerResource(URL, { kind: 'html',
+        init: { method: 'POST', body: 'synthetic-form-state', redirect: 'error', credentials: 'omit', cache: 'force-cache' },
+        fetchFn: async (url, init) => { request = init; return response(); },
+    });
+    assert.equal(result.kind, 'ok');
+    assert.equal(request.redirect, 'error');
+    assert.equal(request.credentials, 'include');
+    assert.equal(request.cache, 'no-store');
+    assert.equal(request.body, 'synthetic-form-state');
+    assert.ok(request.signal instanceof AbortSignal);
+});
+
 test('a valid 200 Buddy report ignores Cloudflare metadata', async () => {
     const result = await fetchPeakbaggerResource(URL, {
         kind: 'buddies',

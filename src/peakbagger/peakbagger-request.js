@@ -127,7 +127,9 @@ export const fetchPeakbaggerResource = async (url, {
         response = await run(fetchFn(requestedUrl, {
             ...init,
             credentials: 'include',
-            redirect: 'follow',
+            // Buddy postbacks keep form tokens on their verified origin.
+            // Callers may narrow redirects, never broaden authentication.
+            redirect: init.redirect === 'error' ? 'error' : 'follow',
             cache: 'no-store',
             ...(deadline.signal ? { signal: deadline.signal } : {}),
         }));

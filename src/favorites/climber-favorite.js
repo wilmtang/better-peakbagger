@@ -9,6 +9,7 @@ import { favoriteClimbers as F } from './favorite-climbers.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
+import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
 
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
@@ -156,6 +157,46 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         if (ownCid == null) return;
         injectBuddyStyle();
         decorateBuddyControls(document);
+        // Supported real-site controls use the same reserved, confirmed path
+        // as the card. Keep the legacy observer for other native markup.
+        let savingBuddy = false;
+        const buddyStatus = document.createElement('span');
+        buddyStatus.setAttribute('role', 'status');
+        const checkStatus = document.createElement('button');
+        checkStatus.type = 'button'; checkStatus.textContent = 'Check buddy status'; checkStatus.hidden = true;
+        const saveBuddy = async (control, checkOnly = false) => {
+            if (savingBuddy) return;
+            savingBuddy = true; control.disabled = true; control.dataset.bpbBuddyPending = 'true';
+            buddyStatus.textContent = 'Saving…'; checkStatus.disabled = true;
+            try {
+                const result = await changeBuddy({ api: chrome, target: { cid: pageCid, name }, ownerCid: ownCid,
+                    action: control.id === 'RemoveBuddy' ? 'remove' : 'add', checkOnly,
+                    origin: location.origin, currentOwner: () => ownerClimberId(document) });
+                applyBuddyProfileState(document, result.buddy);
+                buddyStatus.textContent = result.warning || (result.buddy ? 'Climbing buddy added.' : 'Climbing buddy removed.');
+                checkStatus.hidden = !result.warning;
+            } catch (error) {
+                buddyStatus.textContent = error.message; checkStatus.hidden = false;
+            } finally {
+                control.disabled = false; delete control.dataset.bpbBuddyPending;
+                savingBuddy = false; checkStatus.disabled = false;
+            }
+        };
+        const interceptBuddy = event => {
+            const control = event.type === 'submit' ? event.submitter : event.target?.closest?.('#AddBuddy, #RemoveBuddy');
+            if (!control || !['AddBuddy', 'RemoveBuddy'].includes(control.id)) return;
+            event.preventDefault(); event.stopImmediatePropagation();
+            const pending = membership?.buddyIntents?.some(entry => entry.cid === pageCid && entry.status !== 'confirmed');
+            if (event.isTrusted !== true || savingBuddy || (control.id === 'AddBuddy' && additionBlocked() && !pending)) return;
+            if (!buddyStatus.isConnected) control.after(buddyStatus, checkStatus);
+            void saveBuddy(control, pending);
+        };
+        document.addEventListener('click', interceptBuddy, true);
+        document.addEventListener('submit', interceptBuddy, true);
+        checkStatus.addEventListener('click', event => {
+            const control = document.querySelector('#AddBuddy, #RemoveBuddy');
+            if (event.isTrusted === true && control) void saveBuddy(control, true);
+        });
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 if (record.type === 'attributes') decorateBuddyControls(record.target);

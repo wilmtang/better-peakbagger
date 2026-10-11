@@ -39,6 +39,7 @@ const MASKED_CLIMBER_ID = '900001';
 // so the favorite control can prove that it never appears on the owner's page.
 const REVIEWED_CLIMBER_IDS = new Map([
     ['climber-other.html', [MASKED_CLIMBER_ID, '900002']],
+    ['climber-buddy-form.html', [MASKED_CLIMBER_ID, '900002']],
 ]);
 const SOCIAL = /strava\.com|instagram\.com|facebook\.com|youtube\.com|youtu\.be|mountainproject\.com|flickr\.com|twitter\.com|linkedin\.com|@gmail\.|@outlook\.|@yahoo\./i;
 

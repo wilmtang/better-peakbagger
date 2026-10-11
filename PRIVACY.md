@@ -61,7 +61,7 @@ permission to read device location. It covers:
 | Storage | Contents | Retention and sync |
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
-| `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, GitHub token/repository, ImgBB API key, report drafts, and automatic-backup state | Device-local; never browser-synced. |
+| `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, and automatic-backup state | Device-local; never browser-synced. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
@@ -232,6 +232,14 @@ date. That happens entirely locally.
 - A confirmed Buddy addition can add that climber to custom favorites. A Buddy
   removal changes custom favorites only when **Keep Buddy removals in sync** is
   enabled; only that preference, not the list, uses browser sync.
+- Explicit Add/Remove actions in name-link cards and supported native profile
+  controls fetch the authenticated profile, submit only the selected Buddy
+  control with fresh form state, and read the profile again to verify the saved
+  relationship. Native form state stays in memory and is never logged or stored.
+  Pending intents retain only owner/target IDs, displayed name, intended action,
+  operation token, tab ID and coordination status in local extension storage.
+  Confirmed reconciliation removes them; uncertain writes stay protected until
+  an explicit status check. A status check never repeats the server write.
 
 ### Ignored climbers and report visibility
 
@@ -239,7 +247,7 @@ date. That happens entirely locally.
   account's own Buddy List to check for conflicting membership, in either
   favorite-source mode. It updates the existing owner-scoped cache; a failed or
   mismatched response leaves the ignored list unchanged. Unignore needs no
-  Buddy request. Buddy management itself uses Peakbagger's native profile.
+  Buddy request. Buddy changes use Peakbagger's native profile form contract.
 - Up to 1,500 climber IDs, displayed names and added dates stay in `storage.local`.
   They are a device preference across Peakbagger accounts. Adding a link or ID
   fetches the public profile to verify it; ignoring on a profile needs no extra

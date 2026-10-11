@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent } from '../helpers/load-page.mjs';
 
 const bundle = ['content/climber-favorite.js'];
 const otherUrl = 'https://www.peakbagger.com/climber/climber.aspx?cid=900002';
@@ -14,6 +14,27 @@ const pendingKey = 'bpbPendingBuddyMutation';
 const buddyFixture = await readFile(new URL('../fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
 const pageResponse = text => ({ status: 200, headers: {}, text: async () => text });
 const pendingMutation = action => JSON.stringify({ version: 1, action, cid: 900002, at: Date.now() });
+
+test('supported native profile actions share the confirmed adapter and cross-tab reservation', async t => {
+    const html = await readFile(new URL('../fixtures/pages/climber-buddy-form.html', import.meta.url), 'utf8');
+    let buddy = false, posts = 0;
+    const dom = await loadPage('climber-buddy-form.html', { fixtures: PAGE_FIXTURES, url: otherUrl,
+        bundles: bundle, settings: { favoritesSource: 'custom' }, prepare(page) {
+            page.window.fetch = async (url, init) => {
+                if (init.method === 'POST') { posts++; buddy = new URLSearchParams(init.body).has('AddBuddy'); }
+                const text = buddy ? html.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
+                    .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : html;
+                return { ...pageResponse(text), url: String(url) };
+            };
+        } });
+    t.after(() => dom.window.close());
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-favorite')?.disabled === false);
+    fireTrustedEvent(dom.window.document.getElementById('AddBuddy'), 'click', { bubbles: true, cancelable: true });
+    await waitFor(dom, () => dom.window.document.getElementById('RemoveBuddy')?.disabled === false);
+    assert.equal(posts, 1);
+    assert.ok(dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
+    assert.deepEqual(dom.chrome._localStore.bpbBuddyIntents, []);
+});
 
 const loadOther = options => loadPage('climber-other.html', {
     fixtures: PAGE_FIXTURES,

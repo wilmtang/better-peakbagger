@@ -1,7 +1,8 @@
 # Climber hover card
 
-Status: name-link card implemented with local Favorite/Ignore actions;
-inline Buddy mutation deferred pending a verified native form contract.
+Status: name-link card implemented with direct Buddy, Favorite and Ignore actions.
+Buddy writes use the inspected native form contract and have fixture verification;
+authenticated live mutation remains a release proof gap.
 Date: 2026-10-10.
 
 ## Findings that shape the feature
@@ -23,12 +24,14 @@ Three existing boundaries matter:
   sync can also reserve a climber ID. See
   [membership policy](../../src/background/climber-list-policy.js) and
   [the maintained behavior](../climber-lists.md).
-- Buddy changes currently happen through native profile controls. The extension
-  observes those changes and verifies the signed-in Buddy List afterward. The
+- Buddy changes originally happened only through native profile controls. The extension
+  observed those changes and verified the signed-in Buddy List afterward. The
   [profile fixture](../../test/fixtures/pages/climber-other.html) uses a stub
   button, with no real server form fields. The authenticated inspection below
-  establishes the current native form markup, but the write adapter and its
-  server-effect verification remain unimplemented. The existing
+  establishes the current native form markup. The implemented adapter uses a
+  [masked form contract](../../test/fixtures/pages/climber-buddy-form.html) and
+  [shared intent coordinator](../../src/background/buddy-store.js); actual live
+  server-effect verification remains outstanding. The existing
   [MAIN-world capture transport](../../src/peakbagger/peakbagger-page.js) is a
   narrow allowlist, not a general authenticated request API.
 
@@ -170,7 +173,7 @@ possible at the limit.
 If signed out, the Buddy row says **Sign in to add a climbing buddy** and offers
 a normal sign-in link. Custom favorites and Ignore can still work when their
 local membership requirements are met. If the native form is unsupported,
-show **Manage buddies on profile**. If a server write times out after dispatch,
+show an actionable error and keep **View profile** available. If a server write times out after dispatch,
 show **Buddy change not confirmed · Check status**; re-read before offering a
 new write. Never automatically replay an ambiguous server mutation.
 
@@ -178,8 +181,8 @@ new write. Never automatically replay an ambiguous server mutation.
 
 The local card is implemented in `src/favorites/climber-card-state.js` and
 `src/favorites/climber-hover-card.js`, with its own bundled stylesheet. The
-following boundaries guide the delivered card and the remaining Buddy adapter;
-items 3–5 remain deferred.
+following boundaries guide the delivered card and Buddy adapter;
+the inline Buddy adapter now implements items 3–5 with the inspected form contract.
 
 1. Add a small isolated-world `climber-hover-card` content surface for top-level
    Peakbagger pages. Register its bundle/CSS in the manifest and build config;
@@ -325,8 +328,8 @@ validation bound. Prefer the target's affirmative profile state for confirmation
 and use the report to refresh the cache.
 
 The Add/Remove markup and current-account report coverage are established.
-Actual mutation success, rejection, timeout recovery, final-buddy removal,
-cross-tab races, and the inline adapter remain unproven. This inspection does
+At this inspection checkpoint, actual mutation success, rejection, timeout
+recovery, final-buddy removal, cross-tab races and the inline adapter were unproven. This inspection does
 not establish visible focus/window behavior, physical touch, or screen-reader
 speech. The existing synthetic form fixture still needs to be replaced with a
 masked fixture covering the observed contract before implementing the adapter.
@@ -343,6 +346,17 @@ masked fixture covering the observed contract before implementing the adapter.
   through the existing worker APIs. Changes become visible after confirmation.
   Ignore additions verify current Buddy absence; failed reads and account
   changes cannot authorize a write. Hover performs no network request.
+- Inline **Add climbing buddy** / **Remove climbing buddy** actions use a fresh,
+  owner/target-validated native form, post only the chosen submit control and
+  hidden ASP.NET state, and confirm through an uncached profile read. Supported
+  native `AddBuddy` / `RemoveBuddy` controls share this adapter. Postbacks reject
+  redirects so native form tokens cannot be forwarded to another destination.
+- Pending intents share the climber-list storage lane. Ignore and ignored-list
+  sync reject unresolved Buddy targets across tabs; lease expiry and worker
+  restart permit a status read, never a repeated POST. Confirmation reconciles
+  only the verified target in the Buddy cache without renewing the full report's
+  age. Custom favorite additions and opted-in removals use authoritative settings;
+  a partial local failure is reported and retried without repeating the server write.
 - Bundled regressions cover cancellation, Escape suppression, source changes,
   synthetic-click rejection, dismissed saves, moved/changed name links, hidden
   rows, settings failure, Buddy verification failure and BFCache restoration.
@@ -365,17 +379,26 @@ masked fixture covering the observed contract before implementing the adapter.
 - `npm run lint` passed with six existing owned dependency/manifest warnings;
   the final verifier edit passed ESLint. Documentation target checks passed
   (3 tests), and `git diff --check` passed.
+- Inline Buddy delivery: `npm test` passed 2,422 tests; the final ambiguous-POST
+  safeguard then passed all 14 focused adapter/coordinator tests. ESLint passed
+  the changed JavaScript. The real-extension Chrome verifier passed in hidden
+  Chrome for Testing 153.0.8010.12, and the general Firefox verifier passed in
+  hidden Firefox 157.0.1 at 1000 × 760. The dedicated
+  [inline Buddy check](../../scripts/verify-inline-buddies.mjs) drove six native
+  and popup Add/Remove POSTs against the masked HTTPS contract fixture, confirmed
+  custom-favorite synchronization and cross-tab protection, and rendered
+  1000 × 760 light / 320 × 760 dark screenshots that were visually inspected.
+  Card rendering uses native HTML/CSS, with no WebGL. Disposable profiles,
+  certificates, servers and browser processes were removed; the live Buddy List
+  was not changed.
 
 ### Intentionally not changed
 
-- Buddy management uses **Manage buddies on profile**. The accepted design allows
-  this fallback until the native write adapter and intent coordination are
-  implemented and verified. Authenticated inspection established the current
-  form markup and confirmation signals above, but did not submit a Buddy change.
-- Existing profile Buddy behavior and local mutation-lane policy remain the
-  authority. No cross-tab Buddy intent protocol, new schema, preference, host
-  permission, or page-world messaging capability was added. Changes on other
-  devices remain outside any local transaction.
+- Unsupported legacy native-control variants keep the existing profile observer.
+  The inline adapter refuses unrecognized or contradictory forms and points to
+  the existing profile link. No new preference, host permission or page-world
+  messaging capability was added. Changes on other devices remain outside the
+  local transaction.
 
 ### Changed but not fully proven
 
@@ -385,3 +408,6 @@ masked fixture covering the observed contract before implementing the adapter.
   or window placement, or all live Peakbagger markup variants. Those remain
   release proof gaps. The fixed-position fallback is exercised in jsdom;
   current Chrome and Firefox use the native popover top layer.
+- The new direct Buddy POST flow has Chrome fixture evidence; the general
+  Firefox check covers startup and card interactions, not direct Buddy POSTs.
+  Authenticated live form submission and response behavior remain untested.

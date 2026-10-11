@@ -37,7 +37,10 @@ const AUTHORITATIVE = Object.freeze({
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
     'src/ascent/ascent-upload.js': [{ count: 1, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
-    'src/background/background.js': [{ count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' }],
+    'src/background/background.js': [
+        { count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' },
+        { count: 1, kind: 'preservation', reason: 'reconcile favorites after a confirmed Buddy change using the current source and removal preference' },
+    ],
     'src/background/github-routes.js': [
         { count: 3, kind: 'preservation', reason: 'keep GitHub writes and coordinated deletion fail closed on unreadable settings' },
         { count: 1, kind: 'privacy', reason: 'default-on favorites transfer requires an authoritative sync preference' },
