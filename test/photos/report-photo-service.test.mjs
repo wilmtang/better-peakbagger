@@ -12,14 +12,27 @@ const image = { width: 2, height: 1, dataUrl: 'data:image/png;base64,aW1hZ2U=', 
 const remote = { providerId: 'abc', displayUrl: 'https://i.ibb.co/abc/photo.png', thumbnailUrl: 'https://i.ibb.co/abc/thumb.png', url: 'https://i.ibb.co/abc/photo.png', viewerUrl: 'https://ibb.co/abc',
     thumbUrl: null, mediumUrl: null, uploadedAt: '2026-09-08T12:00:00.000Z', expiresAt: null };
 const owner = 'bpbReportDraft:1:p2';
-const harness = async upload => {
+const harness = async (upload, onChanged = async () => {}) => {
     const indexedDB = new IDBFactory();
     const openStore = () => Store.createPhotoStore({ indexedDB });
     const store = await openStore();
-    const service = createReportPhotoService({ openStore, upload,
+    const service = createReportPhotoService({ openStore, upload, onChanged,
         permissionGranted: async () => true, keyStore: { getKey: async () => 'private-key' } });
     return { service, store };
 };
+
+test('report photo saves and uploads nudge automatic catalog backup without depending on its success', async () => {
+    let changes = 0;
+    const { service, store } = await harness(async () => ({ remote, deleteUrl: 'https://ibb.co/abc/delete' }),
+        async () => { changes++; throw new Error('alarm unavailable'); });
+    const created = await service.create(owner, image);
+    assert.equal(changes, 1);
+    await service.saveEdit(owner, { localPhotoId: created.localPhotoId, dataUrl: image.dataUrl }, created.localPhotoId);
+    assert.equal(changes, 2);
+    assert.equal((await service.uploadOne(owner, created.localPhotoId)).url, remote.url);
+    assert.equal(changes, 3);
+    store.close();
+});
 
 test('pasted pixels remain local, report ownership is enforced, confirmed uploads are reused', async () => {
     let uploads = 0;

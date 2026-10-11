@@ -282,7 +282,7 @@ test('settings are grouped by the surface they affect', async () => {
         ['map-chart-chart', 'map-chart-map', 'map-handoffs']);
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
-    assert.match(github.querySelector('#github-backup .desc').textContent, /manual backup controls/i);
+    assert.match(github.querySelector('#github-backup .desc').textContent, /automatically back up new and edited ascents/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
     for (const section of [general, capture, mapChart, beta, github]) {

@@ -34,7 +34,8 @@ writer are shared.
 
 Settings, the custom favorite-climber list, and the photo library are separate
 fixed root-file operations. Each has a manual backup and restore action plus an
-independent, default-off automatic backup toggle. They share the worker's
+independent automatic backup toggle, on by default once GitHub is connected.
+Explicit opt-outs remain off. They share the worker's
 credential gate, write queue, repository marker validation, atomic commit, and
 conflict retry, but never enter an ascent payload or the ascent
 automatic-backup path. Photo recovery is metadata-only and performs a semantic
@@ -44,7 +45,7 @@ record merge before writing or restoring.
 
 | Concern | Full profile | Automatic after Add/Edit | Manual saved-ascent action |
 | --- | --- | --- | --- |
-| User trigger | **Back up all ascents and TRs** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Separate opt-in; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up ascent and TR** beside Peakbagger's owner actions |
+| User trigger | **Back up all ascents and TRs** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Ascent backup enabled; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up ascent and TR** beside Peakbagger's owner actions |
 | Raw fields | Fetch each owner-only `AscentEdit.aspx?aid=…`; shared persisted-form reader | Fetch that ascent's owner-only edit URL; shared persisted-form reader | Same as automatic; the same `runBackup()` function |
 | Raw-field mapper | `src/ascent/ascent-snapshot.js` via `src/ascent/ascent-backup-source.js` | Same | Same |
 | Report body | Persisted `JournalText`, bracket markup converted to Markdown | Fresh save-time exact Markdown sidecar when present; otherwise persisted `JournalText` conversion | Fresh sidecar if a matching save transaction still exists; otherwise persisted conversion |
@@ -330,7 +331,7 @@ Manual individual and full-profile backup begin only from a trusted DOM
 activation. The content script exchanges that event for a short-lived one-use
 capability bound to the sender tab and action; profile backup upgrades it to a
 cancelable session grant and renews that grant per batch. Automatic backup
-after a fresh saved-ascent snapshot remains a separate opt-in route and cannot
+after a fresh saved-ascent snapshot follows the ascent-backup switch and cannot
 be manufactured from a page-script click.
 
 The Settings ascent and TR backup panel performs a separate, extension-page-only
@@ -693,10 +694,11 @@ changed.
 ### Debounced settings and favorites backup
 
 The two automatic root-file writers share one worker helper but remain separate
-opt-ins. A settings change replaces the `bpb-settings-backup` alarm; a
+preferences, both on by default once connected. A settings change replaces the `bpb-settings-backup` alarm; a
 `bpbFavoriteClimbers` change replaces `bpb-favorites-backup`. Each named alarm
-fires after one minute, which gives a durable trailing-edge debounce across MV3
-worker shutdowns. The alarm rechecks the toggle and device-local GitHub
+fires after one minute, then every 30 minutes, which gives a durable trailing-edge
+debounce and recovers missed notifications across MV3 worker shutdowns. Worker
+startup installs missing watchdogs. The alarm authoritatively rechecks the toggle and device-local GitHub
 connection, builds a cleaned payload, and compares a content-only signature
 against `bpbSettingsBackupState` or `bpbFavoritesBackupState` in
 `storage.local`. An unchanged signature skips the write only within the same
@@ -713,8 +715,9 @@ without identity produces a visible confirmation error instead of success.
 
 A failed automatic write records its attempt count and re-arms the same alarm
 after ten minutes, with at most two retry alarms for that change. A new change
-resets the retry budget. Automatic failures stay quiet; the manual action is the
-user-visible retry path. Both automatic writers still enter the single write
+resets the retry budget. The periodic watchdog continues recovery after those
+retries. Automatic failures stay quiet; the manual action is the user-visible
+retry path. Both automatic writers still enter the single write
 queue, so they cannot race ascent, profile, or each other on the mutable branch.
 Because both alarms are armed with the same delay they fire together, and the
 queue merges them into one commit; each writer records only its own signature,
@@ -808,7 +811,8 @@ below the advertised capacity. The worker checks the tree's declared blob size,
 streams at most 8 MiB of raw bytes, requires strict UTF-8, and routes backup,
 preview, and restore through that same reader.
 
-Automatic photo backup is a third independent, default-off alarm. Catalog
+Automatic photo backup is a third independent preference, on by default once
+connected. Catalog
 mutations atomically advance an IndexedDB generation and request the one-minute
 trailing-edge run; an installed 30-minute watchdog also checks that durable
 generation, so a lost page-to-worker notification does not strand a change.
@@ -1198,10 +1202,11 @@ in masked fixtures and scripted GitHub backends.
   `https://api.github.com/*` for repository APIs.
 - `enableGithubBackup`, `autoGithubBackup`, and
   `removeGithubBackupOnDelete` are synced ascent and TR backup booleans. Disabling the
-  parent gate forces both subordinate choices off. Neither gates settings or
+  parent gate forces both subordinate choices off; `autoGithubBackup` is a
+  compatibility field derived from `enableGithubBackup`. Neither gates settings or
   favorite transfer.
 - `autoSettingsBackup` and `autoPhotoLibraryBackup` are independent, synced,
-  default-off booleans. `autoFavoritesBackup` is synced and defaults on.
+  default-on booleans. `autoFavoritesBackup` is synced and defaults on.
   Ignored-climber sync also defaults on, with its preference stored locally.
   Without the device-local connection and GitHub host access these choices are
   inert. Both climber checkboxes show their saved preferences and stay disabled
@@ -1212,7 +1217,7 @@ in masked fixtures and scripted GitHub backends.
   photo-library transfer. Every section refreshes when auth or GitHub host access
   changes; superseded status replies cannot repaint a newer connection state.
 - Ascent fields, report, and Peakbagger's stored GPX go only to the selected
-  repository, after explicit backup action or the separate automatic opt-in.
+  repository, after explicit backup action or each save while ascent backup is enabled.
 - Firefox's `locationInfo` declaration covers the stored GPS track.
 - [PRIVACY.md](../PRIVACY.md) is the public canonical disclosure.
 

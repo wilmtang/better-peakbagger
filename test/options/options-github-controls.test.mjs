@@ -13,7 +13,6 @@ const syncControls = [
     ['favorites-auto-backup', 'autoFavoritesBackup'],
     ['settings-backup-auto', 'autoSettingsBackup'],
     ['photos-auto-backup', 'autoPhotoLibraryBackup'],
-    ['github-auto-backup', 'autoGithubBackup'],
     ['github-delete-backup', 'removeGithubBackupOnDelete'],
 ];
 
@@ -90,7 +89,7 @@ const accessSettled = (h, connected) => ['favorites-auto-backup', 'ignored-sync-
     .every(id => el(h.dom, id).disabled === !connected)
     && el(h.dom, 'settings-backup-github-actions').hidden === !connected
     && el(h.dom, 'photos-github-actions').hidden === !connected
-    && !!el(h.dom, 'github-auto-backup') === connected
+    && !!el(h.dom, 'github-delete-backup') === connected
     && /Connected as/.test(el(h.dom, 'github-panel').textContent) === connected;
 
 test('host access revocation and regrant refresh every optional GitHub control without changing preferences', async () => {
@@ -170,7 +169,8 @@ test('older connection replies cannot repaint any section after a newer access r
 
 test('connection changes from another settings tab preserve climber opt-outs through reconnect', async () => {
     const h = await controlPage({ connected: true, granted: true,
-        settings: { enableGithubBackup: true, autoFavoritesBackup: false } });
+        settings: { enableGithubBackup: true, autoFavoritesBackup: false,
+            autoSettingsBackup: false, autoPhotoLibraryBackup: false } });
     el(h.dom, 'ignored-sync-enable').click();
     await waitFor(h.dom, () => !el(h.dom, 'ignored-sync-enable').checked
         && !el(h.dom, 'ignored-github').hasAttribute('aria-busy'));
@@ -206,7 +206,8 @@ test('delayed connected replies cannot reopen backup controls after a newer disc
 });
 
 test('a photo status snapshot cannot overwrite a newer automatic backup preference', async () => {
-    const h = await controlPage({ connected: true, granted: true });
+    const h = await controlPage({ connected: true, granted: true,
+        settings: { autoPhotoLibraryBackup: false } });
     let resolve;
     h.photosReply = () => new Promise(done => { resolve = done; });
     h.dom.window.dispatchEvent(new h.dom.window.Event('focus'));
@@ -225,7 +226,7 @@ test('connected optional GitHub choices toggle both ways and preserve opt-outs o
     assert.equal(el(h.dom, 'favorites-auto-backup').checked, true);
     assert.equal(el(h.dom, 'ignored-sync-enable').checked, true);
     for (const [id, key] of syncControls) {
-        const initial = key === 'autoFavoritesBackup';
+        const initial = key !== 'removeGithubBackupOnDelete';
         assert.equal(el(h.dom, id).checked, initial, `${id} has the intended default`);
         for (const next of [!initial, initial, false]) {
             if (el(h.dom, id).checked !== next) el(h.dom, id).click();

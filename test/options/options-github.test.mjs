@@ -1280,7 +1280,7 @@ test('the connected ascent panel keeps a fresh repository-backed count across or
 
     await waitFor(dom, () => /No ascent and TR backups yet/.test(el(dom, 'github-ascent-panel').textContent));
     assert.match(el(dom, 'github-ascent-panel').textContent,
-        /Back up ascent and TR automatically after each save/);
+        /New and edited ascents and TRs are backed up automatically/);
     assert.match(el(dom, 'github-ascent-panel').textContent,
         /Remove ascent and TR backup files after I delete an ascent/);
     assert.match(el(dom, 'github-ascent-panel').textContent,
@@ -1525,7 +1525,7 @@ test('the My Ascents action explains when Peakbagger is signed out', async () =>
     assert.equal(opened[0], 'https://www.peakbagger.com/Climber/Login.aspx');
 });
 
-test('the connected state exposes independent save and delete backup choices', async () => {
+test('the connected state makes enabled ascent backup automatic and keeps deletion separate', async () => {
     const dom = await loadOptions({
         enableGithubBackup: true,
         removeGithubBackupOnDelete: true,
@@ -1536,14 +1536,8 @@ test('the connected state exposes independent save and delete backup choices', a
         }),
     });
     await new Promise(r => dom.window.setTimeout(r, 40));
-    const autoEl = el(dom, 'github-auto-backup');
-    assert.ok(autoEl, 'the auto-backup checkbox is present when connected');
-    assert.equal(autoEl.checked, false);
-
-    autoEl.checked = true;
-    autoEl.dispatchEvent(new dom.window.Event('change'));
-    await new Promise(r => dom.window.setTimeout(r, 30));
-    assert.equal(dom.chrome._store.bpbSettings.autoGithubBackup, true);
+    assert.equal(el(dom, 'github-auto-backup'), null, 'one ascent-backup switch controls automatic saves');
+    assert.match(el(dom, 'github-ascent-panel').textContent, /backed up automatically/);
 
     const deleteEl = el(dom, 'github-delete-backup');
     assert.ok(deleteEl, 'the deletion-mirroring checkbox is present when connected');

@@ -19,8 +19,8 @@ const FAIL_SOFT = Object.freeze({
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
     'src/background/github-routes.js': [
-        { count: 8, kind: 'safe-gate', reason: 'status, default-off GitHub and photo-recovery gates, and backup scheduling' },
-        { count: 1, kind: 'display', reason: 'render the default-off photo-recovery status' },
+        { count: 3, kind: 'display', reason: 'render connection, ascent-backup and photo-recovery status' },
+        { count: 2, kind: 'safe-gate', reason: 'return connection status and gate default-off ascent snapshots' },
     ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/favorites/climber-favorite.js': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
@@ -43,7 +43,7 @@ const AUTHORITATIVE = Object.freeze({
     ],
     'src/background/github-routes.js': [
         { count: 3, kind: 'preservation', reason: 'keep GitHub writes and coordinated deletion fail closed on unreadable settings' },
-        { count: 1, kind: 'privacy', reason: 'default-on favorites transfer requires an authoritative sync preference' },
+        { count: 4, kind: 'privacy', reason: 'default-on settings, favorites and photo transfer and connection scheduling require authoritative preferences' },
     ],
     'src/background/settings-file-routes.js': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },

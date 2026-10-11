@@ -434,13 +434,6 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             control.disabled = false;
             control.textContent = 'Open My Ascents';
         };
-        const autoToggle = el('label', { class: 'github-auto', for: 'github-auto-backup' }, [
-            el('input', {
-                type: 'checkbox', id: 'github-auto-backup', checked: !!currentSettings.autoGithubBackup,
-                onchange: event => { void save({ autoGithubBackup: event.target.checked }); },
-            }),
-            el('span', { text: 'Back up ascent and TR automatically after each save' }),
-        ]);
         const deleteToggle = el('label', { class: 'github-auto', for: 'github-delete-backup' }, [
             el('input', {
                 type: 'checkbox', id: 'github-delete-backup',
@@ -460,7 +453,6 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         ]);
         renderAscent(
             summaryEl,
-            autoToggle,
             deleteToggle,
             deleteHint,
             historyHint,
@@ -698,12 +690,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         currentSettings = {
             ...currentSettings,
             enableGithubBackup: enableEl.checked,
-            ...(!enableEl.checked && { autoGithubBackup: false }),
+            autoGithubBackup: enableEl.checked,
         };
         renderAscentStatus();
         void save({
             enableGithubBackup: enableEl.checked,
-            ...(!enableEl.checked && { autoGithubBackup: false }),
+            autoGithubBackup: enableEl.checked,
         });
     });
 

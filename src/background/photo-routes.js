@@ -88,6 +88,7 @@ export function createPhotoRoutes({
     trustedActions,
     buildOpenResponse = tabId => ({ ok: true, tabId }),
     logCleanupFailure = message => console.error(message),
+    onPhotoLibraryChanged = async () => {},
 } = {}) {
     if (!ext || !storage || !isPeakbaggerSender || !mutateMap || !readMap || !keyStore
         || !trustedActions
@@ -131,7 +132,7 @@ export function createPhotoRoutes({
     const permissionGranted = async () => !!(ext.permissions?.contains
         && await ext.permissions.contains(IMGBB_PERMISSION));
 
-    const reportPhotos = createReportPhotoService({ keyStore, permissionGranted });
+    const reportPhotos = createReportPhotoService({ keyStore, permissionGranted, onChanged: onPhotoLibraryChanged });
     const reportOwner = sender => isPeakbaggerSender(sender) && Number.isInteger(sender.tab?.id)
         ? reportPhotoOwner(sender.url) : null;
     const reportRoute = operation => async (message, sender) => {

@@ -62,8 +62,8 @@ const DEFAULTS = {
     // GitHub ascent and TR backup. The feature gate is an ordinary synced boolean
     // like the others; the token and chosen repo deliberately do NOT live
     // in this schema (they must never sync) — src/github/github-auth.js owns those
-    // in storage.local. `autoGithubBackup` performs the push without the
-    // per-save click once the manual path is enabled. Deletion mirroring is
+    // in storage.local. Enabling backup also enables automatic save backup;
+    // `autoGithubBackup` remains a derived compatibility field. Deletion mirroring is
     // a separate opt-in because it removes the extension-owned files from
     // the repository's current branch.
     enableGithubBackup: false,
@@ -72,13 +72,13 @@ const DEFAULTS = {
     // Automatic GitHub push of the settings backup file on change.
     // Deliberately independent of enableGithubBackup (that gate belongs to
     // ascent and TR backup); inert without a device-local token/repository.
-    autoSettingsBackup: false,
+    autoSettingsBackup: true,
     // Climber-list transfer defaults on, but needs a device-local GitHub
     // connection. An explicitly saved false remains an opt-out.
     autoFavoritesBackup: true,
     // Metadata-only photo-library recovery. Independent of ascent and TR backup;
     // the ImgBB key, deletion URLs, and pixels never enter this setting.
-    autoPhotoLibraryBackup: false,
+    autoPhotoLibraryBackup: true,
     mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,
     mapRouteCasingColor: ROUTE_STYLE.casingColor, mapRouteCasingWidth: ROUTE_STYLE.casingWidth,
     mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
@@ -208,10 +208,10 @@ const clean = raw => {
     for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
-    // Ascent writes are meaningless without the feature enabled; never let
-    // either destructive or automatic behavior stand on its own.
+    // One ascent-backup choice controls automatic saves. Keep the legacy field
+    // consistent for older readers and imported settings.
+    s.autoGithubBackup = s.enableGithubBackup;
     if (!s.enableGithubBackup) {
-        s.autoGithubBackup = false;
         s.removeGithubBackupOnDelete = false;
     }
     s.mapProviderOrder = orderedIds(s.mapProviderOrder, MAP_PROVIDERS);

@@ -743,20 +743,22 @@ test('enabling or changing favorites schedules one automatic backup and restore 
         settings: { autoFavoritesBackup: true }, auth: AUTH, local, github: backend.handler,
     });
 
+    await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'));
+    const alarmCount = () => worker.alarms.created.filter(alarm => alarm.name === 'bpb-favorites-backup').length;
+    const startupCount = alarmCount();
+
     worker.fireStorageChange({
         bpbSettings: { newValue: structuredClone(worker.sync.bpbSettings) },
     }, 'sync');
-    await waitFor(() => worker.alarms.created.filter(
-        alarm => alarm.name === 'bpb-favorites-backup').length === 1);
+    await waitFor(() => alarmCount() === startupCount + 1);
 
     worker.fireStorageChange({
         [Favorites.FAVORITES_KEY]: { newValue: structuredClone(local[Favorites.FAVORITES_KEY]) },
     }, 'local');
-    await waitFor(() => worker.alarms.created.filter(
-        alarm => alarm.name === 'bpb-favorites-backup').length === 2);
+    await waitFor(() => alarmCount() === startupCount + 2);
     assert.deepEqual(structuredClone(worker.alarms.created.findLast(
         alarm => alarm.name === 'bpb-favorites-backup')), {
-        name: 'bpb-favorites-backup', info: { delayInMinutes: 1 },
+        name: 'bpb-favorites-backup', info: { delayInMinutes: 1, periodInMinutes: 30 },
     });
 
     worker.fireAlarm('bpb-favorites-backup');
@@ -787,7 +789,9 @@ test('favorites auto backup stays inert while off and retries failures only twic
     });
     off.fireStorageChange({ [Favorites.FAVORITES_KEY]: { newValue: favorite } }, 'local');
     await settleQuietly();
-    assert.equal(off.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'), false);
+    off.fireAlarm('bpb-favorites-backup');
+    await settleQuietly();
+    assert.equal(off.local.bpbFavoritesBackupState, undefined, 'a saved opt-out prevents watchdog writes');
 
     const failing = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(500, { message: 'Nope' });
@@ -803,10 +807,10 @@ test('favorites auto backup stays inert while off and retries failures only twic
         await waitFor(() => worker.local.bpbFavoritesBackupState?.attempts === attempts);
     }
     assert.deepEqual(structuredClone(worker.alarms.created.filter(
-        alarm => alarm.name === 'bpb-favorites-backup'
+        alarm => alarm.name === 'bpb-favorites-backup' && alarm.info?.delayInMinutes === 10
     )), [
-        { name: 'bpb-favorites-backup', info: { delayInMinutes: 10 } },
-        { name: 'bpb-favorites-backup', info: { delayInMinutes: 10 } },
+        { name: 'bpb-favorites-backup', info: { delayInMinutes: 10, periodInMinutes: 30 } },
+        { name: 'bpb-favorites-backup', info: { delayInMinutes: 10, periodInMinutes: 30 } },
     ]);
     // The repository read is a GET, so each of the three alarm firings first
     // rides out the 500 on the transport's own bounded schedule before the
@@ -1052,10 +1056,42 @@ test('settings auto backup preserves the remote file when its gate-read succeeds
     assert.equal(backend.state.contents[Transfer.BACKUP_PATH], previousRemote,
         'the automatic path must preserve the last known-good remote backup');
     assert.deepEqual(structuredClone(
-        worker.alarms.created.filter(alarm => alarm.name === 'bpb-settings-backup')
+        worker.alarms.created.filter(alarm => alarm.name === 'bpb-settings-backup' && alarm.info?.delayInMinutes === 10)
     ), [
-        { name: 'bpb-settings-backup', info: { delayInMinutes: 10 } },
+        { name: 'bpb-settings-backup', info: { delayInMinutes: 10, periodInMinutes: 30 } },
     ]);
+});
+
+test('default-on root backups start without a page notification and recover changed settings after a restart', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: {}, auth: AUTH, github: backend.handler });
+    await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup')
+        && worker.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'));
+    worker.fireAlarm('bpb-settings-backup');
+    worker.fireAlarm('bpb-favorites-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.syncedAt && worker.local.bpbFavoritesBackupState?.syncedAt);
+    assert.ok(backend.state.contents['settings.json']);
+    assert.ok(backend.state.contents['favorite-climbers.json']);
+    const restarted = createWorker({ settings: { theme: 'dark' }, local: worker.local, github: backend.handler });
+    await waitFor(() => restarted.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup'));
+    restarted.fireAlarm('bpb-settings-backup');
+    await waitFor(() => JSON.parse(backend.state.contents['settings.json']).settings.theme === 'dark');
+    const commits = backend.state.commits;
+    restarted.fireAlarm('bpb-settings-backup');
+    await settleQuietly();
+    assert.equal(backend.state.commits, commits, 'an unchanged periodic scan creates no commit');
+});
+
+test('settings auto backup fails closed on an unreadable default-on gate', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: {}, auth: AUTH, github: backend.handler,
+        syncReadFailures: [new Error('settings unavailable')] });
+    worker.fireAlarm('bpb-settings-backup');
+    await settleQuietly();
+    assert.equal(backend.state.commits, 0);
+    worker.fireAlarm('bpb-settings-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.syncedAt);
+    assert.equal(backend.state.commits, 1);
 });
 
 test('settings auto backup debounces changes, commits once, and skips an equal signature', async () => {
@@ -1071,7 +1107,7 @@ test('settings auto backup debounces changes, commits once, and skips an equal s
     }, 'sync');
     await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup'));
     assert.deepEqual(structuredClone(worker.alarms.created.find(alarm => alarm.name === 'bpb-settings-backup')), {
-        name: 'bpb-settings-backup', info: { delayInMinutes: 1 },
+        name: 'bpb-settings-backup', info: { delayInMinutes: 1, periodInMinutes: 30 },
     });
 
     worker.fireAlarm('bpb-settings-backup');
@@ -1155,9 +1191,11 @@ test('settings auto backup stays inert while off and retries failures only twice
     const off = createWorker({
         settings: { autoSettingsBackup: false }, auth: AUTH, github: gitDataBackend().handler,
     });
-    off.fireStorageChange({ bpbSettings: { newValue: {} } }, 'sync');
+    off.fireStorageChange({ bpbSettings: { newValue: { autoSettingsBackup: false } } }, 'sync');
     await settleQuietly();
-    assert.equal(off.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup'), false);
+    off.fireAlarm('bpb-settings-backup');
+    await settleQuietly();
+    assert.equal(off.local.bpbSettingsBackupState, undefined, 'a saved opt-out prevents watchdog writes');
 
     const failing = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(500, { message: 'Nope' });
@@ -1168,10 +1206,10 @@ test('settings auto backup stays inert while off and retries failures only twice
         worker.fireAlarm('bpb-settings-backup');
         await waitFor(() => worker.local.bpbSettingsBackupState?.attempts === attempts);
     }
-    const retries = worker.alarms.created.filter(alarm => alarm.name === 'bpb-settings-backup');
+    const retries = worker.alarms.created.filter(alarm => alarm.name === 'bpb-settings-backup' && alarm.info?.delayInMinutes === 10);
     assert.deepEqual(structuredClone(retries), [
-        { name: 'bpb-settings-backup', info: { delayInMinutes: 10 } },
-        { name: 'bpb-settings-backup', info: { delayInMinutes: 10 } },
+        { name: 'bpb-settings-backup', info: { delayInMinutes: 10, periodInMinutes: 30 } },
+        { name: 'bpb-settings-backup', info: { delayInMinutes: 10, periodInMinutes: 30 } },
     ]);
 });
 

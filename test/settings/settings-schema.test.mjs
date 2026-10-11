@@ -103,14 +103,21 @@ test('removing a Buddy from custom favorites is opt-in', () => {
     assert.equal(Schema.clean({ removeFavoriteWhenBuddyRemoved: 'yes' }).removeFavoriteWhenBuddyRemoved, false);
 });
 
-test('automatic settings backup is opt-in and independent of ascent and TR backup', () => {
-    assert.equal(Schema.DEFAULTS.autoSettingsBackup, false);
-    assert.equal(Schema.clean({}).autoSettingsBackup, false);
+test('automatic settings backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
+    assert.equal(Schema.DEFAULTS.autoSettingsBackup, true);
+    assert.equal(Schema.clean({}).autoSettingsBackup, true);
     assert.equal(Schema.clean({
         enableGithubBackup: false,
         autoSettingsBackup: true
     }).autoSettingsBackup, true);
-    assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, false);
+    assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, true);
+    assert.equal(Schema.clean({ autoSettingsBackup: false }).autoSettingsBackup, false);
+});
+
+test('enabling ascent backup also enables automatic saves, including legacy manual-only settings', () => {
+    assert.equal(Schema.clean({ enableGithubBackup: true }).autoGithubBackup, true);
+    assert.equal(Schema.clean({ enableGithubBackup: true, autoGithubBackup: false }).autoGithubBackup, true);
+    assert.equal(Schema.clean({ enableGithubBackup: false, autoGithubBackup: true }).autoGithubBackup, false);
 });
 
 test('automatic favorites backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
@@ -124,14 +131,15 @@ test('automatic favorites backup defaults on, preserves opt-outs, and is indepen
     assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, true);
 });
 
-test('automatic photo-library metadata backup is opt-in and independent of ascent and TR backup', () => {
-    assert.equal(Schema.DEFAULTS.autoPhotoLibraryBackup, false);
-    assert.equal(Schema.clean({}).autoPhotoLibraryBackup, false);
+test('automatic photo-library metadata backup defaults on, preserves opt-outs, and is independent of ascent and TR backup', () => {
+    assert.equal(Schema.DEFAULTS.autoPhotoLibraryBackup, true);
+    assert.equal(Schema.clean({}).autoPhotoLibraryBackup, true);
     assert.equal(Schema.clean({
         enableGithubBackup: false,
         autoPhotoLibraryBackup: true
     }).autoPhotoLibraryBackup, true);
-    assert.equal(Schema.clean({ autoPhotoLibraryBackup: 'yes' }).autoPhotoLibraryBackup, false);
+    assert.equal(Schema.clean({ autoPhotoLibraryBackup: 'yes' }).autoPhotoLibraryBackup, true);
+    assert.equal(Schema.clean({ autoPhotoLibraryBackup: false }).autoPhotoLibraryBackup, false);
 });
 
 test('removing GitHub ascent files on Peakbagger deletion is a subordinate opt-in', () => {

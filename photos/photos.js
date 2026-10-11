@@ -3298,13 +3298,17 @@ const refreshPhotoBackupStatus = async () => {
         || [response.repo?.owner, response.repo?.name].filter(Boolean).join('/');
     const state = response.state;
     if (state?.reconciliationPending) {
-        ui.backupStatus.textContent = `Backup reached ${repository} · local changes still need backup.`;
+        ui.backupStatus.textContent = response.auto
+            ? `Automatic backup on · changes pending for ${repository}.`
+            : `Backup reached ${repository} · local changes still need backup.`;
     } else if (state?.syncedAt) {
-        ui.backupStatus.textContent = `Backed up to ${repository} · ${formatBackupTime(state.syncedAt)}`;
+        ui.backupStatus.textContent = `${response.auto ? 'Automatic backup on · backed up to' : 'Backed up to'} ${repository} · ${formatBackupTime(state.syncedAt)}`;
     } else if (state?.restoredAt) {
         ui.backupStatus.textContent = `Restored from ${repository} · ${formatBackupTime(state.restoredAt)}`;
     } else {
-        ui.backupStatus.textContent = `Ready to back up metadata to ${repository}.`;
+        ui.backupStatus.textContent = response.auto
+            ? `Automatic backup on · ${repository}.`
+            : `Ready to back up metadata to ${repository}.`;
     }
     return true;
 };
@@ -3619,6 +3623,12 @@ const bindEvents = () => {
     });
     ui.importProject.addEventListener('change', () => void importProject(ui.importProject.files?.[0]));
     ui.backupNow.addEventListener('click', () => void backupPhotoLibrary());
+    ext.storage.onChanged?.addListener((changes, area) => {
+        if (area !== 'local' || !changes.bpbPhotoLibraryBackupState || photoBackupBusy) return;
+        void refreshPhotoBackupStatus().then(() => {
+            if (!ui.libraryView.hidden) void renderLibrary();
+        });
+    });
     for (const select of ui.reportWidthSelects) {
         select.addEventListener('change', event => void chooseReportImageWidth(event));
     }

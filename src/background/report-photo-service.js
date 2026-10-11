@@ -20,9 +20,14 @@ export const reportPhotoOwner = source => {
 
 export function createReportPhotoService({
     openStore = () => Store.createPhotoStore(), upload = options => Client.upload(options),
-    keyStore, permissionGranted,
+    keyStore, permissionGranted, onChanged = async () => {},
 } = {}) {
     const locks = new Map();
+    const announceChange = async () => {
+        // The durable watchdog recovers a failed nudge. Scheduling cannot turn
+        // a committed local save or confirmed upload into a report-save error.
+        try { await onChanged(); } catch {}
+    };
     const useStore = async operation => {
         const store = await openStore();
         try { return await operation(store); } finally { store.close(); }
@@ -60,6 +65,7 @@ export function createReportPhotoService({
         const photo = await store.putDraft({ photo: draft, project, original: blob,
             thumbnail: Pending.fromDataUrl(message.thumbnail) });
         await store.putReportImage({ localId, owner, dataUrl: message.dataUrl, exported, revision: photo.revision });
+        await announceChange();
         return { localPhotoId: localId, url: Pending.url(localId), alt: photo.alt };
     });
     const saveEdit = (owner, message, replacesLocalPhotoId) => useStore(async store => {
@@ -74,6 +80,7 @@ export function createReportPhotoService({
         const { exported } = await metadata(message.dataUrl, photo.source);
         await store.putReportImage({ localId: photo.localId, owner, dataUrl: message.dataUrl,
             exported, revision: photo.revision });
+        await announceChange();
         return { localPhotoId: photo.localId, url: Pending.url(photo.localId), alt: photo.alt, caption: photo.caption || '' };
     });
     const uploadOne = async (owner, localId) => {
@@ -134,7 +141,7 @@ export function createReportPhotoService({
             return { url: photo.remote.url, alt: photo.alt };
         });
         locks.set(localId, work);
-        try { return await work; } finally { locks.delete(localId); }
+        try { return await work; } finally { locks.delete(localId); await announceChange(); }
     };
     return { create, read, saveEdit, uploadOne };
 }

@@ -94,6 +94,7 @@ const harness = async ({
     beforeRemoteUpdate = null,
     decoratePhotoStore = null,
     autoEnabled = true,
+    unreadableSettings = false,
 } = {}) => {
     const local = makeStorageArea({ values: localValues || {}, setHook: localSetHook });
     const session = makeStorageArea();
@@ -208,6 +209,11 @@ const harness = async ({
             };
         },
         photoBackupSettings: {
+            requireCurrent: async () => {
+                photoSettingsReads += 1;
+                if (unreadableSettings) throw new Error('settings unavailable');
+                return { autoPhotoLibraryBackup: autoEnabled };
+            },
             get: async () => {
                 photoSettingsReads += 1;
                 return { autoPhotoLibraryBackup: autoEnabled };
@@ -230,6 +236,13 @@ const harness = async ({
         get remoteText() { return remote.text; },
     };
 };
+
+test('automatic photo backup fails closed when its default-on setting cannot be read', async () => {
+    const h = await harness({ seed: bundle(), unreadableSettings: true });
+    await h.routes.onAlarm('bpb-photo-library-backup');
+    assert.equal(h.accessCalls(), 0);
+    assert.equal(h.commits.length, 0);
+});
 
 test('manual backup reads IndexedDB itself and writes only the metadata recovery document', async () => {
     const h = await harness({ seed: bundle() });

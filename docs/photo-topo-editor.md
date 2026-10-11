@@ -518,8 +518,8 @@ every other GitHub backup: manual backup, preview-first restore, and the
 automatic option. The library page keeps only **Back up now**, which is the
 action worth having while looking at photos, and links to Settings for the rest.
 Status, backup, restore preview, and restore therefore accept either
-extension-owned surface; announcing a catalog change stays with the photo page,
-which is the only page that writes the catalog.
+extension-owned surface; announcing a catalog change stays with the photo page
+or trusted worker report-photo saves and uploads.
 
 Manual backup reads the current IndexedDB snapshot in the worker, reads the
 current remote root file, semantically merges by stable `localId`, and commits
@@ -534,9 +534,11 @@ An over-capacity generation stays pending with its exact measured size and a
 stable cleanup action; automatic backup does not rebuild the same hopeless
 generation until the catalog changes.
 
-Automatic photo recovery is a separate, default-off setting. A local catalog
+Automatic photo recovery is a separate setting, on by default once GitHub is
+connected; an explicit opt-out stays off. A local catalog
 change arms a one-minute trailing-edge alarm, while a recurring 30-minute
-watchdog remains installed until the option is disabled. The watchdog compares
+watchdog remains installed but performs no backup while the option is disabled.
+The watchdog authoritatively reads the preference and compares
 the durable local and confirmed generations, so losing the page's fast runtime
 notification can delay a backup but cannot suppress it indefinitely. Content
 signatures skip unchanged writes, failure retries are bounded, and a semantic

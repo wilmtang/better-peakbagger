@@ -3423,6 +3423,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         mutateMap,
         readMap,
         trustedActions,
+        onPhotoLibraryChanged: githubRoutes.schedulePhotoLibraryBackup,
     });
     const reportDraftRoutes = ReportDraftRoutes.createReportDraftRoutes({
         ext,
@@ -3788,12 +3789,13 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     runDetachedCleanup('capture payload recovery', reconcileCapturePayloads);
     runDetachedCleanup('temporary Peakbagger tab recovery', () =>
         cleanupExpiredPeakbaggerHelperLeases(now()));
-    runDetachedCleanup('photo backup watchdog startup', () =>
-        githubRoutes.startPhotoBackupWatchdog());
+    runDetachedCleanup('automatic backup watchdog startup', () =>
+        githubRoutes.startAutomaticBackups());
 
     runDetachedCleanup('ignored climber transaction recovery', () => githubRoutes.startIgnoredSync());
     ext.runtime.onStartup?.addListener(() => {
         runDetachedCleanup('ignored climber browser startup', () => githubRoutes.startIgnoredSync({ startup: true }));
+        runDetachedCleanup('automatic backup browser startup', () => githubRoutes.startAutomaticBackups());
     });
 
     if (ext.alarms) {
@@ -3802,7 +3804,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (alarm.name === CLEANUP_ALARM) {
                 runDetachedCleanup('expired capture cleanup', cleanup);
             }
-            githubRoutes.onAlarm(alarm.name);
+            runDetachedCleanup('automatic GitHub backup', () => githubRoutes.onAlarm(alarm.name));
         });
     }
 })();

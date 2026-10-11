@@ -1138,9 +1138,21 @@ export function createGithubRoutes({
 
         const schedule = () => {
             if (!ext.alarms) return;
-            ext.alarms.create(alarmName, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+            ext.alarms.create(alarmName, {
+                delayInMinutes: AUTO_BACKUP_DELAY_MINUTES, periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
+            });
             // A fresh change grants a fresh retry budget.
             void updateState(state => state?.attempts ? { ...state, attempts: 0 } : null).catch(() => {});
+        };
+
+        const startWatchdog = async () => {
+            if (!ext.alarms) return;
+            const alarm = ext.alarms.get ? await ext.alarms.get(alarmName) : null;
+            if (!alarm || alarm.periodInMinutes !== AUTO_BACKUP_WATCHDOG_MINUTES) {
+                ext.alarms.create(alarmName, {
+                    delayInMinutes: AUTO_BACKUP_DELAY_MINUTES, periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
+                });
+            }
         };
 
         const fire = async () => {
@@ -1177,12 +1189,14 @@ export function createGithubRoutes({
                     return { ...(latest || state || {}), attempts, attemptScope: scope };
                 });
                 if (attempts != null && attempts <= AUTO_BACKUP_MAX_RETRIES) {
-                    ext.alarms.create(alarmName, { delayInMinutes: AUTO_BACKUP_RETRY_MINUTES });
+                    ext.alarms.create(alarmName, {
+                        delayInMinutes: AUTO_BACKUP_RETRY_MINUTES, periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
+                    });
                 }
             }
         };
 
-        return { schedule, fire, markSynced };
+        return { schedule, fire, markSynced, startWatchdog };
     };
 
     const buildSettingsBackup = async () => {
@@ -1209,7 +1223,7 @@ export function createGithubRoutes({
         stateKey: SETTINGS_BACKUP_STATE_KEY,
         path: Transfer.BACKUP_PATH,
         commitMessage: 'Back up settings',
-        enabled: async () => (await Settings.get()).autoSettingsBackup,
+        enabled: async () => (await Settings.requireCurrent().catch(() => null))?.autoSettingsBackup === true,
         build: buildSettingsBackup
     });
 
@@ -1327,9 +1341,10 @@ export function createGithubRoutes({
     // Backup and restore are reachable from both extension-owned surfaces:
     // Settings is where every other GitHub backup lives, and the library is
     // where the user is standing when a photo changes. Announcing a catalog
-    // change stays with the photo page, because that is the only page that
-    // writes the catalog.
+    // change stays with the photo page or trusted worker report-photo mutations.
     const isPhotoBackupPage = sender => isPhotoPage(sender) || isOptionsPage(sender);
+    const automaticPhotoBackupEnabled = async () =>
+        (await photoBackupSettings.requireCurrent().catch(() => null))?.autoPhotoLibraryBackup === true;
     const readPhotoBackupState = async () =>
         (await ext.storage.local.get(PHOTO_BACKUP_STATE_KEY))[PHOTO_BACKUP_STATE_KEY] || null;
     const sameRepo = (left, right) => !!left && !!right
@@ -1782,11 +1797,13 @@ export function createGithubRoutes({
         periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
     });
 
+    const schedulePhotoLibraryBackup = async () => {
+        if (await automaticPhotoBackupEnabled() && ext.alarms) armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
+    };
+
     const photoLibraryChanged = async (_message, sender) => {
         if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
-        if ((await photoBackupSettings.get()).autoPhotoLibraryBackup && ext.alarms) {
-            armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
-        }
+        await schedulePhotoLibraryBackup();
         return { ok: true };
     };
 
@@ -1831,7 +1848,7 @@ export function createGithubRoutes({
     };
 
     const firePhotoAutoBackup = async () => {
-        if (!(await photoBackupSettings.get()).autoPhotoLibraryBackup) return;
+        if (!await automaticPhotoBackupEnabled()) return;
         const [catalog, previousState] = await Promise.all([
             withPhotoStore(store => store.getCatalogState()),
             readPhotoBackupState(),
@@ -1847,6 +1864,12 @@ export function createGithubRoutes({
         if (attempts <= AUTO_BACKUP_MAX_RETRIES) {
             armPhotoBackup(AUTO_BACKUP_RETRY_MINUTES);
         }
+    };
+
+    const startAutomaticBackups = async () => {
+        await settingsAutoBackup.startWatchdog();
+        await favoritesAutoBackup.startWatchdog();
+        await startPhotoBackupWatchdog();
     };
 
 
@@ -1901,10 +1924,11 @@ export function createGithubRoutes({
         if (connectionChanged) ignoredSync.connectionChanged();
         if (changes[Ignored.IGNORED_KEY]) void ignoredSync.localChanged().catch(() => {});
         if (!connectionChanged && !changes[Favorites.FAVORITES_KEY]) return;
-        void Settings.get().then(settings => {
+        void Settings.requireCurrent().then(settings => {
             if (connectionChanged && settings.autoSettingsBackup) settingsAutoBackup.schedule();
             if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
-        });
+            if (connectionChanged && settings.autoPhotoLibraryBackup) armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
+        }).catch(() => {});
     };
 
     const onSettingsChanged = settings => {
@@ -1924,8 +1948,8 @@ export function createGithubRoutes({
     const onAlarm = name => {
         const ignoredOperation = ignoredSync.onAlarm(name);
         if (ignoredOperation) return ignoredOperation;
-        if (name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
-        if (name === FAVORITES_BACKUP_ALARM) void favoritesAutoBackup.fire();
+        if (name === SETTINGS_BACKUP_ALARM) return settingsAutoBackup.fire();
+        if (name === FAVORITES_BACKUP_ALARM) return favoritesAutoBackup.fire();
         if (name === PHOTO_BACKUP_ALARM) return firePhotoAutoBackup();
         return undefined;
     };
@@ -1937,6 +1961,8 @@ export function createGithubRoutes({
         onSettingsChanged,
         onAlarm,
         startPhotoBackupWatchdog,
+        startAutomaticBackups,
+        schedulePhotoLibraryBackup,
         startIgnoredSync: ignoredSync.start,
         validateImportedConnection,
         isExtensionOnly: routeTable.isExtensionOnly,

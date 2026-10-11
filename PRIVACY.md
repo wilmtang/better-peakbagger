@@ -371,8 +371,10 @@ parked and idle for a few minutes before release, and the cache is not cleared.
 
 GitHub is disconnected by default. Connecting requires the user to grant host
 access, authorize the extension, and select one repository. Ascent and TR backup
-is separate from automatic backups for settings, favorites, and photo metadata;
-all are off by default. Backup never blocks or changes Peakbagger Save.
+is off by default; enabling it also enables backup after each save. Automatic
+backups for settings, favorites, and photo metadata default on once GitHub is
+connected. Each has its own opt-out, and saved opt-outs are preserved. Backup
+never blocks or changes Peakbagger Save.
 
 ### What a backup contains
 
@@ -386,16 +388,18 @@ all are off by default. Backup never blocks or changes Peakbagger Save.
 ### When a backup happens
 
 - **Ascents and TRs:** after **Back up ascent and TR**, **Back up all ascents and TRs**, or a
-  confirmed **Refresh all**; or after each save when automatic ascent and TR backup is
+  confirmed **Refresh all**; or after each save when ascent and TR backup is
   enabled. Profile runs read each owned ascent from Peakbagger and send one at a
   time. Existing repository folders act as resume checkpoints.
 - **Settings and favorites:** after an explicit backup, or after a change when
   that data type's automatic-backup toggle is enabled.
-  Favorites backup defaults on once GitHub is connected; explicit opt-outs are
-  preserved. It includes buddies saved to custom favorites, not the native
+  Both default on once GitHub is connected; explicit opt-outs are
+  preserved. Favorites include buddies saved to custom favorites, not the native
   Peakbagger Buddy List cache. Restoring favorites remains a manual action.
 - **Photo metadata:** after an explicit backup, or after a catalog change when
-  its separate automatic toggle is enabled.
+  its separate automatic toggle is enabled (on by default once connected).
+- **Recovery checks:** periodic worker alarms retry pending settings, favorites,
+  and photo metadata, including changes missed while a page or worker was closed.
 - **Restore:** always requires an explicit Settings action and confirmation.
   Photo restore previews changes/conflicts and restores metadata and annotations
   only, not pixels, thumbnails, or ImgBB deletion capability.
@@ -450,7 +454,7 @@ The user can export and import settings without GitHub:
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
-| GitHub | User-triggered or separately enabled automatic backups to the selected repository; validation reads for an imported connection; explicit restores. |
+| GitHub | User-triggered backups, automatic ascent backups when enabled, and default-on settings/favorites/photo metadata backups with opt-outs, all to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
 
 All extension code and libraries are packaged locally. A YouTube player is

@@ -82,10 +82,12 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         }
         const when = backedUpAt();
         statusEl.textContent = backupState?.reconciliationPending
-            ? `Backup reached ${repoName()} · local changes still need backup.`
+            ? autoEl.checked ? `Automatic backup on · changes pending for ${repoName()}.`
+                : `Backup reached ${repoName()} · local changes still need backup.`
             : when
                 ? `${backupState?.syncedAt ? 'Backed up to' : 'Restored from'} ${repoName()} · ${when}`
-                : `Ready to back up photo records to ${repoName()}.`;
+                : autoEl.checked ? `Automatic backup on · ${repoName()}.`
+                    : `Ready to back up photo records to ${repoName()}.`;
     };
 
     const refresh = async () => {
@@ -209,6 +211,9 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
 
     window.addEventListener('focus', () => { void refresh(); });
     observeGithubAccess(extensionApi, () => { void refresh(); });
+    extensionApi.storage.onChanged?.addListener((changes, area) => {
+        if (area === 'local' && changes.bpbPhotoLibraryBackupState && !busy) void refresh();
+    });
 
     let painted = false;
     return {
