@@ -24,3 +24,12 @@ test('insecure sources, HTML responses, empty files and dishonest size headers a
         await assert.rejects(readPhotoSourceUrl('https://images.example/a.png', { maxBytes: 4, fetchFn: async () => response }));
     }
 });
+
+test('a readable image-host 429 is explicit without confusing CORS or access failures with a limit', async () => {
+    await assert.rejects(readPhotoSourceUrl('https://images.example/ridge.png', {
+        maxBytes: 16, fetchFn: async () => new Response('unreadable', { status: 429, headers: { 'retry-after': '60' } }),
+    }), error => error.code === 'rate-limit' && /Image host request limit reached\. Try again after/.test(error.message));
+    await assert.rejects(readPhotoSourceUrl('https://images.example/ridge.png', {
+        maxBytes: 16, fetchFn: async () => new Response('', { status: 403 }),
+    }), error => error.code !== 'rate-limit');
+});

@@ -50,6 +50,14 @@ image failures, offline errors, access denials or normal OAuth polling delays.
   at 375/1000 × 760, light/dark. The fixture stubs optional permission grants
   and returns 429 without contacting GitHub.
 
+- ImgBB and readable image-source imports: confirmed 429 is provider-named
+  before reading a body, with Retry-After advice when exposed. ImgBB refusal
+  remains definite and never triggers an automatic upload retry. Pending report
+  photos, text and native controls remain usable; no ascent is submitted.
+  Verified: 287 photo/report-local tests, build and focused ESLint; real
+  extension intercepted upload in hidden Chrome 153 at 1280/720 × 900,
+  light/dark warning inspection, one upload request and zero form POSTs.
+
 ### Intentionally not changed
 
 - Links to Gaia, onX, AllTrails, CalTopo, Windy, AirNow, store pages and other

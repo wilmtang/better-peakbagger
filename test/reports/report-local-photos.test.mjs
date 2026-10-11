@@ -189,3 +189,15 @@ test('leaving during upload never submits the old report on return', async () =>
     assert.ok(h.dom.window.document.getElementById('JournalText').value.includes(src));
     h.dom.window.close();
 });
+
+test('rate-limit advice remains visible while pending photos and native editing survive', async () => {
+    const h = await setup(async () => ({ ok: false, error: { code: 'rate-limit', message: 'ImgBB request limit reached. Wait a few minutes, then try again.' } }));
+    try {
+        fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+        await waitFor(h.dom, () => h.ui.querySelector('.bpb-re-local-photo-status').textContent.includes('ImgBB request limit reached'));
+        assert.equal(h.submissions(), 0);
+        assert.match(h.dom.window.document.getElementById('JournalText').value, /bpb-photo.invalid/);
+        assert.equal(h.dom.window.document.getElementById('SaveButton').disabled, false);
+        assert.equal(h.ui.querySelector('.bpb-re-local-photo-status').dataset.state, 'error');
+    } finally { h.dom.window.close(); }
+});

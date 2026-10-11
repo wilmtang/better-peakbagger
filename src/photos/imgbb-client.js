@@ -14,6 +14,7 @@
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { rateLimitError } from '../net/rate-limit.js';
 import { cleanPhotoUrl as cleanHttpsUrl, PHOTO_URL_LIMIT as URL_LIMIT } from './photo-url.js';
 
 const API_ROOT = 'https://api.imgbb.com/1/upload';
@@ -248,6 +249,13 @@ const upload = async ({
             );
     }
 
+    if (response?.status === 429) {
+        const limit = rateLimitError('ImgBB', response);
+        release();
+        // A confirmed refusal must not become an ambiguous upload because its
+        // error body stalled, nor be replaced by an unrelated provider code.
+        throw new ImgbbError('rate-limit', limit.message, { status: 429 });
+    }
     let text;
     try {
         text = await deadline.run(BoundedText.readBoundedResponseText(response, {
@@ -289,10 +297,6 @@ const upload = async ({
         );
     }
     if (!response.ok) {
-        if (response.status === 429) {
-            throw providerFailure(payload, response.status, 'rate-limit',
-                'ImgBB is rate-limiting uploads. Wait a few minutes, then try again.');
-        }
         // A 5xx carrying ImgBB's own error envelope is ImgBB rejecting the
         // image, so it is definite. A 5xx without one came from whatever sits
         // in front of ImgBB and says nothing about whether the backend behind

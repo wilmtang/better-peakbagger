@@ -1,6 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { rateLimitError } from '../net/rate-limit.js';
 
 // A clicked report image may be public but not present in the local library.
 // Respect CORS, omit credentials, and bound both time and encoded bytes.
@@ -14,6 +15,7 @@ export const readPhotoSourceUrl = async (value, { maxBytes, fetchFn = globalThis
     try {
         const response = await deadline.run(fetchFn(url.href, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: deadline.signal }));
         if (response.url && new URL(response.url).protocol !== 'https:') throw new Error('The image redirected to an insecure URL.');
+        if (response.status === 429) throw rateLimitError('Image host', response);
         if (!response.ok || !/^image\//i.test(response.headers.get('content-type') || '')) throw new Error('The image host did not return a readable image.');
         if (Number(response.headers.get('content-length')) > maxBytes) throw new Error('The image is too large to edit.');
         reader = response.body?.getReader();

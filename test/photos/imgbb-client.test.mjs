@@ -133,13 +133,13 @@ test('an unusable key and an undecodable file each say what to do next', async (
 
 // An unrecognized code must still surface ImgBB's own words rather than a
 // generic "the upload failed".
-test('an unmapped provider error still reads as ImgBB said it', async () => {
+test('a confirmed rate limit takes precedence over provider wording', async () => {
     await assert.rejects(Client.upload({
         fetch: async () => response(429, { error: { message: 'Rate limit reached', code: 999 } }),
         key: KEY,
         blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
     }), error => error.code === 'rate-limit'
-        && error.message === 'Rate limit reached'
+        && error.message === 'ImgBB request limit reached. Wait a few minutes, then try again.'
         // Refused before the image pipeline: nothing was stored, so a retry is
         // safe and the library must not mark the photo's outcome unknown.
         && error.ambiguous === false);
@@ -151,7 +151,7 @@ test('a rate limit with no wording of its own still says what to do', async () =
         key: KEY,
         blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
     }), error => error.code === 'rate-limit'
-        && /rate-limiting uploads/.test(error.message)
+        && /ImgBB request limit reached/.test(error.message)
         && error.ambiguous === false);
 });
 
@@ -329,4 +329,13 @@ test('only an explicit structured refusal makes a malformed success safe to retr
         { success: false, error: { code: 415, message: 'Invalid image' } }),
     key: KEY, blob: new Blob(['image'], { type: 'image/png' }) }),
     error => error.code === 'invalid-image' && error.ambiguous === false);
+});
+
+test('an unreadable 429 remains a definite refusal with provider-named retry advice', async () => {
+    let calls = 0, cancelled = false;
+    await assert.rejects(Client.upload({ key: KEY, blob: new Blob(['pixels'], { type: 'image/png' }),
+        fetch: async () => { calls++; return { status: 429, ok: false, headers: new Headers({ 'retry-after': '120' }),
+            body: { cancel() { cancelled = true; } }, text() { throw new Error('must not read'); } }; },
+    }), error => error.code === 'rate-limit' && error.ambiguous === false && /ImgBB request limit reached\. Try again after/.test(error.message));
+    assert.equal(calls, 1); assert.equal(cancelled, true);
 });

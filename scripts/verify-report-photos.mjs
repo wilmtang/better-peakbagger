@@ -14,6 +14,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const resources = createResourceStack();
 const root = process.cwd();
+const rateLimit = process.argv.includes('--rate-limit');
 let failure = null;
 try {
     const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-report-photos-'));
@@ -54,6 +55,7 @@ try {
         uploads++;
         markUploadStarted();
         await uploadReleased;
+        if (rateLimit) return route.fulfill({ status: 429, headers: { 'retry-after': '120', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after' }, body: 'unreadable refusal' });
         return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
             body: JSON.stringify({ success: true, status: 200, data: {
                 id: `fixture-${uploads}`, url_viewer: 'https://ibb.co/fixture', url: 'https://i.ibb.co/fixture/photo.png',
@@ -321,19 +323,33 @@ try {
     }
     await report.screenshot({ path: path.join(output, 'save-upload-progress.png') });
     releaseUpload();
-    await report.waitForURL(url, { waitUntil: 'domcontentloaded' });
-    await report.waitForFunction(() => !document.querySelector('.bpb-re-local-photo-status')?.textContent.includes('Uploading'));
-    // Request dispatch is the native form's observable boundary; fixture POST
-    // handling does not claim that Peakbagger accepted a real ascent.
-    const deadline = Date.now() + 20000;
-    while (!posts.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
-    assert.equal(posts.length, 1);
-    assert.equal(uploads, 1);
-    const reportText = /name="JournalText"\r\n\r\n([\s\S]*?)\r\n--/.exec(posts[0])?.[1]
+    if (rateLimit) {
+        await uploadStatus.filter({ hasText: 'ImgBB request limit reached' }).waitFor();
+        assert.match(await uploadStatus.textContent(), /Try again after/);
+        assert.equal(await report.locator('#SaveButton').isEnabled(), true);
+        assert.equal(posts.length, 0);
+        assert.equal(uploads, 1);
+        assert.match(await report.locator('#JournalText').inputValue(), /bpb-photo.invalid/);
+        for (const theme of ['light', 'dark']) {
+            await report.locator('html').evaluate((element, value) => { element.dataset.bpbTheme = value; }, theme);
+            await uploadStatus.scrollIntoViewIfNeeded();
+            await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, `rate-limit-${theme}.png`) });
+        }
+    } else {
+        await report.waitForURL(url, { waitUntil: 'domcontentloaded' });
+        await report.waitForFunction(() => !document.querySelector('.bpb-re-local-photo-status')?.textContent.includes('Uploading'));
+        // Request dispatch is the native form's observable boundary; fixture POST
+        // handling does not claim that Peakbagger accepted a real ascent.
+        const deadline = Date.now() + 20000;
+        while (!posts.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+        assert.equal(posts.length, 1);
+        assert.equal(uploads, 1);
+        const reportText = /name="JournalText"\r\n\r\n([\s\S]*?)\r\n--/.exec(posts[0])?.[1]
         ?? new URLSearchParams(posts[0]).get('JournalText');
-    assert.match(reportText, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
-    assert.match(reportText, /\[figcaption\]Looking north — caption edited in Photo Topos\./);
-    assert.doesNotMatch(reportText, /bpb-photo\.invalid|data:image|blob:/);
-    console.log(JSON.stringify({ browser: context.browser().version(), mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
+        assert.match(reportText, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
+        assert.match(reportText, /\[figcaption\]Looking north — caption edited in Photo Topos\./);
+        assert.doesNotMatch(reportText, /bpb-photo\.invalid|data:image|blob:/);
+    }
+    console.log(JSON.stringify({ browser: context.browser().version(), rateLimit, mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
 } catch (error) { console.error('Primary failure:', error); failure = error; }
 await resources.dispose(failure);
