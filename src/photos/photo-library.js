@@ -344,6 +344,22 @@ const searchableText = photo => [
     ...photo.references.flatMap(reference => [reference.aid, reference.pid, reference.cid]),
 ].join(' ').toLocaleLowerCase();
 
+// Creation order identifies the current version. Inserting an older public
+// link into another report updates its timestamp, but must not make it current.
+const latestPhotos = values => {
+    const latest = new Map();
+    for (const value of Array.isArray(values) ? values : []) {
+        const photo = cleanPhoto(value);
+        if (!photo) continue;
+        const previous = latest.get(photo.source.sha256);
+        const order = previous && (photo.createdAt.localeCompare(previous.createdAt)
+            || photo.updatedAt.localeCompare(previous.updatedAt)
+            || photo.localId.localeCompare(previous.localId));
+        if (!previous || order > 0) latest.set(photo.source.sha256, photo);
+    }
+    return [...latest.values()].filter(photo => !photo.deletedAt);
+};
+
 const search = (values, query = '', filter = 'all') => {
     const needle = trim(query, 200).toLocaleLowerCase();
     return (Array.isArray(values) ? values : [])
@@ -383,5 +399,6 @@ export const photoLibrary = {
     restoreDeleted,
     deletedRecovery,
     updateAssets,
+    latestPhotos,
     search,
 };

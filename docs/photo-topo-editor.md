@@ -115,11 +115,12 @@ an open project. A
 title is required — it is filled from the file name when available — and the
 alt text describing the image is optional. Drafts autosave to the browser
 profile.
-Choosing another file or **Edit as new version** first settles the outgoing
+Choosing another file or **Edit** first settles the outgoing
 gesture and waits for its edits to save. A route with at least two placed
 points finishes on the outgoing photo; incomplete single-point/freehand/resize
 previews end there. If persistence fails, the current edits stay open and the
-replacement stops. A new version uses the freshly saved title and caption.
+replacement stops. A local draft reopens in place. Editing a published image
+starts one current draft with the same title and caption; later edits resume it.
 The standalone photo workflow uploads only when the user chooses **Upload and insert**.
 A photo pasted into a Rich text TR follows a deferred workflow: double-click opens
 an editable copy here, **Save and return** updates it locally, and saving the TR
@@ -310,6 +311,13 @@ stricter pre-upload gate.
 Editing an uploaded image creates a new local project whose
 `lineage.parentLocalId` points to the prior record. It never overwrites the
 published ImgBB asset or breaks an old report URL.
+The library shows the latest version of each source image, identified by its
+SHA-256, rather than every editing session. Older originals, thumbnails, and
+projects are reclaimed once a complete newer editable bundle exists; public
+links and report associations remain as historical catalog records. Pending
+report snapshots, unresolved uploads, and Recently Deleted keep their recovery
+data. An older unresolved upload also stays visible until resolved. Removing
+the current version does not reveal its superseded history.
 
 ## Local IndexedDB ownership
 

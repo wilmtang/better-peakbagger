@@ -65,9 +65,12 @@ export function createReportPhotoService({
     const saveEdit = (owner, message, replacesLocalPhotoId) => useStore(async store => {
         const { photo } = await store.getBundle(message.localPhotoId);
         if (!owner || !photo || photo.deletedAt || photo.remote.state !== 'draft'
-            || photo.lineage.parentLocalId !== replacesLocalPhotoId) {
+            || (photo.localId !== replacesLocalPhotoId && photo.lineage.parentLocalId !== replacesLocalPhotoId)) {
             throw new Error('Save an editable local photo first.');
         }
+        // Resuming a draft keeps its id. Verify the same report still owns its
+        // flattened snapshot before replacing it in place.
+        if (photo.localId === replacesLocalPhotoId) await read(owner, replacesLocalPhotoId);
         const { exported } = await metadata(message.dataUrl, photo.source);
         await store.putReportImage({ localId: photo.localId, owner, dataUrl: message.dataUrl,
             exported, revision: photo.revision });

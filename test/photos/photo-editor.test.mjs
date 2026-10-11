@@ -37,6 +37,8 @@ const settle = win => new Promise(resolve => win.setTimeout(resolve, 0));
 
 const loadEditor = async ({
     returnToReport = false,
+    imageUrl = null,
+    nativeBlobs = false,
     imgbbStatus = { ok: true, configured: false, permissionGranted: false },
     runtimeHandler = async () => ({ ok: true }),
     fetchImpl = null,
@@ -58,6 +60,7 @@ const loadEditor = async ({
 } = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
+    if (imageUrl) params.set('imageUrl', imageUrl);
     if (startMode) params.set('mode', startMode);
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${params.size ? `?${params}` : ''}`,
@@ -65,6 +68,7 @@ const loadEditor = async ({
         pretendToBeVisual: true,
     });
     const win = dom.window;
+    if (nativeBlobs) win.Blob = Blob;
     const doc = win.document;
     if (fixedNow) {
         const NativeDate = win.Date;
@@ -394,9 +398,10 @@ const seedUploadedLibraryPhoto = async (indexedDB, {
     localId = 'copy-url-photo',
     url = 'https://i.ibb.co/a/topo.jpg',
     withoutThumbnail = false,
+    sourceSha256 = null,
 } = {}) => {
+    sourceSha256 ??= Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(localId))), byte => byte.toString(16).padStart(2, '0')).join('');
     const store = await Store.createPhotoStore({ indexedDB });
-    const sourceSha256 = 'a'.repeat(64);
     const input = {
         photo: Library.createDraft({
             localId,
@@ -649,10 +654,11 @@ for (const destination of ['new file', 'new version']) {
             page.click(page.doc.getElementById('show-library'));
             await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
             [...page.doc.querySelectorAll('.photo-card button')]
-                .find(button => button.textContent === 'Edit as new version').click();
-            await waitFor(page.dom, () => title.value === 'important outgoing edit revision');
+                .find(button => button.textContent === 'Edit').click();
+            await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false && title.value === 'important outgoing edit');
         }
         const photos = await readPhotoStore(page.win, 'photos');
+        if (destination === 'new version') assert.equal(photos.length, 1, 'resuming a draft keeps its id');
         const outgoing = photos.find(photo => photo.title === 'important outgoing edit');
         assert.ok(outgoing, 'the outgoing title remains durable');
         const projects = await readPhotoStore(page.win, 'projects');
@@ -676,7 +682,7 @@ for (const destination of ['new file', 'new version']) {
             page.click(page.doc.getElementById('show-library'));
             await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
             [...page.doc.querySelectorAll('.photo-card button')]
-                .find(button => button.textContent === 'Edit as new version').click();
+                .find(button => button.textContent === 'Edit').click();
         }
         await waitFor(page.dom, () => /Resolve the save problem/.test(
             page.doc.getElementById('toast-message').textContent));
@@ -725,8 +731,8 @@ for (const destination of ['new file', 'new version']) {
                 page.click(page.doc.getElementById('show-library'));
                 await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
                 [...page.doc.querySelectorAll('.photo-card button')]
-                    .find(button => button.textContent === 'Edit as new version').click();
-                await waitFor(page.dom, () => page.doc.getElementById('photo-title').value.endsWith(' revision'));
+                    .find(button => button.textContent === 'Edit').click();
+                await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false);
             }
             assert.equal(page.drawing(), false);
             page.pointer('pointerdown', 300, 300);
@@ -741,7 +747,7 @@ for (const destination of ['new file', 'new version']) {
                 assert.match(page.doc.getElementById('export-summary').textContent, /600 × 800/);
                 assert.equal(page.markCount(), 0);
             } else {
-                const child = photos.find(photo => photo.lineage.parentLocalId);
+                const child = outgoing;
                 assert.equal(projects.find(project => project.localId === child.localId).objects.length,
                     points === 2 ? 1 : 0, 'Escape after replacement stays scoped to the new project');
             }
@@ -775,10 +781,10 @@ for (const gesture of ['freehand', 'object drag']) {
     });
 }
 
-test('Edit as new version has one owner across rapid same-card and cross-card actions', async t => {
+test('Edit has one owner across rapid same-card and cross-card actions', async t => {
     const indexedDB = new IDBFactory();
     await seedUploadedLibraryPhoto(indexedDB, { localId: 'first-version' });
-    await seedUploadedLibraryPhoto(indexedDB, { localId: 'second-version' });
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'second-version', sourceSha256: 'c'.repeat(64) });
     let deferred;
     const page = await loadEditor({
         indexedDB,
@@ -793,7 +799,7 @@ test('Edit as new version has one owner across rapid same-card and cross-card ac
         page.dom.window.close();
     });
     const edits = [...page.doc.querySelectorAll('.photo-card button')]
-        .filter(button => button.textContent === 'Edit as new version');
+        .filter(button => button.textContent === 'Edit');
     assert.equal(edits.length, 2);
 
     edits[0].click();
@@ -812,7 +818,28 @@ test('Edit as new version has one owner across rapid same-card and cross-card ac
     assert.deepEqual(page.errors, []);
 });
 
-test('Edit as new version closes its fallback bitmap after successful ownership transfer', async t => {
+test('editing an older report URL resumes the latest source draft after historical pixels are reclaimed', async t => {
+    const indexedDB = new IDBFactory();
+    const published = await seedUploadedLibraryPhoto(indexedDB);
+    const store = await Store.createPhotoStore({ indexedDB });
+    const bundle = await store.getBundle(published.localId);
+    const latest = Library.createDraft({ localId: 'current-version', title: 'Current title',
+        source: published.source, parentLocalId: published.localId, now: '2026-08-03T00:00:00Z' });
+    await store.putDraft({ ...bundle, photo: latest, project: { ...bundle.project, localId: latest.localId } });
+    store.close();
+    const page = await loadEditor({ indexedDB, pickPhoto: false, nativeBlobs: true,
+        returnToReport: true, imageUrl: published.remote.url,
+        fetchImpl: () => { throw new Error('must reuse local original'); } });
+    t.after(() => page.dom.window.close());
+    await waitFor(page.dom, () => !page.doc.getElementById('editor-workspace').hidden);
+    assert.equal(page.doc.getElementById('photo-title').value, 'Current title');
+    const photos = await readPhotoStore(page.win, 'photos');
+    assert.equal(photos.length, 2, 'opening the old public link creates no extra draft');
+    assert.equal(photos.find(photo => photo.localId === published.localId).assets.originalRetained, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Edit closes its fallback bitmap after successful ownership transfer', async t => {
     const indexedDB = new IDBFactory();
     await seedUploadedLibraryPhoto(indexedDB, {
         localId: 'missing-thumbnail-success',
@@ -822,7 +849,7 @@ test('Edit as new version closes its fallback bitmap after successful ownership 
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
     t.after(() => page.dom.window.close());
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Edit as new version');
+        .find(button => button.textContent === 'Edit');
 
     edit.click();
     await waitForPhotoStore(page.win, 'photos', records => records.length === 2).catch(error => {
@@ -838,7 +865,7 @@ test('Edit as new version closes its fallback bitmap after successful ownership 
     assert.deepEqual(page.errors, []);
 });
 
-test('Edit as new version releases decoded pixels and its owner when thumbnailing or storage fails', async t => {
+test('Edit releases decoded pixels and its owner when thumbnailing or storage fails', async t => {
     await t.test('thumbnail failure', async () => {
         const indexedDB = new IDBFactory();
         await seedUploadedLibraryPhoto(indexedDB, {
@@ -849,7 +876,7 @@ test('Edit as new version releases decoded pixels and its owner when thumbnailin
         Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
         page.win.HTMLCanvasElement.prototype.toBlob = callback => callback(null);
         const edit = [...page.doc.querySelectorAll('.photo-card button')]
-            .find(button => button.textContent === 'Edit as new version');
+            .find(button => button.textContent === 'Edit');
 
         edit.click();
         await waitFor(page.dom, () => /could not be saved/i.test(
@@ -878,7 +905,7 @@ test('Edit as new version releases decoded pixels and its owner when thumbnailin
         });
         Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
         const edit = [...page.doc.querySelectorAll('.photo-card button')]
-            .find(button => button.textContent === 'Edit as new version');
+            .find(button => button.textContent === 'Edit');
 
         edit.click();
         await waitFor(page.dom, () => /could not be saved/i.test(
@@ -911,7 +938,7 @@ test('a committed new version stays recoverable when its editor load fails', asy
         return decode(...args);
     };
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Edit as new version');
+        .find(button => button.textContent === 'Edit');
 
     edit.click();
     await waitFor(page.dom, () => /new version was saved.*reopen it from the library/i.test(
@@ -922,7 +949,7 @@ test('a committed new version stays recoverable when its editor load fails', asy
     assert.equal(page.decodedBitmaps.length, 1);
     assert.equal(page.decodedBitmaps[0].closed, true);
     assert.equal(page.doc.getElementById('library-view').hidden, false);
-    assert.equal(page.doc.querySelectorAll('.photo-card').length, 2);
+    assert.equal(page.doc.querySelectorAll('.photo-card').length, 1);
     assert.deepEqual(page.errors, []);
 });
 
@@ -1609,9 +1636,9 @@ test('imported annotations enter the same semantic keyboard selection list', asy
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
     page.doc.getElementById('show-library').click();
     await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
-        .some(button => button.textContent === 'Edit as new version'));
+        .some(button => button.textContent === 'Edit'));
     const editImported = [...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Edit as new version');
+        .find(button => button.textContent === 'Edit');
     editImported.focus();
     editImported.click();
     await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false)
@@ -2275,7 +2302,7 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     assert.equal(insertionMessages.length, 1);
     assert.equal(insertionMessages[0].caption, 'Snapshot caption');
     assert.ok(mutationControls.every(control => control.disabled),
-        'the committed snapshot remains read-only until Edit as new version');
+        'the committed snapshot remains read-only until Edit');
     assert.equal(doc.getElementById('photo-file').disabled, false,
         'choosing a different source remains available after commit');
     assert.equal(doc.getElementById('import-project').disabled, false);
@@ -3839,7 +3866,7 @@ test('library pagination keeps a usable control when Next becomes disabled', asy
     const store = await Store.createPhotoStore({ indexedDB });
     for (let index = 0; index < 49; index++) await store.putPhoto(Library.createDraft({
         localId: `page-${index}`, title: `Topo ${index}`,
-        source: { fileName: 'photo.jpg', mime: 'image/jpeg', bytes: 6, width: 1600, height: 1200, sha256: 'a'.repeat(64) },
+        source: { fileName: 'photo.jpg', mime: 'image/jpeg', bytes: 6, width: 1600, height: 1200, sha256: index.toString(16).padStart(64, '0') },
     }));
     store.close();
     const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });

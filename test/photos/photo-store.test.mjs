@@ -195,6 +195,53 @@ test('reads one bounded thumbnail page without loading full bundles', async () =
     store.close();
 });
 
+test('superseded editing data is reclaimed while public links and pending report/upload recovery survive', async () => {
+    const store = await Store.createPhotoStore({ indexedDB: new IDBFactory() });
+    const published = fixture('published');
+    published.photo = await store.putDraft(published);
+    const uploaded = await store.putPhoto(Library.completeUpload(published.photo, uploadOperation('x').export, {
+        providerId: 'public', url: 'https://i.ibb.co/x/photo.jpg', displayUrl: 'https://i.ibb.co/x/photo.jpg',
+        viewerUrl: 'https://ibb.co/public', thumbnailUrl: 'https://i.ibb.co/x/thumb.jpg', uploadedAt: LATER,
+    }, LATER));
+    const abandoned = fixture('abandoned');
+    abandoned.photo = await store.putDraft(abandoned);
+    const pending = fixture('pending');
+    pending.photo = await store.putDraft(pending);
+    await store.putReportImage({ localId: 'pending', owner: 'report', dataUrl: 'pixels',
+        exported: uploadOperation('x').export, revision: pending.photo.revision });
+    const uncertain = fixture('uncertain');
+    uncertain.photo = await store.putDraft(uncertain);
+    await store.beginUploadOperation({ photo: Library.beginUpload(uncertain.photo, uploadOperation('x').export),
+        operation: uploadOperation('uncertain') });
+    const latest = fixture('latest');
+    latest.photo = Library.cleanPhoto({ ...latest.photo, createdAt: '2026-08-01T00:00:00Z' });
+    await store.putDraft(latest);
+    const before = await store.getCatalogState();
+    assert.equal(await store.pruneSupersededVersions(), 2);
+    assert.equal((await store.getBundle('published')).photo.remote.url, uploaded.remote.url);
+    assert.equal((await store.getBundle('published')).project, null);
+    assert.equal((await store.getBundle('abandoned')).original, null);
+    assert.ok((await store.getBundle('pending')).project);
+    assert.ok((await store.getBundle('uncertain')).original);
+    assert.ok((await store.getBundle('latest')).original);
+    assert.equal((await store.getCatalogState()).generation, before.generation + 1);
+    await assert.rejects(store.putDraft({ ...abandoned, photo: (await store.getBundle('abandoned')).photo }),
+        Store.PhotoStoreConflictError, 'a stale editor cannot resurrect superseded editing data');
+    assert.equal(await store.pruneSupersededVersions(), 0);
+    store.close();
+});
+
+test('a newer metadata-only restore never discards the last editable original', async () => {
+    const store = await Store.createPhotoStore({ indexedDB: new IDBFactory() });
+    await store.putDraft(fixture('editable'));
+    const restored = fixture('restored').photo;
+    await store.putPhoto(Library.cleanPhoto({ ...restored, createdAt: '2026-08-01T00:00:00Z',
+        assets: { originalRetained: false, projectRetained: false, thumbnailRetained: false } }));
+    assert.equal(await store.pruneSupersededVersions(), 0);
+    assert.ok((await store.getBundle('editable')).original);
+    store.close();
+});
+
 test('rejects a mismatched draft without partially writing any store', async () => {
     const store = await Store.createPhotoStore({
         indexedDB: new IDBFactory(),

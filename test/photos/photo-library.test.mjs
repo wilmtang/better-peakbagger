@@ -43,6 +43,27 @@ const draft = () => Library.createDraft({
     now: TIME,
 });
 
+test('latest versions group by source bytes, independent of titles and later report use', () => {
+    const older = Library.cleanPhoto({ ...draft(), updatedAt: '2026-08-01T00:00:00Z' });
+    const latest = Library.createDraft({ localId: 'photo-2', title: 'New title', source, now: LATER });
+    const other = Library.createDraft({ localId: 'photo-3', title: latest.title,
+        source: { ...source, sha256: 'c'.repeat(64) }, now: TIME });
+    const deleted = Library.markDeleted(Library.createDraft({
+        localId: 'photo-4', title: 'Deleted', source, now: TIME,
+    }));
+    assert.deepEqual(Library.latestPhotos([older, other, latest, deleted]).map(photo => photo.localId),
+        ['photo-2', 'photo-3']);
+    assert.deepEqual(Library.latestPhotos([latest, older])[0], latest);
+});
+
+test('removing the latest version does not reveal its superseded history', () => {
+    const latest = Library.markDeleted(Library.createDraft({
+        localId: 'latest', title: 'Latest', source, now: LATER,
+    }));
+    assert.deepEqual(Library.latestPhotos([draft(), latest]), []);
+    assert.equal(Library.latestPhotos([draft(), Library.restoreDeleted(latest)])[0].localId, 'latest');
+});
+
 test('captions are bounded metadata without turning legacy alt text into visible captions', () => {
     const legacy = draft();
     assert.equal(legacy.caption, undefined);

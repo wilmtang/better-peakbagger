@@ -109,6 +109,18 @@ test('only ascent editing URLs have report owners', () => {
     assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/climber.aspx?cid=1'), null);
 });
 
+test('a resumed report draft returns under the same id and still rejects another report owner', async () => {
+    const { service, store } = await harness(async () => { throw new Error('must not upload'); });
+    const created = await service.create(owner, image);
+    const edit = { localPhotoId: created.localPhotoId, dataUrl: 'data:image/png;base64,ZWRpdA==' };
+    await assert.rejects(service.saveEdit('other-report', edit, created.localPhotoId), /unavailable/);
+    const result = await service.saveEdit(owner, edit, created.localPhotoId);
+    assert.equal(result.localPhotoId, created.localPhotoId);
+    assert.equal((await service.read(owner, result.localPhotoId)).image.dataUrl, edit.dataUrl);
+    assert.equal((await store.listPhotos()).length, 1);
+    store.close();
+});
+
 
 test('a malformed real client success retains its journal across service restart', async () => {
     const indexedDB = new IDBFactory();

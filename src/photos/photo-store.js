@@ -253,7 +253,8 @@ const createPhotoStore = async options => {
                     'This photo was deleted in another tab. Restore it before editing.');
             }
             if (editableOnly && current && (!EDITABLE_STATES.has(current.remote.state)
-                || current.source.sha256 !== cleanPhoto.source.sha256)) {
+                || current.source.sha256 !== cleanPhoto.source.sha256
+                || !current.assets.originalRetained || !current.assets.projectRetained)) {
                 throw new PhotoStoreConflictError(cleanPhoto.localId,
                     'This photo can no longer be edited in place.');
             }
@@ -356,6 +357,62 @@ const createPhotoStore = async options => {
         return values.map(value => presentPhoto(value, catalog)).filter(Boolean)
             .filter(photo => includeDeleted || !photo.deletedAt)
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    };
+
+    // Keep one editable bundle per source image. Historical public URLs and
+    // report associations remain catalog records. Pending report snapshots,
+    // upload recovery, and Recently Deleted retain their own recovery data.
+    const pruneSupersededVersions = async () => {
+        const transaction = database.transaction([
+            STORES.photos, STORES.projects, STORES.originals, STORES.thumbnails,
+            STORES.operations, STORES.metadata,
+        ], 'readwrite');
+        let pruned = 0;
+        try {
+            const photos = transaction.objectStore(STORES.photos);
+            const metadata = transaction.objectStore(STORES.metadata);
+            const [values, projects, originals, operations, metadataKeys, catalogValue] = await Promise.all([
+                requestResult(photos.getAll()),
+                requestResult(transaction.objectStore(STORES.projects).getAll()),
+                requestResult(transaction.objectStore(STORES.originals).getAllKeys()),
+                requestResult(transaction.objectStore(STORES.operations).getAll()),
+                requestResult(metadata.getAllKeys()),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
+            ]);
+            const projectsById = new Map(projects.map(value => [value.localId, Project.cleanProject(value)]));
+            const originalIds = new Set(originals);
+            const operationIds = new Set(operations.map(value => value.localId));
+            const reportIds = new Set(metadataKeys.filter(key => typeof key === 'string'
+                && key.startsWith('report-image:')).map(key => key.slice('report-image:'.length)));
+            const latestByHash = new Map(Library.latestPhotos(values).map(photo => [photo.source.sha256, photo]));
+            for (const value of values) {
+                const photo = Library.cleanPhoto(value);
+                const latest = photo && latestByHash.get(photo.source.sha256);
+                const latestProject = latest && projectsById.get(latest.localId);
+                if (!photo || photo.deletedAt || !latest || latest.localId === photo.localId
+                    || !latest.assets.originalRetained || !latest.assets.projectRetained
+                    || !originalIds.has(latest.localId) || !latestProject
+                    || latestProject.image.sourceSha256 !== latest.source.sha256
+                    || !Project.matchingImageDimensions(latestProject.image, latest.source)
+                    || operationIds.has(photo.localId)
+                    || !['draft', 'uploaded', 'unreachable'].includes(photo.remote.state)
+                    || (photo.remote.state === 'draft' && reportIds.has(photo.localId))
+                    || !Object.values(photo.assets).some(Boolean)) continue;
+                photos.put(Library.cleanPhoto({
+                    ...Library.updateAssets(photo, {
+                        originalRetained: false, projectRetained: false, thumbnailRetained: false,
+                    }),
+                    revision: photo.revision + 1,
+                }));
+                for (const name of [STORES.projects, STORES.originals, STORES.thumbnails]) {
+                    transaction.objectStore(name).delete(photo.localId);
+                }
+                pruned += 1;
+            }
+            if (pruned) advanceCatalog(metadata, cleanCatalogState(catalogValue));
+        } catch (error) { return abortAndRethrow(transaction, error); }
+        await transactionDone(transaction);
+        return pruned;
     };
 
     const getThumbnails = async localIds => {
@@ -1129,6 +1186,7 @@ const createPhotoStore = async options => {
         putReportImage,
         getReportImage,
         listPhotos,
+        pruneSupersededVersions,
         getThumbnails,
         listBackupBundles,
         getCatalogState,

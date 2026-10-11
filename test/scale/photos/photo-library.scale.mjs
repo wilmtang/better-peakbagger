@@ -26,7 +26,6 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
 const CATALOG_SIZE = 1200;
 const PAGE_SIZE = 48;
-const HASH = 'a'.repeat(64);
 
 const transactionDone = transaction => new Promise((resolve, reject) => {
     transaction.oncomplete = resolve;
@@ -73,7 +72,7 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
                 bytes: 12,
                 width: 1600,
                 height: 1200,
-                sha256: HASH,
+                sha256: index.toString(16).padStart(64, '0'),
             },
             now,
         }));

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
 // no live site, user browser, API key, or upload is involved.
-/* global document, DataTransfer, chrome, innerWidth, innerHeight, scrollY, getComputedStyle, HTMLCanvasElement, FileReader, navigator */
+/* global document, DataTransfer, chrome, innerWidth, innerHeight, scrollY, getComputedStyle, HTMLCanvasElement, FileReader, navigator, indexedDB */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -350,8 +350,36 @@ try {
     await page.waitForFunction(() => document.getElementById('save-status').textContent === 'Saved on this device');
     const savedEditor = await context.newPage();
     await savedEditor.goto(`${url}?mode=library`);
-    await savedEditor.getByRole('button', { name: 'Edit as new version', exact: true }).click();
+    await savedEditor.getByRole('button', { name: 'Edit', exact: true }).click();
     await savedEditor.locator('#editor-workspace').waitFor({ state: 'visible' });
+    await savedEditor.locator('#show-library').click();
+    await savedEditor.waitForFunction(() => document.querySelectorAll('.photo-card').length === 1);
+    if (screenshots) {
+        for (const theme of ['light', 'dark']) {
+            await savedEditor.locator('html').evaluate((html, value) => { html.dataset.bpbTheme = value; }, theme);
+            for (const width of [1440, 520]) {
+                await savedEditor.setViewportSize({ width, height: 900 });
+                await savedEditor.locator('#library-view').screenshot({
+                    path: path.join(screenshots, `latest-library-${theme}-${width}.png`),
+                });
+            }
+        }
+        await savedEditor.setViewportSize({ width: 1440, height: 1100 });
+    }
+    await savedEditor.getByRole('button', { name: 'Edit', exact: true }).click();
+    await savedEditor.locator('#editor-workspace').waitFor({ state: 'visible' });
+    assert.equal(await savedEditor.locator('#photo-title').inputValue(), 'mountain');
+    const savedCount = await savedEditor.evaluate(() => new Promise((resolve, reject) => {
+        const open = indexedDB.open('betterPeakbaggerPhotos');
+        open.onsuccess = () => {
+            const database = open.result;
+            const count = database.transaction('photos').objectStore('photos').count();
+            count.onsuccess = () => { database.close(); resolve(count.result); };
+            count.onerror = () => { database.close(); reject(count.error); };
+        };
+        open.onerror = () => reject(open.error);
+    }));
+    assert.equal(savedCount, 1, 'reopening a draft retains one saved version');
     await savedEditor.locator('#annotation-list button').filter({ hasText: 'Text: North ridge' }).click();
     assert.equal(await savedEditor.locator('#text-width').inputValue(), '300');
     assert.equal(await savedEditor.locator('#object-text').inputValue(), labelText);

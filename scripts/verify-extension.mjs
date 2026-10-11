@@ -860,6 +860,7 @@ try {
                         ...structuredClone(photo),
                         localId,
                         title: `Browser library page ${String(index).padStart(2, '0')}`,
+                        source: { ...photo.source, sha256: index.toString(16).padStart(64, '0') },
                         createdAt: timestamp,
                         updatedAt: timestamp,
                         assets: {
@@ -966,7 +967,7 @@ try {
         );
         await photoPage.locator('#library-view [data-report-width-control]')
             .waitFor({ state: 'visible', timeout: 5000 });
-        await photoPage.getByRole('button', { name: 'Edit as new version' }).first().click();
+        await photoPage.getByRole('button', { name: 'Edit', exact: true }).first().click();
         await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
         await photoPage.locator('[data-report-width]').first().selectOption('320');
         await photoPage.locator('#upload-format').selectOption('jpeg');

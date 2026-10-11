@@ -2739,7 +2739,7 @@ const editAsNewVersion = async (item, control = null) => {
     const owner = {};
     newVersionTransaction = owner;
     settleEditorGestures();
-    setBusy(true, 'Opening new version…');
+    setBusy(true, 'Opening photo…');
     if (control) {
         control.disabled = true;
         control.setAttribute('aria-busy', 'true');
@@ -2749,9 +2749,16 @@ const editAsNewVersion = async (item, control = null) => {
     let opened = false;
     try {
         if (!await settleOutgoingDraft()) return;
-        const bundle = await store.getBundle(item.localId);
+        const latest = LOCAL_PHOTO_ID ? item : Library.latestPhotos(await store.listPhotos())
+            .find(candidate => candidate.source.sha256 === item.source.sha256) || item;
+        const bundle = await store.getBundle(latest.localId);
         if (!bundle.photo || !bundle.original || !bundle.project) {
             toast('The original photo is not available on this device.');
+            return;
+        }
+        if (bundle.photo.remote.state === 'draft') {
+            if (!await loadBundle(bundle)) throw new Error('saved draft could not be loaded');
+            opened = true;
             return;
         }
         const localId = crypto.randomUUID();
@@ -2763,10 +2770,10 @@ const editAsNewVersion = async (item, control = null) => {
         });
         const nextPhoto = Library.createDraft({
             localId,
-            title: `${bundle.photo.title} revision`.slice(0, Library.TITLE_LIMIT),
+            title: bundle.photo.title,
             alt: bundle.photo.alt, caption: bundle.photo.caption || '',
             source: bundle.photo.source,
-            parentLocalId: item.localId,
+            parentLocalId: bundle.photo.localId,
             now,
         });
         let thumbnail = bundle.thumbnail;
@@ -2785,6 +2792,7 @@ const editAsNewVersion = async (item, control = null) => {
         const savedBundle = await store.getBundle(localId);
         if (!await loadBundle(savedBundle)) throw new Error('saved draft could not be loaded');
         opened = true;
+        if (await store.pruneSupersededVersions()) notifyBackupChanged();
         toast('Editing a new version. The existing image will stay unchanged.');
     } catch {
         if (committed) {
@@ -3091,7 +3099,7 @@ const cardFor = (item, thumbnail, objectUrls) => {
             control => insertFromLibrary(item, control), 'The image could not be inserted. Try again.', 'secondary-button'));
     }
     if (!item.deletedAt && item.assets.originalRetained && item.assets.projectRetained) {
-        appendAction('edit', makeButton('Edit as new version',
+        appendAction('edit', makeButton('Edit',
             event => void editAsNewVersion(item, event.currentTarget)));
         appendAction('download', makeLibraryButton('Download project', () => downloadProject(item),
             'This project could not be downloaded. Try again.'));
@@ -3133,9 +3141,14 @@ const libraryFocusFallback = () => {
 async function drawLibrary() {
     const all = await store.listPhotos({ includeDeleted: true });
     const filter = ui.filter.value;
+    const latest = Library.latestPhotos(all);
+    const latestIds = new Set(latest.map(item => item.localId));
+    // An unresolved upload is still actionable even if another version exists.
+    const visible = [...latest, ...all.filter(item => !item.deletedAt && !latestIds.has(item.localId)
+        && ['uploading', 'outcome-unknown'].includes(item.remote.state))];
     const items = filter === 'recently-deleted'
         ? all.filter(item => item.deletedAt)
-        : Library.search(all, ui.search.value, filter);
+        : Library.search(filter === 'needs-attention' ? all : visible, ui.search.value, filter);
     const pageCount = Math.max(1, Math.ceil(items.length / LIBRARY_PAGE_SIZE));
     libraryPage = Math.min(libraryPage, pageCount - 1);
     const pageStart = libraryPage * LIBRARY_PAGE_SIZE;
@@ -3772,6 +3785,7 @@ const initialize = async () => {
         },
     });
     await recoverOperations();
+    if (await store.pruneSupersededVersions()) notifyBackupChanged();
     await refreshCredential();
     await refreshPhotoBackupStatus();
     ui.upload.textContent = LOCAL_PHOTO_ID ? 'Save and return'
@@ -3786,9 +3800,12 @@ const initialize = async () => {
         setEditorStatus('Edits stay on this device. Save and return to update the TR.');
     } else if (SOURCE_IMAGE_URL && RETURN_TOKEN) {
         try {
-            const existing = (await store.listPhotos()).find(item => !item.deletedAt
+            const photos = await store.listPhotos({ includeDeleted: true });
+            const existing = photos.find(item => !item.deletedAt
                 && [item.remote?.url, item.remote?.displayUrl, item.remote?.mediumUrl].includes(SOURCE_IMAGE_URL));
-            const bundle = existing ? await store.getBundle(existing.localId) : null;
+            const latest = existing && Library.latestPhotos(photos)
+                .find(item => item.source.sha256 === existing.source.sha256);
+            const bundle = latest ? await store.getBundle(latest.localId) : null;
             if (bundle?.original && bundle?.project) await editAsNewVersion(existing);
             else await chooseFile(await readPhotoSourceUrl(SOURCE_IMAGE_URL, { maxBytes: MAX_ENCODED_SOURCE_BYTES }));
             if (project && SOURCE_IMAGE_CAPTION !== null) { ui.caption.value = SOURCE_IMAGE_CAPTION; schedulePersist(); }
