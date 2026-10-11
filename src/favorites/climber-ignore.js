@@ -62,10 +62,11 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
         button.title = reason || (active ? "Show this climber's reports again." : "Hide this climber's reports on peak and ascent pages.");
         button.setAttribute('aria-pressed', String(active));
         if (button.getAttribute('aria-busy') !== String(busy)) button.setAttribute('aria-busy', String(busy));
-        status.textContent = error || membership?.error || reason
+        status.textContent = error || membership?.error
             || (favoriteSaving ? 'Saving favorites…' : buddyPending ? 'Buddy List change pending · Refresh this page before ignoring.' : '')
             || (active ? 'Ignored · Unignore to add to favorites or your Buddy List.'
                 : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish sync before adding to favorites or your Buddy List.' : '');
+        status.hidden = !status.textContent;
         announcement.textContent = error || membership?.error || notice;
         retry.hidden = !error && !membership?.error;
     };

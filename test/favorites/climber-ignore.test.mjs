@@ -69,18 +69,24 @@ test('an unconfirmed native Buddy addition blocks Ignore until the page confirms
     buddy.value = 'Remove from My Buddy List';
     await waitFor(dom, () => !buddy.hasAttribute('data-bpb-buddy-pending'));
     assert.equal(ignore.disabled, true);
-    assert.match(dom.window.document.getElementById('bpb-climber-membership-note').textContent, /Remove from.*Buddy List/);
+    const note = dom.window.document.getElementById('bpb-climber-membership-note');
+    assert.equal(note.textContent, '');
+    assert.equal(note.hidden, true);
     dom.window.close();
 });
 
-test('favorite and ignored actions guide deliberate removal before switching lists', async () => {
+test('favorites quietly disable Ignore and allow deliberate removal before switching lists', async () => {
     const dom = await load('custom', 900002, { local: { bpbFavoriteClimbers: {
         schemaVersion: 1, entries: [{ ...entry, source: 'manual' }] } } });
     const button = id => dom.window.document.getElementById(id);
     await waitFor(dom, () => button('bpb-climber-favorite')?.textContent === '★');
     assert.equal(button('bpb-climber-ignore').disabled, true);
-    assert.match(button('bpb-climber-membership-note').textContent, /Remove from favorites to ignore/);
+    assert.equal(button('bpb-climber-membership-note').textContent, '');
+    assert.equal(button('bpb-climber-membership-note').hidden, true);
+    assert.match(button('bpb-climber-ignore').title, /Remove from favorites to ignore/);
     assert.equal(button('bpb-climber-favorite').disabled, false);
+    button('bpb-climber-ignore').click();
+    assert.equal(dom.chrome._localStore.bpbIgnoredClimbers, undefined);
     button('bpb-climber-favorite').click();
     await waitFor(dom, () => !button('bpb-climber-ignore').disabled);
     button('bpb-climber-ignore').click();
@@ -127,6 +133,9 @@ test('native and saved Buddy membership blocks Ignore, and native Remove stays a
     const ignore = dom.window.document.getElementById('bpb-climber-ignore');
     await waitFor(dom, () => /Remove from your Buddy List/.test(ignore.title));
     assert.equal(ignore.disabled, true);
+    const note = dom.window.document.getElementById('bpb-climber-membership-note');
+    assert.equal(note.textContent, '');
+    assert.equal(note.hidden, true);
     assert.notEqual(buddy.getAttribute('aria-disabled'), 'true');
     buddy.value = 'Add to My Buddy List';
     await waitFor(dom, () => !ignore.disabled);
@@ -134,6 +143,8 @@ test('native and saved Buddy membership blocks Ignore, and native Remove stays a
         entries: [entry], fetchedAt: Date.now() } });
     await waitFor(dom, () => ignore.disabled);
     assert.match(ignore.title, /Buddy List/);
+    assert.equal(note.textContent, '');
+    assert.equal(note.hidden, true);
     await dom.chrome.storage.local.set({ bpbBuddyCache: { ownerCid: 900001, entries: [], fetchedAt: Date.now() } });
     await waitFor(dom, () => !ignore.disabled);
     dom.window.close();
