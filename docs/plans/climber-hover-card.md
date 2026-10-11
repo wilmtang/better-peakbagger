@@ -26,8 +26,9 @@ Three existing boundaries matter:
 - Buddy changes currently happen through native profile controls. The extension
   observes those changes and verifies the signed-in Buddy List afterward. The
   [profile fixture](../../test/fixtures/pages/climber-other.html) uses a stub
-  button, with no real server form fields. The repository does not yet establish
-  the native write contract needed to add buddies from another page. The existing
+  button, with no real server form fields. The authenticated inspection below
+  establishes the current native form markup, but the write adapter and its
+  server-effect verification remain unimplemented. The existing
   [MAIN-world capture transport](../../src/peakbagger/peakbagger-page.js) is a
   narrow allowlist, not a general authenticated request API.
 
@@ -263,6 +264,73 @@ extension loaded. At that stage no native Buddy write contract, deployed hover-c
 screen-reader speech, or visible browser focus/window behavior is established.
 The documentation target checks passed (3 tests).
 
+## Authenticated Buddy inspection — 2026-10-10
+
+Read-only inspection used the user's signed-in Chrome 155 session in background
+tabs at a 2048 × 950 px content viewport. A non-buddy profile and an existing
+buddy profile exposed the following contract; no Buddy action, contact message,
+or ascent Save was submitted. No cookies or hidden field values were recorded.
+
+| Field | Not a buddy | Existing buddy |
+| --- | --- | --- |
+| `#BuddyLabel` text | `Add this Climber as a Buddy` | `This Climber is one of your buddies.` |
+| Submit control ID and name | `AddBuddy` | `RemoveBuddy` |
+| Submit control value | `Add to your Buddy List` | `Remove from your Buddy List` |
+| Control type | `submit` | `submit` |
+
+Both controls belong to `form#Form1`, with method `post`, encoding
+`application/x-www-form-urlencoded`, and action `./climber.aspx?cid=TARGET`.
+Its hidden field names are `__EVENTTARGET`, `__EVENTARGUMENT`, `__VIEWSTATE`,
+`__VIEWSTATEGENERATOR`, `__SCROLLPOSITIONX`, `__SCROLLPOSITIONY`, and
+`__EVENTVALIDATION`. Required state must come from the freshly fetched target
+profile, remain in memory, and never be logged or persisted. Submit only the
+chosen Buddy control; an existing buddy's form also contains unrelated
+`ContactTextBox` and `ContactButton` controls.
+
+The Buddy control sits inside `UpdatePanel1` and is registered with
+`Sys.WebForms.PageRequestManager` as an asynchronous postback control. Native
+clicks are therefore configured for partial-page updates, consistent with
+[Microsoft's PageRequestManager documentation](https://learn.microsoft.com/en-us/previous-versions/aspnet/bb386571(v=vs.100)).
+An ordinary full-page form POST is a candidate adapter transport, not a proven
+Peakbagger write path: no POST or resulting response was inspected. Do not
+execute downloaded scripts or assume every native response is HTML.
+
+The confirmation rule for implementation is a fresh, uncached profile GET
+after the attempted write, requiring all of the following:
+
+1. The resolved response is the expected Peakbagger climber profile for the
+   original target CID. Its account links identify the same signed-in owner
+   as before the operation. The live site retains a `Log In` link even while
+   signed in, so that link alone cannot establish signed-out state.
+2. A confirmed add has the exact existing-buddy label and supported
+   `RemoveBuddy` submit control, with no `AddBuddy` control. A confirmed removal
+   has the exact non-buddy label and supported `AddBuddy` control, with no
+   `RemoveBuddy` control. Missing or contradictory markup is unknown, not
+   successful absence. An explicit add/remove intent must never become a toggle
+   when fresh state differs from the card's cached state.
+3. Only confirmed state can reconcile the cache and existing custom-favorite
+   sync behavior. An ambiguous POST must be followed by a status read rather
+   than an automatic repeat of the write. Keep the pending reservation until
+   reconciliation succeeds; the current native observer clears its marker
+   before its verification request finishes and needs coordination under
+   implementation items 4–5.
+
+The authenticated Buddy report contained 89 distinct climber rows, with no
+pager. Its other-climber IDs matched all 88 actual options in the ascent
+editor's `#BuddyList`; the report additionally included the owner, while the
+editor had a placeholder instead. This supports completeness for this observed
+account, not all possible empty, hidden, or no-ascent Buddy lists. The help page's
+stated 50-buddy limit disagrees with this live state and must not become a local
+validation bound. Prefer the target's affirmative profile state for confirmation
+and use the report to refresh the cache.
+
+The Add/Remove markup and current-account report coverage are established.
+Actual mutation success, rejection, timeout recovery, final-buddy removal,
+cross-tab races, and the inline adapter remain unproven. This inspection does
+not establish visible focus/window behavior, physical touch, or screen-reader
+speech. The existing synthetic form fixture still needs to be replaced with a
+masked fixture covering the observed contract before implementing the adapter.
+
 ## Delivery ledger
 
 ### Fixed and verified
@@ -301,10 +369,9 @@ The documentation target checks passed (3 tests).
 ### Intentionally not changed
 
 - Buddy management uses **Manage buddies on profile**. The accepted design allows
-  this fallback before the native write form is verified. Neither the existing
-  fixture's stub nor an inferred endpoint authorizes a new server-write adapter.
-  Authenticated browser inspection was unavailable in this session: Firefox had
-  no Marionette listener and Chrome had no debugging session.
+  this fallback until the native write adapter and intent coordination are
+  implemented and verified. Authenticated inspection established the current
+  form markup and confirmation signals above, but did not submit a Buddy change.
 - Existing profile Buddy behavior and local mutation-lane policy remain the
   authority. No cross-tab Buddy intent protocol, new schema, preference, host
   permission, or page-world messaging capability was added. Changes on other
@@ -312,8 +379,9 @@ The documentation target checks passed (3 tests).
 
 ### Changed but not fully proven
 
-- Fixture evidence cannot establish live authenticated Buddy form behavior,
-  physical touch input, screen-reader speech, visible browser focus or window
-  placement, or all live Peakbagger markup variants. Those remain release proof
-  gaps. The fixed-position fallback is exercised in jsdom; current Chrome and
-  Firefox use the native popover top layer.
+- Authenticated inspection establishes current Buddy form markup, but actual
+  server writes and error behavior remain unproven. Fixture evidence cannot
+  establish physical touch input, screen-reader speech, visible browser focus
+  or window placement, or all live Peakbagger markup variants. Those remain
+  release proof gaps. The fixed-position fallback is exercised in jsdom;
+  current Chrome and Firefox use the native popover top layer.
