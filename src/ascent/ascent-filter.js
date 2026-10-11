@@ -625,16 +625,31 @@ const containAscentTable = table => {
     table.before(scroller); scroller.append(table);
 };
 
-const cacheRenderedBuddyList = async () => {
+const readRenderedBuddyList = () => {
+    if (!isBuddyListPage || document.readyState === 'loading' || !document.querySelector('#RGridView')) return null;
     const pageCid = numericParam(location.href, 'cid', document.baseURI);
     const ownCid = ownerClimberId(document);
     // The signed-in report endpoint omits cid and derives the owner from
     // the session. An explicit cid must still match that owner so viewing
     // another climber's report can never replace the local cache.
-    if (ownCid == null || (pageCid != null && pageCid !== ownCid)) return;
+    if (ownCid == null || (pageParams.has('cid') && (pageParams.getAll('cid').length !== 1 || pageCid !== ownCid))) return null;
     const entries = F.parseBuddyDocument(document);
+    return { ownerCid: ownCid, entries, fetchedAt: Date.now() };
+};
+
+// Options reads only its own helper tab. A storage notification from another
+// page is a wake-up cue, never proof that this navigation succeeded.
+if (isBuddyListPage) chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== F.BUDDY_PAGE_READ_TYPE || sender.id !== chrome.runtime.id
+        || sender.url?.split(/[?#]/)[0] !== chrome.runtime.getURL('options/favorites.html')) return;
+    sendResponse({ url: location.href, cache: readRenderedBuddyList() });
+});
+
+const cacheRenderedBuddyList = async () => {
+    const cache = readRenderedBuddyList();
+    if (!cache) return;
     await chrome.storage.local.set({
-        [F.BUDDY_CACHE_KEY]: { ownerCid: ownCid, entries, fetchedAt: Date.now() }
+        [F.BUDDY_CACHE_KEY]: cache
     });
 };
 

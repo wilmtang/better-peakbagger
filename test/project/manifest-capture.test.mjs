@@ -155,13 +155,25 @@ test('the site theme runs its tiny fallback before the full dynamic bundle', () 
     ]);
 });
 
-test('the Buddy refresh helper is a fixed first-party navigation', async () => {
+test('the Buddy refresh helper confines first-party navigation to Peakbagger origins', async () => {
     assert.ok(COPY_FILES.some(([source, target]) =>
         source === 'options/buddy-refresh.html' && target === 'options/buddy-refresh.html'));
     const html = await fs.readFile(new URL('../../options/buddy-refresh.html', import.meta.url), 'utf8');
-    assert.match(html,
-        /<meta http-equiv="refresh" content="0;url=https:\/\/www\.peakbagger\.com\/report\/report\.aspx\?r=b">/);
-    assert.doesNotMatch(html, /<script\b/i);
+    assert.match(html, /<script src="buddy-refresh\.js" defer><\/script>/);
+    assert.ok(bundle('options/buddy-refresh.js'));
+    const source = await fs.readFile(new URL('../../dist/options/buddy-refresh.js', import.meta.url), 'utf8');
+    for (const [hash, origin] of [
+        ['', 'https://www.peakbagger.com'],
+        ['#origin=https%3A%2F%2Fpeakbagger.com', 'https://peakbagger.com'],
+        ['#origin=https%3A%2F%2Fwww.peakbagger.com%3A8443', 'https://www.peakbagger.com:8443'],
+        ['#origin=https%3A%2F%2Fevil.test', 'https://www.peakbagger.com'],
+        ['#origin=http%3A%2F%2Fpeakbagger.com', 'https://www.peakbagger.com'],
+        ['#origin=https%3A%2F%2Fpeakbagger.com%2Fevil', 'https://www.peakbagger.com'],
+    ]) {
+        let destination;
+        vm.runInNewContext(source, { URL, URLSearchParams, location: { hash, replace: url => { destination = url; } } });
+        assert.equal(destination, `${origin}/report/report.aspx?r=b`);
+    }
 });
 
 test('3D terrain is isolated from Peakbagger globals in an extension-owned frame', async () => {

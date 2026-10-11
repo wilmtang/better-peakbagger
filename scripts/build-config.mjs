@@ -31,6 +31,7 @@ const PAGE_LOCAL = {
     'options-drafts-page.js': path.join(root, 'options', 'drafts-page.js'),
     'options-favorites.js': path.join(root, 'options', 'favorites.js'),
     'options-favorites-page.js': path.join(root, 'options', 'favorites-page.js'),
+    'options-buddy-refresh.js': path.join(root, 'options', 'buddy-refresh.js'),
     'options-ignored.js': path.join(root, 'options', 'ignored.js'),
     'options-favorites-backup.js': path.join(root, 'options', 'favorites-backup.js'),
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
@@ -92,6 +93,7 @@ export const ENTRIES = [
     // The custom-list workspace ships as its own page bundle; only its GitHub
     // backup (options-favorites-backup.js) stays in the options bundle below.
     { out: 'options/favorites-page.js', sources: ['favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/runtime-message.js', 'settings/settings-schema.js', 'settings/settings.js', 'options-utils.js', 'options-favorites.js', 'options-ignored.js', 'options-favorites-page.js'], page: true },
+    { out: 'options/buddy-refresh.js', sources: ['favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'options-buddy-refresh.js'], page: true },
     { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/section-nav.js', 'options-utils.js', 'options-main.js', 'options-favorites-backup.js'], page: true },
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },

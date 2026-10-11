@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
     loadFavoritesPage, el, favoriteRow, waitFor, registerCleanup,
     accelerateTimeout, siteTabChrome, buddyCacheFrom, signedOutFetch,
@@ -7,6 +8,7 @@ import {
 } from '../helpers/options-helpers.mjs';
 
 registerCleanup();
+const cloudflareBody = await readFile(new URL('../fixtures/pages/peakbagger-managed-challenge.html', import.meta.url), 'utf8');
 
 test('favorite removal transfers focus to Undo and restoration to the same row', async () => {
     const entries = [{ cid: 900002, name: 'First', addedAt: 2, source: 'manual' },
@@ -653,6 +655,10 @@ test('custom import opens a first-party helper when extension cookies look signe
                     removed.push(tabId);
                     callback();
                 },
+                sendMessage: (tabId, message, callback) => callback({
+                    url: 'https://www.peakbagger.com/report/report.aspx?r=b',
+                    cache: chrome._localStore[buddyCacheKey],
+                }),
             };
         },
         prepareWindow: window => {
@@ -706,6 +712,86 @@ test('a cookie-blocked Buddy read recovers through the first-party helper tab', 
     assert.equal(dom.chrome._siteTab.created[0].url, 'about:blank');
     assert.equal(dom.chrome._siteTab.created[0].active, false);
     assert.deepEqual(dom.chrome._siteTab.removed, [77], 'the helper tab must never be left open');
+});
+
+test('a managed-challenge 403 recovers through its own first-party Buddy tab', async () => {
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+        prepareChrome: siteTabChrome({ onNavigate: ({ chrome }) => {
+            void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+        } }),
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.doesNotMatch(el(dom, 'favorites-buddy-status').textContent, /human check/);
+    assert.equal(el(dom, 'status-error').hidden, true);
+    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+});
+
+test('challenge recovery keeps the working Buddy List hostname and reads only its helper', async () => {
+    const navigations = [], reads = [];
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+        prepareChrome: chrome => {
+            siteTabChrome({ onNavigate: ({ chrome, details }) => {
+                navigations.push(details);
+                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+            } })(chrome);
+            chrome.tabs.query = (query, callback) => callback([
+                { id: 5, url: 'https://www.peakbagger.com/Peak.aspx?pid=1', active: true },
+                { id: 6, url: 'https://peakbagger.com/report/report.aspx?r=b', active: false },
+                { id: 7, url: 'https://evil.test/report/report.aspx?r=b', active: true },
+            ]);
+            chrome.tabs.sendMessage = (tabId, message, callback) => {
+                reads.push({ tabId, message: structuredClone(message) });
+                callback({ url: 'https://peakbagger.com/report/report.aspx?r=b', cache: buddyCacheFrom() });
+            };
+        },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.equal(navigations[0].url, 'chrome-extension://test-extension/options/buddy-refresh.html#origin=https%3A%2F%2Fpeakbagger.com');
+    assert.equal(navigations[0].active, false);
+    assert.deepEqual(reads, [{ tabId: 77, message: { type: 'BUDDY_PAGE_READ' } }]);
+    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+});
+
+test('an unrelated cache update cannot complete a still-challenged helper tab', async () => {
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+        prepareChrome: chrome => {
+            siteTabChrome({ onNavigate: ({ chrome }) => {
+                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+            } })(chrome);
+            chrome.tabs.sendMessage = (tabId, message, callback) => callback({
+                url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache: null,
+            });
+        },
+    });
+    accelerateTimeout(dom, 8000);
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /human check/);
+    assert.equal(dom.chrome._localStore[favoriteKey], undefined);
+    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+});
+
+test('a helper read from another report cannot complete challenge recovery', async () => {
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+        prepareChrome: chrome => {
+            siteTabChrome({ onNavigate: ({ chrome }) => {
+                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+            } })(chrome);
+            chrome.tabs.sendMessage = (tabId, message, callback) => callback({
+                url: 'https://www.peakbagger.com/report/report.aspx?r=b&cid=900002', cache: buddyCacheFrom(),
+            });
+        },
+    });
+    accelerateTimeout(dom, 8000);
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
+    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
 });
 
 test('a wedged helper tab reports the timeout, never “sign in”', async () => {

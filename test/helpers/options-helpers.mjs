@@ -188,6 +188,10 @@ export const siteTabChrome = ({ onNavigate } = {}) => chrome => {
             onNavigate?.({ tabId, details, chrome });
         },
         remove: (tabId, callback) => { removed.push(tabId); callback?.(); },
+        sendMessage: (tabId, message, callback) => callback({
+            url: 'https://www.peakbagger.com/report/report.aspx?r=b',
+            cache: chrome._localStore[buddyCacheKey],
+        }),
     };
     chrome._siteTab = { created, removed };
 };
@@ -201,8 +205,8 @@ export const buddyCacheFrom = () => ({
     })),
 });
 
-// A 401 is what a cookie-blocked extension fetch looks like, and it is the only
-// failure that opens the helper tab.
+// A cookie-blocked extension fetch can look signed out. Managed challenges
+// also recover through a first-party helper tab.
 export const signedOutFetch = () => async () => pageResponse('', 401);
 
 export { waitFor, accelerateTimeout, makeChromeStub, evalBundle };

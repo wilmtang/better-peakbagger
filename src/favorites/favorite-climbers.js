@@ -10,6 +10,7 @@ import { PEAKBAGGER_HOSTS } from '../peakbagger/peakbagger-origin.js';
 const SCHEMA_VERSION = 1;
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const BUDDY_CACHE_KEY = 'bpbBuddyCache';
+const BUDDY_PAGE_READ_TYPE = 'BUDDY_PAGE_READ';
 const MUTATION_MESSAGE_TYPE = 'FAVORITES_MUTATE';
 const BUDDY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LIMIT = 1500;
@@ -358,6 +359,7 @@ export const favoriteClimbers = {
     SCHEMA_VERSION,
     FAVORITES_KEY,
     BUDDY_CACHE_KEY,
+    BUDDY_PAGE_READ_TYPE,
     MUTATION_MESSAGE_TYPE,
     BUDDY_TTL_MS,
     LIMIT,

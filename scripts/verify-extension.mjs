@@ -1189,9 +1189,9 @@ try {
                 }
                 if (request === 4) {
                     return {
-                        status: 401,
+                        status: 403,
                         headers: {},
-                        text: async () => '<html><body><a href="/Default.aspx">Log In</a></body></html>',
+                        text: async () => '<!DOCTYPE html><html><head><title>Just a moment...</title></head><body></body></html>',
                     };
                 }
                 return { status: 500, headers: {}, text: async () => 'fixture failure' };
@@ -1250,6 +1250,9 @@ try {
             && importRecovery?.href === signedInBuddyUrl,
         `the custom import failure was not persistent and actionable: ${JSON.stringify({ buddyRequests, importRecovery })}`);
 
+        const fallbackBuddyUrl = `https://www.peakbagger.com:${port}/report/report.aspx?r=b`;
+        const workingBuddyPage = await context.newPage();
+        await workingBuddyPage.goto(fallbackBuddyUrl);
         // This models a real Settings click and keeps Chrome from throttling
         // the initiating extension page's fallback deadline as a background
         // tab while the helper itself opens inactive.
@@ -1259,7 +1262,7 @@ try {
         null, { timeout: 5000 });
         await optionsPage.locator('#favorites-merge-buddies').click();
         await waitForCondition(
-            () => context.pages().some(page => page.url() === signedInBuddyUrl),
+            () => context.pages().filter(page => page.url() === fallbackBuddyUrl).length === 2,
             { description: 'the first-party Buddy helper navigation', timeoutMs: 5000 }
         ).catch(() => false);
         // The fallback opens a helper tab that loads the real site page. That
@@ -1288,16 +1291,18 @@ try {
             favorites: (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
         }));
         const fallbackPageUrls = context.pages().map(page => page.url());
-        const fallbackTabClosed = !fallbackPageUrls.includes(signedInBuddyUrl)
-            && !fallbackPageUrls.some(url => url.endsWith('/options/buddy-refresh.html'));
+        const fallbackTabClosed = context.pages().filter(page => page.url() === fallbackBuddyUrl).length === 1
+            && context.pages().includes(workingBuddyPage)
+            && !fallbackPageUrls.some(url => /\/options\/buddy-refresh\.html(?:#|$)/.test(url));
         check(buddyRequests === 4
-            && fallbackReportRequests === 1
+            && fixture.requests.buddyReports >= 2
             && fallbackImport?.count === 6
             && fallbackTabClosed,
         `the first-party Buddy import fallback failed or leaked its tab: ${JSON.stringify({
             buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls,
             fallbackDebug
         })}`);
+        await workingBuddyPage.close();
 
         await optionsPage.evaluate(async ({ signedInBuddyUrl, buddyListFixture }) => {
             const current = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;

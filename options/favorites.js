@@ -5,7 +5,7 @@
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
-import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
+import { isPeakbaggerPageOrigin, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
@@ -93,6 +93,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let buddyCache = null;
     let buddyState = 'idle';
     let buddyError = null;
+    let buddyOrigin = PEAKBAGGER_ORIGIN;
     let refreshPromise = null;
     let refreshRevision = 0;
     let refreshTimer = null;
@@ -134,7 +135,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     const appendBuddyRecovery = (error, target = buddyStatusEl) => {
         const recovery = PeakbaggerError.recovery(error, {
-            url: F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN),
+            url: F.signedInBuddyListUrl(buddyOrigin),
             label: 'Open Buddy List',
         });
         if (recovery) appendPeakbaggerLink(target, recovery);
@@ -386,14 +387,16 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         const url = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN);
         const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
         if (result.kind !== 'ok') {
-            if (result.error?.code === 'signed-out') {
+            if (['signed-out', 'cloudflare'].includes(result.error?.code)) {
                 const fallback = await loadBuddiesInSiteTab();
                 if (fallback.cache) return fallback.cache;
                 // Only an unavailable fallback leaves the original diagnosis
                 // standing. One that ran and ran out of time must say so: the
                 // signed-out error would tell a signed-in user to sign in,
                 // which is both wrong and unactionable.
-                if (fallback.timedOut) {
+                // A challenged navigation still needs a user-completed check;
+                // a timeout cannot establish that the challenge disappeared.
+                if (fallback.timedOut && result.error.code !== 'cloudflare') {
                     throw PeakbaggerError.failure('timeout', { resource: 'buddies' });
                 }
             }
@@ -413,12 +416,39 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const loadBuddiesInSiteTab = async () => {
         const tabs = extensionApi.tabs;
         const changes = extensionApi.storage.onChanged;
-        const helperUrl = extensionApi.runtime.getURL?.('options/buddy-refresh.html');
+        let helperUrl = extensionApi.runtime.getURL?.('options/buddy-refresh.html');
         if (!helperUrl || !tabs?.create || !tabs?.update || !tabs?.remove
+            || !tabs?.sendMessage
             || !changes?.addListener || !changes?.removeListener) return UNAVAILABLE;
 
         const promiseTabs = typeof globalThis.browser !== 'undefined'
             && extensionApi === globalThis.browser;
+        // Prefer an open Buddy List, then the most recently used site tab.
+        // This keeps first-party cookies/clearance on the user's working host.
+        if (tabs.query) {
+            try {
+                const siteTabs = await (promiseTabs
+                    ? tabs.query({ url: ['https://peakbagger.com/*', 'https://www.peakbagger.com/*'] })
+                    : new Promise((resolve, reject) => tabs.query({
+                        url: ['https://peakbagger.com/*', 'https://www.peakbagger.com/*'],
+                    }, result => {
+                        if (extensionApi.runtime.lastError) reject(new Error('Site tabs are unavailable.'));
+                        else resolve(result);
+                    })));
+                const buddyTab = tab => {
+                    const url = new URL(tab.url);
+                    return /^\/report\/report\.aspx$/i.test(url.pathname) && url.searchParams.get('r') === 'b';
+                };
+                const candidates = siteTabs.filter(tab => {
+                    try { return isPeakbaggerPageOrigin(new URL(tab.url).origin); }
+                    catch { return false; }
+                }).sort((a, b) => Number(buddyTab(b)) - Number(buddyTab(a))
+                    || Number(!!b.active) - Number(!!a.active) || (b.lastAccessed || 0) - (a.lastAccessed || 0));
+                buddyOrigin = candidates.length ? new URL(candidates[0].url).origin : PEAKBAGGER_ORIGIN;
+            } catch { buddyOrigin = PEAKBAGGER_ORIGIN; }
+        }
+        if (buddyOrigin !== PEAKBAGGER_ORIGIN) helperUrl += `#origin=${encodeURIComponent(buddyOrigin)}`;
+        const buddyUrl = F.signedInBuddyListUrl(buddyOrigin);
         const createTab = details => promiseTabs
             ? tabs.create(details)
             : new Promise((resolve, reject) => {
@@ -449,20 +479,52 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         let listener = null;
         let timer = null;
         let tab = null;
+        let updatedListener = null;
+        let finished = false;
+        let reading = false;
+        let readAgain = false;
         const cachePromise = new Promise(resolve => {
             const finish = value => {
+                if (finished) return;
+                finished = true;
                 if (timer != null) globalThis.clearTimeout(timer);
                 if (listener) changes.removeListener(listener);
                 listener = null;
                 timer = null;
                 resolve(value);
             };
+            const readHelper = async () => {
+                if (finished || !Number.isInteger(tab?.id)) return;
+                if (reading) { readAgain = true; return; }
+                reading = true;
+                try {
+                    const message = { type: F.BUDDY_PAGE_READ_TYPE };
+                    const response = await (promiseTabs ? tabs.sendMessage(tab.id, message)
+                        : new Promise((resolveRead, rejectRead) => tabs.sendMessage(tab.id, message, reply => {
+                            if (extensionApi.runtime.lastError) rejectRead(new Error('Buddy List is not ready.'));
+                            else resolveRead(reply);
+                        })));
+                    const cache = F.cleanBuddyCache(response?.cache);
+                    if (response?.url === buddyUrl && cache && cache.fetchedAt >= startedAt
+                        && Array.isArray(response.cache.entries)
+                        && cache.entries.length === response.cache.entries.length) finish(cache);
+                } catch { /* the helper can still be navigating or challenged */ }
+                finally {
+                    reading = false;
+                    if (readAgain) { readAgain = false; void readHelper(); }
+                }
+            };
             listener = (updates, area) => {
                 if (area !== 'local' || !updates[F.BUDDY_CACHE_KEY]) return;
-                const cache = F.cleanBuddyCache(updates[F.BUDDY_CACHE_KEY].newValue);
-                if (cache && cache.fetchedAt >= startedAt) finish(cache);
+                void readHelper();
             };
             changes.addListener(listener);
+            if (tabs.onUpdated?.addListener && tabs.onUpdated?.removeListener) {
+                updatedListener = (tabId, change) => {
+                    if (tabId === tab?.id && change.status === 'complete') void readHelper();
+                };
+                tabs.onUpdated.addListener(updatedListener);
+            }
             timer = globalThis.setTimeout(() => finish(null), SITE_TAB_REFRESH_MS);
         });
 
@@ -479,8 +541,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         } catch {
             return UNAVAILABLE;
         } finally {
+            finished = true;
             if (timer != null) globalThis.clearTimeout(timer);
             if (listener) changes.removeListener(listener);
+            if (updatedListener) tabs.onUpdated.removeListener(updatedListener);
             if (Number.isInteger(tab?.id)) {
                 try { removeTab(tab.id); }
                 catch { /* the user or browser already closed it */ }

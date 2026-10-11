@@ -618,6 +618,53 @@ test('visiting the implicit signed-in Buddy List refreshes the cache without ano
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
 });
 
+test('only the favorites page can read a signed-in Buddy helper snapshot', async () => {
+    const listeners = [];
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=b',
+        prepare: page => { page.chrome.runtime.onMessage.addListener = listener => listeners.push(listener); },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.entries?.length === 6);
+    const read = sender => {
+        let result;
+        listeners.forEach(listener => listener({ type: 'BUDDY_PAGE_READ' }, sender, value => { result = value; }));
+        return result;
+    };
+    const sender = { id: dom.chrome.runtime.id, url: dom.chrome.runtime.getURL('options/favorites.html') };
+    const result = read(sender);
+    assert.equal(result.url, 'https://peakbagger.com/report/report.aspx?r=b');
+    assert.equal(result.cache.ownerCid, 900001);
+    assert.equal(result.cache.entries.length, 6);
+    assert.equal(read({ ...sender, id: 'another-extension' }), undefined);
+    assert.equal(read({ ...sender, url: 'https://peakbagger.com/report/report.aspx?r=b' }), undefined);
+    dom.window.close();
+});
+
+test('Buddy helper snapshots reject missing identity, challenge pages, and another owner report', async () => {
+    for (const scenario of ['signed-out', 'challenge', 'other-owner', 'invalid-cid']) {
+        const listeners = [];
+        const cid = scenario === 'other-owner' ? '&cid=900002' : scenario === 'invalid-cid' ? '&cid=invalid' : '';
+        const dom = await loadPage('report-buddy-list.html', {
+            fixtures: PAGE_FIXTURES,
+            url: `https://peakbagger.com/report/report.aspx?r=b${cid}`,
+            prepare: page => {
+                page.chrome.runtime.onMessage.addListener = listener => listeners.push(listener);
+                if (scenario === 'signed-out') page.window.document.querySelector('a[href*="climber/climber.aspx?cid=900001"]').remove();
+                if (scenario === 'challenge') page.window.document.body.innerHTML = '<h1>Just a moment...</h1>';
+            },
+        });
+        await waitFor(dom, () => dom.window.document.readyState !== 'loading');
+        let result;
+        listeners.forEach(listener => listener({ type: 'BUDDY_PAGE_READ' }, {
+            id: dom.chrome.runtime.id, url: dom.chrome.runtime.getURL('options/favorites.html'),
+        }, value => { result = value; }));
+        assert.equal(result.cache, null, scenario);
+        assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY], undefined, scenario);
+        dom.window.close();
+    }
+});
+
 test('visiting an empty signed-in Buddy List replaces an older cached list', async () => {
     const oldCache = {
         ownerCid: 900001,
