@@ -273,6 +273,9 @@ try {
     };
     const geometryForCard = () => {
         const card = document.getElementById('bpb-ascent-weather'), box = card.getBoundingClientRect();
+        const header = card.querySelector('header'), headingBox = header.querySelector('h2').getBoundingClientRect();
+        const dateBox = header.querySelector('.bpb-weather-date').getBoundingClientRect();
+        const dateStart = dateBox.top >= headingBox.bottom - 1 ? headingBox.left : headingBox.right + parseFloat(getComputedStyle(header).columnGap);
         const column = document.getElementById('bpb-ascent-summary-column'), columnBox = column.getBoundingClientRect();
         const summaryBox = column.querySelector('.bpb-ascent-table-split__summary').getBoundingClientRect();
         const reportBox = document.querySelector('.bpb-ascent-table-split__report').getBoundingClientRect();
@@ -287,6 +290,7 @@ try {
                 && (bounds.left < columnBox.left - 1 || bounds.right > columnBox.right + 1);
         }).map(node => node.tagName + '.' + node.className) : [];
         return { width: box.width, overflow, gpsOverflow, cardCount: document.querySelectorAll('#bpb-ascent-weather').length,
+            dateWithHeading: Math.abs(dateBox.left - dateStart) <= 1,
             inSummaryColumn: card.parentElement === column, belowSummary: box.top >= summaryBox.bottom,
             gpsBeforeWeather: !gps || (gps.parentElement === column && gps.nextElementSibling === card && gpsBox.bottom <= box.top),
             withinColumn: box.left >= columnBox.left - 1 && box.right <= columnBox.right + 1,
@@ -297,7 +301,7 @@ try {
     const assertPlacement = geometry => {
         assert.deepEqual(geometry.overflow, [], JSON.stringify(geometry));
         assert.deepEqual(geometry.gpsOverflow, [], JSON.stringify(geometry));
-        for (const key of ['inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
+        for (const key of ['dateWithHeading', 'inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
     if (peakMode) {
