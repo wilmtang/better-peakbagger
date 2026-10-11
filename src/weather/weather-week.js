@@ -19,4 +19,8 @@ export function weatherWeekWindow(zone, now = Date.now()) {
     return { zone, days, startDate: iso(days[0].start), endDate: iso(Math.ceil(days.at(-1).end / HOUR) * HOUR), partial: false };
 }
 
-export const summarizeWeatherWeek = (data, window) => window.days.map(day => ({ window: day, ...summarizeWeatherDay(data, day) }));
+export const summarizeWeatherWeek = (data, window) => window.days.map(day => {
+    const summary = summarizeWeatherDay(data, day);
+    return { window: day, ...summary,
+        useful: summary.useful || Number.isFinite(summary.precipitation.total) || Number.isFinite(summary.gust.high) };
+});

@@ -1,0 +1,94 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+/* global document, getComputedStyle */
+
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { waitForCondition } from './browser-verification-fixtures.mjs';
+
+// Reuse the real extension/HTTPS/browser transports and their teardown rather
+// than launch a second browser or substitute a content-script-only demo.
+export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, wait, setMode, release, evidence, networkErrors, live, firefoxMode }) {
+    const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
+    if (output) await mkdir(output, { recursive: true });
+    const card = '#bpb-peak-weather';
+    const openPage = async (kind = 'map') => {
+        await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${kind}`);
+        await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');
+        await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
+        await wait(() => document.querySelectorAll('.bpb-week-day').length === 7
+            && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'seven completed summit-local weather days');
+    };
+    const geometry = () => {
+        const card = document.getElementById('bpb-peak-weather'), right = card.closest('table'), frame = document.getElementById('Gmap');
+        const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
+        return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
+            belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
+            overflow: [...card.querySelectorAll('summary, button, header, footer, .bpb-week-range, .bpb-week-help')].filter(node => {
+                const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
+            }).map(node => node.className || node.tagName),
+            pageWidth: document.documentElement.scrollWidth, bg: getComputedStyle(card).backgroundColor,
+            days: [...card.querySelectorAll('.bpb-week-day')].map(node => node.dataset.date) };
+    };
+    const assertGeometry = state => {
+        assert.equal(state.nativeAlign, 'right', JSON.stringify(state));
+        assert.equal(state.belowMap, true, JSON.stringify(state));
+        assert.ok(state.left >= state.parentLeft - 1 && state.right <= state.parentRight + 1, JSON.stringify(state));
+        assert.deepEqual(state.overflow, [], JSON.stringify(state));
+        assert.equal(new Set(state.days).size, 7);
+        assert.ok(state.days.every((date, index) => !index || date < state.days[index - 1]), JSON.stringify(state));
+    };
+    await setSettings({ theme: 'light', units: 'imperial' });
+    await openPage(); await resize(1440, 1100);
+    if (live) return { liveCors: 'passed', viewport: { width: 1440, height: 1100 } };
+    const widths = [1440, 768, 375], shapes = [];
+    for (const theme of ['light', 'dark']) {
+        await setSettings({ theme, units: theme === 'dark' ? 'metric' : 'imperial' });
+        await openPage(); await resize(1440, 1100);
+        await waitForCondition(async () => await evaluate(() => document.documentElement.getAttribute('data-bpb-theme')) === theme,
+            { description: 'peak weather theme', timeoutMs: 20_000 });
+        for (const width of widths) {
+            await resize(width, 1100);
+            await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
+            const state = await evaluate(geometry); assertGeometry(state); shapes.push({ theme, viewport: width, cardWidth: state.width });
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${width}.png`));
+            const before = evidence.length;
+            await click(`${card} .bpb-week-day:first-child > summary`);
+            await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-hours > tbody > tr'), 'selected day’s hourly readings');
+            const opened = await evaluate(geometry); assertGeometry(opened);
+            assert.ok(opened.pageWidth <= state.pageWidth + 1, 'hourly table must scroll inside the card without widening the peak page');
+            assert.equal(evidence.length, before, 'hourly disclosure reuses the weekly response');
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-hourly-${width}.png`));
+            await click(`${card} .bpb-week-day:first-child > summary`);
+        }
+        await resize(1440, 1100);
+        await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
+        if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-right-column.png`));
+    }
+    // Native summary disclosure is operable by keyboard in both engines.
+    await evaluate(() => document.querySelector('#bpb-peak-weather .bpb-week-day > summary').focus());
+    await press(firefoxMode ? '\uE007' : 'Enter');
+    await wait(() => document.querySelector('#bpb-peak-weather .bpb-week-day[open] .bpb-week-hours'), 'keyboard disclosure');
+    await openPage('no-map'); assertGeometry(await evaluate(geometry));
+    setMode('partial'); await openPage();
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 7);
+    assert.ok(await evaluate(() => [...document.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —'))));
+    setMode('error'); await click('.bpb-week-refresh');
+    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('temporarily limited'), 'rate limit explains failed refresh');
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 7);
+    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-error-partial.png`));
+    setMode('empty'); await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map`);
+    await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView());
+    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('unavailable for this summit'), 'empty response never appears as seven clear dry days');
+    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-unavailable.png`));
+    setMode('loading'); await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map`);
+    await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView());
+    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('Loading'), 'visible weekly loading feedback');
+    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-loading.png`));
+    setMode('complete'); release();
+    await wait(() => document.querySelectorAll('.bpb-week-day').length === 7, 'held weekly response settles');
+    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && request.model === null));
+    assert.deepEqual(networkErrors, []);
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'hourly', 'keyboard', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
+}

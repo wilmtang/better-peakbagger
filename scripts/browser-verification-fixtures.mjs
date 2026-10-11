@@ -766,8 +766,14 @@ export async function createBrowserFixtureServer({
         if (/\/list\.aspx$/i.test(url.pathname)) {
             return send('text/html; charset=utf-8', peakListHtml);
         }
-        if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8',
-            url.searchParams.has('ignored') || url.searchParams.get('pid') === '2296' ? ignoredPeakHtml : peakHtml);
+        if (/peak\.aspx/i.test(url.pathname)) {
+            if (url.searchParams.has('week-weather')) {
+                let html = ignoredPeakHtml.replaceAll('/map/BigMap.aspx?t=P&amp;d=2296&amp;c=900001', '/map/BigMap.aspx?cy=46.851731&amp;cx=-121.760395&amp;z=10&amp;t=P&amp;d=2296&amp;c=900001');
+                if (url.searchParams.get('week-weather') === 'no-map') html = html.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, '');
+                return send('text/html; charset=utf-8', html);
+            }
+            return send('text/html; charset=utf-8', url.searchParams.has('ignored') || url.searchParams.get('pid') === '2296' ? ignoredPeakHtml : peakHtml);
+        }
         if (/bigmap\.aspx/i.test(url.pathname)) {
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakBigMapHtml : bigMapHtml);

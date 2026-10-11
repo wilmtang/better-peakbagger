@@ -477,6 +477,19 @@ test('ascent weather has an independent isolated bundle without API permissions'
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));
 });
 
+test('peak weather ships only on peak pages in the isolated world with its scoped CSS', () => {
+    const weather = contentEntry('content/peak-weather.js');
+    assert.ok(weather);
+    assert.equal(weather.world, undefined);
+    assert.equal(weather.run_at, 'document_end');
+    assert.equal(weather.all_frames, false);
+    assert.deepEqual(weather.js, ['content/peak-weather.js']);
+    assert.deepEqual(weather.css, ['css/peak-weather.css']);
+    assert.ok(weather.matches.every(match => /\/peak\.aspx/i.test(match)));
+    assert.deepEqual(bundleSources('content/peak-weather.js'), ['weather/peak-weather.js']);
+    assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));
+});
+
 // The MV3 service worker resolves its dependencies through the bundle, not
 // importScripts. Boot the bundled worker and require that it comes up with its
 // coordinator wired and its message listener registered.

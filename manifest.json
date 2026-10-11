@@ -275,6 +275,18 @@
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*"
       ],
+      "css": ["css/peak-weather.css"],
+      "js": ["content/peak-weather.js"],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*"
+      ],
       "js": [
         "content/peak-map-bridge.js"
       ],

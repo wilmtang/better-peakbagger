@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Review the past week's summit weather.** Peak pages show seven completed
+  local days below the map in the right column, with conditions, temperature
+  ranges, rain/snow water equivalent and maximum wind. Expand a day for hourly
+  readings; missing hours remain labelled. Open-Meteo chooses regional models
+  automatically, and today's incomplete data stays out of the summary.
+
 - **Give extension panels an outdoor identity.** Warm paper and forest colors,
   subtle contours, and simpler grouped results carry through Settings and Photo
   Topos. Capture results wrap long summit names and keep draft actions visible;

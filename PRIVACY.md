@@ -12,8 +12,8 @@ data or use or transfer it for unrelated purposes or credit decisions.
 Data leaves the browser only when a feature requires it:
 
 - **Peakbagger** receives summit lookups and user-approved GPS Preview data.
-- **Open-Meteo** receives summit coordinates and the ascent-day date window
-  automatically when the historical weather card approaches the viewport.
+- **Open-Meteo** receives summit coordinates and the ascent-day or past-week
+  date window automatically when a weather card approaches the viewport.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
@@ -328,18 +328,26 @@ explicit manual settings export that includes saved credentials, as described
 below. Uploads use the user's own key; Better Peakbagger has no ImgBB relay or
 developer account.
 
-## Historical ascent weather
+## Summit weather
 
 On saved ascent pages, the weather card automatically reads the matching peak
 page on Peakbagger, then requests model estimates from Open-Meteo when the card
 approaches the viewport. This works without a GPX and for other climbers’
 viewable ascents. Invalid or incomplete dates make no weather request.
 
+On peak pages, **Past week weather** reads summit coordinates and elevation
+directly from the current Peakbagger page. It requests the seven completed
+summit-local days, with UTC padding for day boundaries, from Open-Meteo's recent
+weather API when the card approaches the viewport. Today is excluded. The API
+selects regional models automatically; **Refresh** makes another request.
+
 Open-Meteo receives the summit latitude/longitude, summit elevation when
-available, a three-UTC-day window covering the local ascent date, selected model
-and weather fields, IP address, and ordinary request metadata. Weather requests
+available, date window and weather fields, IP address, and ordinary request
+metadata. Ascent weather uses a three-UTC-day window covering the local ascent
+date and a selected model. Peak weather uses a padded UTC window covering the
+seven completed local days and automatic regional model selection. Weather requests
 omit credentials and referrers. No ascent or climber ID, summit name, report,
-GPX, track times, account credentials, or ascent URL is sent to Open-Meteo.
+GPX, track times, account credentials, or page URL is sent to Open-Meteo.
 An hourly graph cursor can follow GPX hover or selection using only timestamps
 passed locally between the page's extension scripts. Cursor movement makes no
 additional network request and persists no track data.
@@ -476,7 +484,7 @@ The user can export and import settings without GitHub:
 | Service | When it receives data |
 | --- | --- |
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
-| Open-Meteo | Summit coordinates, elevation and ascent-day window when the saved-ascent weather card approaches the viewport, and on model selection or Retry. No credentials or referrer. |
+| Open-Meteo | Summit coordinates, elevation and ascent-day or recent-week window when a weather card approaches the viewport, and on model selection, Retry or Refresh. No credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

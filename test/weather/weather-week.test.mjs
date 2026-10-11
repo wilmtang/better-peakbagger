@@ -61,6 +61,15 @@ test('recent requests use fixed automatic forecast endpoint and preserve strict 
     assert.throws(() => validateWeatherResponse(responseBody(window), summit, window, WEATHER_MODELS[0]));
 });
 
+test('precipitation-only days retain useful partial totals instead of disappearing', () => {
+    const body = responseBody(window);
+    for (const field of ['temperature_2m', 'wind_speed_10m', 'wind_gusts_10m', 'weather_code']) body.hourly[field].fill(null);
+    const days = summarizeWeatherWeek(validateRecentWeatherResponse(body, summit, window), window);
+    assert.ok(days.every(day => day.useful && day.partial && day.precipitation.complete));
+    assert.ok(days.every(day => day.condition.label === 'Conditions unavailable' && day.temperature.high === null));
+    assert.equal(days.at(-1).precipitation.total, 24);
+});
+
 test('weekly response stays bounded and validates all fields, grid, timestamps and missing values', () => {
     const body = responseBody(window);
     assert.equal(validateRecentWeatherResponse(body, summit, window).samples.length, 192);

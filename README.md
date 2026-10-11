@@ -92,6 +92,12 @@ detail. A GPX is not required. These are model estimates; they cannot establish
 conditions along the route or the climber’s summit time. See the
 [historical weather design](docs/ascent-weather.md).
 
+Peak pages also show **Past week weather** below the map in the right column:
+seven completed summit-local days with conditions, temperature ranges,
+rain/snow water equivalent and maximum wind. Select a day for hourly readings.
+Today is excluded; Open-Meteo chooses regional models automatically. See the
+[recent weather design](docs/peak-weather.md).
+
 ### Send a saved track to another mapping app
 
 In **Settings → Map & GPX chart → Send GPX**, enable or hide providers and move them into your preferred order. All providers are enabled by default. **Settings → Ascent beta filter** controls the separate peak and personal filter orders; dragging filters on the page updates the same settings. These preferences travel with the existing **Settings backup** export/import file. Existing site-local filter orders migrate when an ascent list is next opened.
@@ -206,9 +212,9 @@ map tiles only after you enable it; once enabled, hovering or focusing its
 toggle may prefetch a small bounded elevation tile set before the view opens.
 Sun and Moon calculations use only packaged code and remain in the Peakbagger
 tab; they add no storage, permission, or provider request.
-The ascent weather card automatically sends summit coordinates, elevation and
-a narrow ascent-date window to Open-Meteo as it approaches the viewport. It
-sends no GPX, ascent/climber IDs, credentials, or referring ascent URL, and keeps
+Weather cards automatically send summit coordinates, elevation and a narrow
+ascent-date or recent-week window to Open-Meteo as they approach the viewport. They
+send no GPX, ascent/climber IDs, credentials, or referring page URL, and keep
 results only in tab memory.
 Gaia or onX receives a saved Peakbagger GPX only when you click its **Send**
 button, and final review and confirmation remain with you.
