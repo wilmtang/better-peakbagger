@@ -1,7 +1,8 @@
 # Historical weather on individual ascent pages
 
-Date: 2026-10-10. Status: investigated and proposed; runtime implementation has
-not started.
+Investigated: 2026-10-10. Implemented and verified locally: 2026-10-11.
+Status: archived implementation record; external release proof remains explicit
+in the closure ledger below. Maintained runtime design: [ascent-weather.md](../ascent-weather.md).
 
 ## Requested outcome
 
@@ -270,26 +271,76 @@ Commit each completed unit after its checks pass:
 - Minimal read-only live Peakbagger inspection in the existing authenticated
   profile must confirm native subject and placement selectors before release.
 
-## Investigation evidence and remaining proof
+## Investigation evidence before implementation
 
 Established: current source boundaries and representative fixture fields;
 strict-date admission problem reproduced; six core-variable model probes;
 two CORS-header probes; multi-model response shape; two historical timezone
-boundary probes. No runtime code has changed.
+boundary probes. At this stage, no runtime code had changed.
 
 Local checks run for this documentation unit: `git diff --check` passed, and
 `node --test test/project/documentation.test.mjs test/ascent/ascent-page.test.mjs test/time/mountain-time.test.mjs`
 passed all 15 tests. These verify document references and existing reader/time
 behavior; they do not establish a weather implementation.
 
-Not yet established: authenticated live ascent markup, complete regional-model
+At this stage, not yet established: authenticated live ascent markup, complete regional-model
 eligibility/ranking, every model's historical variable coverage, actual packaged
 browser CORS, weather-card layout, accessibility speech, or a rendered card.
 The existing Firefox main-session connector returned no Marionette listener;
 no browser was launched and no user tab was changed. These gaps remain explicit
 implementation/release gates.
 
-This investigation does not classify the requested feature as implemented,
-fixed, or visually verified. After implementation, retain separate records for
-fixed and verified behavior, intentional boundaries, and changes whose external
-proof is still incomplete.
+## Implementation closure ledger — 2026-10-11
+
+### Fixed and verified
+
+| Work | Result and evidence |
+| --- | --- |
+| Authoritative subject | Dedicated strict date/summit reader rejects partial or impossible dates, conflicting native identity and mismatched peak pages. Invalid dates make no summit or API request, including after BFCache restore. Negative elevations retain their sign. |
+| Independent placement | Separate isolated bundle and stylesheet mount below the whole route explorer, below the native map without GPX, or after metadata without a map. Bundled DOM and real Chrome/Firefox fixtures verify a single card and late analyzer placement. No new API host permission or worker route. |
+| Model policy and transport | Registry contains 37 date/location candidates. Auto prefers eligible HRRR/HRDPS, then IFS/ERA5; explicit choices never fall back. Fixed hosts, omitted credentials/referrers, response validation, body/deadline bounds, cancellation, memory-only cache, rate-limit stop and explicit fresh Retry have regression coverage. Seven additional public API probes returned usable data for HRRR, HRDPS, IFS, ERA5 blend, ERA5 Ensemble, CERRA and IFS Assimilation. |
+| Historical local day | Offline historic summit timezone, 23/25-hour days, half/quarter-hour offsets, skipped civil dates, date-line eligibility, partial current day, sparse native series and final-midnight precipitation have tests. UTC padding clips at archive boundaries. Missing measurements remain unavailable or labelled partial. |
+| Card behavior and presentation | Daily condition, temperature range, precipitation, max wind/gust, actual source/model, unit changes, accessible disclosure and keyboard tabs, local hourly charts, partial/error/retry and retained results during model changes are implemented. |
+| Real weather surfaces | `npm run verify:weather` passed in hidden Chrome 153.0.8010.12 and Firefox 157.0.1 at 375, 768 and 1440 CSS pixels, both themes, with GPX/no-GPX/no-map, loading, long model name, partial data, rate limit and invalid date. Screenshots were inspected for spacing, wrapping and clipping. Charts are native SVG/CSS; no WebGL weather renderer. Intercepted requests assert no cookies, authorization, referrer or ascent identity. |
+| Live provider CORS | One real public-Rainier HRRR request from the packaged isolated card passed in each hidden browser at 1440×1100, without extra permissions. These establish actual browser CORS, not live Peakbagger selector compatibility. |
+| Project checks and cleanup | `npm test` passed all 2474 tests; `npm run lint` passed with the existing owned warning baseline. `npm run verify:browsers` passed Chrome at 1000×760 but exposed an existing stale Firefox photo-pagination seed. A separate one-line fixture correction now uses distinct source hashes, matching Chrome; the full Firefox verifier then passed at 1000×760. Both report teardown passed; exact disposable process prefixes were checked and no test browser remained. |
+| Public contract | README, architecture/development notes, focused design, privacy policy and generated Chrome store description document the automatic public-summit/date-window transfer and model-estimate limits. |
+
+### Intentionally not changed
+
+- Backup's best-effort date/peak reader, native weather/report fields, ownership
+  controls, GPX analysis, native map layers and the user's Save flow stay unchanged.
+- Date alone selects a daily summit estimate; no GPX-derived ascent time,
+  route-weather synchronization or multi-day trip inference is introduced.
+- Auto is a documented product recommendation, not an accuracy ranking. Outside
+  the verified US/Canada regional preference, global IFS/ERA5 defaults apply;
+  eligible regional alternatives remain selectable. Other regional admission
+  footprints are conservative and may omit domain-edge locations.
+- Forecast/reanalysis estimates remain distinct from observations. Surface-only
+  and no-precipitation models expose missing fields. No persistent weather history,
+  API key setting, reverse geocoding or privileged API permission is added.
+
+### Changed but not fully proven
+
+- **Live Peakbagger markup:** current authenticated ascent selectors and placement
+  remain a pre-release manual check. Masked fixtures establish the packaged
+  behavior; the available authenticated Firefox connector was unavailable and
+  existing Chrome tabs did not supply an authenticated ascent. No user tab or
+  login state was changed for this task.
+- **All model slices and accuracy:** the registry follows official starts and
+  routes, but each regional/date/variable slice and native interpolation behavior
+  has not been live-probed. Provider refusal disables a candidate until Retry;
+  null or sparse results are labelled partial. A finer grid does not establish
+  more accurate summit wind or precipitation.
+- **Native accessibility and browser UI:** hidden DOM interaction and screenshots
+  do not prove screen-reader speech, native select menus, focus/window placement,
+  or visible browser chrome. Firefox's broad smoke did not actually restore from
+  BFCache in this run; weather suspension/restore has bundled lifecycle coverage.
+- **Hosted verification/publication:** no hosted CI, push, store update or release
+  was performed. Free hosted usage is subject to the provider's non-commercial
+  terms and attribution documented in the public privacy contract.
+
+Implementation commits: `aff4884` (subject/civil day), `a392b34` (models/client),
+`4317ebb` (card, integration and public contract). Separate verifier repair:
+`fa5ed33` (Firefox pagination fixture). These closure categories travel with the
+archived plan; local green checks do not erase the external proof gaps.
