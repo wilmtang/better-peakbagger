@@ -170,6 +170,10 @@ CodeMirror only edits and highlights text. It does not parse, sanitize, or
 render the report. The source pane uses GFM, list key bindings, and URL paste without the full
 HTML authoring plugins. Raw HTML block tags are no longer automatically closed;
 supported inline HTML still passes through the same report conversion pipeline.
+Tables with lists or other block content in their cells use an allowlisted HTML
+table in Markdown, since GFM pipe tables only support inline cell content. Rich
+text, the Markdown preview, and saved bracket markup preserve those cell blocks.
+Tables whose cells contain only a single paragraph continue to use pipe syntax.
 The extension sends its string through two sibling outputs:
 
 ```text
@@ -227,7 +231,7 @@ canonical spelling or structure. Several components do only one of those jobs:
 | TipTap schema | Partial, structural first pass | Yes | Refuses nodes and marks its schema cannot represent; turns editing operations and pasted content into a ProseMirror document, carrying the parsed color token across CSSOM serialization |
 | CodeMirror | No | No | Stores a string, highlights syntax, continues lists, and manages Markdown undo history |
 | Marked lexer | No | No | Tokenizes GFM syntax; Better Peakbagger, not Marked, decides which token types enter the AST |
-| Markdown-token-to-AST mapper | Yes | Yes | Accepts known token types, validates links and images, parses only the documented inline HTML allowlist, and keeps other HTML inert as visible text |
+| Markdown-token-to-AST mapper | Yes | Yes | Accepts known token types, validates links and images, parses the documented inline HTML and narrow figure/table forms, and keeps other HTML inert as visible text |
 | Bracket-source parser | Yes | Yes | Requires balanced allowlisted tags, validates attributes, neutralizes unsupported tag-like source, and builds inert safe HTML |
 | DOM-to-AST parser | Yes, authoritative for DOM input | Yes | Drops dangerous DOM nodes, unwraps unsupported elements to safe visible content where appropriate, and revalidates links, image sources, dimensions, raw inline colors, and TipTap-preserved color tokens |
 | AST-to-bracket printer | No new validation | Yes | Serializes the already-validated AST, emitting canonical Peakbagger tags and escaping ordinary text that resembles HTML or bracket tags |
@@ -324,6 +328,7 @@ Peakbagger equivalent:
 | `> quote` | `[blockquote]` |
 | `-`/`*` bullets and `1.` numbering, including nesting | `[ul]`/`[ol]`/`[li]` |
 | GFM pipe tables | `[table border="1"]`/`[tr]`/`[th]`/`[td]` |
+| Allowlisted HTML tables containing lists or multiple cell blocks | The same table tags, preserving nested `[ul]`/`[ol]`/`[li]` and paragraph breaks |
 | fenced or indented code blocks | `[pre]` |
 | `---` horizontal rule | `[hr]` |
 | `[label](https://…)` and bare web URLs | `[a href="…"]` |
@@ -534,7 +539,7 @@ Peakbagger therefore does **not** generate or execute:
 - iframes other than a canonical YouTube player, plus `audio`, `object`, or
   `embed`;
 - `script`, forms, controls, or event-handler attributes;
-- HTML outside the documented inline allowlist;
+- HTML outside the documented inline allowlist and narrow figure/table forms;
 - `javascript:`, `data:`, filesystem, browser-internal, or protocol-relative
   URLs;
 - arbitrary `style` attributes.

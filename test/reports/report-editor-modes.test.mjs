@@ -53,6 +53,41 @@ test('the live Markdown preview keeps adversarial raw HTML inert at the render b
     assert.match(preview.textContent, /<script>/);
 });
 
+test('Rich table lists survive Markdown edits, Plain mode, reload, and synchronous submission', async () => {
+    const dom = await loadEditor();
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const expected = '[table border="1"][tr][th]Names[/th][th]Directions[/th][/tr][tr]'
+        + '[td][ul][li]Standard TH[/li][li]Outhouse TH[/li][/ul][/td]'
+        + '[td][ol][li]Park[/li][li]Walk[/li][/ol][/td][/tr][/table]';
+    typeRich(dom, '<table><tr><th>Names</th><th>Directions</th></tr><tr>'
+        + '<td><ul><li><p>Standard TH</p></li><li><p>Outhouse TH</p></li></ul></td>'
+        + '<td><ol><li><p>Park</p></li><li><p>Walk</p></li></ol></td></tr></table>');
+    // Mode switching must synchronously flush the outgoing Rich document.
+    modeButton(doc, 'Markdown').click();
+    assert.equal(doc.getElementById('JournalText').value, expected);
+    assert.match(editors(dom).markdown.getValue(), /<ul><li>Standard TH<\/li>/);
+    assert.equal(doc.querySelectorAll('.bpb-re-preview td > ul > li').length, 2);
+    assert.equal(doc.querySelectorAll('.bpb-re-preview td > ol > li').length, 2);
+
+    typeMarkdown(dom, editors(dom).markdown.getValue().replace('Standard TH', 'Lower TH'));
+    modeButton(doc, 'Plain').click();
+    const edited = expected.replace('Standard TH', 'Lower TH');
+    assert.equal(doc.getElementById('JournalText').value, edited);
+    modeButton(doc, 'Rich text').click();
+    assert.equal(doc.querySelectorAll('.bpb-re-surface td > ul > li').length, 2);
+    assert.equal(doc.querySelectorAll('.bpb-re-surface td > ol > li').length, 2);
+
+    const reloaded = await loadEditor({ report: edited });
+    await editorReady(reloaded);
+    const reloadDoc = reloaded.window.document;
+    assert.equal(reloadDoc.querySelectorAll('.bpb-re-surface td > ul > li').length, 2);
+    typeRich(reloaded, editors(reloaded).rich.getHTML().replace('Walk', 'Hike'));
+    reloadDoc.getElementById('JournalText').form.dispatchEvent(
+        new reloaded.window.Event('submit', { bubbles: true, cancelable: true }));
+    assert.equal(reloadDoc.getElementById('JournalText').value, edited.replace('Walk', 'Hike'));
+});
+
 test('Markdown retains list continuation, undo, and context-aware URL paste', async () => {
     const dom = await loadEditor();
     await editorReady(dom);

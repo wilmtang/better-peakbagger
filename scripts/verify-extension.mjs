@@ -6229,6 +6229,59 @@ try {
                     path: process.env.BPB_VERIFY_EDITOR_RICH_SCREENSHOT
                 });
             }
+            // Lists typed inside cells must survive the saved-value boundary,
+            // Markdown edits, and reconstruction of the Rich document.
+            const editorModes = editorPage.locator('#bpb-report-editor');
+            await editorModes.getByRole('button', { name: 'Plain', exact: true }).click();
+            await editorPage.locator('#JournalText').fill(
+                '[table border="1"][tr][th]Names[/th][th]Directions[/th][/tr]'
+                + '[tr][td][/td][td][/td][/tr][/table]');
+            await editorModes.getByRole('button', { name: 'Rich text', exact: true }).click();
+            await editorPage.locator('.bpb-re-surface td').nth(0).click();
+            await editorPage.getByRole('button', { name: 'Bulleted list', exact: true }).click();
+            await editorPage.keyboard.type('Standard TH');
+            await editorPage.keyboard.press('Enter');
+            await editorPage.keyboard.type('Outhouse TH');
+            await editorPage.locator('.bpb-re-surface td').nth(1).click();
+            await editorPage.getByRole('button', { name: 'Numbered list', exact: true }).click();
+            await editorPage.keyboard.type('Park');
+            await editorPage.keyboard.press('Enter');
+            await editorPage.keyboard.type('Walk');
+            const tableLists = '[table border="1"][tr][th]Names[/th][th]Directions[/th][/tr][tr]'
+                + '[td][ul][li]Standard TH[/li][li]Outhouse TH[/li][/ul][/td]'
+                + '[td][ol][li]Park[/li][li]Walk[/li][/ol][/td][/tr][/table]';
+            await editorModes.getByRole('button', { name: 'Markdown', exact: true }).click();
+            const tableListsState = await editorPage.evaluate(() => ({
+                saved: document.getElementById('JournalText').value,
+                source: [...document.querySelectorAll('.bpb-re-mdpane .cm-line')]
+                    .map(line => line.textContent).join('\n'),
+                bullets: document.querySelectorAll('.bpb-re-preview td > ul > li').length,
+                numbers: document.querySelectorAll('.bpb-re-preview td > ol > li').length,
+            }));
+            check(tableListsState.saved === tableLists && tableListsState.bullets === 2
+                && tableListsState.numbers === 2 && tableListsState.source.startsWith('<table'),
+            `Rich table lists were lost on the way to Markdown: ${JSON.stringify(tableListsState)}`);
+            if (process.env.BPB_VERIFY_EDITOR_TABLE_LIST_SCREENSHOT) {
+                await editorModes.screenshot({ path: process.env.BPB_VERIFY_EDITOR_TABLE_LIST_SCREENSHOT });
+            }
+            if (process.env.BPB_VERIFY_EDITOR_TABLE_LIST_NARROW_SCREENSHOT) {
+                await editorPage.setViewportSize({ width: 720, height: 900 });
+                await editorModes.screenshot({ path: process.env.BPB_VERIFY_EDITOR_TABLE_LIST_NARROW_SCREENSHOT });
+                await editorPage.setViewportSize(verificationViewport);
+            }
+            await editorPage.locator('.bpb-re-mdpane .cm-content').click();
+            await editorPage.keyboard.press(`${modifier}+a`);
+            await editorPage.keyboard.insertText(tableListsState.source.replace('Standard TH', 'Lower TH'));
+            await editorModes.getByRole('button', { name: 'Plain', exact: true }).click();
+            check(await editorPage.locator('#JournalText').inputValue() === tableLists.replace('Standard TH', 'Lower TH'),
+                'a Markdown table edit lost its lists before Plain/submission');
+            await editorModes.getByRole('button', { name: 'Rich text', exact: true }).click();
+            check(await editorPage.locator('.bpb-re-surface td > ul > li').count() === 2
+                && await editorPage.locator('.bpb-re-surface td > ol > li').count() === 2,
+            're-entering Rich did not reconstruct the saved table lists');
+            if (process.env.BPB_VERIFY_EDITOR_TABLE_LIST_RICH_SCREENSHOT) {
+                await editorModes.screenshot({ path: process.env.BPB_VERIFY_EDITOR_TABLE_LIST_RICH_SCREENSHOT });
+            }
             // A store capture must come from the shipped editor, not a drawn
             // facsimile. These opt-in frames use the real rich and Markdown
             // conversion paths, with an intercepted local mountain image so

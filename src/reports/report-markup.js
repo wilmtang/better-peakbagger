@@ -653,7 +653,7 @@ const tableRows = table => {
         if (!cells.length) return;
         rows.push({
             header: cells.every(cell => cell.tagName === 'TH'),
-            cells: cells.map(cell => trimInlines(inlinesFrom(cell)))
+            cells: cells.map(cell => domChildrenToBlocks(cell))
         });
     };
     for (const child of table.children) {
@@ -1077,11 +1077,11 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
         const rows = [
             {
                 header: true,
-                cells: token.header.map(cell => trimInlines(markedInlines(cell.tokens, extensions)))
+                cells: token.header.map(cell => looseInlinesToParagraphs(markedInlines(cell.tokens, extensions)))
             },
             ...token.rows.map(row => ({
                 header: false,
-                cells: row.map(cell => trimInlines(markedInlines(cell.tokens, extensions)))
+                cells: row.map(cell => looseInlinesToParagraphs(markedInlines(cell.tokens, extensions)))
             }))
         ];
         return [{ type: 'table', rows }];
@@ -1090,6 +1090,11 @@ const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
     if (token.type === 'hr') return [{ type: 'hr' }];
     if (token.type === 'html') {
         const raw = token.raw || token.text || '';
+        if (/^\s*<table[\s>]/i.test(raw) && /<\/table>\s*$/i.test(raw)) {
+            const parsed = parseBracketWithDiagnostics(raw);
+            if (!parsed.diagnostics.length && parsed.ast.length === 1
+                && parsed.ast[0].type === 'table') return parsed.ast;
+        }
         if (/^\s*<figure[\s>]/i.test(raw) && /<\/figure>\s*$/i.test(raw)) {
             const parsed = parseBracketWithDiagnostics(raw);
             if (!parsed.diagnostics.length && parsed.ast.length === 1
@@ -1180,7 +1185,7 @@ const blocksToBracket = blocks => (blocks || []).map(block => {
     if (block.type === 'table') {
         return `[table border="1"]${block.rows.map(row => `[tr]${row.cells.map(cell => {
             const tag = row.header ? 'th' : 'td';
-            return `[${tag}]${inlinesToBracket(cell)}[/${tag}]`;
+            return `[${tag}]${blocksToBracket(cell)}[/${tag}]`;
         }).join('')}[/tr]`).join('')}[/table]`;
     }
     if (block.type === 'pre') return `[pre]${escapeBracketText(block.text)}[/pre]`;
@@ -1237,7 +1242,8 @@ const blockToHtml = block => {
         const headRows = block.rows.filter(row => row.header);
         const bodyRows = block.rows.filter(row => !row.header);
         const rowsHtml = rows => rows.map(row => `<tr>${row.cells.map(cell => `<${row.header ? 'th' : 'td'}>${
-            inlinesToHtml(cell)}</${row.header ? 'th' : 'td'}>`).join('')}</tr>`).join('');
+            cell.length === 1 && cell[0].type === 'p' ? inlinesToHtml(cell[0].kids)
+                : blocksToHtml(cell)}</${row.header ? 'th' : 'td'}>`).join('')}</tr>`).join('');
         return `<table>${headRows.length ? `<thead>${rowsHtml(headRows)}</thead>` : ''}${
             bodyRows.length ? `<tbody>${rowsHtml(bodyRows)}</tbody>` : ''}</table>`;
     }
@@ -1315,10 +1321,19 @@ const inlinesToMarkdown = kids => (kids || []).map(node => {
 const tableToMarkdown = block => {
     const sourceRows = block.rows.slice();
     if (!sourceRows.length) return '';
+    // GFM pipe cells contain inlines only. Preserve lists and other block
+    // content as one allowlisted HTML table instead of flattening the cells.
+    // Use saved attributes (not preview-only media attributes), and explicit
+    // breaks so blank lines cannot split Marked's HTML token mid-table.
+    if (sourceRows.some(row => row.cells.some(cell => cell.length > 1 || cell.some(child => child.type !== 'p')))) {
+        return blocksToBracket([block])
+            .replace(TAG_TOKEN, (raw, closing, tag, attrs) => tag ? `<${closing}${tag}${attrs}>` : raw)
+            .replace(/\n/g, '<br>');
+    }
     const first = sourceRows[0];
     const header = first.header ? first : { header: true, cells: first.cells.map(() => []) };
     const body = first.header ? sourceRows.slice(1) : sourceRows;
-    const row = cells => `| ${cells.map(cell => inlinesToMarkdown(cell)
+    const row = cells => `| ${cells.map(cell => inlinesToMarkdown(cell[0]?.kids)
         .replace(/\n/g, '<br>')
         .replace(/\|/g, '\\|')).join(' | ')} |`;
     return [row(header.cells), `| ${header.cells.map(() => '---').join(' | ')} |`,

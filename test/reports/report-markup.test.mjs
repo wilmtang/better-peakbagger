@@ -448,6 +448,62 @@ test('table cell line breaks stay inside one Markdown row', () => {
     assert.equal(Markup.bracketToMarkdown(normalizedBracket), markdown);
 });
 
+test('table cells preserve lists, nesting, and surrounding paragraphs through every conversion', () => {
+    const html = '<table><tr><th>Trailheads</th><th>Directions</th></tr><tr>'
+        + '<td><p>Names</p><ul><li><p>Standard <b>TH</b></p>'
+        + '<ol><li><p>Lower TH</p></li><li><p>Outhouse TH</p></li></ol></li>'
+        + '<li><p>Mt Sneffels TH</p></li></ul><p>After the list</p></td>'
+        + '<td><ol><li><p>Park</p></li><li><p>Walk <a href="https://example.com/route">north</a></p></li></ol></td>'
+        + '</tr></table>';
+    const bracket = '[table border="1"][tr][th]Trailheads[/th][th]Directions[/th][/tr][tr]'
+        + '[td]Names\n\n[ul][li]Standard [b]TH[/b][ol][li]Lower TH[/li][li]Outhouse TH[/li][/ol][/li]'
+        + '[li]Mt Sneffels TH[/li][/ul]\n\nAfter the list[/td]'
+        + '[td][ol][li]Park[/li][li]Walk [a href="https://example.com/route"]north[/a][/li][/ol][/td]'
+        + '[/tr][/table]';
+
+    assert.equal(Markup.domToBracket(body(html)), bracket);
+    assert.deepEqual(Markup.parseBracketWithDiagnostics(bracket).diagnostics, []);
+    assert.equal(Markup.domToBracket(body(Markup.bracketToEditorHtml(bracket))), bracket);
+
+    const markdown = Markup.bracketToMarkdown(bracket);
+    assert.match(markdown, /^<table\b/);
+    assert.match(markdown, /<ul><li>Standard <b>TH<\/b><ol>/);
+    assert.equal(Markup.markdownToBracket(markdown), bracket);
+    const preview = body(Markup.markdownToPreviewHtml(markdown));
+    assert.equal(preview.querySelectorAll('td > ul > li').length, 2);
+    assert.equal(preview.querySelectorAll('td > ol > li').length, 2);
+    assert.equal(preview.querySelectorAll('ul ol > li').length, 2);
+    assert.equal(preview.querySelector('td').lastElementChild.textContent, 'After the list');
+    assert.equal(Markup.bracketToMarkdown(Markup.markdownToBracket(markdown)), markdown);
+});
+
+test('complex Markdown tables retain literal text, empty cells, media, and paragraph breaks', () => {
+    const bracket = '[table border="1"][tr][th]Notes[/th][th][/th][/tr][tr]'
+        + '[td]Before\n\n[ul][li]Literal *stars*, [13:45], &lt;tag&gt;, and a | pipe[/li]'
+        + '[li][img src="https://example.com/topo.jpg" alt="Topo" width="120"][/li][/ul]'
+        + '\n\nFirst paragraph\n\nSecond paragraph[/td][td][/td][/tr][/table]';
+    const markdown = Markup.bracketToMarkdown(bracket);
+    assert.equal(Markup.markdownToBracket(markdown), bracket);
+    assert.equal(Markup.domToBracket(body(Markup.markdownToPreviewHtml(markdown))), bracket);
+    assert.equal(Markup.markdownToBracket(`Before table\n\n${markdown}\n\nAfter table`),
+        `Before table\n\n${bracket}\n\nAfter table`);
+});
+
+test('Markdown HTML table support keeps unsafe and malformed markup inert', () => {
+    for (const html of [
+        '<table onclick="run()"><tr><td><ul><li>item</li></ul></td></tr></table>',
+        '<table><tr><td><img src="https://example.com/a.jpg" onerror="run()"></td></tr></table>',
+        '<table><tr><td><a href="javascript:run()">item</a></td></tr></table>',
+        '<table><tr><td><iframe src="https://example.com/embed"></iframe></td></tr></table>',
+        '<table><tr><td><ul><li>item</ul></td></tr></table>',
+        '<table><tr><td>item</td></tr></table><script>run()</script>',
+    ]) {
+        const preview = body(Markup.markdownToPreviewHtml(html));
+        assert.equal(preview.querySelector('table, script, img, iframe, [onclick], [onerror]'), null, html);
+        assert.match(preview.textContent, /<table/);
+    }
+});
+
 // ---- editor DOM → bracket ----------------------------------------------------
 
 const body = html => {
