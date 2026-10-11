@@ -1,5 +1,9 @@
 # Active plans
 
+- [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
+  two reproduced open UI findings since 3.9.2: Sentinel capture selection on
+  3D resume and climber-card keyboard focus during row cleanup. Current unit,
+  Chrome/Firefox, responsive visual evidence and proof limits are recorded.
 - [Climber hover card](climber-hover-card.md) — local Favorite/Ignore card
   implemented; Buddy management opens the native profile. Inline Buddy mutation
   remains deferred until its form and transaction coordination are verified.
