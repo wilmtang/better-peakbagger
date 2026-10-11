@@ -79,6 +79,15 @@ try {
     assert.match(rain.first, /12:00 AM.*12:45 AM.*Estimated boundary interval/);
     assert.match(rain.last, /11:45 PM.*12:00 AM.*next midnight.*Estimated boundary interval/);
     if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, 'fractional-rain.png') });
+    fractional = false;
+    await page.setViewportSize({ width: 375, height: 1000 });
+    await page.goto(`${origin}/peak.aspx?pid=2296&week-weather=map`);
+    await page.locator('#bpb-peak-weather').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => document.querySelectorAll('.bpb-week-day').length === 16);
+    await page.locator('.bpb-week-day:first-child > summary').click();
+    await page.locator('.bpb-week-day:nth-child(2) > summary').click();
+    await page.waitForFunction(() => document.querySelector('.bpb-week-day:nth-child(2)[open] .bpb-week-line'));
+    if (output) await page.locator('.bpb-week-day:nth-child(2)').screenshot({ path: path.join(output, 'peak-day-switch-375.png') });
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, rain, requests: requests.length, profile: temporaryRoot }));
 } finally {
     try { await context?.close(); } finally {

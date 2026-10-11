@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
+import { verifyWeatherDaySwitches } from './verify-weather-day-switches.mjs';
 
 // Reuse the real extension/HTTPS/browser transports and their teardown rather
 // than launch a second browser or substitute a content-script-only demo.
@@ -145,6 +146,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
         if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-right-column.png`));
     }
+    await openPage();
+    const daySwitches = await verifyWeatherDaySwitches({ evaluate, click, press, resize, firefoxMode });
+    assert.equal(daySwitches.length, 27);
+    await openPage();
     // Native summary disclosure is operable by keyboard in both engines.
     await evaluate(() => document.querySelector('#bpb-peak-weather .bpb-week-day > summary').focus());
     await press(firefoxMode ? '\uE007' : 'Enter');

@@ -10,7 +10,7 @@ shared provider/data code, settings and GPX presentation integration.
 | --- | --- | --- | --- |
 | W01 | P2 | Historical instantaneous gusts use preceding-hour day boundaries | Fixed; contract and boundary regressions verified |
 | W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Fixed; totals, tooltips and rendered graph verified |
-| W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Open |
+| W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Fixed; both-engine frame geometry and activation verified |
 | W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Open |
 | W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Open |
 | W06 | P2 | Global dark button repaint overrides weather component selection styling | Open |
@@ -33,6 +33,13 @@ missing readings, bounded model fallback, per-page caches and native Save owners
   Hidden Chrome 153 at 1440×1000 confirmed 25 intervals sum to the displayed
   24.0 mm; inspected the screenshot. Concurrent Best Match changes are preserved
   separately and are not part of this commit.
+- W03: summary click handles pointer and native keyboard activation synchronously.
+  Scroll compensation preserves the clicked heading; queued native toggles cannot
+  dispose its replacement chart. Ran 20 peak bundle tests and focused ESLint.
+  Hidden Chrome 153 and Firefox 157 each passed 27 day-switch cases across
+  1440/768/375×1000, Conditions/temperature/rain, pointer/Enter/Space and both
+  directions: no empty or double expansion, heading displacement ≤1 px.
+  Inspected the narrow Chrome expanded-day screenshot.
 
 ## Intentionally not changed
 

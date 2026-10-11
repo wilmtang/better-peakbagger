@@ -23,6 +23,7 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
     const win = jsdom.window, requests = [], listeners = [], observers = [], resizeObservers = [];
     let clock = Date.parse(now);
     win.Date.now = () => clock;
+    win.scrollBy = () => {};
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
         addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1),
@@ -49,6 +50,26 @@ const settled = async (env, { past = true } = {}) => {
     await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
     if (past) env.doc.querySelector('[data-period="past"]').click();
 };
+
+test('summary activation switches the day and mounts its graph synchronously without double expansion', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const days = [...env.doc.querySelectorAll('.bpb-week-day')], first = days[0].querySelector('summary'), second = days[1].querySelector('summary');
+        first.click();
+        assert.equal(days[0].open, true); assert.ok(days[0].querySelector('.bpb-week-line'));
+        const scrolls = []; env.win.scrollBy = value => scrolls.push(value.top);
+        second.getBoundingClientRect = () => ({ top: days[0].open ? 500 : 200 });
+        second.click();
+        assert.equal(days[0].open, false); assert.equal(days[1].open, true);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]').length, 1);
+        assert.ok(days[1].querySelector('.bpb-week-line')); assert.equal(env.doc.activeElement, second);
+        assert.deepEqual(scrolls, [-300]);
+        await waitFor(() => env.resizeObservers.filter(observer => !observer.disconnected).length === 1);
+        assert.ok(days[1].querySelector('.bpb-week-line'), 'queued close toggle cannot dispose the new graph');
+        second.click(); assert.equal(days[1].open, false); assert.equal(days[1].querySelector('.bpb-week-line'), null);
+    } finally { env.close(); }
+});
 
 test('weather opt-out hides the whole table row, skips requests and updates live across BFCache', async () => {
     const env = setup({ storedSettings: { showWeather: false } });

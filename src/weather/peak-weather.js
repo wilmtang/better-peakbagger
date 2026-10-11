@@ -109,9 +109,25 @@ export function mountPeakWeather() {
             if (!day.useful || day.partial || (day.gust.high !== null && !day.gust.complete)) summary.append(element('span', { class: 'bpb-week-partial', text: day.useful ? 'Incomplete hours' : 'Data unavailable' }));
             const hourly = element('div', { class: 'bpb-week-hourly' });
             detail.append(summary, hourly);
+            // Native toggle is asynchronous: opening first paints an empty
+            // panel beside the old one. Handle native summary activation's
+            // click (including Enter/Space) as a single update instead.
+            summary.addEventListener('click', event => {
+                if (!enabled() || lifecycle.state !== 'active' || event.button > 0) return;
+                event.preventDefault();
+                const opening = !detail.open, switching = opening && !!days.querySelector('details[open]');
+                const top = summary.getBoundingClientRect().top;
+                clearChart();
+                days.querySelectorAll('details[open]').forEach(other => { other.open = false; });
+                detail.open = opening;
+                if (opening) renderHours(day, detail, hourly);
+                summary.focus({ preventScroll: true });
+                if (switching) window.scrollBy({ top: summary.getBoundingClientRect().top - top, behavior: 'instant' });
+            });
             detail.addEventListener('toggle', () => {
                 if (!enabled() || !detail.isConnected || lifecycle.state !== 'active') return;
                 if (!detail.open) { if (activeDay === detail) clearChart(); return; }
+                if (activeDay === detail) return;
                 days.querySelectorAll('details[open]').forEach(other => { if (other !== detail) other.open = false; });
                 renderHours(day, detail, hourly);
             });
