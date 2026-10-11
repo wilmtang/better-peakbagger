@@ -36,16 +36,24 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                     return { width: innerWidth, topLayer: card.matches(':popover-open'),
                         card: { left: rect.left, right: rect.right, bottom: rect.bottom }, controls,
                         horizontalOverflow: card.scrollWidth > card.clientWidth + 1,
-                        quietBackground: getComputedStyle(document.getElementById('bpb-climber-card-ignore')).backgroundColor,
-                        quietBorder: getComputedStyle(document.getElementById('bpb-climber-card-ignore')).borderTopWidth,
+                        secondaryActions: ['bpb-climber-card-favorite', 'bpb-climber-card-ignore'].map(id => {
+                            const button = document.getElementById(id), style = getComputedStyle(button);
+                            const bounds = button.getBoundingClientRect();
+                            return { width: bounds.width, height: bounds.height, background: style.backgroundColor,
+                                border: style.borderTopWidth, borderStyle: style.borderTopStyle, borderColor: style.borderTopColor,
+                                radius: style.borderRadius, color: style.color, padding: style.padding,
+                                weight: style.fontWeight, textAlign: style.textAlign };
+                        }),
                         triggerBackground: getComputedStyle(document.querySelector('#hover-climber + button')).backgroundColor,
                         color: getComputedStyle(card).color, background: getComputedStyle(card).backgroundColor };
                 });
                 assert.equal(geometry.topLayer, true, 'card is not in the browser top layer');
                 assert.equal(geometry.width, width, 'browser did not apply the requested content viewport');
                 assert.equal(geometry.horizontalOverflow, false, JSON.stringify(geometry));
-                assert.equal(geometry.quietBackground, 'rgba(0, 0, 0, 0)', JSON.stringify(geometry));
-                assert.equal(geometry.quietBorder, '0px', JSON.stringify(geometry));
+                assert.deepEqual(geometry.secondaryActions[1], geometry.secondaryActions[0],
+                    `Ignore must match the favorite button: ${JSON.stringify(geometry)}`);
+                assert.equal(geometry.secondaryActions[1].border, '1px', JSON.stringify(geometry));
+                assert.ok(geometry.secondaryActions[1].height >= 42, JSON.stringify(geometry));
                 assert.equal(geometry.triggerBackground, 'rgba(0, 0, 0, 0)', JSON.stringify(geometry));
                 assert.ok(geometry.controls.every(control => control.height > 0 && control.left >= geometry.card.left
                     && control.right <= geometry.card.right + 1
@@ -102,6 +110,8 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
     await evaluate(() => { document.getElementById('hover-climber').textContent = 'Morgan Longlastname of the Eastern Cascades'; });
     await wait(() => document.getElementById('bpb-climber-card-name')?.textContent === 'Morgan Longlastname of the Eastern Cascades');
     await capture('long-name');
+    await key('#bpb-climber-card-ignore', 'Escape');
+    await wait(() => document.getElementById('bpb-climber-card').hidden);
     await click('#hover-self + .bpb-climber-actions-trigger');
     await wait(() => document.getElementById('bpb-climber-card-name')?.textContent === 'Alex Doe');
     assert.equal(await evaluate(() => document.getElementById('bpb-climber-card-favorite').hidden), true);

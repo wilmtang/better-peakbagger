@@ -38,8 +38,8 @@
 #bpb-climber-card .bpb-climber-card-settings { display: block; padding: 0; margin: 3px 0 0; background: none;
     border: 0; color: var(--bpb-cc-link); text-align: left; font-size: 12px; }
 #bpb-climber-card .bpb-climber-card-ignore-section { border-top: 1px solid var(--bpb-cc-border); padding-top: 10px; margin-top: 16px; }
-#bpb-climber-card .bpb-climber-card-ignore { display: block; min-height: 32px; padding: 5px 0; border: 0;
-    background: none; color: var(--bpb-cc-text); text-align: left; }
+#bpb-climber-card .bpb-climber-card-ignore { margin-top: 0; }
+#bpb-climber-card .bpb-climber-card-ignore-section .bpb-climber-card-detail { margin-top: 6px; }
 #bpb-climber-card .bpb-climber-card-detail, #bpb-climber-card .bpb-climber-card-feedback { color: var(--bpb-cc-sub);
     font-size: 12px; overflow-wrap: anywhere; }
 #bpb-climber-card .bpb-climber-card-feedback { margin-top: 12px; }

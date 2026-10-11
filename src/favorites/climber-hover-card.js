@@ -40,7 +40,7 @@ const mount = () => {
     const sourceText = D.element('span', { text: 'Favorites follow your Buddy List.' });
     const sourceSettings = button('Use custom favorites…', { class: 'bpb-climber-card-settings' });
     const source = D.element('div', { class: 'bpb-climber-card-source' }, [sourceText, sourceSettings]);
-    const ignore = button('Ignore climber', { id: 'bpb-climber-card-ignore', class: 'bpb-climber-card-ignore',
+    const ignore = button('Ignore climber', { id: 'bpb-climber-card-ignore', class: 'bpb-climber-card-action bpb-climber-card-ignore',
         'aria-describedby': 'bpb-climber-card-ignore-detail' });
     const detail = D.element('div', { id: 'bpb-climber-card-ignore-detail', class: 'bpb-climber-card-detail' });
     const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' });
