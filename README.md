@@ -43,9 +43,10 @@ No weather account, API key, or subscription required.
   with temperature ranges, rain/snow totals, and wind. Expand any day for hourly
   temperature, precipitation, wind, gusts, and conditions in summit-local time.
 - **The past sixteen days at a glance.** Switch to **Past 16 days** to put
-  recent summit weather beside the forecast.
+  recent summit weather beside the forecast. Each view has a model selector;
+  **Best Match** uses Better Peakbagger's country/date policy.
 - **Weather for your ascent day.** Saved ascents show historical summit weather,
-  with archives reaching back to **1940**, a recommended model, and alternatives
+  with archives reaching back to **1940**, Open-Meteo archive **Best Match**, and alternatives
   where available. No GPX needed.
 
 These are model estimates. Coverage varies by date, location, and model;

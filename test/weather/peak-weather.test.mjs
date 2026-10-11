@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { weatherFixture } from '../helpers/weather-fixture.mjs';
+import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
+import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
 
 const [peak, bundle] = await Promise.all([
@@ -39,7 +40,14 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         constructor(callback) { this.callback = callback; this.disconnected = false; resizeObservers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
-    win.fetch = (url, init) => { requests.push({ url, init }); return fetchFn(url, init); };
+    win.fetch = async (url, init) => {
+        requests.push({ url, init });
+        const response = await fetchFn(url, init);
+        if (!response.ok) return response;
+        const body = weatherModelFixture(await response.json(), new URL(url).searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
+            Date.parse(new Date(clock).toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])));
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    };
     win.eval(bundle);
     return { win, doc: win.document, requests, listeners, observers, resizeObservers,
         setNow: next => { clock = Date.parse(next); },
@@ -50,6 +58,86 @@ const settled = async (env, { past = true } = {}) => {
     await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
     if (past) env.doc.querySelector('[data-period="past"]').click();
 };
+const chooseModel = (env, id) => {
+    const select = env.doc.querySelector('#bpb-peak-weather-model');
+    select.value = id; select.dispatchEvent(new env.win.Event('change'));
+};
+
+test('Best Match requests regional history and long-range forecast once, with independent model choices', async () => {
+    const env = setup({ fetchFn: url => {
+        const query = new URL(url).searchParams;
+        const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date'),
+            hours: (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24 }), query.get('models').split(','));
+        for (const [key, values] of Object.entries(body.hourly)) if (key.startsWith('temperature_2m')) values.fill(key.endsWith('gfs_hrrr') ? -10 : 20);
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env, { past: false });
+        assert.equal(env.requests.length, 1); assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'gfs_hrrr,gfs_global');
+        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS.*16 days/);
+        assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /68°F/);
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using HRRR/);
+        assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /14°F/);
+        chooseModel(env, 'icon_global');
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /selected this model explicitly/);
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        env.doc.querySelector('[data-period="past"]').click(); assert.equal(env.doc.querySelector('select').value, 'icon_global');
+        assert.equal(env.requests.length, 2);
+        chooseModel(env, 'best_match');
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR'));
+        assert.equal(env.requests.length, 2, 'reverting reuses the exact cached model selection');
+    } finally { env.close(); }
+});
+
+test('explicit short-range forecast labels its horizon and preserves sixteen days of history', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        assert.match(env.doc.querySelector('option[value="gfs_hrrr"]').textContent, /up to 2 days/);
+        chooseModel(env, 'gfs_hrrr');
+        await waitFor(() => env.doc.querySelector('[data-period="forecast"]').textContent === '2-day forecast');
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 1 day$/);
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Best Match offers up to 16 days/);
+        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), 'gfs_hrrr');
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(env.doc.querySelector('select').value, 'best_match');
+        env.doc.querySelector('[data-period="forecast"]').click(); assert.equal(env.doc.querySelector('select').value, 'gfs_hrrr');
+        chooseModel(env, 'best_match');
+        await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16);
+        assert.equal(env.requests.length, 2);
+    } finally { env.close(); }
+});
+
+test('model changes cancel stale results; explicit failures keep the visible model without fallback', async () => {
+    let slow, unavailable = false;
+    const env = setup({ fetchFn: url => {
+        const ids = new URL(url).searchParams.get('models');
+        if (ids.includes('icon_global')) return new Promise(resolve => { slow = () => resolve(reply(url)); });
+        if (unavailable && ids.includes('ecmwf_ifs')) return new Response('', { status: 400 });
+        return reply(url);
+    } });
+    try {
+        await settled(env, { past: false }); chooseModel(env, 'icon_global');
+        await waitFor(() => slow); const stale = env.requests.at(-1);
+        unavailable = true; chooseModel(env, 'ecmwf_ifs');
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('selection is unavailable'));
+        assert.equal(stale.init.signal.aborted, true); assert.equal(env.requests.length, 3);
+        assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        slow(); await new Promise(resolve => setTimeout(resolve, 0));
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        unavailable = false; env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ECMWF IFS'));
+        assert.equal(env.requests.length, 4); assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 15);
+    } finally { env.close(); }
+});
 
 test('summary activation switches the day and mounts its graph synchronously without double expansion', async () => {
     const env = setup();
@@ -449,7 +537,7 @@ test('forecast and history both show sixteen days and share one response, retain
     } finally { env.close(); }
 });
 
-test('accuracy warning and accessible source disclosure explain possible models without claiming per-hour provenance', async () => {
+test('accuracy warning and accessible source disclosure identify the requested policy model', async () => {
     const env = setup();
     try {
         await settled(env, { past: false });
@@ -459,8 +547,11 @@ test('accuracy warning and accessible source disclosure explain possible models 
         assert.equal(source.querySelector('summary').textContent, 'Models & source details');
         source.open = true;
         const model = source.querySelector('.bpb-week-models').textContent;
-        for (const name of ['Best Match', 'NOAA HRRR', 'NOAA GFS', 'DWD ICON', 'ECMWF IFS']) assert.ok(model.includes(name));
-        assert.match(model, /may use/); assert.match(model, /does not identify the model behind each value/);
+        assert.match(model, /Best Match uses Better Peakbagger.*country\/date policy/);
+        assert.match(model, /GFS globally for the longest 16-day window/);
+        assert.match(model, /GFS \(gfs_global\)/);
+        assert.match(model, /No other model fills missing values/);
+        assert.match(source.textContent, /individual model grids may differ/);
         assert.match(source.textContent, /final day may have incomplete hours/);
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(accuracy.hidden, true); assert.equal(source.open, true);

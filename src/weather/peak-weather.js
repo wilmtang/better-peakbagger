@@ -11,6 +11,7 @@ import { createPeakHourlyChart } from './peak-weather-hourly.js';
 import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
+import { eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
 const icons = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
@@ -35,10 +36,13 @@ export function mountPeakWeather() {
     const days = element('div', { class: 'bpb-week-days' });
     const help = element('p', { class: 'bpb-week-help', hidden: '', text: 'Select a day for hourly weather. Rain/snow is water equivalent; wind is the daily maximum.' });
     const sourceText = element('p');
-    const modelText = element('p', { class: 'bpb-week-models', text: 'Open-Meteo Best Match selects models automatically. US coverage may use NOAA HRRR for short-range forecasts and NOAA GFS farther ahead, with DWD ICON as a fallback. Elsewhere, ECMWF IFS and regional models may be used. The mix varies by location, weather variable and forecast hour; the API does not identify the model behind each value.' });
+    const select = element('select', { id: `${ID}-model`, 'aria-describedby': `${ID}-model-description` });
+    const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description' });
+    const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select, modelDescription]);
+    const modelText = element('p', { class: 'bpb-week-models' });
     const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Models & source details' }), modelText, sourceText]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [range, locationLabel, accuracy, days, help]);
-    card.append(element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Summit weather' }), refresh]), periodTabs, status, periodPanel,
+    card.append(element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Summit weather' }), refresh]), periodTabs, modelControl, status, periodPanel,
         source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
             element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
@@ -51,8 +55,21 @@ export function mountPeakWeather() {
     const enabled = () => settingsReady && preference.showWeather;
     let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
     let period = 'forecast', notice = null, requestedWindow = null;
+    const choices = { past: 'best_match', forecast: 'best_match' };
     const openDates = new Map();
-    const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; });
+    const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; });
+    const populateModels = () => {
+        const window = requestedWindow || weatherPeakWindow(zone);
+        select.replaceChildren(element('option', { value: 'best_match', text: 'Best Match' }),
+            ...eligiblePeakWeatherModels(subject, window, period).map(model => element('option', { value: model.id,
+                text: `${model.label} · ${model.resolution}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
+        // Keep a now-ineligible selection visible so a date rollover cannot
+        // silently turn an explicit choice into Best Match.
+        if (![...select.options].some(option => option.value === choices[period])) select.append(element('option', {
+            value: choices[period], text: 'Selected model — date range unavailable', disabled: '',
+        }));
+        select.value = choices[period];
+    };
     const unitSystem = () => units.resolveUnits(preference, () => {
         const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));
         return /Elevation:\s*[\d,.]+\s*m\b/i.test(heading?.textContent || '') ? 'metric' : 'imperial';
@@ -69,7 +86,7 @@ export function mountPeakWeather() {
         const first = week.days[0].date, last = week.days.at(-1).date;
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
         const interval = period === 'past' ? `${week.days.length} completed days · Today excluded`
-            : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? `Today + ${PEAK_FORECAST_DAYS - 1} days` : `${PEAK_FORECAST_DAYS}-day forecast · Previous dates`;
+            : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? week.days.length === 1 ? 'Today' : `Today + ${week.days.length - 1} ${week.days.length === 2 ? 'day' : 'days'}` : `${week.days.length}-day forecast · Previous dates`;
         locationLabel.textContent = `At the summit${subject.elevation === null ? '' : ` · ${units.formatElevation(subject.elevation, unitSystem())}`} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
     };
     const paintStatus = () => {
@@ -84,7 +101,7 @@ export function mountPeakWeather() {
     const renderHours = (day, detail, container, state) => {
         if (activeDay === detail && hourlyChart) return;
         clearChart(); activeDay = detail;
-        hourlyChart = createPeakHourlyChart({ container, day, samples: current.data.samples, zone, metric: hourlyMetric, format,
+        hourlyChart = createPeakHourlyChart({ container, day, samples: current.data[period].samples, zone, metric: hourlyMetric, format,
             onMetric: metric => { hourlyMetric = metric; }, state });
     };
     function renderResult(openDate = days.querySelector('details[open]')?.dataset.date) {
@@ -95,6 +112,12 @@ export function mountPeakWeather() {
             : focused?.matches('.bpb-week-conditions') ? '.bpb-week-conditions' : focused?.dataset.metric ? `[data-metric="${focused.dataset.metric}"]` : null;
         const stateDate = activeDay?.dataset.date, chartState = hourlyChart?.snapshot();
         const summaries = current.days[period], forecast = period === 'forecast';
+        const model = current.models[period], data = current.data[period];
+        const forecastLabel = `${current.window.forecast.days.length}-day forecast`;
+        (periodButtons[0].querySelector('.bpb-week-tab-label') || periodButtons[0]).textContent = forecastLabel;
+        periodButtons[0].setAttribute('aria-label', forecastLabel); periodButtons[0].dataset.label = forecastLabel;
+        modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}${model.forecastDays < PEAK_FORECAST_DAYS ? '. Best Match offers up to 16 days.' : ''}` : ''}`;
+        modelText.textContent = `${current.choices[period] === 'best_match' ? 'Best Match uses Better Peakbagger’s country/date policy. History prefers HRRR within US CONUS coverage and HRDPS within Canadian coverage, then global ECMWF IFS. Forecast uses GFS globally for the longest 16-day window, or IFS when GFS does not cover the date. This is a product recommendation, not a proven accuracy ranking. ' : 'You selected this model explicitly. '}${model.label} (${model.id}), ${model.resolution}. Forecast length is measured from the model run, so the last displayed day may be incomplete. Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. No other model fills missing values.`;
         help.hidden = !summaries.some(day => day.useful); source.hidden = false;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
         renderLabels(current.window[period]);
@@ -144,13 +167,14 @@ export function mountPeakWeather() {
             (target || periodButtons.find(button => button.dataset.period === period)).focus({ preventScroll: true });
         }
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
-        sourceText.textContent = `${forecast ? `Up to ${PEAK_FORECAST_DAYS} days of forecast model estimates; today includes the whole local day. The final day may have incomplete hours where the forecast ends.` : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${current.data.grid.elevation.toFixed(0)} m. Selected grid: ${current.data.grid.latitude.toFixed(4)}, ${current.data.grid.longitude.toFixed(4)}.`;
+        sourceText.textContent = `${forecast ? `Up to ${model.forecastDays} days of forecast model estimates; today includes the whole local day. The final day may have incomplete hours where the forecast ends.` : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${data.grid.elevation.toFixed(0)} m. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' The combined response reports one grid coordinate; individual model grids may differ.' : ''}`;
         paintStatus();
     }
     const choosePeriod = next => {
         if (next !== period) {
             openDates.set(period, days.querySelector('details[open]')?.dataset.date);
             period = next;
+            populateModels();
             if (current) renderResult(openDates.get(period) || null);
             else if (requestedWindow) renderLabels(requestedWindow[period]);
         }
@@ -171,6 +195,7 @@ export function mountPeakWeather() {
         choosePeriod(periodButtons[next].dataset.period); periodButtons[next].focus();
     });
     choosePeriod(period);
+    populateModels();
     const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); refresh.disabled = cooldown.active(); };
     async function load({ clear = false } = {}) {
         if (!enabled() || lifecycle.state !== 'active' || pending) return;
@@ -181,13 +206,25 @@ export function mountPeakWeather() {
         notice = { text: current ? 'Refreshing summit weather…' : 'Loading summit weather…' }; paintStatus();
         try {
             const window = weatherPeakWindow(zone); requestedWindow = window;
+            populateModels();
             if (!current) renderLabels(window[period]);
             if (clear) client.clear();
-            const data = await client.request(subject, window, { signal: controller.signal });
+            const requestedChoices = { ...choices }, models = resolvePeakWeatherModels(subject, window, requestedChoices);
+            const response = await client.request(subject, window, [...new Set(Object.values(models))], { signal: controller.signal });
             if (owner !== generation || lifecycle.state !== 'active') return;
-            const summaries = { past: summarizeWeatherWeek(data, window.past), forecast: summarizeWeatherWeek(data, window.forecast) };
+            // Short-range choices must not display sixteen empty future days.
+            // Retain full-day expectations through their last useful day so
+            // unavailable boundary hours remain labelled as incomplete.
+            const data = { past: response.models[models.past.id], forecast: response.models[models.forecast.id] };
+            const summaries = { past: summarizeWeatherWeek(data.past, window.past), forecast: summarizeWeatherWeek(data.forecast, window.forecast) };
+            if (models.forecast.forecastDays < PEAK_FORECAST_DAYS) {
+                const lastUseful = summaries.forecast.findLastIndex(day => day.useful);
+                const count = lastUseful >= 0 ? lastUseful + 1 : Math.ceil(models.forecast.forecastDays);
+                summaries.forecast = summaries.forecast.slice(0, count);
+                window.forecast = { ...window.forecast, days: window.forecast.days.slice(0, count) };
+            }
             if (!Object.values(summaries).some(list => list.some(day => day.useful))) throw new Error('Weather is unavailable for this summit.');
-            current = { window, data, days: summaries, loadedAt: Date.now() }; notice = null;
+            current = { window, data, models, choices: requestedChoices, sharedGrid: response.sharedGrid, days: summaries, loadedAt: Date.now() }; notice = null;
             renderResult();
         } catch (error) {
             if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;
@@ -197,6 +234,11 @@ export function mountPeakWeather() {
             if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); }
         }
     }
+    select.addEventListener('change', () => {
+        if (!enabled() || lifecycle.state !== 'active' || cooldown.active()) return;
+        choices[period] = select.value;
+        cancel(); void load();
+    });
     const beginWhenVisible = () => {
         visibilityObserver?.disconnect();
         if (!enabled() || lifecycle.state !== 'active') return;

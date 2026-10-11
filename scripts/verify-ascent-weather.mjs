@@ -12,7 +12,8 @@ import { createResourceStack } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.js';
+import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 
@@ -50,7 +51,8 @@ try {
             else body.hourly.precipitation[40] = null;
         }
         if (mode === 'empty') Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
-        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(body), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
+        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(peakMode ? weatherModelFixture(body, requested.searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
+            Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');

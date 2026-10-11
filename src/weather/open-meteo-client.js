@@ -4,6 +4,7 @@
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { WEATHER_MODELS } from './weather-models.js';
+import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
 import { rateLimitError } from '../net/rate-limit.js';
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
@@ -29,8 +30,17 @@ export function recentWeatherRequestUrl(summit, window) {
 // Sixteen past and sixteen forecast civil days, plus UTC padding. The forecast
 // window caps padding at the API horizon; do not widen historical ascent bounds.
 const PEAK_MAX_UTC_DATES = 33;
-export function peakWeatherRequestUrl(summit, window) {
-    return requestUrl(summit, window, RECENT_MODEL, PEAK_MAX_UTC_DATES - 1);
+const peakModels = models => {
+    if (!Array.isArray(models) || models.length < 1 || models.length > 2
+        || new Set(models).size !== models.length || models.some(model => !PEAK_WEATHER_MODELS.includes(model))) throw fail('invalid', 'Invalid weather model selection.');
+    return models;
+};
+export function peakWeatherRequestUrl(summit, window, models) {
+    peakModels(models);
+    if (models.some(model => !model.domain(summit))) throw fail('invalid', 'Invalid weather model coverage.');
+    return requestUrl(summit, window, { endpoint: RECENT_MODEL.endpoint,
+        id: models.map(model => model.id).join(','), since: models.map(model => model.since).sort()[0],
+        fields: [...new Set(models.flatMap(model => model.fields))] }, PEAK_MAX_UTC_DATES - 1);
 }
 
 function requestUrl(summit, window, model, maxDays) {
@@ -64,8 +74,17 @@ export function validateWeatherResponse(body, summit, window, model) {
 export function validateRecentWeatherResponse(body, summit, window) {
     return validateResponse(body, summit, window, RECENT_MODEL, 216);
 }
-export function validatePeakWeatherResponse(body, summit, window) {
-    return validateResponse(body, summit, window, RECENT_MODEL, PEAK_MAX_UTC_DATES * 24);
+export function validatePeakWeatherResponse(body, summit, window, models) {
+    peakModels(models);
+    const multiple = models.length > 1;
+    return { sharedGrid: multiple, models: Object.fromEntries(models.map(model => {
+        const hourly = { time: body?.hourly?.time }, hourly_units = { time: body?.hourly_units?.time };
+        for (const field of model.fields) {
+            const key = multiple ? `${field}_${model.id}` : field;
+            hourly[field] = body?.hourly?.[key]; hourly_units[field] = body?.hourly_units?.[key];
+        }
+        return [model.id, validateResponse({ ...body, hourly, hourly_units }, summit, window, model, PEAK_MAX_UTC_DATES * 24)];
+    })) };
 }
 
 function validateResponse(body, summit, window, model, maxRows) {
@@ -112,8 +131,7 @@ export function createRecentWeatherClient(options = {}) {
     return { request: (summit, window, requestOptions) => client.request(summit, window, RECENT_MODEL, requestOptions), clear: client.clear };
 }
 export function createPeakWeatherClient(options = {}) {
-    const client = createClient(options, peakWeatherRequestUrl, validatePeakWeatherResponse);
-    return { request: (summit, window, requestOptions) => client.request(summit, window, RECENT_MODEL, requestOptions), clear: client.clear };
+    return createClient(options, peakWeatherRequestUrl, validatePeakWeatherResponse);
 }
 function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000 }, buildUrl, validate) {
     const cache = new Map(), flights = new Map();
@@ -140,7 +158,8 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
                 if (response.status === 429) { limited = rateLimitError('Open-Meteo', response, now()); throw limited; }
                 if ([400, 404].includes(response.status)) throw fail('unavailable', model === RECENT_MODEL
-                    ? 'Recent weather is unavailable for this summit.' : 'This model has no data for the ascent’s date or location.');
+                    ? 'Recent weather is unavailable for this summit.' : Array.isArray(model)
+                        ? 'This weather model selection is unavailable for this summit. Choose another model.' : 'This model has no data for the ascent’s date or location.');
                 if (!response.ok) throw fail('service', 'The weather service is unavailable. Try again later.');
                 if (!/application\/json/i.test(response.headers?.get('content-type') || '')) throw fail('invalid-response', 'The weather service returned an invalid response.');
                 const text = await run(readBoundedResponseText(response, { maxBytes: 128 * 1024, signal: deadline.signal, label: 'Weather response' }));

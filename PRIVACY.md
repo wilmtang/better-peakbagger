@@ -351,8 +351,9 @@ directly from the current Peakbagger page. One forecast-API request covers sixte
 completed summit-local days and up to sixteen forecast days (today plus fifteen
 days), with UTC padding capped at the API's forecast horizon, when the card
 approaches the viewport. Switching periods or hourly graphs makes no additional
-request. The API selects regional models automatically; **Refresh** makes
-another request. Returning to a visible
+request. **Best Match** applies Better Peakbagger's country/date policy; each
+period also offers a model dropdown. Changing models or using **Refresh** makes
+another request unless that exact selection is cached. Returning to a visible
 card after five minutes refreshes expired data unless the previous request failed.
 
 Open-Meteo receives the summit latitude/longitude, summit elevation when
@@ -361,7 +362,9 @@ metadata. Ascent weather uses a three-UTC-day window covering the local ascent
 date and Open-Meteo's archive Best Match by default, or an explicitly selected
 model. Peak weather uses a padded UTC window covering the
 sixteen completed local days and today plus fifteen forecast days, capped at the
-API's available horizon, with automatic regional model selection. Weather
+API's available horizon, with one or two named models selected by our
+country/date policy or the user's per-period dropdown choices. Both periods
+share one request; model IDs are sent to Open-Meteo. Weather
 requests omit credentials and referrers. No ascent or climber ID, summit name,
 report, GPX, track times, account credentials, or page URL is sent to Open-Meteo.
 An hourly graph cursor can follow GPX hover or selection using only timestamps

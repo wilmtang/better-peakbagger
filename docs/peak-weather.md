@@ -16,7 +16,7 @@ there is no geocoding or extra Peakbagger request.
 
 The card defaults to **16-day forecast**, covering today plus fifteen days in forward
 order. **Past 16 days** shows sixteen completed local days, latest first, excluding
-today. Both views share one request; period tabs support arrow keys, Home and End
+today. Both views share one named-model request; period tabs support arrow keys, Home and End
 and retain each view's expanded day. Forecast conditions use expected rather
 than past-tense rain/snow labels. Each compact row has the
 day's most severe available condition, temperature low/high, precipitation
@@ -39,10 +39,38 @@ Metric and period labels reserve their selected font width so selection cannot
 change wrapping.
 The forecast view warns that estimates may be inaccurate, especially farther
 ahead or at mountain summits, and prompts users to check local mountain forecasts.
-**Models & source details** names possible sources: NOAA HRRR and GFS with DWD
-ICON fallback for US coverage, and ECMWF IFS or regional models elsewhere. The
-copy says these models may be used, not that a particular hour has a proven source.
-Examples were checked against Open-Meteo's [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
+Each period has a **Weather model** dropdown, defaulting to **Best Match**.
+Here Best Match is Better Peakbagger's country/date policy: history prefers
+HRRR for US summits inside its projected CONUS grid and HRDPS Continental for
+Canadian summits inside its projected grid, then ECMWF IFS globally. The whole
+sixteen-day history window must fit the model's archive dates. Alaska, Hawaii,
+unknown/multiple nations and other countries use the global history default.
+Forecast uses GFS globally for its longest sixteen-day horizon (IFS is the
+longest-range fallback when GFS's archive start excludes the requested date).
+This is a product recommendation, not a validated universal accuracy ranking.
+It is separate from the ascent archive's Open-Meteo archive Best Match blend.
+
+Named alternatives are filtered by geographic coverage and date availability.
+History excludes delayed reanalyses that cannot cover yesterday. Forecast
+options show their published run horizon. Selecting a shorter-range model
+shows the available forecast days, including partial boundary days; interior
+missing days remain visible. **Using [model]** identifies the model behind the
+currently displayed data. Each period remembers its choice for this page only.
+Switching periods or expanding hourly graphs makes no request. A model change
+requests the two selected models together, deduplicated when they match, and
+can reuse the exact cached selection. An explicit choice never silently falls
+back; a failure preserves the previous dated/model-labelled result. Model
+changes abort superseded requests; known rate-limit cooldowns disable both
+Refresh and the model dropdown while period tabs remain usable.
+
+**Models & source details** explains the policy and names the selected model's
+API identifier, resolution, horizon and possible hourly interpolation. The
+combined API response reports only one grid coordinate, so the disclosure says
+individual model grids may differ. The named fields establish which requested
+model supplied each period, without claiming an exact run initialization or
+sub-grid provenance. Horizons were checked against Open-Meteo's
+[Forecast API and provider tables](https://open-meteo.com/en/docs) and named
+model routing against its [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
 It also explains full-day forecasts, incomplete final-day hours, load time and
 temperature adjustment for summit elevation. The footer credits **Powered by
 Open-Meteo**. An unavailable period does not hide usable data in the other view.
@@ -50,10 +78,10 @@ Open-Meteo**. An unavailable period does not hide usable data in the other view.
 ## Data and civil-day boundaries
 
 The [Open-Meteo Forecast API](https://open-meteo.com/en/docs) provides recent
-and forecast weather through one explicit `start_date`/`end_date` interval. Its default model
-selection combines suitable regional models. The card labels this automatic
-selection; it cannot name an individual model from a blended response and does
-not present archived forecasts as station observations. Forecasts include the
+and forecast weather through one explicit `start_date`/`end_date` interval. The card explicitly sends one or two allowlisted model IDs. Multi-model replies
+use model-suffixed hourly columns, validated and split before grouping into the
+two local periods. Recent archived forecasts are model estimates rather than
+station observations. Forecasts include the
 whole local day, including earlier hours of today. Future forecast hours are
 admitted explicitly by the peak window; historical ascent windows retain their
 future-date rejection and cutoff at the current time.
@@ -76,12 +104,12 @@ identified. Instantaneous fields exclude the ending midnight. Exact local times
 and timezone labels retain repeated hours on DST days.
 
 The separate peak client allows at most thirty-three inclusive UTC dates and 792 rows,
-with five fixed hourly fields. The ascent client retains its three-date/72-row
+with five fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
 contract. Both use a 128-KiB response bound, 15-second deadline, schema/grid/unit
 validation, omitted credentials/referrer, and no redirects. Results live only
 in the bounded per-page cache. Requests begin near the viewport. Failed refreshes
 keep both previous views and their original date labels. Known rate-limit
-cooldowns disable Refresh while period tabs remain usable; failed requests
+cooldowns disable Refresh and model selection while period tabs remain usable; failed requests
 never create an automatic visibility-refresh loop. Back/forward suspension
 aborts outstanding work; restoration resolves the date range again. Returning
 to a tab after local midnight or five minutes refreshes the range when the card
@@ -152,3 +180,22 @@ disclosure wording. Those omissions are also present in HEAD independently of
 the weather length edits. Hidden verification does not establish the user's
 Brave session, native focus/window placement, screen-reader speech or provider
 accuracy.
+
+The model-selection change was verified on 2026-10-11: the build, changed-file
+ESLint and all 91 weather tests passed. The full shipped-bundle suite passed
+2,582 of 2,584 tests; the two existing photo README assertions still fail for
+omitted encoded-source-budget and exact saved-key disclosure wording. Earlier
+runs encountered concurrent ascent/verifier edits; their targeted rechecks now
+pass. An isolated source snapshot confirmed the final weather tests and real
+unpacked extension fixtures independently of ongoing workspace edits.
+
+Hidden Chrome for Testing 153.0.8010.12 and Firefox 155.0 passed at
+375/768/1440 × 1100 in light/dark, including independent model choices, a
+short-range forecast, named-response reuse, rate-limit controls and responsive
+graphs. Inspected the narrow short-range selection, default forecast, wide
+history and live source disclosure. One live public Rainier request rendered
+HRRR history and GFS forecast through the combined endpoint. The hidden
+real-manifest Chrome check passed at 1000 × 760 with BFCache restoration.
+Owned profile/process inspections confirmed teardown. These checks do not
+prove the user's Brave session, native focus/window placement, screen-reader
+speech or model accuracy.
