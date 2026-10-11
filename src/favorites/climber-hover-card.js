@@ -12,7 +12,7 @@ import { observeClimberMembership } from './climber-membership.js';
 import { mutateIgnored } from './ignored-client.js';
 import { climberCardTarget, climberCardState } from './climber-card-state.js';
 
-const OPEN_DELAY = 350, CLOSE_DELAY = 200;
+const OPEN_DELAY = 3500, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
 
 const mount = () => {
@@ -161,9 +161,9 @@ const mount = () => {
             first?.focus({ preventScroll: true });
         }
     };
-    const requestOpen = record => {
+    const requestOpen = (record, delay = OPEN_DELAY) => {
         clearTimeout(openTimer); clearTimeout(closeTimer);
-        if (suppressed !== record) openTimer = setTimeout(() => open(record), OPEN_DELAY);
+        if (suppressed !== record) openTimer = setTimeout(() => open(record), delay);
     };
     const requestClose = () => {
         clearTimeout(openTimer); clearTimeout(closeTimer);
@@ -310,7 +310,7 @@ const mount = () => {
         if (current) current.focusWasInCard = card.contains(event.target);
         if (card.contains(event.target)) return;
         const record = recordAt(event.target);
-        if (record) requestOpen(record);
+        if (record) requestOpen(record, FOCUS_DELAY);
     });
     listen(document, 'focusout', () => {
         queueMicrotask(() => {

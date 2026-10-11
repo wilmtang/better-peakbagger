@@ -84,7 +84,7 @@ their existing behavior. Clicking a name never means adding or ignoring it.
 
 ## Opening, moving, and closing
 
-- Open after 350 ms of pointer dwell on a name. Crossing a dense table should
+- Open after 3.5 seconds of pointer dwell on a name. Crossing a dense table should
   not flash a succession of cards. Hover itself performs no server request or
   mutation; render the name and validated saved membership immediately.
 - Keep the card open while the pointer is on either the trigger or card, or
