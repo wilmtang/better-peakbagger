@@ -41,6 +41,15 @@ image failures, offline errors, access denials or normal OAuth polling delays.
   unstated. The browser fixture initially omitted that exposure; corrected it
   and both checks passed.
 
+- GitHub: REST 429 and primary-limit 403 survive unreadable bodies; secondary
+  message classification remains distinct from ordinary access denial. Device
+  authorization 429 uses the same typed recovery path. Retry-After dates and
+  reset timestamps are bounded. OAuth slow-down and write retry rules remain.
+  Verified: 194 GitHub tests, 55 options GitHub tests, focused ESLint and build;
+  real extension GitHub authorization warning inspected in hidden Chrome 153
+  at 375/1000 × 760, light/dark. The fixture stubs optional permission grants
+  and returns 429 without contacting GitHub.
+
 ### Intentionally not changed
 
 - Links to Gaia, onX, AllTrails, CalTopo, Windy, AirNow, store pages and other

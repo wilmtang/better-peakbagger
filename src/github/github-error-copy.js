@@ -23,7 +23,7 @@ const ERROR_TEXT = Object.freeze({
     [ERROR_CODES.REPO_CONFLICT]: 'This repository contains backup-like paths that Better Peakbagger cannot safely adopt. Choose another repository.',
     [ERROR_CODES.BRANCH_PROTECTED]: 'GitHub branch rules blocked the backup commit. Allow direct commits or choose another repository.',
     [ERROR_CODES.BRANCH_MISSING]: 'This non-empty repository has no usable default branch. Create its default branch or choose another repository.',
-    [ERROR_CODES.RATE_LIMIT]: 'GitHub is temporarily rate-limiting requests. Wait a few minutes, then try again.',
+    [ERROR_CODES.RATE_LIMIT]: 'GitHub request limit reached. Wait a few minutes, then try again.',
     [ERROR_CODES.CONFLICT]: 'The repository changed while the backup was being committed. Try the backup again.',
     [ERROR_CODES.NETWORK]: 'Better Peakbagger could not reach GitHub. Check your connection and try again.',
     [ERROR_CODES.SERVER]: 'GitHub is temporarily unavailable. Try again in a few minutes.',
@@ -69,7 +69,7 @@ const message = (error, { fallback = 'GitHub did not return an error description
     if (code === ERROR_CODES.RATE_LIMIT) {
         const wait = waitText(Number(error && error.retryAfterSeconds));
         return wait
-            ? `GitHub is rate-limiting requests. Try again ${wait}.`
+            ? `GitHub request limit reached. Try again ${wait}.`
             : ERROR_TEXT[ERROR_CODES.RATE_LIMIT];
     }
     // Name the status: an outage is the one case where the user's next move may

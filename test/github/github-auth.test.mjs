@@ -528,3 +528,14 @@ test('snapshot replacement storage failure preserves the complete prior generati
     }), /local replacement failed/);
     assert.deepEqual(await store.readSnapshot(), inspected);
 });
+
+test('device authorization identifies HTTP 429 before reading an unusable body', async () => {
+    let cancelled = false, calls = 0;
+    const flow = Auth.createDeviceFlow({ now: () => 1000, fetch: async () => {
+        calls++;
+        return { status: 429, ok: false, headers: new Headers({ 'retry-after': '60' }),
+            body: { cancel() { cancelled = true; } }, text() { throw new Error('unreadable'); } };
+    } });
+    await assert.rejects(flow.requestCode(), { code: ERROR_CODES.RATE_LIMIT, retryAfterSeconds: 60 });
+    assert.equal(calls, 1); assert.equal(cancelled, true);
+});

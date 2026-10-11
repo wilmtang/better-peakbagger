@@ -10,6 +10,7 @@
 import { githubErrors as GithubErrors } from './github-errors.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { retryAfterAt, cancelResponseBody } from '../net/rate-limit.js';
 
 const API_ROOT = 'https://api.github.com';
 const { ERROR_CODES, GithubError } = GithubErrors;
@@ -82,15 +83,16 @@ const classify = (status, message, headers, phase = '') => {
 
 // How long GitHub says to wait: `retry-after` on a secondary limit, otherwise
 // the absolute `x-ratelimit-reset` instant for a primary one. Only the
-// documented numeric forms are read; anything else leaves the window unstated
+// bounded header forms are read; anything else leaves the window unstated
 // rather than inventing a number for the UI to promise.
 const retryAfterSeconds = (headers, now) => {
-    const after = Number(header(headers, 'retry-after'));
-    if (Number.isFinite(after) && after > 0) return Math.ceil(after);
+    const current = now();
+    const after = retryAfterAt(headers, current);
+    if (after) return Math.ceil((after - current) / 1000);
     const reset = Number(header(headers, 'x-ratelimit-reset'));
     if (!Number.isFinite(reset) || reset <= 0) return null;
-    const seconds = Math.ceil(reset - now() / 1000);
-    return seconds > 0 ? seconds : null;
+    const seconds = Math.ceil(reset - current / 1000);
+    return seconds > 0 && seconds <= 86400 ? seconds : null;
 };
 
 const createGithubApi = ({
@@ -173,6 +175,14 @@ const createGithubApi = ({
                 : new GithubError(ERROR_CODES.NETWORK, 'Network request to GitHub failed.', { cause });
         }
 
+        // Status/header proof does not depend on an error body's readability.
+        if (response?.status === 429 || (response?.status === 403 && header(response.headers, 'x-ratelimit-remaining') === '0')) {
+            cancelResponseBody(response);
+            clear();
+            throw new GithubError(ERROR_CODES.RATE_LIMIT, 'GitHub request limit reached.', {
+                status: response.status, retryAfterSeconds: retryAfterSeconds(response.headers, now),
+            });
+        }
         if (!response || typeof response.text !== 'function') {
             clear();
             throw new GithubError(ERROR_CODES.UNKNOWN, 'GitHub returned an unexpected response.');
@@ -294,4 +304,5 @@ export const githubApi = {
     RESPONSE_LIMITS,
     STRUCTURE_LIMITS,
     createGithubApi,
+    retryAfterSeconds,
 };

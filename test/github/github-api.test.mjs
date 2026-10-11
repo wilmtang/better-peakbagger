@@ -357,3 +357,20 @@ test('auth discovery and repository clients contain no private GitHub REST trans
         assert.doesNotMatch(source, /Authorization\s*:/);
     }
 });
+
+test('confirmed REST limits survive unreadable bodies without transient retries or treating ordinary 403 as a limit', async () => {
+    const now = Date.parse('2026-10-11T12:00:00Z');
+    for (const status of [429, 403]) {
+        let calls = 0, cancelled = false;
+        const api = GithubApi.createGithubApi({ token: 't', now: () => now, fetch: async () => {
+            calls++;
+            return { status, ok: false, headers: new Headers({ 'x-ratelimit-remaining': '0', 'retry-after': 'Sun, 11 Oct 2026 12:02:00 GMT' }),
+                body: { cancel() { cancelled = true; } }, text() { throw new Error('unreadable'); } };
+        } });
+        await assert.rejects(api.request('GET', '/user'), { code: ERROR_CODES.RATE_LIMIT, retryAfterSeconds: 120 });
+        assert.equal(calls, 1); assert.equal(cancelled, true);
+    }
+    const denied = GithubApi.createGithubApi({ token: 't', fetch: async () => respond(403, { message: 'Forbidden' }) });
+    await assert.rejects(denied.request('GET', '/user'), { code: ERROR_CODES.NO_ACCESS });
+    assert.equal(GithubApi.retryAfterSeconds(new Headers({ 'x-ratelimit-reset': String(now / 1000 + 86401) }), () => now), null);
+});

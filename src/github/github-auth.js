@@ -33,6 +33,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
+import { cancelResponseBody } from '../net/rate-limit.js';
 
 const { ERROR_CODES, GithubError } = GithubErrors;
 // Device-flow polls run on a fixed interval, so one stalled request must
@@ -106,6 +107,13 @@ const createDeviceFlow = ({
             throw deadline.expired
                 ? new GithubError(ERROR_CODES.TIMEOUT, 'GitHub did not respond in time.', { cause })
                 : new GithubError(ERROR_CODES.NETWORK, 'Could not reach GitHub.', { cause });
+        }
+        if (res?.status === 429) {
+            cancelResponseBody(res);
+            deadline.clear();
+            throw new GithubError(ERROR_CODES.RATE_LIMIT, 'GitHub request limit reached.', {
+                status: res.status, retryAfterSeconds: GithubApi.retryAfterSeconds(res.headers, now),
+            });
         }
         let text = '';
         try {

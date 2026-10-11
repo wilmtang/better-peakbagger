@@ -36,20 +36,20 @@ test('a GitHub outage reads as an outage, not as a page worth reloading', () => 
 test('a rate limit says when to come back whenever GitHub states the window', () => {
     assert.equal(
         GithubError.message({ code: 'rate-limit', retryAfterSeconds: 1800 }),
-        'GitHub is rate-limiting requests. Try again in about 30 minutes.',
+        'GitHub request limit reached. Try again in about 30 minutes.',
     );
     assert.equal(
         GithubError.message({ code: 'rate-limit', retryAfterSeconds: 3600 }),
-        'GitHub is rate-limiting requests. Try again in about an hour.',
+        'GitHub request limit reached. Try again in about an hour.',
     );
     assert.equal(
         GithubError.message({ code: 'rate-limit', retryAfterSeconds: 45 }),
-        'GitHub is rate-limiting requests. Try again in about a minute.',
+        'GitHub request limit reached. Try again in about a minute.',
     );
     // Without a stated window the copy must not invent one.
     assert.equal(
         GithubError.message({ code: 'rate-limit' }),
-        'GitHub is temporarily rate-limiting requests. Wait a few minutes, then try again.',
+        'GitHub request limit reached. Wait a few minutes, then try again.',
     );
 });
 
