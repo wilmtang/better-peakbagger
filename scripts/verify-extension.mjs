@@ -4421,7 +4421,7 @@ try {
             await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes('Loading climbing buddies'));
             await captureReports('peak-loading');
             releaseBuddy();
-            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes("Couldn't load your climbing buddies"));
+            await reports.waitForFunction(() => document.querySelector('#bpb-peak-report-tools')?.textContent.includes('Peakbagger is temporarily unavailable (HTTP 503)'));
             check(await reports.getByRole('button', { name: 'Retry', exact: true }).isVisible(), 'failed peak Buddy refresh offers no retry');
             await captureReports('peak-failed');
         } catch (error) {

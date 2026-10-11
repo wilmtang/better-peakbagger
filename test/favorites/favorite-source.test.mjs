@@ -65,3 +65,18 @@ test('a limited buddy source retains saved members and exposes the service warni
         await source.refresh({ active: true }); assert.equal(requests, 1);
     } finally { source.stop(); h.close(); }
 });
+
+test('an ordinary Buddy server failure retains typed recovery without claiming a rate limit', async () => {
+    const h = harness(null);
+    let requests = 0;
+    const source = createFavoriteSource({ ...h, fetchDocument: async () => {
+        requests++; return { kind: 'transient', error: { source: 'peakbagger', code: 'server', status: 503 } };
+    } });
+    try {
+        await source.ready; await source.refresh({ active: true });
+        assert.equal(h.states.at(-1).available, false);
+        assert.match(h.states.at(-1).error, /Peakbagger is temporarily unavailable \(HTTP 503\).*Try again later/);
+        assert.doesNotMatch(h.states.at(-1).error, /request limit|rate.limit/i);
+        await source.refresh({ active: true }); assert.equal(requests, 1);
+    } finally { source.stop(); h.close(); }
+});
