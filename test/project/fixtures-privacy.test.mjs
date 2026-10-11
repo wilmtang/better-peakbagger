@@ -131,6 +131,12 @@ test('masking actually ran: live captures carry the masked climber id, and only 
 
     for (const file of live) {
         const text = await readFile(file, 'utf8');
+        // A Cloudflare response has no signed-in identity. Keep all privacy
+        // scans above, but do not manufacture an owner in this response fixture.
+        if (path.basename(file) === 'peakbagger-managed-challenge.html') {
+            assert.doesNotMatch(text, /climber\.aspx\?cid=/i);
+            continue;
+        }
         assert.match(text, new RegExp(MASKED_CLIMBER_ID),
             `${path.basename(file)} should carry the masked climber id (was this capture masked?)`);
     }

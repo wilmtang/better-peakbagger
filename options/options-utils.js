@@ -47,26 +47,31 @@ const actionButton = (className, text, ariaLabel) => {
 // cannot ship a third variant of that contract.
 const createStatusFlash = ({ statusEl, statusErrorEl, statusErrorTextEl, statusErrorDismissEl }) => {
     let statusTimer = null;
-    const dismissStatus = () => {
+    let statusToken = 0;
+    const dismissStatus = expectedToken => {
+        if (expectedToken !== undefined && expectedToken !== statusToken) return false;
         clearTimeout(statusTimer);
         statusTimer = null;
         statusEl.classList.remove('show');
         statusErrorEl.classList.remove('show');
         statusErrorEl.hidden = true;
+        return true;
     };
     const flash = (msg = 'Saved', { error = false } = {}) => {
         dismissStatus();
+        const token = ++statusToken;
         if (error) {
             statusErrorTextEl.textContent = msg;
             statusErrorEl.hidden = false;
             statusErrorEl.classList.add('show');
-            return;
+            return token;
         }
         statusEl.textContent = msg;
         statusEl.classList.add('show');
         statusTimer = setTimeout(() => statusEl.classList.remove('show'), 1200);
+        return token;
     };
-    statusErrorDismissEl.addEventListener('click', dismissStatus);
+    statusErrorDismissEl.addEventListener('click', () => dismissStatus());
     return { flash, dismissStatus };
 };
 

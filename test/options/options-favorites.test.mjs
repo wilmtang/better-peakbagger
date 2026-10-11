@@ -8,7 +8,7 @@ import {
 } from '../helpers/options-helpers.mjs';
 
 registerCleanup();
-const cloudflareBody = await readFile(new URL('../fixtures/pages/peakbagger-managed-challenge.html', import.meta.url), 'utf8');
+const cloudflareBody = await readFile(new URL('../fixtures/peakbagger-managed-challenge.html', import.meta.url), 'utf8');
 
 test('favorite removal transfers focus to Undo and restoration to the same row', async () => {
     const entries = [{ cid: 900002, name: 'First', addedAt: 2, source: 'manual' },
@@ -728,6 +728,29 @@ test('a managed-challenge 403 recovers through its own first-party Buddy tab', a
     assert.deepEqual(dom.chrome._siteTab.removed, [77]);
 });
 
+test('challenge recovery also supports the Firefox promise-based tab API', async () => {
+    const removed = [];
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => {
+            window.browser = window.chrome;
+            window.fetch = async () => pageResponse(cloudflareBody, 403);
+        },
+        prepareChrome: chrome => {
+            chrome.tabs = {
+                query: async () => [],
+                create: async details => { assert.equal(details.active, false); return { id: 77 }; },
+                update: async () => { await chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() }); },
+                sendMessage: async () => ({ url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache: buddyCacheFrom() }),
+                remove: async tabId => { removed.push(tabId); },
+            };
+        },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.equal(el(dom, 'status-error').hidden, true);
+    assert.deepEqual(removed, [77]);
+});
+
 test('challenge recovery keeps the working Buddy List hostname and reads only its helper', async () => {
     const navigations = [], reads = [];
     const dom = await loadFavoritesPage({}, {
@@ -792,6 +815,65 @@ test('a helper read from another report cannot complete challenge recovery', asy
     el(dom, 'favorites-refresh-buddies').click();
     await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+});
+
+test('a newer same-owner Buddy List clears the old challenge warning and banner', async () => {
+    const dom = await loadFavoritesPage({}, {
+        local: { [buddyCacheKey]: { ...buddyCacheFrom(), fetchedAt: 1 } },
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
+    await dom.chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+    await waitFor(dom, () => !/human check/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /6 buddies · updated just now$/);
+    assert.equal(el(dom, 'status-error').hidden, true);
+});
+
+test('Buddy recovery leaves a newer unrelated error banner visible', async () => {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        local: { [buddyCacheKey]: { ...buddyCacheFrom(), fetchedAt: 1 } },
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
+    el(dom, 'favorites-add-input').value = 'invalid';
+    el(dom, 'favorites-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    const unrelatedError = el(dom, 'status-error-text').textContent;
+    assert.match(unrelatedError, /Enter a climber id/);
+    await dom.chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+    await waitFor(dom, () => !/human check/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.equal(el(dom, 'status-error').hidden, false);
+    assert.equal(el(dom, 'status-error-text').textContent, unrelatedError);
+});
+
+test('an old or different-owner cache cannot clear the failed refresh warning', async () => {
+    const dom = await loadFavoritesPage({}, {
+        local: { [buddyCacheKey]: { ...buddyCacheFrom(), fetchedAt: 1 } },
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
+    await dom.chrome.storage.local.set({ [buddyCacheKey]: { ...buddyCacheFrom(), entries: [], fetchedAt: 1 } });
+    await waitFor(dom, () => /^0 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /human check/);
+    await dom.chrome.storage.local.set({ [buddyCacheKey]: { ...buddyCacheFrom(), ownerCid: 900099 } });
+    await waitFor(dom, () => /^6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /human check/);
+    assert.equal(el(dom, 'status-error').hidden, false);
+});
+
+test('a recovered Buddy List clears an obsolete import failure without performing the import', async () => {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        local: { [buddyCacheKey]: { ...buddyCacheFrom(), fetchedAt: 1 } },
+        prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
+    });
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => /human check/.test(el(dom, 'favorites-import-status').textContent));
+    await dom.chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+    await waitFor(dom, () => el(dom, 'favorites-import-status').hidden);
+    assert.equal(el(dom, 'status-error').hidden, true);
+    assert.equal(dom.chrome._favoriteMutations.length, 0);
 });
 
 test('a wedged helper tab reports the timeout, never “sign in”', async () => {

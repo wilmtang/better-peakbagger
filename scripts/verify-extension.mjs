@@ -21,7 +21,7 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +71,8 @@ const photoShowcaseSource = process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE
 const chromeBinary = process.env.CHROME_BIN
     ? path.resolve(process.env.CHROME_BIN)
     : null;
+const buddyScreenshotDir = process.env.BPB_VERIFY_BUDDY_SCREENSHOTS_DIR
+    ? path.resolve(process.env.BPB_VERIFY_BUDDY_SCREENSHOTS_DIR) : null;
 let chromium;
 try {
     ({ chromium } = await import('playwright'));
@@ -1303,6 +1305,53 @@ try {
             fallbackDebug
         })}`);
         await workingBuddyPage.close();
+
+        // A normal Buddy List visit can repair the shared cache while this
+        // page still holds the failed fetch's warning. Verify the visible
+        // recovery, including the independent persistent error banner.
+        const settingsBeforeBuddyRecovery = await optionsPage.evaluate(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings);
+        try {
+            await optionsPage.evaluate(async () => {
+                window.__bpbBuddyNativeCreate = chrome.tabs.create;
+                chrome.tabs.create = (details, callback) => callback({});
+                window.fetch = async () => ({ status: 403, headers: {},
+                    text: async () => '<html><head><title>Just a moment...</title></head></html>' });
+                const stored = (await chrome.storage.sync.get('bpbSettings')).bpbSettings;
+                await chrome.storage.sync.set({ bpbSettings: { ...stored, favoritesSource: 'buddies' } });
+            });
+            await optionsPage.waitForFunction(() => !document.getElementById('favorites-buddy-panel').hidden);
+            await optionsPage.locator('#favorites-refresh-buddies').click();
+            await optionsPage.waitForFunction(() => !document.getElementById('status-error').hidden
+                && /human check/.test(document.getElementById('favorites-buddy-status').textContent));
+            if (buddyScreenshotDir) {
+                await mkdir(buddyScreenshotDir, { recursive: true });
+                await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-challenged-wide.png'), fullPage: true });
+                await optionsPage.setViewportSize({ width: 390, height: 760 });
+                await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-challenged-narrow.png'), fullPage: true });
+            }
+            await optionsPage.evaluate(async () => {
+                const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
+                await chrome.storage.local.set({ bpbBuddyCache: { ...cache, fetchedAt: Date.now() } });
+            });
+            const repairedBuddyStatus = await optionsPage.waitForFunction(() => {
+                const status = document.getElementById('favorites-buddy-status').textContent;
+                return /^6 buddies · updated just now$/.test(status) && document.getElementById('status-error').hidden;
+            }).then(() => true).catch(() => false);
+            check(repairedBuddyStatus, 'a fresh signed-in Buddy List did not clear the stale challenge warning and banner');
+            if (buddyScreenshotDir) {
+                await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-recovered-narrow.png'), fullPage: true });
+                await optionsPage.setViewportSize(verificationViewport);
+                await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, 'buddy-recovered-wide.png'), fullPage: true });
+            }
+        } finally {
+            await optionsPage.evaluate(async previous => {
+                chrome.tabs.create = window.__bpbBuddyNativeCreate;
+                window.fetch = window.__bpbNativeFetch;
+                await chrome.storage.sync.set({ bpbSettings: previous });
+            }, settingsBeforeBuddyRecovery);
+            await optionsPage.setViewportSize(verificationViewport);
+        }
 
         await optionsPage.evaluate(async ({ signedInBuddyUrl, buddyListFixture }) => {
             const current = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;

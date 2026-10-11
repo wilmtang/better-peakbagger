@@ -5,7 +5,7 @@
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
-import { isPeakbaggerPageOrigin, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
+import { isPeakbaggerPageOrigin, PEAKBAGGER_HOSTS, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
@@ -22,7 +22,7 @@ const UNDO_MS = 6000;
 const SITE_TAB_REFRESH_MS = 8000;
 const SOURCE_FILTERS = ['all', 'buddy', 'manual'];
 
-export const initFavorites = ({ extensionApi, flash, save } = {}) => {
+export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {}) => {
     const store = extensionApi?.storage?.local;
     const sourceEls = Array.from(document.querySelectorAll('input[name="favorites-source"]'));
     const buddyPanelEl = document.getElementById('favorites-buddy-panel');
@@ -93,6 +93,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let buddyCache = null;
     let buddyState = 'idle';
     let buddyError = null;
+    let buddyFailure = null;
+    let buddyErrorFlashToken = null;
+    let importBuddyError = null;
     let buddyOrigin = PEAKBAGGER_ORIGIN;
     let refreshPromise = null;
     let refreshRevision = 0;
@@ -142,9 +145,29 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     };
 
     const renderImportStatus = (message = '', error = null) => {
+        importBuddyError = error;
         importStatusEl.textContent = message;
         importStatusEl.hidden = !message;
         if (message && error) appendBuddyRecovery(error, importStatusEl);
+    };
+
+    const flashBuddyError = () => {
+        buddyErrorFlashToken = flash(PeakbaggerError.message(buddyError), { error: true });
+    };
+
+    const acceptBuddyCache = raw => {
+        const next = F.cleanBuddyCache(raw);
+        if (next && buddyFailure && Array.isArray(raw.entries) && next.entries.length === raw.entries.length
+            && (buddyFailure.ownerCid == null || next.ownerCid === buddyFailure.ownerCid)
+            && next.fetchedAt > buddyFailure.fetchedAt && next.fetchedAt >= buddyFailure.failedAt) {
+            const recoveredError = buddyError;
+            buddyError = null;
+            buddyFailure = null;
+            if (buddyErrorFlashToken != null) dismissStatus?.(buddyErrorFlashToken);
+            buddyErrorFlashToken = null;
+            if (importBuddyError === recoveredError) renderImportStatus();
+        }
+        buddyCache = next;
     };
 
     const favoritesSignature = () => F.backupSignature(favorites);
@@ -372,7 +395,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             const values = await store.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]);
             if (revision !== refreshRevision) return;
             favorites = F.cleanFavorites(values[F.FAVORITES_KEY]);
-            buddyCache = F.cleanBuddyCache(values[F.BUDDY_CACHE_KEY]);
+            acceptBuddyCache(values[F.BUDDY_CACHE_KEY]);
             renderPanels();
             if (pendingReplacement && !replacementBusy) {
                 showReplacementConfirmation(pendingReplacement, { focus: false });
@@ -427,11 +450,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         // This keeps first-party cookies/clearance on the user's working host.
         if (tabs.query) {
             try {
+                const siteQuery = { url: [...PEAKBAGGER_HOSTS].map(host => `https://${host}/*`) };
                 const siteTabs = await (promiseTabs
-                    ? tabs.query({ url: ['https://peakbagger.com/*', 'https://www.peakbagger.com/*'] })
-                    : new Promise((resolve, reject) => tabs.query({
-                        url: ['https://peakbagger.com/*', 'https://www.peakbagger.com/*'],
-                    }, result => {
+                    ? tabs.query(siteQuery)
+                    : new Promise((resolve, reject) => tabs.query(siteQuery, result => {
                         if (extensionApi.runtime.lastError) reject(new Error('Site tabs are unavailable.'));
                         else resolve(result);
                     })));
@@ -556,6 +578,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         if (refreshPromise) return refreshPromise;
         buddyState = 'loading';
         buddyError = null;
+        buddyFailure = null;
         setBusy(true);
         renderBuddyStatus();
         refreshPromise = (async () => {
@@ -572,6 +595,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             buddyError = error && error.code
                 ? error
                 : PeakbaggerError.failure('network', { resource: 'buddies' });
+            buddyFailure = { ownerCid: buddyCache?.ownerCid ?? null,
+                fetchedAt: buddyCache?.fetchedAt ?? -1, failedAt: Date.now() };
             return null;
         }).finally(() => {
             buddyState = 'idle';
@@ -695,7 +720,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     refreshBuddiesEl.addEventListener('click', () => {
         void refreshBuddies().then(cache => {
             if (cache && !buddyError) flash('Buddy List refreshed');
-            else if (buddyError) flash(PeakbaggerError.message(buddyError), { error: true });
+            else if (buddyError) flashBuddyError();
         });
     });
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
@@ -717,7 +742,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             if (!cache) {
                 const message = PeakbaggerError.message(buddyError);
                 renderImportStatus(message, buddyError);
-                flash(message, { error: true });
+                flashBuddyError();
                 return;
             }
             try {
@@ -750,7 +775,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             if (!cache) {
                 const message = PeakbaggerError.message(buddyError);
                 renderImportStatus(message, buddyError);
-                flash(message, { error: true });
+                flashBuddyError();
                 return;
             }
             renderImportStatus();

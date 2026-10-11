@@ -65,3 +65,22 @@ test('options action buttons share one accessible non-submit shape', () => {
         dom.window.close();
     }
 });
+
+test('scoped status dismissal preserves a newer report and manual dismissal still works', () => {
+    const dom = new JSDOM('<div id="status"></div><div id="error" hidden><span id="text"></span><button id="dismiss"></button></div>');
+    const el = id => dom.window.document.getElementById(id);
+    const { flash, dismissStatus } = Utils.createStatusFlash({
+        statusEl: el('status'), statusErrorEl: el('error'), statusErrorTextEl: el('text'), statusErrorDismissEl: el('dismiss'),
+    });
+    const oldToken = flash('Buddy request failed', { error: true });
+    const currentToken = flash('Setting could not be saved', { error: true });
+    assert.equal(dismissStatus(oldToken), false);
+    assert.equal(el('error').hidden, false);
+    assert.equal(el('text').textContent, 'Setting could not be saved');
+    assert.equal(dismissStatus(currentToken), true);
+    assert.equal(el('error').hidden, true);
+    flash('Another error', { error: true });
+    el('dismiss').click();
+    assert.equal(el('error').hidden, true);
+    dom.window.close();
+});

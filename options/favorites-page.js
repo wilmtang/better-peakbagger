@@ -28,7 +28,7 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
     'status-error-text': statusErrorTextEl,
     'status-error-dismiss': statusErrorDismissEl,
 })) {
-    const { flash } = OptionsUtils.createStatusFlash({
+    const { flash, dismissStatus } = OptionsUtils.createStatusFlash({
         statusEl,
         statusErrorEl,
         statusErrorTextEl,
@@ -58,7 +58,7 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
         }
     };
 
-    const favorites = initFavorites({ extensionApi, flash, save });
+    const favorites = initFavorites({ extensionApi, flash, dismissStatus, save });
     initIgnored(extensionApi);
     S.subscribe(accept);
     const initialRevision = settingsRevision;
