@@ -15,17 +15,25 @@
     box-sizing: border-box;
 }
 
-#bpb-ascent-table-split > .bpb-ascent-table-split__table {
+#bpb-ascent-table-split > .bpb-ascent-table-split__table,
+#bpb-ascent-summary-column > .bpb-ascent-table-split__table {
     float: none !important;
     width: 100% !important;
     min-width: 0;
     margin: 0 !important;
     box-sizing: border-box;
+    overflow-wrap: anywhere;
+}
+
+#bpb-ascent-summary-column {
+    min-width: 0;
+    container: bpb-ascent-summary / inline-size;
 }
 
 /* Saved dimensions are preferred sizes, not minimum table widths. Let images
  * shrink with their cell and recover their authored size when it grows. */
-#bpb-ascent-table-split > .bpb-ascent-table-split__table img {
+#bpb-ascent-table-split > .bpb-ascent-table-split__table img,
+#bpb-ascent-summary-column > .bpb-ascent-table-split__table img {
     max-width: 100%;
     height: auto;
     max-height: var(--bpb-ascent-image-max-height, none);

@@ -802,8 +802,10 @@ contract are maintained in [sun-position.md](sun-position.md).
 Saved ascent weather uses a separate isolated-world bundle and runs without a
 GPX or native map. Its strict reader identifies the native ascent date and
 summit, then reads the matching peak page through the existing Peakbagger
-transport. The card follows the whole route explorer if the analyzer later
-creates it. It does not mutate native weather fields or synchronize to GPX time.
+transport. The card lives below Summary Total Data in the resizable right-hand
+column beside the report, including when GPX analysis mounts later. Unrecognized
+table layouts retain a map/metadata fallback. It does not mutate native weather
+fields or synchronize to GPX time.
 
 The weather client accepts only packaged model endpoints, omits credentials
 and referrers, and has bounded requests and a small tab-memory cache. It needs

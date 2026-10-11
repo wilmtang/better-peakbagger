@@ -1,8 +1,11 @@
 # Historical ascent weather
 
-The independent isolated-world `content/ascent-weather.js` bundle mounts below
-the whole route explorer, below a native map if no analyzer is present, or after
-the ascent metadata when no map exists. It does not depend on GPX, Chart.js,
+The independent isolated-world `content/ascent-weather.js` bundle mounts in the
+right-hand column beneath Summary Total Data, beside the trip report. It follows
+the existing divider width and stacks with the summary on narrow screens. Its
+metrics and controls adapt to the column width. The same card moves into that
+column if the table layout mounts later; GPX analysis never moves it out.
+Unrecognized table layouts retain the native map/metadata fallback. It does not depend on GPX, Chart.js,
 terrain, ownership, backup, or a page-world settings bridge.
 
 The strict subject reader uses the native saved date and heading peak link,

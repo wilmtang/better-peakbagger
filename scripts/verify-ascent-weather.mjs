@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, chrome */
+/* global document, chrome, getComputedStyle */
 
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -27,7 +27,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, navigate, click, screenshot, resize, setSettings, version;
+    let mode = 'complete', evaluate, navigate, click, screenshot, screenshotPage, resize, setSettings, version;
     const replyFor = url => {
         const requested = new URL(url), fields = requested.searchParams.get('hourly').split(',');
         const body = weatherFixture({ startDate: requested.searchParams.get('start_date'), fields,
@@ -88,6 +88,7 @@ try {
         click = selector => driver.findElement(By.css(selector)).click();
         resize = async (width, height) => send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width, height } } });
         screenshot = async output => writeFile(output, await driver.findElement(By.id('bpb-ascent-weather')).takeScreenshot(true), 'base64');
+        screenshotPage = async output => writeFile(output, await driver.takeScreenshot(), 'base64');
         setSettings = async values => {
             await driver.get(extensionUrl);
             await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
@@ -114,9 +115,32 @@ try {
         evaluate = fn => page.evaluate(fn); navigate = url => page.goto(url, { waitUntil: 'load' });
         click = selector => page.locator(selector).click(); resize = (width, height) => page.setViewportSize({ width, height });
         screenshot = output => page.locator('#bpb-ascent-weather').screenshot({ path: output });
+        screenshotPage = output => page.screenshot({ path: output });
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
     }
     const wait = (fn, description) => waitForCondition(() => evaluate(fn), { description, timeoutMs: 20_000 });
+    const geometryForCard = () => {
+        const card = document.getElementById('bpb-ascent-weather'), box = card.getBoundingClientRect();
+        const column = document.getElementById('bpb-ascent-summary-column'), columnBox = column.getBoundingClientRect();
+        const summaryBox = column.querySelector('.bpb-ascent-table-split__summary').getBoundingClientRect();
+        const reportBox = document.querySelector('.bpb-ascent-table-split__report').getBoundingClientRect();
+        const stacked = getComputedStyle(document.getElementById('bpb-ascent-table-split')).display !== 'grid';
+        const overflow = [...card.querySelectorAll('*')].filter(node => {
+            if (node.closest('details:not([open])') && !node.closest('summary')) return false;
+            const bounds = node.getBoundingClientRect(); return bounds.width > 0 && !node.closest('[hidden]') && (bounds.left < box.left - 1 || bounds.right > box.right + 1);
+        }).map(node => node.tagName + '.' + node.className);
+        return { width: box.width, overflow, cardCount: document.querySelectorAll('#bpb-ascent-weather').length,
+            inSummaryColumn: card.parentElement === column, belowSummary: box.top >= summaryBox.bottom,
+            withinColumn: box.left >= columnBox.left - 1 && box.right <= columnBox.right + 1,
+            besideReport: stacked || box.left >= reportBox.right - 1,
+            reportRight: reportBox.right, cardLeft: box.left,
+            beforeReportEnd: stacked || box.top < reportBox.bottom };
+    };
+    const assertPlacement = geometry => {
+        assert.deepEqual(geometry.overflow, [], JSON.stringify(geometry));
+        for (const key of ['inSummaryColumn', 'belowSummary', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
+        assert.equal(geometry.cardCount, 1);
+    };
     await setSettings({ theme: 'light', units: 'imperial' });
     await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);
     await resize(1440, 1100);
@@ -130,7 +154,7 @@ try {
         if (output) await mkdir(output, { recursive: true });
         for (const theme of ['light', 'dark']) {
             await setSettings({ theme, units: theme === 'dark' ? 'metric' : 'imperial' });
-            for (const kind of ['gpx', 'no-gpx', 'no-map']) {
+            for (const kind of ['gpx', 'no-gpx', 'no-map', 'long-report']) {
                 await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=${kind}`);
                 await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
                 await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using HRRR'), 'weather with and without GPX');
@@ -142,16 +166,29 @@ try {
                         const card = document.getElementById('bpb-ascent-weather'), svg = card.querySelector('svg');
                         return Math.abs(Number(svg.getAttribute('viewBox')?.split(' ')[2]) - svg.getBoundingClientRect().width) < 1;
                     }, 'responsive chart width');
-                    const geometry = await evaluate(() => {
-                        const card = document.getElementById('bpb-ascent-weather'), box = card.getBoundingClientRect(), explorer = document.getElementById('bpb-route-explorer');
-                        const overflow = [...card.querySelectorAll('*')].filter(node => {
-                            if (node.closest('details:not([open])') && !node.closest('summary')) return false;
-                            const bounds = node.getBoundingClientRect(); return bounds.width > 0 && !node.closest('[hidden]') && (bounds.left < box.left - 1 || bounds.right > box.right + 1);
-                        }).map(node => node.tagName + '.' + node.className);
-                        return { width: box.width, overflow, belowExplorer: !explorer || box.top >= explorer.getBoundingClientRect().bottom, cardCount: document.querySelectorAll('#bpb-ascent-weather').length };
-                    });
-                    assert.deepEqual(geometry.overflow, [], JSON.stringify(geometry)); assert.equal(geometry.belowExplorer, true); assert.equal(geometry.cardCount, 1);
+                    const geometry = await evaluate(geometryForCard);
+                    assertPlacement(geometry);
+                    if (kind === 'long-report') assert.equal(geometry.beforeReportEnd, true, JSON.stringify(geometry));
                     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-${width}.png`));
+                }
+                if (kind === 'long-report') {
+                    await resize(1440, 1100);
+                    await evaluate(() => document.getElementById('bpb-ascent-table-split').scrollIntoView());
+                    if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-right-column.png`));
+                    // Both column extremes must fit; also exercise the narrowest
+                    // desktop width immediately before the stacked layout.
+                    for (const width of [1440, 681]) {
+                        await resize(width, 1100);
+                        await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.KeyboardEvent('keydown', { key: 'End' })));
+                        await wait(() => {
+                            const svg = document.querySelector('#bpb-ascent-weather svg');
+                            return Math.abs(Number(svg.getAttribute('viewBox')?.split(' ')[2]) - svg.getBoundingClientRect().width) < 1;
+                        }, 'weather chart after divider resize');
+                        assertPlacement(await evaluate(geometryForCard));
+                    }
+                    await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.KeyboardEvent('keydown', { key: 'Home' })));
+                    assertPlacement(await evaluate(geometryForCard));
+                    await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.MouseEvent('dblclick')));
                 }
             }
         }
@@ -178,7 +215,7 @@ try {
         await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
         assert.equal(evidence.length, before);
         assert.deepEqual(networkErrors, []);
-        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx', 'no-gpx', 'no-map', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
     }
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);

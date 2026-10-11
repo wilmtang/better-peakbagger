@@ -4,17 +4,18 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { weatherFixture } from '../helpers/weather-fixture.mjs';
 
-const [ascent, peak, bundle] = await Promise.all([
+const [ascent, peak, bundle, layoutBundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/climber-ascent.html', import.meta.url), 'utf8'),
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
     readFile(new URL('../../dist/content/ascent-weather.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../dist/content/ascent-layout.js', import.meta.url), 'utf8'),
 ]);
 const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 async function waitFor(predicate) {
     const until = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > until) throw new Error('Weather UI did not settle'); await pause(); }
 }
-const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather } = {}) => {
+const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, withLayout = true } = {}) => {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [];
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
@@ -25,6 +26,7 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
         if (fetchWeather) return fetchWeather(url, init);
         return new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } });
     };
+    if (withLayout) win.eval(layoutBundle);
     win.eval(bundle);
     return { win, doc: win.document, requests, listeners, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 };
@@ -35,6 +37,7 @@ test('bundled independent card loads on a visitor ascent without GPX or map', as
         assert.equal(env.requests.length, 2);
         assert.match(env.doc.querySelector('.bpb-weather-condition').textContent, /Snow occurred/);
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').previousElementSibling.id, 'summarydata');
+        assert.equal(env.doc.querySelector('#bpb-ascent-weather').parentElement.id, 'bpb-ascent-summary-column');
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy'), 'false');
         const transfer = env.requests[1]; assert.equal(transfer.init.credentials, 'omit'); assert.equal(transfer.init.referrerPolicy, 'no-referrer');
         assert.equal(new URL(transfer.url).searchParams.has('aid'), false);
@@ -55,12 +58,27 @@ test('invalid or incomplete date makes no summit or weather request, including B
     }
 });
 
-test('same card follows the whole late route explorer without duplication', async () => {
+test('same card stays in the right column when the route explorer appears later', async () => {
     const env = setup();
     try {
         const card = env.doc.getElementById('bpb-ascent-weather');
         const explorer = env.doc.createElement('div'); explorer.id = 'bpb-route-explorer'; env.doc.getElementById('page').append(explorer);
-        await waitFor(() => explorer.nextElementSibling === card);
+        await pause();
+        assert.equal(card.parentElement.id, 'bpb-ascent-summary-column');
+        assert.equal(card.previousElementSibling.id, 'summarydata');
+        assert.notEqual(explorer.nextElementSibling, card);
+        assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
+    } finally { env.close(); }
+});
+
+test('a later table split moves the existing weather card into the summary column', async () => {
+    const env = setup({ withLayout: false });
+    try {
+        const card = env.doc.getElementById('bpb-ascent-weather');
+        assert.equal(card.parentElement.id, 'page');
+        env.win.eval(layoutBundle);
+        await waitFor(() => card.parentElement.id === 'bpb-ascent-summary-column');
+        assert.equal(card.previousElementSibling.id, 'summarydata');
         assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
     } finally { env.close(); }
 });

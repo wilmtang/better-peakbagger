@@ -2593,7 +2593,7 @@ try {
     }, 'pbAscentTableSplit.v1');
     check(ascentSplitBefore.display === 'grid'
         && ascentSplitBefore.children.join('|')
-            === 'ascent-report|bpb-ascent-table-resize-handle|ascent-summary'
+            === 'ascent-report|bpb-ascent-table-resize-handle|bpb-ascent-summary-column'
         && ascentSplitBefore.role === 'separator'
         && ascentSplitBefore.orientation === 'vertical'
         && Math.abs(ascentSplitBefore.handle?.width - 13) <= 0.5

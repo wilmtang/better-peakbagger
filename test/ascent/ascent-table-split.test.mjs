@@ -51,8 +51,9 @@ test('the exact legacy report / summary pair becomes one accessible split', () =
     try {
         assert.ok(split);
         assert.deepEqual(Array.from(split.wrapper.children).map(element => element.id), [
-            'report', 'bpb-ascent-table-resize-handle', 'summary',
+            'report', 'bpb-ascent-table-resize-handle', 'bpb-ascent-summary-column',
         ]);
+        assert.equal(split.summaryColumn.firstElementChild, split.right);
         assert.equal(split.handle.type, 'button', 'the handle cannot submit Peakbagger\'s page form');
         assert.equal(split.handle.getAttribute('role'), 'separator');
         assert.equal(split.handle.getAttribute('aria-orientation'), 'vertical');

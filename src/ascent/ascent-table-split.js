@@ -85,6 +85,10 @@ export const mountAscentTableSplit = ({
     const wrapper = Dom.element('div', {
         id: 'bpb-ascent-table-split',
     });
+    const summaryColumn = Dom.element('div', {
+        id: 'bpb-ascent-summary-column',
+        class: 'bpb-ascent-table-split__summary-column',
+    });
     const handle = Dom.element('button', {
         id: 'bpb-ascent-table-resize-handle',
         type: 'button',
@@ -100,7 +104,8 @@ export const mountAscentTableSplit = ({
     left.before(wrapper);
     left.classList.add('bpb-ascent-table-split__table', 'bpb-ascent-table-split__report');
     right.classList.add('bpb-ascent-table-split__table', 'bpb-ascent-table-split__summary');
-    wrapper.append(left, handle, right);
+    wrapper.append(left, handle, summaryColumn);
+    summaryColumn.append(right);
 
     // CSS height:auto releases fixed heights while shrinking. Preserve an
     // authored ratio, or a height-only size cap, without waiting for image load
@@ -220,6 +225,7 @@ export const mountAscentTableSplit = ({
         handle,
         left,
         right,
+        summaryColumn,
         get leftPercent() { return leftPercent; },
         applyPercent,
     };

@@ -19,6 +19,7 @@
     background: var(--bpb-weather-bg);
     font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     text-align: left;
+    overflow-wrap: anywhere;
 }
 html[data-bpb-theme="dark"] #bpb-ascent-weather {
     --bpb-weather-bg: #23262a;
@@ -39,6 +40,7 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-weather .bpb-weather-status:not(:empty) { color: var(--bpb-weather-sub); font-size: 12px; margin: 18px 0; }
 #bpb-ascent-weather[aria-busy="true"] .bpb-weather-feedback { min-height: 70px; }
 #bpb-ascent-weather .bpb-weather-condition { display: flex; align-items: center; gap: 14px; margin: 26px 0 24px; }
+#bpb-ascent-weather .bpb-weather-condition > div { min-width: 0; }
 #bpb-ascent-weather .bpb-weather-icon { width: 36px; font: 32px/1 sans-serif; text-align: center; }
 #bpb-ascent-weather h3 { margin: 0 0 2px; font: 500 21px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: inherit; }
 #bpb-ascent-weather .bpb-weather-sub { color: var(--bpb-weather-sub); font-size: 12px; }
@@ -50,11 +52,11 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-weather .bpb-weather-model > div:first-child { flex: 1 1 240px; max-width: 360px; min-width: 0; }
 #bpb-ascent-weather label { display: block; margin: 0 0 6px; color: var(--bpb-weather-sub); font-size: 12px; }
 #bpb-ascent-weather select { display: block; width: 100%; margin: 0; padding: 8px 10px; border: 1px solid var(--bpb-weather-border); border-radius: 6px; color: var(--bpb-weather-text); background: var(--bpb-weather-control); font: inherit; }
-#bpb-ascent-weather .bpb-weather-model-description { display: flex; flex-direction: column; gap: 3px; padding-top: 20px; flex: 1 1 180px; font-size: 12px; }
+#bpb-ascent-weather .bpb-weather-model-description { display: flex; flex-direction: column; gap: 3px; padding-top: 20px; flex: 1 1 180px; min-width: 0; font-size: 12px; }
 #bpb-ascent-weather .bpb-weather-hourly { border-top: 1px solid var(--bpb-weather-border); }
 #bpb-ascent-weather button { color: var(--bpb-weather-text); font: inherit; cursor: pointer; }
 #bpb-ascent-weather .bpb-weather-disclosure { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; gap: 10px; padding: 16px 0; border: 0; border-radius: 0; background: transparent; font-weight: 500; }
-#bpb-ascent-weather .bpb-weather-hourly-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+#bpb-ascent-weather .bpb-weather-hourly-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
 #bpb-ascent-weather .bpb-weather-tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 7px; background: var(--bpb-weather-soft); }
 #bpb-ascent-weather .bpb-weather-tabs button { padding: 6px 10px; border: 0; border-radius: 5px; background: transparent; font-size: 12px; color: var(--bpb-weather-sub); }
 #bpb-ascent-weather .bpb-weather-tabs button[aria-selected="true"] { background: var(--bpb-weather-control); color: var(--bpb-weather-text); }
@@ -76,6 +78,17 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
     #bpb-ascent-weather .bpb-weather-model > div:first-child { max-width: none; }
     #bpb-ascent-weather .bpb-weather-model-description { padding-top: 0; }
     #bpb-ascent-weather .bpb-weather-tabs button { padding: 6px 8px; }
+}
+@container bpb-ascent-summary (max-width: 600px) {
+    #bpb-ascent-weather { padding: 18px 16px 0; }
+    #bpb-ascent-weather .bpb-weather-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #bpb-ascent-weather .bpb-weather-model > div:first-child { max-width: none; }
+    #bpb-ascent-weather .bpb-weather-model-description { padding-top: 0; }
+    #bpb-ascent-weather .bpb-weather-tabs button { padding: 6px 8px; }
+}
+@container bpb-ascent-summary (max-width: 300px) {
+    #bpb-ascent-weather .bpb-weather-metrics { grid-template-columns: minmax(0, 1fr); }
+    #bpb-ascent-weather .bpb-weather-disclosure { flex-wrap: wrap; }
 }
 @media (pointer: coarse) {
     #bpb-ascent-weather select { min-height: 44px; font-size: 16px; }

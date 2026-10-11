@@ -704,7 +704,8 @@ export async function createBrowserFixtureServer({
                 let weatherHtml = weatherAscentHtml.replace('Sunday, July 12, 2026', url.searchParams.get('weather') === 'invalid' ? '2024' : 'Friday, July 12, 2024')
                     .replace('</head>', '<style>body{margin:18px;font:13px/1.4 Verdana,Arial,sans-serif}#page{max-width:1120px;margin:auto}table.gray{background:#e6e6e3;border-collapse:collapse}td,th{padding:6px 8px;text-align:left}</style></head>');
                 if (url.searchParams.get('weather') !== 'no-map') weatherHtml = weatherHtml.replace('<div id="gpxlinks">', '<iframe src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="450" height="450"></iframe><br><a href="/map/BigMap.aspx?t=A">Click Here for a Full Screen Map</a><div id="gpxlinks">');
-                if (['no-gpx', 'no-map', 'invalid'].includes(url.searchParams.get('weather'))) weatherHtml = weatherHtml.replace(/<div id="gpxlinks">[\s\S]*?<\/div>/, '');
+                if (url.searchParams.get('weather') === 'long-report') weatherHtml = weatherHtml.replace('<b>Great climb</b>', '<b>Great climb</b>' + '<p>Synthetic long trip report. The report continues on the left while summary and weather stay together on the right.</p>'.repeat(45));
+                if (['no-gpx', 'no-map', 'invalid', 'long-report'].includes(url.searchParams.get('weather'))) weatherHtml = weatherHtml.replace(/<div id="gpxlinks">[\s\S]*?<\/div>/, '');
                 else weatherHtml = weatherHtml.replace('/climber/GPXFile.aspx?aid=7654321&amp;sep=1', '/track.gpx');
                 return send('text/html; charset=utf-8', weatherHtml);
             }

@@ -68,13 +68,18 @@ export function mountAscentWeather() {
     card.append(element('header', {}, [heading, date]), locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
         element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }), attribution]));
 
-    // The analyzer may later reparent the map and legend. Move this same card
-    // below its whole explorer, without altering any native map layers/actions.
+    // Keep weather with the right-hand summary, independently of report height
+    // or a later GPX explorer. Unrecognized layouts retain the map fallback.
     const nativeMap = [...document.querySelectorAll('iframe[src]')].find(frame => {
         try { return /\/MasterMap\.aspx$/i.test(new URL(frame.getAttribute('src'), location.href).pathname); } catch { return false; }
     });
     const mountParent = nativeMap?.parentElement || subject.table?.parentElement || document.querySelector('#page') || document.body;
     const place = () => {
+        const summary = document.querySelector('#bpb-ascent-summary-column > .bpb-ascent-table-split__summary');
+        if (summary) {
+            if (summary.nextElementSibling !== card) summary.after(card);
+            return;
+        }
         let anchor = document.getElementById('bpb-route-explorer');
         if (!anchor && nativeMap?.isConnected) {
             anchor = document.getElementById('bpb-map-viewport') || nativeMap;
@@ -133,7 +138,7 @@ export function mountAscentWeather() {
             add('line', { x1: left, x2: right, y1: yy, y2: yy, class: 'bpb-weather-grid' });
             add('text', { x: left - 7, y: yy + 4, 'text-anchor': 'end' }, value.toFixed(metric === 'precipitation' ? (unitSystem() === 'imperial' ? 2 : 1) : 0));
         }
-        const tickCount = width < 400 ? 3 : 5;
+        const tickCount = width < 200 ? 2 : width < 400 ? 3 : 5;
         for (let index = 0; index < tickCount; index++) {
             const time = dayWindow.start + (dayWindow.end - dayWindow.start) * index / (tickCount - 1);
             const label = index === tickCount - 1 ? '24:00' : mountainTime.formatClock(dayWindow.zone, time, { locales: 'en-GB' });

@@ -344,3 +344,26 @@ Implementation commits: `aff4884` (subject/civil day), `a392b34` (models/client)
 `4317ebb` (card, integration and public contract). Separate verifier repair:
 `fa5ed33` (Firefox pagination fixture). These closure categories travel with the
 archived plan; local green checks do not erase the external proof gaps.
+
+## Right-column placement follow-up — 2026-10-11
+
+The user's placement revision supersedes the original below-explorer layout:
+weather now sits beneath Summary Total Data in the resizable right column,
+independent of report length or a later GPX explorer. Unrecognized table layouts
+retain the original map/metadata fallback. Container queries adapt the card to
+the divider width, and long table text wraps instead of overlapping the other
+column. Narrow pages retain the existing stacked report/summary arrangement.
+
+Fixed and verified: 19 focused layout/weather tests, all 2475 `npm test` tests,
+and `npm run lint` passed with the existing owned warning baseline. Both full
+extension browser gates passed at 1000×760. The weather verifier passed in
+hidden Chrome 153.0.8010.12 and Firefox 157.0.1 at 375, 681, 768 and 1440 CSS
+pixels, both themes, with long reports and divider extremes. Real page/card
+screenshots were inspected for wrapping and overlap. The initial divider check
+exposed intrinsic report-table overflow; the wrapping correction passed the
+same check in both browsers. Both verifiers reported teardown passed.
+
+Intentionally preserved: native tables, divider bounds and interactions,
+weather/model behavior, GPX analysis and user-owned browser state. The live
+authenticated-markup and native accessibility proof gaps above remain open;
+hidden fixture evidence does not establish those behaviors.
