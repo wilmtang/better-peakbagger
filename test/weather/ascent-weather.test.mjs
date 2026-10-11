@@ -320,6 +320,7 @@ test('a shared GPS footer paragraph is moved once and ambiguous or report-quoted
 test('hourly tabs have one keyboard stop and arrow navigation preserves the active measurement', async () => {
     const env = setup();
     try {
+        await openChart(env);
         const tabs = [...env.doc.querySelectorAll('[role="tab"]')];
         assert.deepEqual(tabs.map(tab => tab.tabIndex), [0, -1, -1, -1]);
         tabs[0].focus(); tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight' }));

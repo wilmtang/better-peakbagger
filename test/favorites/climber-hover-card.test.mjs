@@ -28,6 +28,10 @@ const load = async ({ settings = { favoritesSource: 'custom' }, local = {}, prep
             prepare?.(dom);
         } });
     await waitFor(dom, () => dom.window.document.querySelector('.bpb-climber-actions-trigger'));
+    // jsdom has popover UA styles but no popover API. Exercise the fixed-position
+    // fallback without leaving the card permanently display:none for focus checks.
+    const card = dom.window.document.getElementById('bpb-climber-card');
+    if (typeof card.showPopover !== 'function') card.removeAttribute('popover');
     return dom;
 };
 const open = async (dom, id = 'casey') => {
