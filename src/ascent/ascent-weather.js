@@ -5,8 +5,10 @@ import { dom } from '../ui/dom.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
 import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
@@ -140,6 +142,7 @@ export function mountAscentWeather() {
     let metric = 'temperature', generation = 0, controller = null, started = false, visibilityObserver = null;
     const failed = new Set(), client = createWeatherClient();
     let lifecycle;
+    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; });
     let cursorState = { hovering: false, hoverTime: null, selected: false, selectionTime: null };
     let cursorFrame = null, chartBounds = null, chartDescription = '';
     const conditionRows = new Map();
@@ -298,7 +301,7 @@ export function mountAscentWeather() {
     const prepare = async signal => {
         if (summit) return;
         const response = await fetchPeakbaggerDocument(subject.peak.url, { kind: 'html', signal, init: { referrerPolicy: 'no-referrer' } });
-        if (response.kind !== 'ok') throw new Error('Summit details could not be loaded. Try again.');
+        if (response.kind !== 'ok') throw peakbaggerError.exception(response.error);
         summit = readWeatherSummit(response.document, subject, response.url);
         const zone = mountainTime.resolve(summit.latitude, summit.longitude);
         dayWindow = weatherDayWindow(subject.date, zone);
@@ -311,6 +314,7 @@ export function mountAscentWeather() {
         if (subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
         cancel(); const ownGeneration = generation; controller = new AbortController(); const signal = controller.signal;
         busy(true); started = true;
+        delete status.dataset.kind;
         if (!current) { resultArea.hidden = false; condition.textContent = 'Weather conditions'; conditionDetail.textContent = 'Ascent-day model estimate'; }
         status.textContent = current ? `Showing ${current.model.label} while loading…` : 'Loading ascent-day weather…';
         try {
@@ -344,6 +348,7 @@ export function mountAscentWeather() {
         } catch (error) {
             if (ownGeneration !== generation || signal.aborted) return;
             if (!current) resultArea.hidden = true;
+            if (error.code === 'rate-limit') { status.dataset.kind = 'rate-limit'; cooldown.set(error.retryAt); }
             status.textContent = `${current ? `Showing ${current.model.label}. ` : ''}${error.message}`; retry.hidden = false;
         } finally {
             if (ownGeneration === generation) card.setAttribute('aria-busy', 'false');
@@ -389,9 +394,9 @@ export function mountAscentWeather() {
         visibilityObserver.observe(card);
     };
     lifecycle = createPageLifecycle({
-        onSuspend: () => { stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
-        onResume: () => { listenForCursor(); drawChart(); place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (!current || started) beginWhenVisible(); },
-        onDispose: () => { stopCursor(); cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
+        onSuspend: () => { cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
+        onResume: () => { cooldown.resume(); listenForCursor(); drawChart(); place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (!current || started) beginWhenVisible(); },
+        onDispose: () => { cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
     listenForCursor();
     if (subject.reason) status.textContent = subject.reason;

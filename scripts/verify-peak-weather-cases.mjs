@@ -108,9 +108,16 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-line').length), 0);
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-missing-rain.png`));
     setMode('error'); await click('.bpb-week-refresh');
-    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('temporarily limited'), 'rate limit explains failed refresh');
+    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('Open-Meteo request limit reached'), 'rate limit explains failed refresh');
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 7);
-    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-error-partial.png`));
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-refresh').disabled), true);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-status').dataset.kind), 'rate-limit');
+    for (const width of [1440, 375]) {
+        await resize(width, 1100);
+        await evaluate(() => document.querySelector('.bpb-week-status').scrollIntoView({ block: 'center' }));
+        assertGeometry(await evaluate(geometry));
+        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-rate-limit-${width}.png`));
+    }
     setMode('empty'); await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map`);
     await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView());
     await wait(() => document.querySelector('.bpb-week-status').textContent.includes('unavailable for this summit'), 'empty response never appears as seven clear dry days');

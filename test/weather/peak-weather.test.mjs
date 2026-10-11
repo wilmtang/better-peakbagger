@@ -248,9 +248,11 @@ test('partial data stays labelled and a failed refresh preserves the previous da
         assert.ok([...env.doc.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —')));
         const range = env.doc.querySelector('.bpb-week-range').textContent;
         limited = true; env.doc.querySelector('.bpb-week-refresh').click();
-        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('temporarily limited'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Open-Meteo request limit reached'));
         assert.equal(env.doc.querySelector('.bpb-week-range').textContent, range);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, false);
     } finally { env.close(); }
 });
 

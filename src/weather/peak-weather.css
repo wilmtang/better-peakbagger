@@ -22,8 +22,9 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 #bpb-peak-weather .bpb-week-sub, #bpb-peak-weather .bpb-week-help { color: var(--week-sub); font-size: 12px; }
 #bpb-peak-weather .bpb-week-status { color: var(--week-sub); }
 #bpb-peak-weather .bpb-week-status:empty { display: none; }
+#bpb-peak-weather .bpb-week-status[data-kind="rate-limit"] { padding: 10px 12px; border-left: 3px solid #b47b26; background: var(--week-soft); border-radius: 4px; color: var(--week-text); }
 #bpb-peak-weather button { font: inherit; color: var(--week-accent); border: 1px solid var(--week-border); background: var(--week-bg); padding: 6px 10px; border-radius: 7px; cursor: pointer; }
-#bpb-peak-weather button:disabled { opacity: .65; cursor: wait; }
+#bpb-peak-weather button:disabled { opacity: .65; cursor: default; }
 #bpb-peak-weather :is(button, summary, a, [tabindex]):focus-visible { outline: 2px solid var(--week-accent); outline-offset: 3px; }
 #bpb-peak-weather .bpb-week-days { margin-top: 16px; }
 #bpb-peak-weather .bpb-week-day { border-top: 1px solid var(--week-border); }

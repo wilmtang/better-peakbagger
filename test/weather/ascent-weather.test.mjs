@@ -357,15 +357,20 @@ test('superseded response cannot overwrite explicit model choice', async () => {
 test('rate limits preserve previous results without cascading, explicit selection never falls back', async () => {
     const env = setup({ fetchWeather: url => new URL(url).searchParams.get('models') === 'gfs_hrrr'
         ? Promise.resolve(new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } }))
-        : Promise.resolve(new Response('', { status: 429 })) });
+        : Promise.resolve(new Response('', { status: 429, headers: { 'retry-after': '120' } })) });
     try {
         await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'));
         const before = env.requests.length;
         const select = env.doc.querySelector('select'); select.value = 'ecmwf_ifs'; select.dispatchEvent(new env.win.Event('change'));
-        await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('temporarily limited'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('Open-Meteo request limit reached'));
         assert.equal(env.requests.length, before + 1);
         assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using HRRR/);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, false);
+        assert.equal(env.doc.querySelector('.bpb-weather-retry').disabled, true);
+        assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');
+        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Try again after/);
+        select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
+        await pause(); assert.equal(env.requests.length, before + 1);
     } finally { env.close(); }
 });
 

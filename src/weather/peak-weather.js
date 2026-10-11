@@ -5,6 +5,7 @@ import { dom } from '../ui/dom.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createPeakHourlyChart } from './peak-weather-hourly.js';
 import { weatherWeekWindow, summarizeWeatherWeek } from './weather-week.js';
@@ -40,6 +41,7 @@ export function mountPeakWeather() {
     const client = createRecentWeatherClient();
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
     let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
+    const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; });
     const unitSystem = () => units.resolveUnits(preference, () => {
         const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));
         return /Elevation:\s*[\d,.]+\s*m\b/i.test(heading?.textContent || '') ? 'metric' : 'imperial';
@@ -96,13 +98,14 @@ export function mountPeakWeather() {
         }
         sourceText.textContent = `Automatic regional model selection by Open-Meteo. Recent model estimates, not weather-station observations. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window.days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${current.days.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${current.data.grid.elevation.toFixed(0)} m. Selected grid: ${current.data.grid.latitude.toFixed(4)}, ${current.data.grid.longitude.toFixed(4)}.`;
     }
-    const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); refresh.disabled = false; };
+    const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); refresh.disabled = cooldown.active(); };
     async function load({ clear = false } = {}) {
         if (lifecycle.state !== 'active' || pending) return;
         visibilityObserver?.disconnect(); visibilityObserver = null;
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
         card.setAttribute('aria-busy', 'true'); refresh.disabled = true;
+        delete status.dataset.kind;
         status.textContent = current ? 'Refreshing weather…' : 'Loading past week weather…';
         try {
             const week = weatherWeekWindow(zone);
@@ -116,9 +119,10 @@ export function mountPeakWeather() {
             renderResult(); status.textContent = summaries.some(day => day.partial) ? 'Some days have incomplete hours.' : '';
         } catch (error) {
             if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;
+            if (error.code === 'rate-limit') { status.dataset.kind = 'rate-limit'; cooldown.set(error.retryAt); }
             status.textContent = `${error.message || 'Weather could not be loaded.'}${current ? ' Showing the previous result.' : ' Use Refresh to try again.'}`;
         } finally {
-            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); refresh.disabled = false; }
+            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); }
         }
     }
     const beginWhenVisible = () => {
@@ -137,10 +141,10 @@ export function mountPeakWeather() {
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const unsubscribe = settings.subscribe(next => { preference = next; if (lifecycle.state === 'active') renderResult(); });
     settings.get().then(next => { preference = next; if (lifecycle.state === 'active') renderResult(); });
-    const stop = () => { cancel(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { cooldown.suspend(); cancel(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { document.addEventListener('visibilitychange', visibility); renderResult(); beginWhenVisible(); },
-        onDispose: () => { stop(); unsubscribe(); client.clear(); },
+        onResume: () => { cooldown.resume(); document.addEventListener('visibilitychange', visibility); renderResult(); beginWhenVisible(); },
+        onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
     beginWhenVisible();

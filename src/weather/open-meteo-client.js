@@ -4,6 +4,7 @@
 import { requestDeadline } from '../net/request-deadline.js';
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { WEATHER_MODELS } from './weather-models.js';
+import { rateLimitError } from '../net/rate-limit.js';
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const fields = {
@@ -102,12 +103,14 @@ export function createRecentWeatherClient(options = {}) {
 }
 function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000 }, buildUrl, validate) {
     const cache = new Map(), flights = new Map();
+    let limited = null;
     const request = (summit, window, model, { signal } = {}) => {
         const url = buildUrl(summit, window, model);
         const key = `weather-v1:${url}`;
         if (signal?.aborted) return Promise.reject(Object.assign(new Error('Cancelled.'), { name: 'AbortError' }));
         const cached = cache.get(key);
         if (cached && cached.expires > now()) return Promise.resolve(cached.data);
+        if (limited?.retryAt > now()) return Promise.reject(limited);
         if (flights.has(key) && !flights.get(key).signal?.aborted) return flights.get(key).promise;
         const deadline = requestDeadline.createRequestDeadline(timeoutMs);
         let rejectCancel;
@@ -121,7 +124,7 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
             try {
                 const response = await run(fetchFn(url, { credentials: 'omit', referrerPolicy: 'no-referrer',
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
-                if (response.status === 429) throw fail('rate-limit', 'Weather requests are temporarily limited. Wait before trying again.');
+                if (response.status === 429) { limited = rateLimitError('Open-Meteo', response, now()); throw limited; }
                 if ([400, 404].includes(response.status)) throw fail('unavailable', model === RECENT_MODEL
                     ? 'Recent weather is unavailable for this summit.' : 'This model has no data for the ascent’s date or location.');
                 if (!response.ok) throw fail('service', 'The weather service is unavailable. Try again later.');

@@ -93,6 +93,26 @@ test('429, missing archive and oversized responses are classified without retry'
     ]) await assert.rejects(createWeatherClient({ fetchFn }).request(summit, window, model), { code });
 });
 
+test('a confirmed limit survives unreadable bodies and gates new requests while cached results stay usable', async () => {
+    let now = 1700000000000, calls = 0, cancelled = false;
+    const client = createWeatherClient({ now: () => now, fetchFn: async () => {
+        calls++;
+        if (calls !== 2) return response(weatherResponse());
+        return { status: 429, headers: new Headers({ 'retry-after': '120' }),
+            body: { cancel() { cancelled = true; } }, text() { throw new Error('must not read'); } };
+    } });
+    const cached = await client.request(summit, window, model);
+    const other = WEATHER_MODELS.find(item => item !== model);
+    await assert.rejects(client.request(summit, window, other), { code: 'rate-limit', retryAt: now + 120000 });
+    assert.equal(cancelled, true);
+    assert.equal(await client.request(summit, window, model), cached);
+    client.clear();
+    await assert.rejects(client.request(summit, window, model), { code: 'rate-limit' });
+    assert.equal(calls, 2);
+    now += 120001;
+    await client.request(summit, window, model); assert.equal(calls, 3);
+});
+
 test('deadlines and caller cancellation settle a transport that ignores AbortSignal', async () => {
     const client = createWeatherClient({ fetchFn: () => new Promise(() => {}), timeoutMs: 15 });
     await assert.rejects(client.request(summit, window, model), { code: 'timeout' });

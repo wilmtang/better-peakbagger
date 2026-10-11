@@ -49,7 +49,7 @@ try {
             else body.hourly.precipitation[40] = null;
         }
         if (mode === 'empty') Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
-        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(body) };
+        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(body), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');
@@ -88,7 +88,7 @@ try {
                     if (mode === 'loading') await new Promise(resolve => held.push(resolve));
                     const reply = replyFor(url);
                     await send({ method: 'network.provideResponse', params: { request: params.request.request, statusCode: reply.status,
-                        headers: [{ name: 'content-type', value: { type: 'string', value: 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }],
+                        headers: [{ name: 'content-type', value: { type: 'string', value: 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
                         body: { type: 'string', value: reply.body } } });
                 })().catch(error => networkErrors.push(error.message));
             };
@@ -144,7 +144,7 @@ try {
             checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
             if (mode === 'loading') await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
-            await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+            await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
         page.on('pageerror', error => networkErrors.push(error.message));
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
@@ -400,9 +400,15 @@ try {
             await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
             await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('Partial data'), 'partial-data label');
             mode = 'error'; await evaluate(() => { const select = document.querySelector('.bpb-weather-model select'); select.value = 'gfs_global'; select.dispatchEvent(new Event('change')); });
-            await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('temporarily limited'), 'rate-limit recovery state');
+            await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('Open-Meteo request limit reached'), 'rate-limit recovery state');
             assert.ok(await evaluate(() => !document.querySelector('.bpb-weather-result').hidden));
-            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-error-partial.png`));
+            assert.equal(await evaluate(() => document.querySelector('.bpb-weather-retry').disabled), true);
+            assert.equal(await evaluate(() => document.querySelector('.bpb-weather-status').dataset.kind), 'rate-limit');
+            for (const width of [1440, 375]) {
+                await resize(width, 1100);
+                await evaluate(() => document.querySelector('.bpb-weather-status').scrollIntoView({ block: 'center' }));
+                if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-rate-limit-${width}.png`));
+            }
             const before = evidence.length;
             await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=invalid`);
             await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
