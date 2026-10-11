@@ -27,12 +27,6 @@ export function weatherRequestUrl(summit, window, model) {
     return requestUrl(summit, window, model, 2);
 }
 
-// Recent weather uses the forecast API's automatic regional blend. Keep its
-// longer window separate from the historical ascent client's three-day bound.
-const RECENT_MODEL = { endpoint: 'https://api.open-meteo.com/v1/forecast', since: '1970-01-01', fields: Object.keys(fields) };
-export function recentWeatherRequestUrl(summit, window) {
-    return requestUrl(summit, window, RECENT_MODEL, 8);
-}
 // Sixteen past and sixteen forecast civil days, plus UTC padding. The forecast
 // window caps padding at the API horizon; do not widen historical ascent bounds.
 const PEAK_MAX_UTC_DATES = 33;
@@ -44,7 +38,7 @@ const peakModels = models => {
 export function peakWeatherRequestUrl(summit, window, models) {
     peakModels(models);
     if (models.some(model => !model.domain(summit))) throw fail('invalid', 'Invalid weather model coverage.');
-    return requestUrl(summit, window, { endpoint: RECENT_MODEL.endpoint,
+    return requestUrl(summit, window, { endpoint: 'https://api.open-meteo.com/v1/forecast',
         id: models.map(model => model.id).join(','), since: models.map(model => model.since).sort()[0],
         fields: [...new Set(models.flatMap(model => model.fields))] }, PEAK_MAX_UTC_DATES - 1);
 }
@@ -76,9 +70,6 @@ function requestUrl(summit, window, model, maxDays) {
 
 export function validateWeatherResponse(body, summit, window, model) {
     return validateResponse(body, summit, window, model, 72);
-}
-export function validateRecentWeatherResponse(body, summit, window) {
-    return validateResponse(body, summit, window, RECENT_MODEL, 216);
 }
 export function validatePeakWeatherResponse(body, summit, window, models) {
     peakModels(models);
@@ -133,10 +124,6 @@ function validateResponse(body, summit, window, model, maxRows, definitions = fi
 export function createWeatherClient(options = {}) {
     return createClient(options, weatherRequestUrl, validateWeatherResponse);
 }
-export function createRecentWeatherClient(options = {}) {
-    const client = createClient(options, recentWeatherRequestUrl, validateRecentWeatherResponse);
-    return { request: (summit, window, requestOptions) => client.request(summit, window, RECENT_MODEL, requestOptions), clear: client.clear };
-}
 export function createPeakWeatherClient(options = {}) {
     return createClient(options, peakWeatherRequestUrl, validatePeakWeatherResponse);
 }
@@ -164,9 +151,8 @@ function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 
                 const response = await run(fetchFn(url, { credentials: 'omit', referrerPolicy: 'no-referrer',
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
                 if (response.status === 429) { limited = rateLimitError('Open-Meteo', response, now()); throw limited; }
-                if ([400, 404].includes(response.status)) throw fail('unavailable', model === RECENT_MODEL
-                    ? 'Recent weather is unavailable for this summit.' : Array.isArray(model)
-                        ? 'This weather model selection is unavailable for this summit. Choose another model.' : 'This model has no data for the ascent’s date or location.');
+                if ([400, 404].includes(response.status)) throw fail('unavailable', Array.isArray(model)
+                    ? 'This weather model selection is unavailable for this summit. Choose another model.' : 'This model has no data for the ascent’s date or location.');
                 if (!response.ok) throw fail('service', 'The weather service is unavailable. Try again later.');
                 if (!/application\/json/i.test(response.headers?.get('content-type') || '')) throw fail('invalid-response', 'The weather service returned an invalid response.');
                 const text = await run(readBoundedResponseText(response, { maxBytes: 128 * 1024, signal: deadline.signal, label: 'Weather response' }));

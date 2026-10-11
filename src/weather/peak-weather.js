@@ -264,7 +264,7 @@ export function mountPeakWeather() {
             populateModels();
             if (!current) renderLabels(window[period]);
             if (clear) { client.clear(); cancelUpdates(); updateClient.clear(); }
-            const requestedChoices = { ...choices }, models = resolvePeakWeatherModels(subject, window, requestedChoices);
+            const models = resolvePeakWeatherModels(subject, window, choices);
             const response = await client.request(subject, window, [...new Set(Object.values(models))], { signal: controller.signal });
             if (owner !== generation || lifecycle.state !== 'active') return;
             // Short-range choices must not display sixteen empty future days.
@@ -279,7 +279,7 @@ export function mountPeakWeather() {
                 window.forecast = { ...window.forecast, days: window.forecast.days.slice(0, count) };
             }
             if (!Object.values(summaries).some(list => list.some(day => day.useful))) throw new Error('Weather is unavailable for this summit.');
-            current = { window, data, models, choices: requestedChoices, sharedGrid: response.sharedGrid, days: summaries, loadedAt: Date.now() }; notice = null;
+            current = { window, data, models, sharedGrid: response.sharedGrid, days: summaries, loadedAt: Date.now() }; notice = null;
             renderResult();
         } catch (error) {
             if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;

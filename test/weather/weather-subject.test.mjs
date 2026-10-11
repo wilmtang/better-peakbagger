@@ -39,7 +39,7 @@ test('summit metadata requires matching native name, URL and labelled WGS84 row'
     const url = 'https://www.peakbagger.com/peak.aspx?pid=2296';
     const summit = readWeatherSummit(doc, subject, url);
     assert.equal(summit.latitude, 46.851731); assert.equal(summit.longitude, -121.760395);
-    assert.equal(summit.nation, 'united states'); assert.equal(summit.elevation, 4391);
+    assert.equal(summit.elevation, 4391);
     doc.querySelector('h2').textContent = 'Elevation: −86 meters';
     assert.equal(readWeatherSummit(doc, subject, url).elevation, -86);
     assert.throws(() => readWeatherSummit(doc, subject, url.replace('2296', '999')), /match/);

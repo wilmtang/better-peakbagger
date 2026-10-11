@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels, recommendedWeatherModels } from '../../src/weather/weather-models.js';
+import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../../src/weather/weather-models.js';
 import { createWeatherClient, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.js';
 
-const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391, nation: 'united states' };
+const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391 };
 const window = { startDate: '2024-07-11', endDate: '2024-07-13', partial: false };
 const model = WEATHER_MODELS[0];
 export function weatherResponse({ startDate = window.startDate, model: selected = model } = {}) {
@@ -33,20 +33,20 @@ test('archive Best Match uses the packaged archive endpoint across its date cove
     assert.equal(first.searchParams.get('start_date'), '1940-01-01');
 });
 
-test('model recommendations respect date, nation and projected regional grids', () => {
+test('model eligibility respects archive dates and projected regional grids', () => {
     const now = Date.parse('2026-10-10');
-    assert.equal(recommendedWeatherModels(summit, '2024-07-12', now)[0].id, 'gfs_hrrr');
-    assert.equal(recommendedWeatherModels({ ...summit, latitude: 21.3, longitude: -157.8 }, '2024-07-12', now)[0].id, 'ecmwf_ifs');
-    assert.equal(recommendedWeatherModels({ ...summit, latitude: 64, longitude: -150 }, '2024-07-12', now)[0].id, 'ecmwf_ifs');
-    assert.equal(recommendedWeatherModels({ ...summit, latitude: 49.85, longitude: -123, nation: 'canada' }, '2024-07-12', now)[0].id, 'gem_hrdps_continental');
-    assert.equal(recommendedWeatherModels(summit, '2000-01-01', now)[0].id, 'era5_seamless');
-    assert.equal(recommendedWeatherModels(summit, '1940-01-01', now)[0].id, 'era5');
-    assert.equal(recommendedWeatherModels(summit, '1930-01-01', now).length, 0);
+    assert.ok(eligibleWeatherModels(summit, '2024-07-12', now).some(item => item.id === 'gfs_hrrr'));
+    assert.equal(eligibleWeatherModels({ ...summit, latitude: 21.3, longitude: -157.8 }, '2024-07-12', now).some(item => item.id === 'gfs_hrrr'), false);
+    assert.equal(eligibleWeatherModels({ ...summit, latitude: 64, longitude: -150 }, '2024-07-12', now).some(item => item.id === 'gfs_hrrr'), false);
+    assert.ok(eligibleWeatherModels({ ...summit, latitude: 49.85, longitude: -123 }, '2024-07-12', now).some(item => item.id === 'gem_hrdps_continental'));
+    assert.ok(eligibleWeatherModels(summit, '2000-01-01', now).some(item => item.id === 'era5_seamless'));
+    assert.ok(eligibleWeatherModels(summit, '1940-01-01', now).some(item => item.id === 'era5'));
+    assert.equal(eligibleWeatherModels(summit, '1930-01-01', now).length, 0);
     assert.equal(eligibleWeatherModels(summit, '2024-07-12', now).some(item => item.id === 'ncep_nbm_conus'), false);
     assert.equal(eligibleWeatherModels(summit, '2026-10-10', now).some(item => item.id === 'era5'), false);
-    const newZealand = { latitude: -43.6, longitude: 170.14, nation: 'new zealand' };
+    const newZealand = { latitude: -43.6, longitude: 170.14 };
     const nzNow = Date.parse('2026-10-10T12:00:00Z'); // October 11 at the summit
-    assert.equal(recommendedWeatherModels(newZealand, '2026-10-11', nzNow)[0].id, 'ecmwf_ifs');
+    assert.ok(eligibleWeatherModels(newZealand, '2026-10-11', nzNow).some(item => item.id === 'ecmwf_ifs'));
     assert.equal(eligibleWeatherModels(newZealand, '2026-10-12', nzNow).length, 0);
     const alps = { latitude: 46, longitude: 7 };
     assert.ok(eligibleWeatherModels(alps, '2020-01-01', now).some(item => item.id === 'cerra'));

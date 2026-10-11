@@ -8,13 +8,8 @@ const DAY = 86400_000, HOUR = 3600_000;
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
 export const PEAK_FORECAST_DAYS = 16;
 
-// Seven completed civil days at the summit, not seven UTC dates or 168 hours.
 // Request GMT/Unix timestamps and group locally: the API's fixed UTC offset
 // ignores DST transitions. Include the final precipitation interval endpoint.
-export function weatherWeekWindow(zone, now = Date.now()) {
-    return completedWeatherWindow(zone, now, 7);
-}
-
 function completedWeatherWindow(zone, now, dayCount) {
     const today = mountainTime.localDate(zone, now);
     const midnight = Date.parse(`${today}T00:00:00Z`);

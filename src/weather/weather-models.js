@@ -102,13 +102,3 @@ export function eligibleWeatherModels(summit, date, now = Date.now()) {
     return WEATHER_MODELS.filter(item => date >= item.since && date <= cutoff(item.delayDays)
         && (!item.until || date <= item.until) && item.domain(summit));
 }
-
-export function recommendedWeatherModels(summit, date, now) {
-    const eligible = eligibleWeatherModels(summit, date, now);
-    const ids = [
-        ...(summit.nation === 'united states' ? ['gfs_hrrr'] : []),
-        ...(summit.nation === 'canada' ? ['gem_hrdps_continental'] : []),
-        'ecmwf_ifs', 'era5_seamless', 'era5',
-    ];
-    return ids.map(id => eligible.find(item => item.id === id)).filter(Boolean);
-}
