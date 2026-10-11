@@ -5,6 +5,8 @@
 // Reanalysis fields/delay: https://open-meteo.com/en/docs/historical-weather-api
 // Regional candidates outside the two projected grids use conservative interior
 // footprints. Eligibility is a candidate, not a promise of an archive slice.
+import { mountainTime } from '../time/mountain-time.js';
+
 const rad = degrees => degrees * Math.PI / 180;
 function lambert(lat, lon) {
     const n = Math.sin(rad(38.5));
@@ -88,7 +90,10 @@ export const WEATHER_MODELS = Object.freeze([
 export function eligibleWeatherModels(summit, date, now = Date.now()) {
     if (!Number.isFinite(summit.latitude) || Math.abs(summit.latitude) > 90
         || !Number.isFinite(summit.longitude) || Math.abs(summit.longitude) > 180) return [];
-    const cutoff = delay => new Date(now - delay * 86400_000).toISOString().slice(0, 10);
+    const zone = mountainTime.resolve(summit.latitude, summit.longitude);
+    // A summit east of the date line can already be on tomorrow's UTC date.
+    // The subject's future-date guard and this cutoff both use its civil day.
+    const cutoff = delay => mountainTime.localDate(zone, now - delay * 86400_000);
     return WEATHER_MODELS.filter(item => date >= item.since && date <= cutoff(item.delayDays)
         && (!item.until || date <= item.until) && item.domain(summit));
 }

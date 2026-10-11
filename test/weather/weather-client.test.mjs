@@ -25,6 +25,10 @@ test('model recommendations respect date, nation and projected regional grids', 
     assert.equal(recommendedWeatherModels(summit, '1930-01-01', now).length, 0);
     assert.equal(eligibleWeatherModels(summit, '2024-07-12', now).some(item => item.id === 'ncep_nbm_conus'), false);
     assert.equal(eligibleWeatherModels(summit, '2026-10-10', now).some(item => item.id === 'era5'), false);
+    const newZealand = { latitude: -43.6, longitude: 170.14, nation: 'new zealand' };
+    const nzNow = Date.parse('2026-10-10T12:00:00Z'); // October 11 at the summit
+    assert.equal(recommendedWeatherModels(newZealand, '2026-10-11', nzNow)[0].id, 'ecmwf_ifs');
+    assert.equal(eligibleWeatherModels(newZealand, '2026-10-12', nzNow).length, 0);
     const alps = { latitude: 46, longitude: 7 };
     assert.ok(eligibleWeatherModels(alps, '2020-01-01', now).some(item => item.id === 'cerra'));
     assert.equal(eligibleWeatherModels(alps, '2022-01-01', now).some(item => item.id === 'cerra'), false);
@@ -37,6 +41,17 @@ test('fixed-host request never accepts caller model, URL or overlong dates', () 
     assert.equal(url.searchParams.get('elevation'), '4391');
     assert.throws(() => weatherRequestUrl(summit, window, { ...model, endpoint: 'https://evil.test' }));
     assert.throws(() => weatherRequestUrl(summit, { ...window, endDate: '2025-07-13' }, model));
+});
+
+test('UTC padding is clipped at an archive boundary without substituting the ascent date', () => {
+    const era5 = WEATHER_MODELS.find(item => item.id === 'era5');
+    const first = new URL(weatherRequestUrl(summit, { startDate: '1939-12-31', endDate: '1940-01-02' }, era5));
+    assert.equal(first.searchParams.get('start_date'), '1940-01-01');
+    assert.equal(first.searchParams.get('end_date'), '1940-01-02');
+    const cerra = WEATHER_MODELS.find(item => item.id === 'cerra');
+    const last = new URL(weatherRequestUrl(summit, { startDate: '2021-06-29', endDate: '2021-07-01' }, cerra));
+    assert.equal(last.searchParams.get('end_date'), '2021-06-30');
+    assert.throws(() => weatherRequestUrl(summit, { startDate: '1939-01-01', endDate: '1939-01-03' }, era5), { code: 'unavailable' });
 });
 
 test('response contract validates units, aligned arrays, coordinate/elevation and timestamps', () => {

@@ -8,6 +8,7 @@ Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 - **Process a GPX on Peakbagger:** Analyze a GPX for route stats, nearby summits, and coordinated multi-peak drafts.
 - **Explore free 3D terrain:** Explore routes and maps in opt-in interactive 3D with compatible layers, synced views, and a compass.
 - **Understand GPX tracks:** See interactive charts, local times, route metrics, source point counts, and map tracking with customizable route styling. Review and reverse the interpretation of narrowly identified suspect segments without changing the saved GPX.
+- **Review ascent-day weather:** See summit weather estimates for the saved ascent date, even without GPX, with a recommended historical model, other available models, and hourly local-time detail. Open-Meteo automatically receives summit coordinates, elevation and a narrow date window when the card approaches the viewport; no GPX, account credentials or ascent identity is sent.
 - **Send saved tracks to mapping apps:** Open a saved ascent GPX in Gaia GPS, onX Backcountry, AllTrails, or CalTopo for review and confirmation there.
 - **Plan with the Sun and Moon:** Check their directions, astronomical sunrise and sunset, Moon phase, and illumination on peak maps and saved ascent tracks, calculated offline in mountain-local time.
 - **Find useful ascent beta:** Filter and sort ascent lists without reloading, using Buddy List or custom favorites.

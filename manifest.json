@@ -161,6 +161,18 @@
         "https://peakbagger.com/climber/ascent.aspx*",
         "https://peakbagger.com/climber/Ascent.aspx*"
       ],
+      "css": ["css/ascent-weather.css"],
+      "js": ["content/ascent-weather.js"],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
+      ],
       "css": [
         "css/ascent-backup.css"
       ],

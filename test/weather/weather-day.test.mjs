@@ -69,6 +69,22 @@ test('current day excludes future samples and unfinished precipitation intervals
     assert.equal(result.precipitation.complete, false);
 });
 
+test('sparse native series never pretend to cover the missing hourly intervals', () => {
+    const window = weatherDayWindow('2024-07-12', zone, now);
+    for (const interval of [3, 6]) {
+        const data = samplesFor(window);
+        data.samples = data.samples.filter((_, index) => index % interval === 0);
+        data.samples.forEach(row => { row.code = null; });
+        const result = summarizeWeatherDay(data, window);
+        assert.equal(result.partial, true);
+        assert.equal(result.temperature.complete, false);
+        assert.equal(result.precipitation.complete, false);
+        assert.ok(result.precipitation.total < 24);
+        assert.equal(result.condition.label, 'Conditions unavailable');
+        assert.equal(result.condition.icon, 'unknown');
+    }
+});
+
 test('date-line days, skipped dates, future dates and estimated timezones', () => {
     const apia = mountainTime.resolve(-13.83, -171.76);
     assert.throws(() => weatherDayWindow('2011-12-30', apia, now), /does not exist/);

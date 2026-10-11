@@ -65,7 +65,7 @@ export function summarizeWeatherDay(data, window) {
     const precipitationComplete = covered === window.end - window.start && !window.partial;
     const codes = instants.map(row => row.code).filter(knownWeatherCode);
     const conditionComplete = expected.length > 0 && expected.every(time => knownWeatherCode(byTime.get(time)?.code));
-    const condition = CONDITIONS.find(item => codes.some(code => item.codes.includes(code))) || { label: 'Conditions unavailable', icon: 'cloud' };
+    const condition = CONDITIONS.find(item => codes.some(code => item.codes.includes(code))) || { label: 'Conditions unavailable', icon: 'unknown' };
     const coreComplete = temperature.complete && wind.complete && conditionComplete && precipitationComplete;
     return {
         temperature, wind, gust, condition: { ...condition, complete: conditionComplete },

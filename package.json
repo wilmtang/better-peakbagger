@@ -28,6 +28,7 @@
     "verify:map-handoffs": "npm run build && node scripts/verify-map-handoffs.mjs",
     "verify:gaia": "npm run verify:map-handoffs",
     "verify:onx": "npm run verify:map-handoffs",
+    "verify:weather": "npm run build && node scripts/verify-ascent-weather.mjs && node scripts/verify-ascent-weather.mjs --firefox",
     "lint": "eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs",
     "audit:ci": "node scripts/check-npm-audit.mjs",
     "verify:chrome": "npm run build && node scripts/verify-extension.mjs",

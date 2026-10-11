@@ -12,6 +12,8 @@ data or use or transfer it for unrelated purposes or credit decisions.
 Data leaves the browser only when a feature requires it:
 
 - **Peakbagger** receives summit lookups and user-approved GPS Preview data.
+- **Open-Meteo** receives summit coordinates and the ascent-day date window
+  automatically when the historical weather card approaches the viewport.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
@@ -326,6 +328,29 @@ explicit manual settings export that includes saved credentials, as described
 below. Uploads use the user's own key; Better Peakbagger has no ImgBB relay or
 developer account.
 
+## Historical ascent weather
+
+On saved ascent pages, the weather card automatically reads the matching peak
+page on Peakbagger, then requests model estimates from Open-Meteo when the card
+approaches the viewport. This works without a GPX and for other climbers’
+viewable ascents. Invalid or incomplete dates make no weather request.
+
+Open-Meteo receives the summit latitude/longitude, summit elevation when
+available, a three-UTC-day window covering the local ascent date, selected model
+and weather fields, IP address, and ordinary request metadata. Weather requests
+omit credentials and referrers. No ascent or climber ID, summit name, report,
+GPX, track times, account credentials, or ascent URL is sent to Open-Meteo.
+Changing models or clicking Retry makes another request; Auto may try up to
+three candidates when a model lacks data. Rate limits and network failures do
+not trigger automatic retries. Results remain only in a small, short-lived
+per-tab memory cache, never browser sync, backups, or persistent ascent history.
+
+Open-Meteo supplies model estimates rather than summit observations. Its
+[privacy policy](https://open-meteo.com/en/terms) governs provider logs and
+retention, including API logs that may contain coordinates and are deleted
+after 90 days. Free hosted API access is for non-commercial use. The card
+credits Open-Meteo; underlying datasets retain their provider licences.
+
 ## Optional 3D terrain
 
 The **Sentinel-2 (experimental)** layer is also available in the native 2D map.
@@ -448,6 +473,7 @@ The user can export and import settings without GitHub:
 | Service | When it receives data |
 | --- | --- |
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
+| Open-Meteo | Summit coordinates, elevation and ascent-day window when the saved-ascent weather card approaches the viewport, and on model selection or Retry. No credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

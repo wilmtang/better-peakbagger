@@ -18,6 +18,7 @@ const FAIL_SOFT = Object.freeze({
     'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
+    'src/ascent/ascent-weather.js': [{ count: 1, kind: 'display', reason: 'render passive weather units; settings do not authorize weather requests' }],
     'src/background/github-routes.js': [
         { count: 3, kind: 'display', reason: 'render connection, ascent-backup and photo-recovery status' },
         { count: 2, kind: 'safe-gate', reason: 'return connection status and gate default-off ascent snapshots' },

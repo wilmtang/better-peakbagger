@@ -20,9 +20,14 @@ export function weatherRequestUrl(summit, window, model) {
     const start = Date.parse(`${window.startDate}T00:00:00Z`), end = Date.parse(`${window.endDate}T00:00:00Z`);
     if (![start, end].every(Number.isFinite) || iso(start) !== window.startDate || iso(end) !== window.endDate
         || end < start || end - start > 2 * 86400_000) throw fail('invalid', 'Invalid weather date window.');
+    // Adjacent UTC days may cross the archive's first/last day. Fetch the
+    // covered portion and let the civil-day summary label missing hours.
+    const startDate = window.startDate < model.since ? model.since : window.startDate;
+    const endDate = model.until && window.endDate > model.until ? model.until : window.endDate;
+    if (startDate > endDate) throw fail('unavailable', 'This model has no data for the ascent’s date or location.');
     const url = new URL(model.endpoint);
     const params = { latitude: summit.latitude, longitude: summit.longitude,
-        start_date: window.startDate, end_date: window.endDate, models: model.id,
+        start_date: startDate, end_date: endDate, models: model.id,
         hourly: model.fields.join(','), timezone: 'GMT', timeformat: 'unixtime',
         temperature_unit: 'celsius', precipitation_unit: 'mm', wind_speed_unit: 'kmh' };
     if (summit.elevation !== null && summit.elevation !== undefined) {

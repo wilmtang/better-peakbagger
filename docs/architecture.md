@@ -159,6 +159,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
+| Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; no GPX or worker dependency |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -795,6 +796,21 @@ terrain.
 Peak pages use their separately validated summit subject and retain a date
 input. The complete claims, date-source rules, bearing coupling, and privacy
 contract are maintained in [sun-position.md](sun-position.md).
+
+### Independent historical weather
+
+Saved ascent weather uses a separate isolated-world bundle and runs without a
+GPX or native map. Its strict reader identifies the native ascent date and
+summit, then reads the matching peak page through the existing Peakbagger
+transport. The card follows the whole route explorer if the analyzer later
+creates it. It does not mutate native weather fields or synchronize to GPX time.
+
+The weather client accepts only packaged model endpoints, omits credentials
+and referrers, and has bounded requests and a small tab-memory cache. It needs
+no API permission or privileged bridge. Historical local-day aggregation uses
+the packaged summit timezone, handles DST and preceding-hour precipitation,
+and retains missing values as partial data. See [ascent-weather.md](ascent-weather.md)
+for model defaults, coverage limits, retries and privacy.
 
 ### The fragile Leaflet seam
 

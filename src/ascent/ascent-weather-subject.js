@@ -75,7 +75,7 @@ export function readWeatherSummit(doc, subject, responseUrl) {
     const nationRows = ownRows(rows[0].closest('table')).filter(row => label(row) === 'nation');
     const nation = nationRows.length === 1 ? clean(nationRows[0].cells[1]?.textContent).toLowerCase() : '';
     const elevations = [...doc.querySelectorAll('h2')].filter(element => /^Elevation:/i.test(clean(element.textContent)));
-    const match = elevations.length === 1 ? /([\d,]+(?:\.\d+)?)\s*(?:meters|m)\b/i.exec(clean(elevations[0].textContent)) : null;
+    const match = elevations.length === 1 ? /([+-]?[\d,]+(?:\.\d+)?)\s*(?:meters|m)\b/i.exec(clean(elevations[0].textContent).replaceAll('−', '-')) : null;
     const meters = match ? Number(match[1].replaceAll(',', '')) : null;
     const elevation = Number.isFinite(meters) && meters >= -500 && meters <= 9000 ? meters : null;
     return { latitude, longitude, nation, elevation };
