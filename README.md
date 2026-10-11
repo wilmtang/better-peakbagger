@@ -42,8 +42,8 @@ No weather account, API key, or subscription required.
 - **More than two weeks ahead.** Peak pages offer an **up to 16-day forecast**
   with temperature ranges, rain/snow totals, and wind. Expand any day for hourly
   temperature, precipitation, wind, gusts, and conditions in summit-local time.
-- **The past week at a glance.** Switch to **Past 7 days** to put recent summit
-  weather beside the forecast.
+- **The past sixteen days at a glance.** Switch to **Past 16 days** to put
+  recent summit weather beside the forecast.
 - **Weather for your ascent day.** Saved ascents show historical summit weather,
   with archives reaching back to **1940**, a recommended model, and alternatives
   where available. No GPX needed.
@@ -212,7 +212,7 @@ toggle may prefetch a small bounded elevation tile set before the view opens.
 Sun and Moon calculations use only packaged code and remain in the Peakbagger
 tab; they add no storage, permission, or provider request.
 Weather cards automatically send summit coordinates, elevation, and a date
-window to Open-Meteo as they approach the viewport: the ascent date, or seven
+window to Open-Meteo as they approach the viewport: the ascent date, or sixteen
 past days plus up to sixteen forecast days. They send no GPX, ascent/climber
 IDs, credentials, or referring page URL, and keep results only in tab memory.
 Gaia or onX receives a saved Peakbagger GPX only when you click its **Send**

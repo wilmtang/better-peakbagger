@@ -42,12 +42,22 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         assert.equal(state.belowMap, true, JSON.stringify(state));
         assert.ok(state.left >= state.parentLeft - 1 && state.right <= state.parentRight + 1, JSON.stringify(state));
         assert.deepEqual(state.overflow, [], JSON.stringify(state));
-        assert.equal(new Set(state.days).size, state.period === 'forecast' ? 16 : 7);
+        assert.equal(new Set(state.days).size, 16);
         assert.ok(state.days.every((date, index) => !index || (state.period === 'past' ? date < state.days[index - 1] : date > state.days[index - 1])), JSON.stringify(state));
     };
     await setSettings({ theme: 'light', units: 'imperial' });
     await openPage(); await resize(1440, 1100);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-attribution').textContent), 'Powered by Open-Meteo');
+    if (!live) {
+        assert.equal(await evaluate(() => document.querySelector('[data-period="past"]').textContent), 'Past 16 days');
+        assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('16 completed days')));
+        const before = evidence.length;
+        await click(`${card} .bpb-week-day:last-child > summary`);
+        await wait(() => document.querySelector('.bpb-week-day:last-child[open] .bpb-week-line'), 'oldest historical day has an hourly graph');
+        assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day:last-child .bpb-week-point').length), 24);
+        assert.equal(evidence.length, before, 'oldest history expansion reuses the combined response');
+        await click(`${card} .bpb-week-day:last-child > summary`);
+    }
     const assertForecastInfo = async () => {
         assert.equal(await evaluate(() => document.querySelector('.bpb-week-accuracy').hidden), false);
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-accuracy').textContent.includes('may be inaccurate')));
@@ -154,7 +164,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-cursor.png`));
     await openPage('no-map'); assertGeometry(await evaluate(geometry));
     setMode('partial'); await openPage();
-    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 7);
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 16);
     assert.ok(await evaluate(() => [...document.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —'))));
     await click(`${card} .bpb-week-day:first-child > summary`);
     await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'partial day graph');
@@ -164,7 +174,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-missing-rain.png`));
     setMode('error'); await click('.bpb-week-refresh');
     await wait(() => document.querySelector('.bpb-week-status').textContent.includes('Open-Meteo request limit reached'), 'rate limit explains failed refresh');
-    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 7);
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 16);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-refresh').disabled), true);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-status').dataset.kind), 'rate-limit');
     const limitedRequests = evidence.length;
@@ -181,7 +191,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     }
     setMode('empty'); await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map`);
     await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView());
-    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('unavailable for this summit'), 'empty response never appears as seven clear dry days');
+    await wait(() => document.querySelector('.bpb-week-status').textContent.includes('unavailable for this summit'), 'empty response never appears as sixteen clear dry days');
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-unavailable.png`));
     setMode('loading'); await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map`);
     await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView());

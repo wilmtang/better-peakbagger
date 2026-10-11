@@ -15,7 +15,7 @@ a location. Peak name, coordinates and elevation come from the current page;
 there is no geocoding or extra Peakbagger request.
 
 The card defaults to **16-day forecast**, covering today plus fifteen days in forward
-order. **Past 7 days** shows seven completed local days, latest first, excluding
+order. **Past 16 days** shows sixteen completed local days, latest first, excluding
 today. Both views share one request; period tabs support arrow keys, Home and End
 and retain each view's expanded day. Forecast conditions use expected rather
 than past-tense rain/snow labels. Each compact row has the
@@ -68,7 +68,7 @@ rain as estimated. Gust maxima are not prorated; overlapping boundary hours are
 identified. Instantaneous fields exclude the ending midnight. Exact local times
 and timezone labels retain repeated hours on DST days.
 
-The separate peak client allows at most twenty-four inclusive UTC dates and 576 rows,
+The separate peak client allows at most thirty-three inclusive UTC dates and 792 rows,
 with five fixed hourly fields. The ascent client retains its three-date/72-row
 contract. Both use a 128-KiB response bound, 15-second deadline, schema/grid/unit
 validation, omitted credentials/referrer, and no redirects. Results live only
@@ -84,7 +84,7 @@ See [PRIVACY.md](../PRIVACY.md#summit-weather).
 
 ## Verification
 
-Pure tests cover the seven completed days and sixteen forecast days across DST,
+Pure tests cover sixteen completed days and sixteen forecast days across DST,
 date-line and fractional-hour zones, full future hours, the UTC forecast cap,
 midnight precipitation/gust boundaries, missing coverage and unchanged ascent
 limits. Built-bundle UI tests cover native placement with/without a map,
@@ -127,3 +127,21 @@ The full `npm run verify:chrome` check passed, including BFCache restoration.
 Final process and disposable-profile checks found no owned verification
 browser or profile remaining. Hidden fixtures and the live CORS probe do not
 establish forecast accuracy, screen-reader speech or the user's Brave session.
+
+Matching history to the forecast was verified on 2026-10-11: 74 focused weather
+tests passed, as did ESLint for the changed JavaScript and the build. Regression
+coverage includes sixteen completed local days across spring/fall DST, year and
+date-line boundaries, complete oldest-day hourly data, and the 33-date/792-row
+transport cap. Hidden real-extension fixtures passed in Chrome for Testing
+153.0.8010.12 and Firefox 155.0 at 375/768/1440 × 1100 in light and dark themes.
+Visually inspected wide light history and narrow dark history with an expanded
+hourly graph. One live public Rainier probe rendered both sixteen-day periods
+from exactly one weather HTTP request; the real-manifest Chrome check passed at
+1000 × 760 with BFCache restoration. Final process/profile inspection found no
+owned test browser or disposable profile remaining. The full suite passed
+2,565 of 2,567 tests; two photo-documentation assertions fail because the
+separately rewritten README omits its encoded-source budget and saved-key
+disclosure wording. Those omissions are also present in HEAD independently of
+the weather length edits. Hidden verification does not establish the user's
+Brave session, native focus/window placement, screen-reader speech or provider
+accuracy.

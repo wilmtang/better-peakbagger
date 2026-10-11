@@ -23,7 +23,7 @@ export function mountPeakWeather() {
     const zone = mountainTime.resolve(subject.latitude, subject.longitude);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
-    const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', 'Past 7 days']];
+    const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
     const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', text,
         id: `${ID}-${key}`, 'data-period': key, 'aria-controls': `${ID}-period` }));
@@ -68,7 +68,7 @@ export function mountPeakWeather() {
     const renderLabels = week => {
         const first = week.days[0].date, last = week.days.at(-1).date;
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
-        const interval = period === 'past' ? '7 completed days · Today excluded'
+        const interval = period === 'past' ? `${week.days.length} completed days · Today excluded`
             : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? `Today + ${PEAK_FORECAST_DAYS - 1} days` : `${PEAK_FORECAST_DAYS}-day forecast · Previous dates`;
         locationLabel.textContent = `At the summit${subject.elevation === null ? '' : ` · ${units.formatElevation(subject.elevation, unitSystem())}`} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
     };

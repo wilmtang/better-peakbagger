@@ -12,10 +12,14 @@ export const PEAK_FORECAST_DAYS = 16;
 // Request GMT/Unix timestamps and group locally: the API's fixed UTC offset
 // ignores DST transitions. Include the final precipitation interval endpoint.
 export function weatherWeekWindow(zone, now = Date.now()) {
+    return completedWeatherWindow(zone, now, 7);
+}
+
+function completedWeatherWindow(zone, now, dayCount) {
     const today = mountainTime.localDate(zone, now);
     const midnight = Date.parse(`${today}T00:00:00Z`);
     const days = [];
-    for (let offset = 7; offset >= 1; offset--) days.push(weatherDayWindow(iso(midnight - offset * DAY), zone, now));
+    for (let offset = dayCount; offset >= 1; offset--) days.push(weatherDayWindow(iso(midnight - offset * DAY), zone, now));
     if (days.some(day => day.partial)) throw new Error('The summit’s completed weather days could not be resolved.');
     return { zone, days, startDate: iso(days[0].start), endDate: iso(Math.ceil(days.at(-1).end / HOUR) * HOUR), partial: false };
 }
@@ -32,7 +36,7 @@ export const summarizeWeatherWeek = (data, window) => window.days.map(day => {
 export function weatherPeakWindow(zone, now = Date.now()) {
     const today = mountainTime.localDate(zone, now);
     const midnight = Date.parse(`${today}T00:00:00Z`);
-    const past = weatherWeekWindow(zone, now);
+    const past = completedWeatherWindow(zone, now, PEAK_FORECAST_DAYS);
     const days = Array.from({ length: PEAK_FORECAST_DAYS }, (_, offset) =>
         weatherDayWindow(iso(midnight + offset * DAY), zone, now, { forecast: true }));
     // The GMT request cannot exceed the API's sixteen UTC dates from today.

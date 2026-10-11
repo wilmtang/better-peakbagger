@@ -26,10 +26,11 @@ const RECENT_MODEL = { endpoint: 'https://api.open-meteo.com/v1/forecast', since
 export function recentWeatherRequestUrl(summit, window) {
     return requestUrl(summit, window, RECENT_MODEL, 8);
 }
-// Seven past and sixteen forecast civil days, plus UTC padding. The forecast
+// Sixteen past and sixteen forecast civil days, plus UTC padding. The forecast
 // window caps padding at the API horizon; do not widen historical ascent bounds.
+const PEAK_MAX_UTC_DATES = 33;
 export function peakWeatherRequestUrl(summit, window) {
-    return requestUrl(summit, window, RECENT_MODEL, 23);
+    return requestUrl(summit, window, RECENT_MODEL, PEAK_MAX_UTC_DATES - 1);
 }
 
 function requestUrl(summit, window, model, maxDays) {
@@ -64,7 +65,7 @@ export function validateRecentWeatherResponse(body, summit, window) {
     return validateResponse(body, summit, window, RECENT_MODEL, 216);
 }
 export function validatePeakWeatherResponse(body, summit, window) {
-    return validateResponse(body, summit, window, RECENT_MODEL, 576);
+    return validateResponse(body, summit, window, RECENT_MODEL, PEAK_MAX_UTC_DATES * 24);
 }
 
 function validateResponse(body, summit, window, model, maxRows) {

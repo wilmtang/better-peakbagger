@@ -13,7 +13,7 @@ Data leaves the browser only when a feature requires it:
 
 - **Peakbagger** receives summit lookups and user-approved GPS Preview data.
 - **Open-Meteo** receives summit coordinates, elevation when available, and an
-  ascent-day window or seven past days plus up to sixteen forecast days
+  ascent-day window or sixteen past days plus up to sixteen forecast days
   automatically when an enabled weather card approaches the viewport.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
@@ -347,7 +347,7 @@ approaches the viewport. This works without a GPX and for other climbers’
 viewable ascents. Invalid or incomplete dates make no weather request.
 
 On peak pages, **Summit weather** reads summit coordinates and elevation
-directly from the current Peakbagger page. One forecast-API request covers seven
+directly from the current Peakbagger page. One forecast-API request covers sixteen
 completed summit-local days and up to sixteen forecast days (today plus fifteen
 days), with UTC padding capped at the API's forecast horizon, when the card
 approaches the viewport. Switching periods or hourly graphs makes no additional
@@ -359,7 +359,7 @@ Open-Meteo receives the summit latitude/longitude, summit elevation when
 available, date window and weather fields, IP address, and ordinary request
 metadata. Ascent weather uses a three-UTC-day window covering the local ascent
 date and a selected model. Peak weather uses a padded UTC window covering the
-seven completed local days and today plus fifteen forecast days, capped at the
+sixteen completed local days and today plus fifteen forecast days, capped at the
 API's available horizon, with automatic regional model selection. Weather
 requests omit credentials and referrers. No ascent or climber ID, summit name,
 report, GPX, track times, account credentials, or page URL is sent to Open-Meteo.
@@ -499,7 +499,7 @@ The user can export and import settings without GitHub:
 | Service | When it receives data |
 | --- | --- |
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
-| Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or seven past days plus up to sixteen forecast days when an enabled card approaches the viewport; model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
+| Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

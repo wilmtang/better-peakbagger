@@ -46,7 +46,7 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
 const settled = async (env, { past = true } = {}) => {
-    await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === (env.doc.querySelector('[data-period="forecast"]').getAttribute('aria-selected') === 'true' ? 16 : 7) && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+    await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
     if (past) env.doc.querySelector('[data-period="past"]').click();
 };
 
@@ -114,7 +114,7 @@ test('peak identity and unique native coordinates fail closed without remote geo
     assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
 });
 
-test('card stays in the right native table below map and includes only seven completed local days', async () => {
+test('card stays in the right native table below map and includes sixteen completed local days', async () => {
     const env = setup();
     try {
         await settled(env);
@@ -122,9 +122,10 @@ test('card stays in the right native table below map and includes only seven com
         assert.equal(card.closest('table'), map.closest('table'));
         assert.equal(card.closest('table').getAttribute('align'), 'right');
         assert.ok(map.compareDocumentPosition(card) & env.win.Node.DOCUMENT_POSITION_FOLLOWING);
-        assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date), ['2024-11-04', '2024-11-03', '2024-11-02', '2024-11-01', '2024-10-31', '2024-10-30', '2024-10-29']);
-        assert.match(card.querySelector('.bpb-week-range').textContent, /Oct 29.*Nov 4, 2024/);
-        assert.match(card.querySelector('.bpb-week-sub').textContent, /14406 ft.*Today excluded/);
+        assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date), ['2024-11-04', '2024-11-03', '2024-11-02', '2024-11-01', '2024-10-31', '2024-10-30', '2024-10-29', '2024-10-28', '2024-10-27', '2024-10-26', '2024-10-25', '2024-10-24', '2024-10-23', '2024-10-22', '2024-10-21', '2024-10-20']);
+        assert.match(card.querySelector('.bpb-week-range').textContent, /Oct 20.*Nov 4, 2024/);
+        assert.match(card.querySelector('.bpb-week-sub').textContent, /14406 ft.*16 completed days.*Today excluded/);
+        assert.equal(card.querySelector('[data-period="past"]').textContent, 'Past 16 days');
         assert.equal(env.requests.length, 1); assert.equal(new URL(env.requests[0].url).host, 'api.open-meteo.com');
         assert.equal(env.requests[0].init.credentials, 'omit'); assert.equal(env.requests[0].init.referrerPolicy, 'no-referrer');
         assert.equal(card.querySelector('.bpb-week-attribution').textContent, 'Powered by Open-Meteo');
@@ -312,13 +313,13 @@ test('partial data stays labelled and a failed refresh preserves the previous da
     } });
     try {
         await settled(env);
-        assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 7);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 16);
         assert.ok([...env.doc.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —')));
         const range = env.doc.querySelector('.bpb-week-range').textContent;
         limited = true; env.doc.querySelector('.bpb-week-refresh').click();
         await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Open-Meteo request limit reached'));
         assert.equal(env.doc.querySelector('.bpb-week-range').textContent, range);
-        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
         assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, false);
     } finally { env.close(); }
@@ -343,7 +344,7 @@ test('BFCache cancels stale requests and resolves a new completed date range on 
     } finally { env.close(); }
 });
 
-test('forecast defaults to sixteen days, labels the truncated final day and shares one response with the past week', async () => {
+test('forecast and history both show sixteen days and share one response, retaining a truncated final forecast day', async () => {
     const env = setup();
     try {
         await settled(env, { past: false });
@@ -352,6 +353,7 @@ test('forecast defaults to sixteen days, labels the truncated final day and shar
         assert.ok(dates().every((date, index) => !index || date > dates()[index - 1]));
         assert.equal(env.doc.querySelector('[data-period="forecast"]').textContent, '16-day forecast');
         assert.equal(new URL(env.requests[0].url).searchParams.get('end_date'), '2024-11-20');
+        assert.equal(new URL(env.requests[0].url).searchParams.get('start_date'), '2024-10-20');
         assert.match(env.doc.querySelector('.bpb-week-day:last-child .bpb-week-partial').textContent, /Incomplete hours/);
         assert.match(env.doc.querySelector('.bpb-week-day:last-child .bpb-week-metrics').textContent, /\(partial\)/);
         assert.equal(env.doc.querySelector('.bpb-week-date strong').textContent, 'Today');
@@ -369,7 +371,11 @@ test('forecast defaults to sixteen days, labels the truncated final day and shar
         env.doc.activeElement.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
         assert.equal(env.doc.activeElement, past); assert.equal(past.getAttribute('aria-selected'), 'true');
         assert.equal(env.doc.querySelector('#bpb-peak-weather-period').getAttribute('aria-labelledby'), past.id);
-        assert.equal(dates()[0], '2024-11-04'); assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today excluded/);
+        assert.equal(dates().length, 16); assert.equal(dates()[0], '2024-11-04'); assert.equal(dates().at(-1), '2024-10-20');
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /16 completed days.*Today excluded/);
+        const oldest = env.doc.querySelector('.bpb-week-day:last-child'); oldest.open = true;
+        await waitFor(() => oldest.querySelectorAll('.bpb-week-point').length === 24);
+        assert.equal(oldest.querySelector('.bpb-week-partial'), null);
         env.doc.querySelector('[data-period="forecast"]').click();
         assert.equal(env.doc.querySelector('.bpb-week-day[open]').dataset.date, '2024-11-05');
         assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'precipitation');
@@ -424,7 +430,7 @@ test('forecast weather uses expected language and missing forecast hours cannot 
         await waitFor(() => absent.doc.querySelector('.bpb-week-status').textContent.includes('Forecast is unavailable'));
         assert.equal(absent.doc.querySelectorAll('.bpb-week-day').length, 0);
         absent.doc.querySelector('[data-period="past"]').click();
-        assert.equal(absent.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(absent.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(absent.requests.length, 1);
     } finally { absent.close(); }
 });
@@ -438,7 +444,7 @@ test('switching periods preserves the previous response and a known rate-limit w
         await waitFor(() => env.doc.querySelector('.bpb-week-status').dataset.kind === 'rate-limit');
         const warning = env.doc.querySelector('.bpb-week-status').textContent;
         env.doc.querySelector('[data-period="past"]').click();
-        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 7);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(env.doc.querySelector('.bpb-week-status').textContent, warning);
         assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
         env.doc.querySelector('[data-period="forecast"]').click();
