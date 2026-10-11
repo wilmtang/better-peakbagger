@@ -67,6 +67,7 @@ export function summarizeWeatherDay(data, window) {
     const temperature = field('temperature'), wind = field('wind');
     let total = 0, covered = 0, gustCovered = 0, allocationEstimated = false;
     const gustValues = [];
+    const precipitationHours = [];
     const hourly = instants.map(row => ({ ...row, precipitation: null }));
     for (let end = Math.floor(window.start / HOUR) * HOUR + HOUR; end <= Math.ceil(window.cutoff / HOUR) * HOUR; end += HOUR) {
         const overlap = Math.max(0, Math.min(end, window.cutoff) - Math.max(end - HOUR, window.start));
@@ -75,16 +76,13 @@ export function summarizeWeatherDay(data, window) {
         const gustValue = byTime.get(end)?.gust;
         if (Number.isFinite(gustValue)) { gustValues.push(gustValue); gustCovered += overlap; }
         const value = byTime.get(end)?.precipitation;
+        precipitationHours.push({ start: Math.max(end - HOUR, window.start), time: Math.min(end, window.cutoff),
+            sourceTime: end, value: Number.isFinite(value) ? value * overlap / HOUR : null, partialInterval: overlap !== HOUR });
         if (!Number.isFinite(value)) continue;
         total += value * overlap / HOUR;
         covered += overlap;
         if (overlap !== HOUR) allocationEstimated = true;
     }
-    // Hourly labels refer to the preceding interval's ending time. Retain the
-    // final midnight accumulation, independently of instantaneous samples.
-    const precipitationHours = rows.filter(row => row.time > window.start && row.time <= Math.ceil(window.cutoff / HOUR) * HOUR
-        && (!window.partial || row.time <= window.cutoff))
-        .map(row => ({ time: row.time, value: row.precipitation }));
     const precipitationComplete = covered === window.end - window.start && !window.partial;
     const gust = data.gustTiming === 'instant' ? field('gust')
         : { ...range(gustValues), complete: gustCovered === window.end - window.start && !window.partial };

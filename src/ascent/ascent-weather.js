@@ -223,7 +223,7 @@ export function mountAscentWeather() {
         }
         const width = chart.getBoundingClientRect().width;
         if (width < 100) return;
-        const rows = metric === 'precipitation' ? current.day.precipitationHours.map(row => ({ time: row.time, value: row.value }))
+        const rows = metric === 'precipitation' ? current.day.precipitationHours
             : current.day.hourly.map(row => ({ time: row.time, value: row[metric] }));
         const finite = rows.filter(row => numeric(row.value));
         chartBounds = null;
@@ -258,8 +258,11 @@ export function mountAscentWeather() {
             add('text', { x: x(time), y: 150, 'text-anchor': index === 0 ? 'start' : index === tickCount - 1 ? 'end' : 'middle' }, label);
         }
         if (metric === 'precipitation') {
-            const barWidth = Math.max(2, (right - left) / 25 * .65);
-            for (const row of finite) if (row.value > 0) add('rect', { x: Math.max(left, Math.min(right - barWidth, x(Math.min(dayWindow.end, row.time)) - barWidth / 2)), y: y(row.value), width: barWidth, height: bottom - y(row.value), class: 'bpb-weather-bar' });
+            for (const row of finite) if (row.value > 0) {
+                const barWidth = (x(row.time) - x(row.start)) * .65;
+                add('rect', { x: x(row.start) + (x(row.time) - x(row.start) - barWidth) / 2, y: y(row.value),
+                    width: barWidth, height: bottom - y(row.value), class: 'bpb-weather-bar', 'data-value': row.value });
+            }
         } else {
             let path = '', previous = null;
             for (const row of rows) {
@@ -270,8 +273,10 @@ export function mountAscentWeather() {
             add('path', { d: path, class: 'bpb-weather-line' });
         }
         for (const row of finite) {
-            const label = `${mountainTime.formatClock(dayWindow.zone, row.time)} ${mountainTime.zoneLabel(dayWindow.zone, row.time)} · ${format(row.value, metric)}`;
-            const point = add('circle', { cx: Math.min(right, x(row.time)), cy: y(row.value), r: 8, class: 'bpb-weather-hover' });
+            const local = time => `${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
+            const timeLabel = metric === 'precipitation' ? `${local(row.start)} – ${local(row.time)}${row.time === dayWindow.end ? ' (next midnight)' : ''}` : local(row.time);
+            const label = `${timeLabel} · ${format(row.value, metric)}${row.partialInterval ? ' · Estimated boundary interval' : ''}`;
+            const point = add('circle', { cx: x(metric === 'precipitation' ? (row.start + row.time) / 2 : row.time), cy: y(row.value), r: 8, class: 'bpb-weather-hover' });
             const title = document.createElementNS(SVG_NS, 'title'); title.textContent = label; point.append(title);
         }
         chartBounds = { left, right, top, bottom };

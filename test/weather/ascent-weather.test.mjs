@@ -43,6 +43,33 @@ const openChart = async env => {
     env.doc.querySelector('.bpb-weather-disclosure').click();
 };
 
+test('fractional-zone rain bars and interval tooltips agree with the daily total', async () => {
+    const latitude = 27.7, longitude = 85.3;
+    const env = setup({ storedSettings: { units: 'metric' },
+        fetchPeak: async () => new Response(peak.replace('46.851731', String(latitude)).replace('-121.760395', String(longitude)), { headers: { 'content-type': 'text/html' } }),
+        fetchWeather: async url => {
+            const body = weatherFixture({ latitude, longitude, startDate: new URL(url).searchParams.get('start_date') });
+            body.hourly.precipitation.fill(1);
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+    try {
+        await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false' && env.doc.querySelector('option[value="ecmwf_ifs"]'));
+        const model = env.doc.querySelector('.bpb-weather-model select');
+        model.value = 'ecmwf_ifs'; model.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using ECMWF IFS'));
+        env.doc.querySelector('.bpb-weather-chart').getBoundingClientRect = () => ({ width: 500 });
+        env.doc.querySelector('.bpb-weather-disclosure').click();
+        env.doc.querySelector('[data-metric="precipitation"]').click();
+        const bars = [...env.doc.querySelectorAll('.bpb-weather-bar')];
+        assert.equal(bars.length, 25);
+        assert.equal(bars.reduce((sum, row) => sum + Number(row.dataset.value), 0), 24);
+        assert.equal(env.doc.querySelector('[data-weather-value="precipitation"]').textContent, '24.0 mm');
+        const labels = [...env.doc.querySelectorAll('.bpb-weather-hover title')].map(node => node.textContent);
+        assert.match(labels[0], /12:00 AM.*12:45 AM.*0.8 mm.*Estimated boundary interval/);
+        assert.match(labels.at(-1), /11:45 PM.*12:00 AM.*next midnight.*0.3 mm.*Estimated boundary interval/);
+    } finally { env.close(); }
+});
+
 test('weather opt-out hides the archive and skips summit lookup until enabled, including BFCache', async () => {
     const env = setup({ storedSettings: { showWeather: false } });
     const update = showWeather => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));

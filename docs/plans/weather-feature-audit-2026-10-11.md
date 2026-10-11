@@ -9,7 +9,7 @@ shared provider/data code, settings and GPX presentation integration.
 | ID | Priority | Broken invariant | Status |
 | --- | --- | --- | --- |
 | W01 | P2 | Historical instantaneous gusts use preceding-hour day boundaries | Fixed; contract and boundary regressions verified |
-| W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Open |
+| W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Fixed; totals, tooltips and rendered graph verified |
 | W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Open |
 | W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Open |
 | W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Open |
@@ -27,6 +27,12 @@ missing readings, bounded model fallback, per-page caches and native Save owners
   use instantaneous boundaries; forecasts/CERRA retain interval boundaries.
   Ran 28 day/client/week tests and focused ESLint successfully. Provider docs
   checked on 2026-10-11; live model slices remain outside this local proof.
+- W02: clipped precipitation intervals carry allocated amounts and missing slots.
+  Bars use interval widths; boundary tooltips identify estimates and next midnight.
+  Ran 11 day tests, the fractional-zone bundle regression and focused ESLint.
+  Hidden Chrome 153 at 1440×1000 confirmed 25 intervals sum to the displayed
+  24.0 mm; inspected the screenshot. Concurrent Best Match changes are preserved
+  separately and are not part of this commit.
 
 ## Intentionally not changed
 

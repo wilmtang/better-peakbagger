@@ -85,6 +85,12 @@ test('fractional zones proportionally allocate both boundary accumulations', () 
         assert.equal(result.precipitation.total, 24);
         assert.equal(result.precipitation.complete, true);
         assert.equal(result.precipitation.allocationEstimated, true);
+        assert.equal(result.precipitationHours.reduce((sum, row) => sum + row.value, 0), result.precipitation.total);
+        assert.equal(result.precipitationHours[0].start, window.start);
+        assert.equal(result.precipitationHours.at(-1).time, window.end);
+        assert.equal(result.precipitationHours.length, 25);
+        assert.equal(result.precipitationHours[0].partialInterval, true);
+        assert.equal(result.precipitationHours.at(-1).partialInterval, true);
     }
 });
 
@@ -108,6 +114,17 @@ test('current day excludes future samples and unfinished precipitation intervals
     assert.equal(result.hourly.length, 6);
     assert.equal(result.precipitation.total, 5);
     assert.equal(result.precipitation.complete, false);
+    assert.ok(result.precipitationHours.every(row => row.sourceTime <= window.cutoff));
+    assert.equal(result.precipitationHours.reduce((sum, row) => sum + row.value, 0), 5);
+});
+
+test('precipitation intervals retain unavailable slots instead of bridging missing timestamps', () => {
+    const window = weatherDayWindow('2024-07-12', zone, now), data = samplesFor(window);
+    data.samples = data.samples.filter(row => row.time !== window.start + 3600_000);
+    const result = summarizeWeatherDay(data, window);
+    assert.equal(result.precipitationHours.length, 24);
+    assert.equal(result.precipitationHours[0].value, null);
+    assert.equal(result.precipitationHours.filter(row => row.value !== null).reduce((sum, row) => sum + row.value, 0), result.precipitation.total);
 });
 
 test('sparse native series never pretend to cover the missing hourly intervals', () => {

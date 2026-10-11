@@ -1,0 +1,87 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+/* global document, window, chrome, getComputedStyle */
+
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+import { JSDOM } from 'jsdom';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+
+assertChromeLaunchAllowed();
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const temporaryRoot = await mkdtemp('/tmp/bpb-weather-audit-verify-');
+const output = process.env.BPB_WEATHER_AUDIT_OUTPUT;
+let context, fixture, fractional = false;
+const requests = [];
+try {
+    if (output) await mkdir(output, { recursive: true });
+    fixture = await createBrowserFixtureServer({ temporaryRoot });
+    context = await chromium.launchPersistentContext(temporaryRoot, {
+        channel: 'chromium', headless: true, viewport: { width: 1440, height: 1000 },
+        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], args: [...fixture.chromeTrustArgs,
+            `--disable-extensions-except=${root}/dist`, `--load-extension=${root}/dist`,
+            '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+    });
+    await context.route('**/*', async route => {
+        const url = new URL(route.request().url());
+        if (/^(api|archive-api|historical-forecast-api)\.open-meteo\.com$/.test(url.hostname)) {
+            requests.push(url.href);
+            const body = weatherFixture({ startDate: url.searchParams.get('start_date'),
+                hours: (Date.parse(url.searchParams.get('end_date')) - Date.parse(url.searchParams.get('start_date'))) / 3600_000 + 24,
+                latitude: Number(url.searchParams.get('latitude')), longitude: Number(url.searchParams.get('longitude')),
+                elevation: Number(url.searchParams.get('elevation')), fields: url.searchParams.get('hourly').split(',') });
+            if (fractional) body.hourly.precipitation.fill(1);
+            return route.fulfill({ json: body });
+        }
+        if (url.hostname === 'www.peakbagger.com' && (!url.port || (fractional && /^\/peak\.aspx$/i.test(url.pathname)))) {
+            const response = await route.fetch({ url: `https://127.0.0.1:${fixture.port}${url.pathname}${url.search}`, ignoreHTTPSErrors: true });
+            if (fractional && /^\/peak\.aspx$/i.test(url.pathname)) {
+                const html = new JSDOM(await response.text());
+                const rows = [...html.window.document.querySelectorAll('tr')].filter(row => row.cells.length === 2);
+                rows.find(row => row.cells[0].textContent.trim() === 'Latitude/Longitude (WGS84)').cells[1].textContent = '27.7, 85.3 (Dec Deg)';
+                rows.find(row => row.cells[0].textContent.trim() === 'Nation').cells[1].textContent = 'Nepal';
+                const body = html.serialize(); html.window.close();
+                return route.fulfill({ response, body });
+            }
+            return route.fulfill({ response });
+        }
+        if (url.protocol === 'https:' && url.hostname !== 'www.peakbagger.com') return route.abort();
+        return route.continue();
+    });
+    const registry = await context.newPage(); await registry.goto('chrome://extensions-internals/');
+    const extension = await registry.waitForFunction(() => JSON.parse(document.body.innerText).find(row => row.name === 'Better Peakbagger')).then(handle => handle.jsonValue());
+    const options = await context.newPage(); await options.goto(`chrome-extension://${extension.id}/options/options.html`);
+    const setSettings = values => options.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), { showSunMoon: false, showWeather: true, units: 'metric', theme: 'light', ...values });
+    await setSettings({});
+    const page = await context.newPage();
+    const origin = `https://www.peakbagger.com:${fixture.port}`;
+    fractional = true;
+    await page.goto(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);
+    await page.locator('#bpb-ascent-weather').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using'));
+    await page.selectOption('.bpb-weather-model select', 'ecmwf_ifs');
+    await page.waitForFunction(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using ECMWF IFS'));
+    await page.locator('.bpb-weather-disclosure').click();
+    await page.locator('[data-metric="precipitation"]').click();
+    await page.waitForFunction(() => document.querySelectorAll('.bpb-weather-bar').length === 25);
+    const rain = await page.evaluate(() => ({
+        total: document.querySelector('[data-weather-value="precipitation"]').textContent,
+        sum: [...document.querySelectorAll('.bpb-weather-bar')].reduce((sum, bar) => sum + Number(bar.dataset.value), 0),
+        first: document.querySelector('.bpb-weather-hover title').textContent,
+        last: [...document.querySelectorAll('.bpb-weather-hover title')].at(-1).textContent,
+    }));
+    assert.equal(rain.total, '24.0 mm'); assert.equal(rain.sum, 24);
+    assert.match(rain.first, /12:00 AM.*12:45 AM.*Estimated boundary interval/);
+    assert.match(rain.last, /11:45 PM.*12:00 AM.*next midnight.*Estimated boundary interval/);
+    if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, 'fractional-rain.png') });
+    console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, rain, requests: requests.length, profile: temporaryRoot }));
+} finally {
+    try { await context?.close(); } finally {
+        try { await fixture?.close(); } finally { await rm(temporaryRoot, { recursive: true, force: true }); }
+    }
+}
