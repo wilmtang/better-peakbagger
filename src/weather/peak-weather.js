@@ -143,14 +143,20 @@ export function mountPeakWeather() {
             summary.addEventListener('click', event => {
                 if (!enabled() || lifecycle.state !== 'active' || event.button > 0) return;
                 event.preventDefault();
-                const opening = !detail.open, switching = opening && !!days.querySelector('details[open]');
+                const opening = !detail.open;
                 const top = summary.getBoundingClientRect().top;
                 clearChart();
                 days.querySelectorAll('details[open]').forEach(other => { other.open = false; });
                 detail.open = opening;
                 if (opening) renderHours(day, detail, hourly);
                 summary.focus({ preventScroll: true });
-                if (switching) window.scrollBy({ top: summary.getBoundingClientRect().top - top, behavior: 'instant' });
+                // Preserve the clicked heading where possible, but give a
+                // below-fold panel enough room in one synchronous movement.
+                // A tall panel starts at the viewport's top edge.
+                const height = detail.getBoundingClientRect().height;
+                const desiredTop = opening ? Math.max(16, Math.min(top, window.innerHeight - height - 16)) : top;
+                const displacement = summary.getBoundingClientRect().top - desiredTop;
+                if (Math.abs(displacement) > 1) window.scrollBy({ top: displacement, behavior: 'instant' });
             });
             detail.addEventListener('toggle', () => {
                 if (!enabled() || !detail.isConnected || lifecycle.state !== 'active') return;
@@ -259,7 +265,7 @@ export function mountPeakWeather() {
     };
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const applyPreference = next => {
-        const wasEnabled = enabled();
+        const wasEnabled = !row.hidden && enabled();
         const previousUnits = unitSystem();
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();

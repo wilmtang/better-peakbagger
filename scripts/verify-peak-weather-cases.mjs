@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
-import { verifyWeatherDaySwitches, verifyWeatherTabWrapping } from './verify-weather-day-switches.mjs';
+import { verifyWeatherDaySwitches, verifyWeatherTabWrapping, verifyWeatherConditions } from './verify-weather-day-switches.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 
 // Reuse the real extension/HTTPS/browser transports and their teardown rather
@@ -109,6 +109,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
                     { description: 'hourly data tab selection', timeoutMs: 20_000 });
                 assertGeometry(await evaluate(geometry));
                 assert.equal(evidence.length, before, 'data tabs must not fetch weather');
+                if (metric === 'code') await verifyWeatherConditions(evaluate);
                 if (output && (width === 1440 || metric === 'code')) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${metric}-${width}.png`));
             }
             await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);

@@ -16,9 +16,9 @@ export async function verifyWeatherDaySwitches({ evaluate, click, press, resize,
                     const target = document.querySelectorAll('.bpb-week-day > summary')[index];
                     target.scrollIntoView({ block: 'center', behavior: 'instant' }); target.focus({ preventScroll: true });
                     window.__bpbWeatherSwitch = { records: [], stopped: false };
+                    const trace = window.__bpbWeatherSwitch;
                     const collect = () => {
-                        const trace = window.__bpbWeatherSwitch;
-                        if (!trace || trace.stopped) return;
+                        if (trace.stopped) return;
                         const open = [...document.querySelectorAll('.bpb-week-day[open]')];
                         trace.records.push({ top: target.getBoundingClientRect().top, open: open.length,
                             empty: open.some(day => !day.querySelector('[role="tabpanel"]')) });
@@ -40,18 +40,68 @@ export async function verifyWeatherDaySwitches({ evaluate, click, press, resize,
                     }
                     const trace = window.__bpbWeatherSwitch; trace.stopped = true;
                     const result = { records: trace.records, top: target.getBoundingClientRect().top,
+                        bottom: target.parentElement.getBoundingClientRect().bottom,
+                        height: target.parentElement.getBoundingClientRect().height, viewport: window.innerHeight,
                         focused: document.activeElement === target, stable };
                     delete window.__bpbWeatherSwitch; return result;
                 }, index);
                 assert.ok(result.stable >= 5, `day did not settle: ${JSON.stringify(result)}`);
                 assert.ok(result.records.every(frame => frame.open <= 1 && !frame.empty), `intermediate empty/double expansion: ${JSON.stringify(result)}`);
-                assert.ok(Math.abs(result.top - before) <= 1, `clicked heading moved: ${width}/${metric}/${activation}: ${before} -> ${result.top}`);
+                const expected = Math.max(16, Math.min(before, result.viewport - result.height - 16));
+                assert.ok(Math.abs(result.top - expected) <= 1, `day visibility adjustment: ${width}/${metric}/${activation}: ${expected} -> ${result.top}`);
+                assert.ok(result.height > result.viewport - 32 || result.bottom <= result.viewport - 15, `detail panel clipped: ${JSON.stringify(result)}`);
+                const movements = result.records.filter((frame, index) => index && Math.abs(frame.top - result.records[index - 1].top) > 1);
+                assert.ok(movements.length <= 1, `day jitters after activation: ${JSON.stringify(result)}`);
                 assert.equal(result.focused, true);
                 measurements.push({ width, metric, activation, displacement: result.top - before });
+            }
+            // A summary fully in view near the bottom should reveal its panel
+            // once; a summary near the top should stay at the same position.
+            for (const placement of ['bottom', 'top']) {
+                await evaluate(() => document.querySelectorAll('.bpb-week-day').forEach(day => { day.open = false; }));
+                const before = await evaluate(placement => {
+                    const target = document.querySelector('.bpb-week-day > summary'), bounds = target.getBoundingClientRect();
+                    const desired = placement === 'top' ? 72 : window.innerHeight - bounds.height - 16;
+                    window.scrollBy({ top: bounds.top - desired, behavior: 'instant' });
+                    return target.getBoundingClientRect().top;
+                }, placement);
+                await click('.bpb-week-day:first-child > summary');
+                const state = await evaluate(async () => {
+                    const detail = document.querySelector('.bpb-week-day[open]');
+                    let previous, stable = 0, bounds;
+                    for (let frame = 0; frame < 120 && stable < 5; frame++) {
+                        await new Promise(resolve => requestAnimationFrame(resolve));
+                        bounds = detail.getBoundingClientRect(); stable = bounds.top === previous ? stable + 1 : 0; previous = bounds.top;
+                    }
+                    return { top: bounds.top, bottom: bounds.bottom, height: bounds.height, viewport: window.innerHeight, stable };
+                });
+                assert.ok(state.stable >= 5, `panel did not settle: ${JSON.stringify(state)}`);
+                if (placement === 'top') assert.ok(Math.abs(state.top - before) <= 1, `visible panel moved unnecessarily: ${JSON.stringify(state)}`);
+                assert.ok(state.top >= 15 && state.bottom <= state.viewport - 15, `opened panel is clipped: ${JSON.stringify(state)}`);
             }
         }
     }
     return measurements;
+}
+
+export async function verifyWeatherConditions(evaluate) {
+    const state = await evaluate(() => {
+        const grid = document.querySelector('.bpb-week-day[open] .bpb-week-conditions');
+        const pageWidth = document.documentElement.scrollWidth;
+        const label = grid.querySelector('.bpb-week-hourly-table > tbody > tr > th'), before = label.getBoundingClientRect().left;
+        grid.scrollLeft = 600;
+        const result = { pageWidth, afterWidth: document.documentElement.scrollWidth, scroll: grid.scrollLeft,
+            labelDisplacement: label.getBoundingClientRect().left - before, height: grid.clientHeight, scrollHeight: grid.scrollHeight,
+            rowLabels: [...grid.querySelectorAll('.bpb-week-hourly-table > tbody > tr > th')].map(node => node.textContent),
+            hours: grid.querySelectorAll('.bpb-week-conditions-hour').length };
+        grid.scrollLeft = 0; return result;
+    });
+    assert.ok(state.scroll > 0, `hourly grid did not scroll: ${JSON.stringify(state)}`);
+    assert.ok(Math.abs(state.labelDisplacement) <= 1, `row label scrolled away: ${JSON.stringify(state)}`);
+    assert.equal(state.afterWidth, state.pageWidth, 'scrolling hourly columns widened the page');
+    assert.ok(state.scrollHeight <= state.height + 1, 'Conditions needs vertical scrolling');
+    assert.equal(state.hours, 24);
+    assert.deepEqual(state.rowLabels, ['Conditions', 'Temperature', 'Feels like', 'Rain/snow', 'Wind', 'Gusts', 'Wind from']);
 }
 
 export async function verifyWeatherTabWrapping(evaluate) {

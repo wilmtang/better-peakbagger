@@ -15,6 +15,12 @@ const fields = {
     wind_gusts_10m: { name: 'gust', unit: 'km/h', min: 0, max: 600 },
     weather_code: { name: 'code', unit: 'wmo code', min: 0, max: 100 },
 };
+const peakFields = {
+    ...fields,
+    apparent_temperature: { name: 'apparent', unit: '°C', min: -150, max: 100 },
+    wind_direction_10m: { name: 'direction', unit: '°', min: 0, max: 360 },
+    is_day: { name: 'isDay', unit: '', min: 0, max: 1, integer: true },
+};
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
 export function weatherRequestUrl(summit, window, model) {
     if (!WEATHER_MODELS.includes(model)) throw fail('invalid', 'Invalid weather model.');
@@ -83,11 +89,11 @@ export function validatePeakWeatherResponse(body, summit, window, models) {
             const key = multiple ? `${field}_${model.id}` : field;
             hourly[field] = body?.hourly?.[key]; hourly_units[field] = body?.hourly_units?.[key];
         }
-        return [model.id, validateResponse({ ...body, hourly, hourly_units }, summit, window, model, PEAK_MAX_UTC_DATES * 24)];
+        return [model.id, validateResponse({ ...body, hourly, hourly_units }, summit, window, model, PEAK_MAX_UTC_DATES * 24, peakFields)];
     })) };
 }
 
-function validateResponse(body, summit, window, model, maxRows) {
+function validateResponse(body, summit, window, model, maxRows, definitions = fields) {
     const invalid = () => { throw fail('invalid-response', 'The weather service returned an invalid response.'); };
     if (!body || typeof body !== 'object' || Array.isArray(body) || body.utc_offset_seconds !== 0
         || !Number.isFinite(body.latitude) || Math.abs(body.latitude) > 90
@@ -107,11 +113,12 @@ function validateResponse(body, summit, window, model, maxRows) {
             || (index && time <= times[index - 1])) invalid();
     });
     const columns = {};
-    for (const [key, definition] of Object.entries(fields)) {
+    for (const [key, definition] of Object.entries(definitions)) {
         if (!model.fields.includes(key)) { columns[definition.name] = times.map(() => null); continue; }
         const values = hourly[key];
         if (!Array.isArray(values) || values.length !== times.length || body.hourly_units?.[key] !== definition.unit) invalid();
-        if (values.some(value => value !== null && (!Number.isFinite(value) || value < definition.min || value > definition.max))) invalid();
+        if (values.some(value => value !== null && (!Number.isFinite(value) || value < definition.min || value > definition.max
+            || (definition.integer && !Number.isInteger(value))))) invalid();
         columns[definition.name] = values;
     }
     return {

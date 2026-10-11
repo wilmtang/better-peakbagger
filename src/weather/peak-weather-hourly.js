@@ -36,6 +36,21 @@ export function peakHourlySeries(window, samples, metric) {
     return rows;
 }
 
+// Put accumulations under the start of their actual interval, alongside
+// instantaneous readings at that instant. Never borrow ending-midnight
+// temperature or invent a reading at a fractional-hour civil-day boundary.
+export function peakHourlyConditions(window, samples) {
+    const instant = peakHourlySeries(window, samples, 'code');
+    const rain = peakHourlySeries(window, samples, 'precipitation');
+    const gust = peakHourlySeries(window, samples, 'gust');
+    const byTime = new Map(samples.map(sample => [sample.time, sample]));
+    const rainByStart = new Map(rain.map(row => [row.start, row]));
+    const gustByStart = new Map(gust.map(row => [row.start, row]));
+    return [...new Set([...instant.map(row => row.time), ...rain.map(row => row.start)])].sort((a, b) => a - b).map(time => ({
+        time, sample: byTime.get(time), rain: rainByStart.get(time), gust: gustByStart.get(time),
+    }));
+}
+
 export function createPeakHourlyChart({ container, day, samples, zone, metric = 'temperature', format, onMetric, state }) {
     const id = `bpb-week-${day.window.date}`;
     if (!metrics.some(([key]) => key === metric)) metric = 'temperature';
@@ -50,7 +65,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     const svg = svgElement('svg', { role: 'img', preserveAspectRatio: 'xMidYMid meet' });
     const empty = element('p', { class: 'bpb-week-chart-empty', hidden: '' });
     frame.append(svg, empty);
-    const conditions = element('ol', { class: 'bpb-week-conditions', tabindex: '0', 'aria-label': 'Hourly conditions in summit local time' });
+    const conditions = element('div', { class: 'bpb-week-conditions', tabindex: '0', role: 'region', 'aria-label': 'Hourly weather in summit local time. Scroll horizontally for all hours.' });
     const note = element('p', { class: 'bpb-week-sub', id: `${id}-hint` });
     panel.append(readout, frame, conditions, note);
     container.replaceChildren(tabs, panel);
@@ -130,12 +145,40 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         const isConditions = metric === 'code';
         conditions.hidden = !isConditions; frame.hidden = isConditions; readout.hidden = isConditions;
         if (isConditions) {
-            conditions.replaceChildren(...rows.map(row => {
-                const condition = hourlyWeatherCondition(row.value);
-                return element('li', {}, [element('time', { datetime: new Date(row.time).toISOString(), text: localTime(row.time) }),
-                    element('span', { 'aria-hidden': 'true', text: icons[condition.icon] }), element('span', { text: condition.label })]);
-            }));
-            note.textContent = 'Summit local time · Hourly model estimates';
+            const hours = peakHourlyConditions(day.window, samples);
+            const table = element('table', { class: 'bpb-week-hourly-table', 'aria-label': 'Hourly weather' });
+            const head = element('tr', {}, [element('th', { scope: 'col', text: 'Hours' })]);
+            for (const row of hours) head.append(element('th', { scope: 'col', class: 'bpb-week-conditions-hour', 'data-time': row.time }, [
+                element('time', { datetime: new Date(row.time).toISOString(), title: localTime(row.time), text: mountainTime.formatClock(zone, row.time).replace(/^0/, '').replace(':00', '') }),
+                element('span', { class: 'bpb-week-hour-zone', text: mountainTime.zoneLabel(zone, row.time) }),
+            ]));
+            table.append(element('thead', {}, [head]));
+            const body = element('tbody');
+            for (const [key, label] of [['code', 'Conditions'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']]) {
+                const line = element('tr', { 'data-weather-row': key }, [element('th', { scope: 'row', text: label })]);
+                for (const row of hours) {
+                    const interval = key === 'precipitation' ? row.rain : key === 'gust' ? row.gust : null;
+                    const value = interval ? interval.value : key === 'precipitation' || key === 'gust' ? null : row.sample?.[key];
+                    const cell = element('td');
+                    if (key === 'code') {
+                        const condition = hourlyWeatherCondition(value);
+                        const icon = row.sample?.isDay === 0 && ['sun', 'partly'].includes(condition.icon) ? condition.icon === 'partly' ? '☁☾' : '☾' : icons[condition.icon];
+                        cell.append(element('span', { class: `bpb-week-hour-icon bpb-week-hour-icon-${condition.icon}`, role: 'img', 'aria-label': condition.label, title: `${localTime(row.time)} · ${condition.label}`, text: icon }));
+                    } else if (key === 'direction' && Number.isFinite(value)) {
+                        const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(value / 45) % 8];
+                        cell.title = `Wind from ${compass} (${Math.round(value)}°)`;
+                        cell.append(element('span', { class: 'bpb-week-wind-arrow', 'aria-hidden': 'true', style: `transform: rotate(${value}deg)`, text: '↓' }), element('span', { text: compass }));
+                    } else {
+                        cell.textContent = format(value, key === 'apparent' ? 'temperature' : key === 'gust' ? 'wind' : key);
+                        if (interval) cell.title = `${localTime(interval.start)} – ${localTime(interval.time)}${interval.partialInterval ? key === 'precipitation' ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
+                        if ((key === 'wind' || key === 'gust') && Number.isFinite(value)) cell.dataset.strength = value < 20 ? 'calm' : value < 40 ? 'breezy' : value < 60 ? 'strong' : 'high';
+                    }
+                    line.append(cell);
+                }
+                body.append(line);
+            }
+            table.append(body); conditions.replaceChildren(table);
+            note.textContent = 'Summit local time · Scroll for all hours. Rain/snow and gusts cover the hour starting at the shown time; rain/snow is water equivalent.';
         } else {
             const boundary = rows.some(row => row.partialInterval);
             const intervalNote = metric === 'precipitation' ? `. Rain/snow is preceding-hour water equivalent${boundary ? '; boundary intervals are proportionally estimated' : ''}.`
@@ -153,7 +196,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
-        choose(buttons[next].dataset.metric); buttons[next].focus();
+        choose(buttons[next].dataset.metric); buttons[next].focus({ preventScroll: true });
     };
     const pointerIndex = event => {
         if (!geometry || !rows.length) return -1;
@@ -178,11 +221,11 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     choose(metric);
     if (state) {
         selected = rows.findIndex(row => row.sourceTime === state.selectedTime);
-        conditions.scrollTop = state.conditionsScrollTop || 0;
+        conditions.scrollLeft = state.conditionsScrollLeft || 0;
         drawCursor();
     }
     if (typeof ResizeObserver === 'function') { observer = new ResizeObserver(draw); observer.observe(frame); }
-    return { snapshot: () => ({ selectedTime: rows[selected]?.sourceTime ?? null, conditionsScrollTop: conditions.scrollTop }), dispose() {
+    return { snapshot: () => ({ selectedTime: rows[selected]?.sourceTime ?? null, conditionsScrollLeft: conditions.scrollLeft }), dispose() {
         disposed = true; observer?.disconnect();
         tabs.onclick = tabs.onkeydown = frame.onpointermove = frame.onpointerleave = frame.onclick = frame.onkeydown = null;
         container.replaceChildren();

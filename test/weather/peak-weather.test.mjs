@@ -101,6 +101,7 @@ test('local choices load before the request, survive navigation and reject unava
     const env = setup({ localModels, readModels: () => new Promise(resolve => { release = () => resolve(localModels); }) });
     try {
         await waitFor(() => release);
+        await new Promise(resolve => setTimeout(resolve, 0)); // Sync settings finish before the local read.
         assert.equal(env.requests.length, 0);
         release();
         await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
@@ -325,11 +326,11 @@ test('hourly disclosure retains local DST folds, closes other days and changes u
         await waitFor(() => fold.querySelectorAll('.bpb-week-point').length === 25);
         assert.match(fold.textContent, /01:00 AM PDT/); assert.match(fold.textContent, /01:00 AM PST/);
         const conditions = fold.querySelector('[data-metric="code"]'); conditions.click();
-        assert.equal(fold.querySelectorAll('.bpb-week-conditions li').length, 25);
-        assert.match(fold.textContent, /Light snow/);
+        assert.equal(fold.querySelectorAll('.bpb-week-conditions-hour').length, 25);
+        assert.ok([...fold.querySelectorAll('[data-weather-row="code"] [role="img"]')].some(icon => icon.getAttribute('aria-label') === 'Light snow'));
         assert.equal(env.requests.length, 1);
         const previous = env.doc.querySelector('[data-date="2024-11-02"]'); previous.open = true;
-        await waitFor(() => !fold.open && previous.querySelectorAll('.bpb-week-conditions li').length === 24);
+        await waitFor(() => !fold.open && previous.querySelectorAll('.bpb-week-conditions-hour').length === 24);
         assert.equal(previous.querySelector('[aria-selected="true"]').dataset.metric, 'code');
         previous.querySelector('[data-metric="temperature"]').click();
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
@@ -407,12 +408,35 @@ test('missing hours break numeric lines and remain unavailable in conditions; mi
         for (let i = 0; i < 8; i++) frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
         assert.match(day.querySelector('.bpb-week-readout').textContent, /08:00 AM PST.*Unavailable/);
         day.querySelector('[data-metric="code"]').click();
-        assert.equal(day.querySelectorAll('.bpb-week-conditions li').length, 24);
-        assert.match(day.querySelectorAll('.bpb-week-conditions li')[8].textContent, /Unavailable/);
+        assert.equal(day.querySelectorAll('.bpb-week-conditions-hour').length, 24);
+        assert.equal(day.querySelectorAll('[data-weather-row="code"] [role="img"]')[8].getAttribute('aria-label'), 'Unavailable');
         day.querySelector('[data-metric="precipitation"]').click();
         assert.equal(day.querySelector('.bpb-week-chart-empty').hidden, false);
         assert.equal(day.querySelector('svg').hasAttribute('hidden'), true);
         assert.equal(day.querySelectorAll('.bpb-week-line').length, 0);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('horizontal Conditions exposes all measurements, interval values and retained scroll on a unit change', async () => {
+    const env = setup();
+    try {
+        await settled(env); env.doc.querySelector('.bpb-week-day > summary').click();
+        env.doc.querySelector('[data-metric="code"]').click();
+        const grid = env.doc.querySelector('.bpb-week-conditions');
+        assert.deepEqual([...grid.querySelectorAll('.bpb-week-hourly-table > tbody > tr > th')].map(node => node.textContent),
+            ['Conditions', 'Temperature', 'Feels like', 'Rain/snow', 'Wind', 'Gusts', 'Wind from']);
+        assert.equal(grid.querySelectorAll('.bpb-week-conditions-hour').length, 24);
+        assert.match(grid.querySelector('[data-weather-row="apparent"]').textContent, /18°F/);
+        assert.match(grid.querySelector('[data-weather-row="direction"]').textContent, /SW/);
+        const rain = [...grid.querySelectorAll('[data-weather-row="precipitation"] td')];
+        assert.match(rain[0].title, /12:00 AM PST.*01:00 AM PST/);
+        assert.match(rain.at(-1).title, /11:00 PM PST.*12:00 AM PST/);
+        grid.scrollLeft = 340; grid.focus();
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        const next = env.doc.querySelector('.bpb-week-conditions');
+        assert.equal(next.scrollLeft, 340); assert.equal(env.doc.activeElement, next);
+        assert.match(next.querySelector('[data-weather-row="apparent"]').textContent, /−8°C/);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });

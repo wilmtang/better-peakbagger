@@ -24,16 +24,20 @@ water equivalent (rain, showers and snow), and maximum wind. Missing values
 remain unavailable and incomplete hours are labelled. A native keyboard-
 accessible disclosure opens one day's hourly graphs; expanding another day
 closes the previous one and retains the chosen data tab. Temperature, rain/snow,
-wind and gusts use responsive line graphs; conditions use an hourly timeline.
+wind and gusts use responsive line graphs; Conditions shows a horizontally scrollable hourly table of condition icons,
+temperature, feels-like, rain/snow, wind, gusts and wind direction. Row labels
+stay visible while scrolling; clear hours use a Moon icon at night.
 Missing values break the line rather than appearing as zero. Hover previews a
 reading; clicking or using arrow keys pins it, and Escape clears it. Data tabs
 support arrow keys, Home and End. Charts fit inside the card without widening
-the page; the conditions timeline scrolls vertically. Units follow the existing
+the page; the Conditions table scrolls horizontally. Units follow the existing
 preference without another weather request.
 Day activation closes the previous panel and mounts the new graph in one update,
-preserving the activated summary's viewport position and keyboard focus.
+preserving the activated summary's viewport position and keyboard focus when
+the panel fits there. Otherwise one immediate scroll reveals the full panel
+(or its start if taller than the viewport).
 Unrelated preferences retain weather controls. Necessary unit/data refreshes
-restore valid pinned source instants, Conditions scroll position and focused
+restore valid pinned source instants, Conditions horizontal scroll position and focused
 controls; an expired date clears selection and returns focus to the period tab.
 Metric and period labels reserve their selected font width so selection cannot
 change wrapping.
@@ -95,11 +99,13 @@ refer to the preceding hour; daily aggregation includes the ending midnight.
 Their graphs show the same intervals, including the ending midnight and excluding
 the starting midnight. Readouts name the interval and label fractional boundary
 rain as estimated. Gust maxima are not prorated; overlapping boundary hours are
-identified. Instantaneous fields exclude the ending midnight. Exact local times
+identified. Conditions places rain/snow and gusts under the start of each interval alongside
+instantaneous readings at that time; missing boundary readings stay unavailable.
+Instantaneous fields exclude the ending midnight. Exact local times
 and timezone labels retain repeated hours on DST days.
 
 The separate peak client allows at most thirty-three inclusive UTC dates and 792 rows,
-with five fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
+with eight fixed hourly fields per model and at most two named models. The ascent client retains its three-date/72-row
 contract. Both use a 128-KiB response bound, 15-second deadline, schema/grid/unit
 validation, omitted credentials/referrer, and no redirects. Results live only
 in the bounded per-page cache. Requests begin near the viewport. Failed refreshes

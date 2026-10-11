@@ -22,6 +22,7 @@ const horizons = {
 };
 export const PEAK_WEATHER_MODELS = Object.freeze(WEATHER_MODELS.filter(item => horizons[item.id]).map(item => Object.freeze({
     ...item, endpoint: 'https://api.open-meteo.com/v1/forecast',
+    fields: Object.freeze([...item.fields, 'apparent_temperature', 'wind_direction_10m', 'is_day']),
     gustTiming: 'preceding-hour', type: 'Forecast model', forecastDays: horizons[item.id],
 })));
 export const peakModelHorizon = model => model.forecastDays < 2 && !Number.isInteger(model.forecastDays)

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { peakHourlySeries } from '../../src/weather/peak-weather-hourly.js';
+import { peakHourlySeries, peakHourlyConditions } from '../../src/weather/peak-weather-hourly.js';
 import { weatherDayWindow } from '../../src/weather/weather-day.js';
 import { mountainTime } from '../../src/time/mountain-time.js';
 
@@ -53,4 +53,19 @@ test('missing values stay missing, zero rain stays zero and incomplete intervals
     const partial = { ...window, partial: true, cutoff: window.start + 5.5 * HOUR };
     assert.equal(peakHourlySeries(partial, samples, 'precipitation').length, 5);
     assert.equal(peakHourlySeries(partial, samples, 'temperature').length, 6);
+});
+
+test('horizontal conditions align intervals with their start and preserve fractional and DST boundaries', () => {
+    for (const [lat, lon, date, length] of [[46.85, -121.75, '2024-11-03', 25], [46.85, -121.75, '2024-03-10', 23], [27.7, 85.3, '2024-11-04', 25]]) {
+        const zone = mountainTime.resolve(lat, lon), window = weatherDayWindow(date, zone, now), samples = series(window);
+        const endSample = samples.find(sample => sample.time === Math.ceil(window.end / HOUR) * HOUR);
+        endSample.precipitation = 8; endSample.gust = 80; endSample.temperature = 999;
+        const rows = peakHourlyConditions(window, samples);
+        assert.equal(rows.length, length); assert.equal(rows[0].time, window.start);
+        assert.ok(rows.every(row => row.time < window.end && row.sample?.temperature !== 999));
+        assert.equal(rows.at(-1).gust.value, 80);
+        assert.equal(rows.at(-1).rain.value, lon === 85.3 ? 2 : 8);
+        assert.equal(rows.reduce((sum, row) => sum + row.rain.value, 0), peakHourlySeries(window, samples, 'precipitation').reduce((sum, row) => sum + row.value, 0));
+        if (lon === 85.3) { assert.equal(rows[0].sample, undefined); assert.equal(rows[0].rain.partialInterval, true); }
+    }
 });

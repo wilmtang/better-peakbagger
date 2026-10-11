@@ -61,3 +61,17 @@ test('named-model cache keys separate selections while sharing the rate-limit co
     await assert.rejects(client.request(summit, window, [model('ecmwf_ifs')]), { code: 'rate-limit' });
     assert.equal(calls, 3);
 });
+
+test('peak-only fields are bounded, unit-checked and retain missing values', () => {
+    const models = [model('gfs_global')];
+    const url = new URL(peakWeatherRequestUrl(summit, window, models));
+    assert.match(url.searchParams.get('hourly'), /apparent_temperature,wind_direction_10m,is_day/);
+    const body = fixture(['gfs_global']); body.hourly.apparent_temperature[0] = null;
+    assert.equal(validatePeakWeatherResponse(body, summit, window, models).models.gfs_global.samples[0].apparent, null);
+    for (const [field, value] of [['apparent_temperature', 101], ['wind_direction_10m', -1], ['wind_direction_10m', 361], ['is_day', .5]]) {
+        const invalid = fixture(['gfs_global']); invalid.hourly[field][0] = value;
+        assert.throws(() => validatePeakWeatherResponse(invalid, summit, window, models), { code: 'invalid-response' });
+    }
+    body.hourly_units.wind_direction_10m = 'rad';
+    assert.throws(() => validatePeakWeatherResponse(body, summit, window, models), { code: 'invalid-response' });
+});

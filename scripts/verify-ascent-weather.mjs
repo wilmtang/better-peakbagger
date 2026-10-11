@@ -119,7 +119,7 @@ try {
             // Element screenshots and responsive reflows can leave a tab on
             // the viewport edge. Gate the physical click on its exposed centre
             // instead of relying on Marionette's minimum scrolling heuristic.
-            await driver.executeScript('arguments[0].scrollIntoView({block:"center",inline:"nearest"});', target);
+            await driver.executeScript('const e=arguments[0], r=e.getBoundingClientRect(); if(r.top+r.height/2<0 || r.top+r.height/2>=innerHeight) e.scrollIntoView({block:"center",inline:"nearest"});', target);
             let last;
             try {
                 await waitForCondition(async () => {

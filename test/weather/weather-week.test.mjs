@@ -16,8 +16,8 @@ function responseBody(window) {
     const start = Date.parse(window.startDate), end = Date.parse(window.endDate) + 86400_000;
     const time = Array.from({ length: (end - start) / 3600_000 }, (_, i) => (start + i * 3600_000) / 1000);
     return { ...summit, utc_offset_seconds: 0,
-        hourly_units: { time: 'unixtime', temperature_2m: '°C', precipitation: 'mm', wind_speed_10m: 'km/h', wind_gusts_10m: 'km/h', weather_code: 'wmo code' },
-        hourly: { time, temperature_2m: time.map(() => 3), precipitation: time.map(() => 1), wind_speed_10m: time.map(() => 10), wind_gusts_10m: time.map(() => 20), weather_code: time.map(() => 0) } };
+        hourly_units: { time: 'unixtime', temperature_2m: '°C', precipitation: 'mm', wind_speed_10m: 'km/h', wind_gusts_10m: 'km/h', weather_code: 'wmo code', apparent_temperature: '°C', wind_direction_10m: '°', is_day: '' },
+        hourly: { time, apparent_temperature: time.map(() => -2), wind_direction_10m: time.map(() => 225), is_day: time.map(() => 1), temperature_2m: time.map(() => 3), precipitation: time.map(() => 1), wind_speed_10m: time.map(() => 10), wind_gusts_10m: time.map(() => 20), weather_code: time.map(() => 0) } };
 }
 
 test('week is seven completed summit civil days across DST and the date line', () => {
