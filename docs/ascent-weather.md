@@ -81,6 +81,14 @@ Missing codes or missing hours show **Unavailable**; models without weather code
 explain that limitation. Repeated DST clocks retain their distinct timezone
 labels. The four tabs share keyboard arrow/Home/End navigation.
 
+Numeric graphs have their own hourly reading explorer, including on ascents
+without GPX. Tab enters the graph; arrows/Home/End select a returned hour or an
+explicit unavailable slot, and Escape clears that selection. Pointer hover
+previews a reading; pointer exit restores a pinned reading. Keyboard readouts
+use a polite live region. Precipitation readings identify clipped intervals and
+estimated boundary allocation. Weather reading selection does not change the
+GPX cursor or issue a request.
+
 The GPX cursor highlights the corresponding hourly row in Conditions. An explicit
 tab switch reveals the selected hour inside the list; GPX hover never scrolls
 the list or page. The recorded point time stays separate from the hourly sample,

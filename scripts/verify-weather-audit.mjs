@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, chrome, getComputedStyle */
+/* global document, chrome */
 
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -79,6 +79,16 @@ try {
     assert.match(rain.first, /12:00 AM.*12:45 AM.*Estimated boundary interval/);
     assert.match(rain.last, /11:45 PM.*12:00 AM.*next midnight.*Estimated boundary interval/);
     if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, 'fractional-rain.png') });
+    await page.locator('.bpb-weather-chart-frame').focus(); await page.keyboard.press('Home');
+    await page.waitForFunction(() => document.querySelector('.bpb-weather-readout').textContent.includes('Estimated boundary interval'));
+    assert.match(await page.locator('.bpb-weather-readout').innerText(), /12:00 AM.*12:45 AM/);
+    for (const theme of ['light', 'dark']) {
+        await setSettings({ theme });
+        await page.waitForFunction(theme => document.documentElement.dataset.bpbTheme === theme, theme);
+        await page.setViewportSize({ width: 375, height: 1000 });
+        await page.waitForFunction(() => document.querySelector('.bpb-weather-chart').getAttribute('viewBox').split(' ')[2] - document.querySelector('.bpb-weather-chart').getBoundingClientRect().width < 1);
+        if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, `ascent-reading-${theme}-375.png`) });
+    }
     fractional = false;
     await page.setViewportSize({ width: 375, height: 1000 });
     await page.goto(`${origin}/peak.aspx?pid=2296&week-weather=map`);

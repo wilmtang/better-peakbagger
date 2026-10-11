@@ -12,7 +12,7 @@ shared provider/data code, settings and GPX presentation integration.
 | W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Fixed; totals, tooltips and rendered graph verified |
 | W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Fixed; both-engine frame geometry and activation verified |
 | W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Fixed; focused controls and valid pinned instants verified |
-| W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Open |
+| W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Implemented; keyboard and visual behavior verified, speech unproven |
 | W06 | P2 | Global dark button repaint overrides weather component selection styling | Open |
 | W07 | P3 | Disabled weather still reparents native GPS notes and controls | Open |
 | W08 | P3 | Selected font weight changes intrinsic tab width and wrapping | Open |
@@ -48,6 +48,12 @@ missing readings, bounded model fallback, per-page caches and native Save owners
   readouts, focus and pinned readings after refresh. Firefox settings now use a
   separate hidden tab, preserving the page under test. Initial mixed-worktree
   checks and the old Firefox navigation setter were unsuitable for this proof.
+- W05: numeric graphs expose a focusable hourly explorer and polite keyboard
+  readout, missing slots and interval labels. Weather reading selection remains
+  separate from GPX selection. Ran 25 ascent bundle tests and focused ESLint.
+  Hidden Chrome 153 and Firefox 157 verified Tab entry/exit, Home/End/Escape,
+  existing GPX behavior and responsive layout. Inspected light/dark 375×1000
+  readout screenshots and corrected focus-outline spacing.
 
 ## Intentionally not changed
 
@@ -58,9 +64,9 @@ missing readings, bounded model fallback, per-page caches and native Save owners
 
 ## Changed but not fully proven
 
-None yet. Local fixture verification cannot establish live provider accuracy,
-native browser/OS focus behavior, physical touch or screen-reader speech. Record
-specific outstanding evidence here after implementation.
+- W05: keyboard interaction and live-region DOM are verified; screen-reader
+  speech has not been exercised. Local fixtures also do not establish live
+  provider accuracy, native browser/OS focus behavior or physical touch.
 
 ## Data contracts
 

@@ -70,6 +70,37 @@ test('fractional-zone rain bars and interval tooltips agree with the daily total
     } finally { env.close(); }
 });
 
+test('numeric hourly readings work by keyboard without GPX, preserve missing slots and keep GPX selection separate', async () => {
+    const env = setup({ fetchWeather: async url => {
+        const body = weatherFixture({ startDate: new URL(url).searchParams.get('start_date') });
+        body.hourly.temperature_2m[32] = null;
+        for (const values of Object.values(body.hourly)) values.splice(33, 1);
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await openChart(env);
+        const frame = env.doc.querySelector('.bpb-weather-chart-frame'), readout = env.doc.querySelector('.bpb-weather-readout');
+        const key = value => frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }));
+        frame.focus(); key('Home'); assert.match(readout.textContent, /12:00 AM PDT/);
+        key('ArrowRight'); assert.match(readout.textContent, /1:00 AM PDT.*Unavailable/);
+        key('ArrowRight'); assert.match(readout.textContent, /2:00 AM PDT.*Unavailable/);
+        assert.equal(readout.getAttribute('aria-live'), 'polite');
+        const pinned = readout.textContent, gpxTime = Date.parse('2024-07-12T17:32:00Z');
+        sendCursor(env, { selected: true, selectionTime: gpxTime });
+        await waitFor(() => env.doc.querySelector('.bpb-weather-cursor').dataset.time === String(gpxTime));
+        assert.equal(readout.textContent, pinned);
+        key('Escape'); assert.match(readout.textContent, /^Low/); assert.equal(env.doc.querySelector('.bpb-weather-reading-cursor'), null);
+        assert.equal(env.doc.querySelector('.bpb-weather-cursor').dataset.time, String(gpxTime));
+        assert.equal(key('Tab'), true, 'Tab is not prevented');
+        for (const metric of ['wind', 'precipitation']) {
+            env.doc.querySelector(`[data-metric="${metric}"]`).click(); frame.focus(); key('End');
+            assert.match(readout.textContent, metric === 'precipitation' ? /next midnight.*in/ : /11:00 PM PDT.*mph/);
+        }
+        const before = env.requests.length; key('Home'); key('ArrowRight');
+        assert.equal(env.requests.length, before);
+    } finally { env.close(); }
+});
+
 test('weather opt-out hides the archive and skips summit lookup until enabled, including BFCache', async () => {
     const env = setup({ storedSettings: { showWeather: false } });
     const update = showWeather => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));

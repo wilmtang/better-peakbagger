@@ -60,12 +60,16 @@ export function mountAscentWeather() {
     const zoneText = element('span', { class: 'bpb-weather-sub' });
     const chart = document.createElementNS(SVG_NS, 'svg');
     chart.setAttribute('class', 'bpb-weather-chart'); chart.setAttribute('role', 'img');
+    const readout = element('div', { id: `${ID}-readout`, class: 'bpb-weather-readout', 'aria-live': 'off', 'aria-atomic': 'true' });
+    const readingHint = element('p', { id: `${ID}-reading-hint`, class: 'bpb-weather-sub', text: 'Hover, tap or use ← → for readings. Escape clears selection.' });
+    const chartFrame = element('div', { class: 'bpb-weather-chart-frame', tabindex: '0', role: 'group',
+        'aria-describedby': `${readout.id} ${readingHint.id}` }, [chart]);
     const cursorLabel = element('div', { class: 'bpb-weather-cursor-label' });
     const cursor = document.createElementNS(SVG_NS, 'line');
     cursor.setAttribute('class', 'bpb-weather-cursor'); cursor.setAttribute('aria-hidden', 'true');
     const conditions = element('ul', { class: 'bpb-weather-conditions', 'aria-label': 'Hourly conditions in summit local time', tabindex: '0', hidden: '' });
     const conditionsEmpty = element('div', { class: 'bpb-weather-sub', hidden: '' });
-    const plot = element('div', { id: `${ID}-plot`, role: 'tabpanel', 'aria-labelledby': `${ID}-tab-temperature` }, [cursorLabel, chart, conditions, conditionsEmpty]);
+    const plot = element('div', { id: `${ID}-plot`, role: 'tabpanel', 'aria-labelledby': `${ID}-tab-temperature` }, [cursorLabel, readout, chartFrame, readingHint, conditions, conditionsEmpty]);
     const hourly = element('div', { id: `${ID}-hourly`, hidden: '' }, [element('div', { class: 'bpb-weather-hourly-controls' }, [tabs, zoneText]), plot]);
     const sourceText = element('div', { class: 'bpb-weather-source-text' });
     const sources = element('details', { class: 'bpb-weather-sources' }, [element('summary', { text: 'Source details' }), sourceText]);
@@ -195,9 +199,56 @@ export function mountAscentWeather() {
     const unit = key => key === 'temperature' ? (unitSystem() === 'imperial' ? '°F' : '°C') : key === 'precipitation' ? (unitSystem() === 'imperial' ? 'in' : 'mm') : (unitSystem() === 'imperial' ? 'mph' : 'km/h');
     const format = (value, key) => numeric(value) ? `${convert(value, key).toFixed(key === 'precipitation' ? (unitSystem() === 'imperial' ? 2 : 1) : 0).replace('-', '−')}${key === 'temperature' ? '' : ' '}${unit(key)}` : '—';
 
+    let readingRows = [], readingSelected = null, readingHover = null, readingGeometry = null;
+    const readingLabel = row => {
+        const local = time => `${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
+        const timeLabel = metric === 'precipitation' ? `${local(row.start)} – ${local(row.time)}${row.time === dayWindow.end ? ' (next midnight)' : ''}` : local(row.time);
+        return `${timeLabel} · ${numeric(row.value) ? format(row.value, metric) : 'Unavailable'}${row.partialInterval ? ' · Estimated boundary interval' : ''}`;
+    };
+    const readingPosition = row => metric === 'precipitation' ? (row.start + row.time) / 2 : row.time;
+    function drawReading() {
+        chart.querySelector('.bpb-weather-reading-cursor')?.remove();
+        const row = readingRows.find(sample => sample.sourceTime === (readingHover ?? readingSelected));
+        const values = readingRows.map(sample => sample.value).filter(numeric);
+        readout.textContent = row ? readingLabel(row) : values.length
+            ? `Low ${format(Math.min(...values), metric)} · High ${format(Math.max(...values), metric)}` : 'Hourly readings unavailable';
+        if (!row || !readingGeometry) return;
+        const { x, y, top, bottom } = readingGeometry;
+        const group = document.createElementNS(SVG_NS, 'g');
+        group.setAttribute('class', 'bpb-weather-reading-cursor'); group.setAttribute('aria-hidden', 'true');
+        for (const [tag, attributes] of [['line', { x1: x(readingPosition(row)), x2: x(readingPosition(row)), y1: top, y2: bottom }],
+            ...(numeric(row.value) ? [['circle', { cx: x(readingPosition(row)), cy: y(row.value), r: 4 }]] : [])]) {
+            const node = document.createElementNS(SVG_NS, tag);
+            Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value)); group.append(node);
+        }
+        chart.append(group);
+    }
+    const pointerReading = event => {
+        if (!readingGeometry || !readingRows.length) return null;
+        const bounds = chart.getBoundingClientRect();
+        if (!bounds.width) return null;
+        const position = (event.clientX - bounds.left) / bounds.width * readingGeometry.width;
+        const time = dayWindow.start + (position - readingGeometry.left) / (readingGeometry.right - readingGeometry.left) * (dayWindow.end - dayWindow.start);
+        return readingRows.reduce((nearest, row) => Math.abs(readingPosition(row) - time) < Math.abs(readingPosition(nearest) - time) ? row : nearest).sourceTime;
+    };
+    chartFrame.addEventListener('pointermove', event => { readingHover = pointerReading(event); readout.setAttribute('aria-live', 'off'); drawReading(); });
+    chartFrame.addEventListener('pointerleave', () => { readingHover = null; drawReading(); });
+    chartFrame.addEventListener('click', event => { readingSelected = pointerReading(event); readingHover = null; drawReading(); });
+    chartFrame.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key) || !readingRows.length) return;
+        event.preventDefault(); readingHover = null; readout.setAttribute('aria-live', 'polite');
+        const index = readingRows.findIndex(row => row.sourceTime === readingSelected);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? readingRows.length - 1
+            : index < 0 ? event.key === 'ArrowRight' ? 0 : readingRows.length - 1
+                : Math.max(0, Math.min(readingRows.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)));
+        readingSelected = event.key === 'Escape' ? null : readingRows[next].sourceTime;
+        drawReading();
+    });
+
     function drawChart() {
         if (!enabled() || !current || hourly.hidden || lifecycle?.state !== 'active') return;
         const showConditions = metric === 'conditions';
+        chartFrame.hidden = readout.hidden = readingHint.hidden = showConditions;
         chart.toggleAttribute('hidden', showConditions); conditions.hidden = !showConditions; conditionsEmpty.hidden = true;
         if (showConditions) {
             chartBounds = null; conditionRows.clear(); conditions.replaceChildren();
@@ -223,8 +274,15 @@ export function mountAscentWeather() {
         }
         const width = chart.getBoundingClientRect().width;
         if (width < 100) return;
-        const rows = metric === 'precipitation' ? current.day.precipitationHours
-            : current.day.hourly.map(row => ({ time: row.time, value: row[metric] }));
+        const rows = metric === 'precipitation' ? current.day.precipitationHours : [];
+        if (metric !== 'precipitation') {
+            const samples = new Map(current.day.hourly.map(row => [row.time, row]));
+            for (let time = Math.ceil(dayWindow.start / 3600_000) * 3600_000; time < dayWindow.cutoff; time += 3600_000)
+                rows.push({ time, sourceTime: time, value: samples.get(time)?.[metric] ?? null });
+        }
+        readingRows = rows; readingGeometry = null;
+        if (!rows.some(row => row.sourceTime === readingSelected)) readingSelected = null;
+        readingHover = null;
         const finite = rows.filter(row => numeric(row.value));
         chartBounds = null;
         chart.replaceChildren(); chart.setAttribute('viewBox', `0 0 ${width} 164`);
@@ -236,15 +294,17 @@ export function mountAscentWeather() {
         };
         const chartLabel = `${metric === 'temperature' ? 'Temperature' : metric === 'precipitation' ? 'Preceding-hour precipitation' : 'Wind'} (${unit(metric)}), summit local time.`;
         chartDescription = chartLabel;
+        chartFrame.setAttribute('aria-label', `${chartLabel} Use left and right arrows to explore readings; Escape clears selection.`);
         chart.setAttribute('aria-label', chartLabel);
         add('title', {}, chartLabel);
-        if (!finite.length) { add('text', { x: width / 2, y: 70, 'text-anchor': 'middle' }, 'Hourly data unavailable'); drawCursor(); return; }
+        if (!finite.length) { add('text', { x: width / 2, y: 70, 'text-anchor': 'middle' }, 'Hourly data unavailable'); drawCursor(); drawReading(); return; }
         const values = finite.map(row => convert(row.value, metric));
         const low = metric === 'temperature' ? Math.floor(Math.min(...values) - 2) : 0;
         const high = Math.max(low + 1, Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
         const left = 42, right = width - 16, top = 26, bottom = 124;
         const x = time => left + (right - left) * (time - dayWindow.start) / (dayWindow.end - dayWindow.start);
         const y = value => bottom - (convert(value, metric) - low) / (high - low) * (bottom - top);
+        readingGeometry = { x, y, left, right, top, bottom, width };
         add('text', { x: left, y: 12 }, unit(metric));
         for (const value of [low, (low + high) / 2, high]) {
             const yy = bottom - (value - low) / (high - low) * (bottom - top);
@@ -273,15 +333,14 @@ export function mountAscentWeather() {
             add('path', { d: path, class: 'bpb-weather-line' });
         }
         for (const row of finite) {
-            const local = time => `${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
-            const timeLabel = metric === 'precipitation' ? `${local(row.start)} – ${local(row.time)}${row.time === dayWindow.end ? ' (next midnight)' : ''}` : local(row.time);
-            const label = `${timeLabel} · ${format(row.value, metric)}${row.partialInterval ? ' · Estimated boundary interval' : ''}`;
+            const label = readingLabel(row);
             const point = add('circle', { cx: x(metric === 'precipitation' ? (row.start + row.time) / 2 : row.time), cy: y(row.value), r: 8, class: 'bpb-weather-hover' });
             const title = document.createElementNS(SVG_NS, 'title'); title.textContent = label; point.append(title);
         }
         chartBounds = { left, right, top, bottom };
         chart.append(cursor);
         drawCursor();
+        drawReading();
     }
 
     function renderResult() {
@@ -369,6 +428,7 @@ export function mountAscentWeather() {
     tabs.querySelectorAll('button').forEach(button => {
         button.addEventListener('click', () => {
             metric = button.dataset.metric;
+            readingSelected = readingHover = null;
             tabs.querySelectorAll('button').forEach(tab => { tab.setAttribute('aria-selected', String(tab === button)); tab.tabIndex = tab === button ? 0 : -1; });
             plot.setAttribute('aria-labelledby', button.id); drawChart();
             // An explicit tab switch may reveal the selected hour inside this
