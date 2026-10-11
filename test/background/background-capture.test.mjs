@@ -3599,7 +3599,7 @@ test('the worker passes the page-owned provider deadline inside its dispatch mar
 test('provider response classifications cross the worker only as allowlisted recovery data', async t => {
     const cases = [
         ['provider-human-check', 'complete the check'],
-        ['provider-rate-limited', 'temporarily limiting requests'],
+        ['provider-rate-limited', 'Wait a few minutes'],
         ['provider-forbidden', 'available to your signed-in account'],
         ['provider-unavailable', 'could not complete the export'],
         ['provider-response-changed', 'changed its export'],

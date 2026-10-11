@@ -707,7 +707,8 @@ test('a GitHub write error pauses visibly and resume retries the same ascent', a
     await waitFor(dom, () => /Ascent and TR backup paused/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');
-    assert.match(panel.textContent, /GitHub is temporarily rate-limiting requests/);
+    assert.match(panel.textContent, /GitHub request limit reached/);
+    assert.match(panel.textContent, /Wait a few minutes, then try again/);
     assert.match(panel.textContent, /1-ascent batch is still ready/);
     assert.match(panel.textContent, /Resume will retry it/);
     assert.deepEqual(pushed, [[9100001]]);

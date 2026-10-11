@@ -209,7 +209,8 @@ test('a typed backup error shows an actionable message with a retry', async () =
     });
     await waitFor(dom, () => control(dom));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
-    await waitFor(dom, () => /rate-limiting/.test(control(dom).textContent));
+    await waitFor(dom, () => /GitHub request limit reached/.test(control(dom).textContent));
+    assert.match(control(dom).textContent, /Wait a few minutes, then try again/);
     assert.ok(Array.from(control(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
