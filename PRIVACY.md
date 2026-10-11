@@ -12,8 +12,9 @@ data or use or transfer it for unrelated purposes or credit decisions.
 Data leaves the browser only when a feature requires it:
 
 - **Peakbagger** receives summit lookups and user-approved GPS Preview data.
-- **Open-Meteo** receives summit coordinates and the ascent-day or past-week
-  date window automatically when a weather card approaches the viewport.
+- **Open-Meteo** receives summit coordinates, elevation when available, and an
+  ascent-day window or seven past days plus up to sixteen forecast days
+  automatically when an enabled weather card approaches the viewport.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
@@ -51,6 +52,8 @@ Firefox's `locationInfo` declaration is a data-handling disclosure, not
 permission to read device location. It covers:
 
 - activity coordinates sent to Peakbagger for summit lookup and GPS Preview;
+- summit coordinates sent to Open-Meteo for historical weather and forecasts
+  when an enabled weather card approaches the viewport;
 - viewed-area tile coordinates sent to Mapterhorn, OpenFreeMap, or a selected
   compatible map provider when 3D is used;
 - a Peakbagger-stored GPS track written to the user's GitHub repository when
@@ -61,7 +64,7 @@ permission to read device location. It covers:
 
 | Storage | Contents | Retention and sync |
 | --- | --- | --- |
-| `storage.sync` | Theme, units, chart, map, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
+| `storage.sync` | Theme, units, chart, map, weather-card, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
 | `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, and automatic-backup state | Device-local; never browser-synced. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
@@ -330,6 +333,14 @@ developer account.
 
 ## Summit weather
 
+**Settings → General → Show weather cards** controls both historical ascent
+weather and peak-page forecasts. It is on by default, and the preference may
+sync through the browser account and travel with settings exports or optional
+GitHub settings backup. Turning it off hides both cards on open pages, cancels
+pending requests, and prevents new weather requests and the archive's
+Peakbagger summit lookup until enabled again. Weather requests wait for the
+current setting to be read successfully.
+
 On saved ascent pages, the weather card automatically reads the matching peak
 page on Peakbagger, then requests model estimates from Open-Meteo when the card
 approaches the viewport. This works without a GPX and for other climbers’
@@ -339,9 +350,9 @@ On peak pages, **Summit weather** reads summit coordinates and elevation
 directly from the current Peakbagger page. One forecast-API request covers seven
 completed summit-local days and up to sixteen forecast days (today plus fifteen
 days), with UTC padding capped at the API's forecast horizon, when the card
-approaches the viewport. Switching
-periods or hourly graphs makes no additional request. The API selects regional
-models automatically; **Refresh** makes another request. Returning to a visible
+approaches the viewport. Switching periods or hourly graphs makes no additional
+request. The API selects regional models automatically; **Refresh** makes
+another request. Returning to a visible
 card after five minutes refreshes expired data unless the previous request failed.
 
 Open-Meteo receives the summit latitude/longitude, summit elevation when
@@ -349,10 +360,9 @@ available, date window and weather fields, IP address, and ordinary request
 metadata. Ascent weather uses a three-UTC-day window covering the local ascent
 date and a selected model. Peak weather uses a padded UTC window covering the
 seven completed local days and today plus fifteen forecast days, capped at the
-API's available horizon, with automatic
-regional model selection. Weather requests
-omit credentials and referrers. No ascent or climber ID, summit name, report,
-GPX, track times, account credentials, or page URL is sent to Open-Meteo.
+API's available horizon, with automatic regional model selection. Weather
+requests omit credentials and referrers. No ascent or climber ID, summit name,
+report, GPX, track times, account credentials, or page URL is sent to Open-Meteo.
 An hourly graph cursor can follow GPX hover or selection using only timestamps
 passed locally between the page's extension scripts. Cursor movement makes no
 additional network request and persists no track data.
@@ -489,7 +499,7 @@ The user can export and import settings without GitHub:
 | Service | When it receives data |
 | --- | --- |
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
-| Open-Meteo | Summit coordinates, elevation and ascent-day or recent-week window when a weather card approaches the viewport, and on model selection, Retry or Refresh. No credentials or referrer. |
+| Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or seven past days plus up to sixteen forecast days when an enabled card approaches the viewport; model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

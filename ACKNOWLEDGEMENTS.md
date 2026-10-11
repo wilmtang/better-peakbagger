@@ -2,7 +2,8 @@
 
 Better Peakbagger is licensed under the
 [GNU Affero General Public License v3.0 or later](LICENSE). This document records
-the license notice for software distributed with the extension and credits projects that inspired its design.
+the license notice for software distributed with the extension, credits external
+data services, and acknowledges projects that inspired its design.
 
 The packaged `THIRD_PARTY_NOTICES.txt` is generated from the complete shipped
 npm dependency graph and retains each package's full license and notice text.
@@ -110,6 +111,19 @@ service, not bundled software or executable code. Its terrain-source
 attributions are available on the
 [Mapterhorn attribution page](https://mapterhorn.com/attribution/) and are also
 shown in the rendered map.
+
+### Open-Meteo
+
+Summit forecasts, recent weather, and historical ascent weather are powered by
+[Open-Meteo](https://open-meteo.com/), an open-source weather project that makes
+these data available without an API key. Better Peakbagger uses its hosted APIs;
+the server software is not bundled with the extension. Both weather cards show
+a linked **Powered by Open-Meteo** attribution.
+
+- Source: [Open-Meteo server](https://github.com/open-meteo/open-meteo)
+- Server license: GNU Affero General Public License v3.0 or later
+- API data license: [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://open-meteo.com/en/licence); underlying datasets retain their provider licences.
+- Hosted API access: free for non-commercial use, subject to [Open-Meteo's terms and usage limits](https://open-meteo.com/en/terms).
 
 ## Inspiration
 
