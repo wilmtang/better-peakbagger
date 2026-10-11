@@ -60,9 +60,12 @@ import { initUnitSettings } from './unit-settings.js';
     const statusErrorDismissEl = document.getElementById('status-error-dismiss');
     const aboutVersionEl = document.getElementById('about-version');
 
-    // About section — version from the extension manifest.
+    // About section — version and store destination from the extension runtime.
     const manifest = extensionApi.runtime.getManifest();
     aboutVersionEl.textContent = `Version ${manifest.version}`;
+    document.getElementById('about-rate-us').href = extensionApi.runtime.getURL('').startsWith('moz-extension://')
+        ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/reviews/'
+        : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn/reviews';
 
     const applyTheme = theme => Theme.apply(theme);
 
