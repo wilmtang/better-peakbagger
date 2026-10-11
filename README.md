@@ -188,7 +188,9 @@ kept private.
 ## Privacy by design
 
 There is no Better Peakbagger account, analytics, telemetry, advertising, or
-developer data server. Raw Garmin or Strava GPX is processed on the activity
+developer data server. 
+
+Raw Garmin or Strava GPX is processed on the activity
 page and is never stored or sent to the extension developer. Peakbagger receives
 small corridor boxes for summit discovery and, only after you choose **Open
 drafts**, a privacy-reduced track for GPS Preview. The optional 3D view requests

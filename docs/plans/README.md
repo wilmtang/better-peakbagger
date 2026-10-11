@@ -1,5 +1,9 @@
 # Active plans
 
+- [Historical weather on individual ascent pages](ascent-historical-weather.md) —
+  investigated and proposed; independent card with or without GPX, date/location
+  model selection, strict summit identity, historical local-day aggregation,
+  provider privacy, and explicit browser/coverage verification gates.
 - [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
   two reproduced open UI findings since 3.9.2: Sentinel capture selection on
   3D resume and climber-card keyboard focus during row cleanup. Current unit,
