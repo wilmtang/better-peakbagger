@@ -201,29 +201,12 @@ private.
 ## Privacy by design
 
 There is no Better Peakbagger account, analytics, telemetry, advertising, or
-developer data server. 
-
-Raw Garmin or Strava GPX is processed on the activity
-page and is never stored or sent to the extension developer. Peakbagger receives
-small corridor boxes for summit discovery and, only after you choose **Open
-drafts**, a privacy-reduced track for GPS Preview. The optional 3D view requests
-map tiles only after you enable it; once enabled, hovering or focusing its
-toggle may prefetch a small bounded elevation tile set before the view opens.
-Sun and Moon calculations use only packaged code and remain in the Peakbagger
-tab; they add no storage, permission, or provider request.
-Weather cards automatically send summit coordinates, elevation, and a date
-window to Open-Meteo as they approach the viewport: the ascent date, or sixteen
-past days plus up to sixteen forecast days. They send no GPX, ascent/climber
-IDs, credentials, or referring page URL, and keep results only in tab memory.
-Gaia or onX receives a saved Peakbagger GPX only when you click its **Send**
-button, and final review and confirmation remain with you.
-GitHub backup is off until you enable it, sends an ascent only to the repository
-you choose, and keeps its access token in local extension storage, never synced.
-The token enters a manual settings download only when you explicitly choose
-**Include GitHub connection**; that file is not encrypted.
-
-See [Privacy and data handling](PRIVACY.md) for the complete permissions,
-retention, provider, and field-level disclosure.
+developer data server. Raw Garmin or Strava GPX is processed on the activity
+page and never sent to the developer. Third-party services receive only the
+data needed for the features you use, including summit coordinates for automatic
+weather cards and backups or track transfers you authorize. See
+[Privacy and data handling](PRIVACY.md) for what is sent, when, and how long
+it is kept.
 
 ## FAQ
 
