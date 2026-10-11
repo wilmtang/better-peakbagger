@@ -108,7 +108,7 @@ test('shared Sentinel UI guards late responses, dates, unknown clouds, and dispo
     select.value = select.options[2].value;
     select.dispatchEvent(new dom.window.Event('change'));
     assert.deepEqual(applied.at(-1), ['old'], 'a late catalog cannot overwrite current capture choices');
-    assert.match(layer.element.textContent, /Scene clouds unknown/);
+    assert.match(layer.element.textContent, /Cloud cover unknown/);
     layer.refresh();
     assert.equal(layer.element.querySelector('.bpb-sentinel-stats').textContent, '', 'old coverage is cleared when the view changes');
     layer.dispose();
@@ -144,7 +144,7 @@ test('Leaflet Sentinel intercepts only its own option, preserves native layers, 
     assert.equal(layers.size, 2);
     assert.ok(layers.has(native));
     const oldTile = [...layers].find(layer => layer !== native);
-    assert.match(win.document.body.textContent, /Footprint coverage 100% · Scene clouds 41%/);
+    assert.match(win.document.body.textContent, /Map coverage 100% · Cloud cover 41%/);
     const captureSelect = win.document.querySelector('.bpb-sentinel select');
     captureSelect.value = captureSelect.options[1].value;
     captureSelect.dispatchEvent(new win.Event('change'));

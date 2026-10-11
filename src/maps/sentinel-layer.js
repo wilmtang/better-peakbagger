@@ -20,7 +20,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     const stats = ownerDocument.createElement('p');
     stats.className = 'bpb-sentinel-stats';
     stats.setAttribute('role', 'status');
-    stats.title = 'Footprint coverage is an estimate of scene footprints within this view, not valid or cloud-free pixels. Clouds are averaged across whole scenes, not this viewport.';
+    stats.title = 'Map coverage estimates how much of the area shown falls within this capture\'s satellite images. Clouds or gaps can still obscure covered areas. Cloud cover is averaged across the full satellite images.';
     const retry = ownerDocument.createElement('button');
     retry.type = 'button';
     retry.textContent = 'Try again';
@@ -51,7 +51,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         replaceScenes(capture.scenes);
         summary.hidden = !!target;
         summary.textContent = captureDate(capture.time);
-        stats.textContent = `Footprint coverage ${Math.round(capture.coverage * 100)}% · Scene clouds ${capture.cloud === null ? 'unknown' : Math.round(capture.cloud) + '%'}`;
+        stats.textContent = `Map coverage ${Math.round(capture.coverage * 100)}% · Cloud cover ${capture.cloud === null ? 'unknown' : Math.round(capture.cloud) + '%'}`;
     };
     const choose = () => {
         const capture = target ? captures.find(candidate => candidate.platform === target.platform

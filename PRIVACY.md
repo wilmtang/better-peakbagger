@@ -339,9 +339,10 @@ capture picker can select another pass within that window. No route, GPX,
 Peakbagger identity, or account credentials are sent. Catalog results remain in
 memory; the extension does not persist satellite imagery or capture metadata.
 Browser-managed HTTP caching may retain tiles. Switching away cancels catalog
-requests and removes the extension-owned imagery. Footprint coverage is an
-estimate of the rendered scenes' geographic footprints, and cloud cover is
-scene-wide metadata, not an assessment of clear pixels in the viewport.
+requests and removes the extension-owned imagery. Map coverage estimates how
+much of the visible map falls within the satellite images. Clouds or gaps may
+still obscure covered areas. Cloud cover describes the full satellite images
+and can differ from the area shown.
 
 3D is off by default. The first click shows a provider and privacy confirmation;
 declining keeps it off.
