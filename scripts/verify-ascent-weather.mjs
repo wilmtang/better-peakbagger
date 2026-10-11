@@ -240,6 +240,26 @@ try {
                         await evaluate(() => document.getElementById('bpb-ascent-gpx-details').scrollIntoView());
                         await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-gps-weather-${width}.png`));
                     }
+                    const requestsBeforeConditions = evidence.length;
+                    await click('[data-metric="conditions"]');
+                    await wait(() => !document.querySelector('.bpb-weather-conditions').hidden
+                        && document.querySelectorAll('.bpb-weather-conditions li').length === 24, 'hourly condition descriptions');
+                    assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden')), true);
+                    assert.ok(await evaluate(() => document.querySelector('.bpb-weather-conditions').textContent.includes('Light snow')));
+                    if (kind === 'gpx') {
+                        const selection = await evaluate(() => {
+                            const row = document.querySelector('.bpb-weather-conditions [aria-current="time"]');
+                            const cursor = document.querySelector('.bpb-weather-cursor');
+                            return { mode: row?.dataset.mode, hour: Number(row?.dataset.weatherTime), time: Number(cursor.dataset.time) };
+                        });
+                        assert.equal(selection.mode, 'selected');
+                        assert.equal(selection.hour, Math.floor(selection.time / 3600_000) * 3600_000);
+                    }
+                    assertPlacement(await evaluate(geometryForCard));
+                    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-conditions-${width}.png`));
+                    assert.equal(evidence.length, requestsBeforeConditions, 'the condition tab uses the same response');
+                    await click('[data-metric="temperature"]');
+                    await wait(() => !document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden'), 'return to the numeric graph');
                 }
                 if (kind === 'long-report') {
                     await resize(1440, 1100);
@@ -257,6 +277,10 @@ try {
                             return Math.abs(Number(svg.getAttribute('viewBox')?.split(' ')[2]) - svg.getBoundingClientRect().width) < 1;
                         }, 'weather chart after divider resize');
                         assertPlacement(await evaluate(geometryForCard));
+                        await click('[data-metric="conditions"]');
+                        assertPlacement(await evaluate(geometryForCard));
+                        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-conditions-narrow-${width}.png`));
+                        await click('[data-metric="temperature"]');
                     }
                     await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.KeyboardEvent('keydown', { key: 'Home' })));
                     assertPlacement(await evaluate(geometryForCard));
@@ -273,6 +297,9 @@ try {
         await evaluate(() => { const select = document.querySelector('.bpb-weather-model select'); select.value = 'ecmwf_ifs_analysis_long_window'; select.dispatchEvent(new Event('change')); });
         await wait(() => document.querySelector('.bpb-weather-model-description').textContent.includes('Using IFS Assimilation'), 'explicit model without precipitation');
         assert.equal(await evaluate(() => document.querySelector('[data-weather-value="precipitation"]').textContent), '—');
+        await click('.bpb-weather-disclosure');
+        await click('[data-metric="conditions"]');
+        await wait(() => document.querySelector('[role="tabpanel"]').textContent.includes('This model does not provide hourly conditions'), 'model condition field limitation');
         await click('.bpb-weather-sources summary');
         if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-long-model.png`));
         mode = 'partial'; await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-map`);
@@ -287,7 +314,7 @@ try {
         await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
         assert.equal(evidence.length, before);
         assert.deepEqual(networkErrors, []);
-        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
     }
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);

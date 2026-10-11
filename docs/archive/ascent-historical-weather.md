@@ -457,3 +457,44 @@ Live authenticated Peakbagger markup and native screen-reader speech remain
 unverified. Hidden fixtures establish rendering and interaction, but do not prove
 onscreen focus/window placement or browser chrome. No user tab, push or release
 was changed.
+
+## Hourly conditions follow-up — 2026-10-11
+
+### Fixed and verified
+
+- The fourth hourly tab, **Conditions**, lists local times, icons and precise
+  hourly descriptions, including rain/snow intensity and heavy thunderstorm
+  code 97. It uses the existing response without an additional request. Unknown
+  codes and missing hours stay unavailable; models without codes explain why.
+  Repeated DST clocks carry distinct zone labels. All four tabs support keyboard
+  arrows and Home/End, and the list is a labelled keyboard-scrollable region.
+- GPX hover/selection highlights the corresponding hourly row. Switching to
+  Conditions can reveal that row inside the list; hover never scrolls. Switching
+  back retains the numeric graph cursor. Phone and narrow-sidebar layouts wrap
+  controls and condition descriptions without horizontal overflow.
+- All 37 weather tests and 20 documentation/development checks passed. Hidden
+  Chrome 153.0.8010.12 and Firefox 157.0.1 passed the real-extension weather
+  fixtures in both themes at 375/681/768/1440×1100, including no-GPX, missing
+  model fields, divider extremes and selected-hour highlighting. Screenshots
+  were inspected at desktop, phone and minimum-sidebar widths. Rendering uses
+  native HTML/CSS and the existing SVG numeric graphs. Full hidden Chrome
+  verification passed at 1000×760 with BFCache restore. Exact profiles/processes
+  were checked; all three browser verifiers reported teardown passed.
+- Concurrent Buddy List edits changed the shared tree during its broad gates:
+  two unrelated tests failed and the build could not resolve its new helper.
+  Those edits were preserved. A disposable Git snapshot of `32f1c1d` with only
+  the seven hourly-weather files passed `npm test` (2490/2490), full ESLint,
+  and web-ext lint with six existing owned warnings.
+
+### Intentionally not changed
+
+Saved-date/summit requests, daily condition precedence, default Temperature tab,
+model policy, native report fields, settings permissions and provider transfers
+retain their existing boundaries. There is no minute-level condition inference.
+
+### Changed but not fully proven
+
+Combined-checkout verification with the concurrent Buddy List work remains
+separate from this isolated result. Live authenticated markup, native screen-reader
+speech, and onscreen focus/window behavior remain unverified by hidden fixtures.
+No user tab, push or release was changed.

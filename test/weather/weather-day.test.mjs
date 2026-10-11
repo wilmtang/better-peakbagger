@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.js';
-import { weatherDayWindow, summarizeWeatherDay } from '../../src/weather/weather-day.js';
+import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition, knownWeatherCode } from '../../src/weather/weather-day.js';
 
 const now = Date.parse('2026-10-10T12:00:00Z');
 const zone = mountainTime.resolve(46.85, -121.76);
@@ -12,6 +12,21 @@ const samplesFor = window => {
     }
     return { samples };
 };
+
+test('hourly conditions retain code intensity and missing values never become clear skies', () => {
+    for (const [code, label, icon] of [[0, 'Clear', 'sun'], [3, 'Overcast', 'cloud'], [48, 'Rime fog', 'fog'],
+        [61, 'Light rain', 'rain'], [65, 'Heavy rain', 'rain'], [67, 'Heavy freezing rain', 'rain'],
+        [71, 'Light snow', 'snow'], [86, 'Heavy snow showers', 'snow'], [97, 'Heavy thunderstorm', 'storm'], [99, 'Thunderstorm with heavy hail', 'storm']]) {
+        assert.deepEqual(hourlyWeatherCondition(code), { label, icon });
+        assert.equal(knownWeatherCode(code), true);
+    }
+    for (const code of [null, undefined, NaN, '0', -1, 4, 100, 61.5]) {
+        assert.deepEqual(hourlyWeatherCondition(code), { label: 'Unavailable', icon: 'unknown' });
+    }
+    const window = weatherDayWindow('2024-07-12', zone, now), data = samplesFor(window);
+    data.samples.find(row => row.time === window.start).code = 97;
+    assert.equal(summarizeWeatherDay(data, window).condition.label, 'Thunderstorms');
+});
 
 test('historical winter offset and 23/25-hour days use the summit civil day', () => {
     for (const [date, start, hours] of [

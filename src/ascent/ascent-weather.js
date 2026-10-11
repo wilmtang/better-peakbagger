@@ -9,7 +9,7 @@ import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
 import { ascentPage } from './ascent-page.js';
-import { weatherDayWindow, summarizeWeatherDay } from '../weather/weather-day.js';
+import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
 import { eligibleWeatherModels, recommendedWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
 import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
@@ -17,6 +17,7 @@ import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-curs
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
 const element = dom.element;
 const numeric = value => Number.isFinite(value);
+const WEATHER_ICONS = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const clean = text => (text || '').replace(/\s+/g, ' ').trim();
 const displayDate = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 
@@ -50,8 +51,8 @@ export function mountAscentWeather() {
     const disclosure = element('button', { type: 'button', class: 'bpb-weather-disclosure', 'aria-expanded': 'false', 'aria-controls': `${ID}-hourly` }, [
         element('span', { text: 'Hourly weather' }), element('span', { class: 'bpb-weather-sub', text: 'Summit local time ▾' }),
     ]);
-    const tabs = element('div', { class: 'bpb-weather-tabs', role: 'tablist', 'aria-label': 'Hourly measurement' });
-    for (const [key, text] of [['temperature', 'Temperature'], ['precipitation', 'Precipitation'], ['wind', 'Wind']]) {
+    const tabs = element('div', { class: 'bpb-weather-tabs', role: 'tablist', 'aria-label': 'Hourly weather views' });
+    for (const [key, text] of [['temperature', 'Temperature'], ['precipitation', 'Precipitation'], ['wind', 'Wind'], ['conditions', 'Conditions']]) {
         tabs.append(element('button', { type: 'button', role: 'tab', tabindex: key === 'temperature' ? '0' : '-1', id: `${ID}-tab-${key}`, 'aria-controls': `${ID}-plot`, 'aria-selected': String(key === 'temperature'), 'data-metric': key, text }));
     }
     const zoneText = element('span', { class: 'bpb-weather-sub' });
@@ -60,7 +61,9 @@ export function mountAscentWeather() {
     const cursorLabel = element('div', { class: 'bpb-weather-cursor-label' });
     const cursor = document.createElementNS(SVG_NS, 'line');
     cursor.setAttribute('class', 'bpb-weather-cursor'); cursor.setAttribute('aria-hidden', 'true');
-    const plot = element('div', { id: `${ID}-plot`, role: 'tabpanel', 'aria-labelledby': `${ID}-tab-temperature` }, [cursorLabel, chart]);
+    const conditions = element('ul', { class: 'bpb-weather-conditions', 'aria-label': 'Hourly conditions in summit local time', tabindex: '0', hidden: '' });
+    const conditionsEmpty = element('div', { class: 'bpb-weather-sub', hidden: '' });
+    const plot = element('div', { id: `${ID}-plot`, role: 'tabpanel', 'aria-labelledby': `${ID}-tab-temperature` }, [cursorLabel, chart, conditions, conditionsEmpty]);
     const hourly = element('div', { id: `${ID}-hourly`, hidden: '' }, [element('div', { class: 'bpb-weather-hourly-controls' }, [tabs, zoneText]), plot]);
     const sourceText = element('div', { class: 'bpb-weather-source-text' });
     const sources = element('details', { class: 'bpb-weather-sources' }, [element('summary', { text: 'Source details' }), sourceText]);
@@ -139,9 +142,12 @@ export function mountAscentWeather() {
     let lifecycle;
     let cursorState = { hovering: false, hoverTime: null, selected: false, selectionTime: null };
     let cursorFrame = null, chartBounds = null, chartDescription = '';
+    const conditionRows = new Map();
+    let activeConditionRow = null;
     const cancelCursorFrame = () => { if (cursorFrame !== null) cancelAnimationFrame(cursorFrame); cursorFrame = null; };
     function drawCursor() {
         cursor.style.display = 'none';
+        if (activeConditionRow) { activeConditionRow.removeAttribute('aria-current'); delete activeConditionRow.dataset.mode; activeConditionRow = null; }
         const mode = cursorState.hovering ? 'hover' : cursorState.selected ? 'selected' : null;
         const time = cursorState.hovering ? cursorState.hoverTime : cursorState.selectionTime;
         let label = '';
@@ -150,6 +156,10 @@ export function mountAscentWeather() {
             else if (time < dayWindow.start || time >= dayWindow.end) label = 'Outside ascent day';
             else {
                 label = `${mode === 'hover' ? 'Hover' : 'Selected'} · ${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
+                if (metric === 'conditions' && !hourly.hidden) {
+                    activeConditionRow = conditionRows.get(Math.floor(time / 3600_000) * 3600_000) || null;
+                    if (activeConditionRow) { activeConditionRow.setAttribute('aria-current', 'time'); activeConditionRow.dataset.mode = mode; }
+                }
                 if (chartBounds && !hourly.hidden) {
                     const { left, right, top, bottom } = chartBounds;
                     const x = left + (right - left) * (time - dayWindow.start) / (dayWindow.end - dayWindow.start);
@@ -182,6 +192,30 @@ export function mountAscentWeather() {
 
     function drawChart() {
         if (!current || hourly.hidden || lifecycle?.state !== 'active') return;
+        const showConditions = metric === 'conditions';
+        chart.toggleAttribute('hidden', showConditions); conditions.hidden = !showConditions; conditionsEmpty.hidden = true;
+        if (showConditions) {
+            chartBounds = null; conditionRows.clear(); conditions.replaceChildren();
+            chartDescription = 'Hourly weather conditions, summit local time.';
+            const byTime = new Map(current.day.hourly.map(row => [row.time, row]));
+            for (let time = Math.ceil(dayWindow.start / 3600_000) * 3600_000; time < dayWindow.cutoff; time += 3600_000) {
+                const weather = hourlyWeatherCondition(byTime.get(time)?.code);
+                const row = element('li', { 'data-weather-time': String(time) }, [
+                    element('time', { datetime: new Date(time).toISOString() }, [
+                        element('span', { text: mountainTime.formatClock(dayWindow.zone, time) }),
+                        element('span', { class: 'bpb-weather-sub', text: mountainTime.zoneLabel(dayWindow.zone, time) }),
+                    ]),
+                    element('span', { class: 'bpb-weather-hour-icon', 'aria-hidden': 'true', text: WEATHER_ICONS[weather.icon] }),
+                    element('span', { text: weather.label }),
+                ]);
+                conditions.append(row); conditionRows.set(time, row);
+            }
+            if (!current.day.hourly.some(row => hourlyWeatherCondition(row.code).icon !== 'unknown')) {
+                conditions.hidden = true; conditionsEmpty.hidden = false;
+                conditionsEmpty.textContent = current.model.fields.includes('weather_code') ? 'Hourly conditions unavailable.' : 'This model does not provide hourly conditions.';
+            }
+            drawCursor(); return;
+        }
         const width = chart.getBoundingClientRect().width;
         if (width < 100) return;
         const rows = metric === 'precipitation' ? current.day.precipitationHours.map(row => ({ time: row.time, value: row.value }))
@@ -245,7 +279,7 @@ export function mountAscentWeather() {
         const { day, model, data } = current;
         resultArea.hidden = false; detailsArea.hidden = false;
         condition.textContent = day.condition.label;
-        conditionIcon.textContent = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' }[day.condition.icon];
+        conditionIcon.textContent = WEATHER_ICONS[day.condition.icon];
         conditionDetail.textContent = day.condition.complete && !dayWindow.partial ? 'Conditions during the ascent day' : 'Conditions in available hours';
         readings.temperature.value.textContent = numeric(day.temperature.low) ? `${convert(day.temperature.low, 'temperature').toFixed(0)}–${convert(day.temperature.high, 'temperature').toFixed(0)}${unit('temperature')}`.replaceAll('-', '−') : '—';
         readings.precipitation.value.textContent = format(day.precipitation.total, 'precipitation');
@@ -330,11 +364,14 @@ export function mountAscentWeather() {
             metric = button.dataset.metric;
             tabs.querySelectorAll('button').forEach(tab => { tab.setAttribute('aria-selected', String(tab === button)); tab.tabIndex = tab === button ? 0 : -1; });
             plot.setAttribute('aria-labelledby', button.id); drawChart();
+            // An explicit tab switch may reveal the selected hour inside this
+            // scroll region. GPX hover never scrolls the page or this list.
+            if (metric === 'conditions' && activeConditionRow) conditions.scrollTop = Math.max(0, activeConditionRow.offsetTop - (conditions.clientHeight - activeConditionRow.clientHeight) / 2);
         });
         button.addEventListener('keydown', event => {
             if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault(); const buttons = [...tabs.querySelectorAll('button')], index = buttons.indexOf(button);
-            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : -1) + 3) % 3;
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
             buttons[next].focus(); buttons[next].click();
         });
     });

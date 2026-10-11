@@ -20,7 +20,7 @@ export function weatherDayWindow(date, zone, now = Date.now()) {
 }
 
 const CONDITIONS = [
-    { codes: [95, 96, 99], label: 'Thunderstorms', icon: 'storm' },
+    { codes: [95, 96, 97, 99], label: 'Thunderstorms', icon: 'storm' },
     { codes: [56, 57, 66, 67], label: 'Freezing rain or drizzle', icon: 'rain' },
     { codes: [71, 73, 75, 77, 85, 86], label: 'Snow occurred', icon: 'snow' },
     { codes: [51, 53, 55, 61, 63, 65, 80, 81, 82], label: 'Rain occurred', icon: 'rain' },
@@ -31,6 +31,25 @@ const CONDITIONS = [
     { codes: [0], label: 'Clear', icon: 'sun' },
 ];
 export const knownWeatherCode = code => Number.isInteger(code) && CONDITIONS.some(item => item.codes.includes(code));
+// Hourly descriptions identify the returned sample, rather than the day's
+// priority headline (for example, "Rain occurred"). WMO codes from Open-Meteo:
+// https://open-meteo.com/en/docs/historical-weather-api
+const HOURLY_LABELS = {
+    51: 'Light drizzle', 53: 'Moderate drizzle', 55: 'Dense drizzle',
+    56: 'Light freezing drizzle', 57: 'Dense freezing drizzle',
+    61: 'Light rain', 63: 'Moderate rain', 65: 'Heavy rain',
+    66: 'Light freezing rain', 67: 'Heavy freezing rain',
+    71: 'Light snow', 73: 'Moderate snow', 75: 'Heavy snow', 77: 'Snow grains',
+    80: 'Light rain showers', 81: 'Moderate rain showers', 82: 'Heavy rain showers',
+    85: 'Light snow showers', 86: 'Heavy snow showers',
+    95: 'Thunderstorm', 96: 'Thunderstorm with light hail', 97: 'Heavy thunderstorm', 99: 'Thunderstorm with heavy hail',
+    48: 'Rime fog',
+};
+export const hourlyWeatherCondition = code => {
+    const condition = Number.isInteger(code) && CONDITIONS.find(item => item.codes.includes(code));
+    return condition ? { label: HOURLY_LABELS[code] || condition.label, icon: condition.icon }
+        : { label: 'Unavailable', icon: 'unknown' };
+};
 const range = values => values.length ? { low: Math.min(...values), high: Math.max(...values) } : { low: null, high: null };
 
 // The API exposes hourly interpolations even for coarser native models. Only

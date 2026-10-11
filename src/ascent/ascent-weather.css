@@ -71,6 +71,13 @@ html[data-bpb-theme="dark"] #bpb-ascent-gpx-details {
 #bpb-ascent-weather .bpb-weather-cursor { stroke: var(--bpb-weather-text); stroke-width: 1.5; pointer-events: none; }
 #bpb-ascent-weather .bpb-weather-cursor[data-mode="hover"] { stroke-dasharray: 3 3; }
 #bpb-ascent-weather .bpb-weather-cursor-label { min-height: 18px; margin-bottom: 4px; color: var(--bpb-weather-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
+#bpb-ascent-weather .bpb-weather-conditions { position: relative; max-height: 264px; overflow: auto; list-style: none; padding: 0; margin: 0 0 14px; border: 1px solid var(--bpb-weather-border); border-radius: 7px; }
+#bpb-ascent-weather .bpb-weather-conditions li { display: grid; grid-template-columns: 78px 24px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 10px; font-size: 12px; border-bottom: 1px solid var(--bpb-weather-border); }
+#bpb-ascent-weather .bpb-weather-conditions li:last-child { border-bottom: 0; }
+#bpb-ascent-weather .bpb-weather-conditions time { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+#bpb-ascent-weather .bpb-weather-hour-icon { text-align: center; font: 20px/1 sans-serif; }
+#bpb-ascent-weather .bpb-weather-conditions li[aria-current="time"] { background: var(--bpb-weather-soft); outline: 1px solid var(--bpb-weather-accent); outline-offset: -1px; }
+#bpb-ascent-weather .bpb-weather-conditions li[data-mode="hover"] { outline-style: dashed; }
 #bpb-ascent-weather .bpb-weather-sources { font-size: 12px; color: var(--bpb-weather-sub); padding: 0 0 10px; }
 #bpb-ascent-weather summary { cursor: pointer; padding: 6px 0; }
 #bpb-ascent-weather .bpb-weather-source-text { padding: 6px 0; }
@@ -103,6 +110,8 @@ html[data-bpb-theme="dark"] #bpb-ascent-gpx-details {
 @container bpb-ascent-summary (max-width: 300px) {
     #bpb-ascent-weather .bpb-weather-metrics { grid-template-columns: minmax(0, 1fr); }
     #bpb-ascent-weather .bpb-weather-disclosure { flex-wrap: wrap; }
+    #bpb-ascent-weather .bpb-weather-conditions li { grid-template-columns: minmax(0, 1fr) 24px; gap: 4px 8px; padding: 8px; }
+    #bpb-ascent-weather .bpb-weather-conditions li > :last-child { grid-column: 1 / -1; }
 }
 @media (pointer: coarse) {
     #bpb-ascent-weather select { min-height: 44px; font-size: 16px; }

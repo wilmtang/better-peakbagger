@@ -67,6 +67,19 @@ Coarse native models expose provider-interpolated hourly values, disclosed in
 Source details; the card does not count them as independent measurements.
 Condition precedence is explicit, so a clear majority cannot erase rain/snow.
 
+Hourly weather also offers a **Conditions** tab with a scrollable list of local
+times, packaged icons and code-specific descriptions (including rain/snow
+intensity). It uses the existing hourly weather codes and makes no extra request.
+Missing codes or missing hours show **Unavailable**; models without weather codes
+explain that limitation. Repeated DST clocks retain their distinct timezone
+labels. The four tabs share keyboard arrow/Home/End navigation.
+
+The GPX cursor highlights the corresponding hourly row in Conditions. An explicit
+tab switch reveals the selected hour inside the list; GPX hover never scrolls
+the list or page. The recorded point time stays separate from the hourly sample,
+and returning to a numeric graph restores its cursor line. The daily headline
+continues to use condition precedence rather than the most frequent hourly code.
+
 ## GPX time cursor
 
 Hovering the GPX graph previews a dashed time cursor on the hourly weather graph;

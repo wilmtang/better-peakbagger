@@ -142,6 +142,75 @@ test('BFCache restore clears transient hover, retains selection and requests a f
         assert.equal(requests.at(-1).type, 'bpb:gpx-time-cursor-request');
     } finally { env.close(); }
 });
+
+test('hourly Conditions shows each sample and GPX highlights the corresponding hour without scrolling on hover', async () => {
+    const env = setup();
+    try {
+        await openChart(env);
+        const before = env.requests.length, selectionTime = Date.parse('2024-07-12T17:32:00Z');
+        sendCursor(env, { selected: true, selectionTime });
+        await waitFor(() => env.doc.querySelector('.bpb-weather-cursor')?.dataset.time === String(selectionTime));
+        env.doc.querySelector('[data-metric="conditions"]').click();
+        const list = env.doc.querySelector('.bpb-weather-conditions'), rows = [...list.children];
+        assert.equal(rows.length, 24);
+        assert.equal(env.doc.querySelector('svg').hasAttribute('hidden'), true);
+        assert.match(rows[0].textContent, /12:00 AMPDT.*Overcast/);
+        assert.match(rows[8].textContent, /8:00 AMPDT.*Light snow/);
+        assert.equal(rows[10].getAttribute('aria-current'), 'time');
+        assert.equal(rows[10].dataset.mode, 'selected');
+        list.scrollTop = 100;
+        sendCursor(env, { hovering: true, hoverTime: selectionTime + 3600_000, selected: true, selectionTime });
+        await waitFor(() => rows[11].dataset.mode === 'hover');
+        assert.equal(rows[10].hasAttribute('aria-current'), false);
+        assert.equal(list.scrollTop, 100, 'GPX hover never scrolls the hourly list');
+        sendCursor(env, { selected: true, selectionTime });
+        await waitFor(() => rows[10].dataset.mode === 'selected');
+        assert.equal(env.requests.length, before);
+        env.doc.querySelector('[data-metric="temperature"]').click();
+        assert.equal(list.hidden, true);
+        assert.equal(env.doc.querySelector('svg').hasAttribute('hidden'), false);
+        assert.equal(env.doc.querySelector('.bpb-weather-cursor').dataset.time, String(selectionTime));
+    } finally { env.close(); }
+});
+
+test('hourly Conditions preserves missing hours and repeated clocks with distinct offsets', async () => {
+    const env = setup({ html: ascent.replace('Sunday, July 12, 2026', 'November 3, 2024'), fetchWeather: url => {
+        const body = weatherFixture({ startDate: new URL(url).searchParams.get('start_date') });
+        body.hourly.weather_code[33] = null;
+        // The hourly record can also omit a whole timestamp, without shifting
+        // later hours into the empty position.
+        for (const values of Object.values(body.hourly)) values.splice(34, 1);
+        return Promise.resolve(new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }));
+    } });
+    try {
+        await openChart(env);
+        env.doc.querySelector('[data-metric="conditions"]').click();
+        const rows = [...env.doc.querySelector('.bpb-weather-conditions').children];
+        assert.equal(rows.length, 25);
+        assert.match(rows[1].textContent, /1:00 AMPDT/);
+        assert.match(rows[2].textContent, /1:00 AMPST.*Unavailable/);
+        assert.match(rows[3].textContent, /2:00 AMPST.*Unavailable/);
+        assert.notEqual(rows[1].dataset.weatherTime, rows[2].dataset.weatherTime);
+        const thirdTime = rows[3].dataset.weatherTime;
+        sendCursor(env, { selected: true, selectionTime: Number(thirdTime) + 20 * 60_000 });
+        await waitFor(() => rows[3].getAttribute('aria-current') === 'time');
+        assert.match(rows[3].textContent, /Unavailable/);
+    } finally { env.close(); }
+});
+
+test('models with no condition field keep Conditions available with a clear empty state', async () => {
+    const env = setup({ fetchWeather: url => Promise.resolve(new Response(JSON.stringify(weatherFixture({ fields: new URL(url).searchParams.get('hourly').split(',') })), { headers: { 'content-type': 'application/json' } })) });
+    try {
+        await openChart(env);
+        const model = env.doc.querySelector('.bpb-weather-model select');
+        model.value = 'ecmwf_ifs_analysis_long_window'; model.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using IFS Assimilation'));
+        env.doc.querySelector('[data-metric="conditions"]').click();
+        assert.equal(env.doc.querySelector('.bpb-weather-conditions').hidden, true);
+        assert.match(env.doc.querySelector('[role="tabpanel"]').textContent, /This model does not provide hourly conditions/);
+        assert.equal(env.doc.querySelector('[data-metric="conditions"]').getAttribute('aria-selected'), 'true');
+    } finally { env.close(); }
+});
 test('bundled independent card loads on a visitor ascent without GPX or map', async () => {
     const env = setup({ html: ascent.replace('Sunday, July 12, 2026', 'July 12, 2024').replace(/<div id="gpxlinks">[\s\S]*?<\/div>/, '').replace(/<div id="owneractions">[\s\S]*?<\/div>/, '') });
     try {
@@ -251,14 +320,18 @@ test('hourly tabs have one keyboard stop and arrow navigation preserves the acti
     const env = setup();
     try {
         const tabs = [...env.doc.querySelectorAll('[role="tab"]')];
-        assert.deepEqual(tabs.map(tab => tab.tabIndex), [0, -1, -1]);
+        assert.deepEqual(tabs.map(tab => tab.tabIndex), [0, -1, -1, -1]);
         tabs[0].focus(); tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
         assert.equal(env.doc.activeElement, tabs[1]);
-        assert.deepEqual(tabs.map(tab => tab.getAttribute('aria-selected')), ['false', 'true', 'false']);
-        assert.deepEqual(tabs.map(tab => tab.tabIndex), [-1, 0, -1]);
+        assert.deepEqual(tabs.map(tab => tab.getAttribute('aria-selected')), ['false', 'true', 'false', 'false']);
+        assert.deepEqual(tabs.map(tab => tab.tabIndex), [-1, 0, -1, -1]);
         assert.equal(env.doc.querySelector('[role="tabpanel"]').getAttribute('aria-labelledby'), tabs[1].id);
         tabs[1].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'End' }));
-        assert.equal(env.doc.activeElement, tabs[2]);
+        assert.equal(env.doc.activeElement, tabs[3]);
+        tabs[3].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+        assert.equal(env.doc.activeElement, tabs[0]);
+        tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+        assert.equal(env.doc.activeElement, tabs[3]);
     } finally { env.close(); }
 });
 
