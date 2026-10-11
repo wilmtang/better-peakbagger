@@ -30,6 +30,13 @@ reading; clicking or using arrow keys pins it, and Escape clears it. Data tabs
 support arrow keys, Home and End. Charts fit inside the card without widening
 the page; the conditions timeline scrolls vertically. Units follow the existing
 preference without another weather request.
+Day activation closes the previous panel and mounts the new graph in one update,
+preserving the activated summary's viewport position and keyboard focus.
+Unrelated preferences retain weather controls. Necessary unit/data refreshes
+restore valid pinned source instants, Conditions scroll position and focused
+controls; an expired date clears selection and returns focus to the period tab.
+Metric and period labels reserve their selected font width so selection cannot
+change wrapping.
 The forecast view warns that estimates may be inaccurate, especially farther
 ahead or at mountain summits, and prompts users to check local mountain forecasts.
 **Models & source details** names possible sources: NOAA HRRR and GFS with DWD

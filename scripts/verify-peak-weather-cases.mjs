@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
-import { verifyWeatherDaySwitches } from './verify-weather-day-switches.mjs';
+import { verifyWeatherDaySwitches, verifyWeatherTabWrapping } from './verify-weather-day-switches.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 
 // Reuse the real extension/HTTPS/browser transports and their teardown rather
@@ -111,6 +111,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             }
             await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
             await verifyWeatherTabStyles(evaluate, '.bpb-week-day[open] .bpb-week-tabs button');
+            assert.deepEqual(await verifyWeatherTabWrapping(evaluate), [], 'selection must not change tab row count at wrapping thresholds');
             await click(`${card} .bpb-week-day:first-child > summary`);
             await click(`${card} [data-period="forecast"]`);
             assertGeometry(await evaluate(geometry));

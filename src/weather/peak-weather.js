@@ -25,8 +25,8 @@ export function mountPeakWeather() {
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
     const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
-    const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', text,
-        id: `${ID}-${key}`, 'data-period': key, 'aria-controls': `${ID}-period` }));
+    const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', 'aria-label': text, 'data-label': text,
+        id: `${ID}-${key}`, 'data-period': key, 'aria-controls': `${ID}-period` }, [element('span', { class: 'bpb-week-tab-label', text })]));
     periodTabs.append(...periodButtons);
     const range = element('p', { class: 'bpb-week-range' });
     const locationLabel = element('p', { class: 'bpb-week-sub' });

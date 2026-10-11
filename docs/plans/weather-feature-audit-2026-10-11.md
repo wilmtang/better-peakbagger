@@ -15,7 +15,7 @@ shared provider/data code, settings and GPX presentation integration.
 | W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Implemented; keyboard and visual behavior verified, speech unproven |
 | W06 | P2 | Global dark button repaint overrides weather component selection styling | Fixed; component palettes and selected controls verified |
 | W07 | P3 | Disabled weather still reparents native GPS notes and controls | Fixed; original placement and handlers verified |
-| W08 | P3 | Selected font weight changes intrinsic tab width and wrapping | Open |
+| W08 | P3 | Selected font weight changes intrinsic tab width and wrapping | Fixed; width sweep and responsive rendering verified |
 
 Implement and verify each independent fix before starting the next. Preserve
 fail-closed subject/settings checks, request cancellation and generation guards,
@@ -67,6 +67,12 @@ missing readings, bounded model fallback, per-page caches and native Save owners
   ESLint. Hidden Chrome 153 and Firefox 157 confirmed initial zero weather
   requests, no wrapper while disabled and exact node/parent/next-sibling
   restoration. Inspected the native download/send controls after opt-out.
+- W08: metric/period buttons reserve the semibold label width without changing
+  inactive text weight; explicit accessible names avoid duplicate labels.
+  Ran 26 peak/hourly tests and focused ESLint. Hidden Chrome 153 and Firefox 157
+  swept card widths 280–500 px in 2 px steps in both themes: metric selection
+  changed no row count and caused no horizontal tab overflow. Existing keyboard,
+  state and day-switch regressions also passed; inspected the 375 px day graph.
 
 ## Intentionally not changed
 

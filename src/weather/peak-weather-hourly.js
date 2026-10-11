@@ -41,7 +41,8 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     if (!metrics.some(([key]) => key === metric)) metric = 'temperature';
     let disposed = false, observer, rows = [], geometry, hover = -1, selected = -1;
     const tabs = element('div', { class: 'bpb-week-tabs', role: 'tablist', 'aria-label': 'Hourly weather data' });
-    const buttons = metrics.map(([key, label]) => element('button', { type: 'button', role: 'tab', id: `${id}-${key}`, 'data-metric': key, 'aria-controls': `${id}-panel`, text: label }));
+    const buttons = metrics.map(([key, label]) => element('button', { type: 'button', role: 'tab', id: `${id}-${key}`, 'data-metric': key,
+        'aria-controls': `${id}-panel`, 'aria-label': label, 'data-label': label }, [element('span', { class: 'bpb-week-tab-label', text: label })]));
     tabs.append(...buttons);
     const panel = element('div', { class: 'bpb-week-panel', id: `${id}-panel`, role: 'tabpanel' });
     const readout = element('p', { class: 'bpb-week-readout', 'aria-live': 'off', 'aria-atomic': 'true' });

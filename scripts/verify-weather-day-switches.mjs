@@ -53,3 +53,25 @@ export async function verifyWeatherDaySwitches({ evaluate, click, press, resize,
     }
     return measurements;
 }
+
+export async function verifyWeatherTabWrapping(evaluate) {
+    return evaluate(() => {
+        const card = document.getElementById('bpb-peak-weather'), tabs = card.querySelector('.bpb-week-day[open] .bpb-week-tabs');
+        const buttons = [...tabs.querySelectorAll('button')], original = buttons.find(button => button.getAttribute('aria-selected') === 'true');
+        const previous = card.style.cssText, results = [];
+        card.style.maxWidth = 'none'; card.style.minWidth = '0';
+        try {
+            for (let width = 280; width <= 500; width += 2) {
+                card.style.width = `${width}px`;
+                const heights = buttons.map(button => {
+                    button.click();
+                    return { metric: button.dataset.metric, height: tabs.getBoundingClientRect().height,
+                        overflow: tabs.scrollWidth > tabs.clientWidth + 1 };
+                });
+                const spread = Math.max(...heights.map(row => row.height)) - Math.min(...heights.map(row => row.height));
+                if (spread > 1 || heights.some(row => row.overflow)) results.push({ width, heights });
+            }
+        } finally { card.style.cssText = previous; original.click(); }
+        return results;
+    });
+}
