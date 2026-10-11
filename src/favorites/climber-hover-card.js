@@ -12,7 +12,7 @@ import { observeClimberMembership } from './climber-membership.js';
 import { mutateIgnored } from './ignored-client.js';
 import { climberCardTarget, climberCardState } from './climber-card-state.js';
 
-const OPEN_DELAY = 3500, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
+const OPEN_DELAY = 1000, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
 
 const mount = () => {

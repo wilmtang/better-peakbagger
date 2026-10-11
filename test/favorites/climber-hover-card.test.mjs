@@ -66,9 +66,9 @@ test('card keeps name links intact and exposes only eligible, visible people', a
     assert.equal(card.querySelector('.bpb-climber-card-ignore-section').hidden, true);
 });
 
-test('3.5-second hover dwell cancels on departure; Escape suppresses the same session and explicit opening focuses actions', async t => {
+test('one-second hover dwell cancels on departure; Escape suppresses the same session and explicit opening focuses actions', async t => {
     let opens;
-    const dom = await load({ prepare: dom => { opens = accelerateTimeout(dom, 3500); accelerateTimeout(dom, 200); } });
+    const dom = await load({ prepare: dom => { opens = accelerateTimeout(dom, 1000); accelerateTimeout(dom, 200); } });
     t.after(() => dom.window.close());
     const name = dom.window.document.getElementById('casey');
     const card = dom.window.document.getElementById('bpb-climber-card');
