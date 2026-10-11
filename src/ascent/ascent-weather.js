@@ -50,8 +50,9 @@ export function mountAscentWeather() {
         element('div', {}, [element('label', { for: select.id, text: 'Weather model' }), select]),
         element('div', { class: 'bpb-weather-model-description' }, [modelName, modelType]),
     ]);
+    const disclosureLabel = element('span', { text: 'Show hourly weather' });
     const disclosure = element('button', { type: 'button', class: 'bpb-weather-disclosure', 'aria-expanded': 'false', 'aria-controls': `${ID}-hourly` }, [
-        element('span', { text: 'Hourly weather' }), element('span', { class: 'bpb-weather-sub', text: 'Summit local time ▾' }),
+        disclosureLabel, element('span', { class: 'bpb-weather-disclosure-chevron', 'aria-hidden': 'true', text: '▾' }),
     ]);
     const tabs = element('div', { class: 'bpb-weather-tabs', role: 'tablist', 'aria-label': 'Hourly weather views' });
     for (const [key, text] of [['temperature', 'Temperature'], ['precipitation', 'Precipitation'], ['wind', 'Wind'], ['conditions', 'Conditions']]) {
@@ -439,7 +440,12 @@ export function mountAscentWeather() {
         }
         void load();
     });
-    disclosure.addEventListener('click', () => { hourly.hidden = !hourly.hidden; disclosure.setAttribute('aria-expanded', String(!hourly.hidden)); drawChart(); });
+    disclosure.addEventListener('click', () => {
+        hourly.hidden = !hourly.hidden;
+        disclosure.setAttribute('aria-expanded', String(!hourly.hidden));
+        disclosureLabel.textContent = hourly.hidden ? 'Show hourly weather' : 'Hide hourly weather';
+        drawChart();
+    });
     tabs.querySelectorAll('button').forEach(button => {
         button.addEventListener('click', () => {
             metric = button.dataset.metric;

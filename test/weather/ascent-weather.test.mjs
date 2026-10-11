@@ -43,6 +43,30 @@ const openChart = async env => {
     env.doc.querySelector('.bpb-weather-disclosure').click();
 };
 
+test('hourly disclosure names its action and keeps the expanded state and target in sync', async () => {
+    const env = setup();
+    try {
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
+        const button = env.doc.querySelector('.bpb-weather-disclosure');
+        const panel = env.doc.getElementById(button.getAttribute('aria-controls'));
+        const label = () => button.firstElementChild.textContent;
+        assert.equal(label(), 'Show hourly weather');
+        assert.equal(panel.hidden, true);
+        assert.equal(button.lastElementChild.getAttribute('aria-hidden'), 'true');
+        button.focus(); button.click();
+        assert.equal(label(), 'Hide hourly weather');
+        assert.equal(button.getAttribute('aria-expanded'), 'true');
+        assert.equal(panel.hidden, false);
+        assert.equal(env.doc.activeElement, button);
+        button.click();
+        assert.equal(label(), 'Show hourly weather');
+        assert.equal(button.getAttribute('aria-expanded'), 'false');
+        assert.equal(panel.hidden, true);
+        assert.equal(env.doc.activeElement, button);
+        assert.equal(env.requests.length, 2);
+    } finally { env.close(); }
+});
+
 test('fractional-zone rain bars and interval tooltips agree with the daily total', async () => {
     const latitude = 27.7, longitude = 85.3;
     const env = setup({ storedSettings: { units: 'metric' },

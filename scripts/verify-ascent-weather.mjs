@@ -349,11 +349,18 @@ try {
                     }
                     assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather h2').textContent), 'Weather archive');
                     assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Powered by Open-Meteo');
+                    assert.deepEqual(await evaluate(() => {
+                        const button = document.querySelector('.bpb-weather-disclosure'), style = getComputedStyle(button);
+                        return { label: button.firstElementChild.textContent, expanded: button.getAttribute('aria-expanded'),
+                            bordered: parseFloat(style.borderTopWidth) >= 1, height: button.getBoundingClientRect().height >= 44 };
+                    }), { label: 'Show hourly weather', expanded: 'false', bordered: true, height: true });
+                    if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-disclosure.png`));
                     if (kind === 'gpx') {
                         await checkGpxCursor();
                         await checkExplorerReflow(output);
                     }
                     else await click('.bpb-weather-disclosure');
+                    assert.equal(await evaluate(() => document.querySelector('.bpb-weather-disclosure').firstElementChild.textContent), 'Hide hourly weather');
                     for (const width of [1440, 768, 375]) {
                         await resize(width, 1100);
                         await wait(() => {
