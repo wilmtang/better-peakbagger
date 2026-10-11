@@ -360,11 +360,5 @@ npm run verify:browsers
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE). You may use, modify, and share Better Peakbagger,
-including commercially. **If you distribute it or let others use a modified
-version over a network, you must make the complete source code available to
-them under AGPL.** You cannot distribute it as closed-source software or remove
-required copyright and license notices.
-
-Third-party license notices and project credits are in
+[AGPL-3.0-or-later](LICENSE). Third-party license notices and project credits are in
 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
