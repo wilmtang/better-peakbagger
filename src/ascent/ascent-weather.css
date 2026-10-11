@@ -1,6 +1,7 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later */
-#bpb-ascent-weather {
+#bpb-ascent-weather,
+#bpb-ascent-gpx-details {
     --bpb-weather-bg: #fafafa;
     --bpb-weather-text: #20272d;
     --bpb-weather-sub: #5c6670;
@@ -21,7 +22,8 @@
     text-align: left;
     overflow-wrap: anywhere;
 }
-html[data-bpb-theme="dark"] #bpb-ascent-weather {
+html[data-bpb-theme="dark"] #bpb-ascent-weather,
+html[data-bpb-theme="dark"] #bpb-ascent-gpx-details {
     --bpb-weather-bg: #23262a;
     --bpb-weather-text: #e6e1d8;
     --bpb-weather-sub: #b6b0a6;
@@ -72,6 +74,15 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-weather .bpb-weather-retry { border: 1px solid var(--bpb-weather-border); border-radius: 6px; background: var(--bpb-weather-control); padding: 6px 12px; font-size: 12px; }
 #bpb-ascent-weather footer { border-top: 1px solid var(--bpb-weather-border); margin-top: 6px; padding: 12px 0 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; color: var(--bpb-weather-sub); font-size: 11px; }
 #bpb-ascent-weather footer a { color: var(--bpb-weather-accent); }
+#bpb-ascent-weather .bpb-weather-attribution { margin-left: auto; text-align: right; }
+#bpb-ascent-gpx-details { padding: 14px 16px; font-size: 12px; text-align: center; }
+#bpb-ascent-gpx-details p { margin: 0 0 12px; }
+#bpb-ascent-gpx-details > :last-child { margin-bottom: 0; }
+#bpb-ascent-gpx-details font, #bpb-ascent-gpx-details small { font-size: inherit; }
+#bpb-ascent-gpx-details a { color: var(--bpb-weather-accent); }
+#bpb-ascent-gpx-details .bpb-map-handoff-control { display: flex; justify-content: center; max-width: 100%; margin: 10px 0 0; }
+#bpb-ascent-gpx-details .bpb-map-handoff-buttons { justify-content: center; max-width: 100%; }
+#bpb-ascent-gpx-details .bpb-map-handoff-button { max-width: 100%; white-space: normal; }
 @media (max-width: 600px) {
     #bpb-ascent-weather { padding: 18px 16px 0; }
     #bpb-ascent-weather .bpb-weather-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }

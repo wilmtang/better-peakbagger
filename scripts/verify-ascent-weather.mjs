@@ -129,8 +129,14 @@ try {
             if (node.closest('details:not([open])') && !node.closest('summary')) return false;
             const bounds = node.getBoundingClientRect(); return bounds.width > 0 && !node.closest('[hidden]') && (bounds.left < box.left - 1 || bounds.right > box.right + 1);
         }).map(node => node.tagName + '.' + node.className);
-        return { width: box.width, overflow, cardCount: document.querySelectorAll('#bpb-ascent-weather').length,
+        const gps = document.getElementById('bpb-ascent-gpx-details'), gpsBox = gps?.getBoundingClientRect();
+        const gpsOverflow = gps ? [...gps.querySelectorAll('*')].filter(node => {
+            const bounds = node.getBoundingClientRect(); return bounds.width > 0 && !node.closest('[hidden]')
+                && (bounds.left < columnBox.left - 1 || bounds.right > columnBox.right + 1);
+        }).map(node => node.tagName + '.' + node.className) : [];
+        return { width: box.width, overflow, gpsOverflow, cardCount: document.querySelectorAll('#bpb-ascent-weather').length,
             inSummaryColumn: card.parentElement === column, belowSummary: box.top >= summaryBox.bottom,
+            gpsBeforeWeather: !gps || (gps.parentElement === column && gps.nextElementSibling === card && gpsBox.bottom <= box.top),
             withinColumn: box.left >= columnBox.left - 1 && box.right <= columnBox.right + 1,
             besideReport: stacked || box.left >= reportBox.right - 1,
             reportRight: reportBox.right, cardLeft: box.left,
@@ -138,7 +144,8 @@ try {
     };
     const assertPlacement = geometry => {
         assert.deepEqual(geometry.overflow, [], JSON.stringify(geometry));
-        for (const key of ['inSummaryColumn', 'belowSummary', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
+        assert.deepEqual(geometry.gpsOverflow, [], JSON.stringify(geometry));
+        for (const key of ['inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
     await setSettings({ theme: 'light', units: 'imperial' });
@@ -158,7 +165,13 @@ try {
                 await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=${kind}`);
                 await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
                 await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using HRRR'), 'weather with and without GPX');
-                if (kind === 'gpx') await wait(() => !!document.getElementById('bpb-route-explorer'), 'complete GPX route explorer before placement check');
+                if (kind === 'gpx') {
+                    await wait(() => !!document.getElementById('bpb-route-explorer'), 'complete GPX route explorer before placement check');
+                    await wait(() => document.querySelectorAll('#bpb-ascent-gpx-details .bpb-map-handoff-button').length === 4, 'original provider controls above weather');
+                    assert.equal(await evaluate(() => document.getElementById('gps-track-note').parentElement.id), 'bpb-ascent-gpx-details');
+                }
+                assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather h2').textContent), 'Weather archive');
+                assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Community support by Open-Meteo');
                 await click('.bpb-weather-disclosure');
                 for (const width of [1440, 768, 375]) {
                     await resize(width, 1100);
@@ -170,11 +183,17 @@ try {
                     assertPlacement(geometry);
                     if (kind === 'long-report') assert.equal(geometry.beforeReportEnd, true, JSON.stringify(geometry));
                     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-${width}.png`));
+                    if (kind === 'gpx' && output) {
+                        await evaluate(() => document.getElementById('bpb-ascent-gpx-details').scrollIntoView());
+                        await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-gps-weather-${width}.png`));
+                    }
                 }
                 if (kind === 'long-report') {
                     await resize(1440, 1100);
                     await evaluate(() => document.getElementById('bpb-ascent-table-split').scrollIntoView());
                     if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-right-column.png`));
+                }
+                if (kind === 'gpx' || kind === 'long-report') {
                     // Both column extremes must fit; also exercise the narrowest
                     // desktop width immediately before the stacked layout.
                     for (const width of [1440, 681]) {

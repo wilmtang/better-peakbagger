@@ -367,3 +367,42 @@ Intentionally preserved: native tables, divider bounds and interactions,
 weather/model behavior, GPX analysis and user-owned browser state. The live
 authenticated-markup and native accessibility proof gaps above remain open;
 hidden fixture evidence does not establish those behaviors.
+
+## GPS footer and card wording follow-up — 2026-10-11
+
+### Fixed and verified
+
+- Dedicated native GPS warning and download/send blocks now sit together above
+  **Weather archive** in the right column. The same original nodes and handlers
+  survive late layout insertion and persisted history restore. Shared footer
+  paragraphs move once; report quotations and ambiguous warning blocks stay
+  untouched. No map, report table or ownership control is moved into the group.
+- The bottom-right credit reads **Community support by Open-Meteo**, retaining
+  the provider link. Narrow layouts wrap the credit and four send buttons.
+- Built-bundle checks passed all 2477 tests with
+  `node --test 'test/**/*.test.mjs'`; the focused layout/weather/handoff run
+  passed 34 tests. `npm run lint` passed with the existing owned warning
+  baseline. Hidden Chrome 153.0.8010.12 and Firefox 157.0.1 weather fixtures
+  passed at 375, 681, 768 and 1440 CSS pixels in both themes, including native
+  GPS notes, real provider controls, late analysis and divider extremes. Page
+  and card screenshots were inspected in both browsers. Weather charts remain
+  native SVG/CSS. The full Chrome unpacked-extension verifier also passed at
+  1000×760, with an actual BFCache restore. All three reported teardown passed;
+  the exact weather profile paths were confirmed removed, and process inspection
+  distinguished task-owned cleanup from unrelated browser checks.
+
+### Intentionally not changed
+
+GPX download URLs, provider consent/transfer behavior, native map placement,
+model policy, lazy weather requests and the no-GPX card remain unchanged.
+Unrecognized or ambiguous native content stays in place instead of moving an
+entire map/report container.
+
+### Changed but not fully proven
+
+The existing live authenticated-markup and native accessibility gaps remain.
+A single public-ascent HTML request returned HTTP 403, so no live native DOM
+was used as layout proof; representative fixtures and the user's screenshots
+establish the tested layout. Hidden checks do not prove screen-reader speech,
+native select menus or onscreen focus/window behavior. No user tab, push or
+release was changed.

@@ -706,7 +706,8 @@ export async function createBrowserFixtureServer({
                 if (url.searchParams.get('weather') !== 'no-map') weatherHtml = weatherHtml.replace('<div id="gpxlinks">', '<iframe src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="450" height="450"></iframe><br><a href="/map/BigMap.aspx?t=A">Click Here for a Full Screen Map</a><div id="gpxlinks">');
                 if (url.searchParams.get('weather') === 'long-report') weatherHtml = weatherHtml.replace('<b>Great climb</b>', '<b>Great climb</b>' + '<p>Synthetic long trip report. The report continues on the left while summary and weather stay together on the right.</p>'.repeat(45));
                 if (['no-gpx', 'no-map', 'invalid', 'long-report'].includes(url.searchParams.get('weather'))) weatherHtml = weatherHtml.replace(/<div id="gpxlinks">[\s\S]*?<\/div>/, '');
-                else weatherHtml = weatherHtml.replace('/climber/GPXFile.aspx?aid=7654321&amp;sep=1', '/track.gpx');
+                else weatherHtml = weatherHtml.replace(/<div id="gpxlinks">([\s\S]*?)<\/div>/,
+                    '<p id="gps-track-note"><small>Note: GPS Tracks may not be accurate, and may not show the best route. Do not follow this route blindly. Conditions change frequently. Use of a GPS unit in the outdoors, even with a pre-loaded track, is no substitute for experience and good judgment. Peakbagger.com accepts NO responsibility or liability from use of this data.</small></p><p id="gpxlinks">$1</p>');
                 return send('text/html; charset=utf-8', weatherHtml);
             }
             if (url.searchParams.has('ignored')) return send('text/html; charset=utf-8', ignoredDetailHtml);
@@ -775,7 +776,8 @@ export async function createBrowserFixtureServer({
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMasterMapHtml : masterMapHtml);
         }
-        if (/track\.gpx/i.test(url.pathname)) {
+        if (/track\.gpx/i.test(url.pathname)
+            || (/^\/climber\/GPXFile\.aspx$/i.test(url.pathname) && url.searchParams.get('aid') === '7654321')) {
             const analyzerCase = url.searchParams.get('case') || 'success';
             requests.analyzerTracks[analyzerCase] = (requests.analyzerTracks[analyzerCase] || 0) + 1;
             if (analyzerCase === 'signed-out') {

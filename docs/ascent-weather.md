@@ -5,7 +5,12 @@ right-hand column beneath Summary Total Data, beside the trip report. It follows
 the existing divider width and stacks with the summary on narrow screens. Its
 metrics and controls adapt to the column width. The same card moves into that
 column if the table layout mounts later; GPX analysis never moves it out.
-Unrecognized table layouts retain the native map/metadata fallback. It does not depend on GPX, Chart.js,
+On GPX ascents, dedicated native GPS-note and download/send blocks move together
+immediately above **Weather archive**, preserving their original controls and
+handlers. The map and report stay in place; ambiguous note blocks are left
+untouched. The footer reads **Community support by Open-Meteo**, with the
+provider name linked. Unrecognized table layouts retain the native map/metadata
+fallback. It does not depend on GPX, Chart.js,
 terrain, ownership, backup, or a page-world settings bridge.
 
 The strict subject reader uses the native saved date and heading peak link,

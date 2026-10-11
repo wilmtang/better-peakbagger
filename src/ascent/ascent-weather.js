@@ -8,6 +8,7 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
+import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay } from '../weather/weather-day.js';
 import { eligibleWeatherModels, recommendedWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
@@ -22,7 +23,7 @@ export function mountAscentWeather() {
     if (document.getElementById(ID)) return;
     const subject = readWeatherSubject(document, location.href);
     const card = element('section', { id: ID, 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
-    const heading = element('h2', { id: `${ID}-heading`, text: 'Weather' });
+    const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });
     const date = element('span', { class: 'bpb-weather-date', text: subject.date ? displayDate(subject.date) : 'Ascent date unavailable' });
     const locationLabel = element('div', { class: 'bpb-weather-location', text: subject.peak ? `${subject.peak.name} · At the summit` : 'At the summit' });
     const status = element('div', { class: 'bpb-weather-status', role: 'status', 'aria-live': 'polite' });
@@ -66,18 +67,48 @@ export function mountAscentWeather() {
     modelRow.hidden = true;
     const attribution = element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' });
     card.append(element('header', {}, [heading, date]), locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
-        element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }), attribution]));
+        element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }),
+            element('span', { class: 'bpb-weather-attribution' }, [document.createTextNode('Community support by '), attribution])]));
 
     // Keep weather with the right-hand summary, independently of report height
     // or a later GPX explorer. Unrecognized layouts retain the map fallback.
     const nativeMap = [...document.querySelectorAll('iframe[src]')].find(frame => {
         try { return /\/MasterMap\.aspx$/i.test(new URL(frame.getAttribute('src'), location.href).pathname); } catch { return false; }
     });
-    const mountParent = nativeMap?.parentElement || subject.table?.parentElement || document.querySelector('#page') || document.body;
+    const mountParent = document.querySelector('#page') || subject.table?.parentElement || nativeMap?.parentElement || document.body;
+    let gpsDetails = null;
+    const placeGpsDetails = () => {
+        if (!gpsDetails) {
+            const trackLink = ascentPage.gpxLink(document);
+            const safe = node => node && node !== mountParent && !node.contains(card)
+                && !subject.table?.contains(node)
+                && !node.closest('.bpb-ascent-table-split__report')
+                && !node.querySelector('iframe, table, #bpb-map-viewport, #bpb-route-explorer, #bpb-gpx-analysis, input, select, textarea')
+                && [...node.querySelectorAll('a')].every(link => link === trackLink);
+            const download = trackLink?.closest('p, #gpxlinks') || trackLink?.parentElement;
+            if (!safe(download)) return;
+            // Move dedicated native footer blocks, never the map/table that
+            // contains them. Reparenting preserves provider button handlers.
+            const notes = [...document.querySelectorAll('p, span, font, small, div')].filter(node =>
+                /^Note:\s*GPS Tracks may not be accurate\b/i.test(clean(node.textContent)) && safe(node)
+                && (node.contains(trackLink) || (node.compareDocumentPosition(trackLink) & Node.DOCUMENT_POSITION_FOLLOWING)));
+            const blocks = notes.filter(node => !notes.some(other => other !== node && other.contains(node)));
+            gpsDetails = element('div', { id: 'bpb-ascent-gpx-details' });
+            const note = blocks.length === 1 ? blocks[0] : null;
+            if (note?.contains(download)) gpsDetails.append(note);
+            else {
+                if (note && !download.contains(note)) gpsDetails.append(note);
+                gpsDetails.append(download);
+            }
+        }
+        if (card.previousElementSibling !== gpsDetails) card.before(gpsDetails);
+    };
     const place = () => {
         const summary = document.querySelector('#bpb-ascent-summary-column > .bpb-ascent-table-split__summary');
         if (summary) {
-            if (summary.nextElementSibling !== card) summary.after(card);
+            const anchor = gpsDetails?.parentElement === summary.parentElement ? gpsDetails : summary;
+            if (anchor.nextElementSibling !== card) anchor.after(card);
+            placeGpsDetails();
             return;
         }
         let anchor = document.getElementById('bpb-route-explorer');
@@ -89,8 +120,10 @@ export function mountAscentWeather() {
         if (!anchor) anchor = document.getElementById('bpb-ascent-table-split')
             || [...mountParent.children].filter(node => node.matches('table')).at(-1) || subject.table;
         if (anchor && !card.contains(anchor)) {
-            if (anchor.nextElementSibling !== card) anchor.after(card);
+            if (anchor.nextElementSibling !== card
+                && !(anchor.nextElementSibling === gpsDetails && gpsDetails?.nextElementSibling === card)) anchor.after(card);
         } else if (!card.isConnected) mountParent.append(card);
+        placeGpsDetails();
     };
     place();
     const placementObserver = new MutationObserver(place);

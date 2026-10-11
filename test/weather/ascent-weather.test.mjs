@@ -38,6 +38,9 @@ test('bundled independent card loads on a visitor ascent without GPX or map', as
         assert.match(env.doc.querySelector('.bpb-weather-condition').textContent, /Snow occurred/);
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').previousElementSibling.id, 'summarydata');
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').parentElement.id, 'bpb-ascent-summary-column');
+        assert.equal(env.doc.querySelector('#bpb-ascent-weather-heading').textContent, 'Weather archive');
+        assert.equal(env.doc.querySelector('.bpb-weather-attribution').textContent, 'Community support by Open-Meteo');
+        assert.equal(env.doc.querySelector('#bpb-ascent-gpx-details'), null);
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy'), 'false');
         const transfer = env.requests[1]; assert.equal(transfer.init.credentials, 'omit'); assert.equal(transfer.init.referrerPolicy, 'no-referrer');
         assert.equal(new URL(transfer.url).searchParams.has('aid'), false);
@@ -65,7 +68,8 @@ test('same card stays in the right column when the route explorer appears later'
         const explorer = env.doc.createElement('div'); explorer.id = 'bpb-route-explorer'; env.doc.getElementById('page').append(explorer);
         await pause();
         assert.equal(card.parentElement.id, 'bpb-ascent-summary-column');
-        assert.equal(card.previousElementSibling.id, 'summarydata');
+        assert.equal(card.previousElementSibling.id, 'bpb-ascent-gpx-details');
+        assert.equal(card.previousElementSibling.previousElementSibling.id, 'summarydata');
         assert.notEqual(explorer.nextElementSibling, card);
         assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
     } finally { env.close(); }
@@ -78,9 +82,57 @@ test('a later table split moves the existing weather card into the summary colum
         assert.equal(card.parentElement.id, 'page');
         env.win.eval(layoutBundle);
         await waitFor(() => card.parentElement.id === 'bpb-ascent-summary-column');
-        assert.equal(card.previousElementSibling.id, 'summarydata');
+        assert.equal(card.previousElementSibling.id, 'bpb-ascent-gpx-details');
         assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
     } finally { env.close(); }
+});
+
+test('native GPS note and download controls move together above weather without moving the map', async () => {
+    const html = ascent.replace(/<div id="gpxlinks">([\s\S]*?)<\/div>/,
+        '<table id="nativegps"><tr><td><iframe src="/map/MasterMap.aspx?t=A"></iframe>'
+        + '<p><a href="/map/BigMap.aspx">Click Here for a Full Screen Map</a></p>'
+        + '<p id="gpsnote"><font size="1">Note: GPS Tracks may not be accurate, and may not show the best route. Do not follow this route blindly.</font></p>'
+        + '<p id="gpxlinks">$1<span id="test-handoff"><button type="button">Send to Gaia</button></span></p></td></tr></table>');
+    const env = setup({ html, withLayout: false });
+    try {
+        const card = env.doc.getElementById('bpb-ascent-weather'), details = env.doc.getElementById('bpb-ascent-gpx-details');
+        const note = env.doc.getElementById('gpsnote'), download = env.doc.getElementById('gpxlinks');
+        const button = env.doc.querySelector('#test-handoff button');
+        let clicks = 0; button.addEventListener('click', () => clicks++);
+        assert.equal(details.nextElementSibling, card);
+        assert.deepEqual([...details.children], [note, download]);
+        assert.equal(env.doc.querySelector('iframe').closest('table').id, 'nativegps');
+        // Reparent the same blocks again when the independent layout arrives.
+        env.win.eval(layoutBundle);
+        await waitFor(() => card.parentElement.id === 'bpb-ascent-summary-column');
+        assert.equal(details.nextElementSibling, card);
+        assert.equal(details.parentElement, card.parentElement);
+        assert.equal(env.doc.getElementById('gpsnote'), note);
+        assert.equal(env.doc.getElementById('gpxlinks'), download);
+        button.click(); assert.equal(clicks, 1);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await pause();
+        assert.equal(env.doc.querySelectorAll('#bpb-ascent-gpx-details').length, 1);
+        assert.equal(details.nextElementSibling, card);
+    } finally { env.close(); }
+});
+
+test('a shared GPS footer paragraph is moved once and ambiguous or report-quoted notes stay native', async () => {
+    for (const shared of [true, false]) {
+        const html = ascent.replace('<b>Great climb</b>', '<p id="report-quote">Note: GPS Tracks may not be accurate. Report quotation.</p><b>Great climb</b>')
+            .replace(/<div id="gpxlinks">([\s\S]*?)<\/div>/, shared
+                ? '<p id="gpxlinks"><small>Note: GPS Tracks may not be accurate. Native GPS note.</small><br>$1</p>'
+                : '<p id="note-one">Note: GPS Tracks may not be accurate. First.</p><p id="note-two">Note: GPS Tracks may not be accurate. Second.</p><p id="gpxlinks">$1</p>');
+        const env = setup({ html, withLayout: !shared });
+        try {
+            const details = env.doc.getElementById('bpb-ascent-gpx-details');
+            assert.equal(details.children.length, 1);
+            assert.equal(details.firstElementChild.id, 'gpxlinks');
+            assert.equal(env.doc.getElementById('ascentinfo').contains(env.doc.getElementById('report-quote')), true);
+            if (!shared) for (const id of ['note-one', 'note-two']) assert.equal(env.doc.getElementById(id).parentElement.id, 'page');
+        } finally { env.close(); }
+    }
 });
 
 test('hourly tabs have one keyboard stop and arrow navigation preserves the active measurement', async () => {

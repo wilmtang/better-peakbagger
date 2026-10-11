@@ -804,7 +804,9 @@ GPX or native map. Its strict reader identifies the native ascent date and
 summit, then reads the matching peak page through the existing Peakbagger
 transport. The card lives below Summary Total Data in the resizable right-hand
 column beside the report, including when GPX analysis mounts later. Unrecognized
-table layouts retain a map/metadata fallback. It does not mutate native weather
+table layouts retain a map/metadata fallback. Dedicated native GPS note and
+download/send blocks move together above Weather archive, preserving the
+original controls and leaving the map in place. It does not mutate native weather
 fields or synchronize to GPX time.
 
 The weather client accepts only packaged model endpoints, omits credentials
