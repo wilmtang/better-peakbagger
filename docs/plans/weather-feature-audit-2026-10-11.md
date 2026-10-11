@@ -1,0 +1,54 @@
+# Weather feature audit — 2026-10-11
+
+Audit baseline: `a3ad2c9`; remediation starts from `8a1412b`, preserving the
+sixteen-day forecast and history windows. Scope: summit weather, ascent weather,
+shared provider/data code, settings and GPX presentation integration.
+
+## Findings and implementation ledger
+
+| ID | Priority | Broken invariant | Status |
+| --- | --- | --- | --- |
+| W01 | P2 | Historical instantaneous gusts use preceding-hour day boundaries | Open |
+| W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Open |
+| W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Open |
+| W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Open |
+| W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Open |
+| W06 | P2 | Global dark button repaint overrides weather component selection styling | Open |
+| W07 | P3 | Disabled weather still reparents native GPS notes and controls | Open |
+| W08 | P3 | Selected font weight changes intrinsic tab width and wrapping | Open |
+
+Implement and verify each independent fix before starting the next. Preserve
+fail-closed subject/settings checks, request cancellation and generation guards,
+missing readings, bounded model fallback, per-page caches and native Save ownership.
+
+## Fixed and verified
+
+None yet.
+
+## Intentionally not changed
+
+- Estimates remain model output, not station observations or route conditions.
+- Severe-condition precedence and conservative regional model admission remain.
+- Unavailable authoritative settings reads make no weather request.
+- Weather data remains in page memory, excluded from settings and backups.
+
+## Changed but not fully proven
+
+None yet. Local fixture verification cannot establish live provider accuracy,
+native browser/OS focus behavior, physical touch or screen-reader speech. Record
+specific outstanding evidence here after implementation.
+
+## Data contracts
+
+- [Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api):
+  gusts are instantaneous except CERRA's preceding-hour maximum.
+- [Forecast API](https://open-meteo.com/en/docs): gusts are preceding-hour maxima;
+  precipitation is preceding-hour water equivalent.
+
+## Verification strategy
+
+Use pure boundary regressions and shipped-bundle fixtures for data/state changes.
+Use the real unpacked extension in hidden Chrome and Firefox over HTTPS
+Peakbagger fixtures for day-switch geometry, keyboard interaction, dark selected
+styles, wrap thresholds, opt-out restoration and visual inspection. Keep tests
+condition-driven and ensure owned browser/profile/server cleanup.

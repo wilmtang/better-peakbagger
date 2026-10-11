@@ -1,5 +1,8 @@
 # Active plans
 
+- [Weather feature audit — 2026-10-11](weather-feature-audit-2026-10-11.md) —
+  eight data, interaction, accessibility and styling findings under remediation;
+  focused fixes and an explicit closure ledger.
 - [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
   two reproduced open UI findings since 3.9.2: Sentinel capture selection on
   3D resume and climber-card keyboard focus during row cleanup. Current unit,
