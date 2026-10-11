@@ -365,7 +365,11 @@ model. Peak weather uses a padded UTC window covering the
 sixteen completed local days and today plus fifteen forecast days, capped at the
 API's available horizon, with one or two named models selected by our
 GFS default or the user's per-period dropdown choices. Both periods
-share one request; model IDs are sent to Open-Meteo. Weather
+share one request; model IDs are sent to Open-Meteo. Opening the summit card's
+**Models & source details** additionally requests public model-update metadata
+from Open-Meteo. Those requests send model identifiers, IP address and ordinary
+request metadata, with no coordinates, date range or page URL; results stay in
+the short-lived per-page memory cache. Weather
 requests omit credentials and referrers. No ascent or climber ID, summit name,
 report, GPX, track times, account credentials, or page URL is sent to Open-Meteo.
 An hourly graph cursor can follow GPX hover or selection using only timestamps

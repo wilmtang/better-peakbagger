@@ -70,6 +70,20 @@ model supplied each period, without claiming an exact run initialization or
 sub-grid provenance. Horizons were checked against Open-Meteo's
 [Forecast API and provider tables](https://open-meteo.com/en/docs) and named
 model routing against its [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
+Opening **Models & source details** also loads a table of the eligible models'
+last API availability time and next expected update in summit local time.
+The [metadata API](https://open-meteo.com/en/docs/model-updates) reports availability
+and cadence. The next time is an estimate from that cadence, and overdue
+updates remain dated and marked delayed. GFS lists its 13 km and 25 km products
+separately. Missing or unavailable metadata is labelled unavailable rather than
+guessed (BOM has no mapping in the provider's published update table).
+These are provider-wide clocks, not proof of the exact model run behind each
+forecast or historical hour. Metadata requests contain no coordinates or dates;
+they are limited to three concurrent requests, a five-second deadline and
+16 KiB per response, with successes/failures cached in page memory for five
+minutes. Closing the disclosure, disabling weather or suspending the page
+cancels pending work. Update failures do not hide usable weather.
+
 It also explains full-day forecasts, incomplete final-day hours, load time and
 temperature adjustment for summit elevation. The footer credits **Powered by
 Open-Meteo**. An unavailable period does not hide usable data in the other view.
@@ -200,3 +214,25 @@ real-manifest Chrome check passed at 1000 × 760 with BFCache restoration.
 Owned profile/process inspections confirmed teardown. These checks do not
 prove the user's Brave session, native focus/window placement, screen-reader
 speech or model accuracy.
+
+The hourly-table, local-model and update-clock changes were verified on
+2026-10-11: 104 weather tests passed. The full shipped-bundle suite passed
+2,595 of 2,597 tests; the two photo README assertions for the encoded-source
+budget and saved-key disclosure were already failing before these changes.
+Full lint passed with six existing owned warnings, and changed-file ESLint
+passed after the final request-failure regression was added.
+
+Real unpacked extension fixtures passed in hidden Chrome for Testing
+153.0.8010.12 and Firefox 157.0.1 at 375/768/1440 × 1100 in light and dark;
+day-switch checks also used those widths at 1000 pixels tall. Inspected the
+horizontal table and the expanded update list, including all three update
+columns at 375 pixels. Frame traces allow at most one immediate movement to
+reveal a below-fold day; a panel that fits at the clicked heading stays put.
+HTML/SVG fixtures do not require WebGL. A live public Rainier probe confirmed
+one weather request plus sixteen coordinate-free metadata requests. A separate
+GFS/IFS request validated eight hourly fields in 60,769 bytes. The full hidden
+real-manifest Chrome check passed at 1000 × 760 with BFCache restoration.
+A final process/profile inspection found no owned verification browser or
+disposable profile remaining. Hidden checks do not prove the user's Brave session,
+native window focus or placement, screen-reader speech, model accuracy or a
+promised next update.

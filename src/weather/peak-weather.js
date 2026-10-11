@@ -12,6 +12,7 @@ import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './w
 import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
+import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
 const modelKeys = { past: 'bpbPeakWeatherModelPast', forecast: 'bpbPeakWeatherModelForecast' };
@@ -41,7 +42,13 @@ export function mountPeakWeather() {
     const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description' });
     const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select, modelDescription]);
     const modelText = element('p', { class: 'bpb-week-models' });
-    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Models & source details' }), modelText, sourceText]);
+    const updatesBody = element('tbody');
+    const updates = element('div', { class: 'bpb-week-updates', tabindex: '0', role: 'region', 'aria-label': 'Model update times' }, [
+        element('table', { class: 'bpb-week-updates-table' }, [element('caption', { text: 'Model updates' }),
+            element('thead', {}, [element('tr', {}, ['Model', 'Last update', 'Next expected'].map(text => element('th', { scope: 'col', text })))]), updatesBody]),
+    ]);
+    const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Next updates are estimated from the usual cadence and may be delayed. These are provider-wide updates, not the runs behind individual historical hours; servers may take 10 minutes to agree.' });
+    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Models & source details' }), modelText, sourceText, updates, updatesNote]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [range, locationLabel, accuracy, days, help]);
     card.append(element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Summit weather' }), refresh]), periodTabs, modelControl, status, periodPanel,
         source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
@@ -51,9 +58,50 @@ export function mountPeakWeather() {
     subject.table.tBodies[0].append(row);
 
     const client = createPeakWeatherClient();
+    const updateClient = createPeakModelUpdateClient();
+    let updatesController = null, updatesGeneration = 0;
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
     let settingsReady = false, modelsReady = false;
     const enabled = () => settingsReady && modelsReady && preference.showWeather;
+    const cancelUpdates = () => { updatesGeneration++; updatesController?.abort(); updatesController = null; };
+    async function loadUpdates() {
+        if (!enabled() || lifecycle.state !== 'active' || !source.open || !current) return;
+        cancelUpdates();
+        const updateController = new AbortController(); updatesController = updateController;
+        const owner = updatesGeneration;
+        const models = eligiblePeakWeatherModels(subject, requestedWindow || current.window, period);
+        const targets = new Map();
+        updatesBody.replaceChildren();
+        for (const model of models) {
+            const domains = peakModelUpdateDomains(model);
+            for (const domain of domains.length ? domains : [null]) {
+                const label = model.id === 'gfs_global' ? `${model.label} · ${domain === 'ncep_gfs013' ? '13' : '25'} km` : model.label;
+                const last = element('td', { text: domain ? 'Loading…' : 'Unavailable' }), next = element('td', { text: domain ? 'Loading…' : 'Unavailable' });
+                updatesBody.append(element('tr', { 'data-update-model': model.id }, [element('th', { scope: 'row', text: label }), last, next]));
+                if (domain) targets.set(domain, [...(targets.get(domain) || []), { last, next }]);
+            }
+        }
+        const queue = [...targets.keys()];
+        const label = time => `${dateLabel(mountainTime.localDate(zone, time), { month: 'short', day: 'numeric' })} ${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
+        // Fetch only when the disclosure is open, with at most three metadata
+        // requests in flight. A failure never replaces usable weather data.
+        await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+            while (queue.length && !updateController.signal.aborted) {
+                const domain = queue.shift();
+                let result;
+                try { result = await updateClient.request(domain, { signal: updateController.signal }); }
+                catch { return; }
+                if (owner !== updatesGeneration || updateController.signal.aborted) return;
+                for (const { last, next } of targets.get(domain)) {
+                    last.textContent = result.data ? label(result.data.lastUpdate) : 'Unavailable';
+                    next.textContent = result.data ? `${label(result.data.nextExpected)}${result.data.nextExpected < Date.now() ? ' (delayed)' : ''}` : 'Unavailable';
+                    if (result.data) last.title = `Model initialized ${label(result.data.run)}`;
+                }
+            }
+        }));
+        if (owner === updatesGeneration) updatesController = null;
+    }
+    source.addEventListener('toggle', () => { if (source.open) void loadUpdates(); else cancelUpdates(); });
     let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
     let period = 'forecast', notice = null, requestedWindow = null;
     const choices = { past: 'gfs_global', forecast: 'gfs_global' };
@@ -175,6 +223,7 @@ export function mountPeakWeather() {
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
         sourceText.textContent = `${forecast ? `Up to ${model.forecastDays} days of forecast model estimates; today includes the whole local day. The final day may have incomplete hours where the forecast ends.` : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${data.grid.elevation.toFixed(0)} m. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' The combined response reports one grid coordinate; individual model grids may differ.' : ''}`;
         paintStatus();
+        if (source.open) void loadUpdates();
     }
     const choosePeriod = next => {
         if (next !== period) {
@@ -214,7 +263,7 @@ export function mountPeakWeather() {
             const window = weatherPeakWindow(zone); requestedWindow = window;
             populateModels();
             if (!current) renderLabels(window[period]);
-            if (clear) client.clear();
+            if (clear) { client.clear(); cancelUpdates(); updateClient.clear(); }
             const requestedChoices = { ...choices }, models = resolvePeakWeatherModels(subject, window, requestedChoices);
             const response = await client.request(subject, window, [...new Set(Object.values(models))], { signal: controller.signal });
             if (owner !== generation || lifecycle.state !== 'active') return;
@@ -236,6 +285,7 @@ export function mountPeakWeather() {
             if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;
             if (error.code === 'rate-limit') cooldown.set(error.retryAt);
             notice = { kind: error.code, text: `${error.message || 'Weather could not be loaded.'}${current ? ' Showing the previous result.' : ' Use Refresh to try again.'}` }; paintStatus();
+            if (source.open) void loadUpdates();
         } finally {
             if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); }
         }
@@ -270,7 +320,7 @@ export function mountPeakWeather() {
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
         if (!enabled()) {
-            cooldown.suspend(); cancel(); clearChart();
+            cooldown.suspend(); cancel(); cancelUpdates(); clearChart();
             visibilityObserver?.disconnect(); visibilityObserver = null;
         } else if (lifecycle.state === 'active') {
             cooldown.resume();
@@ -279,10 +329,10 @@ export function mountPeakWeather() {
         }
     };
     const unsubscribe = settings.subscribe(applyPreference);
-    const stop = () => { cooldown.suspend(); cancel(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
         onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); renderResult(); beginWhenVisible(); } },
-        onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); },
+        onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
     // Resolve local choices before the first request, including a late sync

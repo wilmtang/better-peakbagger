@@ -30,11 +30,16 @@ try {
     const fixture = await createBrowserFixtureServer({ temporaryRoot });
     resources.defer('weather HTTPS fixtures', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
-    const evidence = [], networkErrors = [], held = [];
+    const evidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
     let mode = 'complete', evaluate, navigate, click, press, movePointer, clickPoint, screenshot, screenshotPage, resize, setSettings, version;
     const replyFor = url => {
-        const requested = new URL(url), fields = requested.searchParams.get('hourly').split(',');
+        const requested = new URL(url);
+        if (requested.pathname.startsWith('/data/')) return { status: 200, headers: {}, body: JSON.stringify({
+            last_run_initialisation_time: Math.floor(Date.now() / 1000) - 3600,
+            last_run_availability_time: Math.floor(Date.now() / 1000) - 600, update_interval_seconds: 21600,
+        }) };
+        const fields = requested.searchParams.get('hourly').split(',');
         const body = weatherFixture({ startDate: requested.searchParams.get('start_date'), fields,
             hours: (Date.parse(requested.searchParams.get('end_date')) - Date.parse(requested.searchParams.get('start_date'))) / 3600_000 + 24,
             latitude: Number(requested.searchParams.get('latitude')), longitude: Number(requested.searchParams.get('longitude')), elevation: Number(requested.searchParams.get('elevation')) });
@@ -57,6 +62,7 @@ try {
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');
         assert.ok(!/[?&](?:aid|cid|name|gpx)=/i.test(url));
+        if (new URL(url).pathname.startsWith('/data/')) { metadataEvidence.push({ host: new URL(url).host, path: new URL(url).pathname, query: new URL(url).search }); return; }
         evidence.push({ host: new URL(url).host, model: new URL(url).searchParams.get('models'), origin: headers.find(header => header.name.toLowerCase() === 'origin')?.value });
     };
     if (firefoxMode) {
@@ -317,7 +323,7 @@ try {
     if (peakMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, wait,
-                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, networkErrors, live, firefoxMode }) };
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, metadataEvidence, networkErrors, live, firefoxMode }) };
     } else {
         await setSettings({ theme: 'light', units: 'imperial' });
         await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);

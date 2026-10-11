@@ -11,7 +11,7 @@ import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 
 // Reuse the real extension/HTTPS/browser transports and their teardown rather
 // than launch a second browser or substitute a content-script-only demo.
-export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, wait, setMode, release, evidence, networkErrors, live, firefoxMode }) {
+export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, wait, setMode, release, evidence, metadataEvidence, networkErrors, live, firefoxMode }) {
     const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const card = '#bpb-peak-weather';
@@ -75,10 +75,13 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await click(`${card} .bpb-week-day:first-child > summary`);
         await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'live forecast hourly graph');
         await click(`${card} .bpb-week-source > summary`);
+        await wait(() => document.querySelectorAll('[data-update-model]').length > 1 && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'live model metadata settles');
+        assert.ok(await evaluate(() => [...document.querySelectorAll('[data-update-model="gfs_global"] td')].every(cell => !cell.textContent.includes('Unavailable'))), 'live GFS update clocks are available');
         if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-live-forecast.png`));
         assert.equal(evidence.length, 1, 'live past and forecast views must share one HTTP request');
+        assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
         assert.deepEqual(networkErrors, []);
-        return { liveCors: 'passed', weatherRequests: evidence.length, viewport: { width: 1440, height: 1100 } };
+        return { liveCors: 'passed', weatherRequests: evidence.length, metadataRequests: metadataEvidence.length, viewport: { width: 1440, height: 1100 } };
     }
     const widths = [1440, 768, 375], shapes = [];
     for (const theme of ['light', 'dark']) {
@@ -109,7 +112,13 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
                     { description: 'hourly data tab selection', timeoutMs: 20_000 });
                 assertGeometry(await evaluate(geometry));
                 assert.equal(evidence.length, before, 'data tabs must not fetch weather');
-                if (metric === 'code') await verifyWeatherConditions(evaluate);
+                if (metric === 'code') {
+                    await verifyWeatherConditions(evaluate);
+                    if (output) {
+                        await evaluate(() => document.querySelector('.bpb-week-day[open]').scrollIntoView({ block: 'start', behavior: 'instant' }));
+                        await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-conditions-viewport-${width}.png`));
+                    }
+                }
                 if (output && (width === 1440 || metric === 'code')) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${metric}-${width}.png`));
             }
             await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
@@ -136,6 +145,13 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assert.equal(await evaluate(() => document.querySelector('.bpb-week-source').open), true);
             assertGeometry(await evaluate(geometry));
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-models-${width}.png`));
+            await wait(() => document.querySelector('.bpb-week-source').open && document.querySelector('.bpb-week-updates').clientHeight > 0 && document.querySelectorAll('[data-update-model]').length > 1 && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'model update metadata settles');
+            assert.equal(await evaluate(() => document.querySelectorAll('[data-update-model="gfs_global"]').length), 2);
+            assert.ok(await evaluate(() => document.querySelector('.bpb-week-updates').textContent.includes('Next expected')));
+            if (output) {
+                await evaluate(() => document.querySelector('.bpb-week-updates').scrollIntoView({ block: 'start', behavior: 'instant' }));
+                await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-updates-${width}.png`));
+            }
             await click(`${card} .bpb-week-source > summary`);
             await click(`${card} .bpb-week-day:last-child > summary`);
             await wait(() => document.querySelector('.bpb-week-day:last-child[open] .bpb-week-line'), 'last forecast day remains expandable');
@@ -144,7 +160,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
                 return !last.querySelector('.bpb-week-metrics').textContent.includes('(partial)')
                     || last.querySelector('.bpb-week-partial')?.textContent.includes('Incomplete hours');
             }), 'truncated final-day totals must be labelled incomplete');
-            assert.equal(evidence.length, before, 'model disclosure and final-day expansion make no requests');
+            assert.equal(evidence.length, before, 'model disclosure and final-day expansion make no weather requests');
             if (output && width === 375) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-last-day-${width}.png`));
             await click(`${card} [data-period="past"]`);
         }
@@ -270,6 +286,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     setMode('complete'); release();
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'held weather response settles');
     assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global'].includes(request.model)));
+    assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
 }

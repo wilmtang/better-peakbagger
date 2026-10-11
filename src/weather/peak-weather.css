@@ -93,6 +93,12 @@ html[data-bpb-theme="dark"] #bpb-peak-weather .bpb-week-hour-icon-partly { color
 #bpb-peak-weather .bpb-week-help { border-top: 1px solid var(--week-border); margin: 0; padding-top: 12px; }
 #bpb-peak-weather .bpb-week-source { margin: 12px 0; color: var(--week-sub); font-size: 12px; }
 #bpb-peak-weather .bpb-week-source summary { cursor: pointer; color: var(--week-accent); }
+#bpb-peak-weather .bpb-week-updates { max-width: 100%; margin-top: 14px; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--week-border); border-radius: 7px; }
+#bpb-peak-weather .bpb-week-updates-table { width: 100%; min-width: 430px; margin: 0; border: 0; border-spacing: 0; font: inherit; color: var(--week-text); }
+#bpb-peak-weather .bpb-week-updates-table caption { text-align: left; padding: 10px; font-weight: 600; }
+#bpb-peak-weather .bpb-week-updates-table :is(th, td) { padding: 8px 10px; border: 0; border-top: 1px solid var(--week-border); text-align: left; font-weight: 400; font-variant-numeric: tabular-nums; }
+#bpb-peak-weather .bpb-week-updates-table thead th { background: var(--week-soft); color: var(--week-sub); }
+#bpb-peak-weather .bpb-week-updates-table tbody th { font-weight: 500; }
 #bpb-peak-weather footer { display: flex; flex-wrap: wrap; gap: 5px 14px; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--week-border); font-size: 11px; color: var(--week-sub); }
 #bpb-peak-weather a { color: var(--week-accent); }
 #bpb-peak-weather .bpb-week-attribution { margin-left: auto; text-align: right; }
@@ -102,5 +108,7 @@ html[data-bpb-theme="dark"] #bpb-peak-weather .bpb-week-hour-icon-partly { color
     #bpb-peak-weather .bpb-week-temp { grid-column: 3; text-align: left; }
     #bpb-peak-weather .bpb-week-metrics, #bpb-peak-weather .bpb-week-partial { grid-column: 3; }
     #bpb-peak-weather .bpb-week-chevron { grid-column: 4; grid-row: 1 / span 3; }
+    #bpb-peak-weather .bpb-week-updates-table { min-width: 0; table-layout: fixed; font-size: 11px; }
+    #bpb-peak-weather .bpb-week-updates-table :is(th, td) { padding: 8px 6px; overflow-wrap: anywhere; }
 }
 @media (pointer: coarse) { #bpb-peak-weather :is(button, select) { min-height: 44px; } }
