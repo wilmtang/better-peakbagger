@@ -142,7 +142,7 @@ test('explicit short-range forecast labels its horizon and preserves sixteen day
         await waitFor(() => env.doc.querySelector('[data-period="forecast"]').textContent === '2-day forecast');
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
         assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 1 day$/);
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /GFS offers up to 16 days/);
+        assert.equal(env.doc.querySelector('.bpb-week-model-description').textContent, 'Using HRRR · 3 km · up to 2 days');
         assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), 'gfs_global,gfs_hrrr');
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(env.doc.querySelector('select').value, 'gfs_global');

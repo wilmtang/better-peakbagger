@@ -186,7 +186,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'short-range explicit forecast');
     assert.ok(await evaluate(() => document.querySelectorAll('.bpb-week-day').length <= 3));
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('GFS offers up to 16 days')));
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent), 'Using HRRR · 3 km · up to 2 days');
     for (const width of [1440, 375]) {
         await resize(width, 1100);
         const state = await evaluate(geometry);

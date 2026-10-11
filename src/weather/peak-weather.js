@@ -164,7 +164,7 @@ export function mountPeakWeather() {
         const forecastLabel = `${current.window.forecast.days.length}-day forecast`;
         (periodButtons[0].querySelector('.bpb-week-tab-label') || periodButtons[0]).textContent = forecastLabel;
         periodButtons[0].setAttribute('aria-label', forecastLabel); periodButtons[0].dataset.label = forecastLabel;
-        modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}${model.forecastDays < PEAK_FORECAST_DAYS ? '. GFS offers up to 16 days.' : ''}` : ''}`;
+        modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}` : ''}`;
         modelText.textContent = `${model.label} (${model.id}), ${model.resolution}. GFS is the initial default for its 16-day forecast; each period remembers your last model on this device. Forecast length is measured from the model run, so the last displayed day may be incomplete. Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. No other model fills missing values.`;
         help.hidden = !summaries.some(day => day.useful); source.hidden = false;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
