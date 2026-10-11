@@ -15,11 +15,23 @@ const fields = {
 };
 const iso = ms => new Date(ms).toISOString().slice(0, 10);
 export function weatherRequestUrl(summit, window, model) {
-    if (!WEATHER_MODELS.includes(model) || !Number.isFinite(summit.latitude) || Math.abs(summit.latitude) > 90
+    if (!WEATHER_MODELS.includes(model)) throw fail('invalid', 'Invalid weather model.');
+    return requestUrl(summit, window, model, 2);
+}
+
+// Recent weather uses the forecast API's automatic regional blend. Keep its
+// longer window separate from the historical ascent client's three-day bound.
+const RECENT_MODEL = { endpoint: 'https://api.open-meteo.com/v1/forecast', since: '1970-01-01', fields: Object.keys(fields) };
+export function recentWeatherRequestUrl(summit, window) {
+    return requestUrl(summit, window, RECENT_MODEL, 8);
+}
+
+function requestUrl(summit, window, model, maxDays) {
+    if (!Number.isFinite(summit.latitude) || Math.abs(summit.latitude) > 90
         || !Number.isFinite(summit.longitude) || Math.abs(summit.longitude) > 180) throw fail('invalid', 'Invalid weather subject.');
     const start = Date.parse(`${window.startDate}T00:00:00Z`), end = Date.parse(`${window.endDate}T00:00:00Z`);
     if (![start, end].every(Number.isFinite) || iso(start) !== window.startDate || iso(end) !== window.endDate
-        || end < start || end - start > 2 * 86400_000) throw fail('invalid', 'Invalid weather date window.');
+        || end < start || end - start > maxDays * 86400_000) throw fail('invalid', 'Invalid weather date window.');
     // Adjacent UTC days may cross the archive's first/last day. Fetch the
     // covered portion and let the civil-day summary label missing hours.
     const startDate = window.startDate < model.since ? model.since : window.startDate;
@@ -27,9 +39,10 @@ export function weatherRequestUrl(summit, window, model) {
     if (startDate > endDate) throw fail('unavailable', 'This model has no data for the ascent’s date or location.');
     const url = new URL(model.endpoint);
     const params = { latitude: summit.latitude, longitude: summit.longitude,
-        start_date: startDate, end_date: endDate, models: model.id,
+        start_date: startDate, end_date: endDate,
         hourly: model.fields.join(','), timezone: 'GMT', timeformat: 'unixtime',
         temperature_unit: 'celsius', precipitation_unit: 'mm', wind_speed_unit: 'kmh' };
+    if (model.id) params.models = model.id;
     if (summit.elevation !== null && summit.elevation !== undefined) {
         if (!Number.isFinite(summit.elevation) || summit.elevation < -500 || summit.elevation > 9000) throw fail('invalid', 'Invalid summit elevation.');
         params.elevation = summit.elevation;
@@ -39,6 +52,13 @@ export function weatherRequestUrl(summit, window, model) {
 }
 
 export function validateWeatherResponse(body, summit, window, model) {
+    return validateResponse(body, summit, window, model, 72);
+}
+export function validateRecentWeatherResponse(body, summit, window) {
+    return validateResponse(body, summit, window, RECENT_MODEL, 216);
+}
+
+function validateResponse(body, summit, window, model, maxRows) {
     const invalid = () => { throw fail('invalid-response', 'The weather service returned an invalid response.'); };
     if (!body || typeof body !== 'object' || Array.isArray(body) || body.utc_offset_seconds !== 0
         || !Number.isFinite(body.latitude) || Math.abs(body.latitude) > 90
@@ -51,7 +71,7 @@ export function validateWeatherResponse(body, summit, window, model) {
         lonDelta * 111 * Math.cos(summit.latitude * Math.PI / 180));
     if (distance > 200 || (Number.isFinite(summit.elevation) && Math.abs(body.elevation - summit.elevation) > 1)) invalid();
     const hourly = body.hourly, times = hourly?.time;
-    if (!Array.isArray(times) || times.length < 1 || times.length > 72 || body.hourly_units?.time !== 'unixtime') invalid();
+    if (!Array.isArray(times) || times.length < 1 || times.length > maxRows || body.hourly_units?.time !== 'unixtime') invalid();
     const start = Date.parse(`${window.startDate}T00:00:00Z`), end = Date.parse(`${window.endDate}T00:00:00Z`) + 86400_000;
     times.forEach((time, index) => {
         if (!Number.isInteger(time) || time % 3600 !== 0 || time * 1000 < start || time * 1000 >= end
@@ -73,10 +93,17 @@ export function validateWeatherResponse(body, summit, window, model) {
 
 // One client per page: bounded memory only, no persistent ascent history. A
 // single page owner owns cancellation; a cancelled flight is never reused.
-export function createWeatherClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000 } = {}) {
+export function createWeatherClient(options = {}) {
+    return createClient(options, weatherRequestUrl, validateWeatherResponse);
+}
+export function createRecentWeatherClient(options = {}) {
+    const client = createClient(options, recentWeatherRequestUrl, validateRecentWeatherResponse);
+    return { request: (summit, window, requestOptions) => client.request(summit, window, RECENT_MODEL, requestOptions), clear: client.clear };
+}
+function createClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000 }, buildUrl, validate) {
     const cache = new Map(), flights = new Map();
     const request = (summit, window, model, { signal } = {}) => {
-        const url = weatherRequestUrl(summit, window, model);
+        const url = buildUrl(summit, window, model);
         const key = `weather-v1:${url}`;
         if (signal?.aborted) return Promise.reject(Object.assign(new Error('Cancelled.'), { name: 'AbortError' }));
         const cached = cache.get(key);
@@ -95,13 +122,14 @@ export function createWeatherClient({ fetchFn = globalThis.fetch, now = Date.now
                 const response = await run(fetchFn(url, { credentials: 'omit', referrerPolicy: 'no-referrer',
                     redirect: 'error', cache: 'no-store', signal: deadline.signal }));
                 if (response.status === 429) throw fail('rate-limit', 'Weather requests are temporarily limited. Wait before trying again.');
-                if ([400, 404].includes(response.status)) throw fail('unavailable', 'This model has no data for the ascent’s date or location.');
+                if ([400, 404].includes(response.status)) throw fail('unavailable', model === RECENT_MODEL
+                    ? 'Recent weather is unavailable for this summit.' : 'This model has no data for the ascent’s date or location.');
                 if (!response.ok) throw fail('service', 'The weather service is unavailable. Try again later.');
                 if (!/application\/json/i.test(response.headers?.get('content-type') || '')) throw fail('invalid-response', 'The weather service returned an invalid response.');
                 const text = await run(readBoundedResponseText(response, { maxBytes: 128 * 1024, signal: deadline.signal, label: 'Weather response' }));
                 let body;
                 try { body = JSON.parse(text); } catch { throw fail('invalid-response', 'The weather service returned an invalid response.'); }
-                const data = validateWeatherResponse(body, summit, window, model);
+                const data = validate(body, summit, window, model);
                 if (signal?.aborted) throw Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
                 cache.delete(key);
                 cache.set(key, { data, expires: now() + (window.partial ? 5 * 60_000 : 6 * 3600_000) });

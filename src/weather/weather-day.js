@@ -64,12 +64,17 @@ export function summarizeWeatherDay(data, window) {
         const values = instants.map(row => row[name]).filter(Number.isFinite);
         return { ...range(values), complete: expected.length > 0 && expected.every(time => Number.isFinite(byTime.get(time)?.[name])) };
     };
-    const temperature = field('temperature'), wind = field('wind'), gust = field('gust');
-    let total = 0, covered = 0, allocationEstimated = false;
+    const temperature = field('temperature'), wind = field('wind');
+    let total = 0, covered = 0, gustCovered = 0, allocationEstimated = false;
+    const gustValues = [];
     const hourly = instants.map(row => ({ ...row, precipitation: null }));
     for (let end = Math.floor(window.start / HOUR) * HOUR + HOUR; end <= Math.ceil(window.cutoff / HOUR) * HOUR; end += HOUR) {
         const overlap = Math.max(0, Math.min(end, window.cutoff) - Math.max(end - HOUR, window.start));
         if (!overlap || (window.partial && end > window.cutoff)) continue; // never use the future/current unfinished hour
+        // Gusts, like precipitation, describe the preceding hour. Starting
+        // midnight belongs to yesterday; the final midnight belongs to today.
+        const gustValue = byTime.get(end)?.gust;
+        if (Number.isFinite(gustValue)) { gustValues.push(gustValue); gustCovered += overlap; }
         const value = byTime.get(end)?.precipitation;
         if (!Number.isFinite(value)) continue;
         total += value * overlap / HOUR;
@@ -82,6 +87,7 @@ export function summarizeWeatherDay(data, window) {
         && (!window.partial || row.time <= window.cutoff))
         .map(row => ({ time: row.time, value: row.precipitation }));
     const precipitationComplete = covered === window.end - window.start && !window.partial;
+    const gust = { ...range(gustValues), complete: gustCovered === window.end - window.start && !window.partial };
     const codes = instants.map(row => row.code).filter(knownWeatherCode);
     const conditionComplete = expected.length > 0 && expected.every(time => knownWeatherCode(byTime.get(time)?.code));
     const condition = CONDITIONS.find(item => codes.some(code => item.codes.includes(code))) || { label: 'Conditions unavailable', icon: 'unknown' };
