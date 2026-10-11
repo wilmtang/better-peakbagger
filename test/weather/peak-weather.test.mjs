@@ -71,6 +71,48 @@ test('summary activation switches the day and mounts its graph synchronously wit
     } finally { env.close(); }
 });
 
+test('unrelated settings keep nodes and pinned readings; units and refresh restore focus and selected instant', async () => {
+    const env = setup();
+    const update = values => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: values } }, 'sync'));
+    try {
+        await settled(env, { past: false });
+        env.doc.querySelector('.bpb-week-day > summary').click();
+        let frame = env.doc.querySelector('.bpb-week-chart'); frame.focus();
+        frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        const readout = env.doc.querySelector('.bpb-week-readout'), pinned = readout.textContent;
+        update({ units: 'imperial', fillTripInfo: false });
+        assert.equal(env.doc.querySelector('.bpb-week-chart'), frame); assert.equal(env.doc.activeElement, frame);
+        assert.equal(readout.textContent, pinned);
+        update({ units: 'metric', fillTripInfo: false });
+        frame = env.doc.querySelector('.bpb-week-chart');
+        assert.equal(env.doc.activeElement, frame); assert.match(env.doc.querySelector('.bpb-week-readout').textContent, /12:00 AM PST.*°C/);
+        assert.ok(env.doc.querySelector('.bpb-week-cursor'));
+        env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.requests.length === 2 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.activeElement, env.doc.querySelector('.bpb-week-chart'));
+        assert.match(env.doc.querySelector('.bpb-week-readout').textContent, /12:00 AM PST.*°C/);
+        const wind = env.doc.querySelector('[data-metric="wind"]'); wind.click(); wind.focus();
+        update({ units: 'imperial' });
+        assert.equal(env.doc.activeElement, env.doc.querySelector('[data-metric="wind"]'));
+        update({ showWeather: false });
+        assert.equal(env.doc.querySelector('#bpb-peak-weather').hidden, true);
+    } finally { env.close(); }
+});
+
+test('refresh crossing the date window clears expired selection and gives focus a usable fallback', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false }); env.doc.querySelector('.bpb-week-day > summary').click();
+        const frame = env.doc.querySelector('.bpb-week-chart'); frame.focus();
+        frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        env.setNow('2024-12-05T12:00:00Z'); env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.requests.length === 2 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(env.doc.querySelector('.bpb-week-cursor'), null);
+        assert.equal(env.doc.querySelector('.bpb-week-day[open]'), null);
+        assert.equal(env.doc.activeElement, env.doc.querySelector('[data-period="forecast"]'));
+    } finally { env.close(); }
+});
+
 test('weather opt-out hides the whole table row, skips requests and updates live across BFCache', async () => {
     const env = setup({ storedSettings: { showWeather: false } });
     const update = showWeather => env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather } } }, 'sync'));

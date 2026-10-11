@@ -11,7 +11,7 @@ shared provider/data code, settings and GPX presentation integration.
 | W01 | P2 | Historical instantaneous gusts use preceding-hour day boundaries | Fixed; contract and boundary regressions verified |
 | W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Fixed; totals, tooltips and rendered graph verified |
 | W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Fixed; both-engine frame geometry and activation verified |
-| W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Open |
+| W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Fixed; focused controls and valid pinned instants verified |
 | W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Open |
 | W06 | P2 | Global dark button repaint overrides weather component selection styling | Open |
 | W07 | P3 | Disabled weather still reparents native GPS notes and controls | Open |
@@ -40,6 +40,14 @@ missing readings, bounded model fallback, per-page caches and native Save owners
   1440/768/375×1000, Conditions/temperature/rain, pointer/Enter/Space and both
   directions: no empty or double expansion, heading displacement ≤1 px.
   Inspected the narrow Chrome expanded-day screenshot.
+- W04: unrelated weather preferences retain nodes. Necessary unit/data renders
+  restore the selected source instant, Conditions scroll position and focused
+  control; expired dates clear selection and focus the active period tab.
+  Ran 26 peak/hourly tests and focused ESLint. Frozen-snapshot Chrome 153 and
+  Firefox 157 verified unchanged node identity for unrelated settings, new-unit
+  readouts, focus and pinned readings after refresh. Firefox settings now use a
+  separate hidden tab, preserving the page under test. Initial mixed-worktree
+  checks and the old Firefox navigation setter were unsuitable for this proof.
 
 ## Intentionally not changed
 

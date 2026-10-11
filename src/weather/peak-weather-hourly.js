@@ -36,7 +36,7 @@ export function peakHourlySeries(window, samples, metric) {
     return rows;
 }
 
-export function createPeakHourlyChart({ container, day, samples, zone, metric = 'temperature', format, onMetric }) {
+export function createPeakHourlyChart({ container, day, samples, zone, metric = 'temperature', format, onMetric, state }) {
     const id = `bpb-week-${day.window.date}`;
     if (!metrics.some(([key]) => key === metric)) metric = 'temperature';
     let disposed = false, observer, rows = [], geometry, hover = -1, selected = -1;
@@ -175,8 +175,13 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         drawCursor();
     };
     choose(metric);
+    if (state) {
+        selected = rows.findIndex(row => row.sourceTime === state.selectedTime);
+        conditions.scrollTop = state.conditionsScrollTop || 0;
+        drawCursor();
+    }
     if (typeof ResizeObserver === 'function') { observer = new ResizeObserver(draw); observer.observe(frame); }
-    return { dispose() {
+    return { snapshot: () => ({ selectedTime: rows[selected]?.sourceTime ?? null, conditionsScrollTop: conditions.scrollTop }), dispose() {
         disposed = true; observer?.disconnect();
         tabs.onclick = tabs.onkeydown = frame.onpointermove = frame.onpointerleave = frame.onclick = frame.onkeydown = null;
         container.replaceChildren();

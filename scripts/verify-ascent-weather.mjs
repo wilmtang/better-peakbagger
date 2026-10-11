@@ -134,9 +134,16 @@ try {
         resize = async (width, height) => send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width, height } } });
         screenshot = async output => writeFile(output, await driver.findElement(By.id(cardId)).takeScreenshot(true), 'base64');
         screenshotPage = async output => writeFile(output, await driver.takeScreenshot(), 'base64');
+        const weatherWindow = await driver.getWindowHandle();
+        await driver.switchTo().newWindow('tab');
+        const settingsWindow = await driver.getWindowHandle();
+        await driver.get(extensionUrl);
+        await driver.switchTo().window(weatherWindow);
         setSettings = async values => {
-            await driver.get(extensionUrl);
-            await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
+            await driver.switchTo().window(settingsWindow);
+            try {
+                await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
+            } finally { await driver.switchTo().window(weatherWindow); }
         };
     } else {
         const { chromium } = await import('playwright');

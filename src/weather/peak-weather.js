@@ -81,14 +81,19 @@ export function mountPeakWeather() {
         else delete status.dataset.kind;
     };
     const clearChart = () => { hourlyChart?.dispose(); hourlyChart = null; activeDay = null; };
-    const renderHours = (day, detail, container) => {
+    const renderHours = (day, detail, container, state) => {
         if (activeDay === detail && hourlyChart) return;
         clearChart(); activeDay = detail;
         hourlyChart = createPeakHourlyChart({ container, day, samples: current.data.samples, zone, metric: hourlyMetric, format,
-            onMetric: metric => { hourlyMetric = metric; } });
+            onMetric: metric => { hourlyMetric = metric; }, state });
     };
     function renderResult(openDate = days.querySelector('details[open]')?.dataset.date) {
         if (!current) return;
+        const focused = days.contains(document.activeElement) ? document.activeElement : null;
+        const focusedDate = focused?.closest('details')?.dataset.date;
+        const focusSelector = focused?.matches('summary') ? 'summary' : focused?.matches('.bpb-week-chart') ? '.bpb-week-chart'
+            : focused?.matches('.bpb-week-conditions') ? '.bpb-week-conditions' : focused?.dataset.metric ? `[data-metric="${focused.dataset.metric}"]` : null;
+        const stateDate = activeDay?.dataset.date, chartState = hourlyChart?.snapshot();
         const summaries = current.days[period], forecast = period === 'forecast';
         help.hidden = !summaries.some(day => day.useful); source.hidden = false;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
@@ -132,7 +137,11 @@ export function mountPeakWeather() {
                 renderHours(day, detail, hourly);
             });
             days.append(detail);
-            if (date === openDate) { detail.open = true; renderHours(day, detail, hourly); }
+            if (date === openDate) { detail.open = true; renderHours(day, detail, hourly, date === stateDate ? chartState : undefined); }
+        }
+        if (focused && focusSelector) {
+            const target = [...days.children].find(day => day.dataset.date === focusedDate)?.querySelector(focusSelector);
+            (target || periodButtons.find(button => button.dataset.period === period)).focus({ preventScroll: true });
         }
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
         sourceText.textContent = `${forecast ? `Up to ${PEAK_FORECAST_DAYS} days of forecast model estimates; today includes the whole local day. The final day may have incomplete hours where the forecast ends.` : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${current.data.grid.elevation.toFixed(0)} m. Selected grid: ${current.data.grid.latitude.toFixed(4)}, ${current.data.grid.longitude.toFixed(4)}.`;
@@ -205,13 +214,15 @@ export function mountPeakWeather() {
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const applyPreference = next => {
         const wasEnabled = enabled();
+        const previousUnits = unitSystem();
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
         if (!enabled()) {
             cooldown.suspend(); cancel(); clearChart();
             visibilityObserver?.disconnect(); visibilityObserver = null;
         } else if (lifecycle.state === 'active') {
-            cooldown.resume(); renderResult();
+            cooldown.resume();
+            if (!wasEnabled || previousUnits !== unitSystem()) renderResult();
             if (!wasEnabled) beginWhenVisible();
         }
     };

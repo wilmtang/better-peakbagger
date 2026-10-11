@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, getComputedStyle */
+/* global document, window, getComputedStyle */
 
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -149,6 +149,31 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await openPage();
     const daySwitches = await verifyWeatherDaySwitches({ evaluate, click, press, resize, firefoxMode });
     assert.equal(daySwitches.length, 27);
+    await setSettings({ theme: 'light', units: 'imperial', fillTripInfo: true });
+    await openPage();
+    await wait(() => document.querySelector('.bpb-week-temp').textContent.includes('°F'), 'initial weather unit preference applied');
+    await click('.bpb-week-day:first-child > summary');
+    await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-chart').focus());
+    await press(firefoxMode ? '\uE011' : 'Home');
+    const pinned = await evaluate(() => {
+        window.__bpbWeatherFocused = document.activeElement;
+        return document.querySelector('.bpb-week-readout').textContent;
+    });
+    await setSettings({ theme: 'dark', units: 'imperial', fillTripInfo: false });
+    await wait(() => document.documentElement.dataset.bpbTheme === 'dark', 'unrelated theme update applied');
+    assert.equal(await evaluate(() => document.activeElement === window.__bpbWeatherFocused && window.__bpbWeatherFocused.isConnected), true,
+        JSON.stringify(await evaluate(() => ({ before: window.__bpbWeatherFocused?.outerHTML.slice(0, 160), connected: window.__bpbWeatherFocused?.isConnected,
+            after: document.activeElement.outerHTML.slice(0, 160), reading: document.querySelector('.bpb-week-readout').textContent }))));
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-readout').textContent), pinned);
+    await setSettings({ theme: 'dark', units: 'metric', fillTripInfo: false });
+    await wait(() => document.querySelector('.bpb-week-readout').textContent.includes('°C'), 'pinned reading changes units');
+    assert.equal(await evaluate(() => document.activeElement.matches('.bpb-week-chart')), true);
+    const metricPinned = await evaluate(() => document.querySelector('.bpb-week-readout').textContent);
+    await evaluate(() => document.querySelector('.bpb-week-refresh').click());
+    await wait(() => document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'refresh preserves exploration state');
+    assert.equal(await evaluate(() => document.activeElement.matches('.bpb-week-chart')), true);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-readout').textContent), metricPinned);
+    await evaluate(() => { delete window.__bpbWeatherFocused; });
     await openPage();
     // Native summary disclosure is operable by keyboard in both engines.
     await evaluate(() => document.querySelector('#bpb-peak-weather .bpb-week-day > summary').focus());
