@@ -823,15 +823,22 @@ kbd {
   font-size: 12px;
 }
 
+/* Reserve one line so upload, report-use and backup changes never move actions. */
 .status-chips {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  align-items: center;
+  height: 24px;
+  min-width: 0;
+  gap: 3px;
 }
 
 .status-chip {
-  padding: 3px 7px;
-  font-size: 11px;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .deleted-recovery {

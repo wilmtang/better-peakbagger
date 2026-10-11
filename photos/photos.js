@@ -2637,12 +2637,12 @@ const recoverOperations = async () => {
 };
 
 const statusLabels = item => {
-    const remote = item.remote.state === 'outcome-unknown' ? 'Upload outcome unknown'
+    const remote = item.remote.state === 'outcome-unknown' ? 'Upload uncertain'
         : item.remote.state === 'unreachable' ? 'Image unreachable'
             : item.remote.state === 'uploaded' ? 'Uploaded'
                 : item.remote.state === 'uploading' ? 'Uploading'
                     : 'Local draft';
-    const use = item.references.length ? 'Used in report' : item.remote.state === 'uploaded' ? 'Not inserted' : null;
+    const use = item.references.length ? 'In report' : item.remote.state === 'uploaded' ? 'Not inserted' : null;
     const backup = item.backup.state === 'pending' ? 'Backup pending'
         : item.backup.state === 'failed' ? 'Backup failed'
             : item.backup.state === 'current' ? 'Backed up' : null;
@@ -3085,7 +3085,11 @@ const cardFor = (item, thumbnail, objectUrls) => {
         + `${formatBytes(item.export?.bytes || item.source.bytes)} · `
         + new Date(item.updatedAt).toLocaleDateString()));
     const chips = element('div', 'status-chips');
-    statusLabels(item).forEach(label => chips.append(element('span', 'status-chip', label)));
+    statusLabels(item).forEach(label => {
+        const chip = element('span', 'status-chip', label);
+        chip.title = label;
+        chips.append(chip);
+    });
     body.append(chips);
     const deletedDetails = item.deletedAt ? deletedRecoveryDetails(item) : null;
     if (deletedDetails) body.append(deletedDetails.container);

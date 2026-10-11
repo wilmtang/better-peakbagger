@@ -477,6 +477,13 @@ Library refreshes preserve the focused action by photo ID, choosing a nearby
 item or stable empty-state target when it disappears. Pagination keeps a usable
 control, and Undo can return focus to the restored photo. A refresh never
 reclaims focus moved to Search or another control while its reads were pending.
+Card status tags occupy one fixed-height row, so changing upload, report-use, or
+backup tags does not shift actions or add rows to the card. Full status text remains
+in the DOM and hover title if a constrained layout shortens a label.
+`node scripts/verify-photo-library-status.mjs` checks the shipped extension's
+card geometry and readable tags across status changes, light/dark themes, and
+320–1440px hidden Chrome viewports using synthetic device-local photos.
+
 Library storage failures preserve the durable record, clear the busy state,
 and show retryable feedback; failed Undo keeps its retry action available.
 If report insertion succeeds before reference bookkeeping fails, feedback
