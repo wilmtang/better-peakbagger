@@ -1,6 +1,6 @@
 # Historical ascent weather
 
-**Settings → General → Show weather cards** controls this archive and peak-page
+**Settings → General → Show weather forecast and archive** controls this archive and peak-page
 summit weather together. The default is on. The preference uses `storage.sync`
 and travels with settings files and GitHub settings backup. Turning it off
 hides the card on open pages, cancels pending work, and prevents summit lookup

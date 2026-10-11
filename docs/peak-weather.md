@@ -1,6 +1,6 @@
 # Summit weather on peak pages
 
-**Settings → General → Show weather cards** controls both summit weather and
+**Settings → General → Show weather forecast and archive** controls both summit weather and
 the ascent weather archive. It is on by default, saved in `storage.sync`, and
 included in settings export/import and GitHub settings backup. Turning it off
 hides both cards on open pages and cancels pending weather work. Disabled pages
