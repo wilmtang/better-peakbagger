@@ -33,13 +33,11 @@ Archive starts, delays, endpoints and variables live in
 [Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api)
 and [published route definitions](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
 
-Auto prefers HRRR for United States summits within its projected CONUS grid
-from 2018, HRDPS Continental for Canadian summits within its projected grid from
-March 2023, then global IFS from 2017, ERA5 + ERA5-Land from 1950, or ERA5 from
-1940. Alaska, Hawaii, unknown or multiple nations use global candidates unless
-regional preference and projected coverage both match. This is a product
-recommendation, not a validated universal accuracy ranking. Other countries
-currently use the global default; their eligible regional models are selectable.
+The default **Best Match (Open-Meteo)** requests `models=best_match` from
+`archive-api.open-meteo.com/v1/archive`. Open-Meteo combines ECMWF IFS, ERA5 and
+ERA5-Land according to available dates and variables, with coverage back to 1940.
+Source details identify this as a blend and do not invent per-value provenance.
+The ascent archive no longer applies the extension's country recommendation chain.
 
 The dropdown includes global alternatives, overlapping regional candidates,
 CERRA’s finite 1985–June 2021 archive, and explicitly labelled surface-only or
@@ -50,10 +48,10 @@ A provider refusal disables that choice until an explicit Retry. Single-provider
 seamless aliases are excluded to keep the displayed source unambiguous; the
 explicit ERA5 + ERA5-Land combination is labelled as such.
 
-Auto tries at most three candidates for absent/incomplete core fields. It
-preserves a useful partial result when none is complete. Explicit selection
-never silently falls back. Optional gusts do not disqualify a useful model.
-Timeouts, rate limits, malformed replies and server failures stop the chain.
+Best Match and explicit selections each make one weather request, retaining
+useful partial data. No selection silently falls back. An unavailable model
+can be retried explicitly or replaced with a dropdown choice. Rate limits,
+timeouts, malformed replies and server failures never cascade into other models.
 
 ## Historical local day
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { WEATHER_MODELS, eligibleWeatherModels, recommendedWeatherModels } from '../../src/weather/weather-models.js';
+import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels, recommendedWeatherModels } from '../../src/weather/weather-models.js';
 import { createWeatherClient, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.js';
 
 const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391, nation: 'united states' };
@@ -16,9 +16,21 @@ const response = body => new Response(JSON.stringify(body), { headers: { 'conten
 
 test('validated data carries packaged model gust timing, with CERRA and forecasts retaining interval maxima', () => {
     for (const selected of WEATHER_MODELS.filter(item => item.fields.includes('wind_gusts_10m'))) {
-        const expected = ['ecmwf_ifs', 'era5_seamless', 'era5'].includes(selected.id) ? 'instant' : 'preceding-hour';
+        const expected = ['best_match', 'ecmwf_ifs', 'era5_seamless', 'era5'].includes(selected.id) ? 'instant' : 'preceding-hour';
         assert.equal(validateWeatherResponse(weatherResponse({ model: selected }), summit, window, selected).gustTiming, expected);
     }
+});
+
+test('archive Best Match uses the packaged archive endpoint across its date coverage', () => {
+    const url = new URL(weatherRequestUrl(summit, window, ARCHIVE_BEST_MATCH));
+    assert.equal(url.origin + url.pathname, 'https://archive-api.open-meteo.com/v1/archive');
+    assert.equal(url.searchParams.get('models'), 'best_match');
+    assert.equal(url.searchParams.get('hourly'), ARCHIVE_BEST_MATCH.fields.join(','));
+    for (const date of ['1940-01-01', '2000-01-01', '2024-07-12']) {
+        assert.ok(eligibleWeatherModels(summit, date, Date.parse('2026-10-11')).includes(ARCHIVE_BEST_MATCH));
+    }
+    const first = new URL(weatherRequestUrl(summit, { startDate: '1939-12-31', endDate: '1940-01-02' }, ARCHIVE_BEST_MATCH));
+    assert.equal(first.searchParams.get('start_date'), '1940-01-01');
 });
 
 test('model recommendations respect date, nation and projected regional grids', () => {

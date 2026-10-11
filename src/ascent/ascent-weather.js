@@ -12,7 +12,7 @@ import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
 import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
-import { eligibleWeatherModels, recommendedWeatherModels } from '../weather/weather-models.js';
+import { ARCHIVE_BEST_MATCH, eligibleWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
 import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
 
@@ -44,7 +44,7 @@ export function mountAscentWeather() {
         readings[key] = { value, detail };
         metrics.append(element('div', {}, [element('dt', { text: label }), value, detail]));
     }
-    const select = element('select', { id: `${ID}-model`, 'aria-label': 'Weather model' }, [element('option', { value: 'auto', text: 'Auto (recommended)' })]);
+    const select = element('select', { id: `${ID}-model`, 'aria-label': 'Weather model' }, [element('option', { value: ARCHIVE_BEST_MATCH.id, text: 'Best Match (Open-Meteo)' })]);
     const modelName = element('span'), modelType = element('span', { class: 'bpb-weather-sub' });
     const modelRow = element('div', { class: 'bpb-weather-model' }, [
         element('div', {}, [element('label', { for: select.id, text: 'Weather model' }), select]),
@@ -142,7 +142,7 @@ export function mountAscentWeather() {
     let settingsReady = false;
     const enabled = () => settingsReady && preference.showWeather;
     let metric = 'temperature', generation = 0, controller = null, started = false, visibilityObserver = null;
-    const failed = new Set(), client = createWeatherClient();
+    const client = createWeatherClient();
     let lifecycle;
     const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; });
     let cursorState = { hovering: false, hoverTime: null, selected: false, selectionTime: null };
@@ -300,7 +300,9 @@ export function mountAscentWeather() {
         locationLabel.textContent = `${subject.peak.name} · At the summit${summit.elevation === null ? '' : ` · ${units.formatElevation(summit.elevation, unitSystem())}`}`;
         modelName.textContent = `Using ${model.label} · ${model.resolution}`; modelType.textContent = model.type;
         zoneText.textContent = mountainTime.zoneLabel(dayWindow.zone, dayWindow.start);
-        sourceText.textContent = `${model.label}, ${model.resolution}. ${model.type}; native ${model.intervalHours}-hour data${model.intervalHours > 1 ? ', interpolated to hourly' : ''}. Summit timezone: ${dayWindow.zone.timeZone || zoneText.textContent}. Selected grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}. ${summit.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${data.grid.elevation.toFixed(0)} m.${day.precipitation.allocationEstimated ? ' Precipitation at fractional-hour day boundaries is proportionally allocated.' : ''} Model estimates cannot establish the climber’s summit time or route conditions.`;
+        const modelDetails = model === ARCHIVE_BEST_MATCH ? 'Open-Meteo combines ECMWF IFS, ERA5 and ERA5-Land according to available dates and variables. The API does not identify the source of each value.'
+            : `Native ${model.intervalHours}-hour data${model.intervalHours > 1 ? ', interpolated to hourly' : ''}.`;
+        sourceText.textContent = `${model.label}, ${model.resolution}. ${model.type}. ${modelDetails} Summit timezone: ${dayWindow.zone.timeZone || zoneText.textContent}. Selected grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}. ${summit.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${data.grid.elevation.toFixed(0)} m.${day.precipitation.allocationEstimated ? ' Precipitation at fractional-hour day boundaries is proportionally allocated.' : ''} Model estimates cannot establish the climber’s summit time or route conditions.`;
         drawChart();
     }
     const busy = value => { card.setAttribute('aria-busy', String(value)); retry.hidden = true; };
@@ -314,7 +316,7 @@ export function mountAscentWeather() {
         dayWindow = weatherDayWindow(subject.date, zone);
         candidates = eligibleWeatherModels(summit, subject.date);
         if (!candidates.length) throw new Error('No historical weather models cover this ascent date.');
-        for (const model of candidates) select.append(element('option', { value: model.id, text: `${model.label} · ${model.resolution}` }));
+        for (const model of candidates) if (model !== ARCHIVE_BEST_MATCH) select.append(element('option', { value: model.id, text: `${model.label} · ${model.resolution}` }));
         modelRow.hidden = false;
     };
     async function load() {
@@ -328,30 +330,23 @@ export function mountAscentWeather() {
             await prepare(signal);
             if (ownGeneration !== generation) return;
             dayWindow = weatherDayWindow(subject.date, mountainTime.resolve(summit.latitude, summit.longitude));
-            const automatic = select.value === 'auto';
-            const chain = automatic ? recommendedWeatherModels(summit, subject.date).filter(model => !failed.has(model.id)).slice(0, 3) : candidates.filter(model => model.id === select.value);
-            let result = null;
-            for (const model of chain) {
+            const model = candidates.find(candidate => candidate.id === select.value);
+            if (!model) throw new Error('No historical weather model covers this ascent date.');
+            let data;
+            try { data = await client.request(summit, dayWindow, model, { signal }); }
+            catch (error) {
                 if (ownGeneration !== generation) return;
-                let data;
-                try { data = await client.request(summit, dayWindow, model, { signal }); }
-                catch (error) {
-                    if (error.code !== 'unavailable') { if (result) { current = result; renderResult(); } throw error; }
-                    failed.add(model.id); const option = [...select.options].find(candidate => candidate.value === model.id);
+                if (error.code === 'unavailable') {
+                    const option = [...select.options].find(candidate => candidate.value === model.id);
                     if (option) { option.disabled = true; option.textContent += ' — unavailable'; }
-                    if (!automatic) throw error;
-                    continue;
                 }
-                if (ownGeneration !== generation) return;
-                const day = summarizeWeatherDay(data, dayWindow);
-                if (day.useful && !result) result = { model, day, data };
-                if (day.coreComplete || (dayWindow.partial && day.useful)) { result = { model, day, data }; break; }
-                if (!automatic) break;
+                throw error;
             }
             if (ownGeneration !== generation) return;
-            if (!result) throw new Error('No weather data is available for this model and ascent day. Choose another model.');
-            current = result; renderResult(); status.textContent = dayWindow.partial ? 'Partial day · Weather so far' : result.day.partial ? 'Partial data · Some hours or measurements are unavailable' : '';
-            retry.hidden = !result.day.partial && !dayWindow.partial;
+            const day = summarizeWeatherDay(data, dayWindow);
+            if (!day.useful) throw new Error('No weather data is available for this model and ascent day. Choose another model.');
+            current = { model, day, data }; renderResult(); status.textContent = dayWindow.partial ? 'Partial day · Weather so far' : day.partial ? 'Partial data · Some hours or measurements are unavailable' : '';
+            retry.hidden = !day.partial && !dayWindow.partial;
         } catch (error) {
             if (ownGeneration !== generation || signal.aborted) return;
             if (!current) resultArea.hidden = true;
@@ -363,10 +358,10 @@ export function mountAscentWeather() {
     }
     select.addEventListener('change', load);
     retry.addEventListener('click', () => {
-        client.clear(); failed.clear();
+        client.clear();
         for (const model of candidates) {
             const option = [...select.options].find(candidate => candidate.value === model.id);
-            if (option) { option.disabled = false; option.textContent = `${model.label} · ${model.resolution}`; }
+            if (option) { option.disabled = false; option.textContent = model === ARCHIVE_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}`; }
         }
         void load();
     });

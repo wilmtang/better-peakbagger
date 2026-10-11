@@ -358,7 +358,8 @@ card after five minutes refreshes expired data unless the previous request faile
 Open-Meteo receives the summit latitude/longitude, summit elevation when
 available, date window and weather fields, IP address, and ordinary request
 metadata. Ascent weather uses a three-UTC-day window covering the local ascent
-date and a selected model. Peak weather uses a padded UTC window covering the
+date and Open-Meteo's archive Best Match by default, or an explicitly selected
+model. Peak weather uses a padded UTC window covering the
 sixteen completed local days and today plus fifteen forecast days, capped at the
 API's available horizon, with automatic regional model selection. Weather
 requests omit credentials and referrers. No ascent or climber ID, summit name,
@@ -366,8 +367,8 @@ report, GPX, track times, account credentials, or page URL is sent to Open-Meteo
 An hourly graph cursor can follow GPX hover or selection using only timestamps
 passed locally between the page's extension scripts. Cursor movement makes no
 additional network request and persists no track data.
-Changing models or clicking Retry makes another request; Auto may try up to
-three candidates when a model lacks data. Rate limits and network failures do
+Changing models or clicking Retry makes another request. The ascent archive's
+Best Match is one request and does not try other models on failure. Rate limits and network failures do
 not trigger automatic retries. Results remain only in a small, short-lived
 per-tab memory cache, never browser sync, backups, or persistent ascent history.
 

@@ -38,7 +38,7 @@ const sendCursor = (env, state, detail = {}) => env.win.dispatchEvent(new env.wi
     data: { type: GPX_TIME_CURSOR, hovering: false, hoverTime: null, selected: false, selectionTime: null, ...state }, ...detail,
 }));
 const openChart = async env => {
-    await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'));
+    await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
     env.doc.querySelector('.bpb-weather-chart').getBoundingClientRect = () => ({ width: 500 });
     env.doc.querySelector('.bpb-weather-disclosure').click();
 };
@@ -292,7 +292,7 @@ test('models with no condition field keep Conditions available with a clear empt
 test('bundled independent card loads on a visitor ascent without GPX or map', async () => {
     const env = setup({ html: ascent.replace('Sunday, July 12, 2026', 'July 12, 2024').replace(/<div id="gpxlinks">[\s\S]*?<\/div>/, '').replace(/<div id="owneractions">[\s\S]*?<\/div>/, '') });
     try {
-        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description')?.textContent.includes('Using HRRR'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description')?.textContent.includes('Using Best Match'));
         assert.equal(env.requests.length, 2);
         assert.match(env.doc.querySelector('.bpb-weather-condition').textContent, /Snow occurred/);
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').previousElementSibling.id, 'summarydata');
@@ -302,6 +302,10 @@ test('bundled independent card loads on a visitor ascent without GPX or map', as
         assert.equal(env.doc.querySelector('#bpb-ascent-gpx-details'), null);
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy'), 'false');
         const transfer = env.requests[1]; assert.equal(transfer.init.credentials, 'omit'); assert.equal(transfer.init.referrerPolicy, 'no-referrer');
+        assert.equal(new URL(transfer.url).origin + new URL(transfer.url).pathname, 'https://archive-api.open-meteo.com/v1/archive');
+        assert.equal(new URL(transfer.url).searchParams.get('models'), 'best_match');
+        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.match(env.doc.querySelector('.bpb-weather-source-text').textContent, /combines ECMWF IFS, ERA5 and ERA5-Land/);
         assert.equal(new URL(transfer.url).searchParams.has('aid'), false);
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
         assert.match(env.doc.querySelector('[data-weather-value="temperature"]').textContent, /°C$/);
@@ -421,11 +425,11 @@ test('superseded response cannot overwrite explicit model choice', async () => {
         return Promise.resolve(new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } }));
     } });
     try {
-        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
         const select = env.doc.querySelector('select');
         select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => finishSlow);
-        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Showing HRRR while loading/);
+        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Showing Best Match while loading/);
         select.value = 'ecmwf_ifs'; select.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using ECMWF IFS'));
         finishSlow(new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } }));
@@ -434,16 +438,16 @@ test('superseded response cannot overwrite explicit model choice', async () => {
 });
 
 test('rate limits preserve previous results without cascading, explicit selection never falls back', async () => {
-    const env = setup({ fetchWeather: url => new URL(url).searchParams.get('models') === 'gfs_hrrr'
+    const env = setup({ fetchWeather: url => new URL(url).searchParams.get('models') === 'best_match'
         ? Promise.resolve(new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } }))
         : Promise.resolve(new Response('', { status: 429, headers: { 'retry-after': '120' } })) });
     try {
-        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
         const before = env.requests.length;
         const select = env.doc.querySelector('select'); select.value = 'ecmwf_ifs'; select.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('Open-Meteo request limit reached'));
         assert.equal(env.requests.length, before + 1);
-        assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using HRRR/);
+        assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using Best Match/);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').disabled, true);
         assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');
@@ -453,26 +457,27 @@ test('rate limits preserve previous results without cascading, explicit selectio
     } finally { env.close(); }
 });
 
-test('auto falls back for missing archives and partial totals are labelled', async () => {
+test('archive Best Match retains partial data without a country-policy fallback', async () => {
     const env = setup({ fetchWeather: url => {
         const model = new URL(url).searchParams.get('models');
-        if (model === 'gfs_hrrr') return Promise.resolve(new Response('', { status: 400 }));
+        assert.equal(model, 'best_match');
         const body = weatherFixture(); body.hourly.precipitation[40] = null;
         return Promise.resolve(new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }));
     } });
     try {
         await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('Partial data'));
-        assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using ECMWF IFS/);
-        assert.equal(env.doc.querySelector('option[value="gfs_hrrr"]').disabled, true);
+        assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using Best Match/);
+        assert.equal(env.requests.length, 2);
+        assert.equal(env.doc.querySelector('option[value="gfs_hrrr"]').disabled, false);
         assert.equal(env.doc.querySelector('[data-weather-value="precipitation"]').nextElementSibling.textContent, 'Partial total');
     } finally { env.close(); }
 });
 
-test('explicit Retry fetches fresh data and reconsiders unavailable automatic candidates', async () => {
+test('explicit Retry fetches a fresh archive Best Match result', async () => {
     let refreshed = false;
     const env = setup({ fetchWeather: url => {
         const model = new URL(url).searchParams.get('models');
-        if (!refreshed && model === 'gfs_hrrr') return Promise.resolve(new Response('', { status: 400 }));
+        assert.equal(model, 'best_match');
         const body = weatherFixture();
         if (!refreshed) body.hourly.precipitation[40] = null;
         return Promise.resolve(new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }));
@@ -482,11 +487,29 @@ test('explicit Retry fetches fresh data and reconsiders unavailable automatic ca
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, false);
         const before = env.requests.length; refreshed = true;
         env.doc.querySelector('.bpb-weather-retry').click();
-        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'));
+        await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy') === 'false'
+            && env.doc.querySelector('.bpb-weather-status').textContent === '');
         assert.equal(env.requests.length, before + 1);
         assert.equal(env.doc.querySelector('option[value="gfs_hrrr"]').disabled, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, true);
         assert.equal(env.doc.querySelector('[data-weather-value="precipitation"]').nextElementSibling.textContent, 'Water equivalent');
+    } finally { env.close(); }
+});
+
+test('archive Best Match failure makes one request and an explicit Retry re-enables the choice', async () => {
+    let available = false;
+    const env = setup({ fetchWeather: () => available
+        ? new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } })
+        : new Response('', { status: 400 }) });
+    try {
+        await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('no data'));
+        assert.equal(env.requests.length, 2);
+        assert.equal(env.doc.querySelector('option[value="best_match"]').disabled, true);
+        available = true; env.doc.querySelector('.bpb-weather-retry').click();
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
+        assert.equal(env.requests.length, 3);
+        assert.equal(env.doc.querySelector('option[value="best_match"]').disabled, false);
+        assert.equal(env.doc.querySelector('option[value="best_match"]').textContent, 'Best Match (Open-Meteo)');
     } finally { env.close(); }
 });
 

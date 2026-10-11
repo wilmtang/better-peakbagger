@@ -313,7 +313,7 @@ try {
         await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);
         await resize(1440, 1100);
         await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
-        await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using HRRR'), 'weather result from the real isolated bundle');
+        await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather result from the real isolated bundle');
         await wait(() => document.getElementById('bpb-ascent-weather')?.getAttribute('aria-busy') === 'false', 'settled weather card');
         if (live) {
             summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, liveCors: 'passed', viewport: { width: 1440, height: 1100 }, profile: temporaryRoot };
@@ -325,7 +325,7 @@ try {
                 for (const kind of ['gpx', 'no-gpx', 'no-map', 'long-report']) {
                     await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=${kind}`);
                     await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
-                    await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using HRRR'), 'weather with and without GPX');
+                    await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather with and without GPX');
                     if (kind === 'gpx') {
                         await wait(() => !!document.getElementById('bpb-route-explorer'), 'complete GPX route explorer before placement check');
                         await wait(() => document.querySelectorAll('#bpb-ascent-gpx-details .bpb-map-handoff-button').length === 4, 'original provider controls above weather');
@@ -406,7 +406,7 @@ try {
             await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('Loading'), 'visible loading feedback');
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-loading.png`));
             mode = 'complete'; held.splice(0).forEach(resolve => resolve());
-            await wait(() => document.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'), 'loading settles');
+            await wait(() => document.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'), 'loading settles');
             await evaluate(() => { const select = document.querySelector('.bpb-weather-model select'); select.value = 'ecmwf_ifs_analysis_long_window'; select.dispatchEvent(new Event('change')); });
             await wait(() => document.querySelector('.bpb-weather-model-description').textContent.includes('Using IFS Assimilation'), 'explicit model without precipitation');
             assert.equal(await evaluate(() => document.querySelector('[data-weather-value="precipitation"]').textContent), '—');

@@ -47,6 +47,8 @@ const model = (id, label, resolution, since, domain = global, options = {}) => O
     id, label, resolution, since, until: null, domain, endpoint: forecast,
     intervalHours: 1, delayDays: 0, fields, gustTiming: 'preceding-hour', type: 'Archived forecast model', ...options,
 });
+export const ARCHIVE_BEST_MATCH = model('best_match', 'Best Match', '9–25 km', '1940-01-01', global,
+    { endpoint: archive, gustTiming: 'instant', type: 'Open-Meteo archive blend' });
 export const WEATHER_MODELS = Object.freeze([
     model('gfs_hrrr', 'HRRR', '3 km', '2018-01-01', conus),
     model('gem_hrdps_continental', 'HRDPS Continental', '2.5 km', '2023-03-03', hrdps),
@@ -87,6 +89,7 @@ export const WEATHER_MODELS = Object.freeze([
     model('knmi_harmonie_arome_europe', 'KNMI Europe', '5.5 km', '2024-07-01', box(48, 65, -10, 25)),
     model('meteoswiss_icon_ch1', 'MeteoSwiss ICON CH1', '1 km', '2025-07-29', box(45, 49, 5, 12)),
     model('meteoswiss_icon_ch2', 'MeteoSwiss ICON CH2', '2 km', '2025-07-29', box(45, 49, 5, 12)),
+    ARCHIVE_BEST_MATCH,
 ]);
 
 export function eligibleWeatherModels(summit, date, now = Date.now()) {
