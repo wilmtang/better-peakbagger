@@ -22,6 +22,25 @@ import { walkFiles } from '../helpers/walk-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+test('legacy unit preferences retain their default and all measurement overrides inherit', () => {
+    for (const units of ['auto', 'metric', 'imperial']) {
+        const clean = Schema.clean({ units });
+        assert.equal(clean.units, units);
+        for (const key of Object.values(Schema.UNIT_KEYS)) assert.equal(clean[key], 'default');
+        assert.deepEqual(Schema.clean(clean), clean);
+    }
+});
+
+test('every unit override shares validation and invalid values inherit the default', () => {
+    for (const key of Object.values(Schema.UNIT_KEYS)) {
+        for (const value of ['default', 'metric', 'imperial']) assert.equal(Schema.clean({ [key]: value })[key], value);
+        for (const value of [null, 'auto', 'fahrenheit', {}, [], true]) assert.equal(Schema.clean({ [key]: value })[key], 'default');
+    }
+    assert.deepEqual(Schema.trackUnitsPatch('metric'), { distanceUnits: 'metric', elevationUnits: 'metric' });
+    assert.deepEqual(Schema.trackUnitsPatch('default'), { distanceUnits: 'default', elevationUnits: 'default' });
+    assert.deepEqual(Schema.trackUnitsPatch({ temperature: 'metric' }), {});
+});
+
 test('display preferences default on, retain explicit opt-outs and reject non-booleans', () => {
     for (const key of ['showSunMoon', 'showWeather']) {
         assert.equal(Schema.DEFAULTS[key], true);

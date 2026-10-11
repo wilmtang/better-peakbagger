@@ -38,6 +38,29 @@ test('auto falls back to imperial when no probe can answer', () => {
     assert.equal(Units.resolveUnits({}), 'imperial');
 });
 
+test('measurement overrides win independently and inherit a changed default', () => {
+    const mixed = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', elevationUnits: 'metric' };
+    assert.equal(Units.resolveUnits(mixed, null, 'distance'), 'imperial');
+    assert.equal(Units.resolveUnits(mixed, null, 'elevation'), 'metric');
+    assert.equal(Units.resolveUnits(mixed, null, 'temperature'), 'metric');
+    assert.equal(Units.resolveUnits(mixed, null, 'precipitation'), 'metric');
+    assert.equal(Units.resolveUnits(mixed, null, 'wind'), 'imperial');
+    assert.equal(Units.resolveUnits({ ...mixed, units: 'metric' }, null, 'distance'), 'metric');
+    assert.equal(Units.resolveUnits({ units: 'auto', temperatureUnits: 'imperial' }, () => 'metric', 'temperature'), 'imperial');
+    assert.equal(Units.resolveUnits({ units: 'auto', distanceUnits: 'invalid' }, () => 'metric', 'distance'), 'metric');
+});
+
+test('weather formatting converts canonical values with measurement-specific precision', () => {
+    assert.equal(Units.formatWeather(9, 'temperature', 'metric'), '9°C');
+    assert.equal(Units.formatWeather(9, 'temperature', 'imperial'), '48°F');
+    assert.equal(Units.formatWeather(-4, 'temperature', 'metric'), '−4°C');
+    assert.equal(Units.formatWeather(4.2, 'precipitation', 'metric'), '4.2 mm');
+    assert.equal(Units.formatWeather(4.2, 'precipitation', 'imperial'), '0.17 in');
+    assert.equal(Units.formatWeather(16, 'wind', 'metric'), '16 km/h');
+    assert.equal(Units.formatWeather(16, 'wind', 'imperial'), '10 mph');
+    assert.equal(Units.formatWeather(null, 'temperature', 'metric'), '—');
+});
+
 test('display strings match what each surface used to produce on its own', () => {
     assert.equal(Units.formatDistance(1609.344, 'imperial'), '1.0 mi');
     assert.equal(Units.formatDistance(1000, 'metric'), '1.0 km');

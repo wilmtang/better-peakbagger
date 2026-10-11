@@ -68,6 +68,32 @@ const chooseModel = (env, id) => {
     select.value = id; select.dispatchEvent(new env.win.Event('change'));
 };
 
+test('mixed weather units update live without changing the default or refetching canonical data', async () => {
+    const storedSettings = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', elevationUnits: 'metric' };
+    const env = setup({ storedSettings });
+    try {
+        await settled(env, { past: false });
+        assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°C/);
+        assert.match(env.doc.querySelector('.bpb-week-metrics').textContent, /mm.*mph/);
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /\d+ m\b/);
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        day.querySelector('[data-metric="precipitation"]').click();
+        assert.match(day.querySelector('svg').getAttribute('aria-label'), /mm/);
+        const requests = env.requests.length;
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, temperatureUnits: 'imperial', elevationUnits: 'imperial', windUnits: 'metric' } } }, 'sync'));
+        assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°F/);
+        assert.match(env.doc.querySelector('.bpb-week-metrics').textContent, /mm.*km\/h/);
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /\d+ ft\b/);
+        assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'precipitation');
+        assert.equal(env.requests.length, requests);
+        const query = new URL(env.requests[0].url).searchParams;
+        assert.equal(query.get('temperature_unit'), 'celsius');
+        assert.equal(query.get('precipitation_unit'), 'mm');
+        assert.equal(query.get('wind_speed_unit'), 'kmh');
+    } finally { env.close(); }
+});
+
 test('named GFS is the default with independent locally remembered period choices', async () => {
     const env = setup({ fetchFn: url => {
         const query = new URL(url).searchParams;

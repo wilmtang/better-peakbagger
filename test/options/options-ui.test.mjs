@@ -301,7 +301,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(drafts.id, 'drafts', 'the established deep-link anchor stays stable');
     assert.equal(drafts.querySelector('#drafts-list'), null, 'the list is not a setting');
     assert.equal(drafts.querySelector('#open-draft-manager').getAttribute('href'), 'drafts.html');
-    assert.match(mapChart.querySelector('label[for="units"] .desc').textContent, /processing summaries/);
+    assert.match(general.querySelector('label[for="units"] .desc').textContent, /across Better Peakbagger/);
     // The custom-list workspace moved to its own page; Settings keeps the
     // anchor and links out, the way trip report drafts do.
     assert.equal(favorites.querySelector('input[value="custom"]'), null, 'the list is not a setting');
@@ -313,7 +313,8 @@ test('settings are grouped by the surface they affect', async () => {
 
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#enable-3d-map'));
-    assert.equal(general.querySelector('#units'), null);
+    assert.ok(general.querySelector('#general-units #units'));
+    assert.equal(mapChart.querySelector('#units'), null);
     // The trip-report controls moved out of General into Capture & reports.
     assert.equal(general.querySelector('#enable-report-editor'), null);
     assert.equal(general.querySelector('#add-report-credit'), null);
@@ -338,7 +339,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(capture.querySelector('#capture-photos #imgbb-key'),
         'the ImgBB key should belong to Report photos');
     // Map & GPX chart → GPX chart / Map
-    for (const id of ['units', 'chart-series']) {
+    for (const id of ['chart-series']) {
         assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);
     }
     for (const id of ['map-route-color', 'remember-map-layer', 'terrain-cache-limit', 'map-viewport-width']) {
@@ -973,7 +974,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
+        ['#general-units', '#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
@@ -986,7 +987,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     }
     assert.deepEqual(
         Array.from(doc.querySelectorAll('#github > .subsection'), section => `#${section.id}`),
-        subLinks.slice(8).map(link => link.getAttribute('href')),
+        subLinks.slice(9).map(link => link.getAttribute('href')),
         'Backup & sync subsections should follow their sidebar order',
     );
     const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');

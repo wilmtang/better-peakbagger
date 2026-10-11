@@ -117,6 +117,19 @@ export const createPageSettingsClient = ({
     };
     ownerWindow.addEventListener('message', receive);
 
+    const set = (patch, wirePatch = patch) => {
+        if (disposed) return null;
+        const requestId = nextRequestId++;
+        const timer = setTimer(() => fail(requestId), writeAckTimeoutMs);
+        pending.set(requestId, { patch, timer });
+        settings = Schema.clean({ ...(settings || safeFallback), ...patch });
+        markApplied();
+        ownerWindow.postMessage({
+            __bpb: true, dir: 'toCS', kind: 'set', requestId, patch: wirePatch
+        }, ownerLocation.origin);
+        return requestId;
+    };
+
     return {
         init: async () => {
             ownerWindow.postMessage({ __bpb: true, dir: 'toCS', kind: 'get' }, ownerLocation.origin);
@@ -141,23 +154,10 @@ export const createPageSettingsClient = ({
             ownerWindow.postMessage({ __bpb: true, dir: 'toCS', kind: 'get' }, ownerLocation.origin);
             return true;
         },
-        set: patch => {
-            if (disposed) return null;
-            const requestId = nextRequestId++;
-            const timer = setTimer(() => fail(requestId), writeAckTimeoutMs);
-            pending.set(requestId, { patch, timer });
-            settings = Schema.clean({ ...(settings || safeFallback), ...patch });
-            // The caller applies this patch itself; subscribers should only
-            // receive later reconciliation or external changes.
-            markApplied();
-            ownerWindow.postMessage({
-                __bpb: true,
-                dir: 'toCS',
-                kind: 'set',
-                requestId,
-                patch
-            }, ownerLocation.origin);
-            return requestId;
+        set,
+        setTrackUnits: value => {
+            const patch = Schema.trackUnitsPatch(value);
+            return Object.keys(patch).length ? set(patch, { units: value }) : null;
         },
         subscribe: subscriber => {
             subscribers.add(subscriber);

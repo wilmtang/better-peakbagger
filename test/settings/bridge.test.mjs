@@ -44,12 +44,34 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
     await waitFor(dom, () => dom.chrome._store.bpbSettings);
 
     const stored = dom.chrome._store.bpbSettings;
-    assert.equal(stored.units, 'metric');
+    assert.equal(stored.units, 'auto', 'the chart shortcut cannot change the global default');
+    assert.equal(stored.distanceUnits, 'metric');
+    assert.equal(stored.elevationUnits, 'metric');
     assert.equal(stored.mapRouteColor, '#123abc');
     assert.equal(stored.enable3dMap, false, 'page-world writes must not flip extension feature gates');
     assert.equal(stored.theme, 'system', 'page-world writes must not change the theme');
     assert.equal(stored.retainWaypoints, true, 'page-world writes must not change capture privacy options');
     assert.equal(stored.fillAscentDetails, true, 'page-world writes must not change capture autofill options');
+    dom.window.close();
+});
+
+test('the chart units wire key cannot write defaults, weather overrides or arbitrary nested settings', async () => {
+    const dom = await loadBridge();
+    await dom.chrome.storage.sync.set({ bpbSettings: {
+        units: 'metric', temperatureUnits: 'imperial', precipitationUnits: 'metric', windUnits: 'metric'
+    } });
+    sendToBridge(dom, { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'imperial', windUnits: 'imperial' });
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.distanceUnits === 'imperial');
+    const stored = dom.chrome._store.bpbSettings;
+    assert.equal(stored.units, 'metric');
+    assert.equal(stored.temperatureUnits, 'imperial');
+    assert.equal(stored.precipitationUnits, 'metric');
+    assert.equal(stored.windUnits, 'metric');
+    const before = JSON.stringify(stored);
+    sendToBridge(dom, { units: { temperatureUnits: 'metric', units: 'imperial' } }, 2);
+    await waitFor(dom, () => dom.postedMessages.some(message => message.requestId === 2 && message.kind === 'setResult'));
+    assert.equal(dom.postedMessages.find(message => message.requestId === 2 && message.kind === 'setResult').ok, false);
+    assert.equal(JSON.stringify(dom.chrome._store.bpbSettings), before);
     dom.window.close();
 });
 

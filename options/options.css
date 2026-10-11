@@ -88,6 +88,17 @@ label.label { cursor: pointer; }
 /* The shared panel stylesheet gives every control its colour, border, and
    radius; a setting row only decides how much width its value needs. */
 select { min-width: 168px; }
+#general-units select { width: 220px; }
+#general-units { margin-top: 16px; }
+.unit-customize { border-top: 1px solid var(--border); }
+.unit-customize summary { padding: 14px 18px; color: var(--link); font-weight: 600; cursor: pointer; }
+.unit-custom-count { float: right; font-size: 12px; font-weight: 400; color: var(--sub); }
+.unit-reset-row { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
+.unit-example { padding: 12px 18px 0; }
+.unit-example-heading { color: var(--sub); font-size: 12px; margin-bottom: 6px; }
+.unit-example dl { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+.unit-example dt { color: var(--sub); }
+.unit-example dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 input[type="number"] { min-width: 96px; text-align: right; }
 
 .route-style { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -603,6 +614,10 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 @media (max-width: 480px) {
+    #general-units select { width: 100%; }
+    .unit-custom-count { float: none; display: block; margin: 4px 0 0 17px; }
+    .unit-example dl { grid-template-columns: 1fr; }
+    .unit-example dd + dt { margin-top: 6px; }
     .row { flex-direction: column; align-items: stretch; }
     .row .desc { max-width: none; }
     .control { width: 100%; }

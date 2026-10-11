@@ -342,6 +342,28 @@ try {
         } else {
             const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
             if (output) await mkdir(output, { recursive: true });
+            const mixedUnits = { theme: 'light', units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', windUnits: 'imperial' };
+            const beforeUnitChange = evidence.length;
+            await setSettings(mixedUnits);
+            await wait(() => document.querySelector('[data-weather-value="temperature"]')?.textContent.includes('°C')
+                && document.querySelector('[data-weather-value="precipitation"]')?.textContent.includes('mm')
+                && document.querySelector('[data-weather-value="gust"]')?.textContent.includes('mph'), 'mixed weather units');
+            await click('.bpb-weather-disclosure');
+            await click('[data-metric="temperature"]');
+            await wait(() => document.querySelector('.bpb-weather-chart')?.getAttribute('aria-label')?.includes('°C'), 'Celsius chart axis');
+            await click('[data-metric="conditions"]');
+            await wait(() => document.querySelector('[data-weather-row="temperature"] td')?.textContent.includes('°C')
+                && document.querySelector('[data-weather-row="precipitation"] td')?.textContent.includes('mm'), 'mixed hourly weather units');
+            const unitOutput = process.env.BPB_VERIFY_UNIT_SCREENSHOTS_DIR;
+            if (unitOutput) {
+                await mkdir(unitOutput, { recursive: true });
+                await screenshot(path.join(unitOutput, `${firefoxMode ? 'firefox' : 'chrome'}-mixed-weather-units.png`));
+            }
+            await setSettings({ ...mixedUnits, temperatureUnits: 'imperial', windUnits: 'metric' });
+            await wait(() => document.querySelector('[data-weather-value="temperature"]')?.textContent.includes('°F')
+                && document.querySelector('[data-weather-value="gust"]')?.textContent.includes('km/h')
+                && document.querySelector('[data-weather-row="precipitation"] td')?.textContent.includes('mm'), 'independent live weather unit changes');
+            assert.equal(evidence.length, beforeUnitChange, 'display preferences must not refetch weather');
             for (const theme of ['light', 'dark']) {
                 await setSettings({ theme, units: theme === 'dark' ? 'metric' : 'imperial' });
                 for (const kind of ['gpx', 'no-gpx', 'no-map', 'long-report']) {

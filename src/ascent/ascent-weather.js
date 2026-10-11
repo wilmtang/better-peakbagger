@@ -240,13 +240,13 @@ export function mountAscentWeather() {
         window.postMessage({ type: GPX_TIME_CURSOR_REQUEST }, location.origin);
     };
     const stopCursor = () => { window.removeEventListener('message', receiveCursor); cancelCursorFrame(); };
-    const unitSystem = () => units.resolveUnits(preference, () => {
+    const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => {
         const elevationText = clean(document.querySelector('.peakinfo')?.textContent || subject.table?.textContent);
         return /\d\s*(?:meters|m)\b/i.test(elevationText) && !/\d\s*(?:feet|ft)\b/i.test(elevationText) ? 'metric' : 'imperial';
-    });
-    const convert = (value, key) => unitSystem() === 'imperial' ? (key === 'temperature' ? value * 9 / 5 + 32 : key === 'precipitation' ? value / 25.4 : value / 1.609344) : value;
-    const unit = key => key === 'temperature' ? (unitSystem() === 'imperial' ? '°F' : '°C') : key === 'precipitation' ? (unitSystem() === 'imperial' ? 'in' : 'mm') : (unitSystem() === 'imperial' ? 'mph' : 'km/h');
-    const format = (value, key) => numeric(value) ? `${convert(value, key).toFixed(key === 'precipitation' ? (unitSystem() === 'imperial' ? 2 : 1) : 0).replace('-', '−')}${key === 'temperature' ? '' : ' '}${unit(key)}` : '—';
+    }, measurement);
+    const convert = (value, key) => units.convertWeather(value, key, unitSystem(key));
+    const unit = key => units.symbol(key, unitSystem(key));
+    const format = (value, key) => units.formatWeather(value, key, unitSystem(key));
 
     let readingRows = [], readingSelected = null, readingHover = null, readingGeometry = null;
     const readingLabel = row => {
@@ -354,7 +354,7 @@ export function mountAscentWeather() {
         for (const value of [low, (low + high) / 2, high]) {
             const yy = bottom - (value - low) / (high - low) * (bottom - top);
             add('line', { x1: left, x2: right, y1: yy, y2: yy, class: 'bpb-weather-grid' });
-            add('text', { x: left - 7, y: yy + 4, 'text-anchor': 'end' }, value.toFixed(metric === 'precipitation' ? (unitSystem() === 'imperial' ? 2 : 1) : 0));
+            add('text', { x: left - 7, y: yy + 4, 'text-anchor': 'end' }, value.toFixed(units.weatherDigits(metric, unitSystem(metric))));
         }
         const tickCount = width < 200 ? 2 : width < 400 ? 3 : 5;
         for (let index = 0; index < tickCount; index++) {

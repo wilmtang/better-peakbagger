@@ -22,6 +22,16 @@ const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
 const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
 
 const REPORT_EDITOR_MODES = Object.freeze(['rich', 'markdown', 'plain']);
+const UNIT_KEYS = Object.freeze({
+    distance: 'distanceUnits', elevation: 'elevationUnits',
+    temperature: 'temperatureUnits', precipitation: 'precipitationUnits', wind: 'windUnits'
+});
+const unitOverride = value => ['default', 'metric', 'imperial'].includes(value) ? value : 'default';
+// The existing page-world `units` control now writes only these two overrides.
+// Keep the default and every weather preference outside that write boundary.
+const trackUnitsPatch = value => ['default', 'auto', 'metric', 'imperial'].includes(value)
+    ? { distanceUnits: value === 'auto' ? 'default' : value, elevationUnits: value === 'auto' ? 'default' : value }
+    : {};
 
 // The one definition of the extension's route look. Every surface that
 // draws or validates a route resolves through ROUTE_STYLE and BOUNDS.
@@ -38,6 +48,8 @@ const BOUNDS = {
 
 const DEFAULTS = {
     units: 'auto', theme: 'system',
+    distanceUnits: 'default', elevationUnits: 'default',
+    temperatureUnits: 'default', precipitationUnits: 'default', windUnits: 'default',
     showSunMoon: true,
     showWeather: true,
     enable3dMap: false,
@@ -206,6 +218,7 @@ const viewportSizeFromSettings = settings => ({
 const clean = raw => {
     const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
+    for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
     for (const key of ['showSunMoon', 'showWeather', 'enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
@@ -243,6 +256,9 @@ const clean = raw => {
 };
 
 const API = {
+    UNIT_KEYS,
+    unitOverride,
+    trackUnitsPatch,
     MAP_PROVIDERS,
     PEAK_FILTER_ORDER,
     PERSONAL_FILTER_ORDER,

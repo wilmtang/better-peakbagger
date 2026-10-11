@@ -137,6 +137,26 @@ test('refresh requests an authoritative snapshot until the client is disposed', 
     fixture.dom.window.close();
 });
 
+test('track unit writes preserve the default and weather preferences, including on rollback', async () => {
+    const fixture = await setup();
+    fixture.dispatch({ kind: 'push', settings: { units: 'metric', temperatureUnits: 'imperial', precipitationUnits: 'metric' } });
+    const requestId = fixture.client.setTrackUnits('imperial');
+    assert.equal(fixture.client.get().units, 'metric');
+    assert.equal(fixture.client.get().temperatureUnits, 'imperial');
+    assert.equal(fixture.client.get().precipitationUnits, 'metric');
+    assert.equal(fixture.client.get().distanceUnits, 'imperial');
+    assert.equal(fixture.client.get().elevationUnits, 'imperial');
+    assert.deepEqual(fixture.posted.at(-1).patch, { units: 'imperial' });
+    fixture.dispatch({ kind: 'setResult', requestId, ok: false });
+    assert.equal(fixture.client.get().distanceUnits, 'default');
+    assert.equal(fixture.client.get().elevationUnits, 'default');
+    assert.equal(fixture.client.get().units, 'metric');
+    assert.equal(fixture.client.get().temperatureUnits, 'imperial');
+    assert.equal(fixture.client.setTrackUnits('custom'), null);
+    fixture.client.dispose();
+    fixture.dom.window.close();
+});
+
 test('a missing settings acknowledgement rolls back, while its late snapshot remains usable', async () => {
     const fixture = await setup();
     const requestId = fixture.client.set({ units: 'imperial' });

@@ -6,6 +6,12 @@ and travels with settings files and GitHub settings backup. Turning it off
 hides the card on open pages, cancels pending work, and prevents summit lookup
 and weather requests until enabled again.
 
+**Settings → General → Units** provides a default with optional overrides for
+distance, elevation, temperature, precipitation, and wind speed. You can keep
+GPX distance/elevation in miles/feet while displaying weather in Celsius and
+millimeters. Wind also controls gusts. Existing unit preferences become the
+default, and changing display units reuses the loaded weather data.
+
 The independent isolated-world `content/ascent-weather.js` bundle mounts in the
 right-hand column beneath Summary Total Data, beside the trip report. It follows
 the existing divider width and stacks with the summary on narrow screens. Its

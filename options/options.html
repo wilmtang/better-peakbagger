@@ -20,7 +20,10 @@
             </div>
         </header>
         <ul class="nav-list">
-            <li><a class="nav-item" href="#general">General</a></li>
+            <li>
+                <a class="nav-item" href="#general">General</a>
+                <ul class="nav-sublist"><li><a class="nav-subitem" href="#general-units">Units</a></li></ul>
+            </li>
             <li>
                 <a class="nav-item" href="#capture">Capture &amp; reports</a>
                 <ul class="nav-sublist">
@@ -117,6 +120,72 @@
                             <span>Enable 3D map</span>
                         </label>
                     </div>
+                </div>
+            </div>
+            <div class="subsection" id="general-units" role="group" aria-labelledby="general-units-heading">
+                <h3 class="subsection-title" id="general-units-heading">Units</h3>
+                <div class="card">
+                    <div class="row">
+                        <label class="label" for="units">
+                            <span class="title">Default units</span>
+                            <span class="desc">Display units across Better Peakbagger, unless you choose a specific unit below.</span>
+                        </label>
+                        <div class="control">
+                            <select id="units">
+                                <option value="auto">Follow Peakbagger</option>
+                                <option value="imperial">Imperial</option>
+                                <option value="metric">Metric</option>
+                            </select>
+                        </div>
+                    </div>
+                    <details id="unit-customize" class="unit-customize">
+                        <summary>Customize units<span class="unit-custom-count">All use default</span></summary>
+                        <div class="row">
+                            <label class="label" for="distance-units"><span class="title">Distance</span></label>
+                            <div class="control"><select id="distance-units" data-unit="distance">
+                                <option value="default">Default (Peakbagger)</option>
+                                <option value="imperial">Miles (mi)</option>
+                                <option value="metric">Kilometers (km)</option>
+                            </select></div>
+                        </div>
+                        <div class="row">
+                            <label class="label" for="elevation-units"><span class="title">Elevation</span><span class="desc">Includes ascent and descent.</span></label>
+                            <div class="control"><select id="elevation-units" data-unit="elevation">
+                                <option value="default">Default (Peakbagger)</option>
+                                <option value="imperial">Feet (ft)</option>
+                                <option value="metric">Meters (m)</option>
+                            </select></div>
+                        </div>
+                        <div class="row">
+                            <label class="label" for="temperature-units"><span class="title">Temperature</span><span class="desc">Includes feels like.</span></label>
+                            <div class="control"><select id="temperature-units" data-unit="temperature">
+                                <option value="default">Default (Peakbagger)</option>
+                                <option value="imperial">Fahrenheit (°F)</option>
+                                <option value="metric">Celsius (°C)</option>
+                            </select></div>
+                        </div>
+                        <div class="row">
+                            <label class="label" for="precipitation-units"><span class="title">Precipitation</span><span class="desc">Rain and snow water equivalent.</span></label>
+                            <div class="control"><select id="precipitation-units" data-unit="precipitation">
+                                <option value="default">Default (Peakbagger)</option>
+                                <option value="imperial">Inches (in)</option>
+                                <option value="metric">Millimeters (mm)</option>
+                            </select></div>
+                        </div>
+                        <div class="row">
+                            <label class="label" for="wind-units"><span class="title">Wind speed</span><span class="desc">Includes gusts.</span></label>
+                            <div class="control"><select id="wind-units" data-unit="wind">
+                                <option value="default">Default (Peakbagger)</option>
+                                <option value="imperial">Miles per hour (mph)</option>
+                                <option value="metric">Kilometers per hour (km/h)</option>
+                            </select></div>
+                        </div>
+                        <div class="unit-reset-row"><button type="button" class="secondary" id="unit-reset" disabled>Use default for all</button></div>
+                    </details>
+                </div>
+                <div class="unit-example" aria-live="polite" aria-atomic="true">
+                    <div class="unit-example-heading">Example readings</div>
+                    <dl><dt>GPX</dt><dd id="unit-example-gpx"></dd><dt>Weather</dt><dd id="unit-example-weather"></dd></dl>
                 </div>
             </div>
         </section>
@@ -287,20 +356,6 @@
             <div class="subsection" id="map-chart-chart" role="group" aria-labelledby="map-chart-chart-heading">
                 <h3 class="subsection-title" id="map-chart-chart-heading">GPX chart</h3>
                 <div class="card">
-                    <div class="row">
-                        <label class="label" for="units">
-                            <span class="title">Units</span>
-                            <span class="desc">Distance and elevation in the GPX chart and processing summaries. “Auto” matches whatever the ascent page shows.</span>
-                        </label>
-                        <div class="control">
-                            <select id="units">
-                                <option value="auto">Auto (match page)</option>
-                                <option value="imperial">Imperial (mi / ft)</option>
-                                <option value="metric">Metric (km / m)</option>
-                            </select>
-                        </div>
-                    </div>
-
                     <div class="row">
                         <label class="label" for="chart-series">
                             <span class="title">GPX chart default series</span>

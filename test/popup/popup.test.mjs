@@ -118,7 +118,7 @@ const unitsJob = {
     }]
 };
 
-const loadPopupWithUnits = async units => {
+const loadPopupWithUnits = async (units, overrides = {}) => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
@@ -126,7 +126,7 @@ const loadPopupWithUnits = async units => {
     dom.window.chrome = {
         tabs: { query: async () => [{ id: 9 }] },
         storage: {
-            sync: { get: async () => ({ bpbSettings: { units } }), set: async () => {} },
+            sync: { get: async () => ({ bpbSettings: { units, ...overrides } }), set: async () => {} },
             onChanged: { addListener() {}, removeListener() {} }
         },
         runtime: {
@@ -155,6 +155,13 @@ test('popup follows the Units setting like every other surface', async () => {
     assert.match(imperial.window.document.getElementById('track-summary').textContent,
         /max deviation 7\.9 ft/);
     imperial.window.close();
+});
+
+test('popup respects independent ground-distance and elevation choices', async () => {
+    const dom = await loadPopupWithUnits('imperial', { distanceUnits: 'metric', elevationUnits: 'imperial', temperatureUnits: 'metric' });
+    assert.match(dom.window.document.querySelector('.peak-evidence').textContent, /^8 m from summit · 13 ft elevation difference/);
+    assert.match(dom.window.document.getElementById('track-summary').textContent, /max deviation 2\.4 m/);
+    dom.window.close();
 });
 
 test('popup resolves auto units without a page to sniff, and never mixes systems', async () => {

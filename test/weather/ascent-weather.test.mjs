@@ -51,6 +51,26 @@ const archiveResponse = url => new Response(JSON.stringify(weatherFixture({
     fields: new URL(url).searchParams.get('hourly').split(','),
 })), { headers: { 'content-type': 'application/json' } });
 
+test('archive cards, hourly tables and axes use independent measurement units without refetching', async () => {
+    const storedSettings = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', windUnits: 'imperial', elevationUnits: 'metric' };
+    const env = setup({ storedSettings });
+    try {
+        await openChart(env);
+        assert.match(env.doc.querySelector('[data-weather-value="temperature"]').textContent, /°C/);
+        assert.match(env.doc.querySelector('[data-weather-value="precipitation"]').textContent, /mm/);
+        assert.match(env.doc.querySelector('[data-weather-value="wind"]').textContent, /mph/);
+        assert.match(env.doc.querySelector('.bpb-weather-location').textContent, /\d+ m\b/);
+        assert.match(env.doc.querySelector('.bpb-weather-chart').getAttribute('aria-label'), /Temperature.*°C/);
+        assert.match(env.doc.querySelector('[data-weather-row="temperature"] td').textContent, /°C/);
+        const requests = env.requests.length;
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, windUnits: 'metric' } } }, 'sync'));
+        assert.match(env.doc.querySelector('[data-weather-value="wind"]').textContent, /km\/h/);
+        env.doc.querySelector('[data-metric="precipitation"]').click();
+        assert.match(env.doc.querySelector('.bpb-weather-chart').getAttribute('aria-label'), /precipitation.*mm/);
+        assert.equal(env.requests.length, requests);
+    } finally { env.close(); }
+});
+
 test('archive date buttons browse adjacent days without changing the saved ascent or hourly view', async () => {
     const env = setup({ fetchWeather: archiveResponse });
     try {

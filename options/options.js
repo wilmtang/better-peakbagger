@@ -15,6 +15,7 @@ import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
 import { initPhotoBackup } from './photos.js';
 import { initSectionNav } from '../src/ui/section-nav.js';
+import { initUnitSettings } from './unit-settings.js';
 
 (() => {
     'use strict';
@@ -23,7 +24,6 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         const registration = extensionApi.runtime.sendMessage({ type: 'OPTIONS_TAB_REGISTER' });
         if (registration?.catch) void registration.catch(() => {});
     } catch { /* the worker will discover or create the tab on demand */ }
-    const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
     const showSunMoonEl = document.getElementById('show-sun-moon');
     const showWeatherEl = document.getElementById('show-weather');
@@ -113,7 +113,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     let settingsRevision = 0;
     const populate = settings => {
         confirmedSettings = { ...settings };
-        unitsEl.value = settings.units;
+        unitSettings.populate(settings);
         themeEl.value = settings.theme;
         showSunMoonEl.checked = settings.showSunMoon;
         showWeatherEl.checked = settings.showWeather;
@@ -180,6 +180,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     };
 
     const orderSettings = initOrderSettings({ save });
+    const unitSettings = initUnitSettings({ save });
 
     // GitHub connection and ascent and TR backup setup own their panels together; the
     // options page drives GITHUB_AUTH_* messages and never sees the token.
@@ -200,7 +201,6 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     });
     const photoBackup = initPhotoBackup({ extensionApi, flash, save });
 
-    unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
     showSunMoonEl.addEventListener('change', () => save({ showSunMoon: showSunMoonEl.checked }));
     showWeatherEl.addEventListener('change', () => save({ showWeather: showWeatherEl.checked }));

@@ -235,13 +235,14 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         'the GPX download stays in the page flow rather than being mistaken for map metadata');
 
     const unitSelect = window.document.getElementById('bpb-gpx-units');
-    assert.equal(unitSelect.getAttribute('aria-label'), 'Units');
+    assert.equal(unitSelect.getAttribute('aria-label'), 'Distance and elevation');
     assert.deepEqual(Array.from(unitSelect.options, option => [option.value, option.textContent]), [
-        ['auto', 'Auto (match page)'],
-        ['imperial', 'Imperial'],
-        ['metric', 'Metric']
+        ['default', 'Default units'],
+        ['imperial', 'mi / ft'],
+        ['metric', 'km / m'],
+        ['custom', 'Custom']
     ]);
-    assert.equal(unitSelect.value, 'imperial', 'an explicit preference overrides the metric page');
+    assert.equal(unitSelect.value, 'default', 'legacy users inherit their explicit global default');
     const compactControls = analysis.querySelector('.bpb-gpx-controls');
     const routeStyleControls = analysis.querySelector('.bpb-gpx-route-style-controls');
     assert.equal(compactControls.style.flexWrap, 'wrap');
@@ -251,7 +252,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.match(analysis.textContent, /miles\b/);
 
     sendSettings({ units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
-    await waitFor(dom, () => unitSelect.value === 'auto' && /\bkm\b/.test(analysis.textContent));
+    await waitFor(dom, () => unitSelect.value === 'default' && /\bkm\b/.test(analysis.textContent));
     assert.equal(chartConfig.options.scales.x.title.text, 'Distance (km)',
         'Auto remains selected while calculations resolve against the metric page');
 
@@ -260,7 +261,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'imperial' });
     assert.match(analysis.textContent, /miles\b/);
     confirmSetting(sentSettingMessages.at(-1), {
-        units: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+        units: 'auto', distanceUnits: 'imperial', elevationUnits: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
     });
 
     unitSelect.value = 'metric';
@@ -268,18 +269,24 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'metric' });
     assert.match(analysis.textContent, /\bkm\b/);
     confirmSetting(sentSettingMessages.at(-1), {
-        units: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+        units: 'auto', distanceUnits: 'metric', elevationUnits: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
     });
 
-    unitSelect.value = 'auto';
+    unitSelect.value = 'default';
     unitSelect.dispatchEvent(new window.Event('change'));
-    assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'auto' },
-        'returning to Auto must persist the raw preference instead of the resolved unit');
-    assert.equal(unitSelect.value, 'auto');
+    assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'default' },
+        'returning to the default removes only the track overrides');
+    assert.equal(unitSelect.value, 'default');
     assert.match(analysis.textContent, /\bkm\b/);
     confirmSetting(sentSettingMessages.at(-1), {
         units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
     });
+    sendSettings({ units: 'imperial', distanceUnits: 'metric', elevationUnits: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
+    await waitFor(dom, () => unitSelect.value === 'custom');
+    assert.equal(chartConfig.options.scales.x.title.text, 'Distance (km)');
+    assert.equal(chartConfig.options.scales.y.title.text, 'Elevation (ft)');
+    assert.equal(unitSelect.querySelector('[value="custom"]').disabled, true);
+    sendSettings({ units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
 
     const mapViewport = window.document.getElementById('bpb-map-viewport');
     const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');

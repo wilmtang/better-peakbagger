@@ -30,8 +30,11 @@ stay visible while scrolling; clear hours use a Moon icon at night.
 Missing values break the line rather than appearing as zero. Hover previews a
 reading; clicking or using arrow keys pins it, and Escape clears it. Data tabs
 support arrow keys, Home and End. Charts fit inside the card without widening
-the page; the Conditions table scrolls horizontally. Units follow the existing
-preference without another weather request.
+the page; the Conditions table scrolls horizontally. **Settings → General → Units**
+provides a default plus independent distance, elevation, temperature, precipitation,
+and wind choices. For example, miles/feet can stay paired with Celsius and millimeters.
+Temperature also controls feels-like values; wind also controls gusts. Changing units
+reuses the loaded weather data without another weather request.
 Day activation closes the previous panel and mounts the new graph in one update,
 preserving the activated summary's viewport position and keyboard focus when
 the panel fits there. Otherwise one immediate scroll reveals the full panel

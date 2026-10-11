@@ -16,6 +16,7 @@
 // (options page, another tab), so the chart re-themes / re-units live.
 
 import { settings as S } from './settings.js';
+import { settingsSchema as Schema } from './settings-schema.js';
 
 // The page world may only write the settings the GPX Analyzer owns.
 // Everything else — feature gates, capture privacy options, theme — stays
@@ -68,6 +69,11 @@ window.addEventListener('message', async event => {
         if (requestId) latestRequestId = Math.max(latestRequestId, requestId);
         const patch = Object.fromEntries(Object.entries(data.patch)
             .filter(([key]) => WRITABLE_KEYS.has(key)));
+        if (Object.hasOwn(patch, 'units')) {
+            const trackPatch = Schema.trackUnitsPatch(patch.units);
+            delete patch.units;
+            Object.assign(patch, trackPatch);
+        }
         // A patch with nothing writable left in it is refused, not ignored.
         // Staying silent left the page client's pending write to time out
         // and then blame a storage failure it never had — five seconds

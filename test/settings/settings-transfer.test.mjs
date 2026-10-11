@@ -18,6 +18,19 @@ test('display opt-outs survive settings files and affect backup signatures; olde
     assert.equal(legacy.showSunMoon, true); assert.equal(legacy.showWeather, true);
 });
 
+test('mixed unit preferences survive settings transfer and legacy files inherit their default', () => {
+    const mixed = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', distanceUnits: 'metric', elevationUnits: 'imperial' };
+    const payload = Transfer.buildPayload(mixed);
+    const parsed = Transfer.parse(Transfer.serialize(payload));
+    assert.equal(parsed.ok, true);
+    for (const [key, value] of Object.entries(mixed)) assert.equal(parsed.settings[key], value);
+    for (const key of Object.values(Schema.UNIT_KEYS)) delete payload.settings[key];
+    const legacy = Transfer.parse(Transfer.serialize(payload));
+    assert.equal(legacy.settings.units, 'imperial');
+    for (const key of Object.values(Schema.UNIT_KEYS)) assert.equal(legacy.settings[key], 'default');
+    assert.notEqual(Transfer.signature(mixed), Transfer.signature({ units: 'imperial' }));
+});
+
 test('settings transfer payload round-trips known cleaned settings', () => {
     const payload = Transfer.buildPayload({
         theme: 'dark',

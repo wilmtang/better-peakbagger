@@ -115,7 +115,7 @@ import tzlookup from 'tz-lookup';
     // detectPageUnits stays here — it reads this page's own field order — and
     // is handed to the shared resolver rather than reimplementing the
     // preference logic beside it.
-    const resolveDisplayUnits = settings => Units.resolveUnits(settings, detectPageUnits);
+    const resolveDisplayUnits = settings => Units.resolveUnits(settings, detectPageUnits, 'distance');
     const formatTrackDistance = Units.formatDistance;
     const formatApproachDistance = Units.formatApproach;
 

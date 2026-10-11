@@ -71,12 +71,15 @@ const run = async () => {
         const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent.trim() === 'Elevation:');
         return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim()));
     };
-    const unitPreference = settings => Schema.clean(settings).units;
+    const unitPreference = settings => {
+        const clean = Schema.clean(settings);
+        return clean.distanceUnits === clean.elevationUnits ? clean.distanceUnits : 'custom';
+    };
     // detectPageMetric reads this page's own Elevation cell; the preference
     // logic around it belongs to the shared resolver, not to a second copy.
-    const resolveUnits = settings => Units.resolveUnits(
+    const resolveUnits = (settings, measurement) => Units.resolveUnits(
         Schema.clean(settings),
-        () => (detectPageMetric() ? Units.METRIC : Units.IMPERIAL)
+        () => (detectPageMetric() ? Units.METRIC : Units.IMPERIAL), measurement
     );
     // Which series to show on load. Only the initial visibility is bound to the
     // setting; the legend's own click handler toggles visibility for the current
@@ -212,7 +215,8 @@ const run = async () => {
 
         const unitSelect = document.createElement('select');
         unitSelect.id = 'bpb-gpx-units';
-        unitSelect.setAttribute('aria-label', 'Units');
+        unitSelect.setAttribute('aria-label', 'Distance and elevation');
+        unitSelect.title = 'Distance & elevation';
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', borderWidth: '1px', borderStyle: 'solid', cursor: 'pointer' });
         const unitOption = (value, label) => {
             const option = document.createElement('option');
@@ -221,10 +225,13 @@ const run = async () => {
             return option;
         };
         unitSelect.append(
-            unitOption('auto', 'Auto (match page)'),
-            unitOption('imperial', 'Imperial'),
-            unitOption('metric', 'Metric')
+            unitOption('default', 'Default units'),
+            unitOption('imperial', 'mi / ft'),
+            unitOption('metric', 'km / m')
         );
+        const customUnitOption = unitOption('custom', 'Custom');
+        customUnitOption.disabled = true;
+        unitSelect.append(customUnitOption);
 
         // A floating control on the map itself (bottom-right, stacked just above
         // the zoom controls), styled by src/terrain/terrain-map.css. Clicking flips the
@@ -1184,9 +1191,10 @@ const run = async () => {
             coordinateControls.hidden = false;
             chartLegend.hidden = false;
 
-            const isMet = resolveUnits(BPB.get()) === 'metric';
-            const dMult = isMet ? 0.001 : 1 / METERS_PER_MILE, eMult = isMet ? 1 : FEET_PER_METER;
-            const dUnit = isMet ? 'km' : 'miles', eUnit = isMet ? 'm' : 'ft';
+            const metricDistance = resolveUnits(BPB.get(), 'distance') === 'metric';
+            const metricElevation = resolveUnits(BPB.get(), 'elevation') === 'metric';
+            const dMult = metricDistance ? 0.001 : 1 / METERS_PER_MILE, eMult = metricElevation ? 1 : FEET_PER_METER;
+            const dUnit = metricDistance ? 'km' : 'miles', eUnit = metricElevation ? 'm' : 'ft';
             const formatDistanceM = meters => `${(meters * dMult).toFixed(2)} ${dUnit}`;
             const formatElevationM = meters => `${(meters * eMult).toFixed(0)} ${eUnit}`;
             const formatSignedDistanceDelta = meters => `${meters >= 0 ? '+' : '-'}${formatDistanceM(Math.abs(meters))}`;
@@ -1748,7 +1756,7 @@ const run = async () => {
         }
 
         unitSelect.addEventListener('change', () => {
-            BPB.set({ units: unitSelect.value });
+            BPB.setTrackUnits(unitSelect.value);
             if (metrics.routePoints?.length) renderData();
         });
 
@@ -1786,7 +1794,7 @@ const run = async () => {
                 }
             }
             if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
-            if (changed(['units', 'theme', 'chartDefaultSeries'])) {
+            if (changed(['units', 'distanceUnits', 'elevationUnits', 'theme', 'chartDefaultSeries'])) {
                 unitSelect.value = unitPreference(settings);
                 if (metrics.routePoints?.length) {
                     renderData({ resetSeriesVisibility: changed(['chartDefaultSeries']) });

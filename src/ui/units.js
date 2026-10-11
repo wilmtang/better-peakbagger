@@ -10,10 +10,12 @@
 // a divergence would have shipped unnoticed. AGENTS.md already requires shared
 // math to live in one place so drafted and displayed values cannot diverge.
 //
-// Pure by construction: no DOM, no extension APIs, no imports. That is what
+// Pure by construction: no DOM or extension APIs. That is what
 // lets the background worker, both content-script worlds, and the popup all
 // bundle it. Page detection stays with the surface that owns the page — each
 // passes its own probe to resolveUnits() against this one contract.
+
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 const FEET_PER_METER = 3.28084;
 const METERS_PER_MILE = 1609.344;
@@ -28,7 +30,9 @@ const milesFromMeters = meters => meters / METERS_PER_MILE;
 // surface with no page to sniff (the popup) passes nothing. Anything other than
 // a definite 'metric'/'imperial' falls back to imperial, matching Peakbagger's
 // own default for a signed-out or unconfigured reader.
-const resolveUnits = (settings, probe) => {
+const resolveUnits = (settings, probe, measurement) => {
+    const override = settings?.[Schema.UNIT_KEYS[measurement]];
+    if (override === METRIC || override === IMPERIAL) return override;
     const preference = settings?.units;
     if (preference === METRIC || preference === IMPERIAL) return preference;
     const probed = typeof probe === 'function' ? probe() : null;
@@ -53,6 +57,22 @@ const formatElevation = (meters, units, digits = 0) => {
 // elevation, but a distinct name so call sites stay readable.
 const formatApproach = formatElevation;
 
+const SYMBOLS = {
+    distance: { metric: 'km', imperial: 'mi' },
+    elevation: { metric: 'm', imperial: 'ft' },
+    temperature: { metric: '°C', imperial: '°F' },
+    precipitation: { metric: 'mm', imperial: 'in' },
+    wind: { metric: 'km/h', imperial: 'mph' }
+};
+const symbol = (measurement, system) => SYMBOLS[measurement]?.[system] || '';
+const convertWeather = (value, measurement, system) => system !== IMPERIAL ? value
+    : measurement === 'temperature' ? value * 9 / 5 + 32
+        : measurement === 'precipitation' ? value / 25.4 : value / (METERS_PER_MILE / 1000);
+const weatherDigits = (measurement, system) => measurement === 'precipitation' ? system === IMPERIAL ? 2 : 1 : 0;
+const formatWeather = (value, measurement, system) => Number.isFinite(value)
+    ? `${convertWeather(value, measurement, system).toFixed(weatherDigits(measurement, system))}${measurement === 'temperature' ? '' : ' '}${symbol(measurement, system)}`.replaceAll('-', '−')
+    : '—';
+
 export const units = {
     FEET_PER_METER,
     METERS_PER_MILE,
@@ -61,6 +81,10 @@ export const units = {
     feetFromMeters,
     milesFromMeters,
     resolveUnits,
+    symbol,
+    convertWeather,
+    weatherDigits,
+    formatWeather,
     formatDistance,
     formatElevation,
     formatApproach

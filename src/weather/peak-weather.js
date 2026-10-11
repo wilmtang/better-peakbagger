@@ -118,18 +118,12 @@ export function mountPeakWeather() {
         }));
         select.value = choices[period];
     };
-    const unitSystem = () => units.resolveUnits(preference, () => {
+    const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => {
         const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));
         return /Elevation:\s*[\d,.]+\s*m\b/i.test(heading?.textContent || '') ? 'metric' : 'imperial';
-    });
-    const format = (value, kind) => {
-        if (!Number.isFinite(value)) return '—';
-        const imperial = unitSystem() === 'imperial';
-        const number = kind === 'temperature' ? imperial ? value * 9 / 5 + 32 : value
-            : kind === 'precipitation' ? imperial ? value / 25.4 : value : imperial ? value / 1.609344 : value;
-        const suffix = kind === 'temperature' ? imperial ? '°F' : '°C' : kind === 'precipitation' ? imperial ? ' in' : ' mm' : imperial ? ' mph' : ' km/h';
-        return `${number.toFixed(kind === 'precipitation' ? imperial ? 2 : 1 : 0)}${suffix}`.replaceAll('-', '−');
-    };
+    }, measurement);
+    const format = (value, kind) => units.formatWeather(value, kind, unitSystem(kind));
+    const unitSignature = () => ['elevation', 'temperature', 'precipitation', 'wind'].map(unitSystem).join('/');
     const renderLabels = week => {
         const first = week.days[0].date, last = week.days.at(-1).date;
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
@@ -316,7 +310,7 @@ export function mountPeakWeather() {
     refresh.addEventListener('click', () => { void load({ clear: true }); });
     const applyPreference = next => {
         const wasEnabled = !row.hidden && enabled();
-        const previousUnits = unitSystem();
+        const previousUnits = unitSignature();
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
         if (!enabled()) {
@@ -324,7 +318,7 @@ export function mountPeakWeather() {
             visibilityObserver?.disconnect(); visibilityObserver = null;
         } else if (lifecycle.state === 'active') {
             cooldown.resume();
-            if (!wasEnabled || previousUnits !== unitSystem()) renderResult();
+            if (!wasEnabled || previousUnits !== unitSignature()) renderResult();
             if (!wasEnabled) beginWhenVisible();
         }
     };

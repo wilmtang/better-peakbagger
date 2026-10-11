@@ -31,7 +31,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     // Garmin or Strava activity — so it takes the shared module's documented
     // imperial fallback rather than inventing a second source of truth or
     // persisting a "last units seen" value for a cosmetic tie-break.
-    let displayUnits = Units.IMPERIAL;
+    let displayUnits = { distance: Units.IMPERIAL, elevation: Units.IMPERIAL };
     let displayUnitsReady = false;
     let pendingUnitsJob = null;
     let pollTimer = null;
@@ -246,9 +246,9 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     };
 
     const evidenceText = match => {
-        const parts = [`${Units.formatApproach(match.evidence.distanceM, displayUnits)} from summit`];
+        const parts = [`${Units.formatApproach(match.evidence.distanceM, displayUnits.distance)} from summit`];
         if (Number.isFinite(match.evidence.elevationDeltaM)) {
-            parts.push(`${Units.formatElevation(match.evidence.elevationDeltaM, displayUnits)} elevation difference`);
+            parts.push(`${Units.formatElevation(match.evidence.elevationDeltaM, displayUnits.elevation)} elevation difference`);
         }
         if (Number.isFinite(match.evidence.trackQuality)) parts.push(`${Math.round(match.evidence.trackQuality * 100)}% track quality`);
         if (match.evidence.ambiguous) parts.push('nearby summit ambiguity');
@@ -292,7 +292,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         clearCaptureButton.textContent = 'Delete captured track data';
         const counts = document.createElement('strong');
         counts.textContent = `${track.originalPointCount.toLocaleString()} → ${track.retainedPointCount.toLocaleString()} points`;
-        const deviation = Units.formatElevation(track.maxDeviationM, displayUnits, 1);
+        const deviation = Units.formatApproach(track.maxDeviationM, displayUnits.distance, 1);
         summary.append(counts, document.createTextNode(` · max deviation ${deviation} · health/device metadata removed`));
 
         job.matches.forEach(match => {
@@ -507,7 +507,10 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     // active tab is known, but hold a fast result card until units resolve so
     // distances are never painted in one system and corrected in another.
     void Settings.get().catch(() => null).then(settings => {
-        displayUnits = Units.resolveUnits(settings);
+        displayUnits = {
+            distance: Units.resolveUnits(settings, null, 'distance'),
+            elevation: Units.resolveUnits(settings, null, 'elevation')
+        };
         displayUnitsReady = true;
         const pending = pendingUnitsJob;
         if (pending && currentJob === pending) render(pending);

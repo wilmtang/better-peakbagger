@@ -323,11 +323,23 @@ terrain consumer validates it again.
 
 ### The bridges
 
+The default `units` preference retains its existing auto/metric/imperial values.
+Five validated measurement overrides inherit it unless explicitly configured:
+distance, elevation, temperature, precipitation, and wind. Settings exposes these
+under General → Units. Display resolution and weather conversions share
+`src/ui/units.js`; weather requests, caches, calculations, and native draft form
+values keep their canonical/source units. Settings files include the overrides;
+older settings and files inherit their existing default without a migration write.
+
 The ascent-page `src/settings/bridge.js` exchanges settings with the MAIN-world analyzer
 and pushes live storage changes back to it. Page-world writes are restricted to
-the analyzer-owned controls: units, route/casing colors, map viewport size, and
+the analyzer-owned controls: distance/elevation units, route/casing colors, map viewport size, and
 the remembered map layer. Theme, feature gates, capture privacy preferences,
 and every other setting remain writable only from extension-owned surfaces.
+The existing allowlisted `units` wire key now translates only to the two track
+overrides. It cannot change the default or weather overrides, and those new
+storage keys are not independently allowlisted for page-world writes. The page
+client applies the same shared-schema translation for optimism and rollback.
 Bridge writes carry request identities. The analyzer layers pending optimistic
 patches over its last confirmed settings; a failed worker operation removes
 only that patch and rolls the affected controls back without discarding a
