@@ -6,7 +6,7 @@ import { mountainTime } from '../time/mountain-time.js';
 import { hourlyWeatherCondition } from './weather-day.js';
 
 const HOUR = 3600_000, element = dom.element;
-const metrics = [['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts'], ['code', 'Conditions']];
+const metrics = [['code', 'Conditions'], ['temperature', 'Temperature'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts']];
 const icons = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const svgElement = (tag, attrs = {}, text) => {
     const node = document.createElementNS('http://www.w3.org/2000/svg', tag);

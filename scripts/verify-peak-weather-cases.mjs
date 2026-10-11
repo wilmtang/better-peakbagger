@@ -13,6 +13,9 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const card = '#bpb-peak-weather';
+    const assertHourlyTabOrder = async () => assert.deepEqual(
+        await evaluate(() => [...document.querySelectorAll('.bpb-week-day[open] [data-metric]')].map(tab => tab.textContent)),
+        ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
     const openPage = async (kind = 'map') => {
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${kind}`);
         await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');
@@ -71,6 +74,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             const before = evidence.length;
             await click(`${card} .bpb-week-day:first-child > summary`);
             await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'selected day’s hourly line graph');
+            await assertHourlyTabOrder();
             await wait(() => {
                 const chart = document.querySelector('.bpb-week-day[open] .bpb-week-chart');
                 return Math.abs(Number(chart.querySelector('svg').getAttribute('viewBox').split(' ')[2]) - chart.getBoundingClientRect().width) < 1;
@@ -96,6 +100,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-${width}.png`));
             if (!await evaluate(() => document.querySelector('.bpb-week-day').open)) await click(`${card} .bpb-week-day:first-child > summary`);
             await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'full-day forecast graph');
+            await assertHourlyTabOrder();
             assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 24);
             await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
             await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="precipitation"]').getAttribute('aria-selected') === 'true', 'forecast precipitation tab');

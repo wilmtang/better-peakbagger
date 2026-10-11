@@ -111,7 +111,17 @@ test('hourly tabs, keyboard sampling, hover and pinned readings reuse data and r
         const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
         await waitFor(() => day.querySelector('.bpb-week-line'));
         const temperature = day.querySelector('[data-metric="temperature"]'), rain = day.querySelector('[data-metric="precipitation"]');
+        const tabs = [...day.querySelectorAll('[role="tab"]')];
+        assert.deepEqual(tabs.map(tab => tab.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
         assert.equal(temperature.getAttribute('aria-selected'), 'true'); assert.equal(temperature.tabIndex, 0); assert.equal(rain.tabIndex, -1);
+        temperature.focus(); temperature.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        assert.equal(env.doc.activeElement, tabs[0]); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+        assert.equal(day.querySelector('.bpb-week-conditions').hidden, false);
+        tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+        assert.equal(env.doc.activeElement, tabs.at(-1)); assert.equal(tabs.at(-1).dataset.metric, 'gust');
+        tabs.at(-1).dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        assert.equal(env.doc.activeElement, temperature);
         temperature.focus(); temperature.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
         assert.equal(env.doc.activeElement, rain); assert.equal(rain.getAttribute('aria-selected'), 'true');
         assert.equal(day.querySelector('[role="tabpanel"]').getAttribute('aria-labelledby'), rain.id);
@@ -291,6 +301,7 @@ test('forecast defaults to today plus six full days and both periods reuse one r
         assert.equal(env.doc.querySelector('[data-period="forecast"]').getAttribute('aria-selected'), 'true');
         const first = env.doc.querySelector('.bpb-week-day'); first.open = true;
         await waitFor(() => first.querySelector('.bpb-week-line'));
+        assert.deepEqual([...first.querySelectorAll('[role="tab"]')].map(tab => tab.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
         assert.equal(first.querySelectorAll('.bpb-week-point').length, 24);
         assert.ok([...first.querySelectorAll('.bpb-week-point')].some(point => Number(point.dataset.time) > env.win.Date.now()));
         first.querySelector('[data-metric="precipitation"]').click();
