@@ -759,6 +759,7 @@ async function main() {
                             ...structuredClone(photo),
                             localId,
                             title: `Firefox library page ${String(index).padStart(2, '0')}`,
+                            source: { ...photo.source, sha256: index.toString(16).padStart(64, '0') },
                             createdAt: timestamp,
                             updatedAt: timestamp,
                             assets: {
