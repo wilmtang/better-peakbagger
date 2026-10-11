@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { BUDDY_MESSAGE } from './buddy-state.js';
 
 const unsupported = () => { throw new Error('This buddy form is unavailable. Open the profile and try again.'); };
@@ -75,6 +76,7 @@ export const changeBuddy = async ({ api, target, ownerCid, action, origin,
                 method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: before.body.toString(),
             } });
             uncertainPost = post.kind !== 'ok';
+            if (post.error?.code === 'rate-limit') throw peakbaggerError.exception(post.error);
         }
         const after = dispatched && !lease.checkOnly ? await check() : before;
         if (uncertainPost && after.buddy !== (action === 'add')) {

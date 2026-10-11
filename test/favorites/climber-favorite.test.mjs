@@ -265,3 +265,19 @@ test('an unconfirmed Buddy action refreshes the cache without changing custom fa
     await waitFor(dom, () => dom.chrome._localStore[cacheKey]?.entries?.length === 6);
     assert.equal(dom.chrome._localStore[key], undefined);
 });
+
+test('legacy buddy refresh reports limits without replacing saved favorites or the last cache', async () => {
+    const existing = { cid: 900003, name: 'Existing Favorite', addedAt: 1, source: 'manual' };
+    const dom = await loadOther({ settings: { favoritesSource: 'custom' },
+        local: { [key]: { schemaVersion: 1, entries: [existing] } }, prepare(page) {
+            page.window.sessionStorage.setItem(pendingKey, pendingMutation('add'));
+            page.window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
+        } });
+    try {
+        await waitFor(dom, () => dom.window.document.getElementById('bpb-buddy-refresh-limit')?.textContent.includes('Peakbagger request limit reached'));
+        assert.equal(dom.chrome._localStore[key].entries.length, 1);
+        assert.equal(dom.chrome._localStore[cacheKey], undefined);
+        assert.match(dom.window.document.getElementById('bpb-buddy-refresh-limit').textContent, /saved favorites were kept/);
+        assert.match(dom.window.document.getElementById('bpb-buddy-refresh-limit').previousElementSibling.value, /Buddy List/);
+    } finally { dom.window.close(); }
+});

@@ -6,6 +6,8 @@ const now = Date.parse('2026-10-11T12:00:00Z');
 test('retry timing accepts bounded seconds and HTTP dates, never invents a reset from malformed headers', () => {
     const read = value => retryAfterAt(new Headers(value === null ? {} : { 'retry-after': value }), now);
     assert.equal(read('120'), now + 120000);
+    assert.equal(retryAfterAt({ 'Retry-AFTER': '120' }, now), now + 120000);
+    assert.equal(retryAfterAt({ get: 'ordinary header value', 'retry-after': '120' }, now), now + 120000);
     assert.equal(read('Sun, 11 Oct 2026 12:02:00 GMT'), now + 120000);
     for (const invalid of [null, '', '0', '-1', '1.5', 'Infinity', 'tomorrow', '86401', 'Sun, 11 Oct 2026 11:59:00 GMT']) assert.equal(read(invalid), null);
 });

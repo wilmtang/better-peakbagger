@@ -6,6 +6,7 @@ import { settings as S } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { trustedAction } from '../ui/trusted-action.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { observeClimberMembership } from './climber-membership.js';
@@ -251,7 +252,8 @@ const mount = () => {
                 readController = new AbortController();
                 const result = await fetchPeakbaggerDocument(F.buddyListUrl(owner, location.origin),
                     { kind: 'buddies', signal: readController.signal });
-                if (!active || result.kind !== 'ok' || ownerClimberId(document) !== owner
+                if (active && result.kind !== 'ok') throw peakbaggerError.exception(result.error);
+                if (!active || ownerClimberId(document) !== owner
                     || ownerClimberId(result.document) !== owner) throw new Error("Couldn't verify your Buddy List. Try again.");
                 const entries = F.parseBuddyDocument(result.document);
                 await chrome.storage.local.set({ [F.BUDDY_CACHE_KEY]: { ownerCid: owner, entries, fetchedAt: Date.now() } });

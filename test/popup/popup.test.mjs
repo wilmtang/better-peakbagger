@@ -1037,7 +1037,7 @@ test('popup recovery actions match the shared capture error policy', async t => 
         },
         {
             code: 'provider-rate-limited',
-            title: 'Your activity provider needs a pause',
+            title: 'Garmin request limit reached',
             action: null,
             retryAt: Date.now() + 60000,
             invoked: () => true,

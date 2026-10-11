@@ -3,7 +3,9 @@
 
 const MAX_WAIT = 24 * 3600_000;
 export const retryAfterAt = (headers, now = Date.now()) => {
-    const raw = String(headers?.get?.('retry-after') || '').trim();
+    const key = headers && typeof headers.get !== 'function'
+        ? Object.keys(headers).find(candidate => candidate.toLowerCase() === 'retry-after') : null;
+    const raw = String((typeof headers?.get === 'function' ? headers.get('retry-after') : key ? headers[key] : '') || '').trim();
     if (!raw || !Number.isFinite(now)) return null;
     // Reject loose Date.parse inputs such as "1.5"; accept the HTTP-date form.
     const value = /^\d+$/.test(raw) ? now + Number(raw) * 1000

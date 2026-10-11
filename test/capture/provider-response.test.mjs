@@ -41,7 +41,7 @@ test('provider rate limits expose only a bounded validated retry timestamp', () 
         code: 'provider-rate-limited',
         retryAt: now + 120000,
     });
-    for (const value of ['-1', '9999999', 'not-a-date']) {
+    for (const value of ['-1', '9999999', 'not-a-date', '1.5', '0']) {
         assert.deepEqual(classifyProviderResponse(response(429, {
             headers: { 'retry-after': value },
         }), { provider: 'strava', now }), {

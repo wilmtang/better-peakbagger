@@ -277,3 +277,14 @@ test('an account change during Buddy verification cannot authorize Ignore or sav
     assert.equal(dom.chrome._localStore[ignoredKey], undefined);
     assert.equal(dom.chrome._localStore.bpbBuddyCache, undefined);
 });
+
+test('Ignore shows a Peakbagger limit without saving an unverified absence', async t => {
+    const dom = await load(); t.after(() => dom.window.close());
+    const card = await open(dom), ignore = card.querySelector('#bpb-climber-card-ignore');
+    await waitFor(dom, () => !ignore.disabled);
+    dom.window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
+    fireTrustedEvent(ignore, 'click');
+    await waitFor(dom, () => card.querySelector('.bpb-climber-card-feedback').textContent.includes('Peakbagger request limit reached'));
+    assert.equal(dom.chrome._localStore[ignoredKey], undefined);
+    assert.match(card.querySelector('.bpb-climber-card-feedback').textContent, /Try again after/);
+});

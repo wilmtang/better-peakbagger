@@ -5,6 +5,7 @@ import { observeIgnored, mutateIgnored } from '../src/favorites/ignored-client.j
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { isPeakbaggerUrl } from '../src/peakbagger/peakbagger-origin.js';
+import { peakbaggerError } from '../src/peakbagger/peakbagger-error.js';
 
 export const initIgnored = api => {
     void api.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', action: 'check' }).catch(() => {});
@@ -84,7 +85,7 @@ export const initIgnored = api => {
         busy = true; render(); announce('Loading climber…');
         try {
             const result = await fetchPeakbaggerDocument(F.climberPageUrl(cid), { kind: 'climber' });
-            if (result.kind !== 'ok') throw new Error("Couldn't load this climber. Try again.");
+            if (result.kind !== 'ok') throw peakbaggerError.exception(result.error);
             const doc = result.document;
             const ids = new Set([...doc.querySelectorAll('a[href]')].filter(a => {
                 try { const url = new URL(a.href, doc.baseURI); return isPeakbaggerUrl(url.href)

@@ -7,6 +7,7 @@ import { matchLabel } from '../src/capture/match-confidence.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
+import { rateLimitMessage } from '../src/net/rate-limit.js';
 
 (() => {
     'use strict';
@@ -171,15 +172,16 @@ import { units as Units } from '../src/ui/units.js';
         let detail = dynamicErrorMessages.has(code) && error?.message
             ? error.message
             : policy.message;
-        if (policy.recovery === 'wait' && Number.isFinite(error?.retryAt)) {
-            const retryTime = new Date(error.retryAt).toLocaleTimeString([], {
-                hour: 'numeric',
-                minute: '2-digit',
-            });
-            detail = `${detail} Try again after ${retryTime}.`;
+        let title = policy.title;
+        if (code === 'provider-rate-limited' || code === 'rate-limit') {
+            const service = code === 'rate-limit' ? 'Peakbagger' : currentJob?.provider === 'garmin'
+                ? 'Garmin' : currentJob?.provider === 'strava' ? 'Strava' : 'Activity provider';
+            title = `${service} request limit reached`;
+            detail = rateLimitMessage(service, error?.retryAt).slice(`${title}. `.length)
+                + ' Select Better Peakbagger again to retry.';
         }
         stateCard(
-            policy.title,
+            title,
             detail,
             {
                 kind: code === 'unsupported' ? 'empty'

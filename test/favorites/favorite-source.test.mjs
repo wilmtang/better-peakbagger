@@ -51,3 +51,17 @@ test('source switch invalidates a late buddy response before it can replace loca
     assert.equal((await h.api.storage.local.get()).bpbBuddyCache, null);
     source.stop(); h.close();
 });
+
+test('a limited buddy source retains saved members and exposes the service warning without looping', async () => {
+    const h = harness({ ownerCid: 1, entries: [{ cid: 3, name: 'Buddy' }], fetchedAt: 0 });
+    let requests = 0;
+    const source = createFavoriteSource({ ...h, fetchDocument: async () => {
+        requests++; return { kind: 'transient', error: { source: 'peakbagger', code: 'rate-limit', retryAt: Date.now() + 60000 } };
+    } });
+    try {
+        await source.ready; await source.refresh({ active: true });
+        assert.equal(h.states.at(-1).available, true); assert.ok(h.states.at(-1).ids.has(3));
+        assert.match(h.states.at(-1).error, /saved Buddy List.*Peakbagger request limit reached/);
+        await source.refresh({ active: true }); assert.equal(requests, 1);
+    } finally { source.stop(); h.close(); }
+});

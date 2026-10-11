@@ -23,9 +23,12 @@ image failures, offline errors, access denials or normal OAuth polling delays.
    warning, rather than repeated popups or a false renderer diagnosis.
 6. The extension's Peakbagger nearby-peak feed turns all failed responses into
    an empty marker list. Confirmed 429 must not look like an area with no peaks.
-7. Peakbagger's bounded document client and Garmin/Strava capture already carry
-   typed limits and bounded retry timestamps into their inline recovery UI.
-   The capture headings can identify a request limit more directly.
+7. Peakbagger's document client and Garmin/Strava capture carry typed limits,
+   but Peakbagger reads the body before classification. Capture headings are
+   indirect. Follow-up inspection also found generic-error replacements in
+   ignored lookup, hover-card Ignore and Buddy-source refresh; legacy native
+   Buddy reconciliation silently drops limits, and a refused Buddy POST can
+   trigger another status read before reporting a generic failure.
 
 ## Surface inventory and closure ledger
 
@@ -71,6 +74,20 @@ image failures, offline errors, access denials or normal OAuth polling delays.
   in light/dark and Planetary Computer catalog warning at 820 × 900. MapLibre
   status events were injected for tile UI; catalog 429 used runtime fetch.
   Corrected a fixture CDP serialization failure and reran successfully.
+
+- Peakbagger and activity capture: document 429 survives unreadable bodies;
+  the shared bounded Retry-After parser accepts Headers and plain header
+  records. Capture names Garmin/Strava/Peakbagger and gives local date/time or
+  a general wait, without contradictory instructions. GPX, backup and Buddy
+  readers retain typed copy. Ignored lookup, hover-card Ignore, Buddy sources,
+  legacy native reconciliation and refused Buddy POSTs now preserve the limit
+  diagnosis and local lists; a limited POST is never automatically retried.
+  Verified: 143 shared request/provider/popup tests, 117 favorites/ignored
+  tests, build and focused ESLint. Hidden Chrome 153 / Firefox 155 shipped
+  popup fixtures at 390 × 600, light/dark, and Chrome real action popup sizing
+  at tab zoom 100/200 percent. Inspected both provider and Peakbagger warnings.
+  Real extension Chrome HTTPS climber/settings warnings also rendered and
+  were inspected; permission/provider responses are fixture-owned.
 
 ### Intentionally not changed
 

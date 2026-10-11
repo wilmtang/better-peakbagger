@@ -283,3 +283,17 @@ test('recovery actions point at sign-in, the challenged resource, or nowhere for
     });
     assert.equal(PeakbaggerError.recovery({ code: 'storage' }), null);
 });
+
+test('Peakbagger 429 survives unreadable or stalled bodies and displays bounded retry advice', async () => {
+    let calls = 0, cancelled = false;
+    const result = await fetchPeakbaggerResource(URL, { kind: 'html', fetchFn: async () => {
+        calls++;
+        return { status: 429, headers: new Headers({ 'retry-after': '120', 'content-length': '999999999' }),
+            body: { cancel() { cancelled = true; } }, text() { throw new Error('must not read'); } };
+    } });
+    assert.equal(result.error.code, 'rate-limit'); assert.equal(result.status, 429);
+    assert.match(result.reason, /Peakbagger request limit reached\. Try again after/);
+    assert.equal(calls, 1); assert.equal(cancelled, true);
+    assert.equal(PeakbaggerError.message({ code: 'rate-limit', retryAt: Number.MAX_VALUE }),
+        'Peakbagger request limit reached. Wait a few minutes, then try again.');
+});

@@ -16,13 +16,14 @@ async function waitFor(predicate) {
     const until = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > until) throw new Error('Weather UI did not settle'); await pause(); }
 }
-const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, withLayout = true } = {}) => {
+const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true } = {}) => {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [];
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { units: 'imperial' } }) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     win.fetch = async (url, init) => {
         requests.push({ url, init });
+        if (new URL(url).host === 'www.peakbagger.com' && fetchPeak) return fetchPeak(url, init);
         if (new URL(url).host === 'www.peakbagger.com') return new Response(peak, { headers: { 'content-type': 'text/html' } });
         if (fetchWeather) return fetchWeather(url, init);
         return new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } });
@@ -408,5 +409,16 @@ test('explicit Retry fetches fresh data and reconsiders unavailable automatic ca
         assert.equal(env.doc.querySelector('option[value="gfs_hrrr"]').disabled, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, true);
         assert.equal(env.doc.querySelector('[data-weather-value="precipitation"]').nextElementSibling.textContent, 'Water equivalent');
+    } finally { env.close(); }
+});
+
+test('summit lookup keeps a Peakbagger limit distinct from Open-Meteo and makes no weather request', async () => {
+    const env = setup({ fetchPeak: async () => new Response('', { status: 429, headers: { 'retry-after': '120' } }) });
+    try {
+        await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('Peakbagger request limit reached'));
+        assert.equal(env.requests.length, 1);
+        assert.equal(env.doc.querySelector('.bpb-weather-retry').disabled, true);
+        assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');
+        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Try again after/);
     } finally { env.close(); }
 });

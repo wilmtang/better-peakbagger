@@ -7,6 +7,7 @@ import { settings as S } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
@@ -245,10 +246,23 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
                 S.get(),
                 fetchPeakbaggerDocument(F.signedInBuddyListUrl(location.origin), { kind: 'buddies' }),
             ]);
-            if (result.kind !== 'ok') return;
+            if (result.kind !== 'ok') {
+                if (result.error?.code === 'rate-limit') {
+                    let notice = document.getElementById('bpb-buddy-refresh-limit');
+                    if (!notice) {
+                        notice = document.createElement('p');
+                        notice.id = 'bpb-buddy-refresh-limit';
+                        notice.setAttribute('role', 'status');
+                        (buddyControls(document).find(control => buddyActionForControl(control)) || host).after(notice);
+                    }
+                    notice.textContent = `${peakbaggerError.message(result.error)} Your saved favorites were kept.`;
+                }
+                return;
+            }
             const responseOwner = ownerClimberId(result.document);
             if (responseOwner !== ownCid) return;
             const entries = F.parseBuddyDocument(result.document);
+            document.getElementById('bpb-buddy-refresh-limit')?.remove();
             const target = entries.find(entry => entry.cid === pageCid);
             const confirmed = mutation.action === 'add' ? !!target : !target;
             await store.set({

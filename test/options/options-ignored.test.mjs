@@ -155,3 +155,17 @@ test('storage refresh preserves profile-link focus and undo respects a changed s
     assert.equal(control(3), null, 'Undo must not clear the active search');
     assert.equal(dom.window.document.activeElement, el(dom, 'ignored-add-input'));
 });
+
+test('Ignored lookup reports Peakbagger limits and retains the entered climber', async () => {
+    const dom = await loadFavoritesPage({}, { prepareWindow: window => {
+        window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
+    } });
+    el(dom, 'ignored-tab').click();
+    await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
+    el(dom, 'ignored-add-input').value = '900002';
+    el(dom, 'ignored-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(dom, () => el(dom, 'ignored-status').textContent.includes('Peakbagger request limit reached'));
+    assert.match(el(dom, 'ignored-status').textContent, /Try again after/);
+    assert.equal(el(dom, 'ignored-add-input').value, '900002');
+    assert.equal(dom.chrome._localStore.bpbIgnoredClimbers?.entries.length || 0, 0);
+});

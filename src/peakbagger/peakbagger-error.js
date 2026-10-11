@@ -6,6 +6,7 @@
 // page-shape failures independently on every surface.
 
 import { peakbaggerCloudflare as Cloudflare } from './peakbagger-cloudflare.js';
+import { rateLimitMessage } from '../net/rate-limit.js';
 
 const RESOURCE_NAMES = Object.freeze({
     buddies: 'Buddy List',
@@ -39,7 +40,7 @@ const message = (error, { resource, fallback = 'Peakbagger could not complete th
         cancelled: `Loading the ${name} was cancelled.`,
         'response-read': `Peakbagger responded, but the ${name} could not be read. Try again.`,
         'response-too-large': `Peakbagger returned more ${name} data than Better Peakbagger can process safely. Try a narrower request.`,
-        'rate-limit': 'Peakbagger is temporarily limiting requests. Wait a few minutes, then try again.',
+        'rate-limit': rateLimitMessage('Peakbagger', error?.retryAt),
         server: `Peakbagger is temporarily unavailable${status ? ` (HTTP ${status})` : ''}. Try again later.`,
         'not-found': `Peakbagger could not find the requested ${name}.`,
         http: `Peakbagger returned HTTP ${status || 'an error'} while loading the ${name}.`,

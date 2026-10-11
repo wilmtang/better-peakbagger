@@ -8,10 +8,10 @@
 // leave here.
 
 import { isProviderHost } from './provider-url.js';
+import { retryAfterAt } from '../net/rate-limit.js';
 
 export const PROVIDER_RESPONSE_PROBE_BYTES = 8192;
 export const PROVIDER_RESPONSE_PROBE_CHARS = 4096;
-const MAX_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 
 const headerValue = (headers, name) => {
     if (!headers) return '';
@@ -20,15 +20,6 @@ const headerValue = (headers, name) => {
     return key ? String(headers[key] || '').trim() : '';
 };
 
-const cleanRetryAt = (headers, now) => {
-    const value = headerValue(headers, 'retry-after');
-    if (!value) return null;
-    const seconds = /^\d+$/.test(value) ? Number(value) : null;
-    const candidate = seconds === null ? Date.parse(value) : now + seconds * 1000;
-    return Number.isFinite(candidate) && candidate >= now && candidate <= now + MAX_RETRY_DELAY_MS
-        ? Math.trunc(candidate)
-        : null;
-};
 
 const looksLikeSignIn = url => /\/(?:login|signin|sso)(?:[/?#]|$)/i.test(url.pathname);
 const looksLikeChallenge = body => {
@@ -77,7 +68,7 @@ export const classifyProviderResponse = (response, {
         return { ok: false, code: 'provider-forbidden' };
     }
     if (status === 429) {
-        const retryAt = cleanRetryAt(headers, now);
+        const retryAt = retryAfterAt(headers, now);
         return { ok: false, code: 'provider-rate-limited', ...(retryAt ? { retryAt } : {}) };
     }
     if (status === 404) return { ok: false, code: 'provider-response-changed' };

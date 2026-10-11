@@ -120,3 +120,12 @@ test('a confirmed Buddy add with failed local favorites still permits explicit B
     assert.equal(h.posts.length, 2);
     assert.deepEqual(h.api._localStore[BUDDY_INTENTS_KEY], []);
 });
+
+test('a refused buddy POST exposes the rate limit without another read or automatic write retry', async t => {
+    const h = harness(t);
+    let posts = 0;
+    await assert.rejects(h.change('add', { fetchResource: async () => {
+        posts++; return { kind: 'transient', error: { source: 'peakbagger', code: 'rate-limit', retryAt: Date.now() + 60000 } };
+    } }), /Peakbagger request limit reached/);
+    assert.equal(posts, 1); assert.equal(h.gets, 1);
+});

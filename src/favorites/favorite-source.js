@@ -4,6 +4,7 @@ import { favoriteClimbers as F } from './favorite-climbers.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 
 // One source policy for peak reports and full ascent lists. Empty is valid;
 // unavailable is separate. Buddy caches are useful only for the current owner.
@@ -33,7 +34,7 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
                 { kind: 'buddies', signal: controller.signal });
             if (stopped || token !== requestGeneration || mode !== 'buddies' || ownCid !== owner()) return;
             if (result.kind !== 'ok') {
-                throw new Error("Couldn't load your climbing buddies.");
+                throw peakbaggerError.exception(result.error);
             }
             if (ownerClimberId(result.document) !== ownCid) {
                 throw new Error('The Buddy List belongs to a different Peakbagger account.');
