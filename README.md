@@ -49,7 +49,9 @@ No weather account, API key, or subscription required.
   **Models & source details** lists last updates and estimated next updates.
 - **Weather for your ascent day.** Saved ascents show historical summit weather,
   with archives reaching back to **1940**, Open-Meteo archive **Best Match**, and alternatives
-  where available. No GPX needed.
+  where available. Browse adjacent archive days without changing the saved ascent
+  date. Expand **Hourly weather** for charts and a horizontal Conditions table;
+  a timed GPX can preview or pin the corresponding hour. No GPX needed.
 
 These are model estimates. Coverage varies by date, location, and model;
 incomplete hours stay labelled. Longer-range and mountain forecasts can be
@@ -67,6 +69,8 @@ Explore ascent tracks and peak maps in interactive 3D at true vertical scale,
 using open [Mapterhorn](https://mapterhorn.com/) elevation data and compatible
 Peakbagger basemaps. Turn 3D on when you want it; cached terrain makes return
 visits faster. An experimental OpenFreeMap style offers another way to explore.
+Resize a peak's Dynamic Map by dragging its handle or using the arrow keys;
+the size is remembered locally, and double-clicking the handle resets it.
 
 **Sentinel-2 (experimental)** adds recent satellite imagery to both the native
 2D map and 3D view through Microsoft Planetary Computer. Choose a capture from
@@ -145,6 +149,9 @@ Follow your Peakbagger Buddy List or build a searchable favorites list. Hide
 reports from climbers you choose to ignore, with a temporary reveal when you
 want another look. Ignores stay local unless you choose GitHub backup or enable
 two-way sync on this device. See the [climber lists guide](docs/climber-lists.md).
+Hover over a climber name for quick Favorite, Ignore, and Buddy actions, or
+open the adjacent **⋯** button with the keyboard or touch. Buddy changes are
+confirmed against the native profile; uncertain results offer a status check.
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 
@@ -166,10 +173,17 @@ and climbing symbols over a photo, then insert a flattened, metadata-free
 JPEG or PNG into your report. Your original stays unchanged, and a searchable
 local library keeps editable projects and published versions ready to reuse.
 
-Upload directly to ImgBB with your own API key, kept in device-local extension
-storage and included in settings exports only when you choose **Include saved
-credentials**. Optional GitHub recovery can preserve the catalog and annotation
-projects. See the
+Upload directly to ImgBB with your own API key. The saved key remains in
+device-local extension storage. The background worker uses it for report-photo
+uploads and gives it only to the exact packaged photo page for a direct ImgBB
+upload; it is never exposed to Peakbagger, another website, GitHub, browser sync,
+or status UI. Settings exports include it only when you choose **Include saved
+credentials**.
+
+Photo sources are limited to 128 MiB encoded, 64 megapixels decoded, and
+16,384 pixels per side. Editable project bundles are limited to 40 MiB;
+ImgBB decides upload size separately. Optional GitHub recovery can preserve the
+catalog and annotation projects. See the
 [photo workflow and privacy boundaries](https://github.com/wilmtang/better-peakbagger/blob/main/docs/photo-topo-editor.md).
 
 ![Photo Topos editor with an annotated alpine route and direct ImgBB upload](store-assets/showcase-6-photo-topos.png)
@@ -192,8 +206,11 @@ supported service at the mountain you're researching.
 ### Make Peakbagger easier on the eyes
 
 Give Peakbagger a polished dark theme, follow your system appearance, or stay
-with light mode. Set your preferred units, maps, chart styles, and feature
-options in one place, then export your settings for safekeeping.
+with light mode. Set your preferred maps, chart styles, and feature options in
+one place, then export your settings for safekeeping. **Settings → General → Units**
+offers a default plus separate distance, elevation, temperature, precipitation,
+and wind choices—for example, miles and feet with Celsius. Sun & Moon and
+weather cards each have a display toggle.
 
 Exports leave credentials out by default. Choosing **Include saved credentials**
 adds your ImgBB API key and GitHub connection to an unencrypted file; keep it
@@ -218,6 +235,8 @@ it is kept.
 No. Better Peakbagger is an independent passion project. Ideas and bug reports
 are welcome in [GitHub Issues](https://github.com/wilmtang/better-peakbagger/issues)
 and the [discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+**Settings → About** links to feedback, bug reports, source code, the license,
+and the rating page for your browser's store.
 
 ### How can Better Peakbagger offer 3D maps for free? What's the catch?
 

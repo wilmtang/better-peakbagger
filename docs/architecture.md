@@ -104,6 +104,8 @@ The diagram encodes six important boundaries:
 - [Photo topo editor and local library](#deep-dive-photo-topo-editor-and-local-library)
 - [GPX Analyzer and native 2D map integration](#deep-dive-gpx-analyzer-and-native-2d-map-integration)
 - [Sun and Moon position calculator](sun-position.md)
+- [Historical ascent weather](ascent-weather.md)
+- [Summit forecasts and recent weather](peak-weather.md)
 - [Opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
@@ -160,7 +162,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.js`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; no GPX or worker dependency |
-| Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, sixteen completed days and sixteen forecast days from one request, automatic regional model blend, bounded requests and tab-memory results |
+| Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.js`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices remembered locally, bounded combined requests and tab-memory results |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -824,8 +826,12 @@ fields. An optional hourly cursor follows GPX hover and selection through the
 narrow local `gpx-time-cursor.js` channel: exact-shape, source/origin-validated
 epoch timestamps and flags only, with no coordinates or privileged actions.
 Hover is transient; clicked/keyboard selection persists. Missing or suspect
-times and points outside the summit-local ascent day have no cursor line.
+times and points outside the displayed summit-local day have no cursor line.
 This presentation channel never changes weather requests or the saved date.
+Previous/Next day controls browse the selected model's available archive, starting
+at the saved ascent date and stopping at today's local date. Pending or failed
+navigation retains the displayed day. Hourly charts and the horizontal Conditions
+table share keyboard sampling and the optional GPX cursor.
 
 The weather client accepts only packaged model endpoints, omits credentials
 and referrers, and has bounded requests and a small tab-memory cache. It needs
@@ -839,14 +845,21 @@ a row beneath the map in the native right-hand table, including when no map is
 present, without moving native content or waiting for the MAIN-world enhancer.
 It reuses the strict summit-coordinate reader, offline timezone, daily summary
 and private transport, but uses a fixed forecast endpoint and a separate
-792-hour response cap. One padded UTC request supplies both sixteen completed
-local days and today plus fifteen forecast days, capped at the API's sixteen
-UTC-day forecast horizon. The ascent client's three-day/72-row
+792-hour response cap. Each period has an independent named-model selector,
+defaulting to GFS and remembering its choice in extension-local storage outside
+settings sync and backups. One padded UTC request for at most two allowlisted
+models supplies both sixteen completed local days and today plus fifteen
+forecast days, capped at the API's sixteen UTC-day forecast horizon. Shorter-range
+models show their available days; explicit choices never silently fall back.
+The ascent client's three-day/72-row
 limits and future-date rejection remain unchanged. Forecast summaries use whole
 local days; past days exclude today. Both retain DST and missing-data semantics,
 including incomplete final forecast days. A visible accuracy warning and model
 disclosure explain possible sources without inventing per-hour model provenance.
-Period tabs and tabbed hourly SVG graphs reuse the same response. The peak-owned
+Period tabs, hourly SVG graphs, and a horizontal Conditions table reuse the same
+response. Opening Models & source details loads bounded, coordinate-free provider
+update metadata; those clocks do not identify the exact run behind each hour.
+The peak-owned
 renderer includes interval boundary semantics, keyboard sampling, resize cleanup,
 a five-minute memory cache and refresh on returning to a visible expired card.
 See [peak-weather.md](peak-weather.md).
@@ -946,7 +959,11 @@ trip-report behavior in 2D.
 ### Peak pages
 
 `src/maps/peak-map.js` supplies summit focus, subject identity, native map context,
-and peak-feed replies for Peak pages. `src/maps/peak-links.js` separately owns
+and peak-feed replies for Peak pages. Its Dynamic Map shares the pointer/keyboard
+viewport control with the analyzer in 2D and 3D, while saving its size separately
+in Peakbagger page-local storage. Double-click resets the native starting size.
+The compact Sun & Moon panel follows the map without overlaying it.
+`src/maps/peak-links.js` separately owns
 user-invoked weather, snow, fire/smoke, and imagery links. Keeping planning
 links separate from the map coordinator prevents remote navigation features
 from acquiring map or settings privileges.

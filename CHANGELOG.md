@@ -2,21 +2,20 @@
 
 ## Unreleased
 
-- **Review the past week's summit weather.** Peak pages show seven completed
-  local days below the map in the right column, with conditions, temperature
-  ranges, rain/snow water equivalent and maximum wind. Expand a day for tabbed
-  hourly graphs and conditions; missing hours remain labelled. Open-Meteo chooses
-  regional models automatically, and today's incomplete data stays out of the summary.
-
-- **Give extension panels an outdoor identity.** Warm paper and forest colors,
-  subtle contours, and simpler grouped results carry through Settings and Photo
-  Topos. Capture results wrap long summit names and keep draft actions visible;
-  optional track details sit in a disclosure.
 - **Use the same release checks before release.** CI and release share the
-  production package and capture gates. Firefox verification reacquires Settings
-  after moving it between windows, while preserving its extension tab identity.
-- **Reduce duplicated owners.** Photo URLs share one bounded HTTPS policy;
-  verifier child processes share cleanup; panel palettes use one theme mapping.
+  production package and capture gates, exact browser-version checks, and
+  bounded scale tests. Rehearsals require consecutive passes of the same archive
+  bytes with fresh profiles. Firefox verification confirms process teardown and
+  reacquires Settings after moving it between windows.
+
+- **Keep capture drafts ready for review.** Multi-peak trips use the activity's
+  local start date as their trip name, and summit drafts cannot be saved before
+  preparation finishes. Settings preserve normal modifier-key actions, and
+  automatic ignored-list sync respects an open manual review.
+
+- **Edit photo annotations with less friction.** New labels size automatically;
+  selected annotations support copy and paste. Placement and narrow-window
+  resizing preserve text focus, multiline content, and a visible editing field.
 
 - **Report the backup that actually completed.** Settings and Favorites show
   success for the acknowledged snapshot and flag newer changes that need backup.
@@ -25,13 +24,59 @@
 - **Keep Photo Library actions recoverable.** Removal, Undo, refresh, and paging
   preserve keyboard position; storage failures explain the problem and allow retry.
 
-- **Keep photo labels visible while typing.** Narrow windows place the text
-  field beneath the photo; resizing preserves focus and multiline content.
+- **Give extension panels an outdoor identity.** Warm paper and forest colors,
+  subtle contours, and simpler grouped results carry through Settings and Photo
+  Topos. Capture results wrap long summit names and keep draft actions visible;
+  optional track details sit in a disclosure. Photo URL validation, verifier
+  cleanup, and panel palettes each share one maintained owner.
 
-- **Open Settings reliably with modifier keys.** Ctrl, Command, and Shift clicks
-  keep their usual tab or window behavior even when keyboard events overlap.
-- **Keep ignored-climber previews valid.** Background sync preserves a review
-  opened while it was waiting and skips queued work after sync is turned off.
+- **Manage climbers where you find their reports.** Hover over a climber name
+  or open its adjacent actions button for Favorite, Ignore, and Buddy controls.
+  Buddy changes use the native profile form and confirm the result; uncertain
+  writes offer a status check. Conflicting memberships remain explicit, and
+  Buddy refresh can recover after a Peakbagger human check.
+
+- **Explore recent satellite imagery.** Experimental Sentinel-2 imagery is
+  available in 2D and 3D through Microsoft Planetary Computer. Choose a capture
+  from the last thirty days with its date, estimated map coverage, and full-image
+  cloud cover shown; clouds and gaps may still obscure the view.
+
+- **Preserve report and photo work.** Lists inside report table cells survive
+  editing. Published photos retain their latest editable version, and photo
+  status labels keep card layouts stable. Enabled GitHub backups run automatically
+  after their prerequisites are met.
+
+- **Relive summit weather on an ascent.** Saved ascents show an independent
+  Weather archive with Open-Meteo Best Match coverage back to 1940 and named
+  alternatives where available. Browse adjacent archive days without changing
+  the saved ascent date. Hourly graphs and a horizontal Conditions table follow
+  timed GPX hover and selection; missing hours and partial totals stay labelled.
+
+- **Plan with sixteen-day summit weather.** Peak pages offer up to sixteen
+  forecast days and the previous sixteen completed local days, with temperature,
+  rain/snow water equivalent, wind, hourly graphs, and a Conditions table. Each
+  period has its own named-model choice, initially GFS and remembered on this
+  device. Source details show model horizons and update clocks. Shorter-range
+  models retain their available coverage, and estimates include an accuracy warning.
+
+- **Recover from service limits without losing work.** Weather, GitHub, photo,
+  map, capture, and climber actions explain rate limits and respect retry windows.
+  Previous results and edits stay available where safe, and pending or uncertain
+  work is not reported as a confirmed success.
+
+- **Fit planning tools to your page.** Resize peak Dynamic Maps by pointer or
+  keyboard in 2D and 3D, retain the size locally, and double-click to reset.
+  Sentinel controls and the peak Sun & Moon panel are more compact. General
+  Settings can hide Sun & Moon or weather cards independently; disabling weather
+  cancels its requests and restores native GPS blocks.
+
+- **Choose units by measurement.** Keep a default unit system or independently
+  choose distance, elevation, temperature, precipitation, and wind speed—for
+  example, miles and feet with Celsius and millimeters. Display changes reuse
+  loaded data and travel with settings exports and backups.
+
+- **Find feedback and ratings in Settings.** About links to discussions, bug
+  reports, source code, the license, and the review page for your browser's store.
 
 ## 3.9.2 — 2026-10-09
 

@@ -4,9 +4,9 @@
   two reproduced open UI findings since 3.9.2: Sentinel capture selection on
   3D resume and climber-card keyboard focus during row cleanup. Current unit,
   Chrome/Firefox, responsive visual evidence and proof limits are recorded.
-- [Climber hover card](climber-hover-card.md) — local Favorite/Ignore card
-  implemented; Buddy management opens the native profile. Inline Buddy mutation
-  remains deferred until its form and transaction coordination are verified.
+- [Climber hover card](climber-hover-card.md) — direct Favorite, Ignore, and
+  Buddy actions implemented with fixture verification; authenticated live Buddy
+  mutation remains a release proof gap.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.
