@@ -97,6 +97,25 @@ try {
         if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, `ascent-reading-${theme}-375.png`) });
     }
     fractional = false;
+    await setSettings({ showWeather: false });
+    const requestsBeforeOptOut = requests.length;
+    await page.goto(`${origin}/climber/ascent.aspx?aid=7654321&weather=gpx`);
+    await page.waitForFunction(() => document.querySelector('#bpb-ascent-weather')?.hidden);
+    assert.equal(await page.locator('#bpb-ascent-gpx-details').count(), 0);
+    const original = await page.locator('#gpxlinks').evaluate(node => {
+        node.dataset.originalWeatherParent = node.parentElement.id || node.parentElement.tagName;
+        return node.dataset.originalWeatherParent;
+    });
+    assert.equal(requests.length, requestsBeforeOptOut);
+    await setSettings({ showWeather: true });
+    await page.waitForFunction(() => document.querySelector('#bpb-ascent-gpx-details #gpxlinks'));
+    await setSettings({ showWeather: false });
+    await page.waitForFunction(() => !document.querySelector('#bpb-ascent-gpx-details') && document.querySelector('#bpb-ascent-weather').hidden);
+    assert.equal(await page.locator('#gpxlinks').evaluate(node => node.parentElement.id || node.parentElement.tagName), original);
+    assert.equal(await page.locator('#gpxlinks').isVisible(), true);
+    if (output) await page.locator('#gpxlinks').screenshot({ path: path.join(output, 'weather-disabled-native-gps.png') });
+    await setSettings({ showWeather: true });
+    fractional = false;
     await page.setViewportSize({ width: 375, height: 1000 });
     await page.goto(`${origin}/peak.aspx?pid=2296&week-weather=map`);
     await page.locator('#bpb-peak-weather').scrollIntoViewIfNeeded();

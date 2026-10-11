@@ -14,7 +14,7 @@ shared provider/data code, settings and GPX presentation integration.
 | W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Fixed; focused controls and valid pinned instants verified |
 | W05 | P2 | Numeric ascent hourly values have no keyboard reading interface | Implemented; keyboard and visual behavior verified, speech unproven |
 | W06 | P2 | Global dark button repaint overrides weather component selection styling | Fixed; component palettes and selected controls verified |
-| W07 | P3 | Disabled weather still reparents native GPS notes and controls | Open |
+| W07 | P3 | Disabled weather still reparents native GPS notes and controls | Fixed; original placement and handlers verified |
 | W08 | P3 | Selected font weight changes intrinsic tab width and wrapping | Open |
 
 Implement and verify each independent fix before starting the next. Preserve
@@ -60,6 +60,13 @@ missing readings, bounded model fallback, per-page caches and native Save owners
   ESLint. Both cards passed computed selected/unselected styles in hidden
   Chrome 153 and Firefox 157, light/dark and 375/768/1440 viewports. Inspected
   final narrow Chrome light/dark ascent screenshots after the accent refinement.
+- W07: authoritative opt-in gates GPS reparenting; position markers restore the
+  original native blocks on disable/disposal. Enabling again moves the same nodes.
+  Ran 25 ascent bundle tests covering startup, live transitions, late reads,
+  BFCache, shared/ambiguous notes and click-handler preservation, plus focused
+  ESLint. Hidden Chrome 153 and Firefox 157 confirmed initial zero weather
+  requests, no wrapper while disabled and exact node/parent/next-sibling
+  restoration. Inspected the native download/send controls after opt-out.
 
 ## Intentionally not changed
 

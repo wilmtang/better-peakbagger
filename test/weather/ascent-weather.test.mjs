@@ -108,19 +108,26 @@ test('weather opt-out hides the archive and skips summit lookup until enabled, i
         await pause();
         const card = env.doc.getElementById('bpb-ascent-weather');
         assert.equal(card.hidden, true); assert.equal(env.requests.length, 0);
+        assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
+        const download = env.doc.getElementById('gpxlinks'), originalParent = download.parentNode, originalNext = download.nextSibling;
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
         assert.equal(env.requests.length, 0);
         update(true); await openChart(env);
         assert.equal(card.hidden, false);
+        assert.equal(download.parentNode.id, 'bpb-ascent-gpx-details');
         const count = env.requests.length;
         update(false); assert.equal(card.hidden, true);
+        assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
+        assert.equal(download.parentNode, originalParent); assert.equal(download.nextSibling, originalNext);
         card.querySelector('.bpb-weather-retry').click();
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
         assert.equal(env.requests.length, count);
+        assert.equal(download.parentNode, originalParent);
         update(true); await waitFor(() => card.getAttribute('aria-busy') === 'false');
         assert.equal(card.hidden, false); assert.equal(env.doc.querySelectorAll('#bpb-ascent-weather').length, 1);
+        assert.equal(env.doc.querySelectorAll('#bpb-ascent-gpx-details').length, 1);
     } finally { env.close(); }
 });
 
@@ -143,6 +150,7 @@ test('a late startup read cannot override the archive opt-out and failed setting
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
         finish({ bpbSettings: { showWeather: true } }); await pause();
         assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true); assert.equal(env.requests.length, 0);
+        assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
     } finally { env.close(); }
     const failed = setup({ readSettings: async () => { throw new Error('Sync unavailable'); } });
     try {
@@ -389,6 +397,7 @@ test('native GPS note and download controls move together above weather without 
         + '<p id="gpxlinks">$1<span id="test-handoff"><button type="button">Send to Gaia</button></span></p></td></tr></table>');
     const env = setup({ html, withLayout: false });
     try {
+        await waitFor(() => env.doc.getElementById('bpb-ascent-gpx-details'));
         const card = env.doc.getElementById('bpb-ascent-weather'), details = env.doc.getElementById('bpb-ascent-gpx-details');
         const note = env.doc.getElementById('gpsnote'), download = env.doc.getElementById('gpxlinks');
         const button = env.doc.querySelector('#test-handoff button');
@@ -409,6 +418,19 @@ test('native GPS note and download controls move together above weather without 
         await pause();
         assert.equal(env.doc.querySelectorAll('#bpb-ascent-gpx-details').length, 1);
         assert.equal(details.nextElementSibling, card);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
+        assert.equal(note.closest('table').id, 'nativegps');
+        assert.equal(note.nextElementSibling, download);
+        button.click(); assert.equal(clicks, 2);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync'));
+        await waitFor(() => env.doc.getElementById('bpb-ascent-gpx-details'));
+        assert.equal(env.doc.getElementById('gpxlinks'), download);
+        assert.equal(env.doc.getElementById('gpsnote'), note);
+        assert.equal(env.doc.querySelectorAll('#bpb-ascent-gpx-details').length, 1);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide'));
+        assert.equal(note.closest('table').id, 'nativegps');
+        assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
     } finally { env.close(); }
 });
 
@@ -420,6 +442,7 @@ test('a shared GPS footer paragraph is moved once and ambiguous or report-quoted
                 : '<p id="note-one">Note: GPS Tracks may not be accurate. First.</p><p id="note-two">Note: GPS Tracks may not be accurate. Second.</p><p id="gpxlinks">$1</p>');
         const env = setup({ html, withLayout: !shared });
         try {
+            await waitFor(() => env.doc.getElementById('bpb-ascent-gpx-details'));
             const details = env.doc.getElementById('bpb-ascent-gpx-details');
             assert.equal(details.children.length, 1);
             assert.equal(details.firstElementChild.id, 'gpxlinks');

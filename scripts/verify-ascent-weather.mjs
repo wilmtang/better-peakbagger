@@ -439,6 +439,26 @@ try {
             await wait(() => !document.querySelector('.bpb-weather-reading-cursor'), 'Escape clears weather reading');
             await press(firefoxMode ? '\uE004' : 'Tab');
             assert.equal(await evaluate(() => document.activeElement.matches('.bpb-weather-sources summary')), true, 'numeric graph never traps Tab');
+            await setSettings({ showWeather: false, units: 'metric' });
+            const beforeOptOut = evidence.length;
+            await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=gpx`);
+            await wait(() => document.querySelector('#bpb-ascent-weather')?.hidden, 'weather initially disabled');
+            assert.equal(await evaluate(() => !!document.querySelector('#bpb-ascent-gpx-details')), false);
+            assert.equal(evidence.length, beforeOptOut);
+            await evaluate(() => {
+                const node = document.querySelector('#gpxlinks');
+                window.__bpbGpsOrigin = { node, parent: node.parentNode, next: node.nextSibling };
+            });
+            await setSettings({ showWeather: true, units: 'metric' });
+            await wait(() => document.querySelector('#bpb-ascent-gpx-details #gpxlinks'), 'enabled weather places native GPS blocks');
+            await setSettings({ showWeather: false, units: 'metric' });
+            await wait(() => !document.querySelector('#bpb-ascent-gpx-details'), 'disabled weather restores native GPS blocks');
+            assert.equal(await evaluate(() => {
+                const original = window.__bpbGpsOrigin;
+                return original.node.isConnected && original.node.parentNode === original.parent && original.node.nextSibling === original.next;
+            }), true);
+            await evaluate(() => { delete window.__bpbGpsOrigin; });
+            await setSettings({ showWeather: true, units: 'metric' });
             mode = 'partial'; await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-map`);
             await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
             await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('Partial data'), 'partial-data label');

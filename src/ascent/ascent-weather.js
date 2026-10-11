@@ -89,8 +89,20 @@ export function mountAscentWeather() {
         try { return /\/MasterMap\.aspx$/i.test(new URL(frame.getAttribute('src'), location.href).pathname); } catch { return false; }
     });
     const mountParent = document.querySelector('#page') || subject.table?.parentElement || nativeMap?.parentElement || document.body;
+    let preference = settings.DEFAULTS, settingsReady = false;
+    const enabled = () => settingsReady && preference.showWeather;
     let gpsDetails = null;
+    const gpsOrigins = [];
+    const restoreGpsDetails = () => {
+        for (const { node, marker, parent } of gpsOrigins.splice(0)) {
+            if (marker.parentNode) marker.before(node);
+            else (parent.isConnected ? parent : mountParent).append(node);
+            marker.remove();
+        }
+        gpsDetails?.remove(); gpsDetails = null;
+    };
     const placeGpsDetails = () => {
+        if (!enabled()) return;
         if (!gpsDetails) {
             const trackLink = ascentPage.gpxLink(document);
             const safe = node => node && node !== mountParent && !node.contains(card)
@@ -107,11 +119,16 @@ export function mountAscentWeather() {
                 && (node.contains(trackLink) || (node.compareDocumentPosition(trackLink) & Node.DOCUMENT_POSITION_FOLLOWING)));
             const blocks = notes.filter(node => !notes.some(other => other !== node && other.contains(node)));
             gpsDetails = element('div', { id: 'bpb-ascent-gpx-details' });
+            const move = node => {
+                const marker = document.createComment('bpb-weather-gps-position');
+                const parent = node.parentNode;
+                node.before(marker); gpsOrigins.push({ node, marker, parent }); gpsDetails.append(node);
+            };
             const note = blocks.length === 1 ? blocks[0] : null;
-            if (note?.contains(download)) gpsDetails.append(note);
+            if (note?.contains(download)) move(note);
             else {
-                if (note && !download.contains(note)) gpsDetails.append(note);
-                gpsDetails.append(download);
+                if (note && !download.contains(note)) move(note);
+                move(download);
             }
         }
         if (card.previousElementSibling !== gpsDetails) card.before(gpsDetails);
@@ -142,9 +159,7 @@ export function mountAscentWeather() {
     const placementObserver = new MutationObserver(place);
     placementObserver.observe(mountParent, { childList: true, subtree: true });
 
-    let preference = settings.DEFAULTS, summit = null, dayWindow = null, candidates = [], current = null;
-    let settingsReady = false;
-    const enabled = () => settingsReady && preference.showWeather;
+    let summit = null, dayWindow = null, candidates = [], current = null;
     let metric = 'temperature', generation = 0, controller = null, started = false, visibilityObserver = null;
     const client = createWeatherClient();
     let lifecycle;
@@ -458,9 +473,11 @@ export function mountAscentWeather() {
         preference = next; settingsReady = true;
         card.hidden = !enabled();
         if (!enabled()) {
+            restoreGpsDetails();
             cooldown.suspend(); stopCursor(); cancel();
             visibilityObserver?.disconnect(); visibilityObserver = null;
         } else if (lifecycle.state === 'active') {
+            place();
             cooldown.resume(); renderResult();
             if (!wasEnabled) { listenForCursor(); beginWhenVisible(); }
         }
@@ -469,7 +486,7 @@ export function mountAscentWeather() {
     lifecycle = createPageLifecycle({
         onSuspend: () => { cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
         onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (enabled()) { cooldown.resume(); listenForCursor(); drawChart(); if (!current || started) beginWhenVisible(); } },
-        onDispose: () => { cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
+        onDispose: () => { cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
     // Preserve an already-published GPX selection while the initial settings
     // read is pending. An opt-out removes this listener before any request.

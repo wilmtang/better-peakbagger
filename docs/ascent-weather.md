@@ -89,6 +89,10 @@ use a polite live region. Precipitation readings identify clipped intervals and
 estimated boundary allocation. Weather reading selection does not change the
 GPX cursor or issue a request.
 
+The General weather display preference gates both requests and weather-owned
+native GPS placement. Initial opt-out leaves GPS blocks in place; disabling
+weather restores the original notes/download/send nodes and their handlers.
+
 The GPX cursor highlights the corresponding hourly row in Conditions. An explicit
 tab switch reveals the selected hour inside the list; GPX hover never scrolls
 the list or page. The recorded point time stays separate from the hourly sample,
