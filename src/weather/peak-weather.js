@@ -32,7 +32,7 @@ export function mountPeakWeather() {
     card.append(element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Past week weather' }), refresh]), range, locationLabel, status, days,
         help,
         source, element('footer', {}, [element('span', { text: 'Model estimates · Route conditions may differ' }),
-            element('span', {}, [document.createTextNode('Community support by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
+            element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
     const row = element('tr', { id: `${ID}-row` }, [cell]);
     subject.table.tBodies[0].append(row);

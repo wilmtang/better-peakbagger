@@ -16,7 +16,7 @@ accessible disclosure opens one day's hourly readings; expanding another day
 closes the previous one. The hourly table scrolls inside the card, never widening
 the page. Temperatures and distances follow the existing units preference.
 The date range excludes today's partial day. Source details explain model
-estimates and the footer credits **Community support by Open-Meteo**.
+estimates and the footer credits **Powered by Open-Meteo**.
 
 ## Data and civil-day boundaries
 

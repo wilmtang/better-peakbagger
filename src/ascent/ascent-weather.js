@@ -75,7 +75,7 @@ export function mountAscentWeather() {
     const attribution = element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' });
     card.append(element('header', {}, [heading, date]), locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
         element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }),
-            element('span', { class: 'bpb-weather-attribution' }, [document.createTextNode('Community support by '), attribution])]));
+            element('span', { class: 'bpb-weather-attribution' }, [document.createTextNode('Powered by '), attribution])]));
 
     // Keep weather with the right-hand summary, independently of report height
     // or a later GPX explorer. Unrecognized layouts retain the map fallback.

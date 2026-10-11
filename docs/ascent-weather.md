@@ -8,7 +8,7 @@ column if the table layout mounts later; GPX analysis never moves it out.
 On GPX ascents, dedicated native GPS-note and download/send blocks move together
 immediately above **Weather archive**, preserving their original controls and
 handlers. The map and report stay in place; ambiguous note blocks are left
-untouched. The footer reads **Community support by Open-Meteo**, with the
+untouched. The footer reads **Powered by Open-Meteo**, with the
 provider name linked. Unrecognized table layouts retain the native map/metadata
 fallback. It does not depend on GPX, Chart.js,
 terrain, ownership, backup, or a page-world settings bridge.

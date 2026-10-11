@@ -313,7 +313,7 @@ try {
                         assert.equal(await evaluate(() => document.getElementById('gps-track-note').parentElement.id), 'bpb-ascent-gpx-details');
                     }
                     assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather h2').textContent), 'Weather archive');
-                    assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Community support by Open-Meteo');
+                    assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Powered by Open-Meteo');
                     if (kind === 'gpx') {
                         await checkGpxCursor();
                         await checkExplorerReflow(output);

@@ -220,7 +220,7 @@ test('bundled independent card loads on a visitor ascent without GPX or map', as
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').previousElementSibling.id, 'summarydata');
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').parentElement.id, 'bpb-ascent-summary-column');
         assert.equal(env.doc.querySelector('#bpb-ascent-weather-heading').textContent, 'Weather archive');
-        assert.equal(env.doc.querySelector('.bpb-weather-attribution').textContent, 'Community support by Open-Meteo');
+        assert.equal(env.doc.querySelector('.bpb-weather-attribution').textContent, 'Powered by Open-Meteo');
         assert.equal(env.doc.querySelector('#bpb-ascent-gpx-details'), null);
         assert.equal(env.doc.querySelector('#bpb-ascent-weather').getAttribute('aria-busy'), 'false');
         const transfer = env.requests[1]; assert.equal(transfer.init.credentials, 'omit'); assert.equal(transfer.init.referrerPolicy, 'no-referrer');

@@ -41,6 +41,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     };
     await setSettings({ theme: 'light', units: 'imperial' });
     await openPage(); await resize(1440, 1100);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-attribution').textContent), 'Powered by Open-Meteo');
     if (live) return { liveCors: 'passed', viewport: { width: 1440, height: 1100 } };
     const widths = [1440, 768, 375], shapes = [];
     for (const theme of ['light', 'dark']) {

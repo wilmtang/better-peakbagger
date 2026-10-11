@@ -61,7 +61,8 @@ test('card stays in the right native table below map and includes only seven com
         assert.match(card.querySelector('.bpb-week-sub').textContent, /14406 ft.*Today excluded/);
         assert.equal(env.requests.length, 1); assert.equal(new URL(env.requests[0].url).host, 'api.open-meteo.com');
         assert.equal(env.requests[0].init.credentials, 'omit'); assert.equal(env.requests[0].init.referrerPolicy, 'no-referrer');
-        assert.match(card.textContent, /Community support by Open-Meteo/);
+        assert.equal(card.querySelector('.bpb-week-attribution').textContent, 'Powered by Open-Meteo');
+        assert.equal(card.querySelector('.bpb-week-attribution a').href, 'https://open-meteo.com/');
         env.win.eval(bundle); assert.equal(env.doc.querySelectorAll('#bpb-peak-weather').length, 1);
     } finally { env.close(); }
 });
