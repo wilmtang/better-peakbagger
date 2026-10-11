@@ -2199,7 +2199,7 @@ async function main() {
           link => link.textContent.trim()),
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         framePreserved: document.getElementById("Gmap")?.parentElement === mount,
-        sunAfterMap: mount.nextElementSibling === sun,
+        sunAfterMap: mount.parentElement.nextElementSibling === sun,
         sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
         sunExpanded: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === false,
         sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",

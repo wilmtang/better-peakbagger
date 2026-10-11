@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Hidden, real unpacked extension on a disposable HTTPS Peakbagger fixture.
-/* global document, chrome */
+/* global document, chrome, window */
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -23,6 +23,7 @@ try {
     resources.defer('peak layout profile', () => rm(profile, { recursive: true, force: true }));
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
     resources.defer('peak layout fixture', () => fixture.close());
+    assertChromeLaunchAllowed();
     const context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium',
         headless: true,
@@ -48,7 +49,7 @@ try {
     const readBounds = () => page.evaluate(() => {
         const rect = element => {
             const box = element.getBoundingClientRect();
-            return { x: box.x, y: box.y, width: box.width, height: box.height };
+            return { x: box.x + window.scrollX, y: box.y + window.scrollY, width: box.width, height: box.height };
         };
         return {
             map: rect(document.querySelector('#bpb-map-viewport')),
@@ -64,6 +65,7 @@ try {
         for (const width of [1280, 780, 640, 390, 320]) {
             await page.setViewportSize({ width, height: 1000 });
             const bounds = await readBounds();
+            assert.ok(bounds.map.x >= 0 && bounds.map.x + bounds.map.width <= width, `map overflow: ${JSON.stringify(bounds.map)}`);
             assert.ok(bounds.sun.height < (bounds.sun.width > 680 ? 380 : bounds.sun.width <= 340 ? 600 : 570), JSON.stringify(bounds));
             for (const date of ['2026-06-21', '2026-12-21']) {
                 await page.locator('.bpb-sun-calculator__date').fill(date);
@@ -86,6 +88,57 @@ try {
             console.log(`${theme}/${width}: Sun & Moon ${bounds.sun.height}px; no overflow or date/time movement`);
         }
     }
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    const handle = page.locator('#bpb-map-resize-handle');
+    await handle.waitFor({ state: 'visible' });
+    const native = page.locator('#Gmap');
+    const initial = await native.boundingBox();
+    assert.equal(initial.height, 425, 'the compact rail leaves the native content height intact');
+    await native.evaluate(frame => {
+        const map = frame.contentWindow.mapsPlaceholder;
+        map.resizeCalls = 0;
+        map.invalidateSize = () => map.resizeCalls++;
+    });
+    await handle.focus();
+    await page.keyboard.press('ArrowDown');
+    await page.waitForFunction(() => document.querySelector('#Gmap').getBoundingClientRect().height === 435);
+    const sunBefore = (await readBounds()).sun;
+    const grip = await handle.boundingBox();
+    const point = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    await page.mouse.move(point.x - 50, point.y + 40, { steps: 12 });
+    const dragged = await handle.boundingBox();
+    assert.ok(Math.abs(dragged.x - grip.x + 50) < 1, `the centered resize edge follows the pointer: ${JSON.stringify({ grip, dragged, map: (await readBounds()).map })}`);
+    assert.ok(Math.abs(dragged.y - grip.y - 40) < 1, 'vertical resize follows the pointer');
+    assert.equal((await readBounds()).sun.height, sunBefore.height, 'resizing the map cannot reshape Sun & Moon');
+    await page.mouse.up();
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('pbPeakMapViewport.v1')));
+    assert.equal(saved.height, 475);
+    await page.waitForFunction(() => document.querySelector('#Gmap').contentWindow.mapsPlaceholder.resizeCalls > 0);
+    let previousWidth = 802;
+    await page.setViewportSize({ width: previousWidth, height: 1000 });
+    let previousMap = (await readBounds()).map;
+    for (const width of [801, 800, 799, 790, 789, 780, 779, 760, 759]) {
+        await page.setViewportSize({ width, height: 1000 });
+        const map = (await readBounds()).map;
+        assert.ok(Math.abs(map.x - previousMap.x) <= Math.abs(width - previousWidth) / 2 + 1,
+            `window sizing jumped the map: ${JSON.stringify({ previousWidth, width, previousMap, map })}`);
+        assert.equal(map.height, previousMap.height);
+        previousWidth = width;
+        previousMap = map;
+    }
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    const beforeReload = await readBounds();
+    await page.reload();
+    await page.locator('#bpb-map-resize-handle').waitFor({ state: 'visible' });
+    await page.addStyleTag({ content: 'body { margin: 12px; } table { max-width: 100%; }' });
+    assert.deepEqual((await readBounds()).map, beforeReload.map, 'the chosen dimensions survive reload');
+    await page.locator('#bpb-map-resize-handle').dblclick();
+    assert.equal(await page.evaluate(() => localStorage.getItem('pbPeakMapViewport.v1')), null);
+    assert.equal((await native.boundingBox()).height, 425);
+    if (artifacts) await page.locator('#bpb-map-viewport').screenshot({ path: path.join(artifacts, 'peak-map-resize.png') });
+    console.log('Peak resize: keyboard, centered drag, smooth window sizing, Leaflet invalidation, stable panel, reload, and reset passed');
     assert.deepEqual(errors, []);
 } catch (error) {
     primaryError = error;

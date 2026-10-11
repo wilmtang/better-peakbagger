@@ -130,7 +130,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
 | `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
-| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, summit Sun/Moon state | Storage, renderer internals, duplicate lifecycle logic |
+| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
@@ -210,6 +210,14 @@ Screen `t=P` map id, valid focus coordinates, and a subject name. It passes a
 summit focus rather than an invented route. The subject peak is supplied
 separately because Peakbagger's nearby-peak feed may intentionally exclude the
 page's own summit.
+
+The Dynamic Map uses the shared drag and keyboard resize handle in both 2D
+and 3D. Arrow keys resize in 10px steps; Shift uses 50px steps, and a double
+click restores the native size. The completed size is stored on the Peakbagger
+origin as `pbPeakMapViewport.v1`, separately from the GPX Analyzer's synced
+size. It is restored before mounting to avoid a later settings-driven jump.
+Blocked page storage leaves resizing available. The resize rail stays below
+both renderers and outside their attribution and zoom controls.
 
 The same validated summit coordinate owns the Peak Sun and Moon calculator below the
 map. It consumes accepted 3D bearing through the optional coordinator callback;

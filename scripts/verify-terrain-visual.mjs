@@ -1880,6 +1880,45 @@ try {
     })()`, 45000);
     const peakSolarBearing = await exerciseSolarBearing(cdp, 'Peak 3D');
     await capture(cdp, path.join(outputDir, 'peak-page-sun-3d.png'));
+    await waitForPageState(cdp, `(() => {
+        const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
+        return { ready: map.loaded() && !map.isMoving(), moving: map.isMoving() };
+    })()`);
+    const peakBeforeResize = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame.contentWindow.__bpbTerrainTestMap;
+        const handle = document.getElementById('bpb-map-resize-handle');
+        handle.focus();
+        return {
+            frameHeight: frame.getBoundingClientRect().height,
+            canvasHeight: map.getCanvas().getBoundingClientRect().height,
+            sunHeight: document.querySelector('.bpb-sun-calculator').getBoundingClientRect().height,
+            center: map.getCenter().toArray(),
+        };
+    })()`);
+    await cdp.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 });
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 });
+    await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const native = document.getElementById('Gmap');
+        const map = frame.contentWindow.__bpbTerrainTestMap;
+        const center = map.getCenter().toArray();
+        return {
+            ready: frame.getBoundingClientRect().height === ${peakBeforeResize.frameHeight - 10}
+                && native.getBoundingClientRect().height === frame.getBoundingClientRect().height
+                && map.getCanvas().getBoundingClientRect().height === ${peakBeforeResize.canvasHeight - 10}
+                && document.querySelector('.bpb-sun-calculator').getBoundingClientRect().height === ${peakBeforeResize.sunHeight}
+                && center.every((value, index) => Math.abs(value - ${JSON.stringify(peakBeforeResize.center)}[index]) < 1e-6),
+            frameHeight: frame.getBoundingClientRect().height,
+            nativeHeight: native.getBoundingClientRect().height,
+            canvasHeight: map.getCanvas().getBoundingClientRect().height,
+            sunHeight: document.querySelector('.bpb-sun-calculator').getBoundingClientRect().height,
+            center,
+            before: ${JSON.stringify(peakBeforeResize)},
+        };
+    })()`);
+    console.log('Peak 3D resize: native/frame/canvas sizes agree; camera and Sun panel remain stable.');
+    await capture(cdp, path.join(outputDir, 'peak-page-resized-3d.png'));
     // Provider warnings use the real rendered controls on the hardware map.
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.

@@ -17,6 +17,7 @@ import { mountainTime as MountainTime } from '../time/mountain-time.js';
 import { sunState as SunState } from '../sun/sun-state.js';
 import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
+import { mapViewport as MapViewport } from '../gpx/map-viewport.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
@@ -82,15 +83,60 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     const TERRAIN_PREFETCH_THROTTLE_MS = 15 * 1000;
     let terrainPrefetchAt = 0;
 
-    const mount = document.createElement('div');
-    mount.id = 'bpb-map-viewport';
-    mount.className = 'bpb-terrain-mount-peak';
+    // Keep Peak sizing separate from the GPX preference. Restore it before
+    // mounting, so the asynchronous settings bridge cannot jump the page.
+    const VIEWPORT_KEY = 'pbPeakMapViewport.v1';
     const configuredHeight = iframe.getAttribute('height');
-    mount.style.height = /^\d+(?:\.\d+)?(?:px)?$/i.test(configuredHeight || '')
-        ? `${parseFloat(configuredHeight)}px`
-        : '425px';
-    iframe.parentNode.insertBefore(mount, iframe);
-    mount.append(iframe);
+    const defaultSize = {
+        // The native percentage iframe has a content-box border. Including
+        // that border in the wrapper's width would widen its table by 4px,
+        // then snap the table back on the first drag.
+        width: Schema.viewportWidth(iframe.clientWidth || iframe.getBoundingClientRect().width || Schema.DEFAULTS.mapViewportWidth),
+        height: Schema.viewportHeight(/^\d+(?:\.\d+)?(?:px)?$/i.test(configuredHeight || '')
+            ? parseFloat(configuredHeight) : 425),
+    };
+    let initialSize = defaultSize;
+    try {
+        const saved = JSON.parse(localStorage.getItem(VIEWPORT_KEY));
+        if (Number.isFinite(saved?.width) && Number.isFinite(saved?.height)) {
+            initialSize = { width: Schema.viewportWidth(saved.width), height: Schema.viewportHeight(saved.height) };
+        }
+    } catch { /* Missing or unavailable page-local preferences preserve the native size. */ }
+    // Bound the resize boundary itself: native tables can stay wider than the
+    // window. Centering inside this region then tracks window changes smoothly
+    // and pointer resizing cannot request space beyond the visible region.
+    const mapRegion = document.createElement('div');
+    mapRegion.className = 'bpb-peak-map-region';
+    iframe.before(mapRegion);
+    mapRegion.append(iframe);
+    const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
+    let terrainCoordinator = null;
+    const viewport = MapViewport.create({
+        iframe,
+        size: initialSize,
+        bounds: {
+            minWidth: Schema.BOUNDS.viewportWidth.min,
+            maxWidth: Schema.BOUNDS.viewportWidth.max,
+            minHeight: Schema.BOUNDS.viewportHeight.min,
+            maxHeight: Schema.BOUNDS.viewportHeight.max,
+        },
+        railHeight: coarsePointer ? 44 : 16,
+        targetSize: coarsePointer ? 44 : 24,
+        persistDelayMs: 400,
+        onPersist: size => {
+            try { localStorage.setItem(VIEWPORT_KEY, JSON.stringify(size)); }
+            catch { /* Resizing remains available when storage is blocked. */ }
+        },
+        onInvalidated: () => terrainCoordinator?.position(),
+    });
+    const mount = viewport.element;
+    mount.className = 'bpb-terrain-mount-peak';
+    const resizeHandle = mount.querySelector('#bpb-map-resize-handle');
+    resizeHandle.title = 'Drag to resize map. Double-click to reset.';
+    resizeHandle.addEventListener('dblclick', () => {
+        viewport.applySize(defaultSize);
+        try { localStorage.removeItem(VIEWPORT_KEY); } catch { /* Optional preference. */ }
+    });
 
     const sunState = SunState.create();
     const sunZone = MountainTime.resolve(lat, lon);
@@ -100,7 +146,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         sunState.setMapBearing(Number.isFinite(bearing) ? bearing : 0)
     );
     sunCalculator = SunCalculator.create({
-        mount: mount.parentElement,
+        mount: mapRegion.parentElement,
         mode: 'peak',
         onDateChange: date => renderSun(sunState.setPeakDate(date)),
         onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
@@ -109,7 +155,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         sunCalculator.element.hidden = true;
         // create() appends safely; move the root beside the validated map so it
         // cannot cover native controls or attribution inside the viewport.
-        mount.after(sunCalculator.element);
+        mapRegion.after(sunCalculator.element);
         renderSun(sunState.setPeakSubject({ lat, lon, zone: sunZone }));
     }
 
@@ -223,7 +269,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         };
     };
 
-    const terrainCoordinator = TerrainCoordinator.create({
+    terrainCoordinator = TerrainCoordinator.create({
         toggle: terrainToggle,
         compass: terrainCompass,
         isEnabled: () => terrainEnabled,
@@ -293,9 +339,8 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 
     const handleIframeLoad = () => {
         peaksResponder.reset();
-        terrainCoordinator.position();
+        viewport.scheduleInvalidate();
     };
-    window.addEventListener('resize', () => terrainCoordinator.position());
     iframe.addEventListener('load', handleIframeLoad);
 
     terrainCoordinator.update();
@@ -314,7 +359,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
                 iframe.style.visibility = 'visible';
                 iframe.removeAttribute('aria-hidden');
                 iframe = nextIframe;
-                if (iframe.parentElement !== mount) mount.append(iframe);
+                viewport.attach(iframe);
                 iframe.addEventListener('load', handleIframeLoad);
             }
             handleIframeLoad();
@@ -326,6 +371,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
         onDispose: () => {
             if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
             iframe.removeEventListener('load', handleIframeLoad);
+            viewport.dispose();
             sunState.resetSubject();
             sunCalculator?.dispose();
             sunCalculator = null;

@@ -4068,8 +4068,10 @@ try {
                 text: button.textContent,
                 mountClass: mount.className,
                 mountHeight: mount.getBoundingClientRect().height,
+                nativeMapHeight: iframe.getBoundingClientRect().height,
+                resizeHandle: Boolean(mount.querySelector('#bpb-map-resize-handle')),
                 iframePreserved: iframe.parentElement === mount,
-                sunAfterMap: mount.nextElementSibling === sun,
+                sunAfterMap: mount.parentElement.nextElementSibling === sun,
                 sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
                 sunExpanded: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === false,
                 sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
@@ -4106,8 +4108,8 @@ try {
             `the Peak page must show an enabled 3D toggle (state=${JSON.stringify(peakState)}, errors=${JSON.stringify(peakErrors)})`);
         check(peakState?.mountClass === 'bpb-terrain-mount-peak' && peakState?.iframePreserved === true,
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
-        check(peakState?.mountHeight === 425,
-            `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
+        check(peakState?.nativeMapHeight === 425 && peakState?.mountHeight === 441 && peakState?.resizeHandle,
+            `the Peak map must preserve 425px of native content and add its resize rail (state=${JSON.stringify(peakState)})`);
         check(peakState?.sunAfterMap && peakState?.sunDateInput && peakState?.sunExpanded
             && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid'
             && peakState?.sunMockHierarchy,

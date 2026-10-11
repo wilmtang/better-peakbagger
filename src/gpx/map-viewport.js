@@ -78,8 +78,10 @@ export const createMapViewport = ({
             cancelInvalidate = null;
             syncHandleLabel();
             try {
-                const map = iframe.contentWindow && iframe.contentWindow.mapsPlaceholder;
-                if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
+                const win = iframe.contentWindow;
+                const map = win && [win.mapsPlaceholder, win.map]
+                    .find(candidate => typeof candidate?.invalidateSize === 'function');
+                map?.invalidateSize(false);
             } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
             // Re-anchor the floating toggle: the native zoom's position (2D)
             // and the viewport size can change as the map settles or resizes.

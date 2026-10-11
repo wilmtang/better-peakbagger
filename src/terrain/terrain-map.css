@@ -78,24 +78,26 @@
     bottom: 94px;
 }
 
-/* Peak pages keep their Dynamic Map inline with the surrounding details. The
-   wrapper preserves the iframe's fixed height while giving the extension-owned
-   frame and toggle one stable positioning context. Unlike the ascent analyzer,
-   this surface has no resize rail, so 3D fills the entire map area. */
+/* Peak and ascent maps share the resize rail. Both renderers stay above it,
+   leaving the grip available without covering map attribution or controls. */
+.bpb-peak-map-region {
+    width: 100%;
+    max-width: calc(100vw - 2rem);
+}
 .bpb-terrain-mount-peak {
     position: relative;
-    width: 100%;
+    margin-inline: auto;
 }
 
-.bpb-terrain-mount-peak > iframe#Gmap {
-    display: block;
-    width: 100%;
-    height: 100%;
+.bpb-terrain-mount-peak .bpb-map-resize-grip {
+    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 5px);
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+    opacity: 0.55;
 }
-
-.bpb-terrain-mount-peak #bpb-terrain-frame {
-    inset: 0;
-    height: 100%;
+.bpb-terrain-mount-peak #bpb-map-resize-handle:is(:hover, :focus-visible, :active) .bpb-map-resize-grip { opacity: 1; }
+.bpb-terrain-mount-peak #bpb-map-resize-handle:focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: -2px !important;
 }
 
 .bpb-map-3d-toggle[data-theme="dark"] {

@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { makeChromeStub, waitFor } from '../helpers/load-page.mjs';
+import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The Peak page loads the isolated settings-bridge bundle and the MAIN-world
@@ -30,6 +31,7 @@ const peakHtml = ({ mapPid = 2829, mapType = 'P', includeCoordinates = true,
 
 const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
     showSunMoon = true,
+    storedSize = null, storageBlocked = false, coarsePointer = false,
     includeCoordinates = true, fullMapOrigin = 'https://www.peakbagger.com',
     nowMs = Date.parse('2026-08-25T18:45:00Z') } = {}) => {
     const dom = new JSDOM(peakHtml({ mapPid, mapType, includeCoordinates, fullMapOrigin }), {
@@ -38,6 +40,10 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
         pretendToBeVisual: true
     });
     const { window } = dom;
+    if (storedSize !== null) window.localStorage.setItem('pbPeakMapViewport.v1', storedSize);
+    if (storageBlocked) Object.defineProperty(window, 'localStorage', {
+        get() { throw new window.DOMException('Storage blocked', 'SecurityError'); },
+    });
     window.Date.now = () => nowMs;
     const messages = [];
     window.chrome = makeChromeStub({ bpbSettings: {
@@ -46,7 +52,7 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
         theme: 'dark',
         terrainCacheLimitMb: 384
     } });
-    window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+    window.matchMedia = query => ({ matches: coarsePointer && query === '(pointer: coarse)', addEventListener() {}, removeEventListener() {} });
     const postMessage = message => {
         messages.push(structuredClone(message));
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
@@ -99,15 +105,16 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
 
     assert.ok(mount);
     assert.equal(mount.className, 'bpb-terrain-mount-peak');
-    assert.equal(mount.style.height, '425px', 'the wrapper preserves Peakbagger\'s map height');
+    assert.equal(mount.style.height, '441px', 'the wrapper adds a 16px resize rail below the native 425px map');
+    assert.equal(iframe.style.height, 'calc(100% - 16px)');
     assert.equal(iframe.parentElement, mount, 'the native iframe stays intact inside the terrain mount');
     assert.equal(toggle.textContent, '3D');
     assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
     assert.ok(sun, 'a calculator is created from the same validated summit subject');
-    assert.equal(mount.nextElementSibling, sun,
+    assert.equal(mount.parentElement.nextElementSibling, sun,
         'the calculator sits immediately below the viewport instead of overlaying the map');
     assert.equal(sun.querySelector('.bpb-sun-calculator__panel').hidden, false,
-        'Peak-page Sun & Moon opens automatically below the fixed-height map');
+        'Peak-page Sun & Moon opens automatically below the map');
     assert.equal(sun.querySelector('.bpb-sun-calculator__toggle').getAttribute('aria-expanded'), 'true');
     assert.equal(sun.querySelector('input[type="date"]').value, '2026-08-25');
     assert.equal(sun.querySelector('input[type="range"]').value, String(11 * 60 + 45),
@@ -233,10 +240,85 @@ test('Peak map survives repeated persisted traversal and adopts a replaced nativ
     assert.equal(calculator.isConnected, true);
     assert.equal(window.document.querySelectorAll('#bpb-terrain-toggle').length, 1);
     assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+    assert.equal(window.document.querySelectorAll('#bpb-map-resize-handle').length, 1);
+    assert.equal(replacement.style.height, 'calc(100% - 16px)');
     window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: false }));
     assert.equal(calculator.isConnected, false);
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
+});
+
+test('Peak map resize supports keyboard, centered pointer drags, persistence, and reset without moving the camera', async () => {
+    const { dom, window } = loadPeakMap({ enabled: false });
+    try {
+        const mount = window.document.getElementById('bpb-map-viewport');
+        const iframe = window.document.getElementById('Gmap');
+        const handle = window.document.getElementById('bpb-map-resize-handle');
+        let invalidations = 0;
+        let cameraChanges = 0;
+        const syncBefore = await window.chrome.storage.sync.get(null);
+        iframe.contentWindow.map = {
+            eachLayer() {}, on() {}, getCenter: () => ({ lat: 48.83115, lng: -121.60214 }), getZoom: () => 14,
+            invalidateSize(animate) { assert.equal(animate, false); invalidations++; },
+            setView() { cameraChanges++; },
+        };
+        assert.equal(handle.type, 'button');
+        assert.match(handle.getAttribute('aria-label'), /Resize map.*425 pixels high/);
+        mount.parentElement.getBoundingClientRect = () => ({ left: 0, right: 1000, width: 1000 });
+        mount.getBoundingClientRect = () => {
+            const width = parseFloat(mount.style.width);
+            return { left: (1000 - width) / 2, right: (1000 + width) / 2, width, height: parseFloat(mount.style.height) };
+        };
+        handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true }));
+        assert.equal(mount.style.height, '491px');
+        assert.equal(window.localStorage.getItem('pbPeakMapViewport.v1'), null, 'key repeats do not persist each step');
+        handle.dispatchEvent(pointerEvent(dom, 'pointerdown', { pointerId: 1, button: 0, clientX: 725, clientY: 491 }));
+        handle.dispatchEvent(pointerEvent(dom, 'pointermove', { pointerId: 1, clientX: 745, clientY: 511 }));
+        assert.equal(mount.style.width, '490px', 'centered sizing keeps the edge under the pointer');
+        assert.equal(mount.style.height, '511px');
+        handle.dispatchEvent(pointerEvent(dom, 'pointerup', { pointerId: 1 }));
+        assert.deepEqual(JSON.parse(window.localStorage.getItem('pbPeakMapViewport.v1')), { width: 490, height: 495 });
+        await waitFor(dom, () => invalidations > 0);
+        handle.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+        assert.equal(mount.style.width, '450px');
+        assert.equal(mount.style.height, '441px');
+        assert.equal(window.localStorage.getItem('pbPeakMapViewport.v1'), null);
+        assert.deepEqual(await window.chrome.storage.sync.get(null), syncBefore, 'Peak sizing does not change GPX sync settings');
+        assert.equal(cameraChanges, 0);
+    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+});
+
+for (const [name, storedSize, width, height] of [
+    ['saved', '{"width":640,"height":360}', '640px', '376px'],
+    ['bounded', '{"width":99999,"height":1}', '4096px', '256px'],
+    ['malformed', 'not json', '450px', '441px'],
+    ['wrong types', '{"width":"640","height":360}', '450px', '441px'],
+]) {
+    test(`Peak map restores ${name} page-local sizing before asynchronous settings`, async () => {
+        const { dom, window } = loadPeakMap({ storedSize });
+        try {
+            const mount = window.document.getElementById('bpb-map-viewport');
+            assert.equal(mount.style.width, width);
+            assert.equal(mount.style.height, height);
+            await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle').dataset.theme === 'dark');
+            assert.equal(mount.style.width, width);
+            assert.equal(mount.style.height, height, 'the settings reply cannot replace the chosen size');
+        } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+    });
+}
+
+test('Peak map remains resizable with blocked storage and reserves a touch target for coarse pointers', () => {
+    const { window } = loadPeakMap({ storageBlocked: true, coarsePointer: true });
+    try {
+        const mount = window.document.getElementById('bpb-map-viewport');
+        const handle = window.document.getElementById('bpb-map-resize-handle');
+        assert.equal(handle.style.height, '44px');
+        assert.equal(mount.style.height, '469px');
+        handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+        assert.equal(mount.style.height, '459px');
+        handle.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+        assert.equal(mount.style.height, '469px');
+    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
 });
 
 test('Peak-page 3D loading can be canceled and renderer failures are announced', async () => {

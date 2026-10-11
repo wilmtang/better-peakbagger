@@ -311,6 +311,16 @@ test('resizing tells Leaflet its container moved', async () => {
     } finally { restore(); }
 });
 
+test('resizing also invalidates a native map exposed through the map alias', async () => {
+    const { viewport, iframe, map, restore } = setup();
+    try {
+        Object.defineProperty(iframe, 'contentWindow', { configurable: true, value: { map } });
+        viewport.applySize({ width: 700, height: 500 });
+        await new Promise(resolve => setTimeout(resolve, 30));
+        assert.ok(map.invalidateCalls >= 1);
+    } finally { restore(); }
+});
+
 test('a map frame Peakbagger has discarded does not break resizing', async () => {
     const { viewport, iframe, restoreGlobals } = setup();
     try {
