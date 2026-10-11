@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, chrome, getComputedStyle, Chart */
+/* global document, window, chrome, getComputedStyle, Chart */
 
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -83,7 +83,7 @@ try {
                 { type: 'pattern', protocol: 'https', hostname: 'historical-forecast-api.open-meteo.com' },
             ] } });
         }
-        evaluate = fn => driver.executeScript(webdriverScript(fn));
+        evaluate = (fn, ...args) => driver.executeScript(webdriverScript(fn, ...args));
         navigate = url => driver.get(url);
         click = selector => driver.findElement(By.css(selector)).click();
         movePointer = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).perform();
@@ -114,7 +114,7 @@ try {
         });
         page.on('pageerror', error => networkErrors.push(error.message));
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
-        evaluate = fn => page.evaluate(fn); navigate = url => page.goto(url, { waitUntil: 'load' });
+        evaluate = (fn, arg) => page.evaluate(fn, arg); navigate = url => page.goto(url, { waitUntil: 'load' });
         click = selector => page.locator(selector).click(); resize = (width, height) => page.setViewportSize({ width, height });
         movePointer = (x, y) => page.mouse.move(x, y); clickPoint = (x, y) => page.mouse.click(x, y);
         screenshot = output => page.locator('#bpb-ascent-weather').screenshot({ path: output });
@@ -170,6 +170,57 @@ try {
         assert.ok(Math.abs(bounds.x - (42 + (bounds.width - 58) * (bounds.time - dayStart) / 86400_000)) < .01, 'weather cursor uses the summit local day');
         assert.equal(evidence.length, before, 'GPX interaction makes no additional weather request');
     };
+    const explorerGeometry = () => {
+        const explorer = document.getElementById('bpb-route-explorer');
+        const mapColumn = explorer.querySelector('.bpb-route-explorer__map-column');
+        const map = document.getElementById('bpb-map-viewport');
+        const frame = map.querySelector('iframe');
+        const analysis = document.getElementById('bpb-gpx-analysis');
+        const mapRect = map.getBoundingClientRect(), frameRect = frame.getBoundingClientRect();
+        const columnRect = mapColumn.getBoundingClientRect(), analysisRect = analysis.getBoundingClientRect();
+        return { layout: explorer.dataset.layout, position: getComputedStyle(mapColumn).position,
+            width: mapRect.width, frameContained: frameRect.bottom <= mapRect.bottom + 1,
+            beside: columnRect.right <= analysisRect.left + 1,
+            below: analysisRect.top >= Math.max(columnRect.bottom, frameRect.bottom) - 1 };
+    };
+    const checkExplorerReflow = async output => {
+        await resize(1440, 1100);
+        await wait(() => document.getElementById('bpb-route-explorer')?.dataset.layout === 'side', 'side layout before container resize');
+        const before = await evaluate(explorerGeometry);
+        assert.ok(before.beside && before.frameContained, JSON.stringify(before));
+        const original = await evaluate(() => {
+            const host = document.getElementById('bpb-route-explorer').parentElement;
+            return { style: host.getAttribute('style'), x: window.scrollX, y: window.scrollY };
+        });
+        try {
+            // Change only the containing column. The map and browser keep their
+            // dimensions, so neither existing map/window resize handler fires.
+            await evaluate(() => {
+                const explorer = document.getElementById('bpb-route-explorer');
+                explorer.parentElement.style.width = `${document.getElementById('bpb-map-viewport').getBoundingClientRect().width + 350}px`;
+            });
+            await wait(() => document.getElementById('bpb-route-explorer')?.dataset.layout === 'stacked', 'container resize clears sticky map layout');
+            await evaluate(() => window.scrollBy(0, document.getElementById('bpb-map-viewport').getBoundingClientRect().top + 200));
+            const stacked = await evaluate(explorerGeometry);
+            assert.ok(stacked.below && stacked.frameContained && stacked.position === 'static', JSON.stringify(stacked));
+            assert.equal(stacked.width, before.width, 'container reflow does not resize the map');
+            if (output) {
+                await evaluate(() => document.getElementById('bpb-route-explorer').scrollIntoView({ block: 'start' }));
+                await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-gpx-stacked.png`));
+            }
+        } finally {
+            await evaluate(original => {
+                const host = document.getElementById('bpb-route-explorer').parentElement;
+                if (original.style === null) host.removeAttribute('style');
+                else host.setAttribute('style', original.style);
+                window.scrollTo(original.x, original.y);
+            }, original);
+        }
+        await wait(() => document.getElementById('bpb-route-explorer')?.dataset.layout === 'side', 'widening the container restores sticky side layout');
+        const restored = await evaluate(explorerGeometry);
+        assert.ok(restored.beside && restored.frameContained && restored.position === 'sticky', JSON.stringify(restored));
+        assert.equal(restored.width, before.width);
+    };
     const geometryForCard = () => {
         const card = document.getElementById('bpb-ascent-weather'), box = card.getBoundingClientRect();
         const column = document.getElementById('bpb-ascent-summary-column'), columnBox = column.getBoundingClientRect();
@@ -223,7 +274,10 @@ try {
                 }
                 assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather h2').textContent), 'Weather archive');
                 assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Community support by Open-Meteo');
-                if (kind === 'gpx') await checkGpxCursor();
+                if (kind === 'gpx') {
+                    await checkGpxCursor();
+                    await checkExplorerReflow(output);
+                }
                 else await click('.bpb-weather-disclosure');
                 for (const width of [1440, 768, 375]) {
                     await resize(width, 1100);
@@ -314,7 +368,7 @@ try {
         await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
         assert.equal(evidence.length, before);
         assert.deepEqual(networkErrors, []);
-        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
     }
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);

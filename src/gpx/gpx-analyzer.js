@@ -1731,6 +1731,10 @@ const run = async () => {
 
         if (typeof ResizeObserver === 'function') {
             chartResizeObserver = new ResizeObserver(() => {
+                // A column resize can wrap the chart without changing the map
+                // or window size. Clear the side layout's sticky map before it
+                // can scroll over the chart in the next row.
+                syncRouteExplorerLayout();
                 if (!metrics.routePoints?.length || chartPointBudget() === lastChartPointBudget) return;
                 if (chartResizeFrame !== null) cancelAnimationFrame(chartResizeFrame);
                 chartResizeFrame = requestAnimationFrame(() => {
@@ -1739,6 +1743,7 @@ const run = async () => {
                 });
             });
             chartResizeObserver.observe(canvasContainer);
+            if (routeExplorer) chartResizeObserver.observe(routeExplorer);
         }
 
         unitSelect.addEventListener('change', () => {
