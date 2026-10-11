@@ -68,6 +68,9 @@ html[data-bpb-theme="dark"] #bpb-ascent-gpx-details {
 #bpb-ascent-weather .bpb-weather-line { fill: none; stroke: var(--bpb-weather-accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 #bpb-ascent-weather .bpb-weather-bar { fill: var(--bpb-weather-accent); opacity: .75; }
 #bpb-ascent-weather .bpb-weather-hover { fill: transparent; }
+#bpb-ascent-weather .bpb-weather-cursor { stroke: var(--bpb-weather-text); stroke-width: 1.5; pointer-events: none; }
+#bpb-ascent-weather .bpb-weather-cursor[data-mode="hover"] { stroke-dasharray: 3 3; }
+#bpb-ascent-weather .bpb-weather-cursor-label { min-height: 18px; margin-bottom: 4px; color: var(--bpb-weather-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
 #bpb-ascent-weather .bpb-weather-sources { font-size: 12px; color: var(--bpb-weather-sub); padding: 0 0 10px; }
 #bpb-ascent-weather summary { cursor: pointer; padding: 6px 0; }
 #bpb-ascent-weather .bpb-weather-source-text { padding: 6px 0; }

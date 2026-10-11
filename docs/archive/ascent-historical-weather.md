@@ -406,3 +406,54 @@ was used as layout proof; representative fixtures and the user's screenshots
 establish the tested layout. Hidden checks do not prove screen-reader speech,
 native select menus or onscreen focus/window behavior. No user tab, push or
 release was changed.
+
+## GPX hourly cursor follow-up — 2026-10-11
+
+This requested presentation feature supersedes the initial decision to omit
+GPX time synchronization. Weather requests still use the saved ascent date and
+summit; the cursor does not fetch weather along the track.
+
+### Fixed and verified
+
+- GPX hover previews a dashed cursor, while click and arrow-key selection retain
+  a solid cursor. Leaving the GPX graph restores the selected time. Hourly weather
+  stays under the user's disclosure control. Measurement/model/unit changes and
+  resizing preserve the cursor without rebuilding weather data on each hover.
+- The MAIN/isolated channel admits only exact-shape, same-window/same-origin
+  timestamp/flag messages. Updates coalesce per frame, late subscriptions request
+  a snapshot, suspension clears hover, and disposal cancels listeners/frames.
+  No coordinates, track objects, storage writes or privileged actions are added.
+- Reliable epochs map into the summit's historical day. Missing/suspect/constant
+  GPX times and points outside that day have no line, with a concise explanation.
+  Regression coverage includes repeated DST hours, malformed messages, hidden
+  hourly state, persistent selection, source-series removal and BFCache restore.
+- All 2486 built-bundle tests passed with
+  `node --test --test-concurrency=1 'test/**/*.test.mjs'`. The initial focused
+  cursor/analyzer/weather/manifest run passed 104 tests, and the final
+  weather/manifest/documentation/development run passed 62. `npm run lint` passed
+  with six existing owned warnings; the subsequently expanded weather test also
+  passed ESLint.
+- Real unpacked-extension checks passed in hidden Chrome 153.0.8010.12 and
+  Firefox 157.0.1 at widths 375, 681, 768 and 1440, height 1100, both themes.
+  Physical pointer/click gestures crossed from the real MAIN Chart.js canvas
+  into the isolated weather SVG, restored selection, retained the collapsed
+  disclosure, and made no additional API requests. Selected-cursor screenshots
+  were inspected in both browsers at mobile/desktop widths for clipping and
+  wrapping. Weather rendering uses native SVG/CSS. Full Chrome verification
+  passed at 1000×760 with an actual BFCache restore. All three reported teardown
+  passed; exact weather profiles were removed and process inspection found no
+  remaining task-owned verification browser.
+
+### Intentionally not changed
+
+Weather model policy, saved-date/summit request identity, no-GPX behavior, hourly
+model values, native report fields, route geometry, settings bridge permissions,
+and provider consent/transfer behavior retain their existing boundaries. No
+minute-level weather interpolation or reverse weather-to-GPX selection is added.
+
+### Changed but not fully proven
+
+Live authenticated Peakbagger markup and native screen-reader speech remain
+unverified. Hidden fixtures establish rendering and interaction, but do not prove
+onscreen focus/window placement or browser chrome. No user tab, push or release
+was changed.

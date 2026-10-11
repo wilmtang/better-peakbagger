@@ -1198,6 +1198,50 @@ const loadElevationAnalyzer = async (gpxSource, {
     };
 };
 
+test('GPX graph publishes hover time separately from clicked and keyboard selection', async () => {
+    const { dom, chartConfig, setActiveElements, postedMessages } = await loadElevationAnalyzer(gpx);
+    try {
+        await waitFor(dom, () => chartConfig() !== null);
+        const { window } = dom, canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+        const latest = () => postedMessages.filter(message => message.type === 'bpb:gpx-time-cursor').at(-1);
+        const points = chartConfig().data.datasets[0].data;
+        setActiveElements([{ datasetIndex: 0, index: 0 }]);
+        canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        chartConfig().options.onHover({ type: 'click' }, [{ datasetIndex: 0, index: 0 }]);
+        await waitFor(dom, () => latest()?.selectionTime === points[0]._raw.ms);
+        assert.equal(latest().hovering, false, 'Chart.js click must not become transient hover');
+        chartConfig().options.onHover(null, [{ datasetIndex: 0, index: 1 }]);
+        await waitFor(dom, () => latest()?.hoverTime === points[1]._raw.ms);
+        assert.equal(latest().selectionTime, points[0]._raw.ms);
+        assert.deepEqual(Object.keys(latest()).sort(), ['hoverTime', 'hovering', 'selected', 'selectionTime', 'type']);
+        canvas.dispatchEvent(new window.MouseEvent('mouseleave'));
+        await waitFor(dom, () => latest()?.hovering === false);
+        assert.equal(latest().selectionTime, points[0]._raw.ms);
+        canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+        await waitFor(dom, () => latest()?.selectionTime === points[1]._raw.ms);
+        const legend = window.document.querySelectorAll('#bpb-gpx-chart-legend button');
+        for (const button of legend) if (button.getAttribute('aria-pressed') === 'true') button.click();
+        await waitFor(dom, () => latest()?.selected === false);
+    } finally { dom.window.close(); }
+});
+
+test('GPX hover and selection do not invent time for missing or constant timestamps', async () => {
+    for (const source of [gpx.replace(/<time>[^<]*<\/time>/, ''), gpx.replace(/<time>[^<]*<\/time>/g, '<time>2024-07-12T13:00:00Z</time>')]) {
+        const { dom, chartConfig, setActiveElements, postedMessages } = await loadElevationAnalyzer(source, { settings: { chartDefaultSeries: 'distance' } });
+        try {
+            await waitFor(dom, () => chartConfig() !== null);
+            const latest = () => postedMessages.filter(message => message.type === 'bpb:gpx-time-cursor').at(-1);
+            chartConfig().options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
+            await waitFor(dom, () => latest()?.hovering === true);
+            assert.equal(latest().hoverTime, null);
+            setActiveElements([{ datasetIndex: 0, index: 0 }]);
+            dom.window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+            await waitFor(dom, () => latest()?.selected === true);
+            assert.equal(latest().selectionTime, null);
+        } finally { dom.window.close(); }
+    }
+});
+
 const analyzerResponse = ({
     status = 200,
     body = '',
@@ -1948,6 +1992,7 @@ test('manual Sun time is one-way and cannot move chart, Leaflet, route identity,
     const updates = updateModes.length;
     const moves = markerMoves.length;
     const styles = markerStyles.length;
+    await waitFor(dom, () => postedMessages.some(message => message.type === 'bpb:gpx-time-cursor' && message.selected));
     const messages = postedMessages.length;
     slider.value = String(16 * 60 + 10);
     slider.dispatchEvent(new window.Event('input', { bubbles: true }));

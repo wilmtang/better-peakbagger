@@ -12,6 +12,7 @@ import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay } from '../weather/weather-day.js';
 import { eligibleWeatherModels, recommendedWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
+import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
 
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
 const element = dom.element;
@@ -56,7 +57,10 @@ export function mountAscentWeather() {
     const zoneText = element('span', { class: 'bpb-weather-sub' });
     const chart = document.createElementNS(SVG_NS, 'svg');
     chart.setAttribute('class', 'bpb-weather-chart'); chart.setAttribute('role', 'img');
-    const plot = element('div', { id: `${ID}-plot`, role: 'tabpanel', 'aria-labelledby': `${ID}-tab-temperature` }, [chart]);
+    const cursorLabel = element('div', { class: 'bpb-weather-cursor-label' });
+    const cursor = document.createElementNS(SVG_NS, 'line');
+    cursor.setAttribute('class', 'bpb-weather-cursor'); cursor.setAttribute('aria-hidden', 'true');
+    const plot = element('div', { id: `${ID}-plot`, role: 'tabpanel', 'aria-labelledby': `${ID}-tab-temperature` }, [cursorLabel, chart]);
     const hourly = element('div', { id: `${ID}-hourly`, hidden: '' }, [element('div', { class: 'bpb-weather-hourly-controls' }, [tabs, zoneText]), plot]);
     const sourceText = element('div', { class: 'bpb-weather-source-text' });
     const sources = element('details', { class: 'bpb-weather-sources' }, [element('summary', { text: 'Source details' }), sourceText]);
@@ -133,6 +137,41 @@ export function mountAscentWeather() {
     let metric = 'temperature', generation = 0, controller = null, started = false, visibilityObserver = null;
     const failed = new Set(), client = createWeatherClient();
     let lifecycle;
+    let cursorState = { hovering: false, hoverTime: null, selected: false, selectionTime: null };
+    let cursorFrame = null, chartBounds = null, chartDescription = '';
+    const cancelCursorFrame = () => { if (cursorFrame !== null) cancelAnimationFrame(cursorFrame); cursorFrame = null; };
+    function drawCursor() {
+        cursor.style.display = 'none';
+        const mode = cursorState.hovering ? 'hover' : cursorState.selected ? 'selected' : null;
+        const time = cursorState.hovering ? cursorState.hoverTime : cursorState.selectionTime;
+        let label = '';
+        if (mode && dayWindow) {
+            if (time === null) label = 'GPX time unavailable';
+            else if (time < dayWindow.start || time >= dayWindow.end) label = 'Outside ascent day';
+            else {
+                label = `${mode === 'hover' ? 'Hover' : 'Selected'} · ${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
+                if (chartBounds && !hourly.hidden) {
+                    const { left, right, top, bottom } = chartBounds;
+                    const x = left + (right - left) * (time - dayWindow.start) / (dayWindow.end - dayWindow.start);
+                    for (const [key, value] of Object.entries({ x1: x, x2: x, y1: top, y2: bottom, 'data-mode': mode, 'data-time': time })) cursor.setAttribute(key, String(value));
+                    cursor.style.display = '';
+                }
+            }
+        }
+        cursorLabel.textContent = label;
+        chart.setAttribute('aria-label', `${chartDescription}${label ? ` ${label}.` : ''}`);
+    }
+    const receiveCursor = event => {
+        const next = readGpxTimeCursor(event);
+        if (!next || lifecycle?.state !== 'active') return;
+        cursorState = next;
+        if (cursorFrame === null) cursorFrame = requestAnimationFrame(() => { cursorFrame = null; drawCursor(); });
+    };
+    const listenForCursor = () => {
+        window.addEventListener('message', receiveCursor);
+        window.postMessage({ type: GPX_TIME_CURSOR_REQUEST }, location.origin);
+    };
+    const stopCursor = () => { window.removeEventListener('message', receiveCursor); cancelCursorFrame(); };
     const unitSystem = () => units.resolveUnits(preference, () => {
         const elevationText = clean(document.querySelector('.peakinfo')?.textContent || subject.table?.textContent);
         return /\d\s*(?:meters|m)\b/i.test(elevationText) && !/\d\s*(?:feet|ft)\b/i.test(elevationText) ? 'metric' : 'imperial';
@@ -148,6 +187,7 @@ export function mountAscentWeather() {
         const rows = metric === 'precipitation' ? current.day.precipitationHours.map(row => ({ time: row.time, value: row.value }))
             : current.day.hourly.map(row => ({ time: row.time, value: row[metric] }));
         const finite = rows.filter(row => numeric(row.value));
+        chartBounds = null;
         chart.replaceChildren(); chart.setAttribute('viewBox', `0 0 ${width} 164`);
         const add = (tag, attributes, text) => {
             const node = document.createElementNS(SVG_NS, tag);
@@ -156,9 +196,10 @@ export function mountAscentWeather() {
             chart.append(node); return node;
         };
         const chartLabel = `${metric === 'temperature' ? 'Temperature' : metric === 'precipitation' ? 'Preceding-hour precipitation' : 'Wind'} (${unit(metric)}), summit local time.`;
+        chartDescription = chartLabel;
         chart.setAttribute('aria-label', chartLabel);
         add('title', {}, chartLabel);
-        if (!finite.length) { add('text', { x: width / 2, y: 70, 'text-anchor': 'middle' }, 'Hourly data unavailable'); return; }
+        if (!finite.length) { add('text', { x: width / 2, y: 70, 'text-anchor': 'middle' }, 'Hourly data unavailable'); drawCursor(); return; }
         const values = finite.map(row => convert(row.value, metric));
         const low = metric === 'temperature' ? Math.floor(Math.min(...values) - 2) : 0;
         const high = Math.max(low + 1, Math.max(...values) + (metric === 'temperature' ? 2 : Math.max(...values) * .15));
@@ -194,6 +235,9 @@ export function mountAscentWeather() {
             const point = add('circle', { cx: Math.min(right, x(row.time)), cy: y(row.value), r: 8, class: 'bpb-weather-hover' });
             const title = document.createElementNS(SVG_NS, 'title'); title.textContent = label; point.append(title);
         }
+        chartBounds = { left, right, top, bottom };
+        chart.append(cursor);
+        drawCursor();
     }
 
     function renderResult() {
@@ -308,10 +352,11 @@ export function mountAscentWeather() {
         visibilityObserver.observe(card);
     };
     lifecycle = createPageLifecycle({
-        onSuspend: () => { cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
-        onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (!current || started) beginWhenVisible(); },
-        onDispose: () => { cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
+        onSuspend: () => { stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
+        onResume: () => { listenForCursor(); drawChart(); place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (!current || started) beginWhenVisible(); },
+        onDispose: () => { stopCursor(); cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
+    listenForCursor();
     if (subject.reason) status.textContent = subject.reason;
     else if (subject.date < '1940-01-01') status.textContent = 'Historical weather is available from 1940.';
     else beginWhenVisible();

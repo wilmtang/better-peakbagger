@@ -817,7 +817,9 @@ export async function createBrowserFixtureServer({
             if (analyzerDelayMs > 0) {
                 await new Promise(resolve => setTimeout(resolve, analyzerDelayMs));
             }
-            return send('application/gpx+xml', analyzerGpxByCase[analyzerCase] || analyzerGpx);
+            const track = /^\/climber\/GPXFile\.aspx$/i.test(url.pathname) && url.searchParams.get('aid') === '7654321'
+                ? gpx.replaceAll('2026-07-01', '2024-07-12') : analyzerGpxByCase[analyzerCase] || analyzerGpx;
+            return send('application/gpx+xml', track);
         }
         if (url.pathname === '/caption-photo.svg') {
             return send('image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">'

@@ -340,6 +340,9 @@ available, a three-UTC-day window covering the local ascent date, selected model
 and weather fields, IP address, and ordinary request metadata. Weather requests
 omit credentials and referrers. No ascent or climber ID, summit name, report,
 GPX, track times, account credentials, or ascent URL is sent to Open-Meteo.
+An hourly graph cursor can follow GPX hover or selection using only timestamps
+passed locally between the page's extension scripts. Cursor movement makes no
+additional network request and persists no track data.
 Changing models or clicking Retry makes another request; Auto may try up to
 three candidates when a model lacks data. Rate limits and network failures do
 not trigger automatic retries. Results remain only in a small, short-lived

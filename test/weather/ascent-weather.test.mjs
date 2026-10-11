@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { weatherFixture } from '../helpers/weather-fixture.mjs';
+import { GPX_TIME_CURSOR } from '../../src/gpx/gpx-time-cursor.js';
 
 const [ascent, peak, bundle, layoutBundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/climber-ascent.html', import.meta.url), 'utf8'),
@@ -30,6 +31,117 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
     win.eval(bundle);
     return { win, doc: win.document, requests, listeners, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 };
+
+const sendCursor = (env, state, detail = {}) => env.win.dispatchEvent(new env.win.MessageEvent('message', {
+    source: env.win, origin: env.win.location.origin,
+    data: { type: GPX_TIME_CURSOR, hovering: false, hoverTime: null, selected: false, selectionTime: null, ...state }, ...detail,
+}));
+const openChart = async env => {
+    await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using HRRR'));
+    env.doc.querySelector('.bpb-weather-chart').getBoundingClientRect = () => ({ width: 500 });
+    env.doc.querySelector('.bpb-weather-disclosure').click();
+};
+
+test('weather cursor previews GPX hover and restores selection without rebuilding data or fetching', async () => {
+    const env = setup();
+    try {
+        await openChart(env);
+        const svg = env.doc.querySelector('svg'), line = svg.querySelector('.bpb-weather-cursor');
+        const dataPath = svg.querySelector('path'), label = env.doc.querySelector('.bpb-weather-cursor-label');
+        const selectionTime = Date.parse('2024-07-12T17:32:00Z'), hoverTime = Date.parse('2024-07-12T19:15:00Z');
+        const before = env.requests.length;
+        sendCursor(env, { selected: true, selectionTime });
+        await waitFor(() => line.dataset.time === String(selectionTime));
+        assert.equal(line.dataset.mode, 'selected');
+        assert.equal(Number(line.getAttribute('x1')), 42 + (484 - 42) * (10 * 60 + 32) / (24 * 60));
+        assert.match(label.textContent, /Selected · 10:32 AM PDT/);
+        sendCursor(env, { hovering: true, hoverTime, selected: true, selectionTime });
+        await waitFor(() => line.dataset.time === String(hoverTime));
+        assert.equal(line.dataset.mode, 'hover');
+        sendCursor(env, { selected: true, selectionTime });
+        await waitFor(() => line.dataset.time === String(selectionTime));
+        assert.equal(svg.querySelector('path'), dataPath, 'hover only moves the overlay');
+        env.doc.querySelector('[data-metric="wind"]').click();
+        assert.equal(svg.querySelector('.bpb-weather-cursor'), line);
+        assert.equal(line.dataset.time, String(selectionTime));
+        assert.match(svg.getAttribute('aria-label'), /Wind.*Selected/);
+        assert.equal(env.requests.length, before, 'cursor movement does not request route weather');
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        assert.equal(line.dataset.time, String(selectionTime));
+        assert.match(svg.getAttribute('aria-label'), /km\/h/);
+        const model = env.doc.querySelector('.bpb-weather-model select');
+        model.value = 'gfs_global'; model.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using GFS'));
+        assert.equal(svg.querySelector('.bpb-weather-cursor'), line);
+        assert.equal(line.dataset.time, String(selectionTime));
+        assert.equal(line.dataset.mode, 'selected');
+        sendCursor(env, {});
+        await waitFor(() => label.textContent === '');
+        assert.equal(line.style.display, 'none');
+    } finally { env.close(); }
+});
+
+test('collapsed hourly graph retains selection and rejects untrusted or invalid times', async () => {
+    const env = setup();
+    try {
+        const selected = Date.parse('2024-07-12T18:00:00Z');
+        sendCursor(env, { selected: true, selectionTime: selected });
+        await openChart(env);
+        const line = env.doc.querySelector('.bpb-weather-cursor'), label = env.doc.querySelector('.bpb-weather-cursor-label');
+        await waitFor(() => line.dataset.time === String(selected));
+        env.doc.querySelector('.bpb-weather-disclosure').click();
+        sendCursor(env, { hovering: true, hoverTime: selected + 3600_000 });
+        await waitFor(() => label.textContent.includes('Hover'));
+        assert.equal(env.doc.querySelector('.bpb-weather-disclosure').getAttribute('aria-expanded'), 'false');
+        env.doc.querySelector('.bpb-weather-disclosure').click();
+        assert.equal(line.dataset.time, String(selected + 3600_000));
+        for (const detail of [{ source: {} }, { origin: 'https://other.example' }, { data: { type: GPX_TIME_CURSOR, selected: true, selectionTime: selected, coordinates: [] } }]) {
+            sendCursor(env, {}, detail);
+        }
+        await pause(); assert.equal(line.dataset.mode, 'hover');
+        sendCursor(env, { hovering: true, hoverTime: null, selected: true, selectionTime: selected });
+        await waitFor(() => label.textContent === 'GPX time unavailable');
+        assert.equal(line.style.display, 'none', 'missing hover time must not silently use the clicked time');
+        for (const time of [Date.parse('2024-07-12T06:59:00Z'), Date.parse('2024-07-13T07:00:00Z')]) {
+            sendCursor(env, { selected: true, selectionTime: time });
+            await waitFor(() => label.textContent === 'Outside ascent day');
+            assert.equal(line.style.display, 'none');
+        }
+    } finally { env.close(); }
+});
+
+test('cursor uses elapsed epochs across a repeated summit-local hour', async () => {
+    const env = setup({ html: ascent.replace('Sunday, July 12, 2026', 'November 3, 2024'),
+        fetchWeather: url => Promise.resolve(new Response(JSON.stringify(weatherFixture({ startDate: new URL(url).searchParams.get('start_date') })), { headers: { 'content-type': 'application/json' } })) });
+    try {
+        await openChart(env);
+        const line = env.doc.querySelector('.bpb-weather-cursor'), label = env.doc.querySelector('.bpb-weather-cursor-label');
+        sendCursor(env, { selected: true, selectionTime: Date.parse('2024-11-03T08:30:00Z') });
+        await waitFor(() => label.textContent.includes('PDT'));
+        const first = Number(line.getAttribute('x1'));
+        sendCursor(env, { selected: true, selectionTime: Date.parse('2024-11-03T09:30:00Z') });
+        await waitFor(() => label.textContent.includes('PST'));
+        assert.match(label.textContent, /1:30 AM PST/);
+        assert.ok(Math.abs(Number(line.getAttribute('x1')) - first - 442 / 25) < 0.0001, 'repeated 01:30 advances by one hour in a 25-hour day');
+    } finally { env.close(); }
+});
+
+test('BFCache restore clears transient hover, retains selection and requests a fresh cursor snapshot', async () => {
+    const env = setup();
+    try {
+        await openChart(env);
+        const requests = []; env.win.postMessage = value => requests.push(value);
+        const selected = Date.parse('2024-07-12T18:00:00Z');
+        sendCursor(env, { hovering: true, hoverTime: selected + 3600_000, selected: true, selectionTime: selected });
+        await waitFor(() => env.doc.querySelector('.bpb-weather-cursor').dataset.mode === 'hover');
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        sendCursor(env, { selected: true, selectionTime: selected + 7200_000 });
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        assert.equal(env.doc.querySelector('.bpb-weather-cursor').dataset.mode, 'selected');
+        assert.equal(env.doc.querySelector('.bpb-weather-cursor').dataset.time, String(selected));
+        assert.equal(requests.at(-1).type, 'bpb:gpx-time-cursor-request');
+    } finally { env.close(); }
+});
 test('bundled independent card loads on a visitor ascent without GPX or map', async () => {
     const env = setup({ html: ascent.replace('Sunday, July 12, 2026', 'July 12, 2024').replace(/<div id="gpxlinks">[\s\S]*?<\/div>/, '').replace(/<div id="owneractions">[\s\S]*?<\/div>/, '') });
     try {

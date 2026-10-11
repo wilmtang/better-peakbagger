@@ -35,6 +35,7 @@ import { gpxPanelCss } from './gpx-panel-css.js';
 import { ascentPage as AscentPage } from '../ascent/ascent-page.js';
 import { sunState as SunState } from '../sun/sun-state.js';
 import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
+import { createGpxTimeCursorPublisher } from './gpx-time-cursor.js';
 
 // Chart remains a separately-loaded vendor global (see manifest). The mountain
 // time module owns the bundled offline timezone resolver.
@@ -529,6 +530,7 @@ const run = async () => {
         let campingSpots = [];
         let mapRouteSegments = [];
         let hoverMarker = null;
+        const timeCursor = createGpxTimeCursorPublisher(window);
 
         const isCoordinatePoint = point =>
             point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
@@ -578,6 +580,7 @@ const run = async () => {
         const syncCoordinateSelection = ({ unavailable = false } = {}) => {
             const selectedPoint = chartData[selectedCoordinateIndex];
             const hasSelection = isCoordinatePoint(selectedPoint);
+            timeCursor.select(hasSelection ? selectedPoint : null, metrics.timeQuality);
             copyCoordinatesButton.disabled = !hasSelection;
             if (!hasSelection) {
                 selectedCoordinateIndex = -1;
@@ -598,6 +601,7 @@ const run = async () => {
         };
         const restoreSelectedSun = () => {
             clearHoverSunPreview();
+            timeCursor.hover(null);
             if (sunState.get().subject) renderSun(sunState.get());
             else showDefaultSun();
         };
@@ -619,6 +623,7 @@ const run = async () => {
             if (chartInstance) chartInstance.update('none');
             renderRouteHighlight(chartData[index], selectedCoordinateSeries);
             selectSunPoint(chartData[index]);
+            timeCursor.select(chartData[index], metrics.timeQuality);
             return true;
         };
         const selectCoordinateFromEvent = event => {
@@ -946,6 +951,7 @@ const run = async () => {
             onSuspend: () => {
                 clearCoordinateFeedbackTimer();
                 clearHoverSunPreview();
+                timeCursor.suspend();
                 // A loading frame owns a deadline that cannot advance while
                 // the document is frozen. Discard that transient attempt; an
                 // already-active 3D surface remains intact in the cached DOM.
@@ -954,6 +960,7 @@ const run = async () => {
                 }
             },
             onResume: () => {
+                timeCursor.resume();
                 BPB.refresh();
                 const frame = frameLifecycle.refresh();
                 if (frame) viewport.attach(frame);
@@ -964,6 +971,7 @@ const run = async () => {
                 terrainCoordinator.position();
             },
             onDispose: () => {
+                timeCursor.dispose();
                 clearCoordinateFeedbackTimer();
                 clearHoverSunPreview();
                 if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
@@ -1043,6 +1051,7 @@ const run = async () => {
         });
 
         const renderUnavailable = (message, { retryable = false } = {}) => {
+            timeCursor.select(null);
             clearCoordinateFeedbackTimer();
             if (chartInstance) {
                 chartInstance.destroy();
@@ -1639,6 +1648,9 @@ const run = async () => {
                     if (hoveredPoint) {
                         renderRouteHighlight(hoveredPoint, hoverSeries);
                         previewSunPoint(hoveredPoint);
+                        // Chart.js also invokes onHover for clicks; the native
+                        // click handler already owns persistent selection.
+                        if (event?.type !== 'click') timeCursor.hover(hoveredPoint, metrics.timeQuality);
                     } else {
                         restoreSelectedRouteHighlight();
                         restoreSelectedSun();
@@ -1834,6 +1846,7 @@ const run = async () => {
         let loadGeneration = 0;
         const loadGpx = async () => {
             const generation = ++loadGeneration;
+            timeCursor.select(null);
             resetSun('Loading GPX data…');
             retryButton.hidden = true;
             retryButton.disabled = true;

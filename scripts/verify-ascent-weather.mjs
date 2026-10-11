@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, chrome, getComputedStyle */
+/* global document, chrome, getComputedStyle, Chart */
 
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -27,7 +27,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, navigate, click, screenshot, screenshotPage, resize, setSettings, version;
+    let mode = 'complete', evaluate, navigate, click, movePointer, clickPoint, screenshot, screenshotPage, resize, setSettings, version;
     const replyFor = url => {
         const requested = new URL(url), fields = requested.searchParams.get('hourly').split(',');
         const body = weatherFixture({ startDate: requested.searchParams.get('start_date'), fields,
@@ -86,6 +86,8 @@ try {
         evaluate = fn => driver.executeScript(webdriverScript(fn));
         navigate = url => driver.get(url);
         click = selector => driver.findElement(By.css(selector)).click();
+        movePointer = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).perform();
+        clickPoint = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).click().perform();
         resize = async (width, height) => send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width, height } } });
         screenshot = async output => writeFile(output, await driver.findElement(By.id('bpb-ascent-weather')).takeScreenshot(true), 'base64');
         screenshotPage = async output => writeFile(output, await driver.takeScreenshot(), 'base64');
@@ -114,11 +116,60 @@ try {
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
         evaluate = fn => page.evaluate(fn); navigate = url => page.goto(url, { waitUntil: 'load' });
         click = selector => page.locator(selector).click(); resize = (width, height) => page.setViewportSize({ width, height });
+        movePointer = (x, y) => page.mouse.move(x, y); clickPoint = (x, y) => page.mouse.click(x, y);
         screenshot = output => page.locator('#bpb-ascent-weather').screenshot({ path: output });
         screenshotPage = output => page.screenshot({ path: output });
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
     }
     const wait = (fn, description) => waitForCondition(() => evaluate(fn), { description, timeoutMs: 20_000 });
+    const checkGpxCursor = async () => {
+        const before = evidence.length;
+        await resize(1440, 1100);
+        await wait(() => {
+            const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+            return canvas && Chart.getChart(canvas)?.getSortedVisibleDatasetMetas()[0]?.data.length > 2;
+        }, 'real MAIN-world Chart.js data');
+        const targets = await evaluate(() => {
+            const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+            canvas.scrollIntoView({ block: 'center' });
+            const chart = Chart.getChart(canvas), meta = chart.getSortedVisibleDatasetMetas()[0], rect = canvas.getBoundingClientRect();
+            return [.2, .8].map(fraction => {
+                const index = Math.floor(meta.data.length * fraction), pixel = meta.data[index].getCenterPoint();
+                return { x: rect.left + pixel.x, y: rect.top + pixel.y, time: chart.data.datasets[meta.index].data[index]._raw.ms };
+            });
+        });
+        await movePointer(targets[0].x, targets[0].y);
+        await wait(() => document.querySelector('.bpb-weather-cursor-label')?.textContent.startsWith('Hover'), 'GPX hover crosses into the isolated weather card');
+        assert.equal(await evaluate(() => document.querySelector('.bpb-weather-disclosure').getAttribute('aria-expanded')), 'false', 'hover must not expand hourly weather');
+        await movePointer(1, 1);
+        await wait(() => document.querySelector('.bpb-weather-cursor-label').textContent === '', 'hover clears without a selection');
+        await clickPoint(targets[0].x, targets[0].y);
+        await movePointer(1, 1);
+        await wait(() => document.querySelector('.bpb-weather-cursor-label').textContent.startsWith('Selected'), 'clicked GPX time survives pointer exit');
+        await click('.bpb-weather-disclosure');
+        assert.equal(Number(await evaluate(() => document.querySelector('.bpb-weather-cursor').dataset.time)), targets[0].time);
+        // The weather disclosure may scroll in WebDriver. Re-read chart geometry
+        // before the next physical pointer gesture.
+        const next = await evaluate(() => {
+            const canvas = document.querySelector('#bpb-gpx-analysis canvas'); canvas.scrollIntoView({ block: 'center' });
+            const chart = Chart.getChart(canvas), meta = chart.getSortedVisibleDatasetMetas()[0], index = Math.floor(meta.data.length * .8);
+            const pixel = meta.data[index].getCenterPoint(), rect = canvas.getBoundingClientRect();
+            return { x: rect.left + pixel.x, y: rect.top + pixel.y, time: chart.data.datasets[meta.index].data[index]._raw.ms };
+        });
+        await movePointer(next.x, next.y);
+        await wait(() => document.querySelector('.bpb-weather-cursor')?.dataset.mode === 'hover', 'transient weather line');
+        assert.equal(Number(await evaluate(() => document.querySelector('.bpb-weather-cursor').dataset.time)), next.time);
+        await movePointer(1, 1);
+        await wait(() => document.querySelector('.bpb-weather-cursor')?.dataset.mode === 'selected', 'weather restores clicked point');
+        assert.equal(Number(await evaluate(() => document.querySelector('.bpb-weather-cursor').dataset.time)), targets[0].time);
+        const bounds = await evaluate(() => {
+            const line = document.querySelector('.bpb-weather-cursor'), svg = line.closest('svg');
+            return { x: Number(line.getAttribute('x1')), width: Number(svg.getAttribute('viewBox').split(' ')[2]), time: Number(line.dataset.time) };
+        });
+        const dayStart = Date.parse('2024-07-12T07:00:00Z');
+        assert.ok(Math.abs(bounds.x - (42 + (bounds.width - 58) * (bounds.time - dayStart) / 86400_000)) < .01, 'weather cursor uses the summit local day');
+        assert.equal(evidence.length, before, 'GPX interaction makes no additional weather request');
+    };
     const geometryForCard = () => {
         const card = document.getElementById('bpb-ascent-weather'), box = card.getBoundingClientRect();
         const column = document.getElementById('bpb-ascent-summary-column'), columnBox = column.getBoundingClientRect();
@@ -172,7 +223,8 @@ try {
                 }
                 assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather h2').textContent), 'Weather archive');
                 assert.equal(await evaluate(() => document.querySelector('.bpb-weather-attribution').textContent), 'Community support by Open-Meteo');
-                await click('.bpb-weather-disclosure');
+                if (kind === 'gpx') await checkGpxCursor();
+                else await click('.bpb-weather-disclosure');
                 for (const width of [1440, 768, 375]) {
                     await resize(width, 1100);
                     await wait(() => {
@@ -181,6 +233,7 @@ try {
                     }, 'responsive chart width');
                     const geometry = await evaluate(geometryForCard);
                     assertPlacement(geometry);
+                    if (kind === 'gpx') assert.equal(await evaluate(() => document.querySelector('.bpb-weather-cursor').dataset.mode), 'selected', 'resize retains selection');
                     if (kind === 'long-report') assert.equal(geometry.beforeReportEnd, true, JSON.stringify(geometry));
                     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-${width}.png`));
                     if (kind === 'gpx' && output) {
@@ -234,7 +287,7 @@ try {
         await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
         assert.equal(evidence.length, before);
         assert.deepEqual(networkErrors, []);
-        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
     }
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);

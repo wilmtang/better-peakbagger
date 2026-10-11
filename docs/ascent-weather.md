@@ -67,6 +67,27 @@ Coarse native models expose provider-interpolated hourly values, disclosed in
 Source details; the card does not count them as independent measurements.
 Condition precedence is explicit, so a clear majority cannot erase rain/snow.
 
+## GPX time cursor
+
+Hovering the GPX graph previews a dashed time cursor on the hourly weather graph;
+clicking or using the GPX arrow keys retains a solid selection. Pointer exit
+restores the selected time. Hourly weather stays collapsed until the user opens
+it, and the cursor survives measurement, unit, model and width changes.
+
+The MAIN-world analyzer publishes only validated epoch timestamps and hover/
+selection flags through the local `gpx-time-cursor.js` presentation channel.
+The isolated card validates the exact message shape, source and origin. No
+coordinates, track objects or privileged actions cross this channel. Updates
+are coalesced per animation frame and move a separate SVG overlay.
+
+Epochs map into the summit's historical local day, including repeated DST hours.
+Missing, suspect or constant track times show **GPX time unavailable**; points
+outside that day show **Outside ascent day**, with no cursor line. The saved
+ascent date and summit continue to own weather requests. The cursor requests no
+additional data and does not estimate weather along the route or interpolate
+hourly values. BFCache suspension clears hover and cancels pending updates;
+restore retains selection and requests the analyzer's current snapshot.
+
 ## Requests and lifecycle
 
 The [weather client](../src/weather/open-meteo-client.js) accepts only packaged

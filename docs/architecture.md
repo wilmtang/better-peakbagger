@@ -807,7 +807,12 @@ column beside the report, including when GPX analysis mounts later. Unrecognized
 table layouts retain a map/metadata fallback. Dedicated native GPS note and
 download/send blocks move together above Weather archive, preserving the
 original controls and leaving the map in place. It does not mutate native weather
-fields or synchronize to GPX time.
+fields. An optional hourly cursor follows GPX hover and selection through the
+narrow local `gpx-time-cursor.js` channel: exact-shape, source/origin-validated
+epoch timestamps and flags only, with no coordinates or privileged actions.
+Hover is transient; clicked/keyboard selection persists. Missing or suspect
+times and points outside the summit-local ascent day have no cursor line.
+This presentation channel never changes weather requests or the saved date.
 
 The weather client accepts only packaged model endpoints, omits credentials
 and referrers, and has bounded requests and a small tab-memory cache. It needs
