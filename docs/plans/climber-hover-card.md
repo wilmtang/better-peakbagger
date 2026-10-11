@@ -1,6 +1,7 @@
 # Climber hover card
 
-Status: proposed design; no extension runtime implementation.
+Status: name-link card implemented with local Favorite/Ignore actions;
+inline Buddy mutation deferred pending a verified native form contract.
 Date: 2026-10-10.
 
 ## Findings that shape the feature
@@ -174,7 +175,10 @@ new write. Never automatically replay an ambiguous server mutation.
 
 ## Implementation boundaries
 
-The following are proposed modules, not existing files:
+The local card is implemented in `src/favorites/climber-card-state.js` and
+`src/favorites/climber-hover-card.js`, with its own bundled stylesheet. The
+following boundaries guide the delivered card and the remaining Buddy adapter;
+items 3–5 remain deferred.
 
 1. Add a small isolated-world `climber-hover-card` content surface for top-level
    Peakbagger pages. Register its bundle/CSS in the manifest and build config;
@@ -250,11 +254,66 @@ Acceptance coverage must include:
   proof. Native screen-reader speech, touch-device behavior, and browser focus
   behavior require their own evidence.
 
-Design verification: source and policy inspected. The interactive preview passed
+Design-stage verification: source and policy inspected. The interactive preview passed
 simulated add/remove, conflict guards, source-mode/sign-in, Close, Escape, and
 focus checks in hidden Chrome for Testing 153.0.8010.12. Both layouts were rendered
 in light/dark at 736, 360, and 320 px content widths; screenshots were inspected
 at desktop and 320 px. This is ordinary HTML/CSS rendering, with no WebGL or
-extension loaded. No native Buddy write contract, deployed hover-card behavior,
+extension loaded. At that stage no native Buddy write contract, deployed hover-card behavior,
 screen-reader speech, or visible browser focus/window behavior is established.
 The documentation target checks passed (3 tests).
+
+## Delivery ledger
+
+### Fixed and verified
+
+- The pure presenter validates profile identity, source mode, self links,
+  existing overlaps, pending sync, missing membership, wrong-owner cache and
+  list ceilings. It follows the worker's conservative conflict protection.
+- The isolated card preserves original anchors, uses delayed pointer/focus
+  opening and an explicit actions button, and saves Favorite/Ignore operations
+  through the existing worker APIs. Changes become visible after confirmation.
+  Ignore additions verify current Buddy absence; failed reads and account
+  changes cannot authorize a write. Hover performs no network request.
+- Bundled regressions cover cancellation, Escape suppression, source changes,
+  synthetic-click rejection, dismissed saves, moved/changed name links, hidden
+  rows, settings failure, Buddy verification failure and BFCache restoration.
+  `npm test` passed all 2,406 tests.
+- `npm run verify:browsers` passed with the real unpacked extension in hidden
+  Chrome for Testing 153.0.8010.12 and Firefox 157.0.1 over HTTPS Peakbagger
+  fixtures. Native pointer travel, Tab/Enter opening, confirmed list actions,
+  Escape focus recovery, self links and top-layer containment passed. Card
+  captures use native HTML/CSS, with no WebGL on this surface, at 1000, 480, 360
+  and 320 × 760 px content viewports in both themes. Default, favorite, ignored
+  and long-name states were captured; representative desktop and narrow
+  screenshots were visually inspected after animation and placement settled.
+- Visual inspection found the site's blanket dark-button repaint and early
+  animation captures. Card-owned controls now opt out of that repaint. The
+  shared verifier waits for opaque, finished animation and placement clear of
+  the name; Firefox uses an exact BiDi content viewport and measures inline
+  links by their rendered rectangle. Both final browser teardowns passed.
+  A separate process/path check found no remaining disposable test browsers or
+  profiles; the user's existing browsers were not touched.
+- `npm run lint` passed with six existing owned dependency/manifest warnings;
+  the final verifier edit passed ESLint. Documentation target checks passed
+  (3 tests), and `git diff --check` passed.
+
+### Intentionally not changed
+
+- Buddy management uses **Manage buddies on profile**. The accepted design allows
+  this fallback before the native write form is verified. Neither the existing
+  fixture's stub nor an inferred endpoint authorizes a new server-write adapter.
+  Authenticated browser inspection was unavailable in this session: Firefox had
+  no Marionette listener and Chrome had no debugging session.
+- Existing profile Buddy behavior and local mutation-lane policy remain the
+  authority. No cross-tab Buddy intent protocol, new schema, preference, host
+  permission, or page-world messaging capability was added. Changes on other
+  devices remain outside any local transaction.
+
+### Changed but not fully proven
+
+- Fixture evidence cannot establish live authenticated Buddy form behavior,
+  physical touch input, screen-reader speech, visible browser focus or window
+  placement, or all live Peakbagger markup variants. Those remain release proof
+  gaps. The fixed-position fallback is exercised in jsdom; current Chrome and
+  Firefox use the native popover top layer.

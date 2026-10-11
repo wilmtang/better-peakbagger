@@ -1,0 +1,62 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.bpb-climber-link { display: inline; position: relative; white-space: normal; }
+.bpb-climber-actions-trigger { appearance: none; display: inline-flex; align-items: center; justify-content: center;
+    vertical-align: middle; width: 22px; height: 24px; margin: 0 0 0 3px; padding: 0; border: 0; border-radius: 5px;
+    background: transparent; color: #5b685b; font: 16px/1 Arial,sans-serif; cursor: pointer; opacity: 0; }
+.bpb-climber-link:hover > .bpb-climber-actions-trigger,
+.bpb-climber-link:focus-within > .bpb-climber-actions-trigger { opacity: 1; }
+.bpb-climber-actions-trigger:focus-visible { outline: 2px solid #2c6244; outline-offset: 2px; opacity: 1; }
+#bpb-climber-card { --bpb-cc-surface: #fcfbf5; --bpb-cc-text: #233629; --bpb-cc-sub: #5b685b;
+    --bpb-cc-border: #d6dccb; --bpb-cc-accent: #2c6244; --bpb-cc-link: #23593e; --bpb-cc-hover: #eaf0e5;
+    box-sizing: border-box; position: fixed; inset: auto; z-index: 2147483646; margin: 0; padding: 16px;
+    width: 312px; max-width: calc(100vw - 24px); overflow: auto; border: 1px solid var(--bpb-cc-border);
+    border-radius: 12px; background: var(--bpb-cc-surface); color: var(--bpb-cc-text); text-align: left;
+    box-shadow: 0 8px 28px rgb(29 42 28 / 16%), 0 2px 6px rgb(29 42 28 / 10%);
+    font: 14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space: normal; }
+#bpb-climber-card[hidden], #bpb-climber-card [hidden] { display: none !important; }
+#bpb-climber-card .bpb-climber-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+#bpb-climber-card .bpb-climber-card-name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+#bpb-climber-card a { color: var(--bpb-cc-link) !important; }
+#bpb-climber-card .bpb-climber-card-profile { font-size: 12px; text-decoration: none; }
+#bpb-climber-card .bpb-climber-card-profile:hover { text-decoration: underline; }
+#bpb-climber-card button { font: inherit; cursor: pointer; }
+#bpb-climber-card .bpb-climber-card-close { flex: 0 0 auto; width: 28px; height: 28px; padding: 0;
+    border: 0; border-radius: 6px; background: transparent; color: var(--bpb-cc-sub); font-size: 21px; }
+#bpb-climber-card .bpb-climber-card-close:hover { background: var(--bpb-cc-hover); }
+#bpb-climber-card .bpb-climber-card-action { display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box; width: 100%; min-height: 42px; padding: 9px 10px; margin: 8px 0 0;
+    border: 1px solid var(--bpb-cc-border); border-radius: 8px; background: var(--bpb-cc-surface);
+    color: var(--bpb-cc-text) !important; text-decoration: none; font-weight: 500; text-align: center; overflow-wrap: anywhere; }
+#bpb-climber-card .bpb-climber-card-buddy { margin-top: 0; border-color: var(--bpb-cc-accent);
+    background: var(--bpb-cc-accent); color: white !important; }
+#bpb-climber-card .bpb-climber-card-action:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(.94); }
+#bpb-climber-card button:disabled, #bpb-climber-card [aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+#bpb-climber-card button[aria-busy="true"] { cursor: wait; }
+#bpb-climber-card .bpb-climber-card-source { margin-top: 10px; color: var(--bpb-cc-sub); font-size: 12px; }
+#bpb-climber-card .bpb-climber-card-settings { display: block; padding: 0; margin: 3px 0 0; background: none;
+    border: 0; color: var(--bpb-cc-link); text-align: left; font-size: 12px; }
+#bpb-climber-card .bpb-climber-card-ignore-section { border-top: 1px solid var(--bpb-cc-border); padding-top: 10px; margin-top: 16px; }
+#bpb-climber-card .bpb-climber-card-ignore { display: block; min-height: 32px; padding: 5px 0; border: 0;
+    background: none; color: var(--bpb-cc-text); text-align: left; }
+#bpb-climber-card .bpb-climber-card-detail, #bpb-climber-card .bpb-climber-card-feedback { color: var(--bpb-cc-sub);
+    font-size: 12px; overflow-wrap: anywhere; }
+#bpb-climber-card .bpb-climber-card-feedback { margin-top: 12px; }
+#bpb-climber-card .bpb-climber-card-retry { margin-top: 6px; border: 0; background: none; color: var(--bpb-cc-link); padding: 3px 0; }
+#bpb-climber-card :is(a,button):focus-visible { outline: 2px solid var(--bpb-cc-link); outline-offset: 2px; }
+#bpb-climber-card-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+html[data-bpb-theme="dark"] .bpb-climber-actions-trigger { color: #a6b3a3; }
+html[data-bpb-theme="dark"] .bpb-climber-actions-trigger:focus-visible { outline-color: #7ac78d; }
+html[data-bpb-theme="dark"] #bpb-climber-card { --bpb-cc-surface: #1e2b23; --bpb-cc-text: #eeeade;
+    --bpb-cc-sub: #a6b3a3; --bpb-cc-border: #384a3e; --bpb-cc-accent: #408054; --bpb-cc-link: #7ac78d;
+    --bpb-cc-hover: #293d30; box-shadow: 0 8px 28px rgb(0 0 0 / 30%); }
+@media (pointer: coarse) {
+    .bpb-climber-actions-trigger { width: 44px; height: 44px; opacity: 1; }
+    #bpb-climber-card .bpb-climber-card-close { width: 44px; height: 44px; }
+    #bpb-climber-card :is(.bpb-climber-card-action,.bpb-climber-card-ignore,.bpb-climber-card-settings,.bpb-climber-card-retry) { min-height: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+    #bpb-climber-card:popover-open { animation: bpb-climber-card-appear 100ms ease-out; }
+    @keyframes bpb-climber-card-appear { from { opacity: 0; } to { opacity: 1; } }
+}

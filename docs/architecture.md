@@ -972,6 +972,7 @@ below remains independent of ignored membership.
 | `src/favorites/ignored-client.js` | Subscribe before read; generation/revision guards retain the latest valid local list after read errors |
 | `src/favorites/favorite-source.js` | Shared custom-or-Buddy source, positive account ownership, stale-cache use, bounded authenticated refresh, cancellation and late-response rejection |
 | `src/favorites/climber-ignore.js`, `options/ignored.js` | Independent public-profile Ignore control and accessible manager tab, verified lookup, search/sort and entry Undo |
+| `src/favorites/climber-card-state.js`, `src/favorites/climber-hover-card.js` | Pure link identity/membership presenter and top-level isolated name-link card; existing worker Favorite/Ignore operations, explicit authenticated Buddy absence check before Ignore, and native-profile Buddy navigation |
 | `src/favorites/report-adapters.js`, `src/favorites/peak-report-filter.js` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
 | `src/ascent/ascent-filter.js` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
 | `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
@@ -983,6 +984,17 @@ below remains independent of ignored membership.
 bridge or browser-synced settings. Ignores are device-wide across Peakbagger
 accounts; only Buddy-cache ownership is account-scoped. Personal ascent lists,
 Buddy reports, editors, native maps/GPX and server totals remain independent.
+
+The name-link card loads at `document_end` on both supported HTTPS hosts with its
+own stylesheet. It uses a manual nonmodal browser popover and fixed-position
+fallback, preserves the original anchors, and subscribes to coherent membership
+and authoritative settings. Hover is local and read-only. Only an explicit Ignore
+addition revalidates signed-in Buddy membership through the bounded shared
+request boundary; failures do not become an empty Buddy List. Favorite and Ignore
+writes use the existing worker lane. Buddy writes stay on the native profile;
+no new authenticated POST adapter, page-world capability, or storage schema is
+introduced. Dismissed writes remain bound to their original climber, and BFCache
+restoration refreshes lists and settings before enabling actions.
 
 The new peak and detail bundles run isolated at `document_start`. They conceal
 only a positively identified region during a bounded initial read and recover

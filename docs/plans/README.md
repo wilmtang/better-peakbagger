@@ -1,8 +1,8 @@
 # Active plans
 
-- [Climber hover card](climber-hover-card.md) — proposed; quick Buddy,
-  favorite, and Ignore actions on person-name links, with keyboard/touch access
-  and a verified native Buddy form as an implementation prerequisite.
+- [Climber hover card](climber-hover-card.md) — local Favorite/Ignore card
+  implemented; Buddy management opens the native profile. Inline Buddy mutation
+  remains deferred until its form and transaction coordination are verified.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.

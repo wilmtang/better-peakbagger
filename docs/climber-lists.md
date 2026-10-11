@@ -5,6 +5,26 @@ Climber lists is the first subsection. Favorites and Ignored
 have separate tabs, searches and counts. The existing `favorites.html` page and
 Settings `#favorites` link remain valid; `favorites.html#ignored` opens Ignored.
 
+## Quick actions on climber names
+
+Hover over a visible climber-name link for a moment to open a compact card.
+The adjacent **⋯** button opens it explicitly with keyboard or touch input.
+The name itself keeps its normal profile-link behavior. Escape, Close, or an
+outside click dismisses the card; Escape returns focus to the actions button.
+
+In custom-favorites mode, **Add favorite climber** and **Remove favorite climber**
+save directly from the card. In Buddy mode, the card explains the active source
+and links to Settings to choose custom favorites. **Ignore climber** and
+**Unignore climber** work in either mode, subject to the membership rules below.
+The labels change after a confirmed save. A failed save stays visible with Retry.
+
+**Manage buddies on profile** opens Peakbagger's native profile controls.
+Inline Buddy writes are not implemented: the authenticated native form contract
+has not been verified. Hovering never fetches a profile or Buddy List. An explicit
+Ignore addition, when signed in, first verifies the current account's Buddy List;
+an unsuccessful read leaves the ignored list unchanged. No new setting or list
+schema is introduced. Your own name shows only profile navigation.
+
 ## Favorite and ignored membership
 
 Favorites follows either your Peakbagger climbing buddies or your custom list,

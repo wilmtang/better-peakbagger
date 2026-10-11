@@ -48,6 +48,7 @@ import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
+import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
@@ -1934,6 +1935,20 @@ try {
                 path: path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR, `chrome-${name}.png`),
             }) : null,
         });
+        await climberPage.goto(`${climberPageUrl}&hover=1`);
+        await verifyClimberHoverCard({
+            evaluate: fn => climberPage.evaluate(fn),
+            wait: fn => climberPage.waitForFunction(fn),
+            click: selector => climberPage.locator(selector).click(),
+            hover: selector => climberPage.locator(selector).hover(),
+            key: (selector, value) => climberPage.locator(selector).press(value),
+            resize: (width, height) => climberPage.setViewportSize({ width, height }),
+            screenshot: process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR ? name => climberPage.screenshot({
+                path: path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR, `chrome-${name}.png`),
+            }) : null,
+        });
+        await climberPage.goto(climberPageUrl);
+        await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.disabled === false);
         await climberPage.locator('#bpb-climber-ignore').click();
         await climberPage.waitForFunction(() => document.getElementById('bpb-climber-ignore')?.textContent === 'Unignore');
         await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html#ignored`);

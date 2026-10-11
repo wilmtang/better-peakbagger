@@ -729,7 +729,12 @@ export async function createBrowserFixtureServer({
                 else if (/^Remove\b/i.test(action)) otherClimberIsBuddy = false;
                 requests.buddyMutations += 1;
             }
-            return send('text/html; charset=utf-8', renderOtherClimber());
+            const html = renderOtherClimber();
+            return send('text/html; charset=utf-8', url.searchParams.has('hover') ? html.replace('</body>',
+                '<section id="hover-card-fixture" style="margin:24px;max-width:440px;text-align:left">'
+                + '<h2>Recent ascents</h2><p><a id="hover-climber" href="/climber/climber.aspx?cid=900002">Morgan Longlastname</a></p>'
+                + '<p><a id="hover-other" href="/climber/climber.aspx?cid=900003">Casey Summit</a></p>'
+                + '<p><a id="hover-self" href="/climber/climber.aspx?cid=900001">Alex Doe</a></p></section></body>') : html);
         }
         if (/\/report\/report\.aspx/i.test(url.pathname)
         && (url.searchParams.get('r') || '').toLowerCase() === 'b') {

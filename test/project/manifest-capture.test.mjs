@@ -85,6 +85,18 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.equal(manifest.minimum_chrome_version, '128');
 });
 
+test('climber cards stay in the isolated top-level Peakbagger surface', () => {
+    const entry = contentEntry('content/climber-hover-card.js');
+    assert.deepEqual(entry.matches, ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']);
+    assert.equal(entry.world || 'ISOLATED', 'ISOLATED');
+    assert.equal(entry.all_frames, false);
+    assert.equal(entry.run_at, 'document_end');
+    assert.deepEqual(entry.css, ['css/climber-hover-card.css']);
+    assert.deepEqual(bundleSources('content/climber-hover-card.js'), ['favorites/climber-hover-card.js']);
+    assert.ok(COPY_FILES.some(([source, output]) => source === 'src/favorites/climber-hover-card.css'
+        && output === 'css/climber-hover-card.css'));
+});
+
 test('ImgBB upload access is optional and scoped to its API origin', () => {
     assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
     assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));

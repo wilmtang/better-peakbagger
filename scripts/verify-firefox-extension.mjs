@@ -46,6 +46,7 @@ import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
 import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
+import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
@@ -133,6 +134,14 @@ async function evaluatePageRealm(driver, expression) {
         throw new Error(response.result.exceptionDetails?.text || 'page-realm script failed');
     }
     return response.result;
+}
+
+async function setContentViewport(driver, viewport) {
+    const response = await (await driver.getBidi()).send({
+        method: 'browsingContext.setViewport',
+        params: { context: await driver.getWindowHandle(), viewport },
+    });
+    if (response.type === 'error') throw new Error(`${response.error}: ${response.message}`);
 }
 
 async function main() {
@@ -1292,6 +1301,22 @@ async function main() {
                 path.join(process.env.BPB_VERIFY_MEMBERSHIP_SCREENSHOT_DIR, `firefox-${name}.png`),
                 await driver.takeScreenshot(), 'base64') : null,
         });
+        await driver.get(`${otherClimberUrl}&hover=1`);
+        try {
+            await verifyClimberHoverCard({
+                evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox climber hover card'),
+                click: selector => driver.findElement(By.css(selector)).click(),
+                hover: async selector => driver.actions().move({ origin: await driver.findElement(By.css(selector)) }).perform(),
+                key: (selector, value) => driver.findElement(By.css(selector)).sendKeys(
+                    { Escape: Key.ESCAPE, Tab: Key.TAB, Enter: Key.ENTER }[value]),
+                // Firefox's window-size floor cannot establish a 320px viewport.
+                resize: (width, height) => setContentViewport(driver, { width, height }),
+                screenshot: process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR ? async name => writeFile(
+                    path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR, `firefox-${name}.png`),
+                    await driver.takeScreenshot(), 'base64') : null,
+            });
+        } finally { await setContentViewport(driver, null); }
 
         await driver.get(optionsUrl);
         await driver.executeAsyncScript(done => {

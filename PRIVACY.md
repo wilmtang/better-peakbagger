@@ -224,14 +224,22 @@ date. That happens entirely locally.
   minutes, and never copied to extension storage, browser sync, or GitHub. The
   extension verifies the resulting Buddy List before changing custom favorites.
 - **Custom mode:** up to 1,500 climber ids, names, added-at timestamps, and
-  manual/Buddy provenance stay in `storage.local`. Adding an id or link fetches
-  the public climber page to verify it. The list is not browser-synced.
+  manual/Buddy provenance stay in `storage.local`. Adding an id or link in the
+  list manager fetches the public climber page to verify it. Name-link cards use
+  the displayed name and validated profile-link id already on the page; hovering
+  performs no network request and stores no browsing history. The list is not
+  browser-synced.
 - A confirmed Buddy addition can add that climber to custom favorites. A Buddy
   removal changes custom favorites only when **Keep Buddy removals in sync** is
   enabled; only that preference, not the list, uses browser sync.
 
 ### Ignored climbers and report visibility
 
+- An explicit Ignore addition from a name-link card fetches the signed-in
+  account's own Buddy List to check for conflicting membership, in either
+  favorite-source mode. It updates the existing owner-scoped cache; a failed or
+  mismatched response leaves the ignored list unchanged. Unignore needs no
+  Buddy request. Buddy management itself uses Peakbagger's native profile.
 - Up to 1,500 climber IDs, displayed names and added dates stay in `storage.local`.
   They are a device preference across Peakbagger accounts. Adding a link or ID
   fetches the public profile to verify it; ignoring on a profile needs no extra

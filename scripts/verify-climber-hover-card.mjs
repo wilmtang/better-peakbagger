@@ -1,0 +1,109 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+/* global document, innerWidth, innerHeight, getComputedStyle */
+import assert from 'node:assert/strict';
+
+// Drive the actual isolated-world bundle through native input, shared by the
+// full Chrome/Firefox manifest verifiers. No mock runtime or optimistic writes.
+export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key, resize, screenshot }) {
+    const capture = async name => {
+        for (const [width, height] of [[1000, 760], [480, 760], [360, 760], [320, 760]]) {
+            await resize(width, height);
+            await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
+            if (await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
+                await click('#hover-climber + .bpb-climber-actions-trigger');
+            }
+            for (const theme of ['light', 'dark']) {
+                await evaluate(theme === 'dark'
+                    ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
+                    : () => { document.documentElement.dataset.bpbTheme = 'light'; });
+                await wait(() => {
+                    const card = document.getElementById('bpb-climber-card');
+                    const rect = card?.getBoundingClientRect();
+                    const anchor = document.getElementById('hover-climber').getBoundingClientRect();
+                    return rect?.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
+                        && (rect.bottom <= anchor.top || rect.top >= anchor.bottom)
+                        && getComputedStyle(card).opacity === '1'
+                        && card.getAnimations().every(animation => animation.playState === 'finished');
+                });
+                const geometry = await evaluate(() => {
+                    const card = document.getElementById('bpb-climber-card');
+                    const rect = card.getBoundingClientRect();
+                    const controls = [...card.querySelectorAll('a, button')].filter(node => node.getClientRects().length)
+                        .map(node => ({ text: node.textContent, left: node.getBoundingClientRect().left,
+                            right: node.getBoundingClientRect().right, height: node.getBoundingClientRect().height,
+                            scroll: node.scrollWidth, client: node.clientWidth }));
+                    return { width: innerWidth, topLayer: card.matches(':popover-open'),
+                        card: { left: rect.left, right: rect.right, bottom: rect.bottom }, controls,
+                        horizontalOverflow: card.scrollWidth > card.clientWidth + 1,
+                        quietBackground: getComputedStyle(document.getElementById('bpb-climber-card-ignore')).backgroundColor,
+                        quietBorder: getComputedStyle(document.getElementById('bpb-climber-card-ignore')).borderTopWidth,
+                        triggerBackground: getComputedStyle(document.querySelector('#hover-climber + button')).backgroundColor,
+                        color: getComputedStyle(card).color, background: getComputedStyle(card).backgroundColor };
+                });
+                assert.equal(geometry.topLayer, true, 'card is not in the browser top layer');
+                assert.equal(geometry.width, width, 'browser did not apply the requested content viewport');
+                assert.equal(geometry.horizontalOverflow, false, JSON.stringify(geometry));
+                assert.equal(geometry.quietBackground, 'rgba(0, 0, 0, 0)', JSON.stringify(geometry));
+                assert.equal(geometry.quietBorder, '0px', JSON.stringify(geometry));
+                assert.equal(geometry.triggerBackground, 'rgba(0, 0, 0, 0)', JSON.stringify(geometry));
+                assert.ok(geometry.controls.every(control => control.height > 0 && control.left >= geometry.card.left
+                    && control.right <= geometry.card.right + 1
+                    // Firefox gives inline links no client box; their rect is the boundary.
+                    && (control.client === 0 || control.scroll <= control.client + 1)), JSON.stringify(geometry));
+                await screenshot?.(`${name}-${theme}-${width}`);
+            }
+        }
+    };
+    await wait(() => document.querySelector('#hover-climber + .bpb-climber-actions-trigger'));
+    const normalLink = await evaluate(() => ({ href: document.getElementById('hover-climber').getAttribute('href'),
+        tabIndex: document.getElementById('hover-climber').tabIndex }));
+    assert.deepEqual(normalLink, { href: '/climber/climber.aspx?cid=900002', tabIndex: 0 });
+    await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
+    await wait(() => {
+        const rect = document.getElementById('hover-climber').getBoundingClientRect();
+        return rect.top >= 0 && rect.bottom <= innerHeight;
+    });
+    await hover('#hover-climber');
+    await wait(() => !document.getElementById('bpb-climber-card').hidden);
+    assert.equal(await evaluate(() => document.getElementById('bpb-climber-card').contains(document.activeElement)), false,
+        'hover must not move keyboard focus');
+    await hover('#bpb-climber-card-favorite');
+    await wait(() => document.getElementById('bpb-climber-card-favorite').matches(':hover'));
+    assert.equal(await evaluate(() => document.getElementById('bpb-climber-card').hidden), false,
+        'card must survive pointer travel from the name');
+    await key('#hover-climber', 'Tab');
+    await wait(() => document.activeElement?.matches('#hover-climber + .bpb-climber-actions-trigger'));
+    await key('#hover-climber + .bpb-climber-actions-trigger', 'Enter');
+    await wait(() => !document.getElementById('bpb-climber-card').hidden
+        && document.getElementById('bpb-climber-card-favorite')?.disabled === false);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-climber-card-buddy').textContent), 'Manage buddies on profile ↗');
+    assert.equal(await evaluate(() => document.activeElement?.matches('.bpb-climber-card-buddy')), true,
+        'explicit keyboard opening must focus the first action');
+    await capture('available');
+    await click('#bpb-climber-card-favorite');
+    await wait(() => document.getElementById('bpb-climber-card-favorite')?.textContent === 'Remove favorite climber'
+        && document.getElementById('bpb-climber-card-ignore')?.disabled === true);
+    await capture('favorite');
+    await click('#bpb-climber-card-favorite');
+    await wait(() => document.getElementById('bpb-climber-card-ignore')?.disabled === false);
+    await click('#bpb-climber-card-ignore');
+    await wait(() => document.getElementById('bpb-climber-card-ignore')?.textContent === 'Unignore climber'
+        && document.getElementById('bpb-climber-card-favorite')?.disabled === true);
+    await capture('ignored');
+    await key('#bpb-climber-card-ignore', 'Escape');
+    await wait(() => document.getElementById('bpb-climber-card').hidden);
+    assert.equal(await evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Climber actions for Morgan Longlastname');
+    await key('#hover-climber + .bpb-climber-actions-trigger', 'Enter');
+    await wait(() => !document.getElementById('bpb-climber-card').hidden);
+    await click('#bpb-climber-card-ignore');
+    await wait(() => document.getElementById('bpb-climber-card-ignore')?.textContent === 'Ignore climber'
+        && document.getElementById('bpb-climber-card-favorite')?.disabled === false);
+    await evaluate(() => { document.getElementById('hover-climber').textContent = 'Morgan Longlastname of the Eastern Cascades'; });
+    await wait(() => document.getElementById('bpb-climber-card-name')?.textContent === 'Morgan Longlastname of the Eastern Cascades');
+    await capture('long-name');
+    await click('#hover-self + .bpb-climber-actions-trigger');
+    await wait(() => document.getElementById('bpb-climber-card-name')?.textContent === 'Alex Doe');
+    assert.equal(await evaluate(() => document.getElementById('bpb-climber-card-favorite').hidden), true);
+    await click('.bpb-climber-card-close');
+}

@@ -47,6 +47,13 @@
   },
   "content_scripts": [
     {
+      "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
+      "js": ["content/climber-hover-card.js"],
+      "css": ["css/climber-hover-card.css"],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
       "matches": [
         "https://www.peakbagger.com/climber/ascentedit.aspx*",
         "https://www.peakbagger.com/climber/AscentEdit.aspx*",
