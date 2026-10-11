@@ -2,13 +2,13 @@
 
 **Spend less time wrestling with Peakbagger and more time planning the next summit.**
 
-Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
-have—into review-ready ascent drafts. It also adds free 3D terrain, richer GPX
-analysis, filters and climber lists for finding useful beta, rich-text and
-Markdown trip reports with reusable photo topos, optional GitHub backup,
-one-click saved-track handoff to Gaia GPS and onX Backcountry, offline Sun and Moon planning,
-location-aware planning links, and a polished dark theme to
-[Peakbagger](https://www.peakbagger.com/).
+Plan your next climb with free summit weather and 3D terrain. Relive past trips
+with historical weather and interactive GPX charts. Turn Garmin and Strava
+activities—or a GPX file you already have—into review-ready ascent drafts.
+
+Better Peakbagger brings all of this to [Peakbagger](https://www.peakbagger.com/),
+along with faster beta discovery, rich-text and Markdown trip reports, reusable
+photo topos, optional GitHub backup, and a polished dark theme.
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kndjohodnpdoejmjkiiakejfehoodedn?style=for-the-badge&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
 [![Firefox Add-ons](https://img.shields.io/amo/v/better-peakbagger?style=for-the-badge&logo=firefoxbrowser&logoColor=white&label=Firefox%20Add-ons&color=FF7139)](https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/)
@@ -32,15 +32,38 @@ Preferences page.
 
 ## Feature tour
 
-### Open-source free 3D mapping
+### Free summit weather: past climbs and the next two weeks
+
+Look ahead to your next summit—or back at a memorable climb—with free weather
+data built right into Peakbagger. Powered by [Open-Meteo](https://open-meteo.com/),
+an [open-source weather project](https://github.com/open-meteo/open-meteo).
+No weather account, API key, or subscription required.
+
+- **More than two weeks ahead.** Peak pages offer an **up to 16-day forecast**
+  with temperature ranges, rain/snow totals, and wind. Expand any day for hourly
+  temperature, precipitation, wind, gusts, and conditions in summit-local time.
+- **The past week at a glance.** Switch to **Past 7 days** to put recent summit
+  weather beside the forecast.
+- **Weather for your ascent day.** Saved ascents show historical summit weather,
+  with archives reaching back to **1940**, a recommended model, and alternatives
+  where available. No GPX needed.
+
+These are model estimates. Coverage varies by date, location, and model;
+incomplete hours stay labelled. Longer-range and mountain forecasts can be
+inaccurate, so check local mountain forecasts before your climb. Historical
+data describes the summit, not conditions along your route. See the
+[historical weather guide](docs/ascent-weather.md) and
+[summit forecast guide](docs/peak-weather.md).
+
+### Explore the mountain in free 3D
 
 ![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-3D-map-sync-resize-billboard-1.5x.gif)
 
-Explore ascent tracks, Full Screen GPS maps, and peak Dynamic Maps in
-interactive 3D at true vertical scale. Better Peakbagger combines open
-[Mapterhorn](https://mapterhorn.com/) elevation data with Peakbagger's familiar
-compatible basemaps and an experimental OpenFreeMap style. 3D is opt-in and
-uses a small, bounded terrain cache to make return visits faster.
+See how a route follows the ridgeline, climbs a face, or crosses a basin.
+Explore ascent tracks and peak maps in interactive 3D at true vertical scale,
+using open [Mapterhorn](https://mapterhorn.com/) elevation data and compatible
+Peakbagger basemaps. Turn 3D on when you want it; cached terrain makes return
+visits faster. An experimental OpenFreeMap style offers another way to explore.
 
 **Sentinel-2 (experimental)** adds recent satellite imagery to both the native
 2D map and 3D view through Microsoft Planetary Computer. Choose a capture from
@@ -52,155 +75,126 @@ the full satellite images. Clouds or gaps may still obscure covered areas.
 
 ### Turn an activity into ascent drafts
 
-Turn an activity you own on Garmin Connect or Strava into prefilled Peakbagger
-ascent drafts. Explained **Strong** and **Probable** matches help you choose the
-right summits; route details and a privacy-reduced track are prepared for GPS
-Preview, and multi-peak trips open as coordinated drafts. You always review and
-save each ascent yourself.
+Log the climb without retyping the trip. Open your activity on Garmin Connect
+or Strava, click Better Peakbagger, and choose from explained **Strong** and
+**Probable** summit matches. Route details and a privacy-reduced track are
+prepared for GPS Preview—even for a multi-peak day. You review every draft
+and save each ascent yourself.
 
 ![Garmin and Strava activity capture with privacy-reduced Peakbagger drafts](store-assets/showcase-activity-capture.gif)
 
-### Process a GPX directly on Peakbagger
+### Turn a GPX file into a climb log
 
-Choose a GPX from your watch, a friend, or a mapping app on Peakbagger's
-**Add Ascent** form. Better Peakbagger calculates the route details, finds
-summits along the track, and can prepare coordinated drafts for a multi-peak
-trip. Large tracks are reduced to Peakbagger's point limit without sending the
-original file anywhere else.
+Choose a GPX from your watch, a friend, or a mapping app
+on Peakbagger's **Add Ascent** form. Better Peakbagger calculates route details,
+finds summits along the track, and can prepare drafts for the whole multi-peak
+trip. Large files are fitted to Peakbagger's point limit without sending the
+original file elsewhere. You review each draft before saving.
 
-### Chart-synced map and track customization
+### Relive the route, one chart point at a time
 
 ![Three-day GPX analysis with chart-synchronized map marker and custom route](store-assets/showcase-gpx-map-sync.gif)
 
-Ascent pages gain interactive GPX charts, route metrics, grades,
-mountain-local timing, and multi-day details. Chart points stay synchronized
-with the map and can be selected by pointer or keyboard for coordinate copying.
-Custom route colors, width, and outline carry through to Full Screen GPS maps
-without covering Peakbagger's native route or markers. Degraded tracks remain
-useful without invented measurements: partial data produces visible gaps,
-timed coordinate-only tracks show distance over time, and untimed
-coordinate-only tracks get a compact route scrubber. Narrowly identified suspect
-segments get a reversible interpretation with an inline explanation; the
-original download and provider transfers stay unchanged. See the
-[missing-data result table](docs/gpx-data-quality.md#resulting-chart).
+Follow a GPX chart and watch the map move with you. Explore route metrics,
+grades, mountain-local timing, and multi-day details; select a point by pointer
+or keyboard to copy its coordinates. Make the track easier to read with custom
+colors, width, and outline that carry through to Full Screen GPS maps.
 
-### Review ascent-day weather
+Tracks with missing elevation or timestamps still get the most useful view
+their data supports, with visible gaps instead of invented measurements.
+Suspect segments get an explained, reversible interpretation; original
+downloads and transfers stay unchanged. See the
+[track data guide](docs/gpx-data-quality.md#resulting-chart).
 
-Saved ascent pages show historical weather at the summit, with a recommended
-model, other models available for the date and location, and hourly local-time
-detail. A GPX is not required. These are model estimates; they cannot establish
-conditions along the route or the climber’s summit time. See the
-[historical weather design](docs/ascent-weather.md).
+### Take a saved route to your favorite mapping app
 
-Peak pages show **Summit weather** below the map in the right column. The
-**16-day forecast** covers today plus fifteen days, up to the API's available
-horizon; **Past 7 days** shows seven
-completed summit-local days. One Open-Meteo request supplies both views with
-conditions, temperature ranges, rain/snow water equivalent and maximum wind.
-Expand a day for hourly graphs with temperature, rain/snow, wind, gusts and
-conditions tabs. Incomplete final-day hours stay labelled. Open-Meteo chooses
-models automatically; **Models & source details** names possible sources, and
-the card warns that forecasts may be inaccurate, especially farther ahead. See the
-[recent weather design](docs/peak-weather.md).
+Take a track worth following straight from a saved ascent to **Gaia
+GPS**, **onX Backcountry**, **AllTrails**, or **CalTopo**. After a one-time access
+grant, the exact saved GPX opens in the destination's import preview, ready for
+your review and confirmation. Choose which apps appear and their order in
+**Settings → Map & GPX chart → Send GPX**.
 
-### Send a saved track to another mapping app
-
-In **Settings → Map & GPX chart → Send GPX**, enable or hide providers and move them into your preferred order. All providers are enabled by default. **Settings → Ascent beta filter** controls the separate peak and personal filter orders; dragging filters on the page updates the same settings. These preferences travel with the existing **Settings backup** export/import file. Existing site-local filter orders migrate when an ascent list is next opened.
-
-On a saved ascent, **Send to Gaia**, **Send to onX**, **Send to AllTrails**, and **Send to CalTopo** sit below Peakbagger's
-GPX download. After the destination's one-time access grant, each button opens
-its map and supplies the exact saved GPX to the visible import preview. You
-review and confirm in the mapping app; Better Peakbagger does not copy account
-credentials or keep the GPX in extension storage. onX import requires a Premium
-or Elite membership and a GPX under 4 MB; AllTrails limits uploads to 20 MB. If an import fails after handoff,
-**Send to onX again** opens a fresh importer while leaving the failed tab
-available to inspect. See
-[how the Gaia handoff works](docs/gaia-import.md) and
-[how the onX handoff works](docs/onx-import.md), and
-[how the CalTopo handoff works](docs/caltopo-import.md).
+Your mapping app's membership and file limits still apply: onX needs Premium
+or Elite and a GPX under 4 MB; AllTrails accepts uploads up to 20 MB. Better
+Peakbagger does not copy account credentials or keep the GPX in extension
+storage. See the [Gaia](docs/gaia-import.md), [onX](docs/onx-import.md), and
+[CalTopo](docs/caltopo-import.md) handoff guides.
 
 ### Plan around the Sun and Moon
 
-Peak Dynamic Maps and saved-ascent GPX analysis include a compact offline Sun
-and Moon calculator. It shows apparent Sun and Moon direction and elevation,
-level-horizon sunrise and sunset, Moon phase, and illuminated percentage in
-mountain-local time. On a GPX, selecting a chart point uses that point's
-recorded time when available; the separate time slider previews the same
-location without moving the route. In 3D, the compass follows the rotated map
-while its absolute azimuth remains unchanged.
+Check sunrise, sunset, Moon phase, and the direction of the Sun and Moon right
+on a peak map or GPX route. Times follow the mountain's local timezone, and the
+calculator works entirely offline. Select a recorded GPX point or use the time
+slider to explore another moment at the same location.
 
-This is an astronomical planning aid, not a terrain-shadow prediction. Nearby
-ridges, weather, smoke, and actual direct light are outside its model. See the
-[Sun and Moon contract](docs/sun-position.md).
+Rise and set times assume a level horizon; terrain shadows, weather, smoke,
+and actual direct light are outside the model. See the
+[Sun and Moon guide](docs/sun-position.md).
 
 ### Find useful ascent beta faster
 
-Filter and sort long ascent lists by trip report, GPS track, external link, or
-favorite climber—without reloading the page. Favorites can follow your
-Peakbagger Buddy List or a searchable custom list, with optional Buddy syncing
-and GitHub transfer. Ignore other climbers' reports on peak pages, ascent lists
-and individual reports, with counted temporary reveal. Manage both lists under
-**Settings → Ascent beta filter → Climber lists**; ignores stay local unless you
-choose GitHub backup or enable two-way sync on this device. Filters combine, show
-live counts, and remember which signals you consider useful beta. See the
-[climber lists guide](docs/climber-lists.md).
+Skip the scrolling and get to the reports that help you plan. Filter and sort
+ascent lists by trip report, GPS track, external link, or favorite climber,
+without reloading the page. Combine filters, see live counts, and keep your
+preferred order.
+
+Follow your Peakbagger Buddy List or build a searchable favorites list. Hide
+reports from climbers you choose to ignore, with a temporary reveal when you
+want another look. Ignores stay local unless you choose GitHub backup or enable
+two-way sync on this device. See the [climber lists guide](docs/climber-lists.md).
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 
 ### Write trip reports, not bracket tags
 
-Write trip reports in rich text or GitHub-flavored Markdown with tables, media,
-syntax highlighting, and live preview; Better Peakbagger handles the
-square-bracket format Peakbagger expects. Device-local autosave and a dedicated
-draft workspace help recover interrupted work, while Plain mode keeps the
-native textarea available for unsupported legacy markup. See the
+Tell the story with rich text or GitHub-flavored Markdown, complete with tables,
+media, syntax highlighting, and live preview. Better Peakbagger handles the
+square-bracket format for you. Device-local autosave and a dedicated draft
+workspace help you pick up where you left off; Plain mode keeps the native
+textarea available for unsupported legacy markup. See the
 [supported syntax and safety contract](https://github.com/wilmtang/better-peakbagger/blob/main/docs/trip-report-editor.md).
 
 ![Rich-text trip report editor with formatting controls and local draft recovery](store-assets/showcase-5-trip-report-editor-light.png)
 
 ### Draw and reuse photo topos
 
-Draw routes, curves, labels, and familiar climbing symbols over a photo, then
-insert a flattened, metadata-free JPEG or PNG into your report. Originals,
-editable projects, and your ImgBB API key are device-local. The saved key
-remains in device-local extension storage and is never exposed to Peakbagger,
-another website, GitHub, browser sync, or status UI. The background worker gives
-it only to Better Peakbagger's exact packaged photo page for the direct ImgBB
-upload. A manual settings export includes the key only if you tick **Include
-saved credentials**, and warns you to keep that file private. Images decode up to 64 megapixels and 16,384 pixels per
-side. The source file has a separate 128 MiB processing and local-storage
-ceiling; your original file is never changed. Editable project bundles are
-capped at 40 MiB, while ImgBB decides the upload size allowed for your account.
-A searchable local library keeps drafts
-and published versions reusable, while optional GitHub recovery can preserve
-the catalog and annotation projects. See the
+Show the line, mark the crux, and share the beta. Draw routes, curves, labels,
+and climbing symbols over a photo, then insert a flattened, metadata-free
+JPEG or PNG into your report. Your original stays unchanged, and a searchable
+local library keeps editable projects and published versions ready to reuse.
+
+Upload directly to ImgBB with your own API key, kept in device-local extension
+storage and included in settings exports only when you choose **Include saved
+credentials**. Optional GitHub recovery can preserve the catalog and annotation
+projects. See the
 [photo workflow and privacy boundaries](https://github.com/wilmtang/better-peakbagger/blob/main/docs/photo-topo-editor.md).
 
 ![Photo Topos editor with an annotated alpine route and direct ImgBB upload](store-assets/showcase-6-photo-topos.png)
 
-### Back up your ascents and TRs to GitHub
+### Keep a copy of your climbing history
 
-Keep portable copies of your ascents and TRs in a GitHub repository you control,
-with trip reports as Markdown, form data as JSON, and Peakbagger's stored GPX files.
-Back up one saved ascent or your full history, then keep later edits in sync.
-The same connection can separately transfer settings and favorite climbers or
-preserve photo-library recovery data. Each backup is optional, respects its own
-controls, and never changes an ascent on Peakbagger.
+Your climbing history deserves a copy you control. Back up one ascent or your
+full history to your own GitHub repository, with readable Markdown trip reports,
+JSON ascent details, and Peakbagger's stored GPX files. Keep later edits in sync,
+and optionally preserve settings, favorite climbers, and photo-library recovery
+data through the same connection. Each backup is optional and never changes
+an ascent on Peakbagger.
 
-### Check summit conditions and recent imagery
+### Bring the rest of your planning into reach
 
-Peak pages link directly to location-aware forecasts, recent satellite imagery,
-modeled snow depth, and fire or smoke information from supported planning
-services.
+Jump from a peak page to location-aware forecasts, recent satellite imagery,
+modeled snow depth, and fire or smoke information. Planning links open the
+supported service at the mountain you're researching.
 
 ### Make Peakbagger easier on the eyes
 
-Use a site-wide theme that follows your system or stays light or dark. Shared
-settings cover units, maps, GPX charts, activity capture, trip reports, photo
-topos, backups, and beta filters, and can be exported for safekeeping. The
-download is credential-free unless you tick **Include saved credentials**, which
-adds your ImgBB API key and GitHub connection; it is not encrypted and must be
-kept private.
+Give Peakbagger a polished dark theme, follow your system appearance, or stay
+with light mode. Set your preferred units, maps, chart styles, and feature
+options in one place, then export your settings for safekeeping.
+
+Exports leave credentials out by default. Choosing **Include saved credentials**
+adds your ImgBB API key and GitHub connection to an unencrypted file; keep it
+private.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/showcase-3-dark-mode-settings.png)
 
@@ -217,10 +211,10 @@ map tiles only after you enable it; once enabled, hovering or focusing its
 toggle may prefetch a small bounded elevation tile set before the view opens.
 Sun and Moon calculations use only packaged code and remain in the Peakbagger
 tab; they add no storage, permission, or provider request.
-Weather cards automatically send summit coordinates, elevation and a narrow
-ascent-date or recent-week window to Open-Meteo as they approach the viewport. They
-send no GPX, ascent/climber IDs, credentials, or referring page URL, and keep
-results only in tab memory.
+Weather cards automatically send summit coordinates, elevation, and a date
+window to Open-Meteo as they approach the viewport: the ascent date, or seven
+past days plus up to sixteen forecast days. They send no GPX, ascent/climber
+IDs, credentials, or referring page URL, and keep results only in tab memory.
 Gaia or onX receives a saved Peakbagger GPX only when you click its **Send**
 button, and final review and confirmation remain with you.
 GitHub backup is off until you enable it, sends an ascent only to the repository
