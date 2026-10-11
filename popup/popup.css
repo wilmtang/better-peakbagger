@@ -71,6 +71,9 @@ button.primary, button.secondary { width: 100%; }
 
 /* An icon button in the header: no chrome until it is pointed at. */
 .settings-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 32px;
   min-height: 32px;
