@@ -17,9 +17,11 @@ shared provider/data code, settings and GPX presentation integration.
 | W07 | P3 | Disabled weather still reparents native GPS notes and controls | Fixed; original placement and handlers verified |
 | W08 | P3 | Selected font weight changes intrinsic tab width and wrapping | Fixed; width sweep and responsive rendering verified |
 
-Implement and verify each independent fix before starting the next. Preserve
-fail-closed subject/settings checks, request cancellation and generation guards,
-missing readings, bounded model fallback, per-page caches and native Save ownership.
+All eight findings have implementation and local verification, in eight focused
+runtime commits. Preserve fail-closed subject/settings checks, cancellation and
+generation guards, missing readings, explicit model choice, per-page caches and
+native Save ownership. Concurrent archive/forecast model changes were preserved
+and excluded from remediation commits.
 
 ## Fixed and verified
 
@@ -80,6 +82,9 @@ missing readings, bounded model fallback, per-page caches and native Save owners
 - Severe-condition precedence and conservative regional model admission remain.
 - Unavailable authoritative settings reads make no weather request.
 - Weather data remains in page memory, excluded from settings and backups.
+- Two photo-documentation tests fail on README text: encoded-source budgets and
+  saved-key disclosure wording. Reproduced both using the starting `8a1412b`
+  README; they are outside this weather audit and were left unchanged.
 
 ## Changed but not fully proven
 
@@ -101,3 +106,38 @@ Use the real unpacked extension in hidden Chrome and Firefox over HTTPS
 Peakbagger fixtures for day-switch geometry, keyboard interaction, dark selected
 styles, wrap thresholds, opt-out restoration and visual inspection. Keep tests
 condition-driven and ensure owned browser/profile/server cleanup.
+
+## Final checks — 2026-10-11
+
+Committed remediation snapshot: `665db2e5`, plus launch-guard correction
+`8ea1adac`. Final verification ran on frozen source/bundles, excluding concurrent
+uncommitted forecast model work.
+
+| Check | Observed result |
+| --- | --- |
+| `npm test` | 2,576 / 2,578 pass; the two README assertions above fail |
+| `node --test test/weather/*.test.mjs` | All 85 pass |
+| `npm run lint` | Pass; six existing owned web-ext warnings |
+| Real manifest Chrome verifier | Pass; Chrome 153.0.8010.12, hidden 1000×760, BFCache restored |
+| Ascent and peak real-extension fixtures | Chrome 153.0.8010.12 and Firefox 157.0.1 pass |
+| Targeted day switching | 27 cases per engine; pointer/Enter/Space, three metrics, 375/768/1440×1000 |
+| Tab wrapping | 280–500 px card sweep in 2 px steps, light/dark, both engines; stable selection geometry |
+| Final launcher guard | Both tests and ESLint pass |
+
+Visually inspected fractional rain intervals, keyboard readouts/focus spacing,
+dark selected ascent pills, native GPS controls after opt-out and the narrow
+expanded peak graph. Existing page fixtures also check wide/narrow light/dark
+layouts at 375/681/768/1440×1100. Weather graphics are SVG; no WebGL renderer
+claim is made. Hidden DOM focus/geometry does not establish native browser/OS
+focus placement, physical touch, screen-reader speech or live weather accuracy.
+
+The first full snapshot run lacked a Git index required by fixture-privacy
+tests; added an isolated fixture index and reran, eliminating those environment
+failures. Corrected the new launcher's guard position rather than weakening the
+repository structural test. No push or release was performed.
+
+Final documentation check passed. All 20 recorded disposable weather profiles
+were absent at handoff; exact-profile process inspection found no owned browser
+or fixture process. The real-manifest verifier also reported successful teardown.
+Saved selected screenshots and verification logs in the task's artifact folder;
+removed the temporary source and documentation-baseline snapshots.
