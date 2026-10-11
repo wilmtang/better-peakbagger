@@ -208,3 +208,12 @@ test('the loader refuses to be built without a style URL', () => {
     assert.throws(() => TerrainStyle.createVectorStyleLoader({}), TypeError);
     assert.throws(() => TerrainStyle.createVectorStyleLoader({ styleUrl: '' }), TypeError);
 });
+
+test('OpenFreeMap limits survive an unreadable body and block repeated style fetches until the known reset', async () => {
+    let calls = 0;
+    const loader = TerrainStyle.createVectorStyleLoader({ styleUrl: STYLE_URL, fetch: async () => {
+        calls++; return { status: 429, headers: new Headers({ 'retry-after': '60' }), text() { throw new Error('must not read'); } };
+    } });
+    await assert.rejects(loader.load(), error => error.code === 'rate-limit' && /OpenFreeMap request limit reached/.test(error.message));
+    await assert.rejects(loader.load(), { status: 429 }); assert.equal(calls, 1);
+});

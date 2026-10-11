@@ -26,6 +26,8 @@
 }
 .bpb-sentinel p { margin: 6px 0 0; overflow-wrap: anywhere; }
 .bpb-sentinel-stats { font-size: 11px; }
+.bpb-sentinel-summary[data-kind="rate-limit"] { border-left: 3px solid #b47b26; padding-left: 7px; }
+.bpb-sentinel button:disabled { opacity: .6; cursor: default; }
 .bpb-sentinel button {
     margin-top: 6px;
     padding: 3px 8px;

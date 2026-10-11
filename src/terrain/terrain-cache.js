@@ -6,6 +6,7 @@
 // space is tight, and a cache miss always falls back to the network.
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { rateLimitError } from '../net/rate-limit.js';
 
 const CACHE_NAME = 'bpb-mapterhorn-dem-v1';
 // The status a tile host returns for ground it does not cover. Mapterhorn's
@@ -237,6 +238,7 @@ const create = ({
     let persistenceQueue = Promise.resolve();
     let saveTimer = null;
     let closed = false;
+    let limited = null;
     let dirtyGeneration = 0;
     let persistedGeneration = 0;
     let closePromise = null;
@@ -504,6 +506,7 @@ const create = ({
 
     const startNetworkLoad = remoteUrl => {
         if (closed) throw Object.assign(new Error('DEM cache was closed'), { name: 'AbortError' });
+        if (limited?.retryAt > now()) throw limited;
         // One owner holds the immutable tile's network request, byte bound,
         // validation, and cache write. Callers subscribe below; their own
         // cancellation never tears down work another caller still needs.
@@ -526,6 +529,7 @@ const create = ({
                 credentials: 'omit',
                 referrerPolicy: 'no-referrer'
             }));
+            if (response?.status === 429) { limited = rateLimitError('Mapterhorn', response, now()); throw limited; }
             if (!response || !response.ok) {
                 throw new TileRequestError(
                     `DEM tile request failed (${response && response.status})`,

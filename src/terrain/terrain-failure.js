@@ -16,6 +16,7 @@ const MESSAGES = Object.freeze({
     // Reaching the provider failed. Unlike `coverage` this may well work later,
     // and unlike `maplibre` it is not the browser's doing.
     elevation: '3D elevation data could not be loaded. The 2D map is unchanged.',
+    'elevation-rate-limit': 'Mapterhorn request limit reached. Wait a few minutes, then try 3D again. The 2D map is unchanged.',
     maplibre: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
     renderer: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
     timeout: '3D terrain took too long to load. The 2D map is unchanged.'

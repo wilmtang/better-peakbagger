@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { requestDeadline } from '../net/request-deadline.js';
+import { rateLimitError } from '../net/rate-limit.js';
 
 export const SENTINEL_NAME = 'Sentinel-2 (experimental)';
 export const SENTINEL_CODE = 'BPB_SENTINEL';
@@ -147,7 +148,8 @@ export const searchSentinel = async (view, { signal, fetchImpl = globalThis.fetc
                 body: JSON.stringify({ collections: ['sentinel-2-l2a'], bbox,
                     datetime: `${new Date(now - 30 * DAY).toISOString()}/${new Date(now).toISOString()}`, limit: 100,
                     sortby: [{ field: 'datetime', direction: 'desc' }] }), signal: deadline.signal }));
-            if (!response.ok) throw new Error(response.status === 429 ? 'Satellite service is busy. Try again shortly.' : 'Satellite service is unavailable. Try again.');
+            if (response.status === 429) throw rateLimitError('Microsoft Planetary Computer', response, now);
+            if (!response.ok) throw new Error('Satellite service is unavailable. Try again.');
             if (Number(response.headers?.get('content-length')) > MAX_BODY) throw new Error('Satellite search is too large. Zoom in.');
             let text;
             if (response.body?.getReader) {

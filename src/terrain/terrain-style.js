@@ -5,6 +5,7 @@
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { rateLimitError } from '../net/rate-limit.js';
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const STYLE_MAX_BYTES = 2 * 1024 * 1024;
@@ -167,8 +168,10 @@ const createVectorStyleLoader = ({
     const requestedUrl = providerUrl(styleUrl);
     if (!requestedUrl) throw new TypeError('vector style loader requires an OpenFreeMap style URL');
     let pending = null;
+    let limited = null;
 
     const request = async () => {
+        if (limited?.retryAt > Date.now()) throw limited;
         const deadline = Deadline.createRequestDeadline(timeoutMs);
         try {
             const response = await deadline.run(fetch(requestedUrl, {
@@ -176,6 +179,7 @@ const createVectorStyleLoader = ({
                 referrerPolicy: 'no-referrer',
                 signal: deadline.signal,
             }));
+            if (response?.status === 429) { limited = rateLimitError('OpenFreeMap', response); throw limited; }
             if (!response || !response.ok) {
                 throw new Error(`Vector style request failed (${response && response.status})`);
             }

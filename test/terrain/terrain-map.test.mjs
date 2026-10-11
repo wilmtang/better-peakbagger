@@ -1517,6 +1517,13 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
     assert.equal(reply.dir, 'toFrame');
     assert.equal(reply.requestId, 3);
     assert.deepEqual(reply.peaks, [{ id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' }]);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toCS', type: 'peaks', requestId: 3, rateLimited: true, retryAt: Number.MAX_VALUE }
+    }));
+    assert.equal(frameMessages.at(-1).rateLimited, true);
+    assert.equal(frameMessages.at(-1).retryAt, null, 'the bridge rejects an unreasonable retry time');
+
     dom.window.close();
 });
 
@@ -1695,6 +1702,12 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         geometry: { type: 'Point', coordinates: [-121.79, 48.72] }
     });
     assert.equal(rendered()[2].properties.state, 'unknown', 'an unrecognized state falls back safely');
+    dispatch({ type: 'peaks', requestId: 1, rateLimited: true, retryAt: Number.MAX_VALUE });
+    assert.equal(rendered().length, 3, 'rate limits retain the last marker set');
+    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /Peakbagger request limit reached/);
+    assert.equal(window.document.querySelector('.bpb-terrain-notice').textContent.includes('Try again after'), false,
+        'untrusted unreasonable retry timestamps cannot enter warning copy');
+
 
     dispatch({
         type: 'peaks',
@@ -2389,4 +2402,25 @@ test('every failure reason the frame can report survives the bridge relay intact
     assert.equal(unknown.pageMessages.at(-1).reason, 'renderer',
         'an unrecognised reason must still fail closed to a known one');
     unknown.dom.window.close();
+});
+
+test('a DEM rate limit during boot reports the provider rather than a renderer failure', async () => {
+    const host = bootFrameWithTileHost({ tileStatus: () => 429, deferLoad: true });
+    try {
+        host.maps[0].handlers.get('error')({ sourceId: 'terrain', error: Object.assign(new Error('limit'), { status: 429 }) });
+        assert.equal(host.messages.at(-1).reason, 'elevation-rate-limit');
+        assert.match(terrainFailure.message('elevation-rate-limit'), /Mapterhorn request limit reached/);
+    } finally { host.dom.window.close(); }
+});
+
+test('a loaded DEM limit keeps the working terrain and shows one contextual notice', async () => {
+    const host = bootFrameWithTileHost({ tileStatus: () => 200 });
+    try {
+        await new Promise(resolve => setImmediate(resolve));
+        const map = host.maps[0];
+        map.handlers.get('error')({ sourceId: 'terrain', error: Object.assign(new Error('limit'), { status: 429 }) });
+        assert.match(host.window.document.querySelector('.bpb-terrain-notice').textContent, /Mapterhorn request limit reached/);
+        assert.equal(map.removed, undefined);
+        assert.equal(host.messages.some(message => message.type === 'error'), false);
+    } finally { host.dom.window.close(); }
 });

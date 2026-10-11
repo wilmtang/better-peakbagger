@@ -169,3 +169,24 @@ test('Leaflet Sentinel intercepts only its own option, preserves native layers, 
     assert.equal(select.options.length, 1);
     dom.window.close();
 });
+
+test('catalog limits name the provider, preserve status through unreadable bodies and stop camera retries', async () => {
+    await assert.rejects(searchSentinel(view, { fetchImpl: async () => ({ status: 429,
+        headers: new Headers({ 'retry-after': '60' }), text() { throw new Error('must not read'); } }) }),
+    error => error.code === 'rate-limit' && /Microsoft Planetary Computer request limit reached/.test(error.message));
+    const dom = new JSDOM('<!doctype html>');
+    let requests = 0;
+    const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom: 13 }),
+        clearScenes() {}, replaceScenes() {}, debounceMs: 0, search: async () => {
+            requests++; throw Object.assign(new Error('limit'), { code: 'rate-limit', retryAt: Date.now() + 60000 });
+        } });
+    try {
+        layer.activate(); await new Promise(resolve => setImmediate(resolve));
+        assert.match(layer.element.textContent, /Microsoft Planetary Computer request limit reached/);
+        assert.equal(layer.element.querySelector('button').disabled, true);
+        layer.refresh(); layer.refresh();
+        await new Promise(resolve => setImmediate(resolve)); assert.equal(requests, 1);
+        layer.tileError(); assert.match(layer.element.textContent, /request limit reached/);
+        layer.deactivate(); layer.activate(); assert.equal(requests, 1);
+    } finally { layer.dispose(); dom.window.close(); }
+});

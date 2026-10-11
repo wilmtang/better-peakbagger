@@ -12,6 +12,7 @@ import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { SENTINEL_NAME, SENTINEL_ATTRIBUTION, sentinelTileUrl, sentinelTarget } from '../maps/sentinel-core.js';
 import { createSentinelLayer } from '../maps/sentinel-layer.js';
+import { rateLimitMessage } from '../net/rate-limit.js';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
@@ -256,6 +257,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     let peaksRequestId = 0;
     let peaksDebounceTimer = null;
     let peaksUnavailable = false;
+    let peaksLimitedUntil = 0;
     let lastPeaksBoundsKey = null;
     // The currently rendered peak features, kept for the screen-space hit
     // test, and the pointer's last position for the frame-throttled hover.
@@ -376,6 +378,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }
         peaksRequestId = 0;
         peaksUnavailable = false;
+        peaksLimitedUntil = 0;
         lastPeaksBoundsKey = null;
         peakSnapCache.clear();
         peakFeatures = [];
@@ -876,6 +879,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     const showNotice = text => {
         if (!noticeElement) return;
+        if (noticeElement.textContent === text) return;
         noticeElement.textContent = text;
         noticeElement.hidden = !text;
     };
@@ -1060,12 +1064,13 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     renderPicker();
                     showNotice('');
                 })
-                .catch(() => {
+                .catch(error => {
                     if (!map || !loaded || token !== vectorSwapToken) return;
                     removeVectorBasemap();
                     vectorActive = false;
                     renderPicker();
-                    showNotice(`${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
+                    showNotice(error?.code === 'rate-limit' ? `${error.message} Showing terrain only.`
+                        : `${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
                 });
             return true;
         }
@@ -1596,7 +1601,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const requestPeaks = () => {
-        if (!map || !loaded || peaksUnavailable) return;
+        if (!map || !loaded || peaksUnavailable || peaksLimitedUntil > Date.now()) return;
         try {
             if (map.getZoom() < PEAK_MARKERS.minZoom) {
                 lastPeaksBoundsKey = null;
@@ -1714,6 +1719,15 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         }
         // Only the newest request may answer; stale replies are dropped.
         if (data.requestId !== peaksRequestId) return;
+        if (data.rateLimited === true) {
+            const now = Date.now();
+            const retryAt = Number.isFinite(data.retryAt) && data.retryAt > now && data.retryAt <= now + 86400_000 ? data.retryAt : null;
+            peaksLimitedUntil = retryAt || now + 60000;
+            lastPeaksBoundsKey = null;
+            showNotice(`${rateLimitMessage('Peakbagger', retryAt)} ${peakFeatures.length ? 'Showing the last loaded peaks.' : 'Nearby peaks could not be loaded.'}`);
+            return;
+        }
+        peaksLimitedUntil = 0;
         setPeakData(validatePeaks(data.peaks) || []);
     };
 
@@ -1943,12 +1957,26 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             // and no setup step may race ahead and leave the host on a spinner.
             terrainMap.on('error', event => {
                 if (map !== terrainMap) return;
+                if (event?.error?.status === 429) {
+                    const source = event.sourceId || '';
+                    if (source.startsWith('bpb-sentinel-')) {
+                        if (map.getSource(source)) sentinelLayer?.tileError(event.error);
+                        return;
+                    }
+                    if (source === 'terrain' && !loaded) { fail('elevation-rate-limit'); return; }
+                    const service = source === 'basemap' ? activeBasemap?.name || 'Map provider'
+                        : source.startsWith(VECTOR_PREFIX) || String(event.error.url || '').startsWith('https://tiles.openfreemap.org/') ? 'OpenFreeMap'
+                            : source === 'terrain' ? 'Mapterhorn' : 'Map service';
+                    if (source === 'basemap' || source.startsWith(VECTOR_PREFIX)) swapBasemap(-1);
+                    showNotice(rateLimitMessage(service, event.error.retryAt));
+                    return;
+                }
                 if (event && event.sourceId === 'basemap') {
                     basemapErrored = true;
                     return;
                 }
                 if (event?.sourceId?.startsWith('bpb-sentinel-')) {
-                    if (map.getSource(event.sourceId)) sentinelLayer?.tileError();
+                    if (map.getSource(event.sourceId)) sentinelLayer?.tileError(event.error);
                     return;
                 }
                 if (event?.sourceId?.startsWith(VECTOR_PREFIX)) {
@@ -2202,6 +2230,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // Peaks: clear stale dots (keeping the focus peak) and refetch for the
         // new view.
         peaksUnavailable = false;
+        peaksLimitedUntil = 0;
         lastPeaksBoundsKey = null;
         setPeakData([]);
         schedulePeaksRequest();

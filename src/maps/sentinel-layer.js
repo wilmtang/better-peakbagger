@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { searchSentinel, sentinelView, sentinelTarget } from './sentinel-core.js';
+import { rateLimitMessage } from '../net/rate-limit.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.js';
 
 const captureDate = time => new Date(time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 
@@ -32,6 +34,16 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     let timer = null;
     let captures = [];
     let target = null;
+    let limit = null;
+    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; });
+    const showLimit = error => {
+        limit = error;
+        summary.hidden = false;
+        summary.dataset.kind = 'rate-limit';
+        summary.textContent = rateLimitMessage('Microsoft Planetary Computer', error.retryAt);
+        retry.hidden = false;
+        cooldown.set(error.retryAt);
+    };
 
     const clearRequest = () => {
         revision++;
@@ -80,6 +92,9 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     };
     const load = async () => {
         if (!active) return;
+        if (cooldown.active()) return;
+        limit = null;
+        delete summary.dataset.kind;
         clearRequest();
         const current = revision;
         controller = new AbortController();
@@ -105,6 +120,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
                     : error?.message || 'Satellite imagery is unavailable. Try again.';
             stats.textContent = '';
             retry.hidden = false;
+            if (error?.code === 'rate-limit') showLimit(error);
         }
     };
     select.addEventListener('change', () => {
@@ -112,6 +128,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         onCaptureChange(sentinelTarget(target));
         retry.hidden = true;
         choose();
+        if (limit) showLimit(limit);
     });
     retry.addEventListener('click', () => { void load(); });
     return {
@@ -119,11 +136,13 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         activate(capture) {
             if (capture !== undefined) target = sentinelTarget(capture);
             active = true;
+            cooldown.resume();
             element.hidden = false;
+            if (cooldown.active()) { showLimit(limit || {}); return; }
             void load();
         },
         refresh() {
-            if (!active) return;
+            if (!active || limit) return;
             clearRequest();
             summary.textContent = 'Finding captures…';
             summary.hidden = false;
@@ -131,13 +150,15 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             select.disabled = true;
             timer = setTimeout(() => { void load(); }, debounceMs);
         },
-        deactivate() { active = false; clearRequest(); element.hidden = true; clearScenes(); },
-        tileError() {
+        deactivate() { active = false; clearRequest(); cooldown.suspend(); element.hidden = true; clearScenes(); },
+        tileError(error) {
             if (!active) return;
+            if (error?.status === 429) { showLimit(error); return; }
+            if (limit) return;
             summary.hidden = false;
             summary.textContent = 'Some imagery tiles are unavailable. Choose another capture or try again.';
             retry.hidden = false;
         },
-        dispose() { active = false; clearRequest(); clearScenes(); element.remove(); }
+        dispose() { active = false; clearRequest(); cooldown.dispose(); clearScenes(); element.remove(); }
     };
 };

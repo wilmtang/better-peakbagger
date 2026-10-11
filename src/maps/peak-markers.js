@@ -21,6 +21,7 @@
 //     else is unclimbed (pink); peak ids can be negative (provisional peaks).
 
 import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { rateLimitError } from '../net/rate-limit.js';
 
 // Defensive cap on rendered markers; when the feed returns more, the most
 // prominent peaks win. The native map draws everything, but a pitched 3D
@@ -139,12 +140,14 @@ const createClient = iframeSrc => {
     const context = contextFrom(iframeSrc);
     if (!context) return null;
     let inflight = null;
+    let limit = null, limitedUntil = 0;
 
     return {
         context,
         request: async bounds => {
             const url = requestUrl(context, bounds);
             if (!url) return [];
+            if (Date.now() < limitedUntil) throw limit;
             if (inflight) inflight.abort();
             const controller = new AbortController();
             inflight = controller;
@@ -155,6 +158,13 @@ const createClient = iframeSrc => {
                     credentials: 'same-origin',
                     headers: { Accept: 'text/xml' }
                 });
+                if (controller !== inflight) return null;
+                if (response.status === 429) {
+                    limit = rateLimitError('Peakbagger', response);
+                    // A local backoff without a header is not a promised reset.
+                    limitedUntil = limit.retryAt || Date.now() + 60000;
+                    throw limit;
+                }
                 const text = response.ok ? await BoundedText.readBoundedResponseText(response, {
                     maxBytes: RESPONSE_MAX_BYTES,
                     signal: controller.signal,
@@ -163,6 +173,7 @@ const createClient = iframeSrc => {
                 if (controller !== inflight) return null;
                 return response.ok ? parsePeaks(text, context.hj) : [];
             } catch (error) {
+                if (controller === inflight && error?.code === 'rate-limit') throw error;
                 // A superseded request stays silent; a genuine failure
                 // clears the markers until the next camera settle.
                 return controller === inflight ? [] : null;
@@ -205,12 +216,17 @@ const createTerrainResponder = ({ getIframeSrc, post }) => {
         }
         const requestGeneration = generation;
         const request = activeClient.request(data.bounds);
-        request.then(peaks => {
+        return request.then(peaks => {
             // A superseded request resolves null and stays silent; a reset
             // means the old frame's otherwise-valid answer is stale too.
             if (peaks && requestGeneration === generation) post('peaks', { requestId, peaks });
+            return peaks;
+        }, error => {
+            if (requestGeneration === generation && error?.code === 'rate-limit') {
+                post('peaks', { requestId, rateLimited: true, ...(error.retryAt ? { retryAt: error.retryAt } : {}) });
+            }
+            return null;
         });
-        return request;
     };
 
     const reset = () => {

@@ -981,3 +981,16 @@ test('MapLibre cancelling during the cache read starts no DEM request', async ()
     assert.equal(aborts.length, 0, 'an already-gone consumer must not create a network owner');
     dom.window.close();
 });
+
+test('confirmed DEM limits retain HTTP status and gate new tiles without breaking cached coverage', async () => {
+    let now = 1000, calls = 0;
+    const cache = terrainCache.create({ limitMb: 1, cacheStorage: new MemoryCacheStorage(), storageArea: makeStorageArea(), now: () => now,
+        fetchFn: async () => { calls++; return calls === 1 ? webpResponse() : new Response('', { status: 429, headers: { 'retry-after': '60' } }); } });
+    try {
+        const a = { url: 'bpb-dem://14/2651/5947.webp' }, b = { url: 'bpb-dem://14/2652/5947.webp' };
+        await cache.load(a); await cache.flush();
+        await assert.rejects(cache.load(b), error => error.status === 429 && /Mapterhorn request limit reached/.test(error.message));
+        await cache.load(a); await assert.rejects(cache.load(b), { code: 'rate-limit' }); assert.equal(calls, 2);
+        now += 60001; await assert.rejects(cache.load(b), { status: 429 }); assert.equal(calls, 3);
+    } finally { cache.close(); }
+});

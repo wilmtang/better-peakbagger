@@ -480,7 +480,9 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                     postToFrame('cameraRequest', { requestId: data.requestId });
                 }
             } else if (data.type === 'peaks') {
-                postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable });
+                postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable,
+                    rateLimited: data.rateLimited === true,
+                    retryAt: Number.isFinite(data.retryAt) && data.retryAt > Date.now() && data.retryAt <= Date.now() + 86400_000 ? data.retryAt : null });
             } else if (data.type === 'update') {
                 if (pendingInit) {
                     pendingInit.routeStyle = data.routeStyle;

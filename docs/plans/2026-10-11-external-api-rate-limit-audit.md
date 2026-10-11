@@ -58,6 +58,20 @@ image failures, offline errors, access denials or normal OAuth polling delays.
   extension intercepted upload in hidden Chrome 153 at 1280/720 × 900,
   light/dark warning inspection, one upload request and zero form POSTs.
 
+- Maps: Planetary Computer catalog/observable tile limits, OpenFreeMap style
+  and observable resource limits, Mapterhorn DEM limits, and observable 3D
+  raster-provider limits use contextual provider warnings. Catalog movement
+  stops retrying after a limit; known style/DEM cooldowns retain cached data.
+  Nearby Peakbagger limits retain markers, use bounded bridge metadata and
+  pause camera requests. Boot DEM limits explain the provider/2D fallback.
+  Ordinary 404 coverage gaps and opaque Leaflet errors remain distinct.
+  Verified: 157 map/terrain tests, build and focused ESLint; hidden Chrome 153
+  Metal Apple M3 Pro hardware renderer, HTTPS terrain fixtures with non-flat
+  synthetic DEM. Inspected Mapterhorn/OpenFreeMap warnings at 375/820 × 900
+  in light/dark and Planetary Computer catalog warning at 820 × 900. MapLibre
+  status events were injected for tile UI; catalog 429 used runtime fetch.
+  Corrected a fixture CDP serialization failure and reran successfully.
+
 ### Intentionally not changed
 
 - Links to Gaia, onX, AllTrails, CalTopo, Windy, AirNow, store pages and other

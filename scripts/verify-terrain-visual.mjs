@@ -1880,6 +1880,56 @@ try {
     })()`, 45000);
     const peakSolarBearing = await exerciseSolarBearing(cdp, 'Peak 3D');
     await capture(cdp, path.join(outputDir, 'peak-page-sun-3d.png'));
+    // Provider warnings use the real rendered controls on the hardware map.
+    // Engine status events are injected; transport classification is covered
+    // separately. The catalog uses the runtime's fetch path with a 429 stub.
+    const savedPicker = await evaluate(cdp, 'document.getElementById(\'bpb-terrain-frame\').contentDocument.querySelector(\'.bpb-terrain-picker\').value');
+    for (const width of [820, 375]) {
+        await cdp.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+        await evaluate(cdp, 'document.getElementById(\'bpb-map-viewport\').scrollIntoView({ block: \'start\' })');
+        for (const theme of ['light', 'dark']) {
+            await evaluate(cdp, `(() => {
+                const win = document.getElementById('bpb-terrain-frame').contentWindow;
+                win.document.getElementById('bpb-terrain-map').dataset.theme = ${JSON.stringify(theme)};
+                win.__bpbTerrainTestMap.resize();
+                win.__bpbTerrainTestMap.fire('error', { sourceId: 'terrain', error: Object.assign(new Error('fixture refusal'), { status: 429 }) });
+            })()`);
+            await waitForPageState(cdp, `(() => {
+                const notice = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.bpb-terrain-notice');
+                return { ready: !notice.hidden && notice.textContent.includes('Mapterhorn request limit reached') };
+            })()`);
+            await capture(cdp, path.join(outputDir, `mapterhorn-rate-limit-${theme}-${width}.png`));
+            await evaluate(cdp, `void document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap.fire('error', {
+                sourceId: 'bpb-vector:fixture', error: Object.assign(new Error('fixture refusal'), { status: 429 }) })`);
+            await waitForPageState(cdp, `(() => {
+                const notice = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.bpb-terrain-notice');
+                return { ready: !notice.hidden && notice.textContent.includes('OpenFreeMap request limit reached') };
+            })()`);
+            await capture(cdp, path.join(outputDir, `openfreemap-rate-limit-${theme}-${width}.png`));
+        }
+    }
+    await cdp.call('Emulation.setDeviceMetricsOverride', { width: 820, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate(cdp, `(() => {
+        const win = document.getElementById('bpb-terrain-frame').contentWindow;
+        win.__apiLimitOriginalFetch = win.fetch;
+        win.fetch = (url, init) => String(url).startsWith('https://planetarycomputer.microsoft.com/')
+            ? Promise.resolve(new win.Response('unreadable', { status: 429, headers: { 'retry-after': '120' } })) : win.__apiLimitOriginalFetch(url, init);
+        const picker = win.document.querySelector('.bpb-terrain-picker');
+        picker.value = 'sentinel'; picker.dispatchEvent(new win.Event('change'));
+    })()`);
+    await waitForPageState(cdp, `(() => {
+        const control = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.bpb-sentinel');
+        return { ready: control.textContent.includes('Microsoft Planetary Computer request limit reached') && control.querySelector('button').disabled };
+    })()`);
+    await capture(cdp, path.join(outputDir, 'sentinel-rate-limit.png'));
+    await evaluate(cdp, `(() => {
+        const win = document.getElementById('bpb-terrain-frame').contentWindow;
+        win.fetch = win.__apiLimitOriginalFetch; delete win.__apiLimitOriginalFetch;
+        win.document.getElementById('bpb-terrain-map').dataset.theme = 'light';
+        const picker = win.document.querySelector('.bpb-terrain-picker');
+        picker.value = ${JSON.stringify(savedPicker)}; picker.dispatchEvent(new win.Event('change'));
+    })()`);
+
     await clickTerrainToggle(cdp);
     await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
