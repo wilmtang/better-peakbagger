@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, chrome */
+/* global document, chrome, getComputedStyle */
 
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -85,6 +85,13 @@ try {
     for (const theme of ['light', 'dark']) {
         await setSettings({ theme });
         await page.waitForFunction(theme => document.documentElement.dataset.bpbTheme === theme, theme);
+        const tabs = await page.evaluate(() => [...document.querySelectorAll('.bpb-weather-tabs button')].map(button => ({
+            selected: button.getAttribute('aria-selected') === 'true', background: getComputedStyle(button).backgroundColor,
+            color: getComputedStyle(button).color,
+        })));
+        assert.notEqual(tabs.find(tab => tab.selected).background, tabs.find(tab => !tab.selected).background);
+        assert.notEqual(tabs.find(tab => tab.selected).color, tabs.find(tab => !tab.selected).color);
+        assert.equal(await page.locator('.bpb-weather-disclosure').evaluate(button => getComputedStyle(button).borderTopWidth), '0px');
         await page.setViewportSize({ width: 375, height: 1000 });
         await page.waitForFunction(() => document.querySelector('.bpb-weather-chart').getAttribute('viewBox').split(' ')[2] - document.querySelector('.bpb-weather-chart').getBoundingClientRect().width < 1);
         if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, `ascent-reading-${theme}-375.png`) });

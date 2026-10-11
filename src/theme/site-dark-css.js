@@ -101,11 +101,12 @@ html[data-bpb-theme="dark"] [bgcolor="#f0f0f0"] {
    color swatches are semantic samples whose backgrounds and borders must stay
    intact, and .pbaf-control marks the Ascent Beta Filter's controls, whose
    complete light+dark theme lives in src/ascent/ascent-filter.js. Climber-card
-   controls carry data-bpb-climber-ui and own their palette too. */
+   controls carry data-bpb-climber-ui and own their palette too. Weather cards
+   also own their selected, disclosure and focus control styles. */
 html[data-bpb-theme="dark"] input:not(.pbaf-control),
 html[data-bpb-theme="dark"] select,
 html[data-bpb-theme="dark"] textarea,
-html[data-bpb-theme="dark"] button:not(.bpb-re-swatch):not(.pbaf-control):not([data-bpb-climber-ui]) {
+html[data-bpb-theme="dark"] button:not(.bpb-re-swatch):not(.pbaf-control):not([data-bpb-climber-ui]):not(:where(#bpb-ascent-weather *, #bpb-peak-weather *)) {
     background: #2b2f34 !important;
     color: #e6e1d8 !important;
     border: 1px solid #4a5058 !important;

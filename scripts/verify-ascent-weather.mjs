@@ -14,6 +14,7 @@ import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
+import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -362,6 +363,7 @@ try {
                         }
                         const requestsBeforeConditions = evidence.length;
                         await click('[data-metric="conditions"]');
+                        await verifyWeatherTabStyles(evaluate, '.bpb-weather-tabs button');
                         await wait(() => !document.querySelector('.bpb-weather-conditions').hidden
                         && document.querySelectorAll('.bpb-weather-conditions li').length === 24, 'hourly condition descriptions');
                         assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden')), true);

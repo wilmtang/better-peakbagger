@@ -7,6 +7,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 import { verifyWeatherDaySwitches } from './verify-weather-day-switches.mjs';
+import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 
 // Reuse the real extension/HTTPS/browser transports and their teardown rather
 // than launch a second browser or substitute a content-script-only demo.
@@ -109,6 +110,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
                 if (output && (width === 1440 || metric === 'code')) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${metric}-${width}.png`));
             }
             await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
+            await verifyWeatherTabStyles(evaluate, '.bpb-week-day[open] .bpb-week-tabs button');
             await click(`${card} .bpb-week-day:first-child > summary`);
             await click(`${card} [data-period="forecast"]`);
             assertGeometry(await evaluate(geometry));
