@@ -59,7 +59,7 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         );
         assert.equal(
             copernicus.parentElement.querySelector('.bpb-peak-links__detail').textContent,
-            'Find fresh satellite data by date and cloud cover'
+            'Browse images by date and cloud cover, or choose Sentinel-2 in the map’s layer menu.'
         );
 
         const fireSmoke = linkByText(document, 'AirNow fire & smoke');

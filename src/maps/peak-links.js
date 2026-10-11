@@ -91,7 +91,7 @@
     );
     addLink(
         'Copernicus satellite imagery',
-        'Find fresh satellite data by date and cloud cover',
+        'Browse images by date and cloud cover, or choose Sentinel-2 in the map’s layer menu.',
         `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
     );
 
