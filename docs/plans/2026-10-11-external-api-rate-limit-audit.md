@@ -32,17 +32,30 @@ image failures, offline errors, access denials or normal OAuth polling delays.
 
 ## Surface inventory and closure ledger
 
+Inspected every extension-owned request boundary: Open-Meteo forecast,
+historical forecast and reanalysis; GitHub REST and device authorization;
+ImgBB uploads and readable remote image imports; Peakbagger documents, GPX,
+climber/Buddy lists and nearby-peak feeds; Garmin/Strava activity exports;
+Planetary Computer STAC and imagery; Mapterhorn DEM; and OpenFreeMap style,
+vector, glyph and sprite resources. The 3D map also uses the selected native
+raster provider (CalTopo/USFS, MyTopo, OpenTopoMap, OpenStreetMap or Esri).
+Request wrappers cover their callers; map-renderer errors cover readable tile
+statuses. Navigation and opaque image requests are listed below as boundaries.
+
 ### Fixed and verified
 
 - Open-Meteo: provider-named inline warning, bounded Retry-After time,
   retained weather, and per-page request/retry cooldown. Summit lookup retains
   typed Peakbagger errors. Unreadable 429 bodies cannot mask the warning.
-  Verified: build, 63 weather/shared-helper tests, focused ESLint, and real
+  Verified: build, 63 weather/shared-helper tests, 19 ascent weather tests
+  including summit-lookup refusal, focused ESLint, and real
   unpacked extension in hidden Chrome 153 HTTPS ascent/peak fixtures at
   375/681/768/1440 × 1100. Inspected narrow peak and wide ascent warnings.
-  Retry-After is usable only when CORS exposes it; otherwise the wait stays
-  unstated. The browser fixture initially omitted that exposure; corrected it
+  Retry-After is usable only when CORS exposes it; otherwise no reset time is
+  shown. The browser fixture initially omitted that exposure; corrected it
   and both checks passed.
+  Hidden Firefox 157.0.1 peak and ascent fixtures also passed at the same
+  relevant widths in light/dark; inspected the 375-pixel ascent warning.
 
 - GitHub: REST 429 and primary-limit 403 survive unreadable bodies; secondary
   message classification remains distinct from ordinary access denial. Device
@@ -104,20 +117,49 @@ image failures, offline errors, access denials or normal OAuth polling delays.
 
 ### Changed but not fully proven
 
-Implementation pending. Live provider throttling, browser chrome/focus behavior
-and screen-reader speech are outside intercepted fixture proof.
+- Live throttling was not induced against external services. Transport tests
+  use controlled responses; browser checks intercept requests or inject a
+  confirmed status event. This proves classification and presentation, not
+  each provider's current response or header exposure.
+- Browser CORS can hide Retry-After even on a readable 429. In that case the
+  warning gives general wait advice without inventing a reset time. A local
+  nearby-peak backoff is request pacing, not a promised provider reset.
+- Hidden rendering and DOM checks do not establish native focus/window
+  placement, real permission prompts or screen-reader speech. The terrain
+  fixture has storage/bridge stubs; the real extension check covers manifest
+  loading separately.
 
 ## Implementation and verification
 
-Use provider-named "request limit reached" copy, a validated retry time when
-available, and an unstated wait otherwise. Preserve useful results and local
-edits, stop known cooldown requests, and use existing inline status/recovery
-surfaces. Keep 403 access denial distinct from GitHub's confirmed quota signals.
-Rate-limit status must survive unreadable bodies. Reuse a small bounded
-Retry-After parser; avoid changing authentication or network permissions.
+Warnings use provider-named "request limit reached" copy, a validated retry time
+when available, and general wait advice otherwise. Existing inline recovery
+surfaces preserve useful results and local edits. Request gates respect known
+cooldowns; ordinary 403 access denial stays distinct from GitHub's confirmed
+quota signals. A shared bounded Retry-After parser keeps confirmed status
+independent of body readability without changing authentication or permissions.
 
-Run focused regression tests per independent unit before committing, then the
-full suite and lint. Real extension HTTPS fixtures can load weather, capture,
-report-photo and settings surfaces; existing terrain fixtures support hidden
-hardware-rendered map checks. Inspect warnings in light/dark and narrow/wide
-layouts, record exact evidence and remaining gaps here, and check teardown.
+Focused tests, builds, lint and rendered warnings were checked before each
+independent implementation commit. The full suite initially found three tests
+expecting previous copy (four failures including their parent subtest). Updated
+the assertions while retaining batch recovery and worker sanitization checks;
+all 240 affected tests passed. The real Chrome verifier also expected obsolete
+generic Buddy failure copy. It correctly rendered typed HTTP 503 recovery;
+updated that expectation and added a test distinguishing server failures from
+rate limits. All 16 related source/filter/fixture tests passed, followed by all
+2,548 tests in `npm test`.
+
+`npm run lint` passed. Web-ext reports six owned warnings within the existing
+allowances: the cross-browser worker manifest and reviewed MapLibre/ProseMirror
+vendor paths. No network permissions or execution worlds were changed.
+
+`node scripts/verify-extension.mjs` passed with the real unpacked extension in
+hidden Chrome for Testing 153.0.8010.12 at 1000 × 760, including BFCache restore
+and teardown. The typed Buddy failure expectation was corrected before this
+successful run. Both Firefox 157.0.1 weather runs also reported clean teardown.
+
+Final filtered process-command inspection found no owned verification browser
+or server, and the exact disposable profile prefixes were absent from the
+temporary directory. Removed the owned temporary logs and screenshot folders;
+retained three warning previews and compact verification evidence in the
+thread's managed visualization directory. Native focus/window behavior and
+screen-reader speech remain outside these hidden checks.
