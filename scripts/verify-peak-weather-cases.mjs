@@ -63,8 +63,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const assertForecastInfo = async () => {
         assert.equal(await evaluate(() => document.querySelector('.bpb-week-accuracy').hidden), false);
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-accuracy').textContent.includes('may be inaccurate')));
-        assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS globally for the longest 16-day window')));
-        assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'best_match');
+        assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS is the initial default')));
+        assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
     };
     if (live) {
@@ -157,19 +157,19 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
     }, id);
     const beforeModels = evidence.length;
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR')));
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
     await chooseModel('icon_global');
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'explicit historical model');
     assertGeometry(await evaluate(geometry));
     assert.equal(evidence.length, beforeModels + 1);
     await click(`${card} [data-period="forecast"]`);
-    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'best_match');
+    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
     await chooseModel('gfs_hrrr');
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'short-range explicit forecast');
     assert.ok(await evaluate(() => document.querySelectorAll('.bpb-week-day').length <= 3));
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Best Match offers up to 16 days')));
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('GFS offers up to 16 days')));
     for (const width of [1440, 375]) {
         await resize(width, 1100);
         const state = await evaluate(geometry);
@@ -180,6 +180,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await click(`${card} [data-period="past"]`);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'icon_global');
     assertGeometry(await evaluate(geometry));
+    await chooseModel('gfs_global');
+    await click(`${card} [data-period="forecast"]`);
+    await chooseModel('gfs_global');
+    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16 && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'reset saved models');
     await openPage();
     const daySwitches = await verifyWeatherDaySwitches({ evaluate, click, press, resize, firefoxMode });
     assert.equal(daySwitches.length, 27);
@@ -264,7 +268,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-loading.png`));
     setMode('complete'); release();
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'held weather response settles');
-    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['gfs_hrrr,gfs_global', 'icon_global,gfs_hrrr', 'icon_global,gfs_global'].includes(request.model)));
+    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global'].includes(request.model)));
     assert.deepEqual(networkErrors, []);
     return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence };
 }

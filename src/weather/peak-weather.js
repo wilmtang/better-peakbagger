@@ -14,6 +14,7 @@ import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
+const modelKeys = { past: 'bpbPeakWeatherModelPast', forecast: 'bpbPeakWeatherModelForecast' };
 const icons = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const dateLabel = (date, options) => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { ...options, timeZone: 'UTC' });
 
@@ -51,20 +52,19 @@ export function mountPeakWeather() {
 
     const client = createPeakWeatherClient();
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
-    let settingsReady = false;
-    const enabled = () => settingsReady && preference.showWeather;
+    let settingsReady = false, modelsReady = false;
+    const enabled = () => settingsReady && modelsReady && preference.showWeather;
     let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
     let period = 'forecast', notice = null, requestedWindow = null;
-    const choices = { past: 'best_match', forecast: 'best_match' };
+    const choices = { past: 'gfs_global', forecast: 'gfs_global' };
     const openDates = new Map();
     const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; });
     const populateModels = () => {
         const window = requestedWindow || weatherPeakWindow(zone);
-        select.replaceChildren(element('option', { value: 'best_match', text: 'Best Match' }),
-            ...eligiblePeakWeatherModels(subject, window, period).map(model => element('option', { value: model.id,
-                text: `${model.label} · ${model.resolution}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
+        select.replaceChildren(...eligiblePeakWeatherModels(subject, window, period).map(model => element('option', { value: model.id,
+            text: `${model.label} · ${model.resolution}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
         // Keep a now-ineligible selection visible so a date rollover cannot
-        // silently turn an explicit choice into Best Match.
+        // silently turn an explicit choice into GFS.
         if (![...select.options].some(option => option.value === choices[period])) select.append(element('option', {
             value: choices[period], text: 'Selected model — date range unavailable', disabled: '',
         }));
@@ -116,8 +116,8 @@ export function mountPeakWeather() {
         const forecastLabel = `${current.window.forecast.days.length}-day forecast`;
         (periodButtons[0].querySelector('.bpb-week-tab-label') || periodButtons[0]).textContent = forecastLabel;
         periodButtons[0].setAttribute('aria-label', forecastLabel); periodButtons[0].dataset.label = forecastLabel;
-        modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}${model.forecastDays < PEAK_FORECAST_DAYS ? '. Best Match offers up to 16 days.' : ''}` : ''}`;
-        modelText.textContent = `${current.choices[period] === 'best_match' ? 'Best Match uses Better Peakbagger’s country/date policy. History prefers HRRR within US CONUS coverage and HRDPS within Canadian coverage, then global ECMWF IFS. Forecast uses GFS globally for the longest 16-day window, or IFS when GFS does not cover the date. This is a product recommendation, not a proven accuracy ranking. ' : 'You selected this model explicitly. '}${model.label} (${model.id}), ${model.resolution}. Forecast length is measured from the model run, so the last displayed day may be incomplete. Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. No other model fills missing values.`;
+        modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}${model.forecastDays < PEAK_FORECAST_DAYS ? '. GFS offers up to 16 days.' : ''}` : ''}`;
+        modelText.textContent = `${model.label} (${model.id}), ${model.resolution}. GFS is the initial default for its 16-day forecast; each period remembers your last model on this device. Forecast length is measured from the model run, so the last displayed day may be incomplete. Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. No other model fills missing values.`;
         help.hidden = !summaries.some(day => day.useful); source.hidden = false;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
         renderLabels(current.window[period]);
@@ -236,7 +236,11 @@ export function mountPeakWeather() {
     }
     select.addEventListener('change', () => {
         if (!enabled() || lifecycle.state !== 'active' || cooldown.active()) return;
+        if (!eligiblePeakWeatherModels(subject, requestedWindow || weatherPeakWindow(zone), period).some(model => model.id === select.value)) return;
         choices[period] = select.value;
+        // Separate keys avoid overwriting the other period's choice from a
+        // concurrently open tab. Store only the allowlisted model identifier.
+        try { void chrome.storage.local.set({ [modelKeys[period]]: select.value }).catch(() => {}); } catch { /* Storage failure keeps the page usable. */ }
         cancel(); void load();
     });
     const beginWhenVisible = () => {
@@ -275,6 +279,21 @@ export function mountPeakWeather() {
         onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
+    // Resolve local choices before the first request, including a late sync
+    // settings read/notification. Regional choices may not cover this summit.
+    void (async () => {
+        try {
+            const saved = await chrome.storage.local.get(Object.values(modelKeys));
+            const window = weatherPeakWindow(zone);
+            for (const key of Object.keys(modelKeys)) {
+                const value = saved?.[modelKeys[key]];
+                if (eligiblePeakWeatherModels(subject, window, key).some(model => model.id === value)) choices[key] = value;
+            }
+        } catch { /* Use GFS when local storage is unavailable. */ }
+        if (lifecycle.state === 'disposed') return;
+        modelsReady = true; populateModels();
+        if (settingsReady) applyPreference(preference);
+    })();
     // A newer sync notification owns the preference if startup's read is late.
     settings.requireCurrent().then(next => { if (!settingsReady && lifecycle.state !== 'disposed') applyPreference(next); }).catch(() => {});
     return { card, lifecycle };

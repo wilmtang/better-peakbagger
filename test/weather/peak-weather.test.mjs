@@ -19,14 +19,14 @@ const reply = url => {
     const hours = (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24;
     return new Response(JSON.stringify(weatherFixture({ startDate: query.get('start_date'), hours })), { headers: { 'content-type': 'application/json' } });
 };
-function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings } = {}) {
+function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
     const win = jsdom.window, requests = [], listeners = [], observers = [], resizeObservers = [];
     let clock = Date.parse(now);
     win.Date.now = () => clock;
     win.scrollBy = () => {};
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
+    win.chrome = { storage: { local: { get: readModels || (async () => localModels), set: saveModels || (async values => Object.assign(localModels, values)) }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
         addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1),
     } } };
     if (lazy) win.IntersectionObserver = class {
@@ -63,35 +63,67 @@ const chooseModel = (env, id) => {
     select.value = id; select.dispatchEvent(new env.win.Event('change'));
 };
 
-test('Best Match requests regional history and long-range forecast once, with independent model choices', async () => {
+test('named GFS is the default with independent locally remembered period choices', async () => {
     const env = setup({ fetchFn: url => {
         const query = new URL(url).searchParams;
         const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date'),
             hours: (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24 }), query.get('models').split(','));
-        for (const [key, values] of Object.entries(body.hourly)) if (key.startsWith('temperature_2m')) values.fill(key.endsWith('gfs_hrrr') ? -10 : 20);
+        for (const [key, values] of Object.entries(body.hourly)) if (key.startsWith('temperature_2m')) values.fill(20);
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     } });
     try {
         await settled(env, { past: false });
-        assert.equal(env.requests.length, 1); assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'gfs_hrrr,gfs_global');
-        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.equal(env.requests.length, 1); assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'gfs_global');
+        assert.equal(env.doc.querySelector('select').value, 'gfs_global');
         assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS.*16 days/);
         assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /68°F/);
         env.doc.querySelector('[data-period="past"]').click();
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using HRRR/);
-        assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /14°F/);
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /68°F/);
         chooseModel(env, 'icon_global');
         await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
-        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /selected this model explicitly/);
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /remembers your last model/);
         env.doc.querySelector('[data-period="forecast"]').click();
-        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.equal(env.doc.querySelector('select').value, 'gfs_global');
         assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
         env.doc.querySelector('[data-period="past"]').click(); assert.equal(env.doc.querySelector('select').value, 'icon_global');
         assert.equal(env.requests.length, 2);
-        chooseModel(env, 'best_match');
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR'));
+        chooseModel(env, 'gfs_global');
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using GFS'));
         assert.equal(env.requests.length, 2, 'reverting reuses the exact cached model selection');
+    } finally { env.close(); }
+});
+
+test('local choices load before the request, survive navigation and reject unavailable regional or unknown IDs', async () => {
+    const localModels = { bpbPeakWeatherModelPast: 'ecmwf_ifs', bpbPeakWeatherModelForecast: 'icon_global' };
+    let release;
+    const env = setup({ localModels, readModels: () => new Promise(resolve => { release = () => resolve(localModels); }) });
+    try {
+        await waitFor(() => release);
+        assert.equal(env.requests.length, 0);
+        release();
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
+        assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'ecmwf_ifs,icon_global');
+        assert.equal(env.doc.querySelector('option[value="best_match"]'), null);
+        chooseModel(env, 'gfs_global');
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using GFS'));
+        assert.deepEqual(localModels, { bpbPeakWeatherModelPast: 'ecmwf_ifs', bpbPeakWeatherModelForecast: 'gfs_global' });
+    } finally { env.close(); }
+    const next = setup({ localModels });
+    try { await settled(next); assert.equal(next.doc.querySelector('select').value, 'ecmwf_ifs'); }
+    finally { next.close(); }
+    const invalid = setup({ localModels: { bpbPeakWeatherModelPast: 'icon_d2', bpbPeakWeatherModelForecast: 'best_match' } });
+    try { await settled(invalid); assert.equal(new URL(invalid.requests[0].url).searchParams.get('models'), 'gfs_global'); }
+    finally { invalid.close(); }
+});
+
+test('local storage failures retain a usable model picker and forecast', async () => {
+    const env = setup({ readModels: async () => { throw new Error('unavailable'); }, saveModels: async () => { throw new Error('unavailable'); } });
+    try {
+        await settled(env, { past: false }); chooseModel(env, 'ecmwf_ifs');
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ECMWF IFS'));
+        assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
     } finally { env.close(); }
 });
 
@@ -104,12 +136,12 @@ test('explicit short-range forecast labels its horizon and preserves sixteen day
         await waitFor(() => env.doc.querySelector('[data-period="forecast"]').textContent === '2-day forecast');
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
         assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 1 day$/);
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Best Match offers up to 16 days/);
-        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), 'gfs_hrrr');
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /GFS offers up to 16 days/);
+        assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), 'gfs_global,gfs_hrrr');
         env.doc.querySelector('[data-period="past"]').click();
-        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(env.doc.querySelector('select').value, 'gfs_global');
         env.doc.querySelector('[data-period="forecast"]').click(); assert.equal(env.doc.querySelector('select').value, 'gfs_hrrr');
-        chooseModel(env, 'best_match');
+        chooseModel(env, 'gfs_global');
         await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 16);
         assert.equal(env.requests.length, 2);
     } finally { env.close(); }
@@ -537,7 +569,7 @@ test('forecast and history both show sixteen days and share one response, retain
     } finally { env.close(); }
 });
 
-test('accuracy warning and accessible source disclosure identify the requested policy model', async () => {
+test('accuracy warning and accessible source disclosure identify the requested named model', async () => {
     const env = setup();
     try {
         await settled(env, { past: false });
@@ -547,11 +579,11 @@ test('accuracy warning and accessible source disclosure identify the requested p
         assert.equal(source.querySelector('summary').textContent, 'Models & source details');
         source.open = true;
         const model = source.querySelector('.bpb-week-models').textContent;
-        assert.match(model, /Best Match uses Better Peakbagger.*country\/date policy/);
-        assert.match(model, /GFS globally for the longest 16-day window/);
+        assert.match(model, /each period remembers your last model on this device/);
+        assert.match(model, /GFS is the initial default for its 16-day forecast/);
         assert.match(model, /GFS \(gfs_global\)/);
         assert.match(model, /No other model fills missing values/);
-        assert.match(source.textContent, /individual model grids may differ/);
+        assert.doesNotMatch(source.textContent, /individual model grids may differ/);
         assert.match(source.textContent, /final day may have incomplete hours/);
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(accuracy.hidden, true); assert.equal(source.open, true);

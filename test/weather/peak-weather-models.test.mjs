@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.js';
 import { weatherPeakWindow } from '../../src/weather/weather-week.js';
-import { PEAK_WEATHER_MODELS, bestMatchPeakWeatherModel, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
+import { PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
 import { peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.js';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 
@@ -12,24 +12,17 @@ const model = id => PEAK_WEATHER_MODELS.find(item => item.id === id);
 const fixture = ids => weatherModelFixture(weatherFixture({ ...summit, startDate: window.startDate,
     hours: (Date.parse(window.endDate) - Date.parse(window.startDate)) / 3600_000 + 24 }), ids);
 
-test('peak Best Match respects country, projected coverage, archive dates and the longest forecast horizon', () => {
-    for (const [subject, expected] of [
-        [summit, 'gfs_hrrr'],
-        [{ ...summit, latitude: 49.25, longitude: -123.1, nation: 'canada' }, 'gem_hrdps_continental'],
-        [{ ...summit, latitude: 63, longitude: -150 }, 'ecmwf_ifs'],
-        [{ ...summit, latitude: 19.8, longitude: -155.5 }, 'ecmwf_ifs'],
-        [{ ...summit, nation: null }, 'ecmwf_ifs'],
-        [{ ...summit, latitude: 45.9, longitude: 6.9, nation: 'france' }, 'ecmwf_ifs'],
-    ]) {
-        assert.equal(bestMatchPeakWeatherModel(subject, window, 'past').id, expected);
-        assert.equal(bestMatchPeakWeatherModel(subject, window, 'forecast').id, 'gfs_global');
-    }
+test('peak model selection requires named eligible models and GFS covers the full forecast', () => {
+    const choices = resolvePeakWeatherModels(summit, window, { past: 'gfs_global', forecast: 'gfs_global' });
+    assert.equal(choices.forecast.forecastDays, 16);
+    assert.equal(choices.past, choices.forecast);
     const early = weatherPeakWindow(window.zone, Date.parse('2018-01-05T12:00:00Z'));
-    assert.equal(bestMatchPeakWeatherModel(summit, early, 'past').id, 'ecmwf_ifs');
     assert.ok(!eligiblePeakWeatherModels(summit, early, 'past').includes(model('gfs_hrrr')));
     assert.ok(eligiblePeakWeatherModels(summit, early, 'forecast').includes(model('gfs_hrrr')));
     assert.ok(!eligiblePeakWeatherModels(summit, window, 'past').some(item => item.id.includes('era5')));
-    assert.throws(() => resolvePeakWeatherModels(summit, window, { past: 'best_match', forecast: 'icon_d2' }), /does not cover/);
+    for (const forecast of ['best_match', 'icon_d2', 'not_a_model']) {
+        assert.throws(() => resolvePeakWeatherModels(summit, window, { past: 'gfs_global', forecast }), /does not cover/);
+    }
 });
 
 test('one bounded named-model request splits suffix columns without confusing history and forecast', () => {

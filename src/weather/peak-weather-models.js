@@ -34,23 +34,10 @@ export function eligiblePeakWeatherModels(summit, window, period) {
     return PEAK_WEATHER_MODELS.filter(item => first >= item.since && item.domain(summit));
 }
 
-export function bestMatchPeakWeatherModel(summit, window, period) {
-    const eligible = eligiblePeakWeatherModels(summit, window, period);
-    // Keep the longest supported forecast. History can use a short-range
-    // regional model because its prior runs cover the completed day window.
-    const ids = period === 'forecast' ? ['gfs_global', 'ecmwf_ifs'] : [
-        ...(summit.nation === 'united states' ? ['gfs_hrrr'] : []),
-        ...(summit.nation === 'canada' ? ['gem_hrdps_continental'] : []),
-        'ecmwf_ifs', 'gfs_global',
-    ];
-    return ids.map(id => eligible.find(item => item.id === id)).find(Boolean) || null;
-}
-
 export function resolvePeakWeatherModels(summit, window, choices) {
     return Object.fromEntries(['past', 'forecast'].map(period => {
-        const model = choices[period] === 'best_match' ? bestMatchPeakWeatherModel(summit, window, period)
-            : eligiblePeakWeatherModels(summit, window, period).find(item => item.id === choices[period]);
-        if (!model) throw new Error('This weather model does not cover the summit and date range. Choose Best Match.');
+        const model = eligiblePeakWeatherModels(summit, window, period).find(item => item.id === choices[period]);
+        if (!model) throw new Error('This weather model does not cover the summit and date range. Choose another model.');
         return [period, model];
     }));
 }

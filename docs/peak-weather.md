@@ -39,23 +39,18 @@ Metric and period labels reserve their selected font width so selection cannot
 change wrapping.
 The forecast view warns that estimates may be inaccurate, especially farther
 ahead or at mountain summits, and prompts users to check local mountain forecasts.
-Each period has a **Weather model** dropdown, defaulting to **Best Match**.
-Here Best Match is Better Peakbagger's country/date policy: history prefers
-HRRR for US summits inside its projected CONUS grid and HRDPS Continental for
-Canadian summits inside its projected grid, then ECMWF IFS globally. The whole
-sixteen-day history window must fit the model's archive dates. Alaska, Hawaii,
-unknown/multiple nations and other countries use the global history default.
-Forecast uses GFS globally for its longest sixteen-day horizon (IFS is the
-longest-range fallback when GFS's archive start excludes the requested date).
-This is a product recommendation, not a validated universal accuracy ranking.
-It is separate from the ascent archive's Open-Meteo archive Best Match blend.
+Each period has a **Weather model** dropdown, initially set to **GFS** for its
+sixteen-day forecast horizon. Each period's last selected named model is saved
+in extension-local storage on this device, separate from synced settings and
+backups. A saved regional model that does not cover a newly opened summit falls
+back to GFS at startup; an explicit choice on an open page never silently changes.
 
 Named alternatives are filtered by geographic coverage and date availability.
 History excludes delayed reanalyses that cannot cover yesterday. Forecast
 options show their published run horizon. Selecting a shorter-range model
 shows the available forecast days, including partial boundary days; interior
 missing days remain visible. **Using [model]** identifies the model behind the
-currently displayed data. Each period remembers its choice for this page only.
+currently displayed data. Each period keeps an independent choice.
 Switching periods or expanding hourly graphs makes no request. A model change
 requests the two selected models together, deduplicated when they match, and
 can reuse the exact cached selection. An explicit choice never silently falls
@@ -63,7 +58,7 @@ back; a failure preserves the previous dated/model-labelled result. Model
 changes abort superseded requests; known rate-limit cooldowns disable both
 Refresh and the model dropdown while period tabs remain usable.
 
-**Models & source details** explains the policy and names the selected model's
+**Models & source details** names the selected model's
 API identifier, resolution, horizon and possible hourly interpolation. The
 combined API response reports only one grid coordinate, so the disclosure says
 individual model grids may differ. The named fields establish which requested
