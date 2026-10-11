@@ -65,7 +65,10 @@ future hours and is marked partial.
 
 Instantaneous temperature, condition and wind samples belong to `[start, end)`.
 UTC padding is clipped at the model's archive boundaries; any missing part of
-the local day remains partial. Precipitation belongs to the preceding hour, so the starting midnight interval
+the local day remains partial. Historical IFS and ERA5 gusts use instantaneous
+samples within the local day; CERRA and archived forecast gusts use preceding-hour
+maxima, including the closing midnight and excluding the opening midnight.
+Precipitation belongs to the preceding hour, so the starting midnight interval
 is excluded and the following midnight interval included. Fractional-hour zones
 use proportional boundary allocation, disclosed in Source details. Missing
 values stay unavailable; incomplete precipitation is labelled Partial total.

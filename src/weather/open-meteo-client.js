@@ -96,6 +96,7 @@ function validateResponse(body, summit, window, model, maxRows) {
         columns[definition.name] = values;
     }
     return {
+        gustTiming: model.gustTiming || 'preceding-hour',
         grid: { latitude: body.latitude, longitude: body.longitude, elevation: body.elevation },
         samples: times.map((time, index) => ({ time: time * 1000, ...Object.fromEntries(Object.entries(columns).map(([key, values]) => [key, values[index]])) })),
     };

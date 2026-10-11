@@ -45,14 +45,16 @@ const archive = 'https://archive-api.open-meteo.com/v1/archive';
 const forecast = 'https://historical-forecast-api.open-meteo.com/v1/forecast';
 const model = (id, label, resolution, since, domain = global, options = {}) => Object.freeze({
     id, label, resolution, since, until: null, domain, endpoint: forecast,
-    intervalHours: 1, delayDays: 0, fields, type: 'Archived forecast model', ...options,
+    intervalHours: 1, delayDays: 0, fields, gustTiming: 'preceding-hour', type: 'Archived forecast model', ...options,
 });
 export const WEATHER_MODELS = Object.freeze([
     model('gfs_hrrr', 'HRRR', '3 km', '2018-01-01', conus),
     model('gem_hrdps_continental', 'HRDPS Continental', '2.5 km', '2023-03-03', hrdps),
-    model('ecmwf_ifs', 'ECMWF IFS', '9 km', '2017-01-01', global, { endpoint: archive }),
-    model('era5_seamless', 'ERA5 + ERA5-Land', '11–25 km', '1950-01-01', global, { endpoint: archive, type: 'Combined reanalysis', delayDays: 5 }),
-    model('era5', 'ERA5', '25 km', '1940-01-01', global, { endpoint: archive, type: 'Reanalysis', delayDays: 5 }),
+    // The Historical Weather API labels gusts instantaneous, except CERRA.
+    // Forecast API gusts remain maxima of the preceding hour.
+    model('ecmwf_ifs', 'ECMWF IFS', '9 km', '2017-01-01', global, { endpoint: archive, gustTiming: 'instant' }),
+    model('era5_seamless', 'ERA5 + ERA5-Land', '11–25 km', '1950-01-01', global, { endpoint: archive, gustTiming: 'instant', type: 'Combined reanalysis', delayDays: 5 }),
+    model('era5', 'ERA5', '25 km', '1940-01-01', global, { endpoint: archive, gustTiming: 'instant', type: 'Reanalysis', delayDays: 5 }),
     model('cerra', 'CERRA', '5 km', '1985-01-01', europe, { endpoint: archive, until: '2021-06-30', type: 'Regional reanalysis' }),
     model('era5_land', 'ERA5-Land (surface only)', '11 km', '1950-01-01', global, { endpoint: archive, type: 'Reanalysis', delayDays: 5, fields: ['temperature_2m'] }),
     model('era5_ensemble', 'ERA5 Ensemble', '55 km', '1940-01-01', global, { endpoint: archive, type: 'Ensemble reanalysis', delayDays: 5, intervalHours: 3, fields: fields.filter(field => field !== 'wind_gusts_10m') }),

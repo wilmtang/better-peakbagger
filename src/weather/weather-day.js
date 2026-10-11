@@ -71,8 +71,7 @@ export function summarizeWeatherDay(data, window) {
     for (let end = Math.floor(window.start / HOUR) * HOUR + HOUR; end <= Math.ceil(window.cutoff / HOUR) * HOUR; end += HOUR) {
         const overlap = Math.max(0, Math.min(end, window.cutoff) - Math.max(end - HOUR, window.start));
         if (!overlap || (window.partial && end > window.cutoff)) continue; // never use the future/current unfinished hour
-        // Gusts, like precipitation, describe the preceding hour. Starting
-        // midnight belongs to yesterday; the final midnight belongs to today.
+        // Only interval gusts share precipitation's preceding-hour boundary.
         const gustValue = byTime.get(end)?.gust;
         if (Number.isFinite(gustValue)) { gustValues.push(gustValue); gustCovered += overlap; }
         const value = byTime.get(end)?.precipitation;
@@ -87,7 +86,8 @@ export function summarizeWeatherDay(data, window) {
         && (!window.partial || row.time <= window.cutoff))
         .map(row => ({ time: row.time, value: row.precipitation }));
     const precipitationComplete = covered === window.end - window.start && !window.partial;
-    const gust = { ...range(gustValues), complete: gustCovered === window.end - window.start && !window.partial };
+    const gust = data.gustTiming === 'instant' ? field('gust')
+        : { ...range(gustValues), complete: gustCovered === window.end - window.start && !window.partial };
     const codes = instants.map(row => row.code).filter(knownWeatherCode);
     const conditionComplete = expected.length > 0 && expected.every(time => knownWeatherCode(byTime.get(time)?.code));
     const condition = CONDITIONS.find(item => codes.some(code => item.codes.includes(code))) || { label: 'Conditions unavailable', icon: 'unknown' };

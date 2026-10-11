@@ -52,6 +52,32 @@ test('precipitation excludes starting midnight and includes next midnight', () =
     assert.equal(summarizeWeatherDay(data, window).precipitation.total, 28);
 });
 
+test('gust timing follows the model contract across midnight, DST and fractional zones', () => {
+    for (const [localZone, date] of [[zone, '2024-07-12'], [zone, '2024-03-10'], [zone, '2024-11-03'],
+        [mountainTime.resolve(27.7, 85.3), '2024-07-12']]) {
+        const window = weatherDayWindow(date, localZone, now), data = samplesFor(window);
+        const first = Math.ceil(window.start / 3600_000) * 3600_000;
+        const last = Math.ceil(window.end / 3600_000) * 3600_000;
+        data.samples.find(row => row.time === first).gust = 100;
+        data.samples.find(row => row.time === last).gust = 200;
+        const instant = summarizeWeatherDay({ ...data, gustTiming: 'instant' }, window).gust;
+        const interval = summarizeWeatherDay({ ...data, gustTiming: 'preceding-hour' }, window).gust;
+        assert.equal(instant.high, 100); assert.equal(instant.complete, true);
+        assert.equal(interval.high, 200); assert.equal(interval.complete, true);
+        data.samples.find(row => row.time === first).gust = null;
+        assert.equal(summarizeWeatherDay({ ...data, gustTiming: 'instant' }, window).gust.complete, false);
+    }
+});
+
+test('current instantaneous gusts include returned samples but exclude the future', () => {
+    const window = weatherDayWindow('2024-07-12', zone, Date.parse('2024-07-12T12:30:00Z'));
+    const data = samplesFor(window);
+    data.samples.find(row => row.time === window.start).gust = 100;
+    data.samples.find(row => row.time === Date.parse('2024-07-12T13:00:00Z')).gust = 200;
+    assert.equal(summarizeWeatherDay({ ...data, gustTiming: 'instant' }, window).gust.high, 100);
+    assert.equal(summarizeWeatherDay({ ...data, gustTiming: 'preceding-hour' }, window).gust.high, 20);
+});
+
 test('fractional zones proportionally allocate both boundary accumulations', () => {
     for (const [lat, lon] of [[27.7, 85.3], [28.6, 77.2]]) {
         const window = weatherDayWindow('2024-07-12', mountainTime.resolve(lat, lon), now);

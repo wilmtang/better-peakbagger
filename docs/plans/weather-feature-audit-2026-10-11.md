@@ -8,7 +8,7 @@ shared provider/data code, settings and GPX presentation integration.
 
 | ID | Priority | Broken invariant | Status |
 | --- | --- | --- | --- |
-| W01 | P2 | Historical instantaneous gusts use preceding-hour day boundaries | Open |
+| W01 | P2 | Historical instantaneous gusts use preceding-hour day boundaries | Fixed; contract and boundary regressions verified |
 | W02 | P2 | Ascent rain graph plots raw boundary accumulations instead of the amounts used in the daily total | Open |
 | W03 | P2 | Native asynchronous day disclosure switching renders an intermediate empty expansion and moves the clicked heading | Open |
 | W04 | P2 | Unrelated settings and refreshes replace focused controls and discard pinned readings | Open |
@@ -23,7 +23,10 @@ missing readings, bounded model fallback, per-page caches and native Save owners
 
 ## Fixed and verified
 
-None yet.
+- W01: packaged model timing travels with validated data. Historical IFS/ERA5
+  use instantaneous boundaries; forecasts/CERRA retain interval boundaries.
+  Ran 28 day/client/week tests and focused ESLint successfully. Provider docs
+  checked on 2026-10-11; live model slices remain outside this local proof.
 
 ## Intentionally not changed
 

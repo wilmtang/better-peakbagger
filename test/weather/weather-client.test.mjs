@@ -14,6 +14,13 @@ export function weatherResponse({ startDate = window.startDate, model: selected 
 }
 const response = body => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
 
+test('validated data carries packaged model gust timing, with CERRA and forecasts retaining interval maxima', () => {
+    for (const selected of WEATHER_MODELS.filter(item => item.fields.includes('wind_gusts_10m'))) {
+        const expected = ['ecmwf_ifs', 'era5_seamless', 'era5'].includes(selected.id) ? 'instant' : 'preceding-hour';
+        assert.equal(validateWeatherResponse(weatherResponse({ model: selected }), summit, window, selected).gustTiming, expected);
+    }
+});
+
 test('model recommendations respect date, nation and projected regional grids', () => {
     const now = Date.parse('2026-10-10');
     assert.equal(recommendedWeatherModels(summit, '2024-07-12', now)[0].id, 'gfs_hrrr');
