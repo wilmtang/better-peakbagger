@@ -2187,7 +2187,7 @@ test('3D Sentinel renders dated scenes below routes, aborts on swap, and cleans 
     const sceneId = [...map.sources.keys()].find(id => id.startsWith('bpb-sentinel-'));
     assert.equal(map.getSource(sceneId).maxzoom, 14);
     assert.equal(window.document.querySelector('.bpb-terrain-picker').value, 'sentinel');
-    assert.match(window.document.querySelector('.bpb-sentinel').textContent, /Map coverage 100% · Cloud cover 41%/);
+    assert.match(window.document.querySelector('.bpb-sentinel').textContent, /Coverage 100% · Clouds 41%/);
     assert.ok(map.layers.findIndex(layer => layer.id === sceneId) < map.layers.findIndex(layer => layer.id === 'bpb-route'));
     dispatch({ type: 'suspend' });
     assert.equal(map.getSource(sceneId), undefined);

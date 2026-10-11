@@ -108,13 +108,42 @@ test('shared Sentinel UI guards late responses, dates, unknown clouds, and dispo
     select.value = select.options[2].value;
     select.dispatchEvent(new dom.window.Event('change'));
     assert.deepEqual(applied.at(-1), ['old'], 'a late catalog cannot overwrite current capture choices');
-    assert.match(layer.element.textContent, /Cloud cover unknown/);
+    assert.match(layer.element.textContent, /Clouds unknown/);
     layer.refresh();
     assert.equal(layer.element.querySelector('.bpb-sentinel-stats').textContent, '', 'old coverage is cleared when the view changes');
     layer.dispose();
     assert.equal(layer.element.isConnected, false);
     assert.ok(cleared > 0);
     dom.window.close();
+});
+
+test('compact Sentinel keeps the capture date in the selector and reuses one metadata row', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>');
+    const layer = createSentinelLayer({ document: dom.window.document,
+        readView: () => ({ bounds, zoom: 13 }), replaceScenes() {}, clearScenes() {},
+        search: async () => sentinelCaptures([feature('new'), feature('old', { date: '2026-10-03T19:02:59Z' })], view) });
+    try {
+        const select = layer.element.querySelector('select');
+        const metadata = layer.element.querySelector('.bpb-sentinel-metadata');
+        const summary = metadata.querySelector('.bpb-sentinel-summary');
+        const stats = metadata.querySelector('.bpb-sentinel-stats');
+        assert.equal(select.selectedOptions[0].textContent, 'Latest capture');
+        layer.activate();
+        assert.equal(summary.textContent, 'Finding captures…');
+        await tick();
+        const date = new Date(captureTime).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+        assert.equal(select.selectedOptions[0].textContent, `Latest · ${date}`);
+        assert.equal(summary.hidden, true, 'the capture date is not duplicated in a third row');
+        assert.match(stats.textContent, /Coverage 100% · Clouds 41%/);
+        select.value = select.options[2].value;
+        select.dispatchEvent(new dom.window.Event('change'));
+        assert.equal(summary.hidden, true, 'pinned and latest captures use the same layout');
+        layer.refresh();
+        assert.equal(summary.hidden, false);
+        assert.equal(summary.textContent, 'Finding captures…');
+        assert.equal(stats.textContent, '');
+        assert.equal(summary.parentElement, stats.parentElement, 'loading and coverage share one stable slot');
+    } finally { layer.dispose(); dom.window.close(); }
 });
 
 test('Leaflet Sentinel intercepts only its own option, preserves native layers, and cleans up', async () => {
@@ -144,7 +173,7 @@ test('Leaflet Sentinel intercepts only its own option, preserves native layers, 
     assert.equal(layers.size, 2);
     assert.ok(layers.has(native));
     const oldTile = [...layers].find(layer => layer !== native);
-    assert.match(win.document.body.textContent, /Map coverage 100% · Cloud cover 41%/);
+    assert.match(win.document.body.textContent, /Coverage 100% · Clouds 41%/);
     const captureSelect = win.document.querySelector('.bpb-sentinel select');
     captureSelect.value = captureSelect.options[1].value;
     captureSelect.dispatchEvent(new win.Event('change'));

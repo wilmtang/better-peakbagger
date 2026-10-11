@@ -16,6 +16,12 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     element.hidden = true;
     const select = ownerDocument.createElement('select');
     select.setAttribute('aria-label', 'Sentinel-2 capture');
+    const initialOption = ownerDocument.createElement('option');
+    initialOption.value = 'latest';
+    initialOption.textContent = 'Latest capture';
+    select.append(initialOption);
+    const metadata = ownerDocument.createElement('div');
+    metadata.className = 'bpb-sentinel-metadata';
     const summary = ownerDocument.createElement('p');
     summary.className = 'bpb-sentinel-summary';
     summary.setAttribute('role', 'status');
@@ -27,7 +33,8 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     retry.type = 'button';
     retry.textContent = 'Try again';
     retry.hidden = true;
-    element.append(select, summary, stats, retry);
+    metadata.append(summary, stats);
+    element.append(select, metadata, retry);
     let active = false;
     let revision = 0;
     let controller = null;
@@ -61,9 +68,9 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             return;
         }
         replaceScenes(capture.scenes);
-        summary.hidden = !!target;
+        summary.hidden = true;
         summary.textContent = captureDate(capture.time);
-        stats.textContent = `Map coverage ${Math.round(capture.coverage * 100)}% · Cloud cover ${capture.cloud === null ? 'unknown' : Math.round(capture.cloud) + '%'}`;
+        stats.textContent = `Coverage ${Math.round(capture.coverage * 100)}% · Clouds ${capture.cloud === null ? 'unknown' : Math.round(capture.cloud) + '%'}`;
     };
     const choose = () => {
         const capture = target ? captures.find(candidate => candidate.platform === target.platform
@@ -71,7 +78,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         const options = [];
         const latest = ownerDocument.createElement('option');
         latest.value = 'latest';
-        latest.textContent = 'Latest capture';
+        latest.textContent = captures[0] ? `Latest · ${captureDate(captures[0].time)}` : 'Latest capture';
         options.push(latest);
         for (const candidate of captures) {
             const option = ownerDocument.createElement('option');
