@@ -28,8 +28,8 @@ wind and gusts use responsive line graphs; Conditions shows a horizontally scrol
 temperature, feels-like, rain/snow, wind, gusts and wind direction. Row labels
 stay visible while scrolling; clear hours use a Moon icon at night.
 Both weather cards share packaged SVG illustrations and the Sun & Moon palette:
-amber sun and temperature graphs, blue rain/snow and daily lows, and muted violet
-wind graphs. Daily temperature ranges label **Low** and **High**, and wind is
+amber sun and temperature graphs, blue rain/snow, and muted violet wind graphs.
+Daily temperature ranges use normal text color and label **Low** and **High**; wind is
 labelled **Max wind**. The selected model is named once; a separate **Using**
 label appears when retained readings belong to a different model during loading
 or after a failed model change. The range and model control sit side by side

@@ -13,7 +13,9 @@ as `10916f24` and `a2561904`; it is excluded from this UI change.
   missing conditions retain their accessible Unavailable label.
 - Both cards use the same light/dark palette and blue control accent. Component
   titles keep their own text color despite the site's global dark heading rule.
-  Daily low/high colors and graph colors agree across both cards.
+  Graph colors agree across both cards. Per the follow-up design preference,
+  daily Low/High labels and values use the normal text color in both themes;
+  browser assertions guard that neutral presentation.
 - Summit temperatures explicitly label Low and High; wind says Max wind.
   Temperature labels can wrap as complete readings in narrow cards.
 - Range/location and model selection share a compact row on wide cards and
@@ -38,6 +40,9 @@ Inspected wide/narrow light/dark forecast screenshots, narrow hourly conditions
 and archive charts. Illustrations/charts use SVG; no WebGL renderer is involved.
 The real-manifest Chrome check also passed, hidden at 1000×760, with BFCache
 restoration and successful teardown.
+The neutral-temperature follow-up passed both hidden Chrome weather suites in
+light/dark at 375–1440×1100, including computed-color assertions and visual
+inspection, plus the build, focused ESLint and diff checks.
 
 ## Intentionally not changed
 

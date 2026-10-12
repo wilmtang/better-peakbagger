@@ -21,6 +21,9 @@ export async function verifyWeatherTabStyles(evaluate, selector) {
             cloud: cloud && getComputedStyle(cloud).fill };
     }, selector);
     assert.equal(palette.title, palette.text, `site heading repaint overrides weather title: ${JSON.stringify(palette)}`);
-    if (palette.low && palette.high) assert.notEqual(palette.low, palette.high, `temperature range lost its palette: ${JSON.stringify(palette)}`);
+    if (palette.low && palette.high) {
+        assert.equal(palette.low, palette.text, `daily low must use normal text color: ${JSON.stringify(palette)}`);
+        assert.equal(palette.high, palette.text, `daily high must use normal text color: ${JSON.stringify(palette)}`);
+    }
     if (palette.cloud) assert.notEqual(palette.cloud, palette.text, `weather illustration lost its palette: ${JSON.stringify(palette)}`);
 }
