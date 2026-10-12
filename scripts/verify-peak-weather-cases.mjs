@@ -169,7 +169,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assert.equal(await evaluate(() => document.querySelectorAll('[data-update-model="gfs_global"]').length), 2);
             assert.equal(metadataEvidence.length - updatesBefore, width === widths[0] ? 2 : 0, 'only GFS products load, once per page');
             assert.ok(metadataEvidence.slice(updatesBefore).every(request => ['/data/ncep_gfs013/static/meta.json', '/data/ncep_gfs025/static/meta.json'].includes(request.path)));
-            assert.ok(await evaluate(() => document.querySelector('.bpb-week-updates').textContent.includes('Next expected')));
+            assert.ok(await evaluate(() => document.querySelector('.bpb-week-updates').textContent.includes('Update interval')));
+            assert.deepEqual(await evaluate(() => [...document.querySelectorAll('[data-update-model] td:last-child')].map(cell => cell.textContent)), ['Every 6 h', 'Every 6 h']);
             if (output) {
                 await evaluate(() => document.querySelector('.bpb-week-updates').scrollIntoView({ block: 'start', behavior: 'instant' }));
                 await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-updates-${width}.png`));

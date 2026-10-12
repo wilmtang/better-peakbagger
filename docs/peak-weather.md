@@ -100,8 +100,11 @@ Opening **Source details** also loads update times for the model supplying
 the displayed weather in the active period, shown in summit local time. Other eligible models are not requested. Switching periods or models
 updates the table; a failed model change retains clocks for the displayed weather.
 The [metadata API](https://open-meteo.com/en/docs/model-updates) reports availability
-and cadence. The next time is an estimate from that cadence, and overdue
-updates remain dated and marked delayed. GFS lists its 13 km and 25 km products
+and cadence. **Update interval** displays `update_interval_seconds` from the same
+metadata response (for example, **Every 6 h**), with no additional request. It is
+the usual model-update cadence, distinct from `temporal_resolution_seconds`,
+which describes weather-data spacing. Updates overdue relative to the last
+availability time plus that cadence remain marked delayed. GFS lists its 13 km and 25 km products
 separately, so GFS needs two metadata requests; other mapped models need one.
 Best Match and unmapped models make no metadata requests. Missing or unavailable
 metadata is labelled unavailable rather than guessed (BOM has no mapping in the provider's published update table).

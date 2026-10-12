@@ -36,7 +36,7 @@ export function validatePeakModelUpdate(body, now = Date.now()) {
     const timestamp = value => Number.isSafeInteger(value) && value > 0 && value * 1000 <= now + 5 * 60_000;
     if (!body || Array.isArray(body) || !timestamp(last) || !timestamp(run) || run > last
         || !Number.isInteger(interval) || interval < 900 || interval > 7 * 86400) throw new Error('Invalid model update metadata.');
-    return { lastUpdate: last * 1000, run: run * 1000, nextExpected: (last + interval) * 1000 };
+    return { lastUpdate: last * 1000, run: run * 1000, updateIntervalSeconds: interval, nextExpected: (last + interval) * 1000 };
 }
 
 // Optional, per-page metadata. Cache failures as well as successes to avoid

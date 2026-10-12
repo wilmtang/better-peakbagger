@@ -4,7 +4,7 @@ import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
 import { peakModelUpdateDomains, validatePeakModelUpdate, createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.js';
 
 const now = Date.parse('2026-10-11T12:00:00Z');
-const body = { last_run_initialisation_time: now / 1000 - 7200, last_run_availability_time: now / 1000 - 1800, update_interval_seconds: 21600 };
+const body = { last_run_initialisation_time: now / 1000 - 7200, last_run_availability_time: now / 1000 - 1800, update_interval_seconds: 21600, temporal_resolution_seconds: 3600 };
 const reply = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } });
 
 test('model metadata maps known selection IDs and exposes both GFS products', () => {
@@ -15,10 +15,11 @@ test('model metadata maps known selection IDs and exposes both GFS products', ()
     assert.throws(() => peakModelUpdateDomains({ id: 'gfs_global' }), /Invalid/);
 });
 
-test('update metadata separates availability from initialization and labels next time as a cadence estimate', () => {
+test('update metadata preserves cadence separately from hourly resolution and run timestamps', () => {
     const result = validatePeakModelUpdate(body, now);
     assert.equal(result.run, now - 7200_000); assert.equal(result.lastUpdate, now - 1800_000);
     assert.equal(result.nextExpected, now + 19800_000);
+    assert.equal(result.updateIntervalSeconds, 21600);
     for (const patch of [{ last_run_availability_time: 0 }, { last_run_availability_time: now / 1000 + 3600 },
         { last_run_initialisation_time: now / 1000 }, { update_interval_seconds: 0 },
         { update_interval_seconds: 900.5 }, { update_interval_seconds: 1e10 }]) {

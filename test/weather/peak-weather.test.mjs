@@ -798,8 +798,11 @@ test('accuracy warning and accessible source disclosure identify the requested n
     } finally { env.close(); }
 });
 
-test('model update times load only on disclosure, cover both GFS products and reuse metadata without weather requests', async () => {
-    const env = setup();
+test('model update times and cadence load only on disclosure, cover both GFS products and reuse metadata without weather requests', async () => {
+    const stamp = Date.parse('2024-11-05T12:00:00Z') / 1000;
+    const env = setup({ metadataFn: url => new Response(JSON.stringify({ last_run_initialisation_time: stamp - 3600,
+        last_run_availability_time: stamp - 600, temporal_resolution_seconds: 3600,
+        update_interval_seconds: url.includes('/ncep_gfs025/') ? 43200 : 21600 }), { headers: { 'content-type': 'application/json' } }) });
     try {
         await settled(env, { past: false }); assert.equal(env.metadataRequests.length, 0);
         const source = env.doc.querySelector('.bpb-week-source'); source.open = true;
@@ -810,7 +813,8 @@ test('model update times load only on disclosure, cover both GFS products and re
             ['/data/ncep_gfs013/static/meta.json', '/data/ncep_gfs025/static/meta.json']);
         assert.match(env.doc.querySelector('.bpb-week-updates').textContent, /GFS · 13 km.*GFS · 25 km/);
         assert.match(env.doc.querySelector('.bpb-week-updates').textContent, /Nov 5.*PST/);
-        assert.match(env.doc.querySelector('.bpb-week-updates-note').textContent, /Next updates are estimates.*Provider-wide/);
+        assert.deepEqual([...env.doc.querySelectorAll('[data-update-model] td:last-child')].map(cell => cell.textContent), ['Every 6 h', 'Every 12 h']);
+        assert.match(env.doc.querySelector('.bpb-week-updates-note').textContent, /Usual update intervals.*delays are possible.*Provider-wide/);
         const count = env.metadataRequests.length;
         source.open = false; await new Promise(resolve => setTimeout(resolve, 0)); source.open = true;
         await waitFor(() => !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
@@ -881,7 +885,7 @@ test('Best Match and unmapped selected models show one row without metadata requ
             env.doc.querySelector('.bpb-week-source').open = true;
             await waitFor(() => env.doc.querySelector(`[data-update-model="${id}"]`));
             assert.equal(env.doc.querySelectorAll('[data-update-model]').length, 1);
-            assert.equal(env.doc.querySelector('[data-update-model] td').textContent, text);
+            assert.deepEqual([...env.doc.querySelectorAll('[data-update-model] td')].map(cell => cell.textContent), [text, text]);
             assert.equal(env.metadataRequests.length, 0);
         } finally { env.close(); }
     }
