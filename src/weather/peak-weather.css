@@ -59,8 +59,8 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 #bpb-peak-weather .bpb-week-date > span { font-size: 11px; color: var(--week-sub); }
 #bpb-peak-weather .bpb-week-icon { --weather-icon-size: 32px; grid-row: 1 / span 2; }
 #bpb-peak-weather .bpb-week-condition { font-weight: 500; overflow-wrap: anywhere; }
-#bpb-peak-weather .bpb-week-temp { grid-column: 4; grid-row: 1 / span 2; display: flex; align-items: center; justify-content: flex-end; gap: .5ch; font-variant-numeric: tabular-nums; text-align: left; }
-#bpb-peak-weather :is(.bpb-week-low, .bpb-week-high) { display: inline-block; flex: 0 0 auto; width: 11ch; white-space: nowrap; }
+#bpb-peak-weather .bpb-week-temp { grid-column: 4; grid-row: 1 / span 2; display: flex; align-items: center; justify-content: flex-end; gap: 1.5ch; font-variant-numeric: tabular-nums; text-align: left; }
+#bpb-peak-weather :is(.bpb-week-low, .bpb-week-high) { display: inline-block; flex: 0 0 auto; width: 10ch; white-space: nowrap; }
 #bpb-peak-weather .bpb-week-metrics { grid-column: 3; color: var(--week-sub); font-size: 11px; }
 #bpb-peak-weather .bpb-week-chevron { grid-column: 5; grid-row: 1 / span 2; color: var(--week-sub); }
 #bpb-peak-weather .bpb-week-day[open] .bpb-week-chevron { transform: rotate(180deg); }

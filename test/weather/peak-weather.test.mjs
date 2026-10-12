@@ -1285,7 +1285,11 @@ test('weather summaries name low/high and max wind; shared icons retain night an
     try {
         await settled(env);
         const day = env.doc.querySelector('.bpb-week-day');
-        assert.match(day.querySelector('.bpb-week-temp').textContent, /^Low .*°F · High .*°F$/);
+        const temperatures = day.querySelector('.bpb-week-temp');
+        assert.match(temperatures.textContent, /^Low .*°F High .*°F$/);
+        assert.equal(temperatures.textContent.includes('·'), false, 'temperature columns use spacing without a separator');
+        assert.match(temperatures.querySelector('.bpb-week-low').textContent, /^Low .*°F$/);
+        assert.match(temperatures.querySelector('.bpb-week-high').textContent, /^High .*°F$/);
         assert.match(day.querySelector('.bpb-week-metrics').textContent, /Max wind/);
         assert.equal(day.querySelector('.bpb-week-icon').getAttribute('aria-hidden'), 'true');
         day.open = true;

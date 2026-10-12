@@ -225,7 +225,7 @@ export function mountPeakWeather() {
                 element('span', { class: 'bpb-week-condition', text: forecast ? day.condition.label.replace('occurred', 'expected') : day.condition.label }),
                 element('span', { class: 'bpb-week-temp' }, [
                     element('span', { class: 'bpb-week-low', text: `Low ${format(day.temperature.low, 'temperature')}` }),
-                    document.createTextNode(' · '), element('span', { class: 'bpb-week-high', text: `High ${format(day.temperature.high, 'temperature')}` }),
+                    document.createTextNode(' '), element('span', { class: 'bpb-week-high', text: `High ${format(day.temperature.high, 'temperature')}` }),
                 ]),
                 element('span', { class: 'bpb-week-metrics', text: `Rain/snow ${format(day.precipitation.total, 'precipitation')}${day.precipitation.total !== null && !day.precipitation.complete ? ' (partial)' : ''} · Max wind ${format(day.wind.high, 'wind')}` }),
                 element('span', { class: 'bpb-week-chevron', 'aria-hidden': 'true', text: '⌄' }),
