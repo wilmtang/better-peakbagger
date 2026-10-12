@@ -179,6 +179,78 @@ test('known rate limits keep the map menu dismissible and prevent location reque
     } finally { env.close(); }
 });
 
+test('failed location selection can retry the same map point and names the actual retry target', async () => {
+    let fail = false;
+    const env = setup({ fetchFn: url => fail ? new Response('', { status: 503 }) : reply(url) });
+    try {
+        await settled(env, { past: false }); fail = true; selectLocation(env, 46.8, -121.7);
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Could not load'));
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').textContent, 'Retry');
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').getAttribute('aria-label'), 'Retry weather for 46.8000, -121.7000');
+        fail = false; selectLocation(env, 46.8, -121.7);
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
+        assert.equal(env.requests.length, 3); assert.equal(env.doc.querySelector('.bpb-week-refresh').textContent, 'Refresh');
+    } finally { env.close(); }
+});
+
+test('failed reset remains retryable when a point supersedes the first summit request', async () => {
+    const held = []; let fail = false, hold = true;
+    const env = setup({ fetchFn: (url, init) => fail ? new Response('', { status: 503 }) : hold
+        ? new Promise(resolve => held.push({ url, init, resolve })) : reply(url) });
+    try {
+        await waitFor(() => held.length === 1); selectLocation(env, 46.8, -121.7);
+        await waitFor(() => held.length === 2); held[1].resolve(reply(held[1].url));
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
+        assert.equal(held[0].init.signal.aborted, true);
+        fail = true; env.doc.querySelector('.bpb-week-location-reset').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Could not load summit'));
+        assert.equal(env.doc.querySelector('.bpb-week-location-reset').disabled, false);
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').getAttribute('aria-label'), 'Retry summit weather');
+        fail = hold = false; env.doc.querySelector('.bpb-week-location-reset').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === 'At the summit');
+        assert.equal(env.doc.querySelector('.bpb-week-location-reset').disabled, true); assert.equal(env.requests.length, 4);
+    } finally { env.close(); }
+});
+
+test('reset restores both summit model choices without persisting a regional fallback', async () => {
+    const writes = [], env = setup({ localModels: { bpbPeakWeatherModelForecast: 'gfs_hrrr', bpbPeakWeatherModelPast: 'icon_global' },
+        saveModels: async value => writes.push({ ...value }) });
+    try {
+        await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length === 2 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        selectLocation(env, 35.68, 139.76);
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '35.6800, 139.7600');
+        assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'gfs_global');
+        const count = env.requests.length; env.doc.querySelector('.bpb-week-location-reset').click();
+        assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'gfs_hrrr');
+        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, true);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
+        env.doc.querySelector('[data-period="past"]').click(); assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'icon_global');
+        assert.equal(env.requests.length, count); assert.deepEqual(writes, []);
+    } finally { env.close(); }
+});
+
+test('reset and BFCache preserve a known cooldown and its explanation', async () => {
+    let limited = false;
+    const env = setup({ fetchFn: url => limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : reply(url) });
+    try {
+        await settled(env, { past: false }); selectLocation(env, 46.8, -121.7);
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
+        limited = true; env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').dataset.kind === 'rate-limit');
+        env.doc.querySelector('.bpb-week-location-reset').click();
+        assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /Showing summit weather/);
+        const count = env.requests.length;
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(env.requests.length, count); assert.equal(env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy'), 'false');
+        assert.equal(env.doc.querySelector('.bpb-week-status').dataset.kind, 'rate-limit');
+        assert.equal(env.doc.querySelector('.bpb-week-refresh').disabled, true);
+    } finally { env.close(); }
+});
+
 test('Conditions is the initial hourly tab and rendering never writes a local preference', async () => {
     const writes = [], env = setup({ saveModels: async values => { writes.push(values); } });
     try {

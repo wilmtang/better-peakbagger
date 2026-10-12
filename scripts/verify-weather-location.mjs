@@ -92,5 +92,32 @@ export async function verifyWeatherLocation({ evaluate, click, clickPoint, press
         }
     }
     await setSettings({ theme: 'light', units: 'imperial' });
+    await resize(375, 1100);
+    const point = await evaluate(() => {
+        const frame = document.getElementById('Gmap'); frame.scrollIntoView({ block: 'center', behavior: 'instant' });
+        const rect = frame.getBoundingClientRect(); return { x: rect.right - 142, y: rect.bottom - 160 };
+    });
+    setMode('service-error');
+    await clickPoint(point.x, point.y, 'right');
+    await wait(() => !document.getElementById('bpb-peak-weather-menu').hidden, 'failed-location menu');
+    await click('#bpb-peak-weather-menu button');
+    await wait(() => document.querySelector('.bpb-week-refresh').textContent === 'Retry', 'failed location has an explicit retry action');
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-location-name').textContent), 'At the summit');
+    const failedRequests = evidence.length;
+    setMode('complete');
+    // Restore the same map viewport; the failure text must not make Tab or
+    // retry selection send the user to unrelated page content.
+    await evaluate(() => document.getElementById('Gmap').scrollIntoView({ block: 'center', behavior: 'instant' }));
+    await clickPoint(point.x, point.y, 'right');
+    await wait(() => !document.getElementById('bpb-peak-weather-menu').hidden, 'same-point retry menu');
+    await click('#bpb-peak-weather-menu button');
+    await wait(() => document.querySelector('.bpb-week-location-name').textContent !== 'At the summit'
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'same map point retries successfully');
+    assert.equal(evidence.length, failedRequests + 1);
+    if (output) {
+        await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start', behavior: 'instant' }));
+        await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-location-retry-375.png`));
+    }
+    await click('.bpb-week-location-reset');
     return measurements;
 }

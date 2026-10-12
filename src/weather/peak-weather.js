@@ -126,6 +126,7 @@ export function mountPeakWeather() {
     let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'code';
     let period = 'forecast', notice = null, requestedWindow = null;
     const choices = { past: 'gfs_global', forecast: 'gfs_global' };
+    let summitChoices = null;
     const openDates = new Map();
     const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; });
     const populateModels = () => {
@@ -154,11 +155,17 @@ export function mountPeakWeather() {
         headingText.textContent = atSummit ? 'Summit weather' : 'Location weather';
         selectedLocation.textContent = atSummit ? 'At the summit' : weatherLocationLabel(subject);
         selectedLocation.title = atSummit ? summit.name : `Selected map location: ${weatherLocationLabel(subject)}`;
-        refresh.setAttribute('aria-label', atSummit ? 'Refresh summit weather' : 'Refresh selected location weather');
         updatesNote.textContent = `${atSummit ? 'Summit' : 'Selected location'} local time. Next updates are estimates. Provider-wide availability may vary between servers.`;
         locationLabel.textContent = `${subject.elevation === null ? 'Terrain elevation' : units.formatElevation(subject.elevation, unitSystem())} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
     };
+    const updateLocationControls = () => {
+        resetLocation.disabled = requestedSubject === summit && (pending || subject === summit);
+        const retry = notice?.kind && requestedSubject !== subject;
+        refresh.textContent = retry ? 'Retry' : 'Refresh';
+        refresh.setAttribute('aria-label', `${retry ? 'Retry' : 'Refresh'} ${requestedSubject === summit ? 'summit weather' : `weather for ${weatherLocationLabel(requestedSubject)}`}`);
+    };
     const paintStatus = () => {
+        updateLocationControls();
         const summaries = current?.days[period];
         const partialCount = summaries?.filter(day => day.partial).length || 0;
         status.textContent = notice?.text || (summaries && !summaries.some(day => day.useful)
@@ -287,7 +294,7 @@ export function mountPeakWeather() {
     populateModels();
     const cancel = () => { generation++; controller?.abort(); controller = null; pending = false; card.setAttribute('aria-busy', 'false'); refresh.disabled = cooldown.active(); };
     async function load({ clear = false } = {}) {
-        if (!enabled() || lifecycle.state !== 'active' || pending) return;
+        if (!enabled() || lifecycle.state !== 'active' || pending || cooldown.active()) return;
         visibilityObserver?.disconnect(); visibilityObserver = null;
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
@@ -326,7 +333,7 @@ export function mountPeakWeather() {
             notice = { kind: error.code, text: `${changingLocation ? `Could not load ${target === summit ? 'summit weather' : weatherLocationLabel(target)}. ` : ''}${error.message || 'Weather could not be loaded.'}${current ? ' Showing the previous result.' : ' Use Refresh to try again.'}` }; paintStatus();
             if (source.open) void loadUpdates();
         } finally {
-            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); }
+            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); updateLocationControls(); }
         }
     }
     select.addEventListener('change', () => {
@@ -340,16 +347,19 @@ export function mountPeakWeather() {
     });
     const chooseLocation = next => {
         if (!enabled() || lifecycle.state !== 'active' || (next !== summit && cooldown.active())) return;
-        if (next.latitude === requestedSubject.latitude && next.longitude === requestedSubject.longitude && next.elevation === requestedSubject.elevation) return;
+        const sameLocation = (left, right) => left.latitude === right.latitude && left.longitude === right.longitude && left.elevation === right.elevation;
+        if (sameLocation(next, requestedSubject) && (pending || (current && sameLocation(next, subject) && !notice?.kind))) return;
+        if (next !== summit && requestedSubject === summit) summitChoices = { ...choices };
+        if (next === summit && summitChoices) { Object.assign(choices, summitChoices); summitChoices = null; }
         cancelUpdates(); cancel(); requestedSubject = next;
-        resetLocation.disabled = next === summit;
         requestedWindow = weatherPeakWindow(mountainTime.resolve(next.latitude, next.longitude));
         for (const key of Object.keys(choices)) {
             if (!eligiblePeakWeatherModels(next, requestedWindow, key).some(model => model.id === choices[key])) choices[key] = 'gfs_global';
         }
         populateModels();
         if (next === summit && summitResult) {
-            current = summitResult; subject = summit; zone = current.zone; notice = null;
+            current = summitResult; subject = summit; zone = current.zone;
+            notice = cooldown.active() ? { kind: 'rate-limit', text: 'Weather requests are temporarily limited. Showing summit weather. Try again after the cooldown.' } : null;
             requestedWindow = current.window; renderResult();
         } else void load();
     };

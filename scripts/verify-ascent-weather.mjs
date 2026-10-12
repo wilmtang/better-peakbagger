@@ -62,7 +62,7 @@ try {
         if (mode === 'negative-precipitation') for (const [key, values] of Object.entries(replyBody.hourly)) {
             if (key === 'precipitation' || key === 'precipitation_meteofrance_arpege_world') values[45] = -0.1;
         }
-        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(replyBody), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
+        return { status: mode === 'error' ? 429 : mode === 'service-error' ? 503 : 200, body: JSON.stringify(replyBody), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');

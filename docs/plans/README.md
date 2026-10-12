@@ -1,5 +1,9 @@
 # Active plans
 
+- [Peak weather location audit — 2026-10-12](peak-weather-location-audit-2026-10-12.md) —
+  request/reset recovery, regional model restoration, menu focus/dismissal,
+  and visual stability of the implemented map-location feature.
+
 - [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
   two reproduced open UI findings since 3.9.2: Sentinel capture selection on
   3D resume and climber-card keyboard focus during row cleanup. Current unit,

@@ -21,6 +21,10 @@ and closes on an outside click, scrolling, or resizing. Opening it sends no
 weather request. The card identifies the selected coordinates; **Reset to
 summit** immediately restores the already-loaded summit result and cancels any
 pending location request. Neither action pans the map or scrolls the page.
+Reset also restores the summit's model choices. A failed location switch names
+its target on **Retry** and can be retried by selecting the same map point.
+If summit weather has not loaded yet, a failed reset remains available to retry.
+Resetting during a provider cooldown retains its explanation and request limit.
 
 Selected points use their own offline timezone and Open-Meteo terrain elevation,
 without applying the summit's elevation to another location. A regional model
