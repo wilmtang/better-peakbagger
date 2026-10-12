@@ -310,6 +310,9 @@ map holds focus is visible only inside the frame — the frame handles that pres
 itself and relays it as `exit`. Inside the frame an open popup is the nearer
 layer and is dismissed first; a modified Escape is left to the browser, and an
 Escape with 3D closed is left to the page.
+Native layer pickers and editable controls own Escape locally, so canceling a
+control interaction does not also leave 3D. Modified Escape remains available
+to the browser in both the page coordinator and the renderer frame.
 
 When 3D is active, a `2D` click does not immediately discard the user's map
 position:

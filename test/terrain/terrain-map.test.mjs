@@ -2085,6 +2085,12 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     await new Promise(resolve => window.queueMicrotask(resolve));
     const map = maps.at(-1);
     const messagesBeforeControlEscape = messages.length;
+    for (const modifier of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey']) {
+        const modified = new window.KeyboardEvent('keydown', { key: 'Escape', [modifier]: true, cancelable: true, bubbles: true });
+        window.document.dispatchEvent(modified);
+        assert.equal(modified.defaultPrevented, false);
+        assert.equal(messages.length, messagesBeforeControlEscape, `${modifier} Escape remains available to the browser`);
+    }
     const pickerEscape = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
     window.document.querySelector('.bpb-terrain-picker').dispatchEvent(pickerEscape);
     assert.equal(pickerEscape.defaultPrevented, false);

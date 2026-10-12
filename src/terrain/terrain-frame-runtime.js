@@ -2324,7 +2324,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // map holds focus is visible only here; ask the page to make its ordinary
     // return to 2D. An open popup is the nearer layer and closes first.
     document.addEventListener('keydown', event => {
-        if (event.key !== 'Escape' || event.defaultPrevented || !map || !loaded) return;
+        if (event.key !== 'Escape' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !map || !loaded) return;
         // Native pickers and editable controls own their Escape interaction.
         // Closing a layer list must not also leave the terrain view.
         if (event.target?.closest?.('select, input, textarea, [contenteditable]:not([contenteditable="false" i]), [role="combobox"], [role="slider"]')) return;

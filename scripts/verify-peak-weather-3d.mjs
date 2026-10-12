@@ -99,6 +99,8 @@ try {
         await picker.focus();
         await page.keyboard.press('Escape');
         assert.equal(await page.locator('#bpb-terrain-toggle').textContent(), '2D');
+        await canvas.focus(); await page.keyboard.press('Control+Escape');
+        assert.equal(await page.locator('#bpb-terrain-toggle').textContent(), '2D');
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
         await page.locator('#bpb-peak-weather-menu button').click();
@@ -137,6 +139,6 @@ try {
     assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => node.hidden), true, 'a parked 3D frame cannot open the weather menu');
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, profile, renderer,
-        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal', 'picker Escape stays in 3D', 'parked-frame rejection'] }));
+        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal', 'picker and modified Escape stay in 3D', 'parked-frame rejection'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);
