@@ -109,9 +109,9 @@ function validateResponse(body, summit, window, model, maxRows, definitions = fi
         let values = hourly[key];
         if (!Array.isArray(values) || values.length !== times.length || body.hourly_units?.[key] !== definition.unit) invalid();
         // Model processing can return negative precipitation (seen in ARPEGE).
-        // Keep that interval unavailable, so totals stay partial and graphs gap,
-        // rather than inventing zero rain or discarding otherwise usable weather.
-        if (key === 'precipitation') values = values.map(value => Number.isFinite(value) && value < 0 ? null : value);
+        // Floor finite amounts at zero; keep genuinely missing values and
+        // malformed data subject to the normal validation below.
+        if (key === 'precipitation') values = values.map(value => Number.isFinite(value) && value < 0 ? 0 : value);
         if (values.some(value => value !== null && (!Number.isFinite(value) || value < definition.min || value > definition.max
             || (definition.integer && !Number.isInteger(value))))) invalid();
         columns[definition.name] = values;

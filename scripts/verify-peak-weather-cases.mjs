@@ -252,23 +252,23 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await chooseModel('meteofrance_arpege_world');
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using ARPEGE World')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'negative ARPEGE precipitation retains usable weather');
-    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 1);
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 0);
     const negativeRequests = evidence.length;
     await click(`${card} [data-period="forecast"]`);
     assertGeometry(await evaluate(geometry));
     assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
     await click(`${card} [data-period="past"]`);
-    await click(`${card} .bpb-week-day:has(.bpb-week-partial) > summary`);
+    await click(`${card} .bpb-week-day:nth-last-child(2) > summary`);
     await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'negative precipitation day retains its temperature graph');
     await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
     await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="precipitation"]').getAttribute('aria-selected') === 'true', 'negative precipitation graph selected');
-    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 23);
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-metrics').textContent.includes('(partial)')));
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 24);
+    assert.equal(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-metrics').textContent.includes('(partial)')), false);
     for (const width of [1440, 375]) {
         await resize(width, 1100); assertGeometry(await evaluate(geometry));
         if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-negative-rain-${width}.png`));
     }
-    assert.equal(evidence.length, negativeRequests, 'period switching and the hourly gap reuse the combined response');
+    assert.equal(evidence.length, negativeRequests, 'period switching and the hourly graph reuse the combined response');
     await chooseModel('gfs_global');
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'reset historical model after negative precipitation');

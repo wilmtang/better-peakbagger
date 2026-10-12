@@ -91,12 +91,12 @@ test('response contract validates units, aligned arrays, coordinate/elevation an
     assert.equal(validateWeatherResponse(body, summit, window, model).samples[0].temperature, null);
 });
 
-test('negative precipitation becomes unavailable without weakening other value checks', () => {
+test('negative precipitation is floored at zero without weakening other value checks', () => {
     const body = weatherResponse();
     body.hourly.precipitation.splice(0, 4, -0.1, -100, 0, null);
     Object.freeze(body.hourly.precipitation);
     const data = validateWeatherResponse(body, summit, window, model);
-    assert.deepEqual(data.samples.slice(0, 4).map(row => row.precipitation), [null, null, 0, null]);
+    assert.deepEqual(data.samples.slice(0, 4).map(row => row.precipitation), [0, 0, 0, null]);
     assert.equal(data.samples[4].precipitation, 0.1);
     assert.equal(data.samples[0].temperature, 10);
     assert.equal(body.hourly.precipitation[0], -0.1, 'the provider response must remain unchanged');

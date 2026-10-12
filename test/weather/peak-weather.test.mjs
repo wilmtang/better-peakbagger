@@ -68,7 +68,7 @@ const chooseModel = (env, id) => {
     select.value = id; select.dispatchEvent(new env.win.Event('change'));
 };
 
-test('a negative historical ARPEGE sample does not hide forecast or history and leaves a gap in its hourly graph', async () => {
+test('a negative historical ARPEGE sample becomes zero without marking the day partial or leaving an hourly gap', async () => {
     const env = setup({ now: '2026-10-12T04:00:00Z', storedSettings: { units: 'metric' },
         localModels: { bpbPeakWeatherModelPast: 'meteofrance_arpege_world' }, fetchFn: url => {
             const query = new URL(url).searchParams;
@@ -83,16 +83,16 @@ test('a negative historical ARPEGE sample does not hide forecast or history and 
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using ARPEGE World/);
-        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /incomplete hours/i);
-        assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 1);
-        const affected = env.doc.querySelector('.bpb-week-partial').closest('details');
-        assert.match(affected.querySelector('.bpb-week-metrics').textContent, /Rain\/snow .*\(partial\)/);
+        assert.equal(env.doc.querySelector('.bpb-week-status').textContent, '');
+        assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 0);
+        const affected = env.doc.querySelector('[data-date="2026-09-26"]');
+        assert.doesNotMatch(affected.querySelector('.bpb-week-metrics').textContent, /partial/);
         affected.open = true;
         await waitFor(() => affected.querySelector('.bpb-week-line'));
         affected.querySelector('[data-metric="precipitation"]').click();
-        assert.equal(affected.querySelectorAll('.bpb-week-point').length, 23);
+        assert.equal(affected.querySelectorAll('.bpb-week-point').length, 24);
         assert.doesNotMatch(affected.textContent, /-0\.1/);
-        assert.equal(env.requests.length, 1, 'both periods and the hourly gap reuse the combined response');
+        assert.equal(env.requests.length, 1, 'both periods and the hourly graph reuse the combined response');
     } finally { env.close(); }
 });
 

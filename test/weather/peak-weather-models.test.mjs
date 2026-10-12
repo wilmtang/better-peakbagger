@@ -45,7 +45,7 @@ test('one bounded named-model request splits suffix columns without confusing hi
     assert.throws(() => validatePeakWeatherResponse(body, summit, window, models), { code: 'invalid-response' });
 });
 
-test('Fuji negative ARPEGE precipitation leaves both weather periods usable and marks the affected day incomplete', async () => {
+test('Fuji negative ARPEGE precipitation is floored at zero and retains complete weather coverage', async () => {
     const fuji = { latitude: 35.360638, longitude: 138.727347, elevation: 3776 };
     const range = weatherPeakWindow(mountainTime.resolve(fuji.latitude, fuji.longitude), Date.parse('2026-10-12T04:00:00Z'));
     for (const ids of [['meteofrance_arpege_world'], ['gfs_global', 'meteofrance_arpege_world']]) {
@@ -56,16 +56,16 @@ test('Fuji negative ARPEGE precipitation leaves both weather periods usable and 
         const client = createPeakWeatherClient({ fetchFn: async () => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }) });
         const result = await client.request(fuji, range, ids.map(model));
         const arpege = result.models.meteofrance_arpege_world;
-        assert.equal(arpege.samples[45].precipitation, null);
+        assert.equal(arpege.samples[45].precipitation, 0);
         assert.equal(arpege.samples[45].temperature, body.hourly[ids.length === 1 ? 'temperature_2m' : 'temperature_2m_meteofrance_arpege_world'][45]);
         const past = summarizeWeatherWeek(arpege, range.past), forecast = summarizeWeatherWeek(arpege, range.forecast);
         assert.equal(past.filter(day => day.useful).length, 16);
         assert.equal(forecast.filter(day => day.useful).length, 16);
         const affected = past.find(day => day.window.date === '2026-09-27');
-        assert.equal(affected.precipitation.complete, false);
-        assert.equal(affected.partial, true);
+        assert.equal(affected.precipitation.complete, true);
+        assert.equal(affected.partial, false);
         assert.ok(affected.precipitation.total >= 0);
-        assert.equal(affected.precipitationHours.filter(hour => hour.value === null).length, 1);
+        assert.equal(affected.precipitationHours.filter(hour => hour.value === null).length, 0);
         if (result.models.gfs_global) assert.equal(result.models.gfs_global.samples[45].precipitation, body.hourly.precipitation_gfs_global[45]);
         assert.equal(body.hourly[key][45], -0.1);
     }
