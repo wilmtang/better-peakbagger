@@ -1,8 +1,5 @@
 # Active plans
 
-- [Peak weather location audit — 2026-10-12](peak-weather-location-audit-2026-10-12.md) —
-  request/reset recovery, regional model restoration, menu focus/dismissal,
-  and visual stability of the implemented map-location feature.
 
 - [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
   two reproduced open UI findings since 3.9.2: Sentinel capture selection on
@@ -22,6 +19,12 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [peak weather location audit](../archive/peak-weather-location-audit-2026-10-12.md)
+is closed locally: twelve reproduced state, focus, map lifecycle, keyboard and
+fixture findings are corrected in seven focused commits. Its ledger records
+2,666 passing tests, Chrome/Firefox and Metal evidence, retained boundaries and
+manual proof limits.
 
 The [weather feature audit](../archive/weather-feature-audit-2026-10-11.md)
 has eight implemented fixes and local browser/regression evidence. Its closure
