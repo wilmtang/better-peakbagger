@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Bound deleted draft metadata.** Old deletion markers are compacted while
+  recent Undo and stale-tab protection remain intact.
+
 - **Track pasted photos in the library.** Photos show In report after their
   hosted links are inserted; reference retries reuse the accepted upload.
 

@@ -822,6 +822,12 @@ first. These are lazy cleanup rules, not timers or a hard write-time quota:
 - Opening Settings → **Trip report drafts** removes expired records, but does not enforce
   the 30-record target. A newly written 31st draft can therefore remain until a
   later editor initialization performs pruning.
+- Deletion markers expire after 14 days; pruning also keeps the newest 60,
+  with a one-minute protection window for recent Undo barriers and an exception
+  for the active editor key. Retiring any draft key first advances one durable
+  deletion epoch. Editors read it with their draft snapshot, so an old tab that
+  observed absence cannot recreate cleared work after a marker is compacted.
+  Existing record generations continue to order edits independently.
 
 These are lazy cleanup rules. There is no expiry timer, write-time quota, or
 background sweep, so expired or excess records can physically remain until an

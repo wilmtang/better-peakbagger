@@ -65,6 +65,9 @@ const cleanAttemptId = value => typeof value === 'string'
 
 const GENERATION_FIELD = ReportDrafts.GENERATION_FIELD;
 const TOMBSTONE_FIELD = 'deletedGeneration';
+const DELETION_EPOCH_KEY = ReportDrafts.DELETION_EPOCH_KEY;
+const TOMBSTONE_LIMIT = ReportDrafts.LIMIT * 2;
+const UNDO_PROTECTION_MS = 60_000;
 const cleanDraftKey = value => typeof value === 'string' && ReportDrafts.parseKey(value)
     ? value : null;
 const cleanGeneration = value => typeof value === 'string'
@@ -119,15 +122,29 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         [TOMBSTONE_FIELD]: createGeneration(),
         deletedAt: now(),
     });
+    // Publish the barrier before retiring keys. An interrupted cleanup leaves
+    // extra markers, never an old absence snapshot with renewed authority.
+    const retireKeys = async keys => {
+        if (!keys.length) return;
+        await ext.storage.local.set({ [DELETION_EPOCH_KEY]: createGeneration() });
+        await ext.storage.local.remove(keys);
+    };
+    const readMutation = async (draftKey, message) => {
+        const values = await ext.storage.local.get([draftKey, DELETION_EPOCH_KEY]);
+        const current = values[draftKey];
+        const matches = !Object.hasOwn(message, 'expectedVersion')
+            || (message.expectedVersion === ReportDrafts.version(current)
+                && (current !== undefined || (message.expectedDeletionEpoch ?? null) === (values[DELETION_EPOCH_KEY] ?? null)));
+        return { current, matches, deletionEpoch: values[DELETION_EPOCH_KEY] ?? null };
+    };
 
     const write = (message, sender) => serialize(async () => {
         const draftKey = cleanDraftKey(message?.draftKey);
         if (!draftKey || !exactEditorKey(draftKey, sender) || !ReportDrafts.validRecord(message?.record)) {
             return { ok: false, error: { code: 'invalid-draft-write' } };
         }
-        const current = (await ext.storage.local.get(draftKey))[draftKey];
-        if (Object.hasOwn(message, 'expectedVersion')
-            && message.expectedVersion !== ReportDrafts.version(current)) {
+        const { current, matches, deletionEpoch } = await readMutation(draftKey, message);
+        if (!matches) {
             return { ok: true, draftKey, written: false, reason: 'changed' };
         }
         if (message.expectedSavedAt !== undefined || message.expectedGeneration !== undefined) {
@@ -140,7 +157,8 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
             }
         }
         if (!Object.hasOwn(message, 'expectedVersion') && ((ReportDrafts.validRecord(current) && current.savedAt > message.record.savedAt)
-            || (isTombstone(current) && current.deletedAt >= message.record.savedAt))) {
+            || (isTombstone(current) && current.deletedAt >= message.record.savedAt)
+            || (current === undefined && deletionEpoch && message.record.savedAt <= Number(deletionEpoch.split(':')[0])))) {
             return { ok: true, draftKey, written: false, reason: 'superseded' };
         }
         const record = structuredClone(message.record);
@@ -155,8 +173,8 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
             return { ok: false, error: { code: 'invalid-draft-remove' } };
         }
         if (Object.hasOwn(message, 'expectedVersion')) {
-            const current = (await ext.storage.local.get(draftKey))[draftKey];
-            if (message.expectedVersion !== ReportDrafts.version(current)) {
+            const { matches } = await readMutation(draftKey, message);
+            if (!matches) {
                 return { ok: true, draftKey, removed: false, reason: 'changed' };
             }
         }
@@ -284,7 +302,7 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         if (!draftKey || !expectedGeneration || !isExtensionPage(sender)) return false;
         const current = (await ext.storage.local.get(draftKey))[draftKey];
         if (!isTombstone(current) || current[TOMBSTONE_FIELD] !== expectedGeneration) return false;
-        await ext.storage.local.remove(draftKey);
+        await retireKeys([draftKey]);
         return true;
     };
     const finalize = (message, sender) => serialize(async () => ({
@@ -304,7 +322,7 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         const finalized = entries.filter(entry => isTombstone(current[entry.draftKey])
             && current[entry.draftKey][TOMBSTONE_FIELD] === entry.generation)
             .map(entry => entry.draftKey);
-        if (finalized.length) await ext.storage.local.remove(finalized);
+        await retireKeys(finalized);
         return { ok: true, finalized };
     });
 
@@ -318,10 +336,15 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         const expired = drafts.filter(([, value]) => now() - value.savedAt > ReportDrafts.TTL_MS);
         const fresh = drafts.filter(([, value]) => now() - value.savedAt <= ReportDrafts.TTL_MS)
             .sort((a, b) => b[1].savedAt - a[1].savedAt);
-        const doomed = [...expired, ...fresh.slice(ReportDrafts.LIMIT)]
+        const markers = Object.entries(everything || {})
+            .filter(([key, value]) => cleanDraftKey(key) && isTombstone(value))
+            .sort((a, b) => b[1].deletedAt - a[1].deletedAt);
+        const retiredMarkers = markers.filter(([, value], index) => now() - value.deletedAt > ReportDrafts.TTL_MS
+            || (index >= TOMBSTONE_LIMIT && now() - value.deletedAt > UNDO_PROTECTION_MS));
+        const doomed = [...expired, ...fresh.slice(ReportDrafts.LIMIT), ...retiredMarkers]
             .map(([key]) => key)
             .filter(key => key !== keepKey);
-        if (doomed.length) await ext.storage.local.remove(doomed);
+        await retireKeys(doomed);
         return { ok: true, removed: doomed };
     });
 
@@ -379,7 +402,7 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         const current = (await ext.storage.local.get(confirmedSave.draftKey))[confirmedSave.draftKey];
         const currentAttemptId = cleanAttemptId(current?.pendingSave?.attemptId);
         const removed = !current || currentAttemptId === confirmedSave.attemptId;
-        if (current && removed) await ext.storage.local.remove(confirmedSave.draftKey);
+        if (current && removed) await retireKeys([confirmedSave.draftKey]);
         await mutateMap(PENDING_KEY, saves => {
             if (saves[sourceTabId]?.generation === confirmedSave.generation) delete saves[sourceTabId];
         });

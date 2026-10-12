@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
+import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
 
 const sharedEditor = (first, options = {}) => loadEditor({ ...options, prepare: second => {
     second.chrome.storage.local = first.chrome.storage.local;
@@ -70,6 +71,22 @@ test('queued edits in one editor adopt the completing writer’s version', async
     } finally { dom.window.close(); }
 });
 
+test('retired deletion barriers still reject an older editor that originally saw no draft', async () => {
+    const dom = await loadEditor({ settings: { addReportCredit: false }, accelerateAutosave: true });
+    try {
+        await editorReady(dom); await waitFor(dom, () => editors(dom).rich);
+        const removal = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_REMOVE', draftKey: DRAFT_KEY });
+        const managerRoutes = createReportDraftRoutes({ ext: dom.chrome, now: Date.now,
+            isPeakbaggerSender: () => false, isExtensionPage: () => true, mutateMap: () => {} });
+        const finalized = await managerRoutes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey: DRAFT_KEY, generation: removal.generation }, {});
+        assert.equal(finalized.finalized, true);
+        typeRich(dom, '<p>Work from the older tab</p>');
+        await waitFor(dom, () => /Another tab saved this draft/.test(dom.window.document.querySelector('.bpb-re-status').textContent));
+        assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+        assert.equal(dom.window.document.querySelector('.bpb-re-save-recovery').hidden, false);
+    } finally { dom.window.close(); }
+});
+
 test('editor expiry cleanup cannot remove a save newer than its read', async () => {
     let releaseRead;
     let reads = 0;
@@ -81,8 +98,9 @@ test('editor expiry cleanup cannot remove a save newer than its read', async () 
             let held = false;
             d.chrome.storage.local.get = async keys => {
                 const result = await get(keys);
-                if (keys === DRAFT_KEY) reads++;
-                if (keys === DRAFT_KEY && !held) {
+                const readsDraft = keys === DRAFT_KEY || (Array.isArray(keys) && keys.includes(DRAFT_KEY));
+                if (readsDraft) reads++;
+                if (readsDraft && !held) {
                     held = true;
                     await new Promise(resolve => { releaseRead = resolve; });
                 }

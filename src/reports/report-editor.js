@@ -762,6 +762,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const mutateDraft = message => RuntimeMessage.send(ext, { ...message, draftKey });
     let draftEditRevision = 0;
     let draftVersion = null, persistedDraftContent = null, persistedDraftRevision = 0, initialDraftText = textarea.value;
+    let draftDeletionEpoch = null;
     let draftPersistenceQueue = Promise.resolve();
     const draftContent = record => JSON.stringify([record.text, record.mode, record.source ?? null, record.pendingSave?.attemptId ?? null]);
     const draftConflict = () => Object.assign(new Error('Another tab saved this draft.'), { code: 'draft-conflict' });
@@ -832,13 +833,16 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             if (revision === draftEditRevision) setDraftPersistenceStatus('Saving…');
             try {
                 if (draftVersion === null) {
-                    const stored = (await localStore.get(draftKey))[draftKey];
+                    const values = await localStore.get([draftKey, ReportDrafts.DELETION_EPOCH_KEY]);
+                    const stored = values[draftKey];
                     if (ReportDrafts.validRecord(stored) && normalized(stored.text) !== normalized(initialDraftText)) throw draftConflict();
                     draftVersion = ReportDrafts.version(stored);
+                    draftDeletionEpoch = values[ReportDrafts.DELETION_EPOCH_KEY] ?? null;
                 }
                 const result = await mutateDraft({
                     type: removing ? 'REPORT_DRAFT_REMOVE' : 'REPORT_DRAFT_WRITE',
                     expectedVersion: draftVersion,
+                    expectedDeletionEpoch: draftDeletionEpoch,
                     ...(!removing && { record }),
                 });
                 if (!result?.ok) throw new Error('draft persistence failed');
@@ -1042,7 +1046,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const checkDraft = async () => {
         let stored;
         try {
-            stored = (await localStore.get(draftKey))[draftKey];
+            const values = await localStore.get([draftKey, ReportDrafts.DELETION_EPOCH_KEY]);
+            stored = values[draftKey];
+            draftDeletionEpoch = values[ReportDrafts.DELETION_EPOCH_KEY] ?? null;
         } catch (error) { return; }
         draftVersion = ReportDrafts.version(stored);
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;

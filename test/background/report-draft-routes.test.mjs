@@ -443,3 +443,50 @@ test('Undo expiry removes only its exact tombstone generation', async () => {
     }, extensionSender)).finalized, false);
     assert.equal(h.local.values[key].text, 'newer');
 });
+
+test('pruning bounds old markers, protects recent Undo and keepKey, and retires expired markers', async () => {
+    const h = harness();
+    const keys = Array.from({ length: 100 }, (_, index) => `bpbReportDraft:22:p${index + 1}`);
+    for (const draftKey of keys) await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey }, extensionSender);
+    const recent = await h.routes.handlers.REPORT_DRAFT_PRUNE({}, extensionSender);
+    assert.equal(recent.removed.length, 0, 'fresh Undo barriers survive bursts');
+    h.advance(60_001);
+    await h.routes.handlers.REPORT_DRAFT_PRUNE({ keepKey: keys[99] }, extensionSender);
+    assert.equal(keys.filter(key => h.local.values[key]).length, 61);
+    assert.ok(h.local.values[keys[99]], 'active editor key stays protected');
+    h.advance(Drafts.TTL_MS);
+    await h.routes.handlers.REPORT_DRAFT_PRUNE({}, extensionSender);
+    assert.equal(keys.filter(key => h.local.values[key]).length, 0);
+    assert.ok(h.local.values[Drafts.DELETION_EPOCH_KEY]);
+});
+
+test('a retired marker cannot give an old absence snapshot permission to recreate a cleared draft', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const h = harness();
+    const removal = await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey: key }, extensionSender);
+    await h.routes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey: key, generation: removal.generation }, extensionSender);
+    const record = { text: 'old tab wakes up', mode: 'rich', savedAt: CLOCK + 1 };
+    const stale = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey: key, record,
+        expectedVersion: Drafts.version(undefined), expectedDeletionEpoch: null }, editSender);
+    assert.equal(stale.written, false);
+    assert.equal(h.local.values[key], undefined);
+    assert.equal((await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey: key,
+        record: { ...record, savedAt: CLOCK } }, editSender)).written, false, 'legacy queued snapshots also retain a deletion-time barrier');
+    const fresh = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey: key, record,
+        expectedVersion: Drafts.version(undefined), expectedDeletionEpoch: h.local.values[Drafts.DELETION_EPOCH_KEY] }, editSender);
+    assert.equal(fresh.written, true);
+});
+
+test('a failed deletion-epoch write leaves the marker in place and cannot reopen stale writer authority', async () => {
+    const h = harness(), draftKey = 'bpbReportDraft:22:a778899';
+    const removal = await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey }, extensionSender);
+    const set = h.local.set;
+    h.local.set = patch => {
+        if (Object.hasOwn(patch, Drafts.DELETION_EPOCH_KEY)) throw new Error('disk full');
+        return set(patch);
+    };
+    await assert.rejects(h.routes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey, generation: removal.generation }, extensionSender), /disk full/);
+    assert.equal(h.local.values[draftKey].deletedGeneration, removal.generation);
+    assert.equal((await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey, expectedVersion: Drafts.version(undefined),
+        record: { text: 'stale', savedAt: CLOCK + 1 } }, editSender)).written, false);
+});

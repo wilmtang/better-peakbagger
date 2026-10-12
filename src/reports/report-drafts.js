@@ -16,6 +16,7 @@ const LIMIT = 30;
 const EDIT_BASE = `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx`;
 const SAVED_EVENT = 'bpb:report-draft-saved';
 const GENERATION_FIELD = 'storageGeneration';
+const DELETION_EPOCH_KEY = 'bpbReportDraftDeletionEpoch';
 
 const keyFor = ({ cid, aid, pid } = {}) => {
     const owner = cid || '0';
@@ -78,6 +79,7 @@ export const reportDrafts = {
     LIMIT,
     SAVED_EVENT,
     GENERATION_FIELD,
+    DELETION_EPOCH_KEY,
     keyFor,
     parseKey,
     editUrl,

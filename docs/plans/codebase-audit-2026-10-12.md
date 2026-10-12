@@ -375,6 +375,16 @@ by file size.
 
 ### Fixed and verified
 
+- **F7:** lazy pruning now expires markers after 14 days and bounds older
+  markers to 60, preserving the active key and a one-minute Undo protection
+  window. Physical key retirement first advances one durable deletion epoch;
+  CAS writers that observed absence before retirement cannot resurrect a draft
+  after compaction. A failed epoch write retains the marker. Existing live
+  generations remain authoritative across unrelated cleanup.
+  Build, 239 report/draft/manager tests, affected ESLint and documentation
+  checks passed. Hidden Chrome 153.0.8010.12 two-tab verification passed at
+  1000×760 and 375×760. Cleanup remains lazy, with no background expiry timer.
+
 - **F6:** report-owned hosted-URL replacement now acknowledges insertion to the
   worker. It checks owner, photo ID and accepted URL, then records an idempotent,
   bounded `ascent-draft` reference with optimistic store conflict retries. An
