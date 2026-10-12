@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { WEATHER_MODELS } from './weather-models.js';
+import { ARCHIVE_BEST_MATCH, WEATHER_MODELS } from './weather-models.js';
 
 // Named forecasts with published horizons. Recent history uses the same model
 // IDs on the Forecast API; delayed reanalyses cannot cover yesterday.
@@ -20,11 +20,19 @@ const horizons = {
     knmi_harmonie_arome_netherlands: 2.5, knmi_harmonie_arome_europe: 2.5,
     meteoswiss_icon_ch1: 1.375, meteoswiss_icon_ch2: 5,
 };
-export const PEAK_WEATHER_MODELS = Object.freeze(WEATHER_MODELS.filter(item => horizons[item.id]).map(item => Object.freeze({
+const forecastModel = (item, forecastDays, options = {}) => Object.freeze({
     ...item, endpoint: 'https://api.open-meteo.com/v1/forecast',
     fields: Object.freeze([...item.fields, 'apparent_temperature', 'wind_direction_10m', 'is_day']),
-    gustTiming: 'preceding-hour', type: 'Forecast model', forecastDays: horizons[item.id],
-})));
+    gustTiming: 'preceding-hour', type: 'Forecast model', forecastDays, ...options,
+});
+// The automatic forecast blend has rolling history, not the archive blend's
+// fixed first date, resolution or instantaneous-gust contract.
+export const PEAK_BEST_MATCH = forecastModel(ARCHIVE_BEST_MATCH, 16, {
+    since: null, resolution: 'Automatic', type: 'Automatic forecast blend',
+});
+export const PEAK_WEATHER_MODELS = Object.freeze([PEAK_BEST_MATCH,
+    ...WEATHER_MODELS.filter(item => horizons[item.id]).map(item => forecastModel(item, horizons[item.id])),
+]);
 export const peakModelHorizon = model => model.forecastDays < 2 && !Number.isInteger(model.forecastDays)
     ? `${model.forecastDays * 24} hours` : `${model.forecastDays} days`;
 
@@ -32,7 +40,7 @@ export function eligiblePeakWeatherModels(summit, window, period) {
     if (!['past', 'forecast'].includes(period) || !Number.isFinite(summit.latitude) || Math.abs(summit.latitude) > 90
         || !Number.isFinite(summit.longitude) || Math.abs(summit.longitude) > 180) return [];
     const first = window[period].days[0].date;
-    return PEAK_WEATHER_MODELS.filter(item => first >= item.since && item.domain(summit));
+    return PEAK_WEATHER_MODELS.filter(item => (!item.since || first >= item.since) && item.domain(summit));
 }
 
 export function resolvePeakWeatherModels(summit, window, choices) {

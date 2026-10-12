@@ -174,6 +174,35 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         const select = document.querySelector('#bpb-peak-weather-model');
         select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
     }, id);
+    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').options[0].value), 'best_match');
+    await chooseModel('best_match');
+    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match')
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'Best Match history with named forecast');
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('automatically combines')));
+    await click(`${card} .bpb-week-source > summary`);
+    await wait(() => document.querySelector('[data-update-model="best_match"] td')?.textContent === 'Varies by model', 'blend does not invent a single update clock');
+    await click(`${card} .bpb-week-source > summary`);
+    await click(`${card} [data-period="forecast"]`);
+    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
+    await chooseModel('best_match');
+    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match')
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'Best Match forecast uses a deduplicated blend request');
+    const blendRequests = evidence.length;
+    for (const width of [1440, 375]) {
+        await resize(width, 1100); assertGeometry(await evaluate(geometry));
+        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-best-match-${width}.png`));
+    }
+    await click(`${card} [data-period="past"]`);
+    assert.equal(evidence.length, blendRequests, 'switching between Best Match periods reuses the response');
+    await openPage();
+    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'best_match', 'Best Match choice survives navigation');
+    await chooseModel('gfs_global');
+    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'restore named history');
+    await click(`${card} [data-period="forecast"]`); await chooseModel('gfs_global');
+    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'restore named forecast');
+    await click(`${card} [data-period="past"]`);
     const beforeModels = evidence.length;
     assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
     await chooseModel('icon_global');
@@ -310,8 +339,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-loading.png`));
     setMode('complete'); release();
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'held weather response settles');
-    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global', 'meteofrance_arpege_world,gfs_global'].includes(request.model)));
+    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['best_match', 'best_match,gfs_global', 'gfs_global,best_match', 'gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global', 'meteofrance_arpege_world,gfs_global'].includes(request.model)));
     assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'best-match', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
 }

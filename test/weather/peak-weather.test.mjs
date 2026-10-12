@@ -165,7 +165,7 @@ test('local choices load before the request, survive navigation and reject unava
         release();
         await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
         assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'ecmwf_ifs,icon_global');
-        assert.equal(env.doc.querySelector('option[value="best_match"]'), null);
+        assert.equal(env.doc.querySelector('select').options[0].value, 'best_match');
         chooseModel(env, 'gfs_global');
         await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using GFS'));
         assert.deepEqual(localModels, { bpbPeakWeatherModelPast: 'ecmwf_ifs', bpbPeakWeatherModelForecast: 'gfs_global' });
@@ -173,7 +173,7 @@ test('local choices load before the request, survive navigation and reject unava
     const next = setup({ localModels });
     try { await settled(next); assert.equal(next.doc.querySelector('select').value, 'ecmwf_ifs'); }
     finally { next.close(); }
-    const invalid = setup({ localModels: { bpbPeakWeatherModelPast: 'icon_d2', bpbPeakWeatherModelForecast: 'best_match' } });
+    const invalid = setup({ localModels: { bpbPeakWeatherModelPast: 'icon_d2', bpbPeakWeatherModelForecast: 'not_a_model' } });
     try { await settled(invalid); assert.equal(new URL(invalid.requests[0].url).searchParams.get('models'), 'gfs_global'); }
     finally { invalid.close(); }
 });
@@ -837,4 +837,40 @@ test('weather summaries name low/high and max wind; shared icons retain night an
         assert.ok(icons.some(icon => icon.dataset.condition === 'sun'));
         assert.equal(env.requests.length, 1, 'illustrations do not request remote assets');
     } finally { env.close(); }
+});
+
+test('peak Best Match choices persist independently, share requests and disclose automatic provenance', async () => {
+    const localModels = { bpbPeakWeatherModelPast: 'best_match', bpbPeakWeatherModelForecast: 'gfs_global' };
+    const env = setup({ localModels });
+    try {
+        await settled(env, { past: false });
+        assert.equal(env.doc.querySelector('select').options[0].value, 'best_match');
+        assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'best_match,gfs_global');
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /automatically combines.*Resolution and update times vary/);
+        assert.doesNotMatch(env.doc.querySelector('.bpb-week-models').textContent, /No other model fills/);
+        assert.doesNotMatch(env.doc.querySelector('.bpb-week-models').textContent, /measured from the model run/);
+        assert.equal(env.requests.length, 1);
+        env.doc.querySelector('.bpb-week-source').open = true;
+        await waitFor(() => env.doc.querySelector('[data-update-model="best_match"]'));
+        assert.equal(env.doc.querySelector('[data-update-model="best_match"] td').textContent, 'Varies by model');
+        env.doc.querySelector('[data-period="forecast"]').click();
+        assert.equal(env.doc.querySelector('select').value, 'gfs_global');
+        chooseModel(env, 'best_match');
+        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match'));
+        assert.equal(new URL(env.requests[1].url).searchParams.get('models'), 'best_match');
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
+        assert.equal(localModels.bpbPeakWeatherModelForecast, 'best_match');
+        assert.equal(localModels.bpbPeakWeatherModelPast, 'best_match');
+        const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        assert.equal(env.requests.length, 2);
+    } finally { env.close(); }
+    const next = setup({ localModels });
+    try {
+        await settled(next, { past: false });
+        assert.equal(next.doc.querySelector('select').value, 'best_match');
+        assert.equal(new URL(next.requests[0].url).searchParams.get('models'), 'best_match');
+    } finally { next.close(); }
 });

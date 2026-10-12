@@ -39,7 +39,7 @@ export function peakWeatherRequestUrl(summit, window, models) {
     peakModels(models);
     if (models.some(model => !model.domain(summit))) throw fail('invalid', 'Invalid weather model coverage.');
     return requestUrl(summit, window, { endpoint: 'https://api.open-meteo.com/v1/forecast',
-        id: models.map(model => model.id).join(','), since: models.map(model => model.since).sort()[0],
+        id: models.map(model => model.id).join(','), since: models.map(model => model.since).filter(Boolean).sort()[0],
         fields: [...new Set(models.flatMap(model => model.fields))] }, PEAK_MAX_UTC_DATES - 1);
 }
 
@@ -51,7 +51,7 @@ function requestUrl(summit, window, model, maxDays) {
         || end < start || end - start > maxDays * 86400_000) throw fail('invalid', 'Invalid weather date window.');
     // Adjacent UTC days may cross the archive's first/last day. Fetch the
     // covered portion and let the civil-day summary label missing hours.
-    const startDate = window.startDate < model.since ? model.since : window.startDate;
+    const startDate = model.since && window.startDate < model.since ? model.since : window.startDate;
     const endDate = model.until && window.endDate > model.until ? model.until : window.endDate;
     if (startDate > endDate) throw fail('unavailable', 'This model has no data for the ascent’s date or location.');
     const url = new URL(model.endpoint);

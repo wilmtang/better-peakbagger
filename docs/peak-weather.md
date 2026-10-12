@@ -16,7 +16,7 @@ there is no geocoding or extra Peakbagger request.
 
 The card defaults to **16-day forecast**, covering today plus fifteen days in forward
 order. **Past 16 days** shows sixteen completed local days, latest first, excluding
-today. Both views share one named-model request; period tabs support arrow keys, Home and End
+today. Both views share one weather request; period tabs support arrow keys, Home and End
 and retain each view's expanded day. Forecast conditions use expected rather
 than past-tense rain/snow labels. Each compact row has the
 day's most severe available condition, temperature low/high, precipitation
@@ -54,10 +54,19 @@ change wrapping.
 The forecast view warns that estimates may be inaccurate, especially farther
 ahead or at mountain summits, and prompts users to check local mountain forecasts.
 Each period has a **Weather model** dropdown, initially set to **GFS** for its
-sixteen-day forecast horizon. Each period's last selected named model is saved
+sixteen-day forecast horizon. Each period's last selected model is saved
 in extension-local storage on this device, separate from synced settings and
 backups. A saved regional model that does not cover a newly opened summit falls
 back to GFS at startup; an explicit choice on an open page never silently changes.
+
+**Best Match (Open-Meteo)** is the first option in both period lists. It uses
+`models=best_match` on the [Forecast API](https://open-meteo.com/en/docs), which
+automatically combines suitable models for the location, with up to sixteen
+forecast days. This is distinct from the ascent card's Historical Weather API
+archive blend. Its resolution is **Automatic**; underlying model resolution,
+availability and update times vary. Source details do not claim a fixed grid
+resolution, a single run, or the source of each value. The update table labels
+the blend's clocks **Varies by model** and retains the individual-model rows.
 
 Named alternatives are filtered by geographic coverage and date availability.
 History excludes delayed reanalyses that cannot cover yesterday. Forecast
@@ -76,7 +85,7 @@ Refresh and the model dropdown while period tabs remain usable.
 API identifier, resolution, horizon and possible hourly interpolation. The
 combined API response reports only one grid coordinate, so the disclosure says
 individual model grids may differ. The named fields establish which requested
-model supplied each period, without claiming an exact run initialization or
+model or Best Match blend supplied each period, without claiming an exact run initialization or
 sub-grid provenance. Horizons were checked against Open-Meteo's
 [Forecast API and provider tables](https://open-meteo.com/en/docs) and named
 model routing against its [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
@@ -246,3 +255,14 @@ A final process/profile inspection found no owned verification browser or
 disposable profile remaining. Hidden checks do not prove the user's Brave session,
 native window focus or placement, screen-reader speech, model accuracy or a
 promised next update.
+
+The Best Match option was verified on 2026-10-11: build, focused ESLint and all
+124 weather tests passed. Hidden real-extension Chrome 153.0.8010.12 and
+Firefox 157.0.1 fixtures passed selection/persistence, combined and deduplicated
+requests, blend source details and responsive layout at 375/768/1440×1100.
+Inspected narrow and wide Best Match renders; charts/icons use SVG, not WebGL.
+The real-manifest Chrome check passed hidden at 1000×760 with BFCache restoration.
+Two live public Mount Rainier API probes validated Best Match alone (36,026 bytes)
+and alongside GFS (62,705 bytes), each with 792 hourly timestamps and the expected
+plain/model-suffixed fields. These establish the transport contract, not forecast
+accuracy, native dropdown-menu behavior or screen-reader speech.

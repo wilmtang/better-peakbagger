@@ -11,6 +11,7 @@ test('model metadata maps known selection IDs and exposes both GFS products', ()
     assert.deepEqual(peakModelUpdateDomains(PEAK_WEATHER_MODELS.find(model => model.id === 'gfs_global')), ['ncep_gfs013', 'ncep_gfs025']);
     assert.deepEqual(peakModelUpdateDomains(PEAK_WEATHER_MODELS.find(model => model.id === 'gfs_hrrr')), ['ncep_hrrr_conus']);
     assert.deepEqual(peakModelUpdateDomains(PEAK_WEATHER_MODELS.find(model => model.id === 'bom_access_global')), []);
+    assert.deepEqual(peakModelUpdateDomains(PEAK_WEATHER_MODELS.find(model => model.id === 'best_match')), []);
     assert.throws(() => peakModelUpdateDomains({ id: 'gfs_global' }), /Invalid/);
 });
 

@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.js';
 import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
-import { PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
-import { peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.js';
+import { PEAK_BEST_MATCH, PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
+import { ARCHIVE_BEST_MATCH } from '../../src/weather/weather-models.js';
+import { weatherRequestUrl, peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.js';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 
 const summit = { latitude: 46.85, longitude: -121.76, elevation: 4391, nation: 'united states' };
@@ -12,7 +13,7 @@ const model = id => PEAK_WEATHER_MODELS.find(item => item.id === id);
 const fixture = ids => weatherModelFixture(weatherFixture({ ...summit, startDate: window.startDate,
     hours: (Date.parse(window.endDate) - Date.parse(window.startDate)) / 3600_000 + 24 }), ids);
 
-test('peak model selection requires named eligible models and GFS covers the full forecast', () => {
+test('peak model selection requires eligible models and GFS covers the full forecast', () => {
     const choices = resolvePeakWeatherModels(summit, window, { past: 'gfs_global', forecast: 'gfs_global' });
     assert.equal(choices.forecast.forecastDays, 16);
     assert.equal(choices.past, choices.forecast);
@@ -20,8 +21,37 @@ test('peak model selection requires named eligible models and GFS covers the ful
     assert.ok(!eligiblePeakWeatherModels(summit, early, 'past').includes(model('gfs_hrrr')));
     assert.ok(eligiblePeakWeatherModels(summit, early, 'forecast').includes(model('gfs_hrrr')));
     assert.ok(!eligiblePeakWeatherModels(summit, window, 'past').some(item => item.id.includes('era5')));
-    for (const forecast of ['best_match', 'icon_d2', 'not_a_model']) {
+    for (const forecast of ['icon_d2', 'not_a_model']) {
         assert.throws(() => resolvePeakWeatherModels(summit, window, { past: 'gfs_global', forecast }), /does not cover/);
+    }
+});
+
+test('peak Best Match is first in both periods and retains forecast rather than archive contracts', () => {
+    for (const period of ['past', 'forecast']) assert.equal(eligiblePeakWeatherModels(summit, window, period)[0], PEAK_BEST_MATCH);
+    const choices = resolvePeakWeatherModels(summit, window, { past: 'best_match', forecast: 'best_match' });
+    assert.equal(choices.forecast, PEAK_BEST_MATCH); assert.equal(choices.past, PEAK_BEST_MATCH);
+    assert.notEqual(PEAK_BEST_MATCH, ARCHIVE_BEST_MATCH);
+    assert.equal(PEAK_BEST_MATCH.forecastDays, 16); assert.equal(PEAK_BEST_MATCH.resolution, 'Automatic');
+    assert.equal(PEAK_BEST_MATCH.since, null); assert.equal(PEAK_BEST_MATCH.gustTiming, 'preceding-hour');
+    const url = new URL(peakWeatherRequestUrl(summit, window, [PEAK_BEST_MATCH]));
+    assert.equal(url.host, 'api.open-meteo.com'); assert.equal(url.searchParams.get('models'), 'best_match');
+    assert.equal(url.searchParams.get('start_date'), window.startDate);
+    assert.throws(() => peakWeatherRequestUrl(summit, window, [ARCHIVE_BEST_MATCH]), { code: 'invalid' });
+    assert.throws(() => weatherRequestUrl(summit, window, PEAK_BEST_MATCH), { code: 'invalid' });
+});
+
+test('Best Match decodes plain and model-suffixed responses without borrowing named readings', () => {
+    for (const ids of [['best_match'], ['best_match', 'gfs_global']]) {
+        const models = ids.map(model), body = fixture(ids);
+        const temperature = ids.length === 1 ? 'temperature_2m' : 'temperature_2m_best_match';
+        body.hourly[temperature].fill(5);
+        if (ids.length > 1) body.hourly.temperature_2m_gfs_global.fill(10);
+        const result = validatePeakWeatherResponse(body, summit, window, models);
+        assert.equal(result.models.best_match.samples[0].temperature, 5);
+        assert.equal(result.models.best_match.gustTiming, 'preceding-hour');
+        if (ids.length > 1) assert.equal(result.models.gfs_global.samples[0].temperature, 10);
+        delete body.hourly[temperature];
+        assert.throws(() => validatePeakWeatherResponse(body, summit, window, models), { code: 'invalid-response' });
     }
 });
 

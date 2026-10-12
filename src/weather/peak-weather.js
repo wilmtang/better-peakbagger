@@ -11,7 +11,7 @@ import { createPeakHourlyChart } from './peak-weather-hourly.js';
 import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
-import { eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
+import { PEAK_BEST_MATCH, eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
 import { createWeatherIcon } from './weather-icon.js';
 
@@ -77,7 +77,8 @@ export function mountPeakWeather() {
             const domains = peakModelUpdateDomains(model);
             for (const domain of domains.length ? domains : [null]) {
                 const label = model.id === 'gfs_global' ? `${model.label} · ${domain === 'ncep_gfs013' ? '13' : '25'} km` : model.label;
-                const last = element('td', { text: domain ? 'Loading…' : 'Unavailable' }), next = element('td', { text: domain ? 'Loading…' : 'Unavailable' });
+                const unavailable = model === PEAK_BEST_MATCH ? 'Varies by model' : 'Unavailable';
+                const last = element('td', { text: domain ? 'Loading…' : unavailable }), next = element('td', { text: domain ? 'Loading…' : unavailable });
                 updatesBody.append(element('tr', { 'data-update-model': model.id }, [element('th', { scope: 'row', text: label }), last, next]));
                 if (domain) targets.set(domain, [...(targets.get(domain) || []), { last, next }]);
             }
@@ -111,7 +112,7 @@ export function mountPeakWeather() {
     const populateModels = () => {
         const window = requestedWindow || weatherPeakWindow(zone);
         select.replaceChildren(...eligiblePeakWeatherModels(subject, window, period).map(model => element('option', { value: model.id,
-            text: `${model.label} · ${model.resolution}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
+            text: `${model === PEAK_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}`}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
         // Keep a now-ineligible selection visible so a date rollover cannot
         // silently turn an explicit choice into GFS.
         if (![...select.options].some(option => option.value === choices[period])) select.append(element('option', {
@@ -166,7 +167,12 @@ export function mountPeakWeather() {
         (periodButtons[0].querySelector('.bpb-week-tab-label') || periodButtons[0]).textContent = forecastLabel;
         periodButtons[0].setAttribute('aria-label', forecastLabel); periodButtons[0].dataset.label = forecastLabel;
         modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}` : ''}`;
-        modelText.textContent = `${model.label} (${model.id}), ${model.resolution}. GFS is the initial default for its 16-day forecast; each period remembers your last model on this device. Forecast length is measured from the model run, so the last displayed day may be incomplete. Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. No other model fills missing values.`;
+        const modelDetails = model === PEAK_BEST_MATCH
+            ? 'Open-Meteo automatically combines suitable forecast models for this location. Resolution and update times vary; the response does not identify the source model of each value.'
+            : 'No other model fills missing values.';
+        const horizonDetails = model === PEAK_BEST_MATCH ? 'Forecast availability varies across the combined models, so the last displayed day may be incomplete.'
+            : 'Forecast length is measured from the model run, so the last displayed day may be incomplete.';
+        modelText.textContent = `${model.label} (${model.id}), ${model.resolution}. GFS is the initial default for its 16-day forecast; each period remembers your last model on this device. ${horizonDetails} Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. ${modelDetails}`;
         help.hidden = !summaries.some(day => day.useful); source.hidden = false;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
         renderLabels(current.window[period]);
