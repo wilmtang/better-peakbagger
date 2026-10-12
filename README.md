@@ -370,5 +370,9 @@ npm run verify:browsers
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE). Third-party license notices and project credits are in
+[AGPL-3.0-or-later](LICENSE). Free to use, improve, and share.
+If you adapt and distribute this code, your version must also be open source
+under the same license, with source code available to users.
+
+Third-party license notices and project credits are in
 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
