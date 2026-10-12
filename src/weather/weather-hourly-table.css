@@ -1,5 +1,28 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Shared weather illustration and measurement palette, matching Sun & Moon. */
+:is(#bpb-ascent-weather, #bpb-peak-weather) {
+    --weather-sun: #f4a62a; --weather-cloud: #718797; --weather-moon: #52758d;
+    --weather-cold: #236fac; --weather-warm: #995e16; --weather-wind: #78649d;
+}
+html[data-bpb-theme="dark"] :is(#bpb-ascent-weather, #bpb-peak-weather) {
+    --weather-sun: #ffb23f; --weather-cloud: #b8d0e1; --weather-moon: #b8d0e1;
+    --weather-cold: #83bbff; --weather-warm: #f2bd70; --weather-wind: #b8a2df;
+}
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol { display: inline-flex; width: var(--weather-icon-size, 28px); height: var(--weather-icon-size, 28px); vertical-align: middle; }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol svg { display: block; width: 100%; height: 100%; overflow: visible; }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__sun { fill: var(--weather-sun); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__rays { fill: none; stroke: var(--weather-sun); stroke-width: 1.8; stroke-linecap: round; }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__moon { fill: var(--weather-moon); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__cloud { fill: var(--weather-cloud); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) :is(.bpb-weather-symbol__rain, .bpb-weather-symbol__snow, .bpb-weather-symbol__fog) { fill: none; stroke: var(--weather-cold); stroke-width: 1.8; stroke-linecap: round; }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__fog { stroke: var(--weather-cloud); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-symbol__storm { fill: var(--weather-wind); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="temperature"] { --weather-plot: var(--weather-warm); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) [data-weather-metric="precipitation"] { --weather-plot: var(--weather-cold); }
+:is(#bpb-ascent-weather, #bpb-peak-weather) :is([data-weather-metric="wind"], [data-weather-metric="gust"]) { --weather-plot: var(--weather-wind); }
+#bpb-ascent-weather .bpb-weather-low { color: var(--weather-cold); }
+#bpb-ascent-weather .bpb-weather-high { color: var(--weather-warm); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-scroll { position: relative; width: 100%; min-width: 0; margin: 12px 0; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--hourly-border); border-radius: 7px; }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-scroll:focus-visible { outline: 2px solid var(--hourly-accent); outline-offset: 3px; }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-table { width: max-content; margin: 0; border: 0; border-spacing: 0; table-layout: fixed; font: inherit; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--hourly-text); }
@@ -10,11 +33,6 @@
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-table tr > :last-child { border-right: 0; }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-table thead { background: var(--hourly-soft); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hour-zone { display: block; color: var(--hourly-sub); font-size: 9px; }
-:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hour-icon { font-size: 21px; line-height: 24px; }
-:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hour-icon-sun,
-:is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hour-icon-partly { color: #b47b26; }
-html[data-bpb-theme="dark"] :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hour-icon-sun,
-html[data-bpb-theme="dark"] :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hour-icon-partly { color: #efc766; }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-wind-arrow { display: inline-block; margin-right: 5px; color: var(--hourly-accent); font-size: 18px; line-height: 1; }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-table td[data-strength="calm"] { background: color-mix(in srgb, var(--hourly-accent) 10%, var(--hourly-bg)); }
 :is(#bpb-ascent-weather, #bpb-peak-weather) .bpb-weather-hourly-table td[data-strength="breezy"] { background: color-mix(in srgb, #c4bb5a 16%, var(--hourly-bg)); }

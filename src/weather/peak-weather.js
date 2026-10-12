@@ -13,10 +13,10 @@ import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
+import { createWeatherIcon } from './weather-icon.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
 const modelKeys = { past: 'bpbPeakWeatherModelPast', forecast: 'bpbPeakWeatherModelForecast' };
-const icons = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const dateLabel = (date, options) => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { ...options, timeZone: 'UTC' });
 
 export function mountPeakWeather() {
@@ -33,13 +33,13 @@ export function mountPeakWeather() {
     periodTabs.append(...periodButtons);
     const range = element('p', { class: 'bpb-week-range' });
     const locationLabel = element('p', { class: 'bpb-week-sub' });
-    const accuracy = element('p', { class: 'bpb-week-accuracy', text: 'Forecasts may be inaccurate, especially farther ahead or at mountain summits. Check local mountain forecasts before your climb.' });
+    const accuracy = element('p', { class: 'bpb-week-accuracy', text: 'Forecasts may be inaccurate farther ahead and at mountain summits. Check a local mountain forecast before your climb.' });
     const status = element('p', { class: 'bpb-week-status', role: 'status', 'aria-live': 'polite' });
     const days = element('div', { class: 'bpb-week-days' });
     const help = element('p', { class: 'bpb-week-help', hidden: '', text: 'Select a day for hourly weather. Rain/snow is water equivalent; wind is the daily maximum.' });
     const sourceText = element('p');
     const select = element('select', { id: `${ID}-model`, 'aria-describedby': `${ID}-model-description` });
-    const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description' });
+    const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description', hidden: '' });
     const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select, modelDescription]);
     const modelText = element('p', { class: 'bpb-week-models' });
     const updatesBody = element('tbody');
@@ -49,8 +49,9 @@ export function mountPeakWeather() {
     ]);
     const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Next updates are estimated from the usual cadence and may be delayed. These are provider-wide updates, not the runs behind individual historical hours; servers may take 10 minutes to agree.' });
     const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Models & source details' }), modelText, sourceText, updates, updatesNote]);
-    const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [range, locationLabel, accuracy, days, help]);
-    card.append(element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Summit weather' }), refresh]), periodTabs, modelControl, status, periodPanel,
+    const overview = element('div', { class: 'bpb-week-overview' }, [element('div', {}, [range, locationLabel]), modelControl]);
+    const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
+    card.append(element('header', {}, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), document.createTextNode('Summit weather')]), refresh]), periodTabs, periodPanel,
         source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
             element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
@@ -133,9 +134,15 @@ export function mountPeakWeather() {
     };
     const paintStatus = () => {
         const summaries = current?.days[period];
+        const partialCount = summaries?.filter(day => day.partial).length || 0;
         status.textContent = notice?.text || (summaries && !summaries.some(day => day.useful)
             ? `${period === 'forecast' ? 'Forecast' : 'Past weather'} is unavailable for this summit. Try the other weather period.`
-            : summaries?.some(day => day.partial) ? 'Some days have incomplete hours.' : '');
+            : partialCount ? `${partialCount} ${partialCount === 1 ? 'day has' : 'days have'} incomplete hours.` : '');
+        // The select already names the model. Identify retained data only when
+        // it differs from the requested choice, including after a failed load.
+        modelDescription.hidden = !current || current.models[period].id === select.value;
+        if (modelDescription.hidden) select.removeAttribute('aria-describedby');
+        else select.setAttribute('aria-describedby', modelDescription.id);
         if (notice?.kind === 'rate-limit') status.dataset.kind = 'rate-limit';
         else delete status.dataset.kind;
     };
@@ -170,10 +177,13 @@ export function mountPeakWeather() {
             const detail = element('details', { class: 'bpb-week-day', 'data-date': date });
             const summary = element('summary', {}, [
                 element('span', { class: 'bpb-week-date' }, [element('strong', { text: forecast && date === mountainTime.localDate(zone, Date.now()) ? 'Today' : dateLabel(date, { weekday: 'short' }) }), element('span', { text: dateLabel(date, { month: 'short', day: 'numeric' }) })]),
-                element('span', { class: 'bpb-week-icon', 'aria-hidden': 'true', text: icons[day.condition.icon] }),
+                createWeatherIcon(day.condition.icon, { className: 'bpb-week-icon' }),
                 element('span', { class: 'bpb-week-condition', text: forecast ? day.condition.label.replace('occurred', 'expected') : day.condition.label }),
-                element('span', { class: 'bpb-week-temp', title: 'Daily low / high', text: day.temperature.low === null ? '—' : `${format(day.temperature.low, 'temperature')} / ${format(day.temperature.high, 'temperature')}` }),
-                element('span', { class: 'bpb-week-metrics', text: `Rain/snow ${format(day.precipitation.total, 'precipitation')}${day.precipitation.total !== null && !day.precipitation.complete ? ' (partial)' : ''} · Wind ${format(day.wind.high, 'wind')}` }),
+                element('span', { class: 'bpb-week-temp' }, [
+                    element('span', { class: 'bpb-week-low', text: `Low ${format(day.temperature.low, 'temperature')}` }),
+                    document.createTextNode(' · '), element('span', { class: 'bpb-week-high', text: `High ${format(day.temperature.high, 'temperature')}` }),
+                ]),
+                element('span', { class: 'bpb-week-metrics', text: `Rain/snow ${format(day.precipitation.total, 'precipitation')}${day.precipitation.total !== null && !day.precipitation.complete ? ' (partial)' : ''} · Max wind ${format(day.wind.high, 'wind')}` }),
                 element('span', { class: 'bpb-week-chevron', 'aria-hidden': 'true', text: '⌄' }),
             ]);
             if (!day.useful || day.partial || (day.gust.high !== null && !day.gust.complete)) summary.append(element('span', { class: 'bpb-week-partial', text: day.useful ? 'Incomplete hours' : 'Data unavailable' }));

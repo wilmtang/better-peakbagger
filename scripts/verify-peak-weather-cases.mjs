@@ -33,6 +33,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
             overflow: [...card.querySelectorAll('select, .bpb-week-model-description, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
+                if (!node.getClientRects().length) return false;
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
             pageWidth: document.documentElement.scrollWidth, bg: getComputedStyle(card).backgroundColor,

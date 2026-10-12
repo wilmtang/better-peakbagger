@@ -27,6 +27,13 @@ closes the previous one and retains the chosen data tab. Temperature, rain/snow,
 wind and gusts use responsive line graphs; Conditions shows a horizontally scrollable hourly table of condition icons,
 temperature, feels-like, rain/snow, wind, gusts and wind direction. Row labels
 stay visible while scrolling; clear hours use a Moon icon at night.
+Both weather cards share packaged SVG illustrations and the Sun & Moon palette:
+amber sun and temperature graphs, blue rain/snow and daily lows, and muted violet
+wind graphs. Daily temperature ranges label **Low** and **High**, and wind is
+labelled **Max wind**. The selected model is named once; a separate **Using**
+label appears when retained readings belong to a different model during loading
+or after a failed model change. The range and model control sit side by side
+where space allows and stack within narrow cards.
 Missing values break the line rather than appearing as zero. Hover previews a
 reading; clicking or using arrow keys pins it, and Escape clears it. Data tabs
 support arrow keys, Home and End. Charts fit inside the card without widening

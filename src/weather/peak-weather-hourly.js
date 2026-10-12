@@ -99,6 +99,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     }
     function choose(next) {
         metric = next; hover = -1; selected = -1; onMetric(metric);
+        frame.dataset.weatherMetric = metric;
         rows = hourlyWeatherSeries(day.window, samples, metric);
         for (const button of buttons) {
             const active = button.dataset.metric === metric;

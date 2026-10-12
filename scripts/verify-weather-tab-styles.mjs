@@ -12,4 +12,15 @@ export async function verifyWeatherTabStyles(evaluate, selector) {
     assert.ok(selected && idle, `missing weather tabs: ${JSON.stringify(styles)}`);
     assert.notEqual(selected.background, idle.background, `selected weather pill erased: ${JSON.stringify(styles)}`);
     assert.notEqual(selected.color, idle.color, `selected weather label erased: ${JSON.stringify(styles)}`);
+    const palette = await evaluate(selector => {
+        const card = document.querySelector(selector).closest('#bpb-ascent-weather, #bpb-peak-weather');
+        const low = card.querySelector('.bpb-week-low, .bpb-weather-low'), high = card.querySelector('.bpb-week-high, .bpb-weather-high');
+        const cloud = card.querySelector('.bpb-weather-symbol__cloud');
+        return { text: getComputedStyle(card).color, title: getComputedStyle(card.querySelector('h2')).color,
+            low: low && getComputedStyle(low).color, high: high && getComputedStyle(high).color,
+            cloud: cloud && getComputedStyle(cloud).fill };
+    }, selector);
+    assert.equal(palette.title, palette.text, `site heading repaint overrides weather title: ${JSON.stringify(palette)}`);
+    if (palette.low && palette.high) assert.notEqual(palette.low, palette.high, `temperature range lost its palette: ${JSON.stringify(palette)}`);
+    if (palette.cloud) assert.notEqual(palette.cloud, palette.text, `weather illustration lost its palette: ${JSON.stringify(palette)}`);
 }

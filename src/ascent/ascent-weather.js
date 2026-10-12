@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { dom } from '../ui/dom.js';
+import { createWeatherIcon } from '../weather/weather-icon.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
@@ -21,7 +22,6 @@ import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-curs
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
 const element = dom.element;
 const numeric = value => Number.isFinite(value);
-const WEATHER_ICONS = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const clean = text => (text || '').replace(/\s+/g, ' ').trim();
 const displayDate = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 
@@ -38,7 +38,6 @@ export function mountAscentWeather() {
     const status = element('div', { class: 'bpb-weather-status', role: 'status', 'aria-live': 'polite' });
     const retry = element('button', { type: 'button', class: 'bpb-weather-retry', text: 'Retry', hidden: '' });
     const condition = element('h3');
-    // Unicode symbols are packaged text, never remotely requested images.
     const conditionIcon = element('span', { class: 'bpb-weather-icon', 'aria-hidden': 'true' });
     const conditionDetail = element('div', { class: 'bpb-weather-sub' });
     const metrics = element('dl', { class: 'bpb-weather-metrics' });
@@ -50,7 +49,7 @@ export function mountAscentWeather() {
         metrics.append(element('div', {}, [element('dt', { text: label }), value, detail]));
     }
     const select = element('select', { id: `${ID}-model`, 'aria-label': 'Weather model' }, [element('option', { value: ARCHIVE_BEST_MATCH.id, text: 'Best Match (Open-Meteo)' })]);
-    const modelName = element('span'), modelType = element('span', { class: 'bpb-weather-sub' });
+    const modelName = element('span', { hidden: '' }), modelType = element('span', { class: 'bpb-weather-sub' });
     const modelRow = element('div', { class: 'bpb-weather-model' }, [
         element('div', {}, [element('label', { for: select.id, text: 'Weather model' }), select]),
         element('div', { class: 'bpb-weather-model-description' }, [modelName, modelType]),
@@ -297,6 +296,7 @@ export function mountAscentWeather() {
 
     function drawChart() {
         if (!enabled() || !current || hourly.hidden || lifecycle?.state !== 'active') return;
+        chartFrame.dataset.weatherMetric = metric;
         const showConditions = metric === 'conditions';
         chartFrame.hidden = readout.hidden = readingHint.hidden = showConditions;
         chart.toggleAttribute('hidden', showConditions); conditions.hidden = conditionsNote.hidden = !showConditions; conditionsEmpty.hidden = true;
@@ -394,25 +394,34 @@ export function mountAscentWeather() {
         const { day, model, data } = current;
         resultArea.hidden = false; detailsArea.hidden = false;
         condition.textContent = day.condition.label;
-        conditionIcon.textContent = WEATHER_ICONS[day.condition.icon];
+        conditionIcon.replaceChildren(createWeatherIcon(day.condition.icon));
         conditionDetail.textContent = day.condition.complete && !dayWindow.partial
             ? dayWindow.date === subject.date ? 'Conditions during the ascent day' : 'Conditions during this day'
             : 'Conditions in available hours';
-        readings.temperature.value.textContent = numeric(day.temperature.low) ? `${convert(day.temperature.low, 'temperature').toFixed(0)}–${convert(day.temperature.high, 'temperature').toFixed(0)}${unit('temperature')}`.replaceAll('-', '−') : '—';
+        readings.temperature.value.replaceChildren(...(numeric(day.temperature.low) ? [
+            element('span', { class: 'bpb-weather-low', text: convert(day.temperature.low, 'temperature').toFixed(0).replaceAll('-', '−') }),
+            document.createTextNode('–'), element('span', { class: 'bpb-weather-high', text: `${convert(day.temperature.high, 'temperature').toFixed(0)}${unit('temperature')}`.replaceAll('-', '−') }),
+        ] : [document.createTextNode('—')]));
         readings.precipitation.value.textContent = format(day.precipitation.total, 'precipitation');
         readings.wind.value.textContent = format(day.wind.high, 'wind'); readings.gust.value.textContent = format(day.gust.high, 'wind');
         for (const key of ['temperature', 'wind', 'gust']) readings[key].detail.textContent = !day[key].complete || dayWindow.partial ? 'Available hours' : key === 'temperature' ? 'Daily low / high' : 'Daily maximum';
         readings.precipitation.detail.textContent = !day.precipitation.complete ? 'Partial total' : 'Water equivalent';
         if (day.precipitation.total === null) readings.precipitation.detail.textContent = 'Unavailable';
         locationLabel.textContent = `${subject.peak.name} · At the summit${summit.elevation === null ? '' : ` · ${units.formatElevation(summit.elevation, unitSystem())}`}`;
-        modelName.textContent = `Using ${model.label} · ${model.resolution}`; modelType.textContent = model.type;
+        modelName.textContent = `Using ${model.label} · ${model.resolution}`;
+        modelName.hidden = model.id === select.value;
+        modelType.textContent = `${model.resolution} · ${model.type}`;
         zoneText.textContent = mountainTime.zoneLabel(dayWindow.zone, dayWindow.start);
         const modelDetails = model === ARCHIVE_BEST_MATCH ? 'Open-Meteo combines ECMWF IFS, ERA5 and ERA5-Land according to available dates and variables. The API does not identify the source of each value.'
             : `Native ${model.intervalHours}-hour data${model.intervalHours > 1 ? ', interpolated to hourly' : ''}.`;
         sourceText.textContent = `${model.label}, ${model.resolution}. ${model.type}. ${modelDetails} Summit timezone: ${dayWindow.zone.timeZone || zoneText.textContent}. Selected grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}. ${summit.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${data.grid.elevation.toFixed(0)} m.${day.precipitation.allocationEstimated ? ' Precipitation at fractional-hour day boundaries is proportionally allocated.' : ''} Model estimates cannot establish the climber’s summit time or route conditions.`;
         drawChart();
     }
-    const busy = value => { card.setAttribute('aria-busy', String(value)); retry.hidden = true; updateNavigation(); };
+    const busy = value => {
+        card.setAttribute('aria-busy', String(value)); retry.hidden = true;
+        modelName.hidden = !current || current.model.id === select.value;
+        updateNavigation();
+    };
     const cancel = () => { generation++; controller?.abort(); controller = null; busy(false); };
     const updateModels = targetDate => {
         const selected = select.value;

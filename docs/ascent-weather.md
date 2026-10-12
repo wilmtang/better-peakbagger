@@ -104,6 +104,11 @@ clocks retain distinct timezone labels. Rain/snow appears under its interval's
 starting time, while gusts retain the selected model's instantaneous or interval
 contract. The four tabs share keyboard arrow/Home/End navigation.
 
+Illustrations and temperature/rain/wind graph colors match the summit weather
+card and Sun & Moon. Model resolution and type remain visible beside the model
+choice; a separate **Using** label identifies retained readings only when they
+belong to a different model than the current choice.
+
 Numeric graphs have their own hourly reading explorer, including on ascents
 without GPX. Tab enters the graph; arrows/Home/End select a returned hour or an
 explicit unavailable slot, and Escape clears that selection. Pointer hover

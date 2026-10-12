@@ -4,9 +4,9 @@
 import { dom } from '../ui/dom.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { hourlyWeatherCondition } from './weather-day.js';
+import { createWeatherIcon } from './weather-icon.js';
 
 const HOUR = 3600_000, element = dom.element;
-const icons = { sun: '☀', cloud: '☁', partly: '⛅', rain: '☂', snow: '❄', fog: '≋', storm: 'ϟ', unknown: '—' };
 const measurements = [['code', 'Conditions'], ['temperature', 'Temperature'], ['apparent', 'Feels like'], ['precipitation', 'Rain/snow'], ['wind', 'Wind'], ['gust', 'Gusts'], ['direction', 'Wind from']];
 
 // Instantaneous fields exclude ending midnight; accumulations include it and
@@ -65,8 +65,8 @@ export function createWeatherHourlyTable({ window, samples, zone, format, gustTi
             const cell = element('td', { 'data-weather-time': row.time });
             if (key === 'code') {
                 const condition = hourlyWeatherCondition(value);
-                const icon = row.sample?.isDay === 0 && ['sun', 'partly'].includes(condition.icon) ? condition.icon === 'partly' ? '☁☾' : '☾' : icons[condition.icon];
-                cell.append(element('span', { class: `bpb-weather-hour-icon bpb-weather-hour-icon-${condition.icon}`, role: 'img', 'aria-label': condition.label, title: `${localTime(row.time)} · ${condition.label}`, text: icon }));
+                cell.append(createWeatherIcon(condition.icon, { night: row.sample?.isDay === 0, className: 'bpb-weather-hour-icon',
+                    label: condition.label, title: `${localTime(row.time)} · ${condition.label}` }));
             } else if (key === 'direction' && Number.isFinite(value)) {
                 const compass = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(value / 45) % 8];
                 cell.title = `Wind from ${compass} (${Math.round(value)}°)`;

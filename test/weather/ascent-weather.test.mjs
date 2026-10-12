@@ -426,7 +426,7 @@ test('weather cursor previews GPX hover and restores selection without rebuildin
     const env = setup();
     try {
         await openChart(env);
-        const svg = env.doc.querySelector('svg'), line = svg.querySelector('.bpb-weather-cursor');
+        const svg = env.doc.querySelector('.bpb-weather-chart'), line = svg.querySelector('.bpb-weather-cursor');
         const dataPath = svg.querySelector('path'), label = env.doc.querySelector('.bpb-weather-cursor-label');
         const selectionTime = Date.parse('2024-07-12T17:32:00Z'), hoverTime = Date.parse('2024-07-12T19:15:00Z');
         const before = env.requests.length;
@@ -535,7 +535,7 @@ test('horizontal Conditions shows measurements and GPX highlights the column wit
         const icons = [...list.querySelectorAll('[data-weather-row="code"] [role="img"]')];
         assert.equal(rows.length, 24);
         assert.deepEqual([...list.querySelectorAll('tbody th')].map(cell => cell.textContent), ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
-        assert.equal(env.doc.querySelector('svg').hasAttribute('hidden'), true);
+        assert.equal(env.doc.querySelector('.bpb-weather-chart').hasAttribute('hidden'), true);
         assert.match(rows[0].textContent, /12 AMPDT/);
         assert.equal(icons[0].getAttribute('aria-label'), 'Overcast');
         assert.match(rows[8].textContent, /8 AMPDT/);
@@ -553,7 +553,7 @@ test('horizontal Conditions shows measurements and GPX highlights the column wit
         assert.equal(env.requests.length, before);
         env.doc.querySelector('[data-metric="temperature"]').click();
         assert.equal(list.hidden, true);
-        assert.equal(env.doc.querySelector('svg').hasAttribute('hidden'), false);
+        assert.equal(env.doc.querySelector('.bpb-weather-chart').hasAttribute('hidden'), false);
         assert.equal(env.doc.querySelector('.bpb-weather-cursor').dataset.time, String(selectionTime));
     } finally { env.close(); }
 });
@@ -798,11 +798,13 @@ test('rate limits preserve previous results without cascading, explicit selectio
         : Promise.resolve(new Response('', { status: 429, headers: { 'retry-after': '120' } })) });
     try {
         await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
+        assert.equal(env.doc.querySelector('.bpb-weather-model-description').firstElementChild.hidden, true);
         const before = env.requests.length;
         const select = env.doc.querySelector('select'); select.value = 'ecmwf_ifs'; select.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => env.doc.querySelector('.bpb-weather-status').textContent.includes('Open-Meteo request limit reached'));
         assert.equal(env.requests.length, before + 1);
         assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using Best Match/);
+        assert.equal(env.doc.querySelector('.bpb-weather-model-description').firstElementChild.hidden, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').disabled, true);
         assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');

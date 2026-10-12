@@ -107,7 +107,7 @@ test('mixed weather units update live without changing the default or refetching
         const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
         await waitFor(() => day.querySelector('.bpb-week-line'));
         day.querySelector('[data-metric="precipitation"]').click();
-        assert.match(day.querySelector('svg').getAttribute('aria-label'), /mm/);
+        assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /mm/);
         const requests = env.requests.length;
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, temperatureUnits: 'imperial', elevationUnits: 'imperial', windUnits: 'metric' } } }, 'sync'));
         assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°F/);
@@ -216,17 +216,24 @@ test('model changes cancel stale results; explicit failures keep the visible mod
         return reply(url);
     } });
     try {
-        await settled(env, { past: false }); chooseModel(env, 'icon_global');
+        await settled(env, { past: false });
+        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, true);
+        assert.equal(env.doc.querySelector('select').hasAttribute('aria-describedby'), false);
+        chooseModel(env, 'icon_global');
         await waitFor(() => slow); const stale = env.requests.at(-1);
+        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, false);
         unavailable = true; chooseModel(env, 'ecmwf_ifs');
         await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('selection is unavailable'));
         assert.equal(stale.init.signal.aborted, true); assert.equal(env.requests.length, 3);
         assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
         assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, false);
+        assert.equal(env.doc.querySelector('select').getAttribute('aria-describedby'), 'bpb-peak-weather-model-description');
         slow(); await new Promise(resolve => setTimeout(resolve, 0));
         assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
         unavailable = false; env.doc.querySelector('.bpb-week-refresh').click();
         await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ECMWF IFS'));
+        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, true);
         assert.equal(env.requests.length, 4); assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 15);
     } finally { env.close(); }
 });
@@ -395,7 +402,7 @@ test('hourly disclosure retains local DST folds, closes other days and changes u
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
         const next = env.doc.querySelector('[data-date="2024-11-02"]');
         assert.equal(next.open, true); assert.match(next.textContent, /°C/); assert.match(next.textContent, /km\/h/);
-        assert.match(next.querySelector('svg').getAttribute('aria-label'), /°C/);
+        assert.match(next.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /°C/);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
@@ -439,7 +446,7 @@ test('hourly tabs, keyboard sampling, hover and pinned readings reuse data and r
         frame.dispatchEvent(new env.win.MouseEvent('pointerleave')); assert.equal(readout.textContent, pinned);
         frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         assert.match(readout.textContent, /Low.*High/); assert.equal(day.querySelectorAll('.bpb-week-cursor').length, 0);
-        env.resize(300); assert.equal(day.querySelector('svg').getAttribute('viewBox'), '0 0 300 184');
+        env.resize(300); assert.equal(day.querySelector('.bpb-week-chart svg').getAttribute('viewBox'), '0 0 300 184');
         assert.equal(env.requests.length, 1);
         day.open = false; await waitFor(() => env.resizeObservers.every(observer => observer.disconnected));
         env.resize(700); assert.equal(day.querySelector('.bpb-week-hourly').childElementCount, 0);
@@ -471,7 +478,7 @@ test('missing hours break numeric lines and remain unavailable in conditions; mi
         assert.equal(day.querySelectorAll('[data-weather-row="code"] [role="img"]')[8].getAttribute('aria-label'), 'Unavailable');
         day.querySelector('[data-metric="precipitation"]').click();
         assert.equal(day.querySelector('.bpb-week-chart-empty').hidden, false);
-        assert.equal(day.querySelector('svg').hasAttribute('hidden'), true);
+        assert.equal(day.querySelector('.bpb-week-chart svg').hasAttribute('hidden'), true);
         assert.equal(day.querySelectorAll('.bpb-week-line').length, 0);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
@@ -803,5 +810,31 @@ test('returning to a visible card refreshes an expired forecast without looping 
         env.doc.dispatchEvent(new env.win.Event('visibilitychange'));
         assert.equal(env.requests.length, 3);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
+    } finally { env.close(); }
+});
+
+test('weather summaries name low/high and max wind; shared icons retain night and unavailable semantics', async () => {
+    const env = setup({ fetchFn: async url => {
+        const body = await reply(url).json();
+        body.hourly.weather_code.fill(0);
+        body.hourly.weather_code[body.hourly.time.indexOf(Date.parse('2024-11-04T10:00:00Z') / 1000)] = null;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env);
+        const day = env.doc.querySelector('.bpb-week-day');
+        assert.match(day.querySelector('.bpb-week-temp').textContent, /^Low .*°F · High .*°F$/);
+        assert.match(day.querySelector('.bpb-week-metrics').textContent, /Max wind/);
+        assert.equal(day.querySelector('.bpb-week-icon').getAttribute('aria-hidden'), 'true');
+        day.open = true;
+        await waitFor(() => day.querySelector('.bpb-week-line'));
+        day.querySelector('[data-metric="code"]').click();
+        const icons = [...day.querySelectorAll('[data-weather-row="code"] [role="img"]')];
+        assert.equal(icons[0].dataset.condition, 'moon');
+        assert.equal(icons[0].getAttribute('aria-label'), 'Clear');
+        assert.equal(icons[2].dataset.condition, 'unknown');
+        assert.equal(icons[2].getAttribute('aria-label'), 'Unavailable');
+        assert.ok(icons.some(icon => icon.dataset.condition === 'sun'));
+        assert.equal(env.requests.length, 1, 'illustrations do not request remote assets');
     } finally { env.close(); }
 });

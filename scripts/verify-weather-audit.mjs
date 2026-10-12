@@ -91,7 +91,7 @@ try {
         })));
         assert.notEqual(tabs.find(tab => tab.selected).background, tabs.find(tab => !tab.selected).background);
         assert.notEqual(tabs.find(tab => tab.selected).color, tabs.find(tab => !tab.selected).color);
-        assert.equal(await page.locator('.bpb-weather-disclosure').evaluate(button => getComputedStyle(button).borderTopWidth), '0px');
+        assert.equal(await page.locator('.bpb-weather-disclosure').evaluate(button => getComputedStyle(button).borderTopWidth), '1px');
         await page.setViewportSize({ width: 375, height: 1000 });
         await page.waitForFunction(() => document.querySelector('.bpb-weather-chart').getAttribute('viewBox').split(' ')[2] - document.querySelector('.bpb-weather-chart').getBoundingClientRect().width < 1);
         if (output) await page.locator('#bpb-ascent-weather').screenshot({ path: path.join(output, `ascent-reading-${theme}-375.png`) });

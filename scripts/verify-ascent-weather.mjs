@@ -405,7 +405,7 @@ try {
                     for (const width of [1440, 768, 375]) {
                         await resize(width, 1100);
                         await wait(() => {
-                            const card = document.getElementById('bpb-ascent-weather'), svg = card.querySelector('svg');
+                            const card = document.getElementById('bpb-ascent-weather'), svg = card.querySelector('.bpb-weather-chart');
                             return Math.abs(Number(svg.getAttribute('viewBox')?.split(' ')[2]) - svg.getBoundingClientRect().width) < 1;
                         }, 'responsive chart width');
                         const geometry = await evaluate(geometryForCard);
@@ -422,7 +422,7 @@ try {
                         await verifyWeatherTabStyles(evaluate, '.bpb-weather-tabs button');
                         await wait(() => !document.querySelector('.bpb-weather-conditions').hidden
                         && document.querySelectorAll('.bpb-weather-conditions thead th[data-weather-time]').length === 24, 'horizontal hourly conditions');
-                        assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden')), true);
+                        assert.equal(await evaluate(() => document.querySelector('#bpb-ascent-weather .bpb-weather-chart').hasAttribute('hidden')), true);
                         assert.ok(await evaluate(() => !!document.querySelector('.bpb-weather-conditions [aria-label="Light snow"]')));
                         assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.bpb-weather-hourly-table tbody th')].map(cell => cell.textContent)), ['Conditions', 'Temperature', 'Rain/snow', 'Wind', 'Gusts']);
                         assert.ok(await evaluate(() => {
@@ -445,7 +445,7 @@ try {
                         await evaluate(() => { document.querySelector('.bpb-weather-conditions').scrollLeft = 320; });
                         assert.equal(await evaluate(() => getComputedStyle(document.querySelector('.bpb-weather-hourly-table tbody th')).position), 'sticky');
                         await click('[data-metric="temperature"]');
-                        await wait(() => !document.querySelector('#bpb-ascent-weather svg').hasAttribute('hidden'), 'return to the numeric graph');
+                        await wait(() => !document.querySelector('#bpb-ascent-weather .bpb-weather-chart').hasAttribute('hidden'), 'return to the numeric graph');
                     }
                     if (kind === 'long-report') {
                         await resize(1440, 1100);
@@ -485,7 +485,7 @@ try {
                             await resize(width, 1100);
                             await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.KeyboardEvent('keydown', { key: 'End' })));
                             await wait(() => {
-                                const svg = document.querySelector('#bpb-ascent-weather svg');
+                                const svg = document.querySelector('#bpb-ascent-weather .bpb-weather-chart');
                                 return Math.abs(Number(svg.getAttribute('viewBox')?.split(' ')[2]) - svg.getBoundingClientRect().width) < 1;
                             }, 'weather chart after divider resize');
                             assertPlacement(await evaluate(geometryForCard));
