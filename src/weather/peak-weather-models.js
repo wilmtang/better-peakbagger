@@ -46,7 +46,7 @@ export function eligiblePeakWeatherModels(summit, window, period) {
 export function resolvePeakWeatherModels(summit, window, choices) {
     return Object.fromEntries(['past', 'forecast'].map(period => {
         const model = eligiblePeakWeatherModels(summit, window, period).find(item => item.id === choices[period]);
-        if (!model) throw new Error('This weather model does not cover the summit and date range. Choose another model.');
+        if (!model) throw new Error('This weather model does not cover the location and date range. Choose another model.');
         return [period, model];
     }));
 }

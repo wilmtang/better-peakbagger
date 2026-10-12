@@ -335,6 +335,22 @@ const bootLoadedFrame = async (initOverrides = {}) => {
     return { dom, window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages, timers, realSetTimeout };
 };
 
+test('3D weather points require the active frame generation, valid coordinates and a visible card', async () => {
+    const harness = await bootLoadedFrame();
+    const { window, frame, dispatchFrame, pageMessages } = harness;
+    try {
+        const card = window.document.createElement('section'); card.id = 'bpb-peak-weather'; window.document.body.append(card);
+        frame.getBoundingClientRect = () => ({ left: 100, top: 50, width: 600, height: 400 });
+        const context = { type: 'weatherContext', latitude: 46.8, longitude: -121.7, x: 20, y: 30 };
+        dispatchFrame(context);
+        assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), { __bpbPeakWeather: true, type: 'context', map: 'terrain', latitude: 46.8, longitude: -121.7, x: 120, y: 80 });
+        const count = pageMessages.length;
+        for (const invalid of [{ latitude: 91 }, { x: 601 }, { longitude: '1' }, { generation: -1 }]) dispatchFrame({ ...context, ...invalid });
+        card.hidden = true; dispatchFrame(context); assert.equal(pageMessages.length, count);
+        card.hidden = false; dispatchFrame({ type: 'weatherDismiss' }); assert.equal(pageMessages.at(-1).type, 'dismiss');
+    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+});
+
 test('a loaded 3D frame suspends on destroy and resumes on re-entry without a new iframe', async () => {
     const ctx = await bootLoadedFrame();
     const { window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages } = ctx;
@@ -1127,6 +1143,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     });
     await new Promise(resolve => window.queueMicrotask(resolve));
     const focused = maps.at(-1);
+    focused.handlers.get('contextmenu')({ lngLat: { lat: 46.8, wrap: () => ({ lng: -121.7 }) }, originalEvent: { clientX: 30, clientY: 40 } });
+    assert.equal(messages.at(-1).type, 'weatherContext');
+    assert.equal(messages.at(-1).latitude, 46.8); assert.equal(messages.at(-1).longitude, -121.7);
+    focused.handlers.get('mousedown')(); assert.equal(messages.at(-1).type, 'weatherDismiss');
     assert.deepEqual(JSON.parse(JSON.stringify(focused.options.center)), [-121.60214, 48.83115]);
     assert.equal(focused.options.zoom, 13);
     assert.equal(focused.options.bounds, undefined, 'a summit view does not synthesize route bounds');

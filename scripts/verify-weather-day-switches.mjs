@@ -47,16 +47,15 @@ export async function verifyWeatherDaySwitches({ evaluate, click, press, resize,
                 }, index);
                 assert.ok(result.stable >= 5, `day did not settle: ${JSON.stringify(result)}`);
                 assert.ok(result.records.every(frame => frame.open <= 1 && !frame.empty), `intermediate empty/double expansion: ${JSON.stringify(result)}`);
-                const expected = Math.max(16, Math.min(before, result.viewport - result.height - 16));
+                const expected = before;
                 assert.ok(Math.abs(result.top - expected) <= 1, `day visibility adjustment: ${width}/${metric}/${activation}: ${expected} -> ${result.top}`);
-                assert.ok(result.height > result.viewport - 32 || result.bottom <= result.viewport - 15, `detail panel clipped: ${JSON.stringify(result)}`);
                 const movements = result.records.filter((frame, index) => index && Math.abs(frame.top - result.records[index - 1].top) > 1);
                 assert.ok(movements.length <= 1, `day jitters after activation: ${JSON.stringify(result)}`);
                 assert.equal(result.focused, true);
                 measurements.push({ width, metric, activation, displacement: result.top - before });
             }
-            // A summary fully in view near the bottom should reveal its panel
-            // once; a summary near the top should stay at the same position.
+            // Opening near either viewport edge keeps the heading in place;
+            // users scroll into the hourly panel at their own pace.
             for (const placement of ['bottom', 'top']) {
                 await evaluate(() => document.querySelectorAll('.bpb-week-day').forEach(day => { day.open = false; }));
                 const before = await evaluate(placement => {
@@ -76,8 +75,7 @@ export async function verifyWeatherDaySwitches({ evaluate, click, press, resize,
                     return { top: bounds.top, bottom: bounds.bottom, height: bounds.height, viewport: window.innerHeight, stable };
                 });
                 assert.ok(state.stable >= 5, `panel did not settle: ${JSON.stringify(state)}`);
-                if (placement === 'top') assert.ok(Math.abs(state.top - before) <= 1, `visible panel moved unnecessarily: ${JSON.stringify(state)}`);
-                assert.ok(state.top >= 15 && state.bottom <= state.viewport - 15, `opened panel is clipped: ${JSON.stringify(state)}`);
+                assert.ok(Math.abs(state.top - before) <= 1, `visible panel moved unnecessarily: ${JSON.stringify(state)}`);
             }
         }
     }

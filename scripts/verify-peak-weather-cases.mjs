@@ -8,10 +8,11 @@ import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 import { verifyWeatherDaySwitches, verifyWeatherTabWrapping, verifyWeatherConditions } from './verify-weather-day-switches.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
+import { verifyWeatherLocation } from './verify-weather-location.mjs';
 
 // Reuse the real extension/HTTPS/browser transports and their teardown rather
 // than launch a second browser or substitute a content-script-only demo.
-export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, wait, setMode, release, evidence, metadataEvidence, networkErrors, live, firefoxMode }) {
+export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, clickPoint, resize, screenshot, screenshotPage, setSettings, wait, setMode, release, evidence, metadataEvidence, networkErrors, live, firefoxMode }) {
     const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
     if (output) await mkdir(output, { recursive: true });
     const card = '#bpb-peak-weather';
@@ -52,6 +53,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await openPage(); await resize(1440, 1100);
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-attribution').textContent), 'Powered by Open-Meteo');
     if (!live) {
+        await verifyWeatherLocation({ evaluate, click, clickPoint, press, resize, wait, setSettings,
+            setMode, release, evidence, screenshot, screenshotPage, output, firefoxMode });
         assert.equal(await evaluate(() => document.querySelector('[data-period="past"]').textContent), 'Past 16 days');
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('16 completed days')));
         await click(`${card} .bpb-week-day:last-child > summary`);

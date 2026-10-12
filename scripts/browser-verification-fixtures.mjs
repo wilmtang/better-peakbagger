@@ -448,6 +448,7 @@ const masterMapHtml = `<!doctype html><html><body>
 </script></body></html>`;
 
 const peakMasterMapHtml = `<!doctype html><html><body>
+<div id="map" style="position:absolute;inset:0;background:#dce6d7"></div>
 <select id="selmap"><option value="L_CT">Topo</option></select>
 <div class="leaflet-control-zoom" style="position:absolute;bottom:10px;right:10px;width:30px;height:60px"></div>
 <script>
@@ -470,6 +471,7 @@ const peakMasterMapHtml = `<!doctype html><html><body>
     on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
     getCenter() { return this.center; }
     getZoom() { return this.zoom; }
+    mouseEventToLatLng(event) { return { lat: 46.8 + event.clientY / 100000, lng: -121.7 + event.clientX / 100000 }; }
     setView(center, zoom) { this.center = { lat: center[0], lng: center[1] }; this.zoom = zoom; return this; }
   }
   window.L = { Marker, Map: MapStub };

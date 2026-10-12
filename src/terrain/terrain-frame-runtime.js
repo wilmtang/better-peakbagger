@@ -2087,6 +2087,14 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                         if (routeFeature) showRoutePopup(routeFeature, event.lngLat);
                     }
                 });
+                terrainMap.on('contextmenu', event => {
+                    if (map !== terrainMap || !focusPeakFeature || !event?.lngLat || !event.originalEvent) return;
+                    post('weatherContext', { latitude: event.lngLat.lat, longitude: event.lngLat.wrap().lng,
+                        x: event.originalEvent.clientX, y: event.originalEvent.clientY });
+                });
+                terrainMap.on('mousedown', () => {
+                    if (map === terrainMap && focusPeakFeature) post('weatherDismiss');
+                });
                 terrainMap.on('mousemove', event => {
                     if (map === terrainMap && event && event.point) schedulePointerUpdate(event.point);
                 });

@@ -526,6 +526,17 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             postToPage('view', { bearing: data.bearing, pitch: data.pitch });
         } else if (data.type === 'peaksRequest') {
             postToPage('peaksRequest', { requestId: data.requestId, bounds: data.bounds });
+        } else if (data.type === 'weatherContext' || data.type === 'weatherDismiss') {
+            const card = document.getElementById('bpb-peak-weather');
+            if (!frameLoaded || !card || card.hidden) return;
+            const rect = frame.getBoundingClientRect();
+            if (data.type === 'weatherContext' && (!Number.isFinite(data.latitude) || Math.abs(data.latitude) > 90
+                || !Number.isFinite(data.longitude) || Math.abs(data.longitude) > 180
+                || !Number.isFinite(data.x) || data.x < 0 || data.x > rect.width
+                || !Number.isFinite(data.y) || data.y < 0 || data.y > rect.height)) return;
+            window.postMessage({ __bpbPeakWeather: true, type: data.type === 'weatherContext' ? 'context' : 'dismiss',
+                map: 'terrain', latitude: data.latitude, longitude: data.longitude,
+                x: rect.left + data.x, y: rect.top + data.y }, location.origin);
         } else if (data.type === 'exit') {
             // Escape pressed while the cross-origin frame held focus. The page
             // never saw that key, so the frame asks for the ordinary return to

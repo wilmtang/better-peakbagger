@@ -14,6 +14,7 @@ import { readPeakWeatherSubject } from './peak-weather-subject.js';
 import { PEAK_BEST_MATCH, eligiblePeakWeatherModels, resolvePeakWeatherModels, peakModelHorizon } from './peak-weather-models.js';
 import { createPeakModelUpdateClient, peakModelUpdateDomains } from './peak-weather-updates.js';
 import { createWeatherIcon } from './weather-icon.js';
+import { createWeatherLocationMenu, weatherLocationLabel } from './peak-weather-location.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
 const modelKeys = { past: 'bpbPeakWeatherModelPast', forecast: 'bpbPeakWeatherModelForecast' };
@@ -31,11 +32,16 @@ const updateIntervalLabel = seconds => {
 
 export function mountPeakWeather() {
     if (document.getElementById(ID)) return;
-    const subject = readPeakWeatherSubject(document, location.href);
+    let subject = readPeakWeatherSubject(document, location.href);
     if (!subject) return;
-    const zone = mountainTime.resolve(subject.latitude, subject.longitude);
+    const summit = subject;
+    let requestedSubject = summit, summitResult = null;
+    let zone = mountainTime.resolve(subject.latitude, subject.longitude);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
+    const selectedLocation = element('span', { class: 'bpb-week-location-name', text: 'At the summit' });
+    const resetLocation = element('button', { type: 'button', class: 'bpb-week-location-reset', text: 'Reset to summit', disabled: '' });
+    const locationControl = element('div', { class: 'bpb-week-location' }, [selectedLocation, resetLocation]);
     const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
     const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', 'aria-label': text, 'data-label': text,
@@ -60,7 +66,8 @@ export function mountPeakWeather() {
     const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Source details' }), sourceText, updates, updatesNote]);
     const overview = element('div', { class: 'bpb-week-overview' }, [element('div', {}, [range, locationLabel]), modelControl]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
-    card.append(element('header', {}, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), document.createTextNode('Summit weather')]), refresh]), periodTabs, periodPanel,
+    const headingText = document.createTextNode('Summit weather');
+    card.append(element('header', {}, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), headingText]), refresh]), locationControl, periodTabs, periodPanel,
         source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
             element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
@@ -123,7 +130,7 @@ export function mountPeakWeather() {
     const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; });
     const populateModels = () => {
         const window = requestedWindow || weatherPeakWindow(zone);
-        select.replaceChildren(...eligiblePeakWeatherModels(subject, window, period).map(model => element('option', { value: model.id,
+        select.replaceChildren(...eligiblePeakWeatherModels(requestedSubject, window, period).map(model => element('option', { value: model.id,
             text: `${model === PEAK_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}`}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
         // Keep a now-ineligible selection visible so a date rollover cannot
         // silently turn an explicit choice into GFS.
@@ -143,13 +150,19 @@ export function mountPeakWeather() {
         range.textContent = `${dateLabel(first, { month: 'short', day: 'numeric', ...(first.slice(0, 4) !== last.slice(0, 4) ? { year: 'numeric' } : {}) })} – ${dateLabel(last, { month: 'short', day: 'numeric', year: 'numeric' })}`;
         const interval = period === 'past' ? `${week.days.length} completed days · Today excluded`
             : week.days[0].date === mountainTime.localDate(zone, Date.now()) ? week.days.length === 1 ? 'Today' : `Today + ${week.days.length - 1} ${week.days.length === 2 ? 'day' : 'days'}` : `${week.days.length}-day forecast · Previous dates`;
-        locationLabel.textContent = `At the summit${subject.elevation === null ? '' : ` · ${units.formatElevation(subject.elevation, unitSystem())}`} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
+        const atSummit = subject === summit;
+        headingText.textContent = atSummit ? 'Summit weather' : 'Location weather';
+        selectedLocation.textContent = atSummit ? 'At the summit' : weatherLocationLabel(subject);
+        selectedLocation.title = atSummit ? summit.name : `Selected map location: ${weatherLocationLabel(subject)}`;
+        refresh.setAttribute('aria-label', atSummit ? 'Refresh summit weather' : 'Refresh selected location weather');
+        updatesNote.textContent = `${atSummit ? 'Summit' : 'Selected location'} local time. Next updates are estimates. Provider-wide availability may vary between servers.`;
+        locationLabel.textContent = `${subject.elevation === null ? 'Terrain elevation' : units.formatElevation(subject.elevation, unitSystem())} · ${interval}${zone.estimated ? ' · Estimated local time' : ''}`;
     };
     const paintStatus = () => {
         const summaries = current?.days[period];
         const partialCount = summaries?.filter(day => day.partial).length || 0;
         status.textContent = notice?.text || (summaries && !summaries.some(day => day.useful)
-            ? `${period === 'forecast' ? 'Forecast' : 'Past weather'} is unavailable for this summit. Try the other weather period.`
+            ? `${period === 'forecast' ? 'Forecast' : 'Past weather'} is unavailable for this ${subject === summit ? 'summit' : 'location'}. Try the other weather period.`
             : partialCount ? `${partialCount} ${partialCount === 1 ? 'day has' : 'days have'} incomplete hours.` : '');
         // The select already names the model. Identify retained data only when
         // it differs from the requested choice, including after a failed load.
@@ -222,12 +235,9 @@ export function mountPeakWeather() {
                 detail.open = opening;
                 if (opening) renderHours(day, detail, hourly);
                 summary.focus({ preventScroll: true });
-                // Preserve the clicked heading where possible, but give a
-                // below-fold panel enough room in one synchronous movement.
-                // A tall panel starts at the viewport's top edge.
-                const height = detail.getBoundingClientRect().height;
-                const desiredTop = opening ? Math.max(16, Math.min(top, window.innerHeight - height - 16)) : top;
-                const displacement = summary.getBoundingClientRect().top - desiredTop;
+                // Keep the heading under the pointer. Revealing the entire
+                // hourly panel forcibly scrolled the page on every activation.
+                const displacement = summary.getBoundingClientRect().top - top;
                 if (Math.abs(displacement) > 1) window.scrollBy({ top: displacement, behavior: 'instant' });
             });
             detail.addEventListener('toggle', () => {
@@ -245,7 +255,7 @@ export function mountPeakWeather() {
             (target || periodButtons.find(button => button.dataset.period === period)).focus({ preventScroll: true });
         }
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
-        sourceText.textContent = `${modelDetails} ${forecast ? 'Hourly forecast estimates.' : 'Model estimates, not station observations.'} Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' Model grids may differ.' : ''} ${subject.elevation === null ? 'Terrain elevation' : 'Temperature adjusted to'} ${data.grid.elevation.toFixed(0)} m. Loaded ${loaded}.${summaries.some(day => day.precipitation.allocationEstimated) ? ' Partial-hour rain/snow totals are estimated.' : ''}`;
+        sourceText.textContent = `${modelDetails} ${forecast ? 'Hourly forecast estimates.' : 'Model estimates, not station observations.'} ${subject === summit ? 'Summit' : 'Selected location'} timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' Model grids may differ.' : ''} ${subject.elevation === null ? 'Terrain elevation' : 'Temperature adjusted to'} ${data.grid.elevation.toFixed(0)} m. Loaded ${loaded}.${summaries.some(day => day.precipitation.allocationEstimated) ? ' Partial-hour rain/snow totals are estimated.' : ''}`;
         paintStatus();
         if (source.open) void loadUpdates();
     }
@@ -282,14 +292,17 @@ export function mountPeakWeather() {
         started = true; pending = true;
         controller = new AbortController(); const owner = ++generation;
         card.setAttribute('aria-busy', 'true'); refresh.disabled = true;
-        notice = { text: current ? 'Refreshing summit weather…' : 'Loading summit weather…' }; paintStatus();
+        const target = requestedSubject, targetZone = mountainTime.resolve(target.latitude, target.longitude);
+        const changingLocation = target !== subject;
+        notice = { text: changingLocation ? `Loading ${target === summit ? 'summit weather' : weatherLocationLabel(target)}…`
+            : current ? `Refreshing ${target === summit ? 'summit' : 'location'} weather…` : 'Loading summit weather…' }; paintStatus();
         try {
-            const window = weatherPeakWindow(zone); requestedWindow = window;
+            const window = weatherPeakWindow(targetZone); requestedWindow = window;
             populateModels();
             if (!current) renderLabels(window[period]);
             if (clear) { client.clear(); cancelUpdates(); updateClient.clear(); }
-            const models = resolvePeakWeatherModels(subject, window, choices);
-            const response = await client.request(subject, window, [...new Set(Object.values(models))], { signal: controller.signal });
+            const models = resolvePeakWeatherModels(target, window, choices);
+            const response = await client.request(target, window, [...new Set(Object.values(models))], { signal: controller.signal });
             if (owner !== generation || lifecycle.state !== 'active') return;
             // Short-range choices must not display sixteen empty future days.
             // Retain full-day expectations through their last useful day so
@@ -302,13 +315,15 @@ export function mountPeakWeather() {
                 summaries.forecast = summaries.forecast.slice(0, count);
                 window.forecast = { ...window.forecast, days: window.forecast.days.slice(0, count) };
             }
-            if (!Object.values(summaries).some(list => list.some(day => day.useful))) throw new Error('Weather is unavailable for this summit.');
-            current = { window, data, models, sharedGrid: response.sharedGrid, days: summaries, loadedAt: Date.now() }; notice = null;
+            if (!Object.values(summaries).some(list => list.some(day => day.useful))) throw new Error(`Weather is unavailable for this ${target === summit ? 'summit' : 'location'}.`);
+            subject = target; zone = targetZone;
+            current = { subject, zone, window, data, models, sharedGrid: response.sharedGrid, days: summaries, loadedAt: Date.now() }; notice = null;
+            if (subject === summit) summitResult = current;
             renderResult();
         } catch (error) {
             if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;
             if (error.code === 'rate-limit') cooldown.set(error.retryAt);
-            notice = { kind: error.code, text: `${error.message || 'Weather could not be loaded.'}${current ? ' Showing the previous result.' : ' Use Refresh to try again.'}` }; paintStatus();
+            notice = { kind: error.code, text: `${changingLocation ? `Could not load ${target === summit ? 'summit weather' : weatherLocationLabel(target)}. ` : ''}${error.message || 'Weather could not be loaded.'}${current ? ' Showing the previous result.' : ' Use Refresh to try again.'}` }; paintStatus();
             if (source.open) void loadUpdates();
         } finally {
             if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); }
@@ -316,13 +331,30 @@ export function mountPeakWeather() {
     }
     select.addEventListener('change', () => {
         if (!enabled() || lifecycle.state !== 'active' || cooldown.active()) return;
-        if (!eligiblePeakWeatherModels(subject, requestedWindow || weatherPeakWindow(zone), period).some(model => model.id === select.value)) return;
+        if (!eligiblePeakWeatherModels(requestedSubject, requestedWindow || weatherPeakWindow(zone), period).some(model => model.id === select.value)) return;
         choices[period] = select.value;
         // Separate keys avoid overwriting the other period's choice from a
         // concurrently open tab. Store only the allowlisted model identifier.
         try { void chrome.storage.local.set({ [modelKeys[period]]: select.value }).catch(() => {}); } catch { /* Storage failure keeps the page usable. */ }
         cancelUpdates(); cancel(); void load();
     });
+    const chooseLocation = next => {
+        if (!enabled() || lifecycle.state !== 'active' || (next !== summit && cooldown.active())) return;
+        if (next.latitude === requestedSubject.latitude && next.longitude === requestedSubject.longitude && next.elevation === requestedSubject.elevation) return;
+        cancelUpdates(); cancel(); requestedSubject = next;
+        resetLocation.disabled = next === summit;
+        requestedWindow = weatherPeakWindow(mountainTime.resolve(next.latitude, next.longitude));
+        for (const key of Object.keys(choices)) {
+            if (!eligiblePeakWeatherModels(next, requestedWindow, key).some(model => model.id === choices[key])) choices[key] = 'gfs_global';
+        }
+        populateModels();
+        if (next === summit && summitResult) {
+            current = summitResult; subject = summit; zone = current.zone; notice = null;
+            requestedWindow = current.window; renderResult();
+        } else void load();
+    };
+    const locationMenu = createWeatherLocationMenu({ enabled: () => enabled() && lifecycle.state === 'active', canSelect: () => !cooldown.active(), onSelect: chooseLocation });
+    resetLocation.addEventListener('click', () => chooseLocation(summit));
     const beginWhenVisible = () => {
         visibilityObserver?.disconnect();
         if (!enabled() || lifecycle.state !== 'active') return;
@@ -344,6 +376,7 @@ export function mountPeakWeather() {
         preference = next; settingsReady = true;
         row.hidden = card.hidden = !enabled();
         if (!enabled()) {
+            locationMenu.close();
             cooldown.suspend(); cancel(); cancelUpdates(); clearChart();
             visibilityObserver?.disconnect(); visibilityObserver = null;
         } else if (lifecycle.state === 'active') {
@@ -353,10 +386,10 @@ export function mountPeakWeather() {
         }
     };
     const unsubscribe = settings.subscribe(applyPreference);
-    const stop = () => { cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { locationMenu.close(); cooldown.suspend(); cancel(); cancelUpdates(); clearChart(); visibilityObserver?.disconnect(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
         onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); renderResult(); beginWhenVisible(); } },
-        onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
+        onDispose: () => { stop(); locationMenu.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); updateClient.clear(); },
     });
     document.addEventListener('visibilitychange', visibility);
     // Resolve local choices before the first request, including a late sync

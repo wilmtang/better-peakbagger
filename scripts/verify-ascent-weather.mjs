@@ -144,7 +144,7 @@ try {
         };
         press = key => driver.actions({ async: true }).sendKeys(key).perform();
         movePointer = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).perform();
-        clickPoint = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).click().perform();
+        clickPoint = (x, y, button = 'left') => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).press(button === 'right' ? 2 : 0).release(button === 'right' ? 2 : 0).perform();
         resize = async (width, height) => send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width, height } } });
         screenshot = async output => writeFile(output, await driver.findElement(By.id(cardId)).takeScreenshot(true), 'base64');
         screenshotPage = async output => writeFile(output, await driver.takeScreenshot(), 'base64');
@@ -187,7 +187,7 @@ try {
         evaluate = (fn, arg) => page.evaluate(fn, arg); navigate = url => page.goto(url, { waitUntil: 'load' });
         click = selector => page.locator(selector).click(); resize = (width, height) => page.setViewportSize({ width, height });
         press = key => page.keyboard.press(key);
-        movePointer = (x, y) => page.mouse.move(x, y); clickPoint = (x, y) => page.mouse.click(x, y);
+        movePointer = (x, y) => page.mouse.move(x, y); clickPoint = (x, y, button = 'left') => page.mouse.click(x, y, { button });
         screenshot = output => page.locator(`#${cardId}`).screenshot({ path: output });
         screenshotPage = output => page.screenshot({ path: output });
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
@@ -333,7 +333,7 @@ try {
     };
     if (peakMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
-            ...await verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, wait,
+            ...await verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, clickPoint, resize, screenshot, screenshotPage, setSettings, wait,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, metadataEvidence, networkErrors, live, firefoxMode }) };
     } else {
         await setSettings({ theme: 'light', units: 'imperial' });

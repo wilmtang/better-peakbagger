@@ -357,6 +357,14 @@ are persisted, separate from synced settings and backups. Changing models or usi
 another request unless that exact selection is cached. Returning to a visible
 card after five minutes refreshes expired data unless the previous request failed.
 
+On peak pages, right-clicking the map and choosing **Forecast and archive for
+this location** requests weather for that selected latitude/longitude instead.
+Opening the menu alone makes no weather request. The selected point uses its
+own local date window and the provider's terrain elevation; the summit elevation
+is not sent for it. Selected coordinates and weather stay only in page memory,
+never settings, sync or backups. **Reset to summit** restores the loaded summit
+weather, and a page reload starts at the summit again.
+
 Open-Meteo receives the summit latitude/longitude, summit elevation when
 available, date window and weather fields, IP address, and ordinary request
 metadata. Ascent weather uses a three-UTC-day window covering the local ascent
@@ -508,7 +516,7 @@ The user can export and import settings without GitHub:
 | Service | When it receives data |
 | --- | --- |
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
-| Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
+| Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; selecting a map location requests that point without summit elevation. Model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

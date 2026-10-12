@@ -14,6 +14,25 @@ coordinates fail closed rather than mounting a full-page fallback or guessing
 a location. Peak name, coordinates and elevation come from the current page;
 there is no geocoding or extra Peakbagger request.
 
+Right-click the peak's **2D or 3D map** and choose **Forecast and archive for
+this location** to use that point for both periods. The menu opens beside the
+pointer, fits within the viewport, supports keyboard activation and Escape,
+and closes on an outside click, scrolling, or resizing. Opening it sends no
+weather request. The card identifies the selected coordinates; **Reset to
+summit** immediately restores the already-loaded summit result and cancels any
+pending location request. Neither action pans the map or scrolls the page.
+
+Selected points use their own offline timezone and Open-Meteo terrain elevation,
+without applying the summit's elevation to another location. A regional model
+that cannot cover a newly selected point switches to GFS for that page without
+overwriting the stored preference. Coordinates and results stay in page memory;
+reloads start at the summit. A pending or failed location request retains the
+previous weather and its actual location label. Loading feedback and the reset
+action reserve their layout space so they do not push the forecast rows around.
+The location behavior is covered by the peak-weather browser verifier; run
+`node scripts/verify-peak-weather-3d.mjs` after building for the hardware-rendered
+3D context menu, elevation, reset and right-drag checks.
+
 The card defaults to **16-day forecast**, covering today plus fifteen days in forward
 order. **Past 16 days** shows sixteen completed local days, latest first, excluding
 today. Both views share one weather request; period tabs support arrow keys, Home and End
@@ -46,9 +65,9 @@ and wind choices. For example, miles/feet can stay paired with Celsius and milli
 Temperature also controls feels-like values; wind also controls gusts. Changing units
 reuses the loaded weather data without another weather request.
 Day activation closes the previous panel and mounts the new graph in one update,
-preserving the activated summary's viewport position and keyboard focus when
-the panel fits there. Otherwise one immediate scroll reveals the full panel
-(or its start if taller than the viewport).
+preserving the activated summary's viewport position and keyboard focus. The
+hourly panel does not force a scroll to fit the viewport; users scroll into it
+at their own pace.
 Unrelated preferences retain weather controls. Necessary unit/data refreshes
 restore valid pinned source instants, Conditions horizontal scroll position and focused
 controls; an expired date clears selection and returns focus to the period tab.

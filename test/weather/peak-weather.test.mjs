@@ -17,7 +17,9 @@ const waitFor = async predicate => {
 const reply = url => {
     const query = new URL(url).searchParams;
     const hours = (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24;
-    return new Response(JSON.stringify(weatherFixture({ startDate: query.get('start_date'), hours })), { headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify(weatherFixture({ startDate: query.get('start_date'), hours,
+        latitude: Number(query.get('latitude')), longitude: Number(query.get('longitude')),
+        elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 })), { headers: { 'content-type': 'application/json' } });
 };
 function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn } = {}) {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
@@ -67,6 +69,115 @@ const chooseModel = (env, id) => {
     const select = env.doc.querySelector('#bpb-peak-weather-model');
     select.value = id; select.dispatchEvent(new env.win.Event('change'));
 };
+const openLocationMenu = (env, latitude = 46.8, longitude = -121.7, extra = {}) => {
+    const frame = env.doc.getElementById('Gmap');
+    frame.getBoundingClientRect = () => ({ left: 10, top: 10, right: 650, bottom: 435, width: 640, height: 425 });
+    env.win.dispatchEvent(new env.win.MessageEvent('message', { source: env.win, origin: env.win.location.origin,
+        data: { __bpbPeakWeather: true, type: 'context', map: 'native', latitude, longitude, x: 100, y: 100, ...extra } }));
+};
+const selectLocation = (env, latitude, longitude) => {
+    openLocationMenu(env, latitude, longitude); env.doc.querySelector('#bpb-peak-weather-menu button').click();
+};
+
+test('map weather menu fetches only on activation, uses terrain elevation and resets from page memory', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const initialLabel = env.doc.querySelector('.bpb-week-sub').textContent;
+        openLocationMenu(env);
+        const menu = env.doc.querySelector('#bpb-peak-weather-menu');
+        assert.equal(menu.hidden, false); assert.equal(env.doc.activeElement, menu.querySelector('button'));
+        assert.equal(menu.querySelector('button').textContent, 'Forecast and archive for this location');
+        assert.equal(env.requests.length, 1);
+        menu.querySelector('button').click();
+        await waitFor(() => env.requests.length === 2 && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        const query = new URL(env.requests[1].url).searchParams;
+        assert.equal(query.get('latitude'), '46.8'); assert.equal(query.get('longitude'), '-121.7'); assert.equal(query.has('elevation'), false);
+        assert.equal(menu.hidden, true); assert.equal(env.doc.querySelector('.bpb-week-location-reset').disabled, false);
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, '46.8000, -121.7000');
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(env.requests.length, 2); assert.match(env.doc.querySelector('.bpb-week-models').textContent, /Selected location timezone/);
+        env.doc.querySelector('.bpb-week-location-reset').click();
+        assert.equal(env.requests.length, 2); assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
+        assert.equal(env.doc.querySelector('.bpb-week-location-reset').disabled, true);
+        env.doc.querySelector('[data-period="forecast"]').click(); assert.equal(env.doc.querySelector('.bpb-week-sub').textContent, initialLabel);
+    } finally { env.close(); }
+});
+
+test('location transactions preserve truthful old labels, cancel races and retain summit weather on failure', async () => {
+    const held = []; let hold = false, fail = false;
+    const env = setup({ fetchFn: (url, init) => fail ? new Response('', { status: 503 }) : hold
+        ? new Promise(resolve => held.push({ url, init, resolve })) : reply(url) });
+    try {
+        await settled(env, { past: false }); hold = true;
+        selectLocation(env, 46.8, -121.7); await waitFor(() => held.length === 1);
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /Loading 46.8000, -121.7000/);
+        const originalDays = env.doc.querySelector('.bpb-week-days').textContent;
+        selectLocation(env, 46.7, -121.6); await waitFor(() => held.length === 2);
+        assert.equal(held[0].init.signal.aborted, true);
+        held[0].resolve(reply(held[0].url));
+        assert.equal(env.doc.querySelector('.bpb-week-days').textContent, originalDays);
+        env.doc.querySelector('.bpb-week-location-reset').click();
+        assert.equal(held[1].init.signal.aborted, true);
+        held[1].resolve(reply(held[1].url));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
+        hold = false; fail = true; selectLocation(env, 46.6, -121.5);
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Could not load'));
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
+        assert.equal(env.doc.querySelector('.bpb-week-days').textContent, originalDays);
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /46.6000, -121.5000/);
+    } finally { env.close(); }
+});
+
+test('selected location resolves its own civil days and resets unavailable regional models without storing coordinates', async () => {
+    const writes = [], env = setup({ saveModels: async value => writes.push(value) });
+    try {
+        await settled(env, { past: false }); chooseModel(env, 'gfs_hrrr');
+        await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        selectLocation(env, 35.68, 139.76);
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '35.6800, 139.7600');
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /Selected location timezone: Asia\/Tokyo/);
+        assert.equal(env.doc.querySelector('.bpb-week-day').dataset.date, '2024-11-05');
+        assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'gfs_global');
+        assert.deepEqual(writes.map(value => ({ ...value })), [{ bpbPeakWeatherModelForecast: 'gfs_hrrr' }]);
+    } finally { env.close(); }
+});
+
+test('menu dismisses on Escape, outside frame clicks and suspension; invalid or disabled map points do nothing', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false }); const menu = env.doc.querySelector('#bpb-peak-weather-menu');
+        for (const extra of [{ latitude: 91 }, { longitude: '1' }, { x: -1 }, { y: Infinity }, { map: 'unknown' }]) {
+            openLocationMenu(env, 46.8, -121.7, extra); assert.equal(menu.hidden, true);
+        }
+        openLocationMenu(env); env.doc.activeElement.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(menu.hidden, true); assert.equal(env.doc.activeElement, env.doc.getElementById('Gmap'));
+        openLocationMenu(env); const frameWin = env.doc.getElementById('Gmap').contentWindow;
+        frameWin.document.dispatchEvent(new frameWin.Event('pointerdown', { bubbles: true })); assert.equal(menu.hidden, true);
+        openLocationMenu(env); env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true })); assert.equal(menu.hidden, true);
+        openLocationMenu(env); assert.equal(menu.hidden, true);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        openLocationMenu(env); assert.equal(menu.hidden, true); assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('known rate limits keep the map menu dismissible and prevent location requests during cooldown', async () => {
+    let limited = false;
+    const env = setup({ fetchFn: url => limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : reply(url) });
+    try {
+        await settled(env, { past: false }); limited = true; env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').dataset.kind === 'rate-limit');
+        const count = env.requests.length;
+        openLocationMenu(env);
+        const menu = env.doc.querySelector('#bpb-peak-weather-menu');
+        assert.equal(menu.hidden, false); assert.equal(menu.querySelector('button').disabled, true);
+        menu.querySelector('button').click(); assert.equal(env.requests.length, count);
+        menu.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); assert.equal(menu.hidden, true);
+    } finally { env.close(); }
+});
 
 test('Conditions is the initial hourly tab and rendering never writes a local preference', async () => {
     const writes = [], env = setup({ saveModels: async values => { writes.push(values); } });
