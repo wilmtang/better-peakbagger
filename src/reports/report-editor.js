@@ -761,6 +761,10 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const localStore = ext.storage.local;
     const mutateDraft = message => RuntimeMessage.send(ext, { ...message, draftKey });
     let draftEditRevision = 0;
+    let draftVersion = null, persistedDraftContent = null, persistedDraftRevision = 0, initialDraftText = textarea.value;
+    let draftPersistenceQueue = Promise.resolve();
+    const draftContent = record => JSON.stringify([record.text, record.mode, record.source ?? null, record.pendingSave?.attemptId ?? null]);
+    const draftConflict = () => Object.assign(new Error('Another tab saved this draft.'), { code: 'draft-conflict' });
 
     saveRecoveryCopy.addEventListener('click', async () => {
         flushSync();
@@ -801,7 +805,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             : then.toLocaleDateString([], { month: 'short', day: 'numeric' });
     };
 
-    const saveDraftNow = async () => {
+    const saveDraftNow = () => {
         if (state.autosaveTimer !== null) {
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
@@ -811,46 +815,54 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             && !PendingPhoto.ids(textarea.value).length) return;
         flushSync();
         const revision = draftEditRevision;
-        let removing = false;
-        if (revision === draftEditRevision) setDraftPersistenceStatus('Saving…');
+        const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
+        if (state.mode === 'markdown') record.source = mdEditor.getValue();
+        if (state.pendingSave) record.pendingSave = state.pendingSave;
+        const content = draftContent(record);
+        const removing = !hasRecoverableDraftContent(record.text);
         try {
-            if (!hasRecoverableDraftContent(textarea.value)) {
-                removing = true;
-                const removal = await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
-                if (!removal?.ok) throw new Error('draft removal failed');
-                if (revision === draftEditRevision) setDraftPersistenceStatus('');
-                return;
-            }
-            const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
-            if (state.mode === 'markdown') record.source = mdEditor.getValue();
-            if (state.pendingSave) record.pendingSave = state.pendingSave;
+            const label = AscentSnapshot.label({ form, params });
+            if (Object.keys(label).length) record.label = label;
+        } catch (error) { /* optional display metadata must never block autosave */ }
+        // Serialize this editor's snapshots so each completing write supplies
+        // the version for the next one. A lifecycle flush of unchanged content
+        // has no authority to overwrite a different editor's recovery copy.
+        const operation = draftPersistenceQueue.then(async () => {
+            if (state.terminalSubmission || (content === persistedDraftContent && revision === persistedDraftRevision)) return;
+            if (revision === draftEditRevision) setDraftPersistenceStatus('Saving…');
             try {
-                const label = AscentSnapshot.label({ form, params });
-                if (Object.keys(label).length) record.label = label;
-            } catch (error) { /* optional display metadata must never block autosave */ }
-            const write = await mutateDraft({ type: 'REPORT_DRAFT_WRITE', record });
-            if (!write?.ok) throw new Error('draft write failed');
-            if (!write.written) throw new Error('draft write superseded');
-            // A worker-confirmed Save or confirmed Delete can arrive while an
-            // earlier storage write is already in flight. The completing
-            // writer must honor that terminal result so it cannot resurrect
-            // the consumed recovery copy.
-            if (state.terminalSubmission) {
-                await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
-                setDraftPersistenceStatus('');
-                return;
+                if (draftVersion === null) {
+                    const stored = (await localStore.get(draftKey))[draftKey];
+                    if (ReportDrafts.validRecord(stored) && normalized(stored.text) !== normalized(initialDraftText)) throw draftConflict();
+                    draftVersion = ReportDrafts.version(stored);
+                }
+                const result = await mutateDraft({
+                    type: removing ? 'REPORT_DRAFT_REMOVE' : 'REPORT_DRAFT_WRITE',
+                    expectedVersion: draftVersion,
+                    ...(!removing && { record }),
+                });
+                if (!result?.ok) throw new Error('draft persistence failed');
+                if (!(removing ? result.removed : result.written)) throw draftConflict();
+                draftVersion = removing ? result.version : ReportDrafts.version(result.record);
+                persistedDraftContent = content;
+                persistedDraftRevision = revision;
+                if (state.terminalSubmission) {
+                    await mutateDraft({ type: 'REPORT_DRAFT_REMOVE', expectedVersion: draftVersion });
+                    setDraftPersistenceStatus('');
+                    return;
+                }
+                if (revision !== draftEditRevision) return;
+                setDraftPersistenceStatus(removing ? '' : `Draft saved on this device · ${timeLabel(record.savedAt)}`);
+            } catch (error) {
+                if (state.terminalSubmission || revision !== draftEditRevision) return;
+                setDraftPersistenceStatus(error.code === 'draft-conflict'
+                    ? 'Another tab saved this draft — keep this page open or copy your text'
+                    : removing ? 'Older saved draft couldn’t be removed' : 'Draft not saved — keep this page open',
+                { recovery: true, cleanup: removing && error.code !== 'draft-conflict' });
             }
-            if (revision !== draftEditRevision) return;
-            setDraftPersistenceStatus(`Draft saved on this device · ${timeLabel(record.savedAt)}`);
-        } catch (error) {
-            if (state.terminalSubmission || revision !== draftEditRevision) return;
-            setDraftPersistenceStatus(
-                removing
-                    ? 'Older saved draft couldn’t be removed'
-                    : 'Draft not saved — keep this page open',
-                { recovery: true, cleanup: removing },
-            );
-        }
+        });
+        draftPersistenceQueue = operation.catch(() => {});
+        return operation;
     };
 
     const scheduleAutosave = () => {
@@ -879,6 +891,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             } : {}),
         }).then(result => {
             if (!result?.ok) throw new Error('draft removal failed');
+            if (stored && result.removed && draftVersion === ReportDrafts.version(stored)) draftVersion = result.version;
         }).catch(() => {
             if (!state.terminalSubmission) {
                 setDraftPersistenceStatus('Older saved draft couldn’t be removed', {
@@ -999,6 +1012,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         const discard = button('bpb-re-draft-discard', 'Delete draft');
         const manage = button('bpb-re-draft-manage', 'Manage drafts');
         restore.addEventListener('click', () => {
+            draftVersion = ReportDrafts.version(stored);
             textarea.value = stored.text;
             state.creditScaffold = false;
             state.mdSource = stored.mode === 'markdown' && typeof stored.source === 'string'
@@ -1030,6 +1044,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         try {
             stored = (await localStore.get(draftKey))[draftKey];
         } catch (error) { return; }
+        draftVersion = ReportDrafts.version(stored);
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;
         const storedText = normalized(stored.text);
         if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS || !storedText) {
@@ -1056,6 +1071,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             // The recovery offer must target our metadata rewrite's generation,
             // while a superseded rewrite keeps its old snapshot expectation.
             if (write?.written && write.record) stored = write.record;
+            draftVersion = ReportDrafts.version(stored);
         }
         if (storedText === normalized(textarea.value)) {
             // Same content the server rendered — keep the markdown source so a
@@ -1646,6 +1662,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         await checkDraft();               // may adopt a markdown source pre-render
         const guarded = configureConversionGuard(textarea.value, settings.reportEditorMode);
         setMode(guarded ? 'plain' : settings.reportEditorMode, { persist: false });
+        initialDraftText = textarea.value;
+        persistedDraftContent = draftContent({ text: textarea.value, mode: state.mode,
+            ...(state.mode === 'markdown' && { source: mdEditor.getValue() }) });
         ext.runtime.onMessage.addListener(handlePhotoInsertion);
         void pruneDrafts();
 

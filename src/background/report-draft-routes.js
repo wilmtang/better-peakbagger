@@ -126,6 +126,10 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
             return { ok: false, error: { code: 'invalid-draft-write' } };
         }
         const current = (await ext.storage.local.get(draftKey))[draftKey];
+        if (Object.hasOwn(message, 'expectedVersion')
+            && message.expectedVersion !== ReportDrafts.version(current)) {
+            return { ok: true, draftKey, written: false, reason: 'changed' };
+        }
         if (message.expectedSavedAt !== undefined || message.expectedGeneration !== undefined) {
             const expected = cleanExpectedRecord(message);
             if (!expected) {
@@ -135,8 +139,8 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
                 return { ok: true, draftKey, written: false, reason: 'changed' };
             }
         }
-        if ((ReportDrafts.validRecord(current) && current.savedAt > message.record.savedAt)
-            || (isTombstone(current) && current.deletedAt >= message.record.savedAt)) {
+        if (!Object.hasOwn(message, 'expectedVersion') && ((ReportDrafts.validRecord(current) && current.savedAt > message.record.savedAt)
+            || (isTombstone(current) && current.deletedAt >= message.record.savedAt))) {
             return { ok: true, draftKey, written: false, reason: 'superseded' };
         }
         const record = structuredClone(message.record);
@@ -149,6 +153,12 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         const draftKey = cleanDraftKey(message?.draftKey);
         if (!draftKey || !mutationSender(sender, draftKey)) {
             return { ok: false, error: { code: 'invalid-draft-remove' } };
+        }
+        if (Object.hasOwn(message, 'expectedVersion')) {
+            const current = (await ext.storage.local.get(draftKey))[draftKey];
+            if (message.expectedVersion !== ReportDrafts.version(current)) {
+                return { ok: true, draftKey, removed: false, reason: 'changed' };
+            }
         }
         // Cleanup and recovery offers act on a snapshot. Keep explicit terminal
         // removals unconditional, but never let an old snapshot consume a newer save.
@@ -164,7 +174,7 @@ export const createReportDraftRoutes = ({ ext, now, isPeakbaggerSender, isExtens
         }
         const marker = tombstone();
         await ext.storage.local.set({ [draftKey]: marker });
-        return { ok: true, draftKey, removed: true, generation: marker[TOMBSTONE_FIELD] };
+        return { ok: true, draftKey, removed: true, generation: marker[TOMBSTONE_FIELD], version: ReportDrafts.version(marker) };
     });
 
     const deleteOne = async (entry, sender) => {

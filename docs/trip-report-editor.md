@@ -714,12 +714,15 @@ that pause, `saveDraftNow()` runs this sequence:
 3. Synchronously flush a dirty editor into `JournalText`. Classification then
    sees the bracket representation a postback would submit, not stale private
    editor state.
-4. Decide whether the flushed report contains recoverable content. Empty and
-   generated-credit-only reports remove the matching key instead of writing.
+4. Skip an unchanged snapshot. An untouched empty or generated-credit-only
+   editor does not delete another tab's recovery copy.
 5. Build `{ text, mode, savedAt }`, add exact Markdown `source` only in
    Markdown mode, and best-effort add `label`.
-6. Replace the one value at the form key with `storage.local.set()` and show
-   the device-local saved timestamp after that promise resolves.
+6. Serialize this editor's snapshots through the worker, comparing the last
+   observed record/deletion version before each mutation. Explicitly cleared
+   reports remove that version; recoverable reports replace it. Show the saved
+   timestamp only after acknowledgement. A competing tab's change preserves
+   its record and offers a recovery copy of this editor's text.
 
 A `pagehide` handler also synchronously flushes and starts a best-effort
 `saveDraftNow()`. Storage failure is deliberately non-blocking because the live

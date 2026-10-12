@@ -54,6 +54,15 @@ const validRecord = value => !!value
     && typeof value.savedAt === 'number'
     && Number.isFinite(value.savedAt);
 
+// Transport identity only: text and optional display metadata never need to
+// travel back to the worker just to compare the editor's observed version.
+const version = value => JSON.stringify([
+    value?.[GENERATION_FIELD] ?? null,
+    value?.savedAt ?? null,
+    value?.deletedGeneration ?? null,
+    value?.deletedAt ?? null,
+]);
+
 const fallbackTitle = parsed => {
     if (!parsed) return 'TR draft';
     if (parsed.kind === 'ascent') return `Ascent #${parsed.id}`;
@@ -73,6 +82,7 @@ export const reportDrafts = {
     parseKey,
     editUrl,
     validRecord,
+    version,
     fallbackTitle,
     remainingMs
 };

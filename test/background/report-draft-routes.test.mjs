@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createReportDraftRoutes, reportDraftRoutes as Routes }
     from '../../src/background/report-draft-routes.js';
+import { reportDrafts as Drafts } from '../../src/reports/report-drafts.js';
 
 const CLOCK = Date.parse('2026-08-08T12:00:00.000Z');
 
@@ -78,6 +79,29 @@ const registerAdd = h => h.routes.handlers.REPORT_DRAFT_SAVE_PENDING({
     identity: { cid: '22', aid: null, pid: '33' },
     attemptId: ADD_ATTEMPT,
 }, addSender);
+
+test('editor versions guard first writes, equal-time replacements, and empty-content removal', async () => {
+    const h = harness(), draftKey = 'bpbReportDraft:22:a778899';
+    const missing = Drafts.version(undefined);
+    const first = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey,
+        expectedVersion: missing, record: { text: 'first editor', savedAt: CLOCK } }, editSender);
+    assert.equal(first.written, true);
+    assert.equal((await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey,
+        expectedVersion: missing, record: { text: 'stale editor', savedAt: CLOCK + 1 } }, editSender)).written, false);
+    assert.equal((await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey, expectedVersion: missing }, editSender)).removed, false);
+    const next = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey,
+        expectedVersion: Drafts.version(first.record), record: { text: 'same timestamp edit', savedAt: CLOCK } }, editSender);
+    assert.equal(next.written, true);
+    assert.equal((await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey,
+        expectedVersion: Drafts.version(first.record) }, editSender)).removed, false);
+    const removed = await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey,
+        expectedVersion: Drafts.version(next.record) }, editSender);
+    assert.equal(removed.removed, true);
+    const restored = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey,
+        expectedVersion: removed.version, record: { text: 'edit after clearing', savedAt: CLOCK } }, editSender);
+    assert.equal(restored.written, true, 'a matching version orders same-millisecond edits after deletion');
+    assert.equal(h.local.values[draftKey].text, 'edit after clearing');
+});
 
 test('snapshot cleanup preserves a newer draft, including a same-timestamp generation', async () => {
     const key = 'bpbReportDraft:22:a778899';

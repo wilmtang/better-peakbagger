@@ -6,6 +6,70 @@ import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 
+const sharedEditor = (first, options = {}) => loadEditor({ ...options, prepare: second => {
+    second.chrome.storage.local = first.chrome.storage.local;
+    second.chrome._localStore = first.chrome._localStore;
+    // Both documents must use one production worker queue, as real tabs do.
+    Object.defineProperty(second.chrome.runtime, 'sendMessage', { value: first.chrome.runtime.sendMessage });
+} });
+
+test('an untouched old editor leaves another editor’s newer draft intact on page exit', async () => {
+    for (const report of ['', 'Old report']) for (const persisted of [false, true]) {
+        const first = await loadEditor({ report, settings: { addReportCredit: false } });
+        let second;
+        try {
+            await editorReady(first); await waitFor(first, () => editors(first).rich);
+            second = await sharedEditor(first, { report, settings: { addReportCredit: false }, accelerateAutosave: true });
+            await editorReady(second); await waitFor(second, () => editors(second).rich);
+            typeRich(second, '<p>Newer work</p>');
+            await waitFor(second, () => first.chrome._localStore[DRAFT_KEY]?.text === 'Newer work');
+            const saved = structuredClone(first.chrome._localStore[DRAFT_KEY]);
+            first.window.dispatchEvent(new first.window.PageTransitionEvent('pagehide', { persisted }));
+            await first.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
+            assert.deepEqual(first.chrome._localStore[DRAFT_KEY], saved);
+        } finally { first.window.close(); second?.window.close(); }
+    }
+});
+
+test('conflicting edits preserve the other editor’s version and expose a recovery copy', async () => {
+    const first = await loadEditor({ report: 'Original', settings: { addReportCredit: false }, accelerateAutosave: true });
+    let second;
+    try {
+        await editorReady(first); await waitFor(first, () => editors(first).rich);
+        second = await sharedEditor(first, { report: 'Original', settings: { addReportCredit: false }, accelerateAutosave: true });
+        await editorReady(second); await waitFor(second, () => editors(second).rich);
+        typeRich(second, '<p>Other editor wins</p>');
+        await waitFor(second, () => first.chrome._localStore[DRAFT_KEY]?.text === 'Other editor wins');
+        for (const html of ['<p>Keep my conflicting text</p>', '<p></p>']) {
+            typeRich(first, html);
+            await waitFor(first, () => /Another tab saved this draft/.test(first.window.document.querySelector('.bpb-re-status').textContent));
+            assert.equal(first.chrome._localStore[DRAFT_KEY].text, 'Other editor wins');
+            assert.equal(first.window.document.querySelector('.bpb-re-save-recovery').hidden, false);
+        }
+    } finally { first.window.close(); second?.window.close(); }
+});
+
+test('queued edits in one editor adopt the completing writer’s version', async () => {
+    let release;
+    const dom = await loadEditor({ accelerateAutosave: true, prepare: page => {
+        const set = page.chrome.storage.local.set;
+        page.chrome.storage.local.set = async patch => {
+            if (patch[DRAFT_KEY]?.text === 'First snapshot') await new Promise(resolve => { release = resolve; });
+            return set(patch);
+        };
+    } });
+    try {
+        await editorReady(dom);
+        typeRich(dom, '<p>First snapshot</p>');
+        await waitFor(dom, () => release);
+        typeRich(dom, '<p>Latest snapshot</p>');
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        release();
+        await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === 'Latest snapshot');
+        assert.doesNotMatch(dom.window.document.querySelector('.bpb-re-status').textContent, /Another tab/);
+    } finally { dom.window.close(); }
+});
+
 test('editor expiry cleanup cannot remove a save newer than its read', async () => {
     let releaseRead;
     let reads = 0;
@@ -168,7 +232,8 @@ test('a first autosave failure keeps live content and exposes selected Markdown 
 test('a failed empty-draft removal discloses that the older device copy remains', async () => {
     const older = { text: 'older saved copy', mode: 'rich', savedAt: Date.now() - 1000 };
     const dom = await loadEditor({
-        report: ' ',
+        report: 'Current report to clear',
+        accelerateAutosave: true,
         drafts: { [DRAFT_KEY]: older },
         prepare: d => {
             const nativeSet = d.chrome.storage.local.set;
@@ -183,6 +248,7 @@ test('a failed empty-draft removal discloses that the older device copy remains'
         },
     });
     await editorReady(dom);
+    typeRich(dom, '<p></p>');
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
     await waitFor(dom, () => dom.window.document.querySelector('.bpb-re-status').textContent
         === 'Older saved draft couldn’t be removed');
@@ -221,7 +287,7 @@ test('switching saved draft modes marks and persists the latest recovery mode', 
             dom.window.document.querySelector('.bpb-re-status').textContent));
 });
 
-test('page exit removes whitespace-only reports instead of retaining a draft', async () => {
+test('an untouched whitespace-only editor cannot consume an offered recovery copy', async () => {
     for (const reportEditorMode of ['rich', 'markdown']) {
         const dom = await loadEditor({
             settings: { reportEditorMode },
@@ -233,13 +299,14 @@ test('page exit removes whitespace-only reports instead of retaining a draft', a
         await editorReady(dom);
 
         dom.window.dispatchEvent(new dom.window.Event('pagehide'));
-        await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.deletedGeneration);
+        await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
+        assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'older recovery copy');
         assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, '',
             `${reportEditorMode} should not report an empty draft as saved`);
     }
 });
 
-test('page exit removes an untouched generated-credit-only draft in Rich and Markdown modes', async () => {
+test('an untouched credit scaffold cannot consume an offered recovery copy', async () => {
     for (const reportEditorMode of ['rich', 'markdown']) {
         const dom = await loadEditor({
             settings: { addReportCredit: true, reportEditorMode },
@@ -250,7 +317,8 @@ test('page exit removes an untouched generated-credit-only draft in Rich and Mar
         await editorReady(dom);
 
         dom.window.dispatchEvent(new dom.window.Event('pagehide'));
-        await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.deletedGeneration);
+        await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
+        assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'older recovery copy');
         assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, '',
             `${reportEditorMode} should not report a credit scaffold as saved`);
     }
@@ -595,12 +663,8 @@ test('only worker-confirmed success makes in-flight autosaves terminal', async (
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
 
     releases[0]();
-    await waitFor(dom, () => releases.length === 2);
-    releases[1]();
-    await waitFor(dom, () => releases.length === 3);
-    releases[2]();
-    await waitFor(dom, () => cleanupCount >= 3);
-    assert.deepEqual(completions, [0, 1, 2],
+    await waitFor(dom, () => cleanupCount >= 1);
+    assert.deepEqual(completions, [0],
         'the worker-owned draft queue must serialize writes before terminal cleanup');
     assert.ok(dom.chrome._localStore[DRAFT_KEY].deletedGeneration);
     assert.equal(dom.chrome._localStore[DRAFT_KEY].text, undefined);
@@ -625,8 +689,9 @@ test('a mismatched success event cannot consume or suppress this draft', async (
 });
 
 test('a named non-Save submission keeps page-exit draft recovery active', async () => {
-    const dom = await loadEditor({ report: 'keep this after cancelling' });
+    const dom = await loadEditor({ report: 'original' });
     await editorReady(dom);
+    typeRich(dom, '<p>keep this after cancelling</p>');
     const doc = dom.window.document;
     const form = doc.getElementById('JournalText').form;
 

@@ -375,12 +375,17 @@ by file size.
 
 ### Fixed and verified
 
-None. The eight new runtime findings remain open. Green baseline checks do not
-close the targeted defects or the failed Firefox integration check.
+- **F1:** editor snapshots now use worker-checked record/deletion versions,
+  serialize their own writes, and skip unchanged lifecycle flushes. Conflicting
+  edits preserve the stored recovery copy and expose the existing copy action.
+  The related report/draft/delete suite passed 196 tests. Hidden real Chrome
+  153.0.8010.12 extension verification passed at 1000×760, including BFCache.
+  The checked-in two-tab browser regression passed; the conflict surface was
+  rendered at 1000×760 light and 375×760 dark.
 
 ### Intentionally not changed
 
-- Runtime behavior, existing privacy/consent/ownership and schema boundaries,
+- Existing privacy/consent/ownership and schema boundaries,
   raw-provider GPX containment, optional host permissions, and manual final Save.
 - Previous accepted design decisions, exact advisory scope/expiry, historical
   recovery constraints, and separate active plan ledgers.
@@ -390,7 +395,8 @@ close the targeted defects or the failed Firefox integration check.
 
 ### Changed but not fully proven
 
-Only this audit record and its index changed. Hidden fixture results do not
+The remaining findings are open until their implementation checks complete.
+Hidden fixture results do not
 establish native focus/window placement, browser chrome/permission prompts,
 screen-reader speech, physical touch behavior, live provider DOM/export,
 live Peakbagger layouts, store acceptance, or hosted CI. Chrome smoke success

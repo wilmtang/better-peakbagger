@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Preserve report drafts across tabs.** Leaving an untouched editor keeps
+  newer recovery text; conflicting edits offer a copy instead of overwriting it.
+
 ## 4.0.0 — 2026-10-11
 
 - **Use the same release checks before release.** CI and release share the
