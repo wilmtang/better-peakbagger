@@ -33,7 +33,22 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         const card = document.getElementById('bpb-peak-weather'), right = card.closest('table'), frame = document.getElementById('Gmap');
         const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
         const hint = card.querySelector('.bpb-week-model-description');
+        const rowAlignment = [];
+        let temperatureRight;
+        for (const summary of card.querySelectorAll('.bpb-week-day > summary')) {
+            const row = summary.getBoundingClientRect(), temperature = summary.querySelector('.bpb-week-temp').getBoundingClientRect();
+            const chevron = summary.querySelector('.bpb-week-chevron').getBoundingClientRect();
+            const center = bounds => (bounds.top + bounds.bottom) / 2;
+            const wide = getComputedStyle(summary).gridTemplateColumns.split(' ').length === 5;
+            if (wide) temperatureRight ??= temperature.right;
+            if (Math.abs(center(chevron) - center(row)) > 1 || (wide && (Math.abs(center(temperature) - center(row)) > 1
+                || Math.abs(temperature.right - temperatureRight) > 1))) {
+                rowAlignment.push({ date: summary.parentElement.dataset.date, wide, rowCenter: center(row),
+                    temperatureCenter: center(temperature), chevronCenter: center(chevron), temperatureRight: temperature.right });
+            }
+        }
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
+            rowAlignment,
             summaryHeight: card.querySelector('.bpb-week-days').getBoundingClientRect().top - r.top,
             hiddenModelHintHeight: hint.hidden ? hint.getBoundingClientRect().height : 0,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
@@ -50,6 +65,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         assert.equal(state.belowMap, true, JSON.stringify(state));
         assert.ok(state.left >= state.parentLeft - 1 && state.right <= state.parentRight + 1, JSON.stringify(state));
         assert.deepEqual(state.overflow, [], JSON.stringify(state));
+        assert.deepEqual(state.rowAlignment, [], `temperature and chevron alignment: ${JSON.stringify(state.rowAlignment)}`);
         assert.equal(new Set(state.days).size, 16);
         assert.ok(state.days.every((date, index) => !index || (state.period === 'past' ? date < state.days[index - 1] : date > state.days[index - 1])), JSON.stringify(state));
     };
