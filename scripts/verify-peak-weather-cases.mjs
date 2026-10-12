@@ -34,17 +34,20 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
         const hint = card.querySelector('.bpb-week-model-description');
         const rowAlignment = [];
-        let temperatureRight;
+        let temperatureRight, temperatureColumns;
         for (const summary of card.querySelectorAll('.bpb-week-day > summary')) {
             const row = summary.getBoundingClientRect(), temperature = summary.querySelector('.bpb-week-temp').getBoundingClientRect();
             const chevron = summary.querySelector('.bpb-week-chevron').getBoundingClientRect();
             const center = bounds => (bounds.top + bounds.bottom) / 2;
             const wide = getComputedStyle(summary).gridTemplateColumns.split(' ').length === 5;
+            const columns = ['low', 'high'].map(key => summary.querySelector(`.bpb-week-${key}`).getBoundingClientRect().left);
+            temperatureColumns ??= columns;
             if (wide) temperatureRight ??= temperature.right;
-            if (Math.abs(center(chevron) - center(row)) > 1 || (wide && (Math.abs(center(temperature) - center(row)) > 1
+            if (columns.some((left, index) => Math.abs(left - temperatureColumns[index]) > 1)
+                || Math.abs(center(chevron) - center(row)) > 1 || (wide && (Math.abs(center(temperature) - center(row)) > 1
                 || Math.abs(temperature.right - temperatureRight) > 1))) {
                 rowAlignment.push({ date: summary.parentElement.dataset.date, wide, rowCenter: center(row),
-                    temperatureCenter: center(temperature), chevronCenter: center(chevron), temperatureRight: temperature.right });
+                    temperatureCenter: center(temperature), chevronCenter: center(chevron), temperatureRight: temperature.right, columns });
             }
         }
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
@@ -225,6 +228,15 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
         if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-right-column.png`));
     }
+    setMode('temperature-alignment');
+    for (const [theme, units] of [['light', 'imperial'], ['dark', 'metric']]) {
+        await setSettings({ theme, units }); await openPage();
+        for (const width of [1440, 375]) {
+            await resize(width, 1100); assertGeometry(await evaluate(geometry));
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-temperature-columns-${width}.png`));
+        }
+    }
+    setMode('complete');
     await openPage();
     const chooseModel = async id => evaluate(value => {
         const select = document.querySelector('#bpb-peak-weather-model');

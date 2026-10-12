@@ -52,6 +52,10 @@ try {
             body.hourly.wind_gusts_10m[index] = 20 + day * 3;
         });
         if (mode === 'cold-temperature') body.hourly.temperature_2m = body.hourly.temperature_2m.map((_, index) => index % 2 ? -29 : -35);
+        if (mode === 'temperature-alignment') body.hourly.temperature_2m = body.hourly.temperature_2m.map((_, index) => {
+            const ranges = [[-5, 1], [-8, -1], [-8, 2], [-6, -.4], [-8, 0], [-35, -29], [-1, 9], [10, 60]];
+            return ranges[Math.floor(index / 24) % ranges.length][index % 24 < 12 ? 0 : 1];
+        });
         if (mode === 'partial' && body.hourly.precipitation) {
             if (peakMode) body.hourly.precipitation.fill(null);
             else body.hourly.precipitation[40] = null;
