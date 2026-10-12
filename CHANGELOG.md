@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep your keyboard place around climber cards.** Hidden, removed, or
+  replaced rows return owned focus to a surviving link or control.
+
 - **Keep your 3D satellite capture.** Explicit dated and Latest choices survive
   a return from 2D; untouched 3D views still follow the 2D layer.
 

@@ -137,10 +137,18 @@ That failure was in the temporary check, not a product failure or flaky pass.
   1.9.4/MapLibre bridge and Firefox 155.0 hardware fixtures exercised actual
   toggles and capture source identity. Both ran hidden on ANGLE Metal / Apple
   M3 Pro. Base terrain viewport 1000×760; Firefox warning renders also used
-  375×760, light/dark. Affected ESLint passed. F2 remains open.
+  375×760, light/dark. Affected ESLint passed.
   Chrome's pixel assertions wait for settled metadata and distinguish saturated
   fixture imagery from the terrain fallback; failed-tile retry repaints the
   expected capture with new requests. Final steady screenshots were inspected.
+- **F2:** cleanup now preserves owned focus through consecutive hidden rows,
+  same-identity replacement, removal, and last/empty-row cases. It searches
+  surviving next/previous controls and a stable scope, keeps the closed card
+  attached to the document, and leaves external focus alone. Build, 109 related
+  tests and affected ESLint passed. Hidden real Chrome 153.0.8010.12 and Firefox
+  157.0.1 manifest verifiers passed the shared native-input DOM focus probes.
+  Base viewport 1000×760; existing card checks cover 1000, 480, 360 and 320px
+  in light/dark. These results prove DOM focus, not native window focus.
 
 ### Intentionally not changed
 

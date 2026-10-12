@@ -116,4 +116,48 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
     await wait(() => document.getElementById('bpb-climber-card-name')?.textContent === 'Alex Doe');
     assert.equal(await evaluate(() => document.getElementById('bpb-climber-card-favorite').hidden), true);
     await click('.bpb-climber-card-close');
+    const focusCases = [
+        { expected: 'focus-third', alter: () => {
+            document.getElementById('focus-first-row').hidden = true;
+            document.getElementById('focus-second-row').hidden = true;
+        } },
+        { expected: 'focus-replacement', alter: () => {
+            const row = document.createElement('article');
+            row.innerHTML = '<a id="focus-replacement" href="/climber/climber.aspx?cid=900002">Morgan Longlastname</a>';
+            document.getElementById('focus-first-row').replaceWith(row);
+        } },
+        { expected: 'focus-second', alter: () => document.getElementById('focus-first-row').remove() },
+        { start: 'third', expected: 'focus-second', alter: () => {
+            document.getElementById('focus-stable').remove();
+            document.getElementById('focus-third-row').remove();
+        } },
+        { expected: 'focus-stable', alter: () => {
+            document.getElementById('focus-first-row').hidden = true;
+            document.getElementById('focus-second-row').hidden = true;
+            document.getElementById('focus-third-row').hidden = true;
+        } },
+        { expected: 'focus-stable', alter: () => {
+            document.getElementById('focus-stable').focus();
+            document.getElementById('focus-first-row').remove();
+        } },
+    ];
+    for (const { expected, alter, start = 'first' } of focusCases) {
+        await evaluate(() => {
+            document.getElementById('focus-probe')?.remove();
+            const section = document.createElement('section'); section.id = 'focus-probe';
+            section.innerHTML = ['first', 'second', 'third'].map((name, index) =>
+                `<article id="focus-${name}-row"><a id="focus-${name}" href="/climber/climber.aspx?cid=${900002 + index}">Example ${name}</a></article>`).join('')
+                + '<button id="focus-stable">Show all</button>';
+            (document.querySelector('main') || document.body).append(section);
+            section.scrollIntoView({ block: 'center' });
+        });
+        await wait(() => document.querySelector('#focus-first + .bpb-climber-actions-trigger'));
+        await click(`#focus-${start} + .bpb-climber-actions-trigger`);
+        await wait(() => document.getElementById('bpb-climber-card').contains(document.activeElement));
+        await evaluate(alter);
+        await wait(() => document.getElementById('bpb-climber-card')?.hidden
+            && document.activeElement?.id?.startsWith('focus-'));
+        assert.equal(await evaluate(() => document.activeElement.id), expected);
+    }
+    await evaluate(() => document.getElementById('focus-probe').remove());
 }

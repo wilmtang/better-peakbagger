@@ -241,6 +241,44 @@ test('changed identities close the card; hiding its report returns focus to the 
     assert.equal(moved.closest('article'), null, 'cleanup must not move a relocated site link back');
 });
 
+test('disappearing card focus skips hidden rows, follows replacements, and uses previous or stable controls', async () => {
+    for (const action of ['hide-two', 'replace', 'remove', 'last', 'all-hidden', 'external', 'trigger']) {
+        const dom = await load({ prepare: dom => {
+            const doc = dom.window.document, list = doc.getElementById('names');
+            for (const id of ['casey', 'morgan', 'owner']) {
+                const row = doc.createElement('article'); row.id = `${id}-row`;
+                row.append(doc.getElementById(id)); list.append(row);
+            }
+            const stable = doc.createElement('button'); stable.id = 'stable-control'; stable.textContent = 'Show all'; list.append(stable);
+        } });
+        try {
+            const doc = dom.window.document;
+            const card = action === 'trigger' ? doc.getElementById('bpb-climber-card') : await open(dom, action === 'last' ? 'owner' : 'casey');
+            if (action === 'trigger') doc.getElementById('casey').nextElementSibling.focus();
+            else card.querySelector('.bpb-climber-card-close').focus();
+            if (action === 'external') doc.getElementById('stable-control').focus();
+            let expected = doc.getElementById('morgan');
+            if (action === 'replace') {
+                const row = doc.createElement('article');
+                row.innerHTML = '<a id="replacement" href="/climber/climber.aspx?cid=900002">Casey Alpine</a>';
+                doc.getElementById('casey-row').replaceWith(row); expected = row.firstElementChild;
+            } else if (action === 'remove') doc.getElementById('casey-row').remove();
+            else if (action === 'last') {
+                doc.getElementById('stable-control').remove(); doc.getElementById('owner-row').remove();
+            } else {
+                doc.getElementById('casey-row').hidden = true;
+                if (action === 'hide-two') { doc.getElementById('morgan-row').hidden = true; expected = doc.getElementById('owner'); }
+                if (action === 'all-hidden') {
+                    doc.getElementById('morgan-row').hidden = true; doc.getElementById('owner-row').hidden = true;
+                    expected = doc.getElementById('stable-control');
+                }
+                if (action === 'external') expected = doc.getElementById('stable-control');
+            }
+            await waitFor(dom, () => card.hidden && doc.activeElement === expected);
+        } finally { dom.window.close(); }
+    }
+});
+
 test('failed settings refresh cannot retain an obsolete writable favorite source', async t => {
     const dom = await load(); t.after(() => dom.window.close());
     const card = await open(dom);

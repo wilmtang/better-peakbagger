@@ -25,6 +25,7 @@ const mount = () => {
     let openTimer = null, closeTimer = null, positionFrame = null, mutationFrame = null;
     let hovered = null, suppressed = null, operation = null, readController = null;
     let error = '', notice = '', active = true, explicitOpen = false;
+    let focusedRecord = null;
     const listen = (node, type, handler, options) => {
         node.addEventListener(type, handler, options);
         listeners.push(() => node.removeEventListener(type, handler, options));
@@ -107,35 +108,69 @@ const mount = () => {
         schedulePosition();
     };
     const clearTimers = () => { clearTimeout(openTimer); clearTimeout(closeTimer); openTimer = closeTimer = null; };
+    const rememberFocusContext = record => {
+        const row = record.host.closest('tr, article, li') || record.host;
+        const parent = row.parentElement;
+        if (parent) record.focusContext = { row, parent, index: [...parent.children].indexOf(row) };
+    };
+    const replacementFocus = record => {
+        const context = record.focusContext;
+        if (!context) return null;
+        const { row, parent } = context;
+        const siblings = [...parent.children];
+        const liveIndex = siblings.indexOf(row);
+        const next = liveIndex < 0 ? context.index : liveIndex + 1;
+        const controls = 'a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex]';
+        const eligible = node => node.tabIndex >= 0 && !record.host.contains(node)
+            && !card.contains(node) && isVisible(node);
+        for (const sibling of [...siblings.slice(next), ...siblings.slice(0, next).reverse()]) {
+            const candidates = [...(sibling.matches(controls) ? [sibling] : []), ...sibling.querySelectorAll(controls)];
+            const candidate = candidates.find(eligible);
+            if (candidate) return candidate;
+        }
+        const scope = parent.isConnected ? parent : document.querySelector('main');
+        const control = [...(scope?.querySelectorAll(controls) || [])].find(eligible);
+        if (control) return control;
+        if (isVisible(scope)) {
+            if (!scope.hasAttribute('tabindex')) scope.tabIndex = -1;
+            return scope;
+        }
+        return null;
+    };
+    const retireFocus = record => {
+        const focused = card.contains(document.activeElement) && current === record
+            || document.activeElement === record.trigger
+            || (focusedRecord === record && document.activeElement === document.body);
+        return focused ? replacementFocus(record) : null;
+    };
     const close = ({ restore = false, suppress = false } = {}) => {
         clearTimers();
         if (!current) return;
         const old = current;
         const focused = card.contains(document.activeElement);
-        old.focusWasInCard = false;
         if (suppress) suppressed = old;
         old.trigger.setAttribute('aria-expanded', 'false');
         try { if (card.matches(':popover-open')) card.hidePopover(); } catch { /* portal fallback */ }
         card.hidden = true; current = null; explicitOpen = false;
+        document.body.append(card);
+        if (focusedRecord === old) focusedRecord = null;
         if (restore && focused && isVisible(old.trigger)) old.trigger.focus({ preventScroll: true });
     };
     const position = () => {
         positionFrame = null;
         if (!current || card.hidden || !active) return;
         if (!isVisible(current.anchor) || !targetFor(current.anchor)) {
-            const focused = card.contains(document.activeElement)
-                || (current.focusWasInCard && document.activeElement === document.body);
-            const row = current.host.closest('tr, article, li');
-            const fallback = row?.nextElementSibling?.querySelector('a[href], button:not(:disabled)');
+            const fallback = retireFocus(current);
             close();
-            if (focused && isVisible(fallback)) fallback.focus({ preventScroll: true });
+            fallback?.focus({ preventScroll: true });
             return;
         }
+        rememberFocusContext(current);
         const rect = current.anchor.getBoundingClientRect();
         const viewport = window.visualViewport;
         const leftEdge = viewport?.offsetLeft || 0, topEdge = viewport?.offsetTop || 0;
         const width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
-        if (rect.bottom < topEdge || rect.top > topEdge + height) { close(); return; }
+        if (rect.bottom < topEdge || rect.top > topEdge + height) { close({ restore: true }); return; }
         card.style.maxWidth = `${Math.max(0, width - 24)}px`;
         card.style.maxHeight = `${Math.max(0, height - 24)}px`;
         const size = card.getBoundingClientRect();
@@ -155,6 +190,7 @@ const mount = () => {
         if (current !== record) {
             if (current && card.contains(document.activeElement) && !explicit) return;
             close(); current = record; error = ''; notice = '';
+            rememberFocusContext(record);
             record.target = targetFor(record.anchor);
             record.host.append(card); // Natural keyboard order follows the actions trigger.
         }
@@ -183,6 +219,7 @@ const mount = () => {
         }, CLOSE_DELAY);
     };
     const removeRecord = record => {
+        const fallback = retireFocus(record);
         if (current === record) close();
         if (hovered === record) hovered = null;
         if (suppressed === record) suppressed = null;
@@ -192,6 +229,8 @@ const mount = () => {
             else record.host.remove();
         }
         records.delete(record.anchor);
+        if (focusedRecord === record) focusedRecord = null;
+        fallback?.focus({ preventScroll: true });
     };
     const decorate = root => {
         const anchors = root.matches?.('a[href]') ? [root] : [];
@@ -342,7 +381,8 @@ const mount = () => {
     });
     listen(document, 'focusin', event => {
         if (!active) return;
-        if (current) current.focusWasInCard = card.contains(event.target);
+        focusedRecord = card.contains(event.target) ? current : recordAt(event.target);
+        if (focusedRecord) rememberFocusContext(focusedRecord);
         if (card.contains(event.target)) return;
         const record = recordAt(event.target);
         if (record) requestOpen(record, FOCUS_DELAY);
@@ -387,6 +427,11 @@ const mount = () => {
                     if (target.cid !== record.target.cid && current === record) close();
                     record.target = target;
                     record.trigger.setAttribute('aria-label', `Climber actions for ${target.name}`);
+                    if (!isVisible(record.anchor) && focusedRecord === record) {
+                        const fallback = retireFocus(record);
+                        if (current === record) close();
+                        fallback?.focus({ preventScroll: true });
+                    }
                 }
             }
             if (current) paint();
