@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep exported tracks tied to their ascent.** Map handoffs reject a GPX
+  response redirected to another ascent or an unexpected download address.
+
 - **Preserve report drafts across tabs.** Leaving an untouched editor keeps
   newer recovery text; conflicting edits offer a copy instead of overwriting it.
 - **Keep ignored reports concealed.** Climber hover actions no longer prevent

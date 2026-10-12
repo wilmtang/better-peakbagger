@@ -375,6 +375,13 @@ by file size.
 
 ### Fixed and verified
 
+- **F8:** the saved-GPX helper now checks the final response against the same
+  exact download-path, origin, credentials, and ascent-ID rules as the request.
+  Another ascent, duplicate IDs, credentials, and non-download paths fail closed;
+  harmless case/query normalization retains the original GPX bytes.
+  Build, 42 source/provider/worker-route tests, affected ESLint and diff checks
+  passed. Live destination-provider imports remain outside this evidence.
+
 - **F1:** editor snapshots now use worker-checked record/deletion versions,
   serialize their own writes, and skip unchanged lifecycle flushes. Conflicting
   edits preserve the stored recovery copy and expose the existing copy action.

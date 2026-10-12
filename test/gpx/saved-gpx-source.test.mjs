@@ -69,6 +69,10 @@ test('saved GPX read fails closed on errors, malformed data, DTDs, size and redi
         response('<!DOCTYPE gpx><gpx><trkpt lat="1" lon="2"/></gpx>'),
         response('<gpx/>'),
         { ...response(gpx), url: 'https://evil.example/track.gpx' },
+        { ...response(gpx), url: download.replace('aid=42', 'aid=43') },
+        { ...response(gpx), url: `${download}&aid=42` },
+        { ...response(gpx), url: download.replace('GPXFile.aspx', 'ascent.aspx') },
+        { ...response(gpx), url: download.replace('www.', 'user:password@www.') },
     ]) {
         const result = await readSourceGpx({
             pageUrl: ascent,
@@ -88,4 +92,15 @@ test('saved GPX read fails closed on errors, malformed data, DTDs, size and redi
         maxBytes: MAX_ONX_GPX_BYTES,
         parseXml,
     }), false);
+});
+
+test('same-ascent download normalization preserves the exact GPX', async () => {
+    for (const url of [download.replace('GPXFile', 'gpxfile'), download.replace('?aid=42&sep=1', '?sep=1&aid=42'),
+        download.replace('&sep=1', '')]) {
+        const result = await readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
+            fetchResource: async () => ({ kind: 'ok', url, text: gpx }) });
+        assert.equal(result.ok, true, url);
+        assert.equal(result.gpx, gpx);
+        assert.equal(result.filename, 'peakbagger-42.gpx');
+    }
 });
