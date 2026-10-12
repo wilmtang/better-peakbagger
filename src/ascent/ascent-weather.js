@@ -6,6 +6,7 @@ import { createWeatherIcon } from '../weather/weather-icon.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
+import { createCardDrag } from '../ui/card-drag.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
@@ -20,6 +21,7 @@ import { createWeatherHourlyTable } from '../weather/weather-hourly-table.js';
 import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
 
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
+const POSITION_KEY = 'bpbAscentWeatherColumn';
 const element = dom.element;
 const numeric = value => Number.isFinite(value);
 const clean = text => (text || '').replace(/\s+/g, ' ').trim();
@@ -30,6 +32,11 @@ export function mountAscentWeather() {
     const subject = readWeatherSubject(document, location.href);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });
+    const moveHandle = element('button', { type: 'button', class: 'bpb-card-drag-handle', hidden: '',
+        'aria-label': 'Move weather below trip report', 'aria-keyshortcuts': 'ArrowLeft ArrowRight' }, [
+        element('span', { class: 'bpb-card-drag-dots', 'aria-hidden': 'true' }),
+    ]);
+    const moveStatus = element('span', { class: 'bpb-card-drag-status', role: 'status', 'aria-live': 'polite' });
     const date = element('span', { class: 'bpb-weather-date', text: subject.date ? displayDate(subject.date) : 'Ascent date unavailable' });
     const previousDay = element('button', { type: 'button', class: 'bpb-weather-day-button', 'aria-label': 'Previous day', text: '‹', hidden: '', 'aria-disabled': 'true' });
     const nextDay = element('button', { type: 'button', class: 'bpb-weather-day-button', 'aria-label': 'Next day', text: '›', hidden: '', 'aria-disabled': 'true' });
@@ -85,7 +92,8 @@ export function mountAscentWeather() {
     const detailsArea = element('div', { hidden: '' }, [element('div', { class: 'bpb-weather-hourly' }, [disclosure, hourly]), sources]);
     modelRow.hidden = true;
     const attribution = element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' });
-    card.append(element('header', {}, [heading, dateNavigation]), locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
+    const header = element('header', {}, [heading, dateNavigation, moveHandle]);
+    card.append(header, moveStatus, locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
         element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }),
             element('span', { class: 'bpb-weather-attribution' }, [document.createTextNode('Powered by '), attribution])]));
 
@@ -97,6 +105,7 @@ export function mountAscentWeather() {
     const mountParent = document.querySelector('#page') || subject.table?.parentElement || nativeMap?.parentElement || document.body;
     let preference = settings.DEFAULTS, settingsReady = false;
     const enabled = () => settingsReady && preference.showWeather;
+    let column = 'summary', positionRevision = 0, positionWrites = Promise.resolve(), cardDrag = null;
     let gpsDetails = null;
     const gpsOrigins = [];
     const restoreGpsDetails = () => {
@@ -137,14 +146,20 @@ export function mountAscentWeather() {
                 move(download);
             }
         }
-        if (card.previousElementSibling !== gpsDetails) card.before(gpsDetails);
+        const summary = document.querySelector('#bpb-ascent-summary-column > .bpb-ascent-table-split__summary');
+        if (summary) {
+            if (summary.nextElementSibling !== gpsDetails) summary.after(gpsDetails);
+        } else if (card.previousElementSibling !== gpsDetails) card.before(gpsDetails);
     };
     const place = () => {
         const summary = document.querySelector('#bpb-ascent-summary-column > .bpb-ascent-table-split__summary');
         if (summary) {
-            const anchor = gpsDetails?.parentElement === summary.parentElement ? gpsDetails : summary;
-            if (anchor.nextElementSibling !== card) anchor.after(card);
             placeGpsDetails();
+            const report = document.querySelector('#bpb-ascent-report-column > .bpb-ascent-table-split__report');
+            const anchor = column === 'report' && report ? report
+                : gpsDetails?.parentElement === summary.parentElement ? gpsDetails : summary;
+            if (anchor.nextElementSibling !== card) anchor.after(card);
+            cardDrag?.refresh();
             return;
         }
         let anchor = document.getElementById('bpb-route-explorer');
@@ -160,6 +175,7 @@ export function mountAscentWeather() {
                 && !(anchor.nextElementSibling === gpsDetails && gpsDetails?.nextElementSibling === card)) anchor.after(card);
         } else if (!card.isConnected) mountParent.append(card);
         placeGpsDetails();
+        cardDrag?.refresh();
     };
     place();
     const placementObserver = new MutationObserver(place);
@@ -544,6 +560,7 @@ export function mountAscentWeather() {
         preference = next; settingsReady = true;
         card.hidden = !enabled();
         if (!enabled()) {
+            cardDrag?.cancel(); cardDrag?.refresh();
             restoreGpsDetails();
             cooldown.suspend(); stopCursor(); cancel();
             visibilityObserver?.disconnect(); visibilityObserver = null;
@@ -555,10 +572,49 @@ export function mountAscentWeather() {
     };
     const unsubscribe = settings.subscribe(applyPreference);
     lifecycle = createPageLifecycle({
-        onSuspend: () => { cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
+        onSuspend: () => { cardDrag?.cancel(); cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
         onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (enabled()) { cooldown.resume(); listenForCursor(); drawChart(); if (!current || started) beginWhenVisible(); } },
-        onDispose: () => { cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
+        onDispose: () => { cardDrag?.dispose(); cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
+    cardDrag = createCardDrag({ card, handle: moveHandle, surface: header, status: moveStatus, name: 'Weather',
+        enabled: () => enabled() && lifecycle.state === 'active', getPosition: () => column,
+        getTargets: () => {
+            const split = document.getElementById('bpb-ascent-table-split');
+            const report = document.getElementById('bpb-ascent-report-column'), summary = document.getElementById('bpb-ascent-summary-column');
+            if (!split || report?.parentElement !== split || summary?.parentElement !== split) return [];
+            return [['report', report, 'below trip report'], ['summary', summary, 'below summary']].map(([id, targetColumn, label]) => ({ id, element: targetColumn, label,
+                bounds: () => {
+                    const rect = targetColumn.getBoundingClientRect(), area = split.getBoundingClientRect();
+                    return getComputedStyle(split).display === 'grid'
+                        ? { left: rect.left, right: rect.right, width: rect.width, top: area.top, bottom: area.bottom } : rect;
+                },
+            }));
+        },
+        onMove: next => {
+            if (next !== 'report' && next !== 'summary') return false;
+            moveStatus.classList.remove('bpb-card-drag-status-visible');
+            column = next; const revision = ++positionRevision;
+            place(); drawChart();
+            positionWrites = positionWrites.catch(() => {}).then(() => chrome.storage.local.set({ [POSITION_KEY]: next })).catch(() => {
+                if (revision === positionRevision && lifecycle.state !== 'disposed') {
+                    moveStatus.textContent = 'Weather moved for this visit. Position could not be saved.';
+                    moveStatus.classList.add('bpb-card-drag-status-visible');
+                }
+            });
+            return true;
+        },
+    });
+    // A delayed read cannot undo a gesture or completed move. Only this device-local
+    // column identifier is stored; it never enters sync or settings exports.
+    const startupPositionRevision = positionRevision;
+    void (async () => {
+        try {
+            const saved = (await chrome.storage.local.get(POSITION_KEY))?.[POSITION_KEY];
+            if (positionRevision !== startupPositionRevision || lifecycle.state === 'disposed' || cardDrag.dragging) return;
+            if (saved === 'report' || saved === 'summary') column = saved;
+            if (lifecycle.state === 'active') place();
+        } catch { /* A storage failure retains the usable default placement. */ }
+    })();
     // Preserve an already-published GPX selection while the initial settings
     // read is pending. An opt-out removes this listener before any request.
     listenForCursor();

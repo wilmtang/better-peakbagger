@@ -161,7 +161,7 @@
         "https://peakbagger.com/climber/ascent.aspx*",
         "https://peakbagger.com/climber/Ascent.aspx*"
       ],
-      "css": ["css/ascent-weather.css", "css/weather-hourly-table.css"],
+      "css": ["css/card-drag.css", "css/ascent-weather.css", "css/weather-hourly-table.css"],
       "js": ["content/ascent-weather.js"],
       "run_at": "document_end",
       "all_frames": false

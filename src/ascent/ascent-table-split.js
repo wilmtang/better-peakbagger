@@ -85,6 +85,10 @@ export const mountAscentTableSplit = ({
     const wrapper = Dom.element('div', {
         id: 'bpb-ascent-table-split',
     });
+    const reportColumn = Dom.element('div', {
+        id: 'bpb-ascent-report-column',
+        class: 'bpb-ascent-table-split__report-column',
+    });
     const summaryColumn = Dom.element('div', {
         id: 'bpb-ascent-summary-column',
         class: 'bpb-ascent-table-split__summary-column',
@@ -104,7 +108,8 @@ export const mountAscentTableSplit = ({
     left.before(wrapper);
     left.classList.add('bpb-ascent-table-split__table', 'bpb-ascent-table-split__report');
     right.classList.add('bpb-ascent-table-split__table', 'bpb-ascent-table-split__summary');
-    wrapper.append(left, handle, summaryColumn);
+    wrapper.append(reportColumn, handle, summaryColumn);
+    reportColumn.append(left);
     summaryColumn.append(right);
 
     // CSS height:auto releases fixed heights while shrinking. Preserve an
@@ -225,6 +230,7 @@ export const mountAscentTableSplit = ({
         handle,
         left,
         right,
+        reportColumn,
         summaryColumn,
         get leftPercent() { return leftPercent; },
         applyPercent,

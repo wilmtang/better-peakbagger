@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { weatherFixture } from '../helpers/weather-fixture.mjs';
 import { GPX_TIME_CURSOR } from '../../src/gpx/gpx-time-cursor.js';
+import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const [ascent, peak, bundle, layoutBundle, challenge] = await Promise.all([
     readFile(new URL('../fixtures/pages/climber-ascent.html', import.meta.url), 'utf8'),
@@ -17,12 +18,16 @@ async function waitFor(predicate) {
     const until = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > until) throw new Error('Weather UI did not settle'); await pause(); }
 }
-const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings, now } = {}) => {
+const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings, localPositions = {}, readPositions, savePositions, now } = {}) => {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = jsdom.window, requests = [], listeners = [];
+    const win = jsdom.window, requests = [], listeners = [], positionWrites = [];
     if (now !== undefined) win.Date.now = () => now;
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
+    win.chrome = { storage: { local: { get: readPositions || (async () => localPositions), set: async values => {
+        positionWrites.push(values);
+        if (savePositions) return savePositions(values);
+        Object.assign(localPositions, values);
+    } }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     win.fetch = async (url, init) => {
         requests.push({ url, init });
         if (new URL(url).host === 'www.peakbagger.com' && fetchPeak) return fetchPeak(url, init);
@@ -32,7 +37,7 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
     };
     if (withLayout) win.eval(layoutBundle);
     win.eval(bundle);
-    return { win, doc: win.document, requests, listeners, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
+    return { win, doc: win.document, requests, listeners, positionWrites, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 };
 
 const sendCursor = (env, state, detail = {}) => env.win.dispatchEvent(new env.win.MessageEvent('message', {
@@ -680,6 +685,113 @@ test('invalid or incomplete date makes no summit or weather request, including B
             assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /date|1940/);
         } finally { env.close(); }
     }
+});
+
+test('weather column choice persists locally and keeps GPS controls in the summary column', async () => {
+    const localPositions = {}, env = setup({ localPositions });
+    try {
+        await openChart(env);
+        const card = env.doc.getElementById('bpb-ascent-weather'), handle = card.querySelector('.bpb-card-drag-handle');
+        const chart = card.querySelector('.bpb-weather-chart'), requests = env.requests.length;
+        const selectedTime = Date.parse('2024-07-12T17:32:00Z');
+        sendCursor(env, { selected: true, selectionTime: selectedTime });
+        await waitFor(() => card.querySelector('.bpb-weather-cursor').dataset.time === String(selectedTime));
+        handle.click(); await waitFor(() => env.positionWrites.length === 1);
+        assert.equal(card.parentElement.id, 'bpb-ascent-report-column');
+        assert.equal(card.previousElementSibling.classList.contains('bpb-ascent-table-split__report'), true);
+        assert.equal(env.doc.getElementById('bpb-ascent-gpx-details').parentElement.id, 'bpb-ascent-summary-column');
+        assert.equal(card.querySelector('.bpb-weather-chart'), chart);
+        assert.equal(card.querySelector('.bpb-weather-cursor').dataset.time, String(selectedTime));
+        assert.equal(card.querySelector('[data-metric="temperature"]').getAttribute('aria-selected'), 'true');
+        assert.equal(env.requests.length, requests);
+        assert.deepEqual(localPositions, { bpbAscentWeatherColumn: 'report' });
+        const explorer = env.doc.createElement('div'); explorer.id = 'bpb-route-explorer'; env.doc.getElementById('page').append(explorer);
+        await pause(); assert.equal(card.parentElement.id, 'bpb-ascent-report-column', 'later GPX DOM cannot undo the chosen column');
+        assert.equal(env.doc.querySelectorAll('.bpb-card-drag-handle').length, 1, 'only weather is enabled for dragging');
+    } finally { env.close(); }
+    const restored = setup({ localPositions });
+    try { await waitFor(() => restored.doc.getElementById('bpb-ascent-weather').parentElement.id === 'bpb-ascent-report-column'); }
+    finally { restored.close(); }
+});
+
+test('late and malformed position reads cannot undo current intent or prevent fallback weather', async () => {
+    let finish;
+    const env = setup({ readPositions: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await openChart(env);
+        env.doc.querySelector('.bpb-card-drag-handle').click(); await pause();
+        finish({ bpbAscentWeatherColumn: 'summary' }); await pause();
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
+    } finally { env.close(); }
+    for (const saved of ['invalid', { column: 'report' }, null]) {
+        const invalid = setup({ localPositions: { bpbAscentWeatherColumn: saved } });
+        try { await openChart(invalid); assert.equal(invalid.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-summary-column'); }
+        finally { invalid.close(); }
+    }
+    const fallback = setup({ withLayout: false, localPositions: { bpbAscentWeatherColumn: 'report' }, readPositions: async () => { throw new Error('Unavailable'); } });
+    try {
+        await openChart(fallback); assert.equal(fallback.doc.querySelector('.bpb-card-drag-handle').hidden, true);
+        fallback.win.eval(layoutBundle); await waitFor(() => !fallback.doc.querySelector('.bpb-card-drag-handle').hidden);
+    } finally { fallback.close(); }
+});
+
+test('completed moves serialize local writes, retain the last choice and report storage failure', async () => {
+    const held = [];
+    const env = setup({ savePositions: values => new Promise(resolve => held.push({ values, resolve })) });
+    try {
+        await openChart(env);
+        const handle = env.doc.querySelector('.bpb-card-drag-handle');
+        handle.click(); handle.click();
+        await waitFor(() => held.length === 1);
+        assert.deepEqual({ ...held[0].values }, { bpbAscentWeatherColumn: 'report' });
+        held[0].resolve(); await waitFor(() => held.length === 2);
+        assert.deepEqual({ ...held[1].values }, { bpbAscentWeatherColumn: 'summary' }); held[1].resolve();
+    } finally { env.close(); }
+    const failed = setup({ savePositions: async () => { throw new Error('Storage full'); } });
+    try {
+        await openChart(failed); failed.doc.querySelector('.bpb-card-drag-handle').click();
+        await waitFor(() => failed.doc.querySelector('.bpb-card-drag-status').textContent.includes('could not be saved'));
+        assert.equal(failed.doc.querySelector('.bpb-card-drag-status').classList.contains('bpb-card-drag-status-visible'), true);
+        assert.equal(failed.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
+    } finally { failed.close(); }
+});
+
+test('a position read arriving during a pointer gesture cannot reparent the lifted card', async () => {
+    let finish;
+    const env = setup({ readPositions: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await openChart(env);
+        const card = env.doc.getElementById('bpb-ascent-weather');
+        card.getBoundingClientRect = () => ({ width: 300 });
+        card.querySelector('.bpb-card-drag-handle').dispatchEvent(pointerEvent({ window: env.win }, 'pointerdown', { button: 0, clientX: 400, clientY: 150 }));
+        finish({ bpbAscentWeatherColumn: 'report' }); await pause();
+        assert.equal(card.parentElement.id, 'bpb-ascent-summary-column');
+        env.win.dispatchEvent(pointerEvent({ window: env.win }, 'pointercancel'));
+        assert.equal(env.positionWrites.length, 0);
+    } finally { env.close(); }
+});
+
+test('weather placement survives opt-out and BFCache and ignores position reads after disposal', async () => {
+    const env = setup({ localPositions: { bpbAscentWeatherColumn: 'report' } });
+    try {
+        await openChart(env);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true })); await pause();
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').hidden, true);
+        assert.equal(env.doc.querySelector('.bpb-card-drag-handle').hidden, true);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync')); await pause();
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-report-column');
+    } finally { env.close(); }
+    let finish;
+    const disposed = setup({ readPositions: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await pause(); disposed.win.dispatchEvent(new disposed.win.PageTransitionEvent('pagehide'));
+        finish({ bpbAscentWeatherColumn: 'report' }); await pause();
+        assert.equal(disposed.doc.getElementById('bpb-ascent-weather').parentElement.id, 'bpb-ascent-summary-column');
+        assert.equal(disposed.doc.querySelector('.bpb-card-drop-preview'), null);
+    } finally { disposed.close(); }
 });
 
 test('same card stays in the right column when the route explorer appears later', async () => {

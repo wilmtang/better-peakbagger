@@ -15,12 +15,29 @@ default, and changing display units reuses the loaded weather data.
 The independent isolated-world `content/ascent-weather.js` bundle mounts in the
 right-hand column beneath Summary Total Data, beside the trip report. It follows
 the existing divider width and stacks with the summary on narrow screens. Its
-metrics and controls adapt to the column width. The same card moves into that
-column if the table layout mounts later; GPX analysis never moves it out.
+metrics and controls adapt to the column width. The same card moves into its
+preferred column if the table layout mounts later; GPX analysis never moves it out.
+Drag the card by its header or six-dot grip to move it beneath the trip report
+on the left or beneath the summary on the right. The destination is outlined
+while dragging; Escape, interruption or dropping outside the columns cancels
+the move. Clicking the grip switches columns, and its Left/Right arrow keys
+provide a keyboard alternative. Only the weather card has dragging enabled.
+The shared opt-in controller in `src/ui/card-drag.js` can support other BPB
+cards without registering or moving them automatically.
+
+The chosen column is remembered for subsequent ascent pages in extension-local
+storage (`bpbAscentWeatherColumn`). It is device-local, contains no ascent
+identity or activity data, and is excluded from synced settings, settings files
+and GitHub backups. Unavailable storage keeps the current visit usable.
+The card keeps its loaded day, model, hourly disclosure and readings when moved;
+moving does not request weather. Narrow layouts retain the chosen column in the
+stacked flow. Reduced motion disables the settling animation.
+
 On GPX ascents, dedicated native GPS-note and download/send blocks move together
 immediately above **Weather archive**, preserving their original controls and
 handlers. The map and report stay in place; ambiguous note blocks are left
-untouched. The footer reads **Powered by Open-Meteo**, with the
+untouched. Those GPS controls remain in the summary column when weather moves
+left; their own card is not draggable. The footer reads **Powered by Open-Meteo**, with the
 provider name linked. Unrecognized table layouts retain the native map/metadata
 fallback. It does not depend on GPX, Chart.js,
 terrain, ownership, backup, or a page-world settings bridge.

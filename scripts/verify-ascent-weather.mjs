@@ -16,6 +16,7 @@ import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.js';
 import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
+import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -32,7 +33,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, navigate, click, press, movePointer, clickPoint, screenshot, screenshotPage, resize, setSettings, version;
+    let mode = 'complete', evaluate, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readLocal, version;
     const replyFor = url => {
         const requested = new URL(url);
         if (requested.pathname.startsWith('/data/')) return { status: 200, headers: {}, body: JSON.stringify({
@@ -148,6 +149,8 @@ try {
         };
         press = key => driver.actions({ async: true }).sendKeys(key).perform();
         movePointer = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).perform();
+        pointerDown = (x, y) => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).press().perform();
+        pointerUp = () => driver.actions({ async: true }).release().perform();
         clickPoint = (x, y, button = 'left') => driver.actions({ async: true }).move({ origin: 'viewport', x: Math.round(x), y: Math.round(y) }).press(button === 'right' ? 2 : 0).release(button === 'right' ? 2 : 0).perform();
         resize = async (width, height) => send({ method: 'browsingContext.setViewport', params: { context: await driver.getWindowHandle(), viewport: { width, height } } });
         screenshot = async output => writeFile(output, await driver.findElement(By.id(cardId)).takeScreenshot(true), 'base64');
@@ -162,6 +165,16 @@ try {
             try {
                 await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
             } finally { await driver.switchTo().window(weatherWindow); }
+        };
+        readLocal = async key => {
+            // Reading the extension realm through BiDi avoids blurring the
+            // weather tab and canceling an in-progress pointer gesture.
+            const response = await send({ method: 'script.evaluate', params: {
+                expression: `chrome.storage.local.get(${JSON.stringify(key)}).then(saved => saved[${JSON.stringify(key)}] ?? null)`,
+                target: { context: settingsWindow }, awaitPromise: true, resultOwnership: 'none',
+            } });
+            if (response.result?.type === 'exception') throw new Error(response.result.exceptionDetails?.text || 'local storage read failed');
+            return { [key]: response.result?.result?.value };
         };
     } else {
         const { chromium } = await import('playwright');
@@ -192,9 +205,12 @@ try {
         click = selector => page.locator(selector).click(); resize = (width, height) => page.setViewportSize({ width, height });
         press = key => page.keyboard.press(key);
         movePointer = (x, y) => page.mouse.move(x, y); clickPoint = (x, y, button = 'left') => page.mouse.click(x, y, { button });
+        pointerDown = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); };
+        pointerUp = () => page.mouse.up();
         screenshot = output => page.locator(`#${cardId}`).screenshot({ path: output });
         screenshotPage = output => page.screenshot({ path: output });
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
+        readLocal = key => worker.evaluate(storageKey => chrome.storage.local.get(storageKey), key);
     }
     const wait = (fn, description) => waitForCondition(() => evaluate(fn), { description, timeoutMs: 20_000 });
     const checkGpxCursor = async () => {
@@ -356,6 +372,9 @@ try {
         } else {
             const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
             if (output) await mkdir(output, { recursive: true });
+            await verifyWeatherCardDrag({ evaluate, navigate, click, press, resize, movePointer, pointerDown, pointerUp, wait, readLocal,
+                setSettings, origin, evidence, screenshotPage, output, firefoxMode });
+            await setSettings({ theme: 'light', units: 'imperial' });
             const mixedUnits = { theme: 'light', units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', windUnits: 'imperial' };
             const beforeUnitChange = evidence.length;
             await setSettings(mixedUnits);

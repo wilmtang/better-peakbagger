@@ -471,7 +471,7 @@ test('ascent weather has an independent isolated bundle without API permissions'
     assert.equal(weather.world, undefined);
     assert.equal(weather.run_at, 'document_end');
     assert.deepEqual(weather.js, ['content/ascent-weather.js']);
-    assert.deepEqual(weather.css, ['css/ascent-weather.css', 'css/weather-hourly-table.css']);
+    assert.deepEqual(weather.css, ['css/card-drag.css', 'css/ascent-weather.css', 'css/weather-hourly-table.css']);
     assert.ok(weather.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/ascent-weather.js'), ['ascent/ascent-weather.js']);
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));

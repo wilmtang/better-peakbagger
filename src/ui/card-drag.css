@@ -1,0 +1,24 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+.bpb-card-drag-dots {
+    display: block; width: 12px; height: 18px;
+    background: radial-gradient(circle, currentColor 1.2px, transparent 1.6px) 0 0 / 6px 6px;
+}
+.bpb-card-drag-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.bpb-card-drag-status.bpb-card-drag-status-visible { position: static; display: block; width: auto; height: auto; clip-path: none; overflow: visible; white-space: normal; margin: 4px 0; font-size: 12px; }
+[data-bpb-card-dragging] {
+    position: relative; z-index: 1000; pointer-events: none;
+    transform: translate(var(--bpb-card-drag-x, 0px), var(--bpb-card-drag-y, 0px));
+    box-shadow: 0 12px 32px #0004; opacity: .94;
+}
+html.bpb-card-drag-active, html.bpb-card-drag-active * { cursor: grabbing !important; user-select: none !important; }
+.bpb-card-drop-preview {
+    position: fixed; z-index: 999; pointer-events: none; box-sizing: border-box;
+    border: 2px dashed #1769aa; border-radius: 10px; background: #1769aa0a;
+    padding: 8px 10px; color: #1769aa; font: 600 12px/1.45 system-ui, sans-serif;
+    text-shadow: 0 1px #fff;
+}
+.bpb-card-drop-preview[hidden] { display: none !important; }
+.bpb-card-drop-preview-label { display: inline-block; padding: 4px 8px; border: 1px solid currentColor; border-radius: 6px; background: #fff; text-shadow: none; }
+html[data-bpb-theme="dark"] .bpb-card-drop-preview { color: #83bbff; border-color: #83bbff; background: #83bbff0a; text-shadow: 0 1px #24272b; }
+html[data-bpb-theme="dark"] .bpb-card-drop-preview-label { background: #24272b; }

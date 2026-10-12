@@ -149,6 +149,7 @@ export const COPY_FILES = [
     ['src/caltopo/access.html', 'caltopo/access.html'],
     ['src/alltrails/access.html', 'alltrails/access.html'],
     ['src/ascent/ascent-layout.css', 'css/ascent-layout.css'],
+    ['src/ui/card-drag.css', 'css/card-drag.css'],
     ['src/ascent/ascent-weather.css', 'css/ascent-weather.css'],
     ['src/weather/peak-weather.css', 'css/peak-weather.css'],
     ['src/weather/weather-hourly-table.css', 'css/weather-hourly-table.css'],

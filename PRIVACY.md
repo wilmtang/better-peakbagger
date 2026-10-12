@@ -345,6 +345,10 @@ On saved ascent pages, the weather card automatically reads the matching peak
 page on Peakbagger, then requests model estimates from Open-Meteo when the card
 approaches the viewport. This works without a GPX and for other climbers’
 viewable ascents. Invalid or incomplete dates make no weather request.
+The ascent weather card can move between the report and summary columns. Only
+that column choice is saved in extension-local storage on this device; it is
+excluded from browser sync, settings exports and GitHub backups. Moving the
+card reuses the loaded weather and sends no new request.
 
 On peak pages, **Summit weather** reads summit coordinates and elevation
 directly from the current Peakbagger page. One forecast-API request covers sixteen
