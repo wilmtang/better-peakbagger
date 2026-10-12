@@ -63,7 +63,7 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-weather .bpb-weather-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 #bpb-ascent-weather .bpb-weather-status:not(:empty) { color: var(--bpb-weather-sub); font-size: 12px; margin: 10px 0; }
 #bpb-ascent-weather .bpb-weather-status[data-kind="rate-limit"] { padding: 10px 12px; border-left: 3px solid #b47b26; background: var(--bpb-weather-soft); border-radius: 4px; color: var(--bpb-weather-text); }
-#bpb-ascent-weather[aria-busy="true"] .bpb-weather-feedback { min-height: 70px; }
+#bpb-ascent-weather[aria-busy="true"]:not([data-refreshing]) .bpb-weather-feedback { min-height: 70px; }
 #bpb-ascent-weather .bpb-weather-condition { display: flex; align-items: center; gap: 12px; margin: 14px 0 12px; }
 #bpb-ascent-weather .bpb-weather-condition > div { min-width: 0; }
 #bpb-ascent-weather .bpb-weather-icon { width: 40px; height: 40px; flex: 0 0 auto; }
@@ -80,7 +80,9 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-weather .bpb-weather-model > div:first-child { flex: 1 1 240px; max-width: 360px; min-width: 0; }
 #bpb-ascent-weather label { display: block; margin: 0 0 4px; color: var(--bpb-weather-sub); font-size: 12px; }
 #bpb-ascent-weather select { display: block; width: 100%; margin: 0; padding: 8px 10px; border: 1px solid var(--bpb-weather-border); border-radius: 6px; color: var(--bpb-weather-text); background: var(--bpb-weather-control); font: inherit; }
-#bpb-ascent-weather .bpb-weather-model-description { display: flex; flex-direction: column; gap: 3px; padding-top: 20px; flex: 1 1 180px; min-width: 0; font-size: 12px; }
+#bpb-ascent-weather .bpb-weather-model-description { display: grid; min-height: 1.45em; padding-top: 20px; flex: 1 1 180px; min-width: 0; font-size: 12px; }
+#bpb-ascent-weather .bpb-weather-model-description > span { grid-area: 1 / 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bpb-ascent-weather .bpb-weather-model-description > span:first-child:not([hidden]) + span { visibility: hidden; }
 #bpb-ascent-weather .bpb-weather-hourly { border-top: 1px solid var(--bpb-weather-border); padding-top: 10px; }
 #bpb-ascent-weather button { color: var(--bpb-weather-text); font: inherit; cursor: pointer; }
 #bpb-ascent-weather button:disabled { opacity: .65; cursor: default; }

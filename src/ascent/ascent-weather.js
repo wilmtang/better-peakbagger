@@ -59,7 +59,7 @@ export function mountAscentWeather() {
     const modelName = element('span', { hidden: '' }), modelType = element('span', { class: 'bpb-weather-sub' });
     const modelRow = element('div', { class: 'bpb-weather-model' }, [
         element('div', {}, [element('label', { for: select.id, text: 'Weather model' }), select]),
-        element('div', { class: 'bpb-weather-model-description' }, [modelName, modelType]),
+        element('div', { class: 'bpb-weather-model-description', role: 'status', 'aria-live': 'polite' }, [modelName, modelType]),
     ]);
     const disclosureLabel = element('span', { text: 'Show hourly weather' });
     const disclosure = element('button', { type: 'button', class: 'bpb-weather-disclosure', 'aria-expanded': 'false', 'aria-controls': `${ID}-hourly` }, [
@@ -182,11 +182,11 @@ export function mountAscentWeather() {
     placementObserver.observe(mountParent, { childList: true, subtree: true });
 
     let summit = null, dayWindow = null, candidates = [], current = null;
-    let retryDate = subject.date;
+    let retryDate = subject.date, refreshLabel = '';
     let metric = 'conditions', generation = 0, controller = null, started = false, visibilityObserver = null;
     const client = createWeatherClient();
     let lifecycle;
-    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; updateNavigation(); });
+    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked || card.getAttribute('aria-busy') === 'true'; updateNavigation(); });
     function adjacentDay(direction) {
         if (!dayWindow) return null;
         // Step by civil dates, not 24-hour instants. Skip a nonexistent civil
@@ -424,18 +424,25 @@ export function mountAscentWeather() {
         readings.precipitation.detail.textContent = !day.precipitation.complete ? 'Partial total' : 'Water equivalent';
         if (day.precipitation.total === null) readings.precipitation.detail.textContent = 'Unavailable';
         locationLabel.textContent = `${subject.peak.name} · At the summit${summit.elevation === null ? '' : ` · ${units.formatElevation(summit.elevation, unitSystem())}`}`;
-        modelName.textContent = `Using ${model.label} · ${model.resolution}`;
-        modelName.hidden = model.id === select.value;
-        modelType.textContent = `${model.resolution} · ${model.type}`;
+        updateModelDescription();
         zoneText.textContent = mountainTime.zoneLabel(dayWindow.zone, dayWindow.start);
         const modelDetails = model === ARCHIVE_BEST_MATCH ? 'Open-Meteo combines ECMWF IFS, ERA5 and ERA5-Land according to available dates and variables. The API does not identify the source of each value.'
             : `Native ${model.intervalHours}-hour data${model.intervalHours > 1 ? ', interpolated to hourly' : ''}.`;
         sourceText.textContent = `${model.label}, ${model.resolution}. ${model.type}. ${modelDetails} Summit timezone: ${dayWindow.zone.timeZone || zoneText.textContent}. Selected grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}. ${summit.elevation === null ? 'Provider terrain elevation' : 'Summit elevation supplied for temperature downscaling'}: ${data.grid.elevation.toFixed(0)} m.${day.precipitation.allocationEstimated ? ' Precipitation at fractional-hour day boundaries is proportionally allocated.' : ''} Model estimates cannot establish the climber’s summit time or route conditions.`;
         drawChart();
     }
+    function updateModelDescription() {
+        if (!current) return;
+        const { model } = current, refreshing = card.hasAttribute('data-refreshing');
+        modelName.textContent = refreshing ? refreshLabel : `Using ${model.label} · ${model.resolution}`;
+        modelName.hidden = !refreshing && model.id === select.value;
+        modelType.textContent = `${model.resolution} · ${model.type}`;
+    }
     const busy = value => {
-        card.setAttribute('aria-busy', String(value)); retry.hidden = true;
-        modelName.hidden = !current || current.model.id === select.value;
+        card.setAttribute('aria-busy', String(value));
+        card.toggleAttribute('data-refreshing', value && !!current);
+        retry.disabled = value || cooldown.active();
+        updateModelDescription();
         updateNavigation();
     };
     const cancel = () => { generation++; controller?.abort(); controller = null; busy(false); };
@@ -461,11 +468,16 @@ export function mountAscentWeather() {
         if (!enabled() || subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
         cancel(); const ownGeneration = generation; controller = new AbortController(); const signal = controller.signal;
         retryDate = targetDate;
+        refreshLabel = current ? targetDate === dayWindow.date ? `Updating… Showing ${current.model.label}`
+            : `Loading ${displayDate(targetDate)}… Showing ${displayDate(dayWindow.date)}.` : '';
         busy(true); started = true;
-        delete status.dataset.kind;
-        if (!current) { resultArea.hidden = false; condition.textContent = 'Weather conditions'; conditionDetail.textContent = 'Ascent-day model estimate'; }
-        status.textContent = current ? targetDate === dayWindow.date ? `Showing ${current.model.label} while loading…`
-            : `Loading ${displayDate(targetDate)}… Showing ${displayDate(dayWindow.date)}.` : 'Loading ascent-day weather…';
+        // Refresh feedback replaces the existing model description. Preserve
+        // the result, hourly view and feedback area's footprint until it settles.
+        if (!current) {
+            delete status.dataset.kind; retry.hidden = true;
+            resultArea.hidden = false; condition.textContent = 'Weather conditions'; conditionDetail.textContent = 'Ascent-day model estimate';
+            status.textContent = 'Loading ascent-day weather…';
+        }
         try {
             await prepare(signal);
             if (ownGeneration !== generation) return;
@@ -492,16 +504,19 @@ export function mountAscentWeather() {
             }
             dayWindow = requestedWindow;
             date.textContent = displayDate(targetDate);
-            current = { model, day, data }; renderResult(); status.textContent = dayWindow.partial ? 'Partial day · Weather so far' : day.partial ? 'Partial data · Some hours or measurements are unavailable' : '';
+            current = { model, day, data }; renderResult();
+            delete status.dataset.kind;
+            status.textContent = dayWindow.partial ? 'Partial day · Weather so far' : day.partial ? 'Partial data · Some hours or measurements are unavailable' : '';
             retry.hidden = !day.partial && !dayWindow.partial;
         } catch (error) {
             if (ownGeneration !== generation || signal.aborted) return;
             if (!current) resultArea.hidden = true;
+            delete status.dataset.kind;
             if (error.code === 'rate-limit') { status.dataset.kind = 'rate-limit'; cooldown.set(error.retryAt); }
             status.textContent = `${current ? targetDate === dayWindow.date ? `Showing ${current.model.label}. `
                 : `Could not load ${displayDate(targetDate)}. Showing ${displayDate(dayWindow.date)}. ` : ''}${error.message}`; retry.hidden = false;
         } finally {
-            if (ownGeneration === generation) { card.setAttribute('aria-busy', 'false'); updateNavigation(); }
+            if (ownGeneration === generation) busy(false);
         }
     }
     select.addEventListener('change', () => { void load(); });

@@ -17,6 +17,7 @@ import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fix
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
+import { verifyWeatherModelRefresh } from './verify-weather-model-refresh.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -374,6 +375,8 @@ try {
             if (output) await mkdir(output, { recursive: true });
             await verifyWeatherCardDrag({ evaluate, navigate, click, press, resize, movePointer, pointerDown, pointerUp, wait, readLocal,
                 setSettings, origin, evidence, screenshotPage, output, firefoxMode });
+            await verifyWeatherModelRefresh({ evaluate, navigate, click, resize, wait, setSettings,
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, origin, screenshotPage, output, firefoxMode });
             await setSettings({ theme: 'light', units: 'imperial' });
             const mixedUnits = { theme: 'light', units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', windUnits: 'imperial' };
             const beforeUnitChange = evidence.length;
@@ -644,7 +647,7 @@ try {
             await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
             await wait(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather after verification navigation');
             assert.deepEqual(networkErrors, []);
-            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['negative-temperature', 'archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
+            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['model-refresh-layout', 'negative-temperature', 'archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
         }
     }
 } catch (error) { primaryError = error; }

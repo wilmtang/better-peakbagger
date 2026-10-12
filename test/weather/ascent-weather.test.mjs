@@ -905,6 +905,51 @@ test('hourly tabs have one keyboard stop and arrow navigation preserves the acti
     } finally { env.close(); }
 });
 
+test('model refresh preserves the weather, expanded chart, feedback and focus until new data arrives', async () => {
+    for (const partial of [false, true]) {
+        let finish;
+        const env = setup({ fetchWeather: async url => {
+            const body = await archiveResponse(url).json();
+            if (new URL(url).searchParams.get('models') === 'gfs_global') {
+                body.hourly.temperature_2m = body.hourly.temperature_2m.map(value => value + 3);
+                return new Promise(resolve => { finish = () => resolve(new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })); });
+            }
+            if (partial) body.hourly.precipitation[40] = null;
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+        try {
+            await openChart(env);
+            const card = env.doc.getElementById('bpb-ascent-weather'), select = card.querySelector('select');
+            const result = card.querySelector('.bpb-weather-result'), hourly = card.querySelector('#bpb-ascent-weather-hourly');
+            const feedback = card.querySelector('.bpb-weather-status'), retry = card.querySelector('.bpb-weather-retry');
+            card.querySelector('.bpb-weather-chart-frame').dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+            const before = { result: result.innerHTML, hourly: hourly.innerHTML, feedback: feedback.textContent, retryHidden: retry.hidden };
+            select.focus(); select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
+            await waitFor(() => finish);
+            assert.equal(card.getAttribute('aria-busy'), 'true');
+            assert.equal(card.hasAttribute('data-refreshing'), true);
+            assert.equal(result.hidden, false);
+            assert.equal(result.innerHTML, before.result);
+            assert.equal(hourly.hidden, false);
+            assert.equal(hourly.innerHTML, before.hourly, 'retain the chart and pinned reading during refresh');
+            assert.equal(feedback.textContent, before.feedback, 'loading does not add a feedback block');
+            assert.equal(retry.hidden, before.retryHidden, 'preserve the partial-data action footprint');
+            assert.equal(retry.disabled, true);
+            assert.equal(env.doc.activeElement, select);
+            assert.match(card.querySelector('.bpb-weather-model-description').textContent, /Updating… Showing Best Match/);
+            finish(); await waitFor(() => card.getAttribute('aria-busy') === 'false');
+            assert.equal(card.hasAttribute('data-refreshing'), false);
+            assert.match(card.querySelector('.bpb-weather-model-description').textContent, /Using GFS/);
+            assert.equal(card.querySelector('.bpb-weather-model-description').firstElementChild.hidden, true);
+            assert.notEqual(result.innerHTML, before.result, 'replace the weather after the new response is ready');
+            assert.equal(card.querySelector('.bpb-weather-disclosure').getAttribute('aria-expanded'), 'true');
+            assert.equal(card.querySelector('[data-metric="temperature"]').getAttribute('aria-selected'), 'true');
+            assert.ok(card.querySelector('.bpb-weather-reading-cursor'));
+            assert.equal(env.doc.activeElement, select);
+        } finally { env.close(); }
+    }
+});
+
 test('superseded response cannot overwrite explicit model choice', async () => {
     let finishSlow;
     const env = setup({ fetchWeather: url => {
@@ -916,9 +961,10 @@ test('superseded response cannot overwrite explicit model choice', async () => {
         const select = env.doc.querySelector('select');
         select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => finishSlow);
-        assert.match(env.doc.querySelector('.bpb-weather-status').textContent, /Showing Best Match while loading/);
+        assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Updating… Showing Best Match/);
         select.value = 'ecmwf_ifs'; select.dispatchEvent(new env.win.Event('change'));
         await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using ECMWF IFS'));
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').hasAttribute('data-refreshing'), false);
         finishSlow(new Response(JSON.stringify(weatherFixture()), { headers: { 'content-type': 'application/json' } }));
         await pause(); assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using ECMWF IFS/);
     } finally { env.close(); }
@@ -937,6 +983,8 @@ test('rate limits preserve previous results without cascading, explicit selectio
         assert.equal(env.requests.length, before + 1);
         assert.match(env.doc.querySelector('.bpb-weather-model-description').textContent, /Using Best Match/);
         assert.equal(env.doc.querySelector('.bpb-weather-model-description').firstElementChild.hidden, false);
+        assert.equal(env.doc.getElementById('bpb-ascent-weather').hasAttribute('data-refreshing'), false);
+        assert.equal(env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Updating'), false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').hidden, false);
         assert.equal(env.doc.querySelector('.bpb-weather-retry').disabled, true);
         assert.equal(env.doc.querySelector('.bpb-weather-status').dataset.kind, 'rate-limit');
