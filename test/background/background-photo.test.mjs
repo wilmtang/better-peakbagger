@@ -322,6 +322,16 @@ test('independent rollback failures are both contained and reported without raw 
     assert.doesNotMatch(JSON.stringify({ failed, logs: h.cleanupLogs }), /raw .* secret/);
 });
 
+test('report insertion acknowledgements reject extension pages and ambiguous report identities', async () => {
+    const h = harness();
+    for (const sender of [photoSender, optionsSender,
+        { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', tab: { id: 1 } },
+        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=1&cid=2', tab: { id: 1 } },
+        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=1&aid=2&pid=3', tab: { id: 1 } }]) {
+        assert.deepEqual(await h.routes.handlers.PHOTO_REPORT_INSERTED({}, sender), { ok: false, error: { code: 'forbidden' } }, sender.url);
+    }
+});
+
 test('leases a remembered key only to the exact packaged photo page', async () => {
     const h = harness();
     await h.keyStore.setKey('secret-key');

@@ -515,7 +515,12 @@ bounded upload workflow. The report becomes temporarily inert while its remainin
 photos upload sequentially. The worker owns credentials, report identity checks,
 revision-checked upload journals, and confirmed public URLs. Only after all URLs
 are available does the editor replace local references and resume native form
-validation with `requestSubmit`; it never clicks Save or bypasses validation with
+submission. After replacement, the worker verifies the report owner and exact
+accepted image URL before recording a bounded, idempotent draft reference in
+the photo library. Upload success alone does not count as insertion or prove a
+server Save. Reference persistence failures retain the hosted URLs and retry
+only bookkeeping on the next Save Ascent attempt. Native form validation resumes
+through `requestSubmit`; the extension never clicks Save or bypasses validation with
 `submit()`. Failures keep the report open. Confirmed uploads are reused, definite
 provider refusals allow correction, and uncertain outcomes require reconciliation
 in the photo library/ImgBB rather than automatic duplicate uploads.

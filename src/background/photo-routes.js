@@ -163,6 +163,7 @@ export function createPhotoRoutes({
         }
         return reportPhotos.uploadOne(owner, message.localPhotoId);
     });
+    const confirmReportPhoto = reportRoute((message, sender, owner) => reportPhotos.confirmInsertion(owner, message));
 
     const status = async (_message, sender) => {
         if (!isCredentialPage(sender)) return { ok: false, error: { code: 'forbidden' } };
@@ -432,6 +433,7 @@ export function createPhotoRoutes({
             PHOTO_REPORT_CREATE: createReportPhoto,
             PHOTO_REPORT_READ: readReportPhoto,
             PHOTO_REPORT_UPLOAD: uploadReportPhoto,
+            PHOTO_REPORT_INSERTED: confirmReportPhoto,
             PHOTO_IMGBB_STATUS: status,
             PHOTO_IMGBB_SAVE_KEY: saveKey,
             PHOTO_IMGBB_REMOVE_KEY: removeKey,

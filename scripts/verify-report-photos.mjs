@@ -349,6 +349,11 @@ try {
         assert.match(reportText, /https:\/\/i\.ibb\.co\/fixture\/photo\.png/);
         assert.match(reportText, /\[figcaption\]Looking north — caption edited in Photo Topos\./);
         assert.doesNotMatch(reportText, /bpb-photo\.invalid|data:image|blob:/);
+        const library = await context.newPage();
+        await library.goto(`chrome-extension://${record.id}/photos/photos.html?mode=library`);
+        await library.locator('#library-list').getByText('In report', { exact: true }).first().waitFor();
+        assert.equal(await library.locator('#library-list').getByText('Not inserted', { exact: true }).count(), 0);
+        await library.screenshot({ path: path.join(output, 'report-photo-library-reference.png') });
     }
     console.log(JSON.stringify({ browser: context.browser().version(), rateLimit, mode: 'hidden', viewports: ['1280x900', '720x900'], uploads, posts: posts.length, output }));
 } catch (error) { console.error('Primary failure:', error); failure = error; }

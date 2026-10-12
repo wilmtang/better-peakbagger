@@ -26,6 +26,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         return result;
     };
     const previews = new Map();
+    const pendingReferences = new Map();
     let preparing = 0;
     let saving = false;
     let pasteFailures = 0;
@@ -134,7 +135,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         const control = event.type === 'click' ? event.target.closest?.('#SaveButton, #SaveButton2') : event.submitter;
         const save = event.type === 'submit' ? event.target === form && (!control || ['SaveButton', 'SaveButton2'].includes(control.id))
             : control?.form === form;
-        if (!save || event.defaultPrevented || (!preparing && !saving && !pendingIds().length)) return;
+        if (!save || event.defaultPrevented || (!preparing && !saving && !pendingIds().length && !pendingReferences.size)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         if (saving) return;
@@ -199,7 +200,14 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                 replaceText(replacements);
                 flush();
                 if (Pending.ids(textarea.value).length) throw new Error('Some photos are still local. Review the report and save again.');
+                for (const [local, url] of replacements) pendingReferences.set(Pending.id(local), url);
                 await saveDraft();
+                for (const [localPhotoId, url] of pendingReferences) {
+                    if (pageGeneration !== savePageGeneration) throw new Error('You left this report during insertion. Review it and save again.');
+                    if (!textarea.value.includes(url)) { pendingReferences.delete(localPhotoId); continue; }
+                    await send({ type: 'PHOTO_REPORT_INSERTED', localPhotoId, url });
+                    pendingReferences.delete(localPhotoId);
+                }
                 showSaveProgress('Photos uploaded. Saving ascent…', 'Saving ascent…');
                 ready = true;
             } catch (error) {

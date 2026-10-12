@@ -12,7 +12,9 @@ export const reportPhotoOwner = source => {
     try {
         const url = new URL(source);
         if (!/^\/climber\/ascentedit\.aspx$/i.test(url.pathname)) return null;
+        if (['cid', 'aid', 'pid'].some(key => url.searchParams.getAll(key).length > 1)) return null;
         const identity = Object.fromEntries(['cid', 'aid', 'pid'].map(key => [key, url.searchParams.get(key)]));
+        if (identity.aid && identity.pid) return null;
         const key = Drafts.keyFor(identity);
         return Drafts.parseKey(key) ? key : null;
     } catch { return null; }
@@ -143,5 +145,30 @@ export function createReportPhotoService({
         locks.set(localId, work);
         try { return await work; } finally { locks.delete(localId); await announceChange(); }
     };
-    return { create, read, saveEdit, uploadOne };
+    const confirmInsertion = (owner, { localPhotoId, url }) => useStore(async store => {
+        const identity = Drafts.parseKey(owner);
+        if (!identity) throw new Error('The photo does not belong to this report.');
+        const reference = { kind: 'ascent-draft', cid: Number(identity.cid) || null,
+            aid: identity.kind === 'ascent' ? Number(identity.id) : null,
+            pid: identity.kind === 'peak' ? Number(identity.id) : null };
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const { photo } = await read(owner, localPhotoId);
+            if (photo.remote.state !== 'uploaded' || photo.remote.url !== url) {
+                throw new Error('The inserted image does not match this report photo.');
+            }
+            if (photo.references.some(existing => ['kind', 'cid', 'aid', 'pid'].every(key => existing[key] === reference[key]))) {
+                return { recorded: true };
+            }
+            try {
+                const now = new Date().toISOString();
+                await store.putPhoto(Library.addReference(photo, { ...reference, insertedAt: now }, now));
+                await announceChange();
+                return { recorded: true };
+            } catch (error) {
+                if (error.name === 'PhotoStoreConflictError' && attempt < 2) continue;
+                throw new Error('The photo is inserted, but its library reference could not be recorded. Save Ascent again to retry.');
+            }
+        }
+    });
+    return { create, read, saveEdit, uploadOne, confirmInsertion };
 }

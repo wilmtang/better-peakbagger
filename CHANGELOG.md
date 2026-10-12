@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Track pasted photos in the library.** Photos show In report after their
+  hosted links are inserted; reference retries reuse the accepted upload.
+
 - **Read satellite warnings clearly.** Capture coverage and failure messages
   no longer overlap in light or dark map controls.
 

@@ -120,6 +120,55 @@ test('saving an edited copy is local and cannot change the accepted image before
 test('only ascent editing URLs have report owners', () => {
     assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/ascentedit.aspx?cid=1&pid=2'), owner);
     assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/climber.aspx?cid=1'), null);
+    assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/ascentedit.aspx?cid=1&cid=2'), null);
+    assert.equal(reportPhotoOwner('https://www.peakbagger.com/climber/ascentedit.aspx?cid=1&aid=2&pid=3'), null);
+});
+
+test('upload alone is not insertion; exact report acknowledgements add one bounded draft reference', async () => {
+    let uploads = 0;
+    const { service, store } = await harness(async () => { uploads++; return { remote, deleteUrl: 'https://ibb.co/abc/delete' }; });
+    try {
+        const { localPhotoId } = await service.create(owner, image);
+        await assert.rejects(service.confirmInsertion(owner, { localPhotoId, url: remote.url }), /does not match/);
+        await service.uploadOne(owner, localPhotoId);
+        assert.equal((await store.getBundle(localPhotoId)).photo.references.length, 0);
+        await assert.rejects(service.confirmInsertion('bpbReportDraft:2:p2', { localPhotoId, url: remote.url }), /unavailable/);
+        await assert.rejects(service.confirmInsertion(owner, { localPhotoId, url: 'https://i.ibb.co/other.png' }), /does not match/);
+        await service.confirmInsertion(owner, { localPhotoId, url: remote.url });
+        const first = (await store.getBundle(localPhotoId)).photo;
+        await service.confirmInsertion(owner, { localPhotoId, url: remote.url });
+        const last = (await store.getBundle(localPhotoId)).photo;
+        assert.deepEqual(last.references, [{ kind: 'ascent-draft', cid: 1, aid: null, pid: 2, insertedAt: first.references[0].insertedAt }]);
+        assert.equal(last.revision, first.revision);
+        await service.uploadOne(owner, localPhotoId);
+        assert.equal(uploads, 1);
+    } finally { store.close(); }
+});
+
+test('a failed reference write preserves the uploaded photo and retries without another upload', async () => {
+    const indexedDB = new IDBFactory();
+    let fail = false, uploads = 0;
+    const openStore = async () => {
+        const store = await Store.createPhotoStore({ indexedDB });
+        const put = store.putPhoto;
+        store.putPhoto = photo => { if (fail) throw new Error('disk full'); return put(photo); };
+        return store;
+    };
+    const service = createReportPhotoService({ openStore, permissionGranted: async () => true,
+        keyStore: { getKey: async () => 'key' }, upload: async () => { uploads++; return { remote, deleteUrl: 'https://ibb.co/abc/delete' }; } });
+    const { localPhotoId } = await service.create(owner, image);
+    await service.uploadOne(owner, localPhotoId);
+    fail = true;
+    await assert.rejects(service.confirmInsertion(owner, { localPhotoId, url: remote.url }), /reference could not be recorded/);
+    const store = await openStore();
+    try {
+        assert.equal((await store.getBundle(localPhotoId)).photo.remote.state, 'uploaded');
+        assert.equal((await store.getBundle(localPhotoId)).photo.references.length, 0);
+        fail = false;
+        await service.confirmInsertion(owner, { localPhotoId, url: remote.url });
+        assert.equal((await store.getBundle(localPhotoId)).photo.references.length, 1);
+        assert.equal(uploads, 1);
+    } finally { store.close(); }
 });
 
 test('a resumed report draft returns under the same id and still rejects another report owner', async () => {

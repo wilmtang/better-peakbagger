@@ -375,6 +375,16 @@ by file size.
 
 ### Fixed and verified
 
+- **F6:** report-owned hosted-URL replacement now acknowledges insertion to the
+  worker. It checks owner, photo ID and accepted URL, then records an idempotent,
+  bounded `ascent-draft` reference with optimistic store conflict retries. An
+  accepted upload alone adds no reference. Incomplete batches and interruption
+  do not acknowledge insertion; a failed reference write retries bookkeeping
+  without another upload. Hidden Chrome 153.0.8010.12 verified one upload, one
+  fixture form POST and the visible In report library card (1280×900); report
+  interactions also ran at 720×900. No live upload or server Save was performed.
+  Build, 494 related photo/report/worker tests and affected ESLint passed.
+
 - **F5:** visible Sentinel metadata paragraphs now occupy separate grid rows.
   Normal/loading states retain their compact single visible row. Hidden real
   Leaflet geometry checks and screenshot inspection confirmed warning/coverage
