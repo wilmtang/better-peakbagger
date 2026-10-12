@@ -8,6 +8,30 @@ import { waitForCondition } from './browser-verification-fixtures.mjs';
 export async function verifyWeatherLocation({ evaluate, click, clickPoint, press, resize, wait, setSettings,
     setMode, release, evidence, screenshotPage, output, firefoxMode, navigate, origin }) {
     const measurements = [];
+    const wrapping = await evaluate(() => {
+        const card = document.getElementById('bpb-peak-weather'), header = card.querySelector('header');
+        const title = header.querySelector('h2').lastChild, location = card.querySelector('.bpb-week-location-name');
+        const reset = card.querySelector('.bpb-week-location-reset');
+        const previous = { style: card.style.cssText, title: title.textContent, location: location.textContent, disabled: reset.disabled };
+        const failures = [];
+        try {
+            card.style.maxWidth = 'none'; card.style.minWidth = '0';
+            for (let width = 280; width <= 500; width += 2) {
+                card.style.width = `${width}px`;
+                const heights = ['Summit weather', 'Location weather'].map((label, index) => {
+                    title.textContent = label; location.textContent = index ? '35.3946, 139.0917' : 'At the summit'; reset.disabled = !index;
+                    return header.getBoundingClientRect().height;
+                });
+                if (Math.abs(heights[0] - heights[1]) > 1) failures.push({ width, heights });
+            }
+        } finally {
+            card.style.cssText = previous.style; title.textContent = previous.title;
+            location.textContent = previous.location; reset.disabled = previous.disabled;
+        }
+        return { failures, locationInHeader: header.contains(location) };
+    });
+    assert.equal(wrapping.locationInHeader, true, 'location belongs with the weather title');
+    assert.deepEqual(wrapping.failures, [], 'location changes must not add a header row at intermediate card widths');
     for (const theme of ['light', 'dark']) {
         await setSettings({ theme, units: 'imperial' });
         await waitForCondition(() => evaluate(() => document.documentElement.getAttribute('data-bpb-theme')).then(value => value === theme), { description: 'weather theme ready' });

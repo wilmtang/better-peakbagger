@@ -31,7 +31,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const geometry = () => {
         const card = document.getElementById('bpb-peak-weather'), right = card.closest('table'), frame = document.getElementById('Gmap');
         const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
+        const hint = card.querySelector('.bpb-week-model-description');
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
+            summaryHeight: card.querySelector('.bpb-week-days').getBoundingClientRect().top - r.top,
+            hiddenModelHintHeight: hint.hidden ? hint.getBoundingClientRect().height : 0,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
             overflow: [...card.querySelectorAll('select, .bpb-week-model-description, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 if (!node.getClientRects().length) return false;
@@ -112,7 +115,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         for (const width of widths) {
             await resize(width, 1100);
             await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
-            const state = await evaluate(geometry); assertGeometry(state); shapes.push({ theme, viewport: width, cardWidth: state.width });
+            const state = await evaluate(geometry); assertGeometry(state);
+            assert.equal(state.hiddenModelHintHeight, 0, `hidden model text reserves blank space: ${JSON.stringify(state)}`);
+            assert.ok(state.summaryHeight <= (state.width > 662 ? 240 : 350), `weather summary is too tall: ${JSON.stringify(state)}`);
+            shapes.push({ theme, viewport: width, cardWidth: state.width, summaryHeight: state.summaryHeight });
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${width}.png`));
             const before = evidence.length;
             await click(`${card} .bpb-week-day:first-child > summary`);

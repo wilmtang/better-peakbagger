@@ -41,7 +41,6 @@ export function mountPeakWeather() {
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
     const selectedLocation = element('span', { class: 'bpb-week-location-name', role: 'status', 'aria-label': 'Weather location', 'aria-live': 'polite', 'aria-atomic': 'true', text: 'At the summit' });
     const resetLocation = element('button', { type: 'button', class: 'bpb-week-location-reset', text: 'Reset to summit', disabled: '' });
-    const locationControl = element('div', { class: 'bpb-week-location' }, [selectedLocation, resetLocation]);
     const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
     const periodButtons = periods.map(([key, text]) => element('button', { type: 'button', role: 'tab', 'aria-label': text, 'data-label': text,
@@ -67,9 +66,12 @@ export function mountPeakWeather() {
     const overview = element('div', { class: 'bpb-week-overview' }, [element('div', {}, [range, locationLabel]), modelControl]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
     const headingText = document.createTextNode('Summit weather');
-    card.append(element('header', {}, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), headingText]), refresh]), locationControl, periodTabs, periodPanel,
-        source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
-            element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
+    card.append(element('header', {}, [
+        element('div', { class: 'bpb-week-heading' }, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), headingText]), selectedLocation]),
+        element('div', { class: 'bpb-week-actions' }, [resetLocation, refresh]),
+    ]), periodTabs, periodPanel,
+    source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),
+        element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
     const row = element('tr', { id: `${ID}-row`, hidden: '' }, [cell]);
     subject.table.tBodies[0].append(row);

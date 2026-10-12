@@ -317,6 +317,8 @@ try {
                 && (bounds.left < columnBox.left - 1 || bounds.right > columnBox.right + 1);
         }).map(node => node.tagName + '.' + node.className) : [];
         return { width: box.width, overflow, gpsOverflow, cardCount: document.querySelectorAll('#bpb-ascent-weather').length,
+            summaryHeight: card.querySelector('.bpb-weather-hourly').getBoundingClientRect().top - box.top,
+            metricColumns: getComputedStyle(card.querySelector('.bpb-weather-metrics')).gridTemplateColumns.split(' ').length,
             dateWithHeading: Math.abs(dateBox.left - dateStart) <= 1,
             inSummaryColumn: card.parentElement === column, belowSummary: box.top >= summaryBox.bottom,
             gpsBeforeWeather: !gps || (gps.parentElement === column && gps.nextElementSibling === card && gpsBox.bottom <= box.top),
@@ -328,6 +330,8 @@ try {
     const assertPlacement = geometry => {
         assert.deepEqual(geometry.overflow, [], JSON.stringify(geometry));
         assert.deepEqual(geometry.gpsOverflow, [], JSON.stringify(geometry));
+        // Extreme divider positions must let text wrap, even into a taller card.
+        if (geometry.width >= 300) assert.ok(geometry.summaryHeight <= ({ 1: 700, 2: 500, 4: 310 }[geometry.metricColumns]), `archive summary is too tall: ${JSON.stringify(geometry)}`);
         for (const key of ['dateWithHeading', 'inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
@@ -496,8 +500,19 @@ try {
                             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-conditions-narrow-${width}.png`));
                             await click('[data-metric="temperature"]');
                         }
+                        await resize(1440, 1100);
                         await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.KeyboardEvent('keydown', { key: 'Home' })));
+                        await wait(() => {
+                            const svg = document.querySelector('#bpb-ascent-weather .bpb-weather-chart');
+                            return Math.abs(Number(svg.getAttribute('viewBox')?.split(' ')[2]) - svg.getBoundingClientRect().width) < 1;
+                        }, 'weather chart after widening the summary column');
                         assertPlacement(await evaluate(geometryForCard));
+                        assert.equal(await evaluate(() => {
+                            const label = document.querySelector('.bpb-weather-model label').getBoundingClientRect();
+                            const select = document.querySelector('.bpb-weather-model select').getBoundingClientRect();
+                            return label.right <= select.left && Math.abs((label.top + label.bottom - select.top - select.bottom) / 2) <= 1;
+                        }), true, 'wide archive model label and picker share a row');
+                        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-${kind}-wide-summary.png`));
                         await evaluate(() => document.getElementById('bpb-ascent-table-resize-handle').dispatchEvent(new document.defaultView.MouseEvent('dblclick')));
                     }
                 }
