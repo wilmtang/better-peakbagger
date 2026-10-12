@@ -14,6 +14,8 @@ coordinates fail closed rather than mounting a full-page fallback or guessing
 a location. Peak name, coordinates and elevation come from the current page;
 there is no geocoding or extra Peakbagger request.
 
+A small hint beneath the weather title explains how to choose another map point;
+it stays visible across visits and location changes, and is hidden on mapless peaks.
 Right-click the peak's **2D or 3D map** and choose **Forecast and archive for
 this location** to use that point for both periods. The menu opens beside the
 pointer, fits within the viewport, supports keyboard activation and Escape,

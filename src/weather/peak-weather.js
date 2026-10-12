@@ -40,6 +40,8 @@ export function mountPeakWeather() {
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
     const selectedLocation = element('span', { class: 'bpb-week-location-name', role: 'status', 'aria-label': 'Weather location', 'aria-live': 'polite', 'aria-atomic': 'true', text: 'At the summit' });
+    const mapHint = element('span', { class: 'bpb-week-map-hint', text: 'Right-click the map for weather at any point.' });
+    mapHint.hidden = !document.querySelector('iframe#Gmap');
     const resetLocation = element('button', { type: 'button', class: 'bpb-week-location-reset', text: 'Reset to summit', disabled: '' });
     const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
     const periodTabs = element('div', { class: 'bpb-week-periods', role: 'tablist', 'aria-label': 'Weather period' });
@@ -67,7 +69,7 @@ export function mountPeakWeather() {
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
     const headingText = document.createTextNode('Summit weather');
     card.append(element('header', {}, [
-        element('div', { class: 'bpb-week-heading' }, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), headingText]), selectedLocation]),
+        element('div', { class: 'bpb-week-heading' }, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), headingText]), selectedLocation, mapHint]),
         element('div', { class: 'bpb-week-actions' }, [resetLocation, refresh]),
     ]), periodTabs, periodPanel,
     source, element('footer', {}, [element('span', { text: 'Estimates may be inaccurate · Route conditions may differ' }),

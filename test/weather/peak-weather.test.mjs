@@ -79,6 +79,27 @@ const selectLocation = (env, latitude, longitude) => {
     openLocationMenu(env, latitude, longitude); env.doc.querySelector('#bpb-peak-weather-menu button').click();
 };
 
+test('map weather discovery stays visible across locations and is absent on mapless peaks', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const hint = env.doc.querySelector('.bpb-week-map-hint');
+        assert.equal(hint.hidden, false);
+        assert.equal(hint.textContent, 'Right-click the map for weather at any point.');
+        assert.equal(env.requests.length, 1, 'showing the hint only loads the normal summit weather');
+        selectLocation(env, 46.8, -121.7);
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
+        assert.equal(hint.hidden, false, 'users can discover how to choose another point');
+        assert.equal(env.requests.length, 2, 'only explicit location selection requests more weather');
+    } finally { env.close(); }
+    const noMap = setup({ html: peak.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, '') });
+    try {
+        await settled(noMap, { past: false });
+        assert.equal(noMap.doc.querySelector('.bpb-week-map-hint').hidden, true);
+        assert.equal(noMap.requests.length, 1, 'mapless peaks still load summit weather');
+    } finally { noMap.close(); }
+});
+
 test('map weather menu fetches only on activation, uses terrain elevation and resets from page memory', async () => {
     const env = setup();
     try {

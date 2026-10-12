@@ -26,6 +26,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
             && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'sixteen summit-local forecast days');
         assert.equal(await evaluate(() => document.querySelector('[data-period="forecast"]').getAttribute('aria-selected')), 'true');
+        assert.equal(await evaluate(() => document.querySelector('.bpb-week-map-hint').hidden), kind === 'no-map', 'show map instructions only on mapped peaks');
         if (!live) await click(`${card} [data-period="past"]`);
     };
     const geometry = () => {
@@ -36,7 +37,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             summaryHeight: card.querySelector('.bpb-week-days').getBoundingClientRect().top - r.top,
             hiddenModelHintHeight: hint.hidden ? hint.getBoundingClientRect().height : 0,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
-            overflow: [...card.querySelectorAll('select, .bpb-week-model-description, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
+            overflow: [...card.querySelectorAll('select, .bpb-week-model-description, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 if (!node.getClientRects().length) return false;
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
