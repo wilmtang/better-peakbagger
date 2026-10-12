@@ -528,7 +528,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             postToPage('peaksRequest', { requestId: data.requestId, bounds: data.bounds });
         } else if (data.type === 'weatherContext' || data.type === 'weatherDismiss') {
             const card = document.getElementById('bpb-peak-weather');
-            if (!frameLoaded || !card || card.hidden) return;
+            if (suspended || !frameLoaded || !card || card.hidden) return;
             const rect = frame.getBoundingClientRect();
             if (data.type === 'weatherContext' && (!Number.isFinite(data.latitude) || Math.abs(data.latitude) > 90
                 || !Number.isFinite(data.longitude) || Math.abs(data.longitude) > 180

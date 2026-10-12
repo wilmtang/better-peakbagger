@@ -337,7 +337,7 @@ const bootLoadedFrame = async (initOverrides = {}) => {
 
 test('3D weather points require the active frame generation, valid coordinates and a visible card', async () => {
     const harness = await bootLoadedFrame();
-    const { window, frame, dispatchFrame, pageMessages } = harness;
+    const { window, frame, dispatchPage, dispatchFrame, pageMessages, frameMessages, initData } = harness;
     try {
         const card = window.document.createElement('section'); card.id = 'bpb-peak-weather'; window.document.body.append(card);
         frame.getBoundingClientRect = () => ({ left: 100, top: 50, width: 600, height: 400 });
@@ -348,6 +348,17 @@ test('3D weather points require the active frame generation, valid coordinates a
         for (const invalid of [{ latitude: 91 }, { x: 601 }, { longitude: '1' }, { generation: -1 }]) dispatchFrame({ ...context, ...invalid });
         card.hidden = true; dispatchFrame(context); assert.equal(pageMessages.length, count);
         card.hidden = false; dispatchFrame({ type: 'weatherDismiss' }); assert.equal(pageMessages.at(-1).type, 'dismiss');
+        const oldGeneration = frameMessages.find(message => message.type === 'init').generation;
+        dispatchPage({ type: 'destroy' });
+        const parkedCount = pageMessages.length;
+        dispatchFrame(context); dispatchFrame({ type: 'weatherDismiss' });
+        assert.equal(pageMessages.length, parkedCount, 'a parked renderer cannot open or dismiss a weather menu');
+        armTerrain(window); dispatchPage(initData);
+        await new Promise(resolve => harness.realSetTimeout(resolve, 0));
+        dispatchFrame({ type: 'loaded', navTop: 96 });
+        const resumedCount = pageMessages.length;
+        dispatchFrame({ ...context, generation: oldGeneration }); assert.equal(pageMessages.length, resumedCount);
+        dispatchFrame(context); assert.equal(pageMessages.at(-1).type, 'context');
     } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
 });
 

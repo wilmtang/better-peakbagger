@@ -55,6 +55,8 @@ try {
         window.__bpbWeatherCameraSettled = 0;
         window.addEventListener('message', event => {
             if (event.data?.__bpbTerrain && event.data.dir === 'toPage' && event.data.type === 'camera') window.__bpbWeatherCameraSettled++;
+            if (event.data?.__bpbTerrainFrame && Number.isSafeInteger(event.data.generation)) window.__bpbWeatherFrameGeneration = event.data.generation;
+            if (event.data?.auditParkedContext) window.__bpbWeatherParkedContextReceived = true;
         });
     });
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware WebGL required: ${renderer}`);
@@ -123,8 +125,18 @@ try {
         await page.evaluate(async () => { for (let frame = 0; frame < 5; frame++) await new Promise(resolve => requestAnimationFrame(resolve)); });
         assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => node.hidden), true, 'right-drag rotates without opening a weather menu');
     }
+    const generation = await page.evaluate(() => window.__bpbWeatherFrameGeneration);
+    assert.ok(Number.isSafeInteger(generation));
+    await page.locator('#bpb-terrain-toggle').click();
+    await page.waitForFunction(() => document.getElementById('bpb-terrain-frame').style.opacity === '0');
+    await canvas.evaluate((node, data) => window.parent.postMessage({ __bpbTerrainFrame: true, dir: 'toParent',
+        type: 'weatherContext', generation: data.generation, latitude: 46.8, longitude: -121.7, x: 100, y: 100,
+        auditParkedContext: true }, data.origin), { generation, origin: `https://www.peakbagger.com:${fixture.port}` });
+    await page.waitForFunction(() => window.__bpbWeatherParkedContextReceived);
+    await page.evaluate(async () => { for (let frame = 0; frame < 2; frame++) await new Promise(resolve => requestAnimationFrame(resolve)); });
+    assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => node.hidden), true, 'a parked 3D frame cannot open the weather menu');
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, profile, renderer,
-        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal', 'picker Escape stays in 3D'] }));
+        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal', 'picker Escape stays in 3D', 'parked-frame rejection'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);

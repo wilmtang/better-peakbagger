@@ -17,7 +17,8 @@ group is committed after its checks pass. Preserve unrelated working-tree edits.
 | L6 | Map wheel zoom does not dismiss the menu for the old point. | Hidden Chrome: a wheel event in the native frame leaves the popup visible; `src/maps/peak-weather-map.js` only observes pointerdown. | Zoom/scroll and interactions with 3D controls dismiss the menu without affecting the map gesture. | Fixed in menu unit |
 | L7 | An open popup stays disabled after a cooldown expires. | Bundled probe: Refresh disabled=false while the popup item disabled=true after the cooldown refresh. | Update the open item's availability and restore usable keyboard focus without reopening or fetching. | Fixed in menu unit |
 | L8 | Escape on the 3D layer picker exits the entire terrain view. | Hardware Chrome integration: after picker Escape, the toggle reads 3D and the frame has opacity 0/pointer-events none. `src/terrain/terrain-frame-runtime.js` handles Escape from every control. | Native editable/control Escape stays local; canvas Escape still exits and closes nearer extension popups first. | Fixed in Escape ownership unit |
-| L9 | A suspended 3D renderer can still open a weather context menu. | Bundled bridge probe: a valid generation's weatherContext is forwarded after destroy parks the frame at opacity 0. `src/terrain/terrain-map.js` checks loaded state but not suspended state. | Ignore context/dismiss messages from a suspended renderer and preserve active-generation checks on resume. | Open |
+| L9 | A suspended 3D renderer can still open a weather context menu. | Bundled bridge probe: a valid generation's weatherContext is forwarded after destroy parks the frame at opacity 0. `src/terrain/terrain-map.js` checks loaded state but not suspended state. | Ignore context/dismiss messages from a suspended renderer and preserve active-generation checks on resume. | Fixed in renderer lifecycle unit |
+| L10 | Selecting a point before initial summit weather loads gives the pending point summit metadata. | Bundled Tokyo probe at a cross-zone date boundary shows Summit weather, At the summit, 14406 ft and Previous dates while loading Tokyo coordinates. | With no usable previous result, show the requested point's identity, terrain elevation and local day immediately; preserve old labels only when retaining real readings. | Open |
 
 Menu/focus and visual findings will be added only after reproduction. Location
 state fixes form one commit; menu interaction and visual fixes form separate
@@ -44,6 +45,9 @@ coherent commits if needed.
   canvas/popup Escape behavior. Hardware Chrome on Apple M3 Pro Metal at
   375/1440×1100 verifies both the open picker and focused picker stay in 3D;
   location/reset and right-drag coverage remains green.
+- L9: 27/27 terrain tests cover parked context/dismiss rejection and
+  old-generation rejection after resume. The hardware verifier sends a real
+  current-generation parked-frame message and confirms no popup appears.
 
 ### Intentionally not changed
 
