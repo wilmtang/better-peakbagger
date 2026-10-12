@@ -23,6 +23,10 @@ Capture dates and clocks use the map center's mountain-local timezone, resolved
 offline through `src/time/mountain-time.js`, with DST at the capture instant and
 a labelled longitude estimate if timezone lookup fails. Pass identities retain
 their original UTC timestamps.
+Capture choices include a compact cloud percentage from the same catalog data;
+unknown cloud cover appears as `☁ ?`. Full timestamps, timezone labels, and cloud
+descriptions remain in option tooltips and accessible labels without widening
+the selector. The latest choice omits the year in its visible date only.
 The layer's 11-by-11 footprint sample reports estimated geographic coverage of
 the scenes actually rendered. Scene-wide cloud metadata is averaged separately
 and never presented as viewport cloud cover or clear-pixel coverage. Tiles are

@@ -131,7 +131,8 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
         layer.activate();
         assert.equal(summary.textContent, 'Finding captures…');
         await tick();
-        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-07 18:27 PDT');
+        assert.equal(select.selectedOptions[0].textContent, 'Latest · 10-07 18:27 · ☁ 41%');
+        assert.equal(select.title, 'Latest · 2026-10-07 18:27 PDT · Clouds 41%');
         assert.equal(summary.hidden, true, 'the capture date is not duplicated in a third row');
         assert.match(stats.textContent, /Coverage 100% · Clouds 41%/);
         select.value = select.options[2].value;
@@ -142,6 +143,36 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
         assert.equal(summary.textContent, 'Finding captures…');
         assert.equal(stats.textContent, '');
         assert.equal(summary.parentElement, stats.parentElement, 'loading and coverage share one stable slot');
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
+test('Sentinel options include rounded cloud percentages and honest unknowns without changing capture identity', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>');
+    const changes = [];
+    const captures = [3.4, 0, 100, null].map((cloud, index) => ({ key: `capture-${index}`,
+        time: Date.parse('2026-10-08T01:27:00Z') - index * 86400000, platform: 'Sentinel-2B', orbit: '13',
+        scenes: [], coverage: 1, cloud }));
+    let searches = 0;
+    const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom: 13 }),
+        search: async () => { searches++; return captures; }, replaceScenes() {}, clearScenes() {},
+        onCaptureChange: capture => changes.push(capture) });
+    try {
+        layer.activate();
+        await tick();
+        const select = layer.element.querySelector('select');
+        assert.deepEqual(Array.from(select.options, option => option.textContent), [
+            'Latest · 10-07 18:27 · ☁ 3%', '2026-10-07 18:27 · ☁ 3%', '2026-10-06 18:27 · ☁ 0%',
+            '2026-10-05 18:27 · ☁ 100%', '2026-10-04 18:27 · ☁ ?'
+        ]);
+        for (const capture of captures) {
+            select.value = capture.key;
+            select.dispatchEvent(new dom.window.Event('change'));
+            const option = select.selectedOptions[0];
+            assert.equal(option.getAttribute('aria-label'), select.title);
+            assert.match(select.title, /PDT · Clouds (?:3%|0%|100%|unknown)$/);
+            assert.deepEqual(changes.at(-1), { time: capture.time, platform: capture.platform, orbit: capture.orbit });
+        }
+        assert.equal(searches, 1, 'changing captures reuses cloud metadata from the existing catalog');
     } finally { layer.dispose(); dom.window.close(); }
 });
 
@@ -164,16 +195,18 @@ test('Sentinel capture labels use the viewed mountain date, DST, unusual offsets
             layer.activate();
             await tick();
             const select = layer.element.querySelector('select');
-            assert.equal(select.options[0].textContent, `Latest · ${expected}`);
-            assert.equal(select.options[1].textContent, expected);
+            assert.equal(select.options[0].textContent, `Latest · ${expected.slice(5, 16)} · ☁ 3%`);
+            assert.equal(select.options[0].title, `Latest · ${expected} · Clouds 3%`);
+            assert.equal(select.options[1].textContent, `${expected.slice(0, 16)} · ☁ 3%`);
             select.value = capture.key;
             select.dispatchEvent(new dom.window.Event('change'));
-            assert.equal(select.title, expected);
+            assert.equal(select.title, `${expected} · Clouds 3%`);
             assert.equal(layer.element.querySelector('.bpb-sentinel-summary').textContent, expected);
             layer.activate({ ...capture, time: capture.time - 86400000 });
             await tick();
             assert.equal(select.value, 'missing');
-            assert.equal(select.selectedOptions[0].textContent, missing, 'missing captures retain the mountain date and clock');
+            assert.equal(select.selectedOptions[0].textContent, `${missing.slice(0, 16)} · ☁ ?`, 'missing captures retain the mountain date and clock');
+            assert.equal(select.title, `${missing} · Clouds unknown`);
         } finally { layer.dispose(); dom.window.close(); }
     }
 });
@@ -195,7 +228,7 @@ test('Sentinel timezone fallback is labelled and stale catalogs cannot change th
         pending[0]([capture]);
         await tick();
         const select = layer.element.querySelector('select');
-        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-08 07:12 GMT+5:45');
+        assert.equal(select.title, 'Latest · 2026-10-08 07:12 GMT+5:45 · Clouds 3%');
         const OriginalFormatter = Intl.DateTimeFormat;
         t.mock.method(Intl, 'DateTimeFormat', function (locales, options) {
             if (options.timeZone !== 'UTC') throw new RangeError('unsupported timezone');
@@ -205,8 +238,9 @@ test('Sentinel timezone fallback is labelled and stale catalogs cannot change th
         layer.activate();
         pending[2]([capture]);
         await tick();
-        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude');
-        assert.equal(select.title, select.selectedOptions[0].textContent, 'the full estimated label remains available in the tooltip');
+        assert.equal(select.selectedOptions[0].textContent, 'Latest · 10-07 17:27 · ☁ 3%');
+        assert.equal(select.title, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude · Clouds 3%',
+            'the full estimated label remains available in the tooltip');
         t.mock.restoreAll();
         t.mock.method(Intl, 'DateTimeFormat', function (locales, options) {
             const formatter = new OriginalFormatter(locales, options);
@@ -218,7 +252,7 @@ test('Sentinel timezone fallback is labelled and stale catalogs cannot change th
         layer.activate();
         pending[3]([capture]);
         await tick();
-        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude',
+        assert.equal(select.title, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude · Clouds 3%',
             'a formatter that fails after timezone resolution also uses the labelled estimate');
     } finally { t.mock.restoreAll(); layer.dispose(); dom.window.close(); }
 });

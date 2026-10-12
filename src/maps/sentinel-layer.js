@@ -6,16 +6,18 @@ import { rateLimitMessage } from '../net/rate-limit.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 
-const captureDate = (time, zone) => {
+const captureDate = (time, zone, includeZone = true) => {
     const date = mountainTime.localDate(zone, time);
     const minute = mountainTime.localMinute(zone, time);
     if (!date || minute === null) {
-        if (zone?.timeZone) return captureDate(time, { timeZone: null, offsetMs: zone.offsetMs });
-        return new Date(time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+        if (zone?.timeZone) return captureDate(time, { timeZone: null, offsetMs: zone.offsetMs }, includeZone);
+        return new Date(time).toISOString().slice(0, 16).replace('T', ' ') + (includeZone ? ' UTC' : '');
     }
     const pad = value => String(value).padStart(2, '0');
-    return `${date} ${pad(Math.floor(minute / 60))}:${pad(minute % 60)} ${mountainTime.zoneLabel(zone, time)}`;
+    return `${date} ${pad(Math.floor(minute / 60))}:${pad(minute % 60)}${includeZone ? ` ${mountainTime.zoneLabel(zone, time)}` : ''}`;
 };
+
+const cloudCover = cloud => Number.isFinite(cloud) ? Math.round(cloud) + '%' : 'unknown';
 
 // Both map engines share request ownership, capture choice, and honest metadata
 // labels. Engine adapters own only adding/removing their extension-owned tiles.
@@ -81,31 +83,36 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         replaceScenes(capture.scenes);
         summary.hidden = true;
         summary.textContent = captureDate(capture.time, captureZone);
-        stats.textContent = `Coverage ${Math.round(capture.coverage * 100)}% · Clouds ${capture.cloud === null ? 'unknown' : Math.round(capture.cloud) + '%'}`;
+        stats.textContent = `Coverage ${Math.round(capture.coverage * 100)}% · Clouds ${cloudCover(capture.cloud)}`;
+    };
+    const captureOption = (capture, value, latest = false) => {
+        const option = ownerDocument.createElement('option');
+        option.value = value;
+        const date = captureDate(capture.time, captureZone, false);
+        const cloud = cloudCover(capture.cloud);
+        // Keep the native picker compact; its tooltip and accessible label retain
+        // the full year, timezone, and meaning of the cloud percentage.
+        option.textContent = `${latest ? `Latest · ${date.slice(5)}` : date} · ☁ ${cloud === 'unknown' ? '?' : cloud}`;
+        option.title = `${latest ? 'Latest · ' : ''}${captureDate(capture.time, captureZone)} · Clouds ${cloud}`;
+        option.setAttribute('aria-label', option.title);
+        return option;
     };
     const choose = () => {
         const capture = target ? captures.find(candidate => candidate.platform === target.platform
             && candidate.orbit === target.orbit && Math.abs(candidate.time - target.time) <= 15 * 60000) : captures[0];
         const options = [];
-        const latest = ownerDocument.createElement('option');
-        latest.value = 'latest';
-        latest.textContent = captures[0] ? `Latest · ${captureDate(captures[0].time, captureZone)}` : 'Latest capture';
+        const latest = captures[0] ? captureOption(captures[0], 'latest', true) : ownerDocument.createElement('option');
+        if (!captures[0]) { latest.value = 'latest'; latest.textContent = 'Latest capture'; }
         options.push(latest);
         for (const candidate of captures) {
-            const option = ownerDocument.createElement('option');
-            option.value = candidate.key;
-            option.textContent = captureDate(candidate.time, captureZone);
-            options.push(option);
+            options.push(captureOption(candidate, candidate.key));
         }
         if (target && !capture) {
-            const missing = ownerDocument.createElement('option');
-            missing.value = 'missing';
-            missing.textContent = captureDate(target.time, captureZone);
-            options.push(missing);
+            options.push(captureOption(target, 'missing'));
         }
         select.replaceChildren(...options);
         select.value = target ? capture?.key || 'missing' : 'latest';
-        select.title = select.selectedOptions[0]?.textContent || '';
+        select.title = select.selectedOptions[0]?.title || select.selectedOptions[0]?.textContent || '';
         select.disabled = false;
         renderCapture(capture);
     };
