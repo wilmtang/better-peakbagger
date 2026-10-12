@@ -54,9 +54,9 @@ export function mountPeakWeather() {
     const updatesBody = element('tbody');
     const updates = element('div', { class: 'bpb-week-updates', tabindex: '0', role: 'region', 'aria-label': 'Model update times' }, [
         element('table', { class: 'bpb-week-updates-table' }, [element('caption', { text: 'Model updates' }),
-            element('thead', {}, [element('tr', {}, ['Model', 'Last update', 'Update interval'].map(text => element('th', { scope: 'col', text })))]), updatesBody]),
+            element('thead', {}, [element('tr', {}, ['Model', 'Last update', 'Next expected', 'Update interval'].map(text => element('th', { scope: 'col', text })))]), updatesBody]),
     ]);
-    const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Usual update intervals; delays are possible. Provider-wide availability may vary between servers.' });
+    const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Next updates are estimates. Provider-wide availability may vary between servers.' });
     const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Source details' }), sourceText, updates, updatesNote]);
     const overview = element('div', { class: 'bpb-week-overview' }, [element('div', {}, [range, locationLabel]), modelControl]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
@@ -89,9 +89,9 @@ export function mountPeakWeather() {
             for (const domain of domains.length ? domains : [null]) {
                 const label = model.id === 'gfs_global' ? `${model.label} · ${domain === 'ncep_gfs013' ? '13' : '25'} km` : model.label;
                 const unavailable = model === PEAK_BEST_MATCH ? 'Varies by model' : 'Unavailable';
-                const last = element('td', { text: domain ? 'Loading…' : unavailable }), interval = element('td', { text: domain ? 'Loading…' : unavailable });
-                updatesBody.append(element('tr', { 'data-update-model': model.id }, [element('th', { scope: 'row', text: label }), last, interval]));
-                if (domain) targets.set(domain, [...(targets.get(domain) || []), { last, interval }]);
+                const last = element('td', { text: domain ? 'Loading…' : unavailable }), next = element('td', { text: domain ? 'Loading…' : unavailable }), interval = element('td', { text: domain ? 'Loading…' : unavailable });
+                updatesBody.append(element('tr', { 'data-update-model': model.id }, [element('th', { scope: 'row', text: label }), last, next, interval]));
+                if (domain) targets.set(domain, [...(targets.get(domain) || []), { last, next, interval }]);
             }
         }
         const queue = [...targets.keys()];
@@ -105,9 +105,10 @@ export function mountPeakWeather() {
                 try { result = await updateClient.request(domain, { signal: updateController.signal }); }
                 catch { return; }
                 if (owner !== updatesGeneration || updateController.signal.aborted) return;
-                for (const { last, interval } of targets.get(domain)) {
+                for (const { last, next, interval } of targets.get(domain)) {
                     last.textContent = result.data ? label(result.data.lastUpdate) : 'Unavailable';
-                    interval.textContent = result.data ? `${updateIntervalLabel(result.data.updateIntervalSeconds)}${result.data.nextExpected < Date.now() ? ' (delayed)' : ''}` : 'Unavailable';
+                    next.textContent = result.data ? `${label(result.data.nextExpected)}${result.data.nextExpected < Date.now() ? ' (delayed)' : ''}` : 'Unavailable';
+                    interval.textContent = result.data ? updateIntervalLabel(result.data.updateIntervalSeconds) : 'Unavailable';
                     if (result.data) last.title = `Model initialized ${label(result.data.run)}`;
                 }
             }

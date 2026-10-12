@@ -813,13 +813,25 @@ test('model update times and cadence load only on disclosure, cover both GFS pro
             ['/data/ncep_gfs013/static/meta.json', '/data/ncep_gfs025/static/meta.json']);
         assert.match(env.doc.querySelector('.bpb-week-updates').textContent, /GFS · 13 km.*GFS · 25 km/);
         assert.match(env.doc.querySelector('.bpb-week-updates').textContent, /Nov 5.*PST/);
+        assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-updates-table thead th')].map(cell => cell.textContent), ['Model', 'Last update', 'Next expected', 'Update interval']);
+        const nextCells = env.doc.querySelectorAll('[data-update-model] td:nth-child(3)');
+        assert.match(nextCells[0].textContent, /Nov 5 09:50 AM PST/);
+        assert.match(nextCells[1].textContent, /Nov 5 03:50 PM PST/);
         assert.deepEqual([...env.doc.querySelectorAll('[data-update-model] td:last-child')].map(cell => cell.textContent), ['Every 6 h', 'Every 12 h']);
-        assert.match(env.doc.querySelector('.bpb-week-updates-note').textContent, /Usual update intervals.*delays are possible.*Provider-wide/);
+        assert.match(env.doc.querySelector('.bpb-week-updates-note').textContent, /Next updates are estimates.*Provider-wide/);
         const count = env.metadataRequests.length;
         source.open = false; await new Promise(resolve => setTimeout(resolve, 0)); source.open = true;
         await waitFor(() => !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
         assert.equal(env.metadataRequests.length, count); assert.equal(env.requests.length, 1);
         assert.ok(env.metadataRequests.every(({ url, init }) => !new URL(url).search && init.credentials === 'omit' && init.referrerPolicy === 'no-referrer'));
+        env.setNow('2024-11-05T22:00:00Z');
+        source.open = false; await new Promise(resolve => setTimeout(resolve, 0)); source.open = true;
+        await waitFor(() => env.metadataRequests.length === count + 2 && !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
+        const refreshedNext = env.doc.querySelectorAll('[data-update-model] td:nth-child(3)');
+        assert.match(refreshedNext[0].textContent, /\(delayed\)/);
+        assert.doesNotMatch(refreshedNext[1].textContent, /\(delayed\)/);
+        assert.deepEqual([...env.doc.querySelectorAll('[data-update-model] td:last-child')].map(cell => cell.textContent), ['Every 6 h', 'Every 12 h']);
+        assert.equal(env.metadataRequests.length, count + 2); assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });
 
@@ -885,7 +897,7 @@ test('Best Match and unmapped selected models show one row without metadata requ
             env.doc.querySelector('.bpb-week-source').open = true;
             await waitFor(() => env.doc.querySelector(`[data-update-model="${id}"]`));
             assert.equal(env.doc.querySelectorAll('[data-update-model]').length, 1);
-            assert.deepEqual([...env.doc.querySelectorAll('[data-update-model] td')].map(cell => cell.textContent), [text, text]);
+            assert.deepEqual([...env.doc.querySelectorAll('[data-update-model] td')].map(cell => cell.textContent), [text, text, text]);
             assert.equal(env.metadataRequests.length, 0);
         } finally { env.close(); }
     }

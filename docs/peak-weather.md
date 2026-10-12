@@ -104,7 +104,8 @@ and cadence. **Update interval** displays `update_interval_seconds` from the sam
 metadata response (for example, **Every 6 h**), with no additional request. It is
 the usual model-update cadence, distinct from `temporal_resolution_seconds`,
 which describes weather-data spacing. Updates overdue relative to the last
-availability time plus that cadence remain marked delayed. GFS lists its 13 km and 25 km products
+availability time plus that cadence remain marked delayed in **Next expected**,
+which displays that calculated time alongside the interval. GFS lists its 13 km and 25 km products
 separately, so GFS needs two metadata requests; other mapped models need one.
 Best Match and unmapped models make no metadata requests. Missing or unavailable
 metadata is labelled unavailable rather than guessed (BOM has no mapping in the provider's published update table).

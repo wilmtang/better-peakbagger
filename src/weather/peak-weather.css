@@ -86,6 +86,9 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 #bpb-peak-weather .bpb-week-updates-table caption { text-align: left; padding: 10px; font-weight: 600; }
 #bpb-peak-weather .bpb-week-updates-table :is(th, td) { padding: 8px 10px; border: 0; border-top: 1px solid var(--week-border); text-align: left; font-weight: 400; font-variant-numeric: tabular-nums; }
 #bpb-peak-weather .bpb-week-updates-table thead th { background: var(--week-soft); color: var(--week-sub); }
+#bpb-peak-weather .bpb-week-updates-table thead th:first-child { width: 24%; }
+#bpb-peak-weather .bpb-week-updates-table thead :is(th:nth-child(2), th:nth-child(3)) { width: 28%; }
+#bpb-peak-weather .bpb-week-updates-table thead th:last-child { width: 20%; }
 #bpb-peak-weather .bpb-week-updates-table tbody th { font-weight: 500; }
 #bpb-peak-weather footer { display: flex; flex-wrap: wrap; gap: 5px 14px; justify-content: space-between; padding: 12px 0; border-top: 1px solid var(--week-border); font-size: 11px; color: var(--week-sub); }
 #bpb-peak-weather a { color: var(--week-accent); }
