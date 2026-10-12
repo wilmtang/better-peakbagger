@@ -341,6 +341,7 @@ try {
         await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
         await wait(() => document.querySelector('#bpb-ascent-weather .bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather result from the real isolated bundle');
         await wait(() => document.getElementById('bpb-ascent-weather')?.getAttribute('aria-busy') === 'false', 'settled weather card');
+        assert.equal(await evaluate(() => document.querySelector('.bpb-weather-model select').options[0].value), 'best_match');
         if (live) {
             summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, liveCors: 'passed', viewport: { width: 1440, height: 1100 }, profile: temporaryRoot };
         } else {

@@ -425,7 +425,8 @@ export function mountAscentWeather() {
     const cancel = () => { generation++; controller?.abort(); controller = null; busy(false); };
     const updateModels = targetDate => {
         const selected = select.value;
-        candidates = eligibleWeatherModels(summit, targetDate);
+        candidates = eligibleWeatherModels(summit, targetDate)
+            .sort((a, b) => Number(b === ARCHIVE_BEST_MATCH) - Number(a === ARCHIVE_BEST_MATCH));
         select.replaceChildren(...candidates.map(model => element('option', { value: model.id,
             text: model === ARCHIVE_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}` })));
         select.value = selected;

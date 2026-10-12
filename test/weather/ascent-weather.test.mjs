@@ -643,6 +643,7 @@ test('bundled independent card loads on a visitor ascent without GPX or map', as
         assert.equal(new URL(transfer.url).origin + new URL(transfer.url).pathname, 'https://archive-api.open-meteo.com/v1/archive');
         assert.equal(new URL(transfer.url).searchParams.get('models'), 'best_match');
         assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.equal(env.doc.querySelector('select').options[0].value, 'best_match');
         assert.match(env.doc.querySelector('.bpb-weather-source-text').textContent, /combines ECMWF IFS, ERA5 and ERA5-Land/);
         assert.equal(new URL(transfer.url).searchParams.has('aid'), false);
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));

@@ -46,6 +46,7 @@ Source details identify this as a blend and do not invent per-value provenance.
 The ascent archive no longer applies the extension's country recommendation chain.
 
 The dropdown includes global alternatives, overlapping regional candidates,
+with **Best Match (Open-Meteo)** first among eligible choices,
 CERRA’s finite 1985–June 2021 archive, and explicitly labelled surface-only or
 no-precipitation choices. HRRR/HRDPS admission uses the provider’s mathematical
 grid definitions. Other regional choices use conservative interior footprints,
