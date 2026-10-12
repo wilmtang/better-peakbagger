@@ -94,6 +94,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         assert.ok(await evaluate(() => [...document.querySelectorAll('[data-update-model="gfs_global"] td')].every(cell => !cell.textContent.includes('Unavailable'))), 'live GFS update clocks are available');
         if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-live-forecast.png`));
         assert.equal(evidence.length, 1, 'live past and forecast views must share one HTTP request');
+        assert.deepEqual(metadataEvidence.map(request => request.path).sort(),
+            ['/data/ncep_gfs013/static/meta.json', '/data/ncep_gfs025/static/meta.json']);
         assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
         assert.deepEqual(networkErrors, []);
         return { liveCors: 'passed', weatherRequests: evidence.length, metadataRequests: metadataEvidence.length, viewport: { width: 1440, height: 1100 } };
@@ -157,12 +159,16 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assertGeometry(await evaluate(geometry));
             assert.equal(evidence.length, before, 'both periods and hourly graphs reuse one response');
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-hourly-${width}.png`));
+            const updatesBefore = metadataEvidence.length;
             await click(`${card} .bpb-week-source > summary`);
             assert.equal(await evaluate(() => document.querySelector('.bpb-week-source').open), true);
             assertGeometry(await evaluate(geometry));
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-models-${width}.png`));
             await wait(() => document.querySelector('.bpb-week-source').open && document.querySelector('.bpb-week-updates').clientHeight > 0 && document.querySelectorAll('[data-update-model]').length > 1 && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'model update metadata settles');
+            assert.equal(await evaluate(() => document.querySelectorAll('[data-update-model]').length), 2);
             assert.equal(await evaluate(() => document.querySelectorAll('[data-update-model="gfs_global"]').length), 2);
+            assert.equal(metadataEvidence.length - updatesBefore, width === widths[0] ? 2 : 0, 'only GFS products load, once per page');
+            assert.ok(metadataEvidence.slice(updatesBefore).every(request => ['/data/ncep_gfs013/static/meta.json', '/data/ncep_gfs025/static/meta.json'].includes(request.path)));
             assert.ok(await evaluate(() => document.querySelector('.bpb-week-updates').textContent.includes('Next expected')));
             if (output) {
                 await evaluate(() => document.querySelector('.bpb-week-updates').scrollIntoView({ block: 'start', behavior: 'instant' }));
@@ -194,8 +200,11 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'Best Match history with named forecast');
     assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('automatically combines')));
+    const blendMetadataBefore = metadataEvidence.length;
     await click(`${card} .bpb-week-source > summary`);
     await wait(() => document.querySelector('[data-update-model="best_match"] td')?.textContent === 'Varies by model', 'blend does not invent a single update clock');
+    assert.equal(await evaluate(() => document.querySelectorAll('[data-update-model]').length), 1);
+    assert.equal(metadataEvidence.length, blendMetadataBefore, 'Best Match does not fetch other models update clocks');
     await click(`${card} .bpb-week-source > summary`);
     await click(`${card} [data-period="forecast"]`);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
@@ -225,11 +234,34 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'explicit historical model');
     assertGeometry(await evaluate(geometry));
     assert.equal(evidence.length, beforeModels + 1);
+    const selectedMetadataBefore = metadataEvidence.length;
+    await click(`${card} .bpb-week-source > summary`);
+    await wait(() => document.querySelectorAll('[data-update-model]').length === 1
+        && document.querySelector('[data-update-model="icon_global"]')
+        && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'only selected ICON update clocks');
+    assert.equal(metadataEvidence.length, selectedMetadataBefore + 1);
+    assert.equal(metadataEvidence.at(-1).path, '/data/dwd_icon/static/meta.json');
+    for (const width of [1440, 375]) {
+        await resize(width, 1100); assertGeometry(await evaluate(geometry));
+        if (output) {
+            await evaluate(() => document.querySelector('.bpb-week-updates').scrollIntoView({ block: 'center', behavior: 'instant' }));
+            await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-selected-updates-${width}.png`));
+        }
+    }
     await click(`${card} [data-period="forecast"]`);
+    await wait(() => document.querySelectorAll('[data-update-model]').length === 2
+        && document.querySelectorAll('[data-update-model="gfs_global"]').length === 2
+        && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'period switch replaces ICON with GFS clocks');
+    assert.equal(metadataEvidence.length, selectedMetadataBefore + 3);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
     await chooseModel('gfs_hrrr');
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'short-range explicit forecast');
+    await wait(() => document.querySelectorAll('[data-update-model]').length === 1
+        && document.querySelector('[data-update-model="gfs_hrrr"]')
+        && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'model change replaces GFS clocks with HRRR');
+    assert.equal(metadataEvidence.length, selectedMetadataBefore + 4);
+    assert.equal(metadataEvidence.at(-1).path, '/data/ncep_hrrr_conus/static/meta.json');
     assert.ok(await evaluate(() => document.querySelectorAll('.bpb-week-day').length <= 3));
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent), 'Using HRRR · 3 km · up to 2 days');
     for (const width of [1440, 375]) {
@@ -241,6 +273,11 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     }
     await click(`${card} [data-period="past"]`);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'icon_global');
+    await wait(() => document.querySelectorAll('[data-update-model]').length === 1
+        && document.querySelector('[data-update-model="icon_global"]')
+        && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'returning period reuses ICON clocks');
+    assert.equal(metadataEvidence.length, selectedMetadataBefore + 4);
+    await click(`${card} .bpb-week-source > summary`);
     assertGeometry(await evaluate(geometry));
     await chooseModel('gfs_global');
     await click(`${card} [data-period="forecast"]`);
@@ -360,5 +397,5 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['best_match', 'best_match,gfs_global', 'gfs_global,best_match', 'gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global', 'meteofrance_arpege_world,gfs_global'].includes(request.model)));
     assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'best-match', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'local-hourly-tab', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'selected-model-updates', 'best-match', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'local-hourly-tab', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
 }

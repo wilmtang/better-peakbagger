@@ -92,13 +92,15 @@ model or Best Match blend supplied each period, without claiming an exact run in
 sub-grid provenance. Horizons were checked against Open-Meteo's
 [Forecast API and provider tables](https://open-meteo.com/en/docs) and named
 model routing against its [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
-Opening **Models & source details** also loads a table of the eligible models'
-last API availability time and next expected update in summit local time.
+Opening **Models & source details** also loads update times for the model supplying
+the displayed weather in the active period, shown in summit local time. Other eligible models are not requested. Switching periods or models
+updates the table; a failed model change retains clocks for the displayed weather.
 The [metadata API](https://open-meteo.com/en/docs/model-updates) reports availability
 and cadence. The next time is an estimate from that cadence, and overdue
 updates remain dated and marked delayed. GFS lists its 13 km and 25 km products
-separately. Missing or unavailable metadata is labelled unavailable rather than
-guessed (BOM has no mapping in the provider's published update table).
+separately, so GFS needs two metadata requests; other mapped models need one.
+Best Match and unmapped models make no metadata requests. Missing or unavailable
+metadata is labelled unavailable rather than guessed (BOM has no mapping in the provider's published update table).
 These are provider-wide clocks, not proof of the exact model run behind each
 forecast or historical hour. Metadata requests contain no coordinates or dates;
 they are limited to three concurrent requests, a five-second deadline and

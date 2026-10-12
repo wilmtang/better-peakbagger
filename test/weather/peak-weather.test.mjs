@@ -805,7 +805,10 @@ test('model update times load only on disclosure, cover both GFS products and re
         await settled(env, { past: false }); assert.equal(env.metadataRequests.length, 0);
         const source = env.doc.querySelector('.bpb-week-source'); source.open = true;
         await waitFor(() => env.doc.querySelectorAll('[data-update-model]').length > 1 && !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
+        assert.equal(env.doc.querySelectorAll('[data-update-model]').length, 2);
         assert.equal(env.doc.querySelectorAll('[data-update-model="gfs_global"]').length, 2);
+        assert.deepEqual(env.metadataRequests.map(({ url }) => new URL(url).pathname).sort(),
+            ['/data/ncep_gfs013/static/meta.json', '/data/ncep_gfs025/static/meta.json']);
         assert.match(env.doc.querySelector('.bpb-week-updates').textContent, /GFS · 13 km.*GFS · 25 km/);
         assert.match(env.doc.querySelector('.bpb-week-updates').textContent, /Nov 5.*PST/);
         assert.match(env.doc.querySelector('.bpb-week-updates-note').textContent, /estimated.*provider-wide/);
@@ -817,7 +820,75 @@ test('model update times load only on disclosure, cover both GFS products and re
     } finally { env.close(); }
 });
 
-test('optional update requests are concurrency-limited, cancel on opt-out and do not replace usable weather on failure', async () => {
+test('update clocks follow only the active period model and reuse cached products', async () => {
+    const env = setup({ localModels: { bpbPeakWeatherModelPast: 'icon_global', bpbPeakWeatherModelForecast: 'gfs_global' } });
+    const rows = () => [...env.doc.querySelectorAll('[data-update-model]')].map(row => row.dataset.updateModel);
+    const ready = id => rows().length && rows().every(model => model === id) && !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading');
+    try {
+        await settled(env, { past: false });
+        assert.equal(env.metadataRequests.length, 0);
+        env.doc.querySelector('.bpb-week-source').open = true;
+        await waitFor(() => ready('gfs_global'));
+        assert.deepEqual(rows(), ['gfs_global', 'gfs_global']);
+        assert.equal(env.metadataRequests.length, 2);
+        env.doc.querySelector('[data-period="past"]').click();
+        await waitFor(() => ready('icon_global'));
+        assert.deepEqual(rows(), ['icon_global']);
+        assert.equal(env.metadataRequests.length, 3);
+        assert.equal(new URL(env.metadataRequests[2].url).pathname, '/data/dwd_icon/static/meta.json');
+        chooseModel(env, 'ecmwf_ifs');
+        await waitFor(() => ready('ecmwf_ifs'));
+        assert.equal(env.metadataRequests.length, 4);
+        assert.equal(new URL(env.metadataRequests[3].url).pathname, '/data/ecmwf_ifs/static/meta.json');
+        env.doc.querySelector('[data-period="forecast"]').click();
+        await waitFor(() => ready('gfs_global'));
+        assert.equal(env.metadataRequests.length, 4, 'returning to GFS reuses its cached products');
+        env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false' && ready('gfs_global'));
+        assert.equal(env.metadataRequests.length, 6, 'explicit refresh reloads only the active model products');
+        assert.ok(env.metadataRequests.slice(4).every(({ url }) => /\/data\/ncep_gfs0(13|25)\//.test(url)));
+    } finally { env.close(); }
+});
+
+test('model changes cancel old update requests and failed changes keep clocks with retained weather', async () => {
+    let failWeather = false, metadataCalls = 0;
+    const env = setup({ fetchFn: url => failWeather ? new Response('', { status: 503 }) : reply(url),
+        metadataFn: (_, init) => ++metadataCalls <= 2 ? new Promise((_, reject) => {
+            init.signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { name: 'AbortError' })), { once: true });
+        }) : Promise.resolve(new Response(JSON.stringify({ last_run_initialisation_time: 1730797200,
+            last_run_availability_time: 1730807400, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } })) });
+    try {
+        await settled(env, { past: false });
+        env.doc.querySelector('.bpb-week-source').open = true;
+        await waitFor(() => env.metadataRequests.length === 2);
+        failWeather = true; chooseModel(env, 'ecmwf_ifs');
+        assert.ok(env.metadataRequests.every(({ init }) => init.signal.aborted), 'selection immediately cancels the old metadata');
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Showing the previous result.'));
+        await waitFor(() => !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
+        assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
+        assert.deepEqual([...env.doc.querySelectorAll('[data-update-model]')].map(row => row.dataset.updateModel), ['gfs_global', 'gfs_global']);
+        assert.equal(env.metadataRequests.length, 4);
+        assert.ok(env.metadataRequests.every(({ url }) => /\/data\/ncep_gfs0(13|25)\//.test(url)));
+    } finally { env.close(); }
+});
+
+test('Best Match and unmapped selected models show one row without metadata requests', async () => {
+    for (const [id, text] of [['best_match', 'Varies by model'], ['bom_access_global', 'Unavailable']]) {
+        const env = setup({ localModels: { bpbPeakWeatherModelPast: id, bpbPeakWeatherModelForecast: id } });
+        try {
+            await waitFor(() => env.doc.querySelectorAll('.bpb-week-day').length > 0
+                && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+            assert.equal(env.doc.querySelector('select').value, id);
+            env.doc.querySelector('.bpb-week-source').open = true;
+            await waitFor(() => env.doc.querySelector(`[data-update-model="${id}"]`));
+            assert.equal(env.doc.querySelectorAll('[data-update-model]').length, 1);
+            assert.equal(env.doc.querySelector('[data-update-model] td').textContent, text);
+            assert.equal(env.metadataRequests.length, 0);
+        } finally { env.close(); }
+    }
+});
+
+test('selected-model update requests stay bounded, cancel on opt-out and do not replace usable weather on failure', async () => {
     let held = [], active = 0, maximum = 0;
     const env = setup({ metadataFn: (_, init) => new Promise(resolve => {
         active++; maximum = Math.max(maximum, active);
@@ -827,17 +898,17 @@ test('optional update requests are concurrency-limited, cancel on opt-out and do
     try {
         await settled(env); const days = env.doc.querySelectorAll('.bpb-week-day').length;
         env.doc.querySelector('.bpb-week-source').open = true;
-        await waitFor(() => env.metadataRequests.length === 3);
-        assert.equal(maximum, 3);
+        await waitFor(() => env.metadataRequests.length === 2);
+        assert.equal(maximum, 2);
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
         assert.ok(env.metadataRequests.every(({ init }) => init.signal.aborted));
         held = []; await new Promise(resolve => setTimeout(resolve, 0));
-        assert.equal(env.metadataRequests.length, 3); assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, days);
+        assert.equal(env.metadataRequests.length, 2); assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, days);
     } finally { env.close(); }
     const failed = setup({ metadataFn: async () => new Response('', { status: 503 }) });
     try {
         await settled(failed); failed.doc.querySelector('.bpb-week-source').open = true;
-        await waitFor(() => failed.metadataRequests.length > 3 && !failed.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
+        await waitFor(() => failed.metadataRequests.length === 2 && !failed.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
         assert.match(failed.doc.querySelector('.bpb-week-updates').textContent, /Unavailable/);
         assert.equal(failed.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(failed.requests.length, 1);
     } finally { failed.close(); }
@@ -846,14 +917,14 @@ test('optional update requests are concurrency-limited, cancel on opt-out and do
 test('a failed weather refresh cannot leave cancelled model metadata loading forever', async () => {
     let failWeather = false, metadataCalls = 0;
     const env = setup({ fetchFn: url => failWeather ? new Response('', { status: 503 }) : reply(url),
-        metadataFn: () => ++metadataCalls <= 3 ? new Promise(() => {}) : Promise.resolve(new Response('', { status: 503 })) });
+        metadataFn: () => ++metadataCalls <= 2 ? new Promise(() => {}) : Promise.resolve(new Response('', { status: 503 })) });
     try {
         await settled(env); env.doc.querySelector('.bpb-week-source').open = true;
-        await waitFor(() => env.metadataRequests.length === 3);
+        await waitFor(() => env.metadataRequests.length === 2);
         failWeather = true; env.doc.querySelector('.bpb-week-refresh').click();
         await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Showing the previous result.'));
         await waitFor(() => !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
-        assert.ok(env.metadataRequests.slice(0, 3).every(({ init }) => init.signal.aborted));
+        assert.ok(env.metadataRequests.slice(0, 2).every(({ init }) => init.signal.aborted));
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
     } finally { env.close(); }
 });

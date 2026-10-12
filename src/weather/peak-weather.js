@@ -71,7 +71,9 @@ export function mountPeakWeather() {
         cancelUpdates();
         const updateController = new AbortController(); updatesController = updateController;
         const owner = updatesGeneration;
-        const models = eligiblePeakWeatherModels(subject, requestedWindow || current.window, period);
+        // Keep update clocks tied to the displayed weather, including when
+        // a failed model change retains the previous result.
+        const models = [current.models[period]];
         const targets = new Map();
         updatesBody.replaceChildren();
         for (const model of models) {
@@ -313,7 +315,7 @@ export function mountPeakWeather() {
         // Separate keys avoid overwriting the other period's choice from a
         // concurrently open tab. Store only the allowlisted model identifier.
         try { void chrome.storage.local.set({ [modelKeys[period]]: select.value }).catch(() => {}); } catch { /* Storage failure keeps the page usable. */ }
-        cancel(); void load();
+        cancelUpdates(); cancel(); void load();
     });
     const beginWhenVisible = () => {
         visibilityObserver?.disconnect();
