@@ -121,7 +121,7 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
     const dom = new JSDOM('<!doctype html><body></body>');
     const layer = createSentinelLayer({ document: dom.window.document,
         readView: () => ({ bounds, zoom: 13 }), replaceScenes() {}, clearScenes() {},
-        search: async () => sentinelCaptures([feature('new'), feature('old', { date: '2026-10-03T19:02:59Z' })], view) });
+        search: async () => sentinelCaptures([feature('new', { date: '2026-10-08T01:27:00Z' }), feature('old', { date: '2026-10-03T19:02:59Z' })], view) });
     try {
         const select = layer.element.querySelector('select');
         const metadata = layer.element.querySelector('.bpb-sentinel-metadata');
@@ -131,8 +131,7 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
         layer.activate();
         assert.equal(summary.textContent, 'Finding captures…');
         await tick();
-        const date = new Date(captureTime).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
-        assert.equal(select.selectedOptions[0].textContent, `Latest · ${date}`);
+        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-07 18:27 PDT');
         assert.equal(summary.hidden, true, 'the capture date is not duplicated in a third row');
         assert.match(stats.textContent, /Coverage 100% · Clouds 41%/);
         select.value = select.options[2].value;
@@ -144,6 +143,84 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
         assert.equal(stats.textContent, '');
         assert.equal(summary.parentElement, stats.parentElement, 'loading and coverage share one stable slot');
     } finally { layer.dispose(); dom.window.close(); }
+});
+
+test('Sentinel capture labels use the viewed mountain date, DST, unusual offsets, and wrapped dateline bounds', async () => {
+    for (const { area = view, time, expected, missing } of [
+        { time: '2026-10-08T01:27:00Z', expected: '2026-10-07 18:27 PDT', missing: '2026-10-06 18:27 PDT' },
+        { time: '2026-01-08T01:27:00Z', expected: '2026-01-07 17:27 PST', missing: '2026-01-06 17:27 PST' },
+        { area: { west: 85, east: 85.6, south: 27.4, north: 28 }, time: '2026-10-08T01:27:00Z',
+            expected: '2026-10-08 07:12 GMT+5:45', missing: '2026-10-07 07:12 GMT+5:45' },
+        { area: { west: 539, east: 541, south: -17, north: -16 }, time: '2026-10-08T01:27:00Z',
+            expected: '2026-10-08 13:27 GMT+12', missing: '2026-10-07 13:27 GMT+12' },
+    ]) {
+        const dom = new JSDOM('<!doctype html><body></body>');
+        const capture = { key: 'capture', time: Date.parse(time), platform: 'Sentinel-2B', orbit: '13', scenes: [], coverage: 1, cloud: 3 };
+        const layer = createSentinelLayer({ document: dom.window.document,
+            readView: () => ({ bounds: { getWest: () => area.west, getEast: () => area.east,
+                getSouth: () => area.south, getNorth: () => area.north }, zoom: 13 }),
+            search: async () => [capture], replaceScenes() {}, clearScenes() {} });
+        try {
+            layer.activate();
+            await tick();
+            const select = layer.element.querySelector('select');
+            assert.equal(select.options[0].textContent, `Latest · ${expected}`);
+            assert.equal(select.options[1].textContent, expected);
+            select.value = capture.key;
+            select.dispatchEvent(new dom.window.Event('change'));
+            assert.equal(select.title, expected);
+            assert.equal(layer.element.querySelector('.bpb-sentinel-summary').textContent, expected);
+            layer.activate({ ...capture, time: capture.time - 86400000 });
+            await tick();
+            assert.equal(select.value, 'missing');
+            assert.equal(select.selectedOptions[0].textContent, missing, 'missing captures retain the mountain date and clock');
+        } finally { layer.dispose(); dom.window.close(); }
+    }
+});
+
+test('Sentinel timezone fallback is labelled and stale catalogs cannot change the current zone', async t => {
+    const dom = new JSDOM('<!doctype html><body></body>');
+    const pending = [];
+    let area = bounds;
+    const capture = { key: 'capture', time: Date.parse('2026-10-08T01:27:00Z'), platform: 'Sentinel-2B', orbit: '13', scenes: [], coverage: 1, cloud: 3 };
+    const layer = createSentinelLayer({ document: dom.window.document,
+        readView: () => ({ bounds: area, zoom: 13 }), search: () => new Promise(resolve => pending.push(resolve)),
+        replaceScenes() {}, clearScenes() {} });
+    try {
+        layer.activate();
+        area = { getWest: () => 85, getEast: () => 85.6, getSouth: () => 27.4, getNorth: () => 28 };
+        layer.activate();
+        pending[1]([capture]);
+        await tick();
+        pending[0]([capture]);
+        await tick();
+        const select = layer.element.querySelector('select');
+        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-08 07:12 GMT+5:45');
+        const OriginalFormatter = Intl.DateTimeFormat;
+        t.mock.method(Intl, 'DateTimeFormat', function (locales, options) {
+            if (options.timeZone !== 'UTC') throw new RangeError('unsupported timezone');
+            return new OriginalFormatter(locales, options);
+        });
+        area = bounds;
+        layer.activate();
+        pending[2]([capture]);
+        await tick();
+        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude');
+        assert.equal(select.title, select.selectedOptions[0].textContent, 'the full estimated label remains available in the tooltip');
+        t.mock.restoreAll();
+        t.mock.method(Intl, 'DateTimeFormat', function (locales, options) {
+            const formatter = new OriginalFormatter(locales, options);
+            return { formatToParts(time) {
+                if (options.timeZone !== 'UTC' && time !== 0) throw new RangeError('capture formatting failed');
+                return formatter.formatToParts(time);
+            } };
+        });
+        layer.activate();
+        pending[3]([capture]);
+        await tick();
+        assert.equal(select.selectedOptions[0].textContent, 'Latest · 2026-10-07 17:27 UTC−8, estimated from longitude',
+            'a formatter that fails after timezone resolution also uses the labelled estimate');
+    } finally { t.mock.restoreAll(); layer.dispose(); dom.window.close(); }
 });
 
 test('Leaflet Sentinel intercepts only its own option, preserves native layers, and cleans up', async () => {

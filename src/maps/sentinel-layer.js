@@ -4,8 +4,18 @@
 import { searchSentinel, sentinelView, sentinelTarget } from './sentinel-core.js';
 import { rateLimitMessage } from '../net/rate-limit.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
+import { mountainTime } from '../time/mountain-time.js';
 
-const captureDate = time => new Date(time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+const captureDate = (time, zone) => {
+    const date = mountainTime.localDate(zone, time);
+    const minute = mountainTime.localMinute(zone, time);
+    if (!date || minute === null) {
+        if (zone?.timeZone) return captureDate(time, { timeZone: null, offsetMs: zone.offsetMs });
+        return new Date(time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+    }
+    const pad = value => String(value).padStart(2, '0');
+    return `${date} ${pad(Math.floor(minute / 60))}:${pad(minute % 60)} ${mountainTime.zoneLabel(zone, time)}`;
+};
 
 // Both map engines share request ownership, capture choice, and honest metadata
 // labels. Engine adapters own only adding/removing their extension-owned tiles.
@@ -40,6 +50,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     let controller = null;
     let timer = null;
     let captures = [];
+    let captureZone = null;
     let target = null;
     let limit = null;
     const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; });
@@ -69,7 +80,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         }
         replaceScenes(capture.scenes);
         summary.hidden = true;
-        summary.textContent = captureDate(capture.time);
+        summary.textContent = captureDate(capture.time, captureZone);
         stats.textContent = `Coverage ${Math.round(capture.coverage * 100)}% · Clouds ${capture.cloud === null ? 'unknown' : Math.round(capture.cloud) + '%'}`;
     };
     const choose = () => {
@@ -78,22 +89,23 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         const options = [];
         const latest = ownerDocument.createElement('option');
         latest.value = 'latest';
-        latest.textContent = captures[0] ? `Latest · ${captureDate(captures[0].time)}` : 'Latest capture';
+        latest.textContent = captures[0] ? `Latest · ${captureDate(captures[0].time, captureZone)}` : 'Latest capture';
         options.push(latest);
         for (const candidate of captures) {
             const option = ownerDocument.createElement('option');
             option.value = candidate.key;
-            option.textContent = captureDate(candidate.time);
+            option.textContent = captureDate(candidate.time, captureZone);
             options.push(option);
         }
         if (target && !capture) {
             const missing = ownerDocument.createElement('option');
             missing.value = 'missing';
-            missing.textContent = captureDate(target.time);
+            missing.textContent = captureDate(target.time, captureZone);
             options.push(missing);
         }
         select.replaceChildren(...options);
         select.value = target ? capture?.key || 'missing' : 'latest';
+        select.title = select.selectedOptions[0]?.textContent || '';
         select.disabled = false;
         renderCapture(capture);
     };
@@ -113,9 +125,14 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         try {
             const view = readView();
             const bounds = sentinelView(view.bounds, view.zoom);
+            // Use the displayed mountain area, including wrapped map copies;
+            // commit its zone with the catalog so stale searches cannot relabel it.
+            const longitude = ((bounds.west + bounds.east) / 2 + 180) % 360 - 180;
+            const zone = mountainTime.resolve((bounds.south + bounds.north) / 2, longitude);
             const result = await search(bounds, { signal: controller.signal, fetchImpl });
             if (!active || revision !== current) return;
             captures = result;
+            captureZone = zone;
             choose();
         } catch (error) {
             if (!active || revision !== current || error?.name === 'AbortError') return;

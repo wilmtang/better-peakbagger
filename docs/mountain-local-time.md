@@ -13,6 +13,9 @@ The same resolver and formatter now own the offline
 [Sun and Moon position calculator](sun-position.md). Peak pages use the
 validated summit coordinate; GPX analysis continues to use the trailhead. No
 surface derives a mountain clock from the viewer's machine timezone.
+The shared Sentinel-2 capture selector in the 2D and 3D maps uses the current
+viewport center. Its compact date and 24-hour clock follow that zone's rules at
+each capture instant, while selection and catalog queries keep UTC timestamps.
 
 ## Where the timezone comes from
 
@@ -21,7 +24,8 @@ The track's **starting coordinate** is resolved to an IANA timezone by
 dependency-free ~73 KB raster that answers entirely offline. The locked npm
 package ships CommonJS, so esbuild bundles it directly into the consumers that
 need mountain time: `dist/content/gpx-analyzer.js`,
-`dist/content/ascent-editor.js`, and `dist/content/peak-map.js`. The shared
+`dist/content/ascent-editor.js`, `dist/content/peak-map.js`,
+`dist/content/sentinel-map.js`, and `dist/terrain/terrain-frame.js`. The shared
 `src/time/mountain-time.js` module is the only authored owner of resolution,
 formatting, local-day comparison, and editable civil-time conversion. There is
 no page-owned global for Peakbagger or another extension to replace.

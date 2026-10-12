@@ -19,6 +19,10 @@ pass cover the view; selecting a dated capture keeps that pass through pans.
 Opening 3D from a dated Leaflet capture preserves that choice using a validated
 pass identity; it never forwards page-owned tile URLs or catalog responses.
 The latest choice prioritizes a pass covering the viewport center, then time.
+Capture dates and clocks use the map center's mountain-local timezone, resolved
+offline through `src/time/mountain-time.js`, with DST at the capture instant and
+a labelled longitude estimate if timezone lookup fails. Pass identities retain
+their original UTC timestamps.
 The layer's 11-by-11 footprint sample reports estimated geographic coverage of
 the scenes actually rendered. Scene-wide cloud metadata is averaged separately
 and never presented as viewport cloud cover or clear-pixel coverage. Tiles are
