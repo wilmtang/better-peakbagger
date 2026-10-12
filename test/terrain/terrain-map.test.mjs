@@ -2073,6 +2073,16 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     dispatch(groupInit([0, 0, 1]));
     await new Promise(resolve => window.queueMicrotask(resolve));
     const map = maps.at(-1);
+    const messagesBeforeControlEscape = messages.length;
+    const pickerEscape = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
+    window.document.querySelector('.bpb-terrain-picker').dispatchEvent(pickerEscape);
+    assert.equal(pickerEscape.defaultPrevented, false);
+    assert.equal(messages.length, messagesBeforeControlEscape, 'the native layer picker owns Escape');
+    for (const tag of ['input', 'textarea']) {
+        const control = window.document.createElement(tag); window.document.querySelector('#bpb-terrain-map').append(control);
+        control.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true }));
+        assert.equal(messages.length, messagesBeforeControlEscape, `${tag} Escape stays local`); control.remove();
+    }
     assert.deepEqual(
         JSON.parse(JSON.stringify(map.sources.get('bpb-route').data.features.map(feature => feature.properties.track))),
         [0, 0, 1],

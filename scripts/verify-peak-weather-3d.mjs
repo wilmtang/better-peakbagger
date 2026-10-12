@@ -93,9 +93,9 @@ try {
         const pickerBounds = await picker.boundingBox();
         await page.mouse.click(pickerBounds.x + pickerBounds.width / 2, pickerBounds.y + pickerBounds.height / 2);
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
-        // Close the native picker without exercising the separately audited
-        // 3D Escape handler. Its control ownership regression has its own unit.
-        await page.keyboard.press('Tab');
+        await page.keyboard.press('Escape');
+        await picker.focus();
+        await page.keyboard.press('Escape');
         assert.equal(await page.locator('#bpb-terrain-toggle').textContent(), '2D');
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
@@ -125,6 +125,6 @@ try {
     }
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, profile, renderer,
-        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal'] }));
+        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal', 'picker Escape stays in 3D'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);
