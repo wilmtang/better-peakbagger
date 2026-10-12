@@ -26,7 +26,8 @@ const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 const REPO_ROOT = path.resolve(FIXTURES, '../..');
 
 // Wayback captures of public peaks (other people's public data) legitimately
-// carry external links; every other .html fixture is a masked live capture.
+// carry external links; other HTML fixtures are masked captures or explicitly
+// reviewed identity-free challenge responses.
 const WAYBACK = new Set([
     '1039-default-full-columns.html',
     '21500-y9998-sort-ascentdated.html',
@@ -35,6 +36,10 @@ const WAYBACK = new Set([
 ]);
 
 const MASKED_CLIMBER_ID = '900001';
+const IDENTITY_FREE_CHALLENGES = new Set([
+    'peakbagger-managed-challenge.html',
+    'pages/cloudflare-challenge.html',
+]);
 // The public-climber fixture deliberately represents a second synthetic person
 // so the favorite control can prove that it never appears on the owner's page.
 const REVIEWED_CLIMBER_IDS = new Map([
@@ -133,8 +138,9 @@ test('masking actually ran: live captures carry the masked climber id, and only 
         const text = await readFile(file, 'utf8');
         // A Cloudflare response has no signed-in identity. Keep all privacy
         // scans above, but do not manufacture an owner in this response fixture.
-        if (path.basename(file) === 'peakbagger-managed-challenge.html') {
-            assert.doesNotMatch(text, /climber\.aspx\?cid=/i);
+        if (IDENTITY_FREE_CHALLENGES.has(path.relative(FIXTURES, file).split(path.sep).join('/'))) {
+            assert.doesNotMatch(text, /\b(?:cid|c|d)=\d+/i);
+            assert.doesNotMatch(text, new RegExp(MASKED_CLIMBER_ID));
             continue;
         }
         assert.match(text, new RegExp(MASKED_CLIMBER_ID),

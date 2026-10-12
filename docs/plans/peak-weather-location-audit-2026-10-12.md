@@ -20,7 +20,7 @@ group is committed after its checks pass. Preserve unrelated working-tree edits.
 | L9 | A suspended 3D renderer can still open a weather context menu. | Bundled bridge probe: a valid generation's weatherContext is forwarded after destroy parks the frame at opacity 0. `src/terrain/terrain-map.js` checks loaded state but not suspended state. | Ignore context/dismiss messages from a suspended renderer and preserve active-generation checks on resume. | Fixed in renderer lifecycle unit |
 | L10 | Selecting a point before initial summit weather loads gives the pending point summit metadata. | Bundled Tokyo probe at a cross-zone date boundary shows Summit weather, At the summit, 14406 ft and Previous dates while loading Tokyo coordinates. | With no usable previous result, show the requested point's identity, terrain elevation and local day immediately; preserve old labels only when retaining real readings. | Fixed in initial-loading identity unit |
 | L11 | Modified Escape exits 3D inside the frame despite the maintained keyboard contract. | Bundled control-Escape probe reports defaultPrevented=true and an exit message. | Leave Ctrl/Meta/Alt/Shift Escape untouched; keep unmodified canvas and popup Escape behavior. | Fixed in modified-Escape unit |
-| L12 | The full suite misclassifies the weather Cloudflare challenge fixture as an authenticated capture. | `test/project/fixtures-privacy.test.mjs` exempts only the older challenge fixture and requires synthetic climber 900001 in the newer identity-free weather challenge. | Explicitly review both exact fixture paths as identity-free; continue all PII/external-link scans and assert they contain no climber identity. | Open |
+| L12 | The full suite misclassifies the weather Cloudflare challenge fixture as an authenticated capture. | `test/project/fixtures-privacy.test.mjs` exempts only the older challenge fixture and requires synthetic climber 900001 in the newer identity-free weather challenge. | Explicitly review both exact fixture paths as identity-free; continue all PII/external-link scans and assert they contain no climber identity. | Fixed in fixture-classification unit |
 
 Menu/focus and visual findings will be added only after reproduction. Location
 state fixes form one commit; menu interaction and visual fixes form separate
@@ -58,6 +58,9 @@ coherent commits if needed.
 - L11: 30/30 terrain/documentation tests cover all four modifiers; hardware
   Chrome 3D tests verify Control+Escape stays in 3D at both widths. Unmodified
   canvas and nearer-popup Escape regressions remain green.
+- L12: 7/7 fixture privacy tests. Both exact challenge paths remain in all
+  banned-identifier and external-link scans; their identity-free exception now
+  rejects climber-ID query fields and the synthetic owner's ID.
 
 ### Intentionally not changed
 
