@@ -375,6 +375,12 @@ by file size.
 
 ### Fixed and verified
 
+- **F3:** theme reconciliation and both read-only map bridges discard reads
+  superseded by subscriptions, newer requests, or pagehide; BFCache restore
+  starts a fresh read. The stylesheet/mirror order and message allowlists remain
+  unchanged. Build, 129 theme/settings/map tests and affected ESLint passed;
+  the final real-manifest browser run remains an integration gate.
+
 - **F8:** the saved-GPX helper now checks the final response against the same
   exact download-path, origin, credentials, and ascent-ID rules as the request.
   Another ascent, duplicate IDs, credentials, and non-download paths fail closed;

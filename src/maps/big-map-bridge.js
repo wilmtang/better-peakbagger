@@ -22,11 +22,20 @@ const send = settings => window.postMessage({
     terrainCacheLimitMb: settings.terrainCacheLimitMb
 }, location.origin);
 
+let settingsGeneration = 0;
+const read = async () => {
+    const generation = ++settingsGeneration;
+    const settings = await S.get();
+    if (generation === settingsGeneration) send(settings);
+};
+
 window.addEventListener('message', async event => {
     if (event.source !== window || event.origin !== location.origin) return;
     const data = event.data;
     if (!data || data.__bpbBigMap !== true || data.dir !== 'toCS' || data.type !== 'get') return;
-    send(await S.get());
+    await read();
 });
 
-S.subscribe(send);
+S.subscribe(settings => { settingsGeneration++; send(settings); });
+window.addEventListener('pagehide', () => { settingsGeneration++; });
+window.addEventListener('pageshow', event => { if (event.persisted) void read(); });

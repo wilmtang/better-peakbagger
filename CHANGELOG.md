@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep live settings current.** Delayed reads no longer undo theme or 3D
+  changes on an open page; restored pages refresh their settings.
+
 - **Keep exported tracks tied to their ascent.** Map handoffs reject a GPX
   response redirected to another ascent or an unexpected download address.
 

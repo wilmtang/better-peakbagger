@@ -77,10 +77,17 @@ const apply = () => {
 // the OS preference for anything that isn't an explicit 'light'/'dark'.
 finishTheme(S.resolveTheme(pref));
 
-void S.requireCurrent()
-    .then(s => { pref = s.theme; apply(); })
-    .catch(error => { console.warn('Better Peakbagger: theme settings reconciliation failed', error); });
-S.subscribe(s => { pref = s.theme; apply(); });
+let settingsGeneration = 0;
+const reconcile = () => {
+    const generation = ++settingsGeneration;
+    void S.requireCurrent()
+        .then(s => { if (generation === settingsGeneration) { pref = s.theme; apply(); } })
+        .catch(error => { console.warn('Better Peakbagger: theme settings reconciliation failed', error); });
+};
+reconcile();
+S.subscribe(s => { settingsGeneration++; pref = s.theme; apply(); });
+window.addEventListener('pagehide', () => { settingsGeneration++; });
+window.addEventListener('pageshow', event => { if (event.persisted) reconcile(); });
 
 if (window.matchMedia) {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
