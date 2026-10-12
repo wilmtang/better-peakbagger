@@ -4,6 +4,8 @@
 
 - **Preserve report drafts across tabs.** Leaving an untouched editor keeps
   newer recovery text; conflicting edits offer a copy instead of overwriting it.
+- **Keep ignored reports concealed.** Climber hover actions no longer prevent
+  ignored-report controls from mounting, including in Firefox.
 
 ## 4.0.0 — 2026-10-11
 

@@ -382,6 +382,15 @@ by file size.
   153.0.8010.12 extension verification passed at 1000×760, including BFCache.
   The checked-in two-tab browser regression passed; the conflict surface was
   rendered at 1000×760 light and 375×760 dark.
+- **F2:** detail-report validation now accepts the extension's marked climber
+  actions while retaining native control, form, input, and map ambiguity gates.
+  Validation also recognizes the resizable report-column wrapper, a second
+  integration defect found during remediation. Combined hover/layout/report
+  bundles and both hover/report orders are covered; 118 related tests passed.
+  Hidden Chrome 153.0.8010.12 extension verification passed at 1000×760.
+  Firefox 157.0.1 passed the formerly failing detail reproduction on all three
+  navigations (actual page viewport 1000×675); broader Firefox rerun remains
+  part of final integration verification.
 
 ### Intentionally not changed
 

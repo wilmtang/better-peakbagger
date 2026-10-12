@@ -48,12 +48,11 @@ export const ascentReport = doc => {
     const cell = headings[0].closest('td');
     const row = cell?.parentElement;
     const table = cell?.closest('table.gray');
-    const surface = table?.parentElement.id === 'bpb-ascent-table-split'
-        ? table.parentElement.parentElement : table?.parentElement;
+    const surface = table?.closest('#bpb-ascent-table-split')?.parentElement ?? table?.parentElement;
     if (!cid || !table || row?.cells.length !== 1 || Number(cell.getAttribute('colspan')) !== 2
         || cell.firstElementChild !== headings[0]
         || !surface.contains(authors[0])
-        || cell.querySelector('iframe#Gmap,iframe#MasterMap,form,input,button')) return null;
+        || cell.querySelector('iframe#Gmap,iframe#MasterMap,form,input,button:not([data-bpb-climber-ui])')) return null;
     const content = text(cell).replace(/^Ascent Trip Report\s*/, '');
     if (!content && !cell.querySelector('img,video,audio,iframe')) return null;
     return { cid, cell, row, heading: headings[0] };

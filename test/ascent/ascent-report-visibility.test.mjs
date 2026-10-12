@@ -7,6 +7,28 @@ const list = { schemaVersion: 1, revision: 1, entries: [{ cid: 900002, name: 'Al
 const load = (options = {}) => loadPage('ascent-ignored-report.html', {
     url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', fixtures: PAGE_FIXTURES,
     bundles: ['content/ascent-report-visibility.js'], local: { bpbIgnoredClimbers: list }, ...options });
+test('hover-card decoration and ignored-report mounting coexist in either bundle order', async () => {
+    for (const bundles of [
+        ['content/climber-hover-card.js', 'content/ascent-report-visibility.js'],
+        ['content/ascent-report-visibility.js', 'content/climber-hover-card.js'],
+        ['content/ascent-layout.js', 'content/climber-hover-card.js', 'content/ascent-report-visibility.js'],
+    ]) {
+        const dom = await load({ bundles, prepare: page => {
+            page.window.HTMLElement.prototype.getClientRects = () => [{ left: 10, top: 10, width: 100, height: 20 }];
+        } });
+        try {
+            const doc = dom.window.document;
+            await waitFor(dom, () => doc.querySelector('#bpb-ascent-report-content')?.parentElement.style.display === 'none');
+            assert.ok(doc.querySelector('main > h2 .bpb-climber-actions-trigger'));
+            const cell = doc.querySelector('#bpb-ascent-report-content');
+            assert.equal(cell.querySelector('iframe').hasAttribute('srcdoc'), false);
+            doc.querySelector('#bpb-ascent-report-tools button').click();
+            assert.equal(cell.parentElement.style.display, '');
+            assert.ok(cell.querySelector('.bpb-climber-actions-trigger'));
+            assert.equal(cell.querySelector('iframe').getAttribute('srcdoc'), '<p>Synthetic player</p>');
+        } finally { dom.window.close(); }
+    }
+});
 test('the original heading and toggle stay together through reveal, hide, and unignore', async () => {
     let heading;
     const dom = await load({ prepare: page => {

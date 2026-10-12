@@ -35,3 +35,14 @@ test('legacy detail fixture without author evidence remains untouched', async ()
     assert.equal(ascentReport(dom.window.document), null);
     dom.window.close();
 });
+test('detail adapter permits its climber actions but rejects native interactive ambiguity', async () => {
+    for (const html of ['<button>Native</button>', '<form></form>', '<input>']) {
+        const dom = await fixture('ascent-ignored-report');
+        const cell = ascentReport(dom.window.document).cell;
+        cell.insertAdjacentHTML('beforeend', '<button data-bpb-climber-ui>Climber actions</button>');
+        assert.ok(ascentReport(dom.window.document));
+        cell.insertAdjacentHTML('beforeend', html);
+        assert.equal(ascentReport(dom.window.document), null);
+        dom.window.close();
+    }
+});
