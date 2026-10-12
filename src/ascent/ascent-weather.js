@@ -399,8 +399,8 @@ export function mountAscentWeather() {
             ? dayWindow.date === subject.date ? 'Conditions during the ascent day' : 'Conditions during this day'
             : 'Conditions in available hours';
         readings.temperature.value.replaceChildren(...(numeric(day.temperature.low) ? [
-            element('span', { class: 'bpb-weather-low', text: convert(day.temperature.low, 'temperature').toFixed(0).replaceAll('-', '−') }),
-            document.createTextNode('–'), element('span', { class: 'bpb-weather-high', text: `${convert(day.temperature.high, 'temperature').toFixed(0)}${unit('temperature')}`.replaceAll('-', '−') }),
+            element('span', { class: 'bpb-weather-low', text: `${convert(day.temperature.low, 'temperature').toFixed(0)}°`.replaceAll('-', '−') }),
+            element('span', { class: 'bpb-weather-temperature-divider', text: ' / ' }), element('span', { class: 'bpb-weather-high', text: `${convert(day.temperature.high, 'temperature').toFixed(0)}${unit('temperature')}`.replaceAll('-', '−') }),
         ] : [document.createTextNode('—')]));
         readings.precipitation.value.textContent = format(day.precipitation.total, 'precipitation');
         readings.wind.value.textContent = format(day.wind.high, 'wind'); readings.gust.value.textContent = format(day.gust.high, 'wind');

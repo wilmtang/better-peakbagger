@@ -51,6 +51,7 @@ try {
             body.hourly.wind_speed_10m[index] = 12 + day * 3;
             body.hourly.wind_gusts_10m[index] = 20 + day * 3;
         });
+        if (mode === 'cold-temperature') body.hourly.temperature_2m = body.hourly.temperature_2m.map((_, index) => index % 2 ? -29 : -35);
         if (mode === 'partial' && body.hourly.precipitation) {
             if (peakMode) body.hourly.precipitation.fill(null);
             else body.hourly.precipitation[40] = null;
@@ -501,6 +502,29 @@ try {
                     }
                 }
             }
+            mode = 'cold-temperature'; await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-map`);
+            await wait(() => document.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'), 'cold temperature fixture');
+            const coldRequests = evidence.length;
+            for (const theme of ['light', 'dark']) {
+                for (const [system, expected] of [['metric', '−35° / −29°C'], ['imperial', '−31° / −20°F']]) {
+                    await setSettings({ theme, units: system });
+                    await waitForCondition(async () => {
+                        const state = await evaluate(() => ({ theme: document.documentElement.dataset.bpbTheme,
+                            text: document.querySelector('[data-weather-value="temperature"]').textContent }));
+                        return state.theme === theme && state.text === expected;
+                    }, { description: 'cold temperature unit and theme update', timeoutMs: 20_000 });
+                    assert.equal(await evaluate(() => document.querySelector('[data-weather-value="temperature"]').textContent), expected);
+                    for (const width of [1440, 768, 375]) {
+                        await resize(width, 1100); assertPlacement(await evaluate(geometryForCard));
+                        assert.deepEqual(await evaluate(() => [...document.querySelectorAll('.bpb-weather-low, .bpb-weather-high')].map(node => {
+                            const bounds = node.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(node);
+                            return { wrapped: range.getClientRects().length > 1, contained: range.getBoundingClientRect().width <= bounds.width + 1 };
+                        })), [{ wrapped: false, contained: true }, { wrapped: false, contained: true }]);
+                        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-cold-temperature-${system}-${width}.png`));
+                    }
+                }
+            }
+            assert.equal(evidence.length, coldRequests, 'formatting and unit changes reuse the loaded cold weather');
             mode = 'loading'; await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-map`);
             await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
             await wait(() => document.querySelector('.bpb-weather-status').textContent.includes('Loading'), 'visible loading feedback');
@@ -582,7 +606,7 @@ try {
             await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
             await wait(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather after verification navigation');
             assert.deepEqual(networkErrors, []);
-            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
+            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['negative-temperature', 'archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
         }
     }
 } catch (error) { primaryError = error; }

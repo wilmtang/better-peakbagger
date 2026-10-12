@@ -68,6 +68,8 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-weather .bpb-weather-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 0; padding: 0 0 24px; }
 #bpb-ascent-weather dt { color: var(--bpb-weather-sub); font-size: 12px; margin: 0 0 4px; }
 #bpb-ascent-weather dd { margin: 0 0 2px; font-size: 21px; font-weight: 500; font-variant-numeric: tabular-nums; }
+#bpb-ascent-weather :is(.bpb-weather-low, .bpb-weather-high) { white-space: nowrap; }
+#bpb-ascent-weather .bpb-weather-temperature-divider { color: var(--bpb-weather-sub); font-weight: 400; }
 #bpb-ascent-weather .bpb-weather-metrics .bpb-weather-sub { font-size: 11px; }
 #bpb-ascent-weather .bpb-weather-model { border-top: 1px solid var(--bpb-weather-border); padding: 18px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 14px 24px; }
 #bpb-ascent-weather .bpb-weather-model > div:first-child { flex: 1 1 240px; max-width: 360px; min-width: 0; }

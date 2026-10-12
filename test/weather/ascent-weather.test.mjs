@@ -71,6 +71,25 @@ test('verification prose in a real ascent report does not suppress weather', asy
     finally { report.close(); }
 });
 
+test('negative daily temperatures stay distinct across zero and unit changes without refetching', async () => {
+    for (const [low, high, fahrenheit] of [[-35, -29, '−31° / −20°F'], [-2, 3, '28° / 37°F']]) {
+        const env = setup({ storedSettings: { units: 'metric' }, fetchWeather: async url => {
+            const body = await archiveResponse(url).json();
+            body.hourly.temperature_2m = body.hourly.temperature_2m.map((_, index) => index % 2 ? high : low);
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+        try {
+            await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using Best Match'));
+            const value = env.doc.querySelector('[data-weather-value="temperature"]');
+            assert.equal(value.textContent, `${low}° / ${high}°C`.replaceAll('-', '−'));
+            const requests = env.requests.length;
+            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial' } } }, 'sync'));
+            assert.equal(value.textContent, fahrenheit);
+            assert.equal(env.requests.length, requests);
+        } finally { env.close(); }
+    }
+});
+
 test('archive cards, hourly tables and axes use independent measurement units without refetching', async () => {
     const storedSettings = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', windUnits: 'imperial', elevationUnits: 'metric' };
     const env = setup({ storedSettings });
