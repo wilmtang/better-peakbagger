@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 
 import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.js';
 import { walkFiles } from '../helpers/walk-files.mjs';
@@ -34,6 +35,22 @@ test('human-check copy and recovery action have one owner', () => {
         label: 'Complete check on Peakbagger',
         href: 'https://www.peakbagger.com/peak.aspx?pid=1',
     });
+});
+
+test('document challenge detection uses page evidence, not report prose or background Cloudflare scripts', () => {
+    for (const [html, expected] of [
+        ['<title>Just a moment...</title>', true],
+        ['<title>  just a moment…  </title>', true],
+        ['<title>Peakbagger</title><form id="challenge-form"></form>', true],
+        ['<title>Peakbagger</title><div id="cf-challenge-running"></div>', true],
+        ['<title>Ascent of Mount Rainier</title><p>Just a moment... Cloudflare verified the browser.</p>', false],
+        ['<title>Ascent of Mount Rainier</title><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>', false],
+        ['<title>Just a moment on the summit</title>', false],
+    ]) {
+        const env = new JSDOM(html);
+        try { assert.equal(Cloudflare.isChallengeDocument(env.window.document), expected, html); }
+        finally { env.window.close(); }
+    }
 });
 
 test('runtime Cloudflare signatures and Peakbagger human-check copy remain centralized', async () => {

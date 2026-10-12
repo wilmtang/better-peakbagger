@@ -9,6 +9,7 @@ import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { peakbaggerCloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
 import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
@@ -25,7 +26,7 @@ const clean = text => (text || '').replace(/\s+/g, ' ').trim();
 const displayDate = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 
 export function mountAscentWeather() {
-    if (document.getElementById(ID)) return;
+    if (document.getElementById(ID) || peakbaggerCloudflare.isChallengeDocument(document)) return;
     const subject = readWeatherSubject(document, location.href);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const heading = element('h2', { id: `${ID}-heading`, text: 'Weather archive' });

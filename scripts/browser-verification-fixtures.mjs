@@ -597,6 +597,7 @@ export async function createBrowserFixtureServer({
         path.join(projectRoot, 'test', 'fixtures', 'pages', 'peak-rainier.html'), 'utf8'));
     const ignoredDetailHtml = await resources.guard(readFile(path.join(projectRoot, 'test', 'fixtures', 'pages', 'ascent-ignored-report.html'), 'utf8'));
     const weatherAscentHtml = await resources.guard(readFile(path.join(projectRoot, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8'));
+    const cloudflareChallengeHtml = await resources.guard(readFile(path.join(projectRoot, 'test', 'fixtures', 'pages', 'cloudflare-challenge.html'), 'utf8'));
     const compactIgnoredHtml = await resources.guard(readFile(path.join(projectRoot, 'test', 'fixtures', 'pages', 'ascent-ignored-compact.html'), 'utf8'));
     await resources.guard(writeFile(gpxPath, gpx, 'utf8'));
     const requests = {
@@ -700,6 +701,9 @@ export async function createBrowserFixtureServer({
             return send('text/html; charset=utf-8', relativeAscentEditHtml);
         }
         if (/ascent\.aspx/i.test(url.pathname)) {
+            if (url.searchParams.get('weather') === 'challenge') {
+                return send('text/html; charset=utf-8', cloudflareChallengeHtml, { status: 403, headers: { 'cf-mitigated': 'challenge' } });
+            }
             if (url.searchParams.has('weather')) {
                 let weatherHtml = weatherAscentHtml.replace('Sunday, July 12, 2026', url.searchParams.get('weather') === 'invalid' ? '2024' : 'Friday, July 12, 2024')
                     .replace('</head>', '<style>body{margin:18px;font:13px/1.4 Verdana,Arial,sans-serif}#page{max-width:1120px;margin:auto}table.gray{background:#e6e6e3;border-collapse:collapse}td,th{padding:6px 8px;text-align:left}</style></head>');

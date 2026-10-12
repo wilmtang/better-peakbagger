@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Peakbagger-specific Cloudflare managed-challenge detection and recovery copy.
-// Detection mirrors peakbagger-cli: a response must be HTTP 403 and then carry
-// either Cloudflare's mitigation header or the managed-challenge page title.
+// Response detection mirrors peakbagger-cli: HTTP 403 plus Cloudflare's
+// mitigation header or managed-challenge page title. Content scripts have no
+// navigation status, so document detection uses the title or challenge markup.
 
 const BODY_PROBE_LENGTH = 2000;
 
@@ -23,6 +24,9 @@ const isManagedChallenge = (status, headers, bodyText) => {
     return body.slice(0, BODY_PROBE_LENGTH).includes('Just a moment');
 };
 
+const isChallengeDocument = doc => /^Just a moment(?:\.{3}|…)?$/i.test(trim(doc.title))
+    || Boolean(doc.querySelector('#challenge-form, #cf-challenge-running'));
+
 const copy = Object.freeze({
     title: 'Peakbagger is asking for a human check',
     message: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.',
@@ -38,5 +42,6 @@ export const peakbaggerCloudflare = {
     BODY_PROBE_LENGTH,
     copy,
     isManagedChallenge,
+    isChallengeDocument,
     recovery,
 };

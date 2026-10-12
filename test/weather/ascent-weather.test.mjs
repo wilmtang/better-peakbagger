@@ -5,11 +5,12 @@ import { JSDOM } from 'jsdom';
 import { weatherFixture } from '../helpers/weather-fixture.mjs';
 import { GPX_TIME_CURSOR } from '../../src/gpx/gpx-time-cursor.js';
 
-const [ascent, peak, bundle, layoutBundle] = await Promise.all([
+const [ascent, peak, bundle, layoutBundle, challenge] = await Promise.all([
     readFile(new URL('../fixtures/pages/climber-ascent.html', import.meta.url), 'utf8'),
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
     readFile(new URL('../../dist/content/ascent-weather.js', import.meta.url), 'utf8'),
     readFile(new URL('../../dist/content/ascent-layout.js', import.meta.url), 'utf8'),
+    readFile(new URL('../fixtures/pages/cloudflare-challenge.html', import.meta.url), 'utf8'),
 ]);
 const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 async function waitFor(predicate) {
@@ -50,6 +51,25 @@ const archiveResponse = url => new Response(JSON.stringify(weatherFixture({
     hours: (Date.parse(new URL(url).searchParams.get('end_date')) - Date.parse(new URL(url).searchParams.get('start_date'))) / 3600_000 + 24,
     fields: new URL(url).searchParams.get('hourly').split(','),
 })), { headers: { 'content-type': 'application/json' } });
+
+test('Cloudflare verification documents never mount an archive card or make requests', async () => {
+    for (const html of [challenge, challenge.replace('<title>Just a moment...</title>', '<title>Verify your browser</title>')]) {
+        const env = setup({ html });
+        try {
+            await pause();
+            assert.equal(env.doc.getElementById('bpb-ascent-weather'), null);
+            assert.equal(env.doc.getElementById('bpb-ascent-gpx-details'), null);
+            assert.equal(env.requests.length, 0);
+        } finally { env.close(); }
+    }
+});
+
+test('verification prose in a real ascent report does not suppress weather', async () => {
+    const report = setup({ html: ascent.replace('Sunday, July 12, 2026', 'Friday, July 12, 2024')
+        .replace('<b>Great climb</b>', '<b>Great climb</b><p>Just a moment... Cloudflare verified the browser.</p>') });
+    try { await openChart(report); assert.equal(report.doc.getElementById('bpb-ascent-weather').hidden, false); }
+    finally { report.close(); }
+});
 
 test('archive cards, hourly tables and axes use independent measurement units without refetching', async () => {
     const storedSettings = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', windUnits: 'imperial', elevationUnits: 'metric' };

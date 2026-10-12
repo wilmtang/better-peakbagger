@@ -564,8 +564,20 @@ try {
             await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=invalid`);
             await wait(() => document.querySelector('.bpb-weather-status')?.textContent.includes('valid ascent date'), 'invalid date explanation');
             assert.equal(evidence.length, before);
+            await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=challenge`);
+            await wait(() => document.readyState === 'complete' && document.querySelector('#challenge-form'), 'loaded verification document');
+            assert.equal(await evaluate(() => !!document.getElementById('bpb-ascent-weather')), false, 'verification must not mount weather');
+            assert.equal(evidence.length, before, 'verification must not request weather');
+            for (const width of [1440, 375]) {
+                await resize(width, 1100);
+                if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-challenge-${width}.png`));
+            }
+            mode = 'complete';
+            await navigate(`${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`);
+            await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
+            await wait(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather after verification navigation');
             assert.deepEqual(networkErrors, []);
-            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid'], requests: evidence, profile: temporaryRoot };
+            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
         }
     }
 } catch (error) { primaryError = error; }
