@@ -52,6 +52,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     let controller = null;
     let timer = null;
     let captures = [];
+    let renderedScenes = null;
     let captureZone = null;
     let target = null;
     let limit = null;
@@ -72,15 +73,27 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         if (timer !== null) clearTimeout(timer);
         timer = null;
     };
+    const clearRenderedScenes = () => {
+        renderedScenes = null;
+        clearScenes();
+    };
     const renderCapture = capture => {
         if (!capture) {
-            clearScenes();
+            clearRenderedScenes();
             summary.hidden = false;
             summary.textContent = target ? 'This capture does not cover the current view.' : 'No captures found in the last 30 days.';
             stats.textContent = '';
             return;
         }
-        replaceScenes(capture.scenes);
+        // Camera movement changes coverage and can reorder the same pass's
+        // scenes. Keep its sources and decoded tiles instead of exposing the
+        // underlying map while identical imagery is requested again.
+        const scenes = JSON.stringify(capture.scenes.map(scene => [scene.id, scene.bounds])
+            .sort(([left], [right]) => left.localeCompare(right)));
+        if (scenes !== renderedScenes) {
+            replaceScenes(capture.scenes);
+            renderedScenes = scenes;
+        }
         summary.hidden = true;
         summary.textContent = captureDate(capture.time, captureZone);
         stats.textContent = `Coverage ${Math.round(capture.coverage * 100)}% · Clouds ${cloudCover(capture.cloud)}`;
@@ -129,9 +142,11 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         stats.textContent = '';
         retry.hidden = true;
         select.disabled = true;
+        let validView = false;
         try {
             const view = readView();
             const bounds = sentinelView(view.bounds, view.zoom);
+            validView = true;
             // Use the displayed mountain area, including wrapped map copies;
             // commit its zone with the catalog so stale searches cannot relabel it.
             const longitude = ((bounds.west + bounds.east) / 2 + 180) % 360 - 180;
@@ -143,12 +158,17 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             choose();
         } catch (error) {
             if (!active || revision !== current || error?.name === 'AbortError') return;
-            clearScenes();
+            // A catalog error says nothing about already loaded imagery. Clear
+            // it only when the view itself is unsupported; old coverage remains
+            // unknown until a successful catalog refresh, so stats stay empty.
+            const retained = validView && renderedScenes !== null && renderedScenes !== '[]';
+            if (!retained) clearRenderedScenes();
             captures = [];
             summary.hidden = false;
             summary.textContent = error?.name === 'TimeoutError' ? 'Satellite service took too long. Try again.'
                 : error instanceof SyntaxError ? 'Satellite service returned an invalid catalog.'
                     : error?.message || 'Satellite imagery is unavailable. Try again.';
+            if (retained) summary.textContent += ' Showing previous imagery.';
             stats.textContent = '';
             retry.hidden = false;
             if (error?.code === 'rate-limit') showLimit(error);
@@ -181,7 +201,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             select.disabled = true;
             timer = setTimeout(() => { void load(); }, debounceMs);
         },
-        deactivate() { active = false; clearRequest(); cooldown.suspend(); element.hidden = true; clearScenes(); },
+        deactivate() { active = false; clearRequest(); cooldown.suspend(); element.hidden = true; clearRenderedScenes(); },
         tileError(error) {
             if (!active) return;
             if (error?.status === 429) { showLimit(error); return; }
@@ -190,6 +210,6 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             summary.textContent = 'Some imagery tiles are unavailable. Choose another capture or try again.';
             retry.hidden = false;
         },
-        dispose() { active = false; clearRequest(); cooldown.dispose(); clearScenes(); element.remove(); }
+        dispose() { active = false; clearRequest(); cooldown.dispose(); clearRenderedScenes(); element.remove(); }
     };
 };

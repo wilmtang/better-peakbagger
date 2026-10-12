@@ -2197,7 +2197,8 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     dom.window.close();
 });
 
-test('3D Sentinel renders dated scenes below routes, aborts on swap, and cleans up on suspend', async () => {
+test('3D Sentinel retains unchanged scenes on camera refresh, aborts on swap, and cleans up on suspend', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only', pretendToBeVisual: true });
     const { window } = dom;
@@ -2241,18 +2242,29 @@ test('3D Sentinel renders dated scenes below routes, aborts on swap, and cleans 
     assert.equal(window.document.querySelector('.bpb-terrain-picker').value, 'sentinel');
     assert.match(window.document.querySelector('.bpb-sentinel').textContent, /Coverage 100% · Clouds 41%/);
     assert.ok(map.layers.findIndex(layer => layer.id === sceneId) < map.layers.findIndex(layer => layer.id === 'bpb-route'));
+    const sceneSource = map.getSource(sceneId);
+    map.handlers.get('moveend')(); t.mock.timers.tick(300);
+    assert.equal(pending.length, 2);
+    pending[1].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: [{
+        id: 'scene_1', collection: 'sentinel-2-l2a',
+        properties: { datetime: new Date(Date.now() - 2 * 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 41 },
+        geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 47], [-122, 47], [-122, 46]]] }
+    }] }) });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(map.getSource(sceneId), sceneSource, 'camera refresh preserves the MapLibre raster source and tile cache');
+    assert.equal([...map.sources.keys()].filter(id => id.startsWith('bpb-sentinel-')).length, 1);
     dispatch({ type: 'suspend' });
     assert.equal(map.getSource(sceneId), undefined);
     dispatch({ type: 'resume', routeSegments: [[[46.5, -121.5], [46.51, -121.51]]], basemap: { kind: 'sentinel' } });
-    assert.equal(pending.length, 2);
+    assert.equal(pending.length, 3);
     map.handlers.get('error')({ sourceId: sceneId });
     assert.equal(window.document.querySelector('.bpb-sentinel-summary').textContent, 'Finding captures…',
         'an old capture tile error cannot overwrite the current capture status');
     const picker = window.document.querySelector('.bpb-terrain-picker');
     picker.value = 'terrain';
     picker.dispatchEvent(new window.Event('change'));
-    assert.equal(pending[1].options.signal.aborted, true);
-    pending[1].resolve({ ok: true, headers: { get: () => null }, text: async () => '{"features":[]}' });
+    assert.equal(pending[2].options.signal.aborted, true);
+    pending[2].resolve({ ok: true, headers: { get: () => null }, text: async () => '{"features":[]}' });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(picker.value, 'terrain');
     assert.equal(map.getSource(sceneId), undefined);

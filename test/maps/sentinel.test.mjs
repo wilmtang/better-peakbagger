@@ -146,6 +146,80 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
     } finally { layer.dispose(); dom.window.close(); }
 });
 
+test('camera refresh updates coverage without rebuilding the same scenes or their reordered tile cache', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dom = new JSDOM('<!doctype html><body></body>'), applied = [];
+    let cleared = 0, searches = 0;
+    const original = sentinelCaptures([feature()], view)[0];
+    let capture = { ...original, scenes: [original.scenes[0], { ...original.scenes[0], id: 'scene_2' }] };
+    const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom: 13 }),
+        replaceScenes: scenes => applied.push(scenes), clearScenes: () => cleared++, search: async () => { searches++; return [capture]; } });
+    try {
+        layer.activate(); await tick();
+        capture = { ...capture, coverage: .25, scenes: [...capture.scenes].reverse().map(scene => ({ ...scene, bounds: [...scene.bounds] })) };
+        layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(searches, 2, 'a changed view still searches for current coverage');
+        assert.equal(applied.length, 1, 'the same image IDs and bounds retain their existing sources');
+        assert.equal(cleared, 0);
+        assert.match(layer.element.textContent, /Coverage 25%/);
+        const select = layer.element.querySelector('select');
+        select.value = select.options[1].value; select.dispatchEvent(new dom.window.Event('change'));
+        assert.equal(applied.length, 1, 'choosing the already displayed capture also preserves tiles');
+        capture = { ...capture, scenes: capture.scenes.map(scene => ({ ...scene, bounds: [179, 46, 181, 47] })) };
+        layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(applied.length, 2, 'changed wrapped source bounds are applied');
+        layer.deactivate(); layer.activate(); await tick();
+        assert.equal(applied.length, 3, 'reactivation rebuilds imagery cleared by suspension');
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
+test('temporary catalog failures retain loaded imagery with unknown coverage, but unsupported views clear it', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dom = new JSDOM('<!doctype html><body></body>');
+    let failure = false, zoom = 13, applied = 0, cleared = 0;
+    const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom }),
+        replaceScenes: () => applied++, clearScenes: () => cleared++, search: async () => {
+            if (failure) throw new Error('Satellite service is unavailable. Try again.');
+            return sentinelCaptures([feature()], view);
+        } });
+    try {
+        layer.activate(); await tick();
+        failure = true; layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(cleared, 0, 'service failure does not erase valid decoded imagery');
+        assert.match(layer.element.querySelector('.bpb-sentinel-summary').textContent, /Showing previous imagery/);
+        assert.equal(layer.element.querySelector('.bpb-sentinel-stats').textContent, '', 'old coverage is not presented as current');
+        assert.equal(layer.element.querySelector('select').disabled, true, 'stale catalog choices stay unavailable');
+        failure = false; layer.element.querySelector('button').click(); await tick();
+        assert.equal(applied, 1, 'retrying an unchanged capture keeps the imagery');
+        assert.equal(layer.element.querySelector('.bpb-sentinel-summary').hidden, true);
+        zoom = 8; layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(cleared, 1);
+        assert.match(layer.element.textContent, /Zoom in/);
+        assert.doesNotMatch(layer.element.textContent, /Showing previous imagery/);
+        zoom = 13; layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(applied, 2, 'returning to a supported view remounts the cleared sources');
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
+test('confirmed missing captures clear old imagery instead of retaining a different date', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dom = new JSDOM('<!doctype html><body></body>');
+    let captures = sentinelCaptures([feature()], view), cleared = 0, applied = 0;
+    const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom: 13 }),
+        replaceScenes: () => applied++, clearScenes: () => cleared++, search: async () => captures });
+    try {
+        layer.activate(); await tick();
+        const select = layer.element.querySelector('select');
+        select.value = select.options[1].value; select.dispatchEvent(new dom.window.Event('change'));
+        captures = []; layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(cleared, 1);
+        assert.equal(select.value, 'missing');
+        assert.match(layer.element.textContent, /does not cover/);
+        captures = sentinelCaptures([feature()], view); layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(applied, 2);
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
 test('Sentinel options include rounded cloud percentages and honest unknowns without changing capture identity', async () => {
     const dom = new JSDOM('<!doctype html><body></body>');
     const changes = [];
@@ -265,7 +339,7 @@ test('Leaflet Sentinel intercepts only its own option, preserves native layers, 
     select.addEventListener('change', () => nativeChanges++);
     const native = { native: true };
     let currentBounds = bounds;
-    let catalog = [feature()];
+    let catalog = [feature(), feature('older', { date: '2026-10-03T19:02:59Z' })];
     const layers = new Set([native]);
     const handlers = new Map();
     win.mapsPlaceholder = { getBounds: () => currentBounds, getZoom: () => 13,
@@ -288,17 +362,20 @@ test('Leaflet Sentinel intercepts only its own option, preserves native layers, 
     const captureSelect = win.document.querySelector('.bpb-sentinel select');
     captureSelect.value = captureSelect.options[1].value;
     captureSelect.dispatchEvent(new win.Event('change'));
+    assert.ok(layers.has(oldTile), 'selecting the displayed capture keeps its loaded tiles');
+    captureSelect.value = captureSelect.options[2].value;
+    captureSelect.dispatchEvent(new win.Event('change'));
     oldTile.tileError();
     assert.doesNotMatch(win.document.body.textContent, /tiles are unavailable/, 'a removed capture cannot report a tile failure on its replacement');
     const capture = JSON.parse(select.selectedOptions[0].dataset.bpbSentinelCapture);
-    assert.equal(capture.time, captureTime);
+    assert.equal(capture.time, Date.parse('2026-10-03T19:02:59Z'));
     assert.deepEqual(Object.keys(capture).sort(), ['orbit', 'platform', 'time']);
     select.value = 'L_OS';
     select.dispatchEvent(new win.Event('change', { bubbles: true }));
     assert.equal(nativeChanges, 1);
     assert.deepEqual([...layers], [native]);
     currentBounds = { ...bounds, getWest: () => 179, getEast: () => 181 };
-    catalog = [{ ...feature(), geometry: { type: 'Polygon', coordinates: [ring(179, -179)] } }];
+    catalog = [{ ...feature('older', { date: '2026-10-03T19:02:59Z' }), geometry: { type: 'Polygon', coordinates: [ring(179, -179)] } }];
     select.value = 'BPB_SENTINEL';
     select.dispatchEvent(new win.Event('change', { bubbles: true }));
     await tick();
