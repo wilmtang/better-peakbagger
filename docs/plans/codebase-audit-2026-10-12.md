@@ -20,6 +20,7 @@ improvement without demonstrated immediate data loss or quota exhaustion.
 | F5 | P2 | Sentinel tile warnings overlap the coverage text. | Real rendered Chrome screenshot and the shared metadata CSS/state transition. |
 | F6 | P2 | Photos uploaded during report Save never acquire library report references. | Production photo service with IndexedDB fixture; inspection of report replacement and library status paths. |
 | F7 | P3 | Report-draft deletion markers have no retention bound. | Production route probe retained 100 markers after 30 days and pruning. |
+| F8 | P2 | A same-origin GPX redirect to another ascent is accepted and relabelled as the requested ascent. | Production request/source helpers and the Gaia worker route, with a controlled changed-identity response. |
 
 ### F1 — An old editor can replace or delete another editor's newer recovery copy
 
@@ -224,6 +225,61 @@ unrelated extension storage. Add expiry/count and worker-restart cases in
 `test/background/report-draft-routes.test.mjs`. Do not simply delete all
 markers and reopen stale-write resurrection. Commit independently after F1.
 
+### F8 — Final GPX response identity is weaker than requested-link identity
+
+**Trigger and evidence.** Request the saved download for ascent 42 and return
+a successful same-origin response whose final URL is
+`GPXFile.aspx?aid=43&sep=1`, containing a valid different track. A probe using
+the production Peakbagger request helper and `readSourceGpx` accepted that
+response, labelled it `peakbagger-42.gpx`, and passed the different bytes to
+the production Gaia route's script-injection boundary. Provider injection was
+stubbed; no actual Gaia import or live redirect was induced.
+
+**Root cause.** `src/gpx/saved-gpx-source.js` (lines 54–60) verifies the
+requested link's exact ascent identity but checks only the response origin.
+It then replaces the transport identity with the original page identity and
+filename (lines 70–74). The shared worker handoff guard only sees those
+regenerated fields, so it cannot recover the mismatch:
+`src/background/gpx-handoff-routes.js` (lines 16–22). The shared source feeds
+Gaia, onX, AllTrails, and CalTopo. Existing redirect tests reject a foreign
+origin, but do not exercise a changed ascent on the same origin.
+
+**Impact and limit.** If Peakbagger unexpectedly redirects a valid request
+to another ascent's GPX endpoint, the wrong route can be prepared under the
+requested ascent's filename. This violates the exact-saved-export contract;
+the controlled probe does not establish that the live service currently emits
+such redirects. No GPX persistence or automatic destination Save is involved.
+
+**Smallest safe direction and acceptance.** Reuse the existing strict
+`storedTrackLink` validation for the final response URL and expected ascent,
+before accepting or returning any GPX bytes. Keep harmless case/query
+normalization for the same endpoint/ascent, and retain actionable login/error
+classification instead of indiscriminately disabling redirects. Extend
+`test/gpx/saved-gpx-source.test.mjs` with another ascent, duplicate `aid`,
+non-download path, URL credentials, foreign origin, and a benign same-ascent
+redirect. Exercise the real request helper as well as a direct source stub,
+and assert that rejected responses never reach any provider route. Commit this
+identity fix independently, with ordinary exact-byte handoff coverage retained.
+
+### O1 — Optional P3: make profile-backup preparation cancelable
+
+The shipped preparation panel contains only “Preparing backup…” and a sentence
+about reading the complete ascent list/repository:
+`src/profile/profile-backup.js` (lines 114–119). A held-list-response bundle
+probe found zero action buttons during this phase, then completed normally
+after the response was released. The running producer/consumer already has
+Pause/Cancel behavior; the preparation phase precedes those controls.
+
+Consider exposing Cancel while the full-list and repository preflight are
+pending. This is a product/UX opportunity, not a claim that an existing Cancel
+button fails or that preparation waits indefinitely. If implemented, cancel
+must invalidate the preparation's generation, abort retractable reads, and
+prevent its late reply from starting a runner or borrowing a newer workflow.
+Add pending-list and pending-repository tests beside
+`test/profile/profile-backup.test.mjs` and inspect the resulting control/focus
+states in Chrome/Firefox. Keep a GitHub batch that already crossed its write
+boundary subject to the existing “stop after this batch” rule.
+
 ## Existing open work, kept separate
 
 The [October 10 UI audit](new-features-ui-audit-2026-10-10.md) already owns two
@@ -237,7 +293,7 @@ P2 findings. Their problematic current source remains present:
   `src/favorites/climber-hover-card.js` (lines 123–132 and 185–194).
   The earlier audit owns the consecutive-hidden-row and replacement evidence.
 
-These are carried findings, not seven additional new defects or fresh full
+These are carried findings, not eight additional new defects or fresh full
 reproductions. Keep their acceptance criteria and independent commits in the
 existing plan rather than duplicating the execution ledger.
 
@@ -280,6 +336,8 @@ manually proved every branch in every file.
 | Focused Firefox detail probe | Three navigations, one concealed and two incorrectly visible; real derived manifest, requested outer size 1000 × 760, measured content viewport 1000 × 675; teardown passed. |
 | Focused Sentinel browser probe | Chrome 153.0.8010.12, actual Leaflet 1.9.4, hidden HTTPS fixture at 1000 × 700; F4/F5 reproduced and screenshots inspected; teardown passed. |
 | Temporary bundle/pure/IndexedDB probes | F1/F3/F6/F7 and the F2 adapter/F4 scene-reuse paths reproduced; these are audit probes, not checked-in regression tests. |
+| Continuation: profile, saved-GPX source, four provider routes, GitHub auth/write queue | **99 passed, zero failed**, using the existing fresh bundles. No runtime change required a rebuild. |
+| Continuation: changed-identity redirect and preparation probes | F8 reached the worker injection boundary with the wrong GPX; O1's preparation had no action controls. All data and replies were synthetic. |
 
 Browser pages used synthetic HTTPS fixtures on a real Peakbagger hostname and
 disposable profiles. Sentinel responses were intercepted; only pinned Leaflet
@@ -295,9 +353,19 @@ exact extension, Firefox, and Sentinel disposable profile prefixes were absent
 from the temporary directory. Compact diagnostics and the two Sentinel
 screenshots are retained with this chat's managed audit artifacts.
 
+The continuation followed the initial audit-record commit `27c70232` and
+reviewed capture draft opening/order, GitHub authorization claims and queued
+access, profile producer/consumer cancellation, photo upload recovery, and all
+four destination adapters. It added F8 and O1, without promoting unproven
+browser-API stalls or already-covered active-runner cancellation to defects.
+The initial preparation probe assumed a Cancel button existed; source and the
+corrected probe showed that it does not, so the issue is recorded as an optional
+control rather than a broken cancellation implementation. No new browser was
+launched for the continuation.
+
 ## Execution order and closure ledger
 
-Implement F1 first, then F2, F3, F4, F5, F6, and F7. Each independent completed
+Implement F1 first, then F2, F8, F3, F4, F5, F6, and F7. Each independent completed
 unit needs its own focused commit after appropriate checks. The two carried
 UI findings retain their existing independent acceptance checks. Extend tests
 to exercise the failing boundary rather than merely checking internal state:
@@ -307,7 +375,7 @@ by file size.
 
 ### Fixed and verified
 
-None. The seven new runtime findings remain open. Green baseline checks do not
+None. The eight new runtime findings remain open. Green baseline checks do not
 close the targeted defects or the failed Firefox integration check.
 
 ### Intentionally not changed
@@ -316,6 +384,7 @@ close the targeted defects or the failed Firefox integration check.
   raw-provider GPX containment, optional host permissions, and manual final Save.
 - Previous accepted design decisions, exact advisory scope/expiry, historical
   recovery constraints, and separate active plan ledgers.
+- O1's optional preparation-control choice remains unimplemented.
 - No live Buddy mutation, upload, GitHub write, push, tag, release, store
   submission, or merge was performed.
 
@@ -329,3 +398,5 @@ does not cancel the Firefox failure. F3's latency was controlled; F6's exact
 library badge still needs rendered end-to-end proof. Minimum supported browsers,
 Firefox Android, packaged production artifacts, and hardware 3D rendering were
 not reverified here.
+F8's changed-identity transport was controlled; live redirect behavior and the
+destination providers were not exercised by that probe.
