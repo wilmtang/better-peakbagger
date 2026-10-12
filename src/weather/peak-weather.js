@@ -38,18 +38,17 @@ export function mountPeakWeather() {
     const status = element('p', { class: 'bpb-week-status', role: 'status', 'aria-live': 'polite' });
     const days = element('div', { class: 'bpb-week-days' });
     const help = element('p', { class: 'bpb-week-help', hidden: '', text: 'Select a day for hourly weather. Rain/snow is water equivalent; wind is the daily maximum.' });
-    const sourceText = element('p');
+    const sourceText = element('p', { class: 'bpb-week-models' });
     const select = element('select', { id: `${ID}-model`, 'aria-describedby': `${ID}-model-description` });
     const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description', hidden: '' });
     const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select, modelDescription]);
-    const modelText = element('p', { class: 'bpb-week-models' });
     const updatesBody = element('tbody');
     const updates = element('div', { class: 'bpb-week-updates', tabindex: '0', role: 'region', 'aria-label': 'Model update times' }, [
         element('table', { class: 'bpb-week-updates-table' }, [element('caption', { text: 'Model updates' }),
             element('thead', {}, [element('tr', {}, ['Model', 'Last update', 'Next expected'].map(text => element('th', { scope: 'col', text })))]), updatesBody]),
     ]);
-    const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Next updates are estimated from the usual cadence and may be delayed. These are provider-wide updates, not the runs behind individual historical hours; servers may take 10 minutes to agree.' });
-    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Models & source details' }), modelText, sourceText, updates, updatesNote]);
+    const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Next updates are estimates. Provider-wide availability may vary between servers.' });
+    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Source details' }), sourceText, updates, updatesNote]);
     const overview = element('div', { class: 'bpb-week-overview' }, [element('div', {}, [range, locationLabel]), modelControl]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
     card.append(element('header', {}, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('partly'), document.createTextNode('Summit weather')]), refresh]), periodTabs, periodPanel,
@@ -176,11 +175,8 @@ export function mountPeakWeather() {
         periodButtons[0].setAttribute('aria-label', forecastLabel); periodButtons[0].dataset.label = forecastLabel;
         modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}` : ''}`;
         const modelDetails = model === PEAK_BEST_MATCH
-            ? 'Open-Meteo automatically combines suitable forecast models for this location. Resolution and update times vary; the response does not identify the source model of each value.'
-            : 'No other model fills missing values.';
-        const horizonDetails = model === PEAK_BEST_MATCH ? 'Forecast availability varies across the combined models, so the last displayed day may be incomplete.'
-            : 'Forecast length is measured from the model run, so the last displayed day may be incomplete.';
-        modelText.textContent = `${model.label} (${model.id}), ${model.resolution}. GFS is the initial default for its 16-day forecast; each period remembers your last model on this device. ${horizonDetails} Open-Meteo interpolates model output to hourly values; native spacing may change farther ahead. ${modelDetails}`;
+            ? 'Best Match. Open-Meteo automatic blend; source models vary.'
+            : `${model.label}, ${model.resolution}.`;
         help.hidden = !summaries.some(day => day.useful); source.hidden = false;
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
         renderLabels(current.window[period]);
@@ -239,7 +235,7 @@ export function mountPeakWeather() {
             (target || periodButtons.find(button => button.dataset.period === period)).focus({ preventScroll: true });
         }
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
-        sourceText.textContent = `${forecast ? `Up to ${model.forecastDays} days of forecast model estimates; today includes the whole local day. The final day may have incomplete hours where the forecast ends.` : 'Recent model estimates, not weather-station observations.'} Loaded ${loaded}. Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Daily conditions highlight the most severe condition in available hours. Rain/snow totals include rain, showers and snow water equivalent${summaries.some(day => day.precipitation.allocationEstimated) ? '; fractional-hour day boundaries are proportionally allocated' : ''}. ${subject.elevation === null ? 'Provider terrain elevation' : 'Temperature adjusted for summit elevation'}: ${data.grid.elevation.toFixed(0)} m. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' The combined response reports one grid coordinate; individual model grids may differ.' : ''}`;
+        sourceText.textContent = `${modelDetails} ${forecast ? 'Hourly forecast estimates.' : 'Model estimates, not station observations.'} Summit timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' Model grids may differ.' : ''} ${subject.elevation === null ? 'Terrain elevation' : 'Temperature adjusted to'} ${data.grid.elevation.toFixed(0)} m. Loaded ${loaded}.${summaries.some(day => day.precipitation.allocationEstimated) ? ' Partial-hour rain/snow totals are estimated.' : ''}`;
         paintStatus();
         if (source.open) void loadUpdates();
     }

@@ -69,7 +69,7 @@ forecast days. This is distinct from the ascent card's Historical Weather API
 archive blend. Its resolution is **Automatic**; underlying model resolution,
 availability and update times vary. Source details do not claim a fixed grid
 resolution, a single run, or the source of each value. The update table labels
-the blend's clocks **Varies by model** and retains the individual-model rows.
+the blend's clocks **Varies by model** without requesting individual-model metadata.
 
 Named alternatives are filtered by geographic coverage and date availability.
 History excludes delayed reanalyses that cannot cover yesterday. Forecast
@@ -77,22 +77,26 @@ options show their published run horizon. Selecting a shorter-range model
 shows the available forecast days, including partial boundary days; interior
 missing days remain visible. **Using [model]** identifies the model behind the
 currently displayed data. Each period keeps an independent choice.
-Switching periods or expanding hourly graphs makes no request. A model change
+Switching periods or expanding hourly graphs makes no weather request. A model change
 requests the two selected models together, deduplicated when they match, and
 can reuse the exact cached selection. An explicit choice never silently falls
 back; a failure preserves the previous dated/model-labelled result. Model
 changes abort superseded requests; known rate-limit cooldowns disable both
 Refresh and the model dropdown while period tabs remain usable.
 
-**Models & source details** names the selected model's
-API identifier, resolution, horizon and possible hourly interpolation. The
-combined API response reports only one grid coordinate, so the disclosure says
-individual model grids may differ. The named fields establish which requested
-model or Best Match blend supplied each period, without claiming an exact run initialization or
-sub-grid provenance. Horizons were checked against Open-Meteo's
+**Source details** uses one compact paragraph for the displayed model and
+resolution, forecast or historical estimate type, summit timezone, response grid,
+elevation adjustment and load time. Best Match identifies its automatic blend;
+combined responses disclose that model grids may differ, and estimated timezone
+or partial-hour precipitation remains labelled. Default selection, saved-choice
+behavior and summary calculation explanations stay in this documentation.
+Hourly values may be interpolated from coarser native output, and forecast
+horizons are measured from the model run. The named API fields establish which
+requested model or Best Match blend supplied each period, without claiming exact
+run initialization or sub-grid provenance. Horizons were checked against Open-Meteo's
 [Forecast API and provider tables](https://open-meteo.com/en/docs) and named
 model routing against its [published selection code](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
-Opening **Models & source details** also loads update times for the model supplying
+Opening **Source details** also loads update times for the model supplying
 the displayed weather in the active period, shown in summit local time. Other eligible models are not requested. Switching periods or models
 updates the table; a failed model change retains clocks for the displayed weather.
 The [metadata API](https://open-meteo.com/en/docs/model-updates) reports availability
@@ -108,9 +112,8 @@ they are limited to three concurrent requests, a five-second deadline and
 minutes. Closing the disclosure, disabling weather or suspending the page
 cancels pending work. Update failures do not hide usable weather.
 
-It also explains full-day forecasts, incomplete final-day hours, load time and
-temperature adjustment for summit elevation. The footer credits **Powered by
-Open-Meteo**. An unavailable period does not hide usable data in the other view.
+Incomplete days are labelled in the daily rows and status. The footer credits
+**Powered by Open-Meteo**. An unavailable period does not hide usable data in the other view.
 
 ## Data and civil-day boundaries
 

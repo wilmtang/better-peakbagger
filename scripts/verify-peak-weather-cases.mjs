@@ -77,7 +77,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const assertForecastInfo = async () => {
         assert.equal(await evaluate(() => document.querySelector('.bpb-week-accuracy').hidden), false);
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-accuracy').textContent.includes('may be inaccurate')));
-        assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS is the initial default')));
+        assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS, 13 km')));
         assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
     };
@@ -199,7 +199,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await chooseModel('best_match');
     await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'Best Match history with named forecast');
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('automatically combines')));
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('Open-Meteo automatic blend; source models vary')));
     const blendMetadataBefore = metadataEvidence.length;
     await click(`${card} .bpb-week-source > summary`);
     await wait(() => document.querySelector('[data-update-model="best_match"] td')?.textContent === 'Varies by model', 'blend does not invent a single update clock');
