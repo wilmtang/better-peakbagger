@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Recover failed satellite imagery.** Try again reloads failed tiles while
+  ordinary camera updates keep healthy captures in place.
+
 - **Keep live settings current.** Delayed reads no longer undo theme or 3D
   changes on an open page; restored pages refresh their settings.
 

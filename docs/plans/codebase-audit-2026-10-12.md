@@ -375,6 +375,14 @@ by file size.
 
 ### Fixed and verified
 
+- **F4:** explicit retry remounts failed imagery even when scene identity is
+  unchanged. Camera refresh preserves the failure until imagery is retried;
+  healthy scene reuse, catalog-only retry and cooldown gates remain intact.
+  Build, 16 Sentinel tests and affected ESLint passed. Hidden Chrome
+  153.0.8010.12 with real Leaflet 1.9.4 passed at 1000×700 and 375×700, including
+  new tile requests and repainted center pixels, with zero healthy-scene fades.
+  MapLibre integration is retained for the final hardware terrain check.
+
 - **F3:** theme reconciliation and both read-only map bridges discard reads
   superseded by subscriptions, newer requests, or pagehide; BFCache restore
   starts a fresh read. The stylesheet/mirror order and message allowlists remain

@@ -53,6 +53,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     let timer = null;
     let captures = [];
     let renderedScenes = null;
+    let failedImagery = false;
     let captureZone = null;
     let target = null;
     let limit = null;
@@ -75,9 +76,11 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     };
     const clearRenderedScenes = () => {
         renderedScenes = null;
+        failedImagery = false;
         clearScenes();
     };
-    const renderCapture = capture => {
+    const imageryFailureMessage = 'Some imagery tiles are unavailable. Choose another capture or try again.';
+    const renderCapture = (capture, retryImagery = false) => {
         if (!capture) {
             clearRenderedScenes();
             summary.hidden = false;
@@ -90,12 +93,14 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         // underlying map while identical imagery is requested again.
         const scenes = JSON.stringify(capture.scenes.map(scene => [scene.id, scene.bounds])
             .sort(([left], [right]) => left.localeCompare(right)));
-        if (scenes !== renderedScenes) {
+        if (scenes !== renderedScenes || (retryImagery && failedImagery)) {
+            failedImagery = false;
             replaceScenes(capture.scenes);
             renderedScenes = scenes;
         }
-        summary.hidden = true;
-        summary.textContent = captureDate(capture.time, captureZone);
+        summary.hidden = !failedImagery;
+        summary.textContent = failedImagery ? imageryFailureMessage : captureDate(capture.time, captureZone);
+        if (failedImagery) retry.hidden = false;
         stats.textContent = `Coverage ${Math.round(capture.coverage * 100)}% · Clouds ${cloudCover(capture.cloud)}`;
     };
     const captureOption = (capture, value, latest = false) => {
@@ -110,7 +115,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         option.setAttribute('aria-label', option.title);
         return option;
     };
-    const choose = () => {
+    const choose = (retryImagery = false) => {
         const capture = target ? captures.find(candidate => candidate.platform === target.platform
             && candidate.orbit === target.orbit && Math.abs(candidate.time - target.time) <= 15 * 60000) : captures[0];
         const options = [];
@@ -127,9 +132,9 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         select.value = target ? capture?.key || 'missing' : 'latest';
         select.title = select.selectedOptions[0]?.title || select.selectedOptions[0]?.textContent || '';
         select.disabled = false;
-        renderCapture(capture);
+        renderCapture(capture, retryImagery);
     };
-    const load = async () => {
+    const load = async ({ retryImagery = false } = {}) => {
         if (!active) return;
         if (cooldown.active()) return;
         limit = null;
@@ -155,7 +160,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             if (!active || revision !== current) return;
             captures = result;
             captureZone = zone;
-            choose();
+            choose(retryImagery);
         } catch (error) {
             if (!active || revision !== current || error?.name === 'AbortError') return;
             // A catalog error says nothing about already loaded imagery. Clear
@@ -181,7 +186,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         choose();
         if (limit) showLimit(limit);
     });
-    retry.addEventListener('click', () => { void load(); });
+    retry.addEventListener('click', () => { void load({ retryImagery: true }); });
     return {
         element,
         activate(capture) {
@@ -204,10 +209,11 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         deactivate() { active = false; clearRequest(); cooldown.suspend(); element.hidden = true; clearRenderedScenes(); },
         tileError(error) {
             if (!active) return;
+            failedImagery = true;
             if (error?.status === 429) { showLimit(error); return; }
             if (limit) return;
             summary.hidden = false;
-            summary.textContent = 'Some imagery tiles are unavailable. Choose another capture or try again.';
+            summary.textContent = imageryFailureMessage;
             retry.hidden = false;
         },
         dispose() { active = false; clearRequest(); cooldown.dispose(); clearRenderedScenes(); element.remove(); }

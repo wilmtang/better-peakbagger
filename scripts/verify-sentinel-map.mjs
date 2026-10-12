@@ -47,7 +47,7 @@ try {
     const page = await context.newPage(), errors = [], held = [];
     page.on('pageerror', error => errors.push(error.message));
     resources.defer('Sentinel held catalogs', () => held.splice(0).forEach(resolve => resolve()));
-    let searches = 0, holdCatalog = false, failedCatalog = false;
+    let searches = 0, holdCatalog = false, failedCatalog = false, failedTiles = false, tileRequests = 0;
     const capture = id => ({ id, collection: 'sentinel-2-l2a',
         properties: { datetime: new Date(Date.now() - (id === 'scene_new' ? 2 : 3) * 86400000).toISOString(),
             platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 4 },
@@ -88,7 +88,11 @@ try {
             if (holdCatalog) await new Promise(resolve => held.push(resolve));
             await route.fulfill({ status: failedCatalog ? 503 : 200, contentType: 'application/json',
                 headers: cors, body: JSON.stringify({ features: catalog }) });
-        } else await route.fulfill({ contentType: 'image/svg+xml', headers: cors, body: tile('#347d61') });
+        } else {
+            tileRequests++;
+            await route.fulfill({ status: failedTiles ? 503 : 200, contentType: 'image/svg+xml', headers: cors,
+                body: failedTiles ? '' : tile('#347d61') });
+        }
     });
     const wait = (fn, description) => waitForCondition(() => page.evaluate(fn), { description, timeoutMs: 20_000 });
     await page.goto(`${origin}/map/MasterMap.aspx?t=P`, { waitUntil: 'load' });
@@ -130,7 +134,16 @@ try {
     failedCatalog = false;
     await page.locator('.bpb-sentinel button').click();
     await wait(() => document.querySelector('.bpb-sentinel-summary').hidden, 'catalog retry recovers');
+    failedTiles = true;
     await page.locator('.bpb-sentinel select').selectOption({ index: 2 });
+    await wait(() => document.querySelector('.bpb-sentinel-summary').textContent.includes('tiles are unavailable'), 'failed imagery exposes retry');
+    const failed = await page.evaluate(snapshot), beforeRetry = tileRequests;
+    assert.equal(failed.imageAtCenter, false);
+    failedTiles = false;
+    await page.locator('.bpb-sentinel button').click();
+    await wait(() => window.imageryOpacity() >= .99, 'retry actually repaints the failed capture');
+    assert.ok(tileRequests > beforeRetry, 'retry sends new tile requests');
+    assert.notDeepEqual((await page.evaluate(snapshot)).ids, failed.ids, 'retry remounts the failed imagery resources');
     await waitForCondition(async () => (await page.evaluate(snapshot)).imageAtCenter, { description: 'the explicitly chosen capture loads' });
     assert.notDeepEqual((await page.evaluate(snapshot)).ids, initial.ids, 'a different dated capture replaces imagery');
     await page.setViewportSize({ width: 375, height: 700 });
@@ -142,7 +155,7 @@ try {
     assert.equal((await page.evaluate(snapshot)).ids.length, 0, 'confirmed missing imagery clears the previous capture');
     assert.deepEqual(errors, []);
     summary = { browser: 'chromium', version: context.browser().version(), hidden: true, leaflet: '1.9.4', viewports: [[1000, 700], [375, 700]], fadedFrames: 0,
-        gestures: 3, tests: ['same-scenes', 'catalog-delay', 'catalog-failure', 'retry', 'capture-switch', 'missing-capture', 'native-layers'], profile: temporaryRoot };
+        gestures: 3, tests: ['same-scenes', 'catalog-delay', 'catalog-failure', 'retry', 'tile-retry', 'capture-switch', 'missing-capture', 'native-layers'], profile: temporaryRoot };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));

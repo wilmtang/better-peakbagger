@@ -173,6 +173,28 @@ test('camera refresh updates coverage without rebuilding the same scenes or thei
     } finally { layer.dispose(); dom.window.close(); }
 });
 
+test('failed imagery retries rebuild identical scenes while camera refresh retains the failure', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dom = new JSDOM('<!doctype html><body></body>');
+    let applied = 0;
+    const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom: 13 }),
+        replaceScenes: () => applied++, clearScenes() {}, search: async () => sentinelCaptures([feature()], view) });
+    try {
+        layer.activate(); await tick();
+        layer.tileError();
+        layer.refresh(); t.mock.timers.tick(300); await tick();
+        assert.equal(applied, 1);
+        assert.equal(layer.element.querySelector('.bpb-sentinel-summary').hidden, false);
+        assert.match(layer.element.textContent, /tiles are unavailable/);
+        layer.element.querySelector('button').click(); await tick();
+        assert.equal(applied, 2);
+        assert.equal(layer.element.querySelector('.bpb-sentinel-summary').hidden, true);
+        layer.tileError({ status: 429, retryAt: Date.now() + 60000 });
+        layer.element.querySelector('button').click(); await tick();
+        assert.equal(applied, 2, 'rate-limit cooldown still gates imagery retries');
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
 test('temporary catalog failures retain loaded imagery with unknown coverage, but unsupported views clear it', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const dom = new JSDOM('<!doctype html><body></body>');
