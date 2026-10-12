@@ -1,6 +1,10 @@
 # Active plans
 
 
+- [Repository bugs, engineering, and UX audit — 2026-10-12](codebase-audit-2026-10-12.md) —
+  seven new findings, led by draft data preservation and ignored-report startup
+  ordering; current test/browser evidence, failed Firefox integration, focused
+  acceptance checks, and earlier open findings remain explicit.
 - [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
   two reproduced open UI findings since 3.9.2: Sentinel capture selection on
   3D resume and climber-card keyboard focus during row cleanup. Current unit,
