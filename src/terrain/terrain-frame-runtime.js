@@ -1864,6 +1864,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         controls.appendChild(pickerElement);
         sentinelLayer = createSentinelLayer({ document,
             readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() + 1 }),
+            onCaptureChange: () => { userPickedBasemap = true; },
             replaceScenes: replaceSentinelScenes, clearScenes: clearSentinelScenes });
         controls.append(sentinelLayer.element);
         const notice = document.createElement('p');

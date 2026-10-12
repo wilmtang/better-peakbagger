@@ -2197,6 +2197,63 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     dom.window.close();
 });
 
+test('explicit Sentinel captures survive resume while untouched captures follow 2D', async () => {
+    const time = Date.now() - 3 * 86400000;
+    const dated = { time, platform: 'Sentinel-2B', orbit: '13' };
+    const catalog = [1, 0].map(offset => ({ id: `scene_${offset}`, collection: 'sentinel-2-l2a',
+        properties: { datetime: new Date(time + offset * 86400000).toISOString(), platform: dated.platform,
+            'sat:relative_orbit': 13, 'eo:cloud_cover': 4 },
+        geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 47], [-122, 47], [-122, 46]]] } }));
+    for (const choice of [null, 'latest', 'dated']) {
+        const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+            runScripts: 'outside-only', pretendToBeVisual: true });
+        let map;
+        class MapStub {
+            constructor(options) { map = this; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); }
+            addControl() {}
+            once(type, callback) { if (type === 'load') this.loadCallback = callback; }
+            on(type, callback) { this.handlers.set(type, callback); }
+            addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+            addLayer(layer) { this.layers.push(layer); }
+            getLayer(id) { return this.layers.find(layer => layer.id === id); }
+            removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+            getSource(id) { return this.sources.get(id); }
+            removeSource(id) { this.sources.delete(id); }
+            getBounds() { return { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 }; }
+            getZoom() { return 13; }
+            setPaintProperty() {}
+            fitBounds() {}
+            resize() {}
+            remove() {}
+        }
+        const dispatch = bootTerrainFrame(dom.window, MapStub, { fetch: async () => ({ ok: true,
+            headers: { get: () => null }, text: async () => JSON.stringify({ features: catalog }) }) });
+        const payload = { routeSegments: [[[46.5, -121.5], [46.51, -121.51]]] };
+        try {
+            dispatch({ type: 'init', ...payload, basemap: { kind: 'sentinel', capture: choice === 'dated' ? null : dated } });
+            map.loadCallback(); await new Promise(resolve => setImmediate(resolve));
+            const select = dom.window.document.querySelector('.bpb-sentinel select');
+            const dateKey = select.options[2].value;
+            if (choice) {
+                select.value = choice === 'dated' ? dateKey : 'latest';
+                select.dispatchEvent(new dom.window.Event('change'));
+            }
+            dispatch({ type: 'suspend' });
+            dispatch({ type: 'resume', ...payload, basemap: { kind: 'sentinel', capture: choice === 'latest' ? dated : null } });
+            await new Promise(resolve => setImmediate(resolve));
+            assert.equal(select.value, choice === 'dated' ? dateKey : 'latest');
+            const id = [...map.sources.keys()].find(id => id.startsWith('bpb-sentinel-'));
+            assert.match(map.getSource(id).tiles[0], choice === 'dated' ? /scene_0/ : /scene_1/);
+            map.handlers.get('error')({ sourceId: id, error: new Error('tile unavailable') });
+            dom.window.document.querySelector('.bpb-sentinel button').click();
+            await new Promise(resolve => setImmediate(resolve));
+            assert.equal(map.getSource(id), undefined, 'failed MapLibre resources are retired on retry');
+            const replacement = [...map.sources.keys()].find(id => id.startsWith('bpb-sentinel-'));
+            assert.match(map.getSource(replacement).tiles[0], choice === 'dated' ? /scene_0/ : /scene_1/);
+        } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
+    }
+});
+
 test('3D Sentinel retains unchanged scenes on camera refresh, aborts on swap, and cleans up on suspend', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',

@@ -401,6 +401,8 @@ by file size.
   separation at 1000×700 and 375×700 in light and dark themes. Build, 16 Sentinel
   tests and verifier ESLint passed. Shared CSS also serves the MapLibre control;
   final terrain rendering remains a separate gate.
+  Firefox 155.0 hardware MapLibre warning geometry and inspected screenshots
+  subsequently passed at 1000×760 and 375×760, light/dark (ANGLE Metal / M3 Pro).
 
 - **F4:** explicit retry remounts failed imagery even when scene identity is
   unchanged. Camera refresh preserves the failure until imagery is retried;
@@ -409,6 +411,8 @@ by file size.
   153.0.8010.12 with real Leaflet 1.9.4 passed at 1000×700 and 375×700, including
   new tile requests and repainted center pixels, with zero healthy-scene fades.
   MapLibre integration is retained for the final hardware terrain check.
+  That gate subsequently passed: real Chrome MapLibre on ANGLE Metal / Apple
+  M3 Pro retried failed tiles and repainted the expected capture at 1000×760.
 
 - **F3:** theme reconciliation and both read-only map bridges discard reads
   superseded by subscriptions, newer requests, or pagehide; BFCache restore

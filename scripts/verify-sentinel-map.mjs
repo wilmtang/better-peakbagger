@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window */
+/* global chrome, document, window, Image */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -76,10 +76,15 @@ try {
         mapsPlaceholder.on('layeradd layerremove',event=>{if(event.layer._url?.includes('planetarycomputer')) sentinelEvents.push(event.type)});
         mapsPlaceholder.on('moveend',()=>moveEnds++);
         </script></body></html>` }));
-    // Solid, decoded SVG tiles distinguish loaded satellite imagery from the
+    // Solid, decoded PNG tiles distinguish loaded satellite imagery from the
     // grey native fallback without using the live imagery service.
-    const tile = color => `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="${color}"/></svg>`;
-    await context.route(`${origin}/native/**`, route => route.fulfill({ contentType: 'image/svg+xml', body: tile('#a8b1ba') }));
+    const tiles = await page.evaluate(() => Object.fromEntries(['#a8b1ba', '#315bb0', '#347d61'].map(color => {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+        const context = canvas.getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 256, 256);
+        return [color, canvas.toDataURL().split(',')[1]];
+    })));
+    const tile = color => Buffer.from(tiles[color], 'base64');
+    await context.route(`${origin}/native/**`, route => route.fulfill({ contentType: 'image/png', body: tile('#a8b1ba') }));
     await context.route('https://planetarycomputer.microsoft.com/**', async route => {
         const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
         if (route.request().method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: cors }); return; }
@@ -90,8 +95,8 @@ try {
                 headers: cors, body: JSON.stringify({ features: catalog }) });
         } else {
             tileRequests++;
-            await route.fulfill({ status: failedTiles ? 503 : 200, contentType: 'image/svg+xml', headers: cors,
-                body: failedTiles ? '' : tile('#347d61') });
+            await route.fulfill({ status: failedTiles ? 503 : 200, contentType: 'image/png', headers: cors,
+                body: failedTiles ? '' : tile(route.request().url().includes('scene_old') ? '#315bb0' : '#347d61') });
         }
     });
     const wait = (fn, description) => waitForCondition(() => page.evaluate(fn), { description, timeoutMs: 20_000 });
@@ -168,9 +173,94 @@ try {
     await page.evaluate(() => window.mapsPlaceholder.panBy([20, 0], { animate: false }));
     await wait(() => document.querySelector('.bpb-sentinel-summary').textContent.includes('does not cover'), 'absent capture has honest coverage feedback');
     assert.equal((await page.evaluate(snapshot)).ids.length, 0, 'confirmed missing imagery clears the previous capture');
+    // The actual BigMap bridge carries the 2D capture into the extension-owned
+    // MapLibre frame. Distinct fixture colors prove the rendered date as well
+    // as the picker value after a real 2D/3D toggle.
+    catalog = [capture('scene_new'), capture('scene_old')];
+    await page.setViewportSize({ width: 1000, height: 760 });
+    const registry = await context.newPage();
+    await registry.goto('chrome://extensions-internals/');
+    const extension = await registry.waitForFunction(() => {
+        try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); }
+        catch { return false; }
+    }).then(handle => handle.jsonValue());
+    await registry.goto(`chrome-extension://${extension.id}/options/options.html`);
+    await registry.evaluate(async () => chrome.storage.sync.set({ bpbSettings: { enable3dMap: true, terrainCacheLimitMb: 0, theme: 'light' } }));
+    const dem = Buffer.from('UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef', 'base64');
+    await context.route('https://tiles.mapterhorn.com/**', route => route.fulfill({ contentType: 'image/webp',
+        headers: { 'access-control-allow-origin': '*' }, body: dem }));
+    await page.goto(`${origin}/map/BigMap.aspx?t=A&d=1&c=900001`);
+    const native = page.frameLocator('iframe[src*="MasterMap.aspx"]');
+    await native.locator('#selmap option[value="BPB_SENTINEL"]').waitFor({ state: 'attached' });
+    await native.locator('#selmap').selectOption('BPB_SENTINEL');
+    await native.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage' }).waitFor();
+    const oldDate = await native.locator('.bpb-sentinel select option').nth(2).getAttribute('value');
+    await native.locator('.bpb-sentinel select').selectOption(oldDate);
+    const toggle = page.locator('#bpb-terrain-toggle');
+    await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.disabled === false);
+    await toggle.click();
+    const terrain = page.frameLocator('#bpb-terrain-frame');
+    await terrain.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage' }).waitFor();
+    const renderer = await terrain.locator('canvas.maplibregl-canvas').evaluate(canvas => {
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const info = gl.getExtension('WEBGL_debug_renderer_info');
+        return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    });
+    assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware renderer required: ${renderer}`);
+    const painted = async color => {
+        const png = await terrain.locator('canvas.maplibregl-canvas').screenshot();
+        return page.evaluate(async ({ data, color }) => {
+            const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
+            const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+            const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+            const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            let count = 0;
+            for (let i = 0; i < pixels.length; i += 4) {
+                if (color === 'blue' ? pixels[i + 2] > pixels[i + 1] * 1.3 && pixels[i + 2] > pixels[i] * 1.5
+                    : pixels[i + 1] > pixels[i + 2] * 1.15 && pixels[i + 1] > pixels[i] * 1.4) count++;
+            }
+            return count;
+        }, { data: png.toString('base64'), color });
+    };
+    const settledCapture = async (value, color) => {
+        await waitForCondition(async () => {
+            const selected = await terrain.locator('.bpb-sentinel select').inputValue();
+            const pixels = await painted(color);
+            const metadata = await terrain.locator('.bpb-sentinel').evaluate(element => ({
+                ready: element.querySelector('.bpb-sentinel-summary').hidden
+                    && element.querySelector('.bpb-sentinel-stats').textContent.includes('Coverage'),
+                text: element.textContent,
+            }));
+            return { ready: selected === value && pixels > 1000 && metadata.ready, selected, pixels, color, metadata };
+        }, { description: `rendered 3D capture ${value}`, timeoutMs: 30_000, isReady: state => state.ready });
+    };
+    const returnTo3d = async nativeChoice => {
+        await toggle.click();
+        await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+        await native.locator('.bpb-sentinel select').selectOption(nativeChoice);
+        await toggle.click();
+        await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true');
+    };
+    if (output) await page.screenshot({ path: path.join(output, '3d-inherited-date.png') });
+    await settledCapture(oldDate, 'blue');
+    await returnTo3d('latest'); await settledCapture('latest', 'green');
+    await terrain.locator('.bpb-sentinel select').selectOption(oldDate);
+    await returnTo3d('latest'); await settledCapture(oldDate, 'blue');
+    await terrain.locator('.bpb-sentinel select').selectOption('latest');
+    await returnTo3d(oldDate); await settledCapture('latest', 'green');
+    if (output) await page.screenshot({ path: path.join(output, '3d-explicit-latest.png') });
+    failedTiles = true;
+    await terrain.locator('.bpb-sentinel select').selectOption(oldDate);
+    await terrain.locator('.bpb-sentinel-summary').filter({ hasText: 'tiles are unavailable' }).waitFor();
+    const beforeTerrainRetry = tileRequests;
+    failedTiles = false;
+    await terrain.locator('.bpb-sentinel button').click();
+    await settledCapture(oldDate, 'blue');
+    assert.ok(tileRequests > beforeTerrainRetry, 'MapLibre retry requests and renders the failed capture');
     assert.deepEqual(errors, []);
-    summary = { browser: 'chromium', version: context.browser().version(), hidden: true, leaflet: '1.9.4', viewports: [[1000, 700], [375, 700]], fadedFrames: 0,
-        gestures: 3, tests: ['same-scenes', 'catalog-delay', 'catalog-failure', 'retry', 'tile-retry', 'capture-switch', 'missing-capture', 'native-layers'], profile: temporaryRoot };
+    summary = { browser: 'chromium', version: context.browser().version(), hidden: true, leaflet: '1.9.4', renderer,
+        viewports: [[1000, 700], [375, 700], [1000, 760]], fadedFrames: 0,
+        gestures: 3, tests: ['same-scenes', 'catalog-delay', 'catalog-failure', 'retry', 'tile-retry', 'capture-switch', 'missing-capture', 'native-layers', '3d-capture-ownership', '3d-tile-retry'], profile: temporaryRoot };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));

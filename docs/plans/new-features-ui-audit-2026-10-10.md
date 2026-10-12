@@ -131,12 +131,20 @@ That failure was in the temporary check, not a product failure or flaky pass.
 
 ### Fixed and verified
 
-None. F1 and F2 remain open; this request authorized an audit, not runtime fixes.
-The green checks above establish the named exercised behavior only.
+- **F1:** an explicit 3D Sentinel capture choice now claims drape ownership,
+  including Latest. Untouched inherited choices still follow 2D. Build and
+  44 terrain/Sentinel tests passed. Chrome 153.0.8010.12 real-extension/Leaflet
+  1.9.4/MapLibre bridge and Firefox 155.0 hardware fixtures exercised actual
+  toggles and capture source identity. Both ran hidden on ANGLE Metal / Apple
+  M3 Pro. Base terrain viewport 1000×760; Firefox warning renders also used
+  375×760, light/dark. Affected ESLint passed. F2 remains open.
+  Chrome's pixel assertions wait for settled metadata and distinguish saturated
+  fixture imagery from the terrain fallback; failed-tile retry repaints the
+  expected capture with new requests. Final steady screenshots were inspected.
 
 ### Intentionally not changed
 
-- Runtime code, existing privacy/ownership/fail-closed gates, shared schema,
+- Existing privacy/ownership/fail-closed gates, shared schema,
   manual final Save, and source/bundle ownership.
 - Prior audit decisions and the separate active October 3 dependency/release
   ledger. No security exception was reviewed, expanded, or renewed here.
@@ -145,16 +153,14 @@ The green checks above establish the named exercised behavior only.
 
 ### Changed but not fully proven
 
-Only this audit record and its plan index changed. No runtime change is claimed.
+The runtime change and repeatable Sentinel browser coverage are recorded above.
 This pass does not establish native browser menus/window placement or focus,
 screen-reader speech, physical touch behavior, store acceptance, hosted CI,
 declared minimum browser versions, live Garmin/Strava/export behavior, live
-Peakbagger Buddy form transactions, or Firefox hardware rendering of the new
-Sentinel drape. Sentinel provider longevity and every geography/date are not
+Peakbagger Buddy form transactions. Sentinel provider longevity and every geography/date are not
 established by the bounded live sample.
 
-The new Sentinel controls have browser evidence from Chrome; the full Firefox
-verifier does not select Sentinel because its native map fixture lacks the
-Leaflet APIs required to bind that adapter. Add explicit Sentinel browser cases
-to repeatable verification while implementing F1; do not infer that coverage
-from the broad Firefox verifier's success.
+Sentinel now has explicit repeatable Chrome real-manifest and Firefox hardware
+fixture cases. The Firefox fixture uses instrumented authorization and storage;
+its result is distinct from real Firefox manifest/worker integration. Native
+focus/window placement and live provider longevity remain outside these checks.

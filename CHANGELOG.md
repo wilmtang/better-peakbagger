@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Keep your 3D satellite capture.** Explicit dated and Latest choices survive
+  a return from 2D; untouched 3D views still follow the 2D layer.
+
 - **Bound deleted draft metadata.** Old deletion markers are compacted while
   recent Undo and stale-tab protection remain intact.
 

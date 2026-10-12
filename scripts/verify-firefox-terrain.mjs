@@ -4,6 +4,8 @@
 /* global document, location, requestAnimationFrame */
 
 import { createServer } from 'node:https';
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 
 import { firefox } from 'playwright';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
@@ -209,6 +211,25 @@ async function main() {
             }
             if (url.startsWith(fixtureOrigin)) return route.continue();
             return route.abort();
+        });
+        const captureTime = Date.now() - 3 * 86400000;
+        const sentinelCatalog = [1, 0].map(offset => ({ id: `scene_${offset}`, collection: 'sentinel-2-l2a',
+            properties: { datetime: new Date(captureTime + offset * 86400000).toISOString(),
+                platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 4 },
+            geometry: { type: 'Polygon', coordinates: [[[-122, 48], [-121, 48], [-121, 49], [-122, 49], [-122, 48]]] } }));
+        const sentinelPixels = await page.evaluate(() => Object.fromEntries(['#315bb0', '#347d61'].map(color => {
+            const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+            const context = canvas.getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 256, 256);
+            return [color, canvas.toDataURL().split(',')[1]];
+        })));
+        await page.route('https://planetarycomputer.microsoft.com/**', route => {
+            const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type',
+                'access-control-allow-methods': 'GET, POST, OPTIONS' };
+            if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+            if (route.request().url().includes('/api/stac/')) return route.fulfill({ contentType: 'application/json',
+                headers: cors, body: JSON.stringify({ features: sentinelCatalog }) });
+            return route.fulfill({ contentType: 'image/png', headers: cors,
+                body: Buffer.from(sentinelPixels[route.request().url().includes('scene_0') ? '#315bb0' : '#347d61'], 'base64') });
         });
 
         await page.goto(
@@ -599,6 +620,66 @@ async function main() {
                 cause: error,
             });
         });
+        await page.goto(`${fixtureOrigin}climber/ascent.aspx?mode=idle&map=wide`);
+        await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.disabled === false);
+        const native = page.frameLocator('iframe[src*="MasterMap.aspx"]');
+        await native.locator('#selmap').evaluate((select, time) => {
+            const option = document.createElement('option'); option.value = 'BPB_SENTINEL';
+            option.textContent = 'Sentinel-2';
+            option.dataset.bpbSentinelCapture = JSON.stringify({ time, platform: 'Sentinel-2B', orbit: '13' });
+            select.append(option); select.value = option.value;
+        }, captureTime);
+        const toggle = page.locator('#bpb-terrain-toggle');
+        await toggle.click();
+        const sentinelFrame = page.frameLocator('#bpb-terrain-frame');
+        await sentinelFrame.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage' }).waitFor();
+        const dateKey = await sentinelFrame.locator('.bpb-sentinel select option').nth(2).getAttribute('value');
+        const settle = async value => {
+            await page.waitForFunction(expected => {
+                const win = document.getElementById('bpb-terrain-frame').contentWindow;
+                const map = win.__bpbTerrainTestMap;
+                const ids = Object.keys(map.getStyle().sources).filter(id => id.startsWith('bpb-sentinel-'));
+                const scene = expected === 'latest' ? 'scene_1' : 'scene_0';
+                return win.document.querySelector('.bpb-sentinel select').value === expected
+                    && ids.length > 0 && ids.every(id => map.isSourceLoaded(id)
+                        && map.getStyle().sources[id].tiles[0].includes(scene)) && !map.isMoving();
+            }, value);
+        };
+        const resume = async capture => {
+            await toggle.click();
+            await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+            await native.locator('#selmap option[value="BPB_SENTINEL"]').evaluate((option, time) => {
+                if (time == null) delete option.dataset.bpbSentinelCapture;
+                else option.dataset.bpbSentinelCapture = JSON.stringify({ time, platform: 'Sentinel-2B', orbit: '13' });
+            }, capture);
+            await toggle.click();
+        };
+        await settle(dateKey);
+        await resume(null); await settle('latest');
+        await sentinelFrame.locator('.bpb-sentinel select').selectOption(dateKey);
+        await resume(null); await settle(dateKey);
+        await sentinelFrame.locator('.bpb-sentinel select').selectOption('latest');
+        await resume(captureTime); await settle('latest');
+        const output = process.env.BPB_VERIFY_FIREFOX_SENTINEL_SCREENSHOT_DIR;
+        if (output) await mkdir(output, { recursive: true });
+        for (const [width, theme] of [[1000, 'light'], [1000, 'dark'], [375, 'light'], [375, 'dark']]) {
+            await page.setViewportSize({ width, height: 760 });
+            await settle('latest');
+            await sentinelFrame.locator('#bpb-terrain-map').evaluate((element, value) => { element.dataset.theme = value; }, theme);
+            await page.evaluate(() => {
+                const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
+                const sourceId = Object.keys(map.getStyle().sources).find(id => id.startsWith('bpb-sentinel-'));
+                map.fire('error', { sourceId, error: Object.assign(new Error('fixture tile limit'), { status: 429, retryAt: Date.now() + 60000 }) });
+            });
+            const geometry = await sentinelFrame.locator('.bpb-sentinel').evaluate(element => {
+                const warning = element.querySelector('.bpb-sentinel-summary').getBoundingClientRect();
+                const stats = element.querySelector('.bpb-sentinel-stats').getBoundingClientRect();
+                return { shown: !element.querySelector('.bpb-sentinel-summary').hidden,
+                    warningBottom: warning.bottom, statsTop: stats.top };
+            });
+            assert.ok(geometry.shown && geometry.warningBottom <= geometry.statsTop, JSON.stringify(geometry));
+            if (output) await sentinelFrame.locator('.bpb-sentinel').screenshot({ path: `${output}/sentinel-${width}-${theme}.png` });
+        }
         if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
 
         console.log('Firefox terrain verification passed:');
@@ -607,6 +688,7 @@ async function main() {
         console.log('  - synthetic activation and direct-frame authorization negatives passed');
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right-drag tilt, bearing sync, Ctrl-drag, and resize passed');
         console.log('  - Analyzer and Peak Sun and Moon compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
+        console.log('  - inherited/explicit Sentinel captures survived real toggles; loaded MapLibre sources and light/dark warning geometry passed');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
     } catch (error) {
         primaryError = error;
