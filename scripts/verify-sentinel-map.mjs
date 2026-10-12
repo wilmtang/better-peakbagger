@@ -139,6 +139,21 @@ try {
     await wait(() => document.querySelector('.bpb-sentinel-summary').textContent.includes('tiles are unavailable'), 'failed imagery exposes retry');
     const failed = await page.evaluate(snapshot), beforeRetry = tileRequests;
     assert.equal(failed.imageAtCenter, false);
+    for (const [width, theme] of [[1000, 'light'], [1000, 'dark'], [375, 'light'], [375, 'dark']]) {
+        await page.setViewportSize({ width, height: 700 });
+        await page.locator('html').evaluate((element, value) => { element.dataset.bpbTheme = value; }, theme);
+        await wait(() => !document.querySelector('.bpb-sentinel-summary').hidden
+            && document.querySelector('.bpb-sentinel-stats').textContent.includes('Coverage'), 'failed capture metadata settles');
+        const geometry = await page.locator('.bpb-sentinel').evaluate(element => {
+            const warning = element.querySelector('.bpb-sentinel-summary').getBoundingClientRect();
+            const stats = element.querySelector('.bpb-sentinel-stats').getBoundingClientRect();
+            return { warningBottom: warning.bottom, statsTop: stats.top };
+        });
+        assert.ok(geometry.warningBottom <= geometry.statsTop, `warning and coverage overlap: ${JSON.stringify(geometry)}`);
+        if (output) await page.locator('.bpb-sentinel').screenshot({ path: path.join(output, `failed-tiles-${width}-${theme}.png`) });
+    }
+    await page.setViewportSize({ width: 1000, height: 700 });
+    await page.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
     failedTiles = false;
     await page.locator('.bpb-sentinel button').click();
     await wait(() => window.imageryOpacity() >= .99, 'retry actually repaints the failed capture');

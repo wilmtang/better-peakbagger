@@ -24,8 +24,8 @@
     color: inherit;
     font: inherit;
 }
-.bpb-sentinel-metadata { display: grid; min-height: 18px; margin-top: 4px; }
-.bpb-sentinel p { grid-area: 1 / 1; margin: 0; overflow-wrap: anywhere; }
+.bpb-sentinel-metadata { display: grid; gap: 2px; min-height: 18px; margin-top: 4px; }
+.bpb-sentinel p { margin: 0; overflow-wrap: anywhere; }
 .bpb-sentinel-stats { font-size: 11px; }
 .bpb-sentinel-summary[data-kind="rate-limit"] { border-left: 3px solid #b47b26; padding-left: 7px; }
 .bpb-sentinel button:disabled { opacity: .6; cursor: default; }

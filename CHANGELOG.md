@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Read satellite warnings clearly.** Capture coverage and failure messages
+  no longer overlap in light or dark map controls.
+
 - **Recover failed satellite imagery.** Try again reloads failed tiles while
   ordinary camera updates keep healthy captures in place.
 

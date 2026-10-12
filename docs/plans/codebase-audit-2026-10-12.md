@@ -375,6 +375,13 @@ by file size.
 
 ### Fixed and verified
 
+- **F5:** visible Sentinel metadata paragraphs now occupy separate grid rows.
+  Normal/loading states retain their compact single visible row. Hidden real
+  Leaflet geometry checks and screenshot inspection confirmed warning/coverage
+  separation at 1000×700 and 375×700 in light and dark themes. Build, 16 Sentinel
+  tests and verifier ESLint passed. Shared CSS also serves the MapLibre control;
+  final terrain rendering remains a separate gate.
+
 - **F4:** explicit retry remounts failed imagery even when scene identity is
   unchanged. Camera refresh preserves the failure until imagery is retried;
   healthy scene reuse, catalog-only retry and cooldown gates remain intact.
