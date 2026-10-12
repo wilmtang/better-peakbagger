@@ -1834,6 +1834,10 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         mapElement.dataset.theme = activeTheme;
         mapElement.setAttribute('role', 'region');
         mapElement.setAttribute('aria-label', 'Interactive 3D terrain map');
+        const weatherRoot = mapElement;
+        const dismissWeatherMenu = () => { if (mapElement === weatherRoot && focusPeakFeature) post('weatherDismiss'); };
+        weatherRoot.addEventListener('pointerdown', dismissWeatherMenu, { capture: true, passive: true });
+        weatherRoot.addEventListener('wheel', dismissWeatherMenu, { capture: true, passive: true });
 
         const canvas = document.createElement('div');
         canvas.id = 'bpb-terrain-canvas';
@@ -2091,9 +2095,6 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     if (map !== terrainMap || !focusPeakFeature || !event?.lngLat || !event.originalEvent) return;
                     post('weatherContext', { latitude: event.lngLat.lat, longitude: event.lngLat.wrap().lng,
                         x: event.originalEvent.clientX, y: event.originalEvent.clientY });
-                });
-                terrainMap.on('mousedown', () => {
-                    if (map === terrainMap && focusPeakFeature) post('weatherDismiss');
                 });
                 terrainMap.on('mousemove', event => {
                     if (map === terrainMap && event && event.point) schedulePointerUpdate(event.point);

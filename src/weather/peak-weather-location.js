@@ -28,16 +28,23 @@ export function createWeatherLocationMenu({ enabled, canSelect = () => true, onS
         frameDocument = null;
         if (restore) returnFocus?.focus({ preventScroll: true });
     };
+    const updateAvailability = () => {
+        action.disabled = !canSelect();
+        action.title = action.disabled ? 'Weather requests are temporarily limited. Try again after the cooldown.' : '';
+        if (!menu.hidden && !action.disabled && document.activeElement === menu) action.focus({ preventScroll: true });
+    };
     const outside = event => { if (!menu.contains(event.target)) close(); };
     const keyboard = event => {
         if (event.key === 'Escape' && !menu.hidden) { event.preventDefault(); event.stopPropagation(); close(true); }
-        else if (event.key === 'Tab') close();
+        else if (!menu.hidden && event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) { event.preventDefault(); close(true); }
         else if (!menu.hidden && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) { event.preventDefault(); action.focus({ preventScroll: true }); }
     };
-    const dismiss = () => close();
+    const dismiss = () => close(true);
+    const blur = () => close();
+    const focusOutside = event => { if (!menu.contains(event.target)) close(); };
     const receive = event => {
         if (event.source !== window || event.origin !== location.origin || event.data?.__bpbPeakWeather !== true) return;
-        if (event.data.type === 'dismiss') { close(); return; }
+        if (event.data.type === 'dismiss') { close(true); return; }
         if (!enabled() || event.data.type !== 'context' || !['native', 'terrain'].includes(event.data.map)) return;
         const point = readWeatherMapPoint(event.data);
         const frame = document.getElementById(event.data.map === 'terrain' ? 'bpb-terrain-frame' : 'Gmap');
@@ -45,8 +52,7 @@ export function createWeatherLocationMenu({ enabled, canSelect = () => true, onS
         const rect = frame.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0 || point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return;
         close(); selected = point; returnFocus = frame;
-        action.disabled = !canSelect();
-        action.title = action.disabled ? 'Weather requests are temporarily limited. Try again after the cooldown.' : '';
+        updateAvailability();
         coordinates.textContent = weatherLocationLabel(point);
         menu.hidden = false;
         const size = menu.getBoundingClientRect();
@@ -66,11 +72,14 @@ export function createWeatherLocationMenu({ enabled, canSelect = () => true, onS
     window.addEventListener('message', receive);
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('keydown', keyboard, true);
+    document.addEventListener('focusin', focusOutside);
+    window.addEventListener('blur', blur);
     window.addEventListener('scroll', dismiss, true);
     window.addEventListener('resize', dismiss);
-    return { close, dispose() {
+    return { close, updateAvailability, dispose() {
         close(); menu.remove(); window.removeEventListener('message', receive);
         document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', keyboard, true);
+        document.removeEventListener('focusin', focusOutside); window.removeEventListener('blur', blur);
         window.removeEventListener('scroll', dismiss, true); window.removeEventListener('resize', dismiss);
     } };
 }

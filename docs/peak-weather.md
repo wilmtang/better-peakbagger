@@ -17,7 +17,8 @@ there is no geocoding or extra Peakbagger request.
 Right-click the peak's **2D or 3D map** and choose **Forecast and archive for
 this location** to use that point for both periods. The menu opens beside the
 pointer, fits within the viewport, supports keyboard activation and Escape,
-and closes on an outside click, scrolling, or resizing. Opening it sends no
+and closes on an outside click, wheel zoom, scrolling, or resizing. Escape,
+Tab and Shift+Tab return focus to the map without moving the page. Opening it sends no
 weather request. The card identifies the selected coordinates; **Reset to
 summit** immediately restores the already-loaded summit result and cancels any
 pending location request. Neither action pans the map or scrolls the page.
@@ -25,6 +26,7 @@ Reset also restores the summit's model choices. A failed location switch names
 its target on **Retry** and can be retried by selecting the same map point.
 If summit weather has not loaded yet, a failed reset remains available to retry.
 Resetting during a provider cooldown retains its explanation and request limit.
+An open menu becomes usable when the cooldown expires, without reopening it.
 
 Selected points use their own offline timezone and Open-Meteo terrain elevation,
 without applying the summit's elevation to another location. A regional model

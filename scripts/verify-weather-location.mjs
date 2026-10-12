@@ -44,10 +44,22 @@ export async function verifyWeatherLocation({ evaluate, click, clickPoint, press
             assert.ok(menu.left >= 7 && menu.right <= menu.width - 7 && menu.top >= 7 && menu.bottom <= menu.height - 7, JSON.stringify(menu));
             assert.equal(menu.focused, true);
             if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-location-menu-${theme}-${width}.png`));
-            await press(firefoxMode ? '\uE00C' : 'Escape');
-            assert.equal(await evaluate(() => document.getElementById('bpb-peak-weather-menu').hidden), true);
+            for (const key of [firefoxMode ? '\uE00C' : 'Escape', firefoxMode ? '\uE004' : 'Tab', firefoxMode ? '\uE008\uE004\uE000' : 'Shift+Tab']) {
+                const scroll = await evaluate(() => window.scrollY);
+                await press(key);
+                assert.equal(await evaluate(() => document.getElementById('bpb-peak-weather-menu').hidden), true);
+                assert.equal(await evaluate(() => document.activeElement === document.getElementById('Gmap')), true);
+                assert.equal(await evaluate(() => window.scrollY), scroll, 'dismissal does not restart page navigation');
+                await clickPoint(pointer.x, pointer.y, 'right');
+                await wait(() => !document.getElementById('bpb-peak-weather-menu').hidden, 'reopened weather menu');
+            }
+            await evaluate(() => {
+                const frame = document.getElementById('Gmap');
+                frame.contentDocument.dispatchEvent(new frame.contentWindow.WheelEvent('wheel', { bubbles: true, deltaY: 120 }));
+            });
+            await wait(() => document.getElementById('bpb-peak-weather-menu').hidden, 'native wheel zoom dismisses weather menu');
             await clickPoint(pointer.x, pointer.y, 'right');
-            await wait(() => !document.getElementById('bpb-peak-weather-menu').hidden, 'reopened weather menu');
+            await wait(() => !document.getElementById('bpb-peak-weather-menu').hidden, 'menu usable after wheel dismissal');
             setMode('loading');
             const original = await evaluate(() => {
                 const rect = node => { const r = node.getBoundingClientRect(); return { top: r.top + window.scrollY, height: r.height }; };

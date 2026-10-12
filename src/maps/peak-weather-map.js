@@ -25,6 +25,8 @@ export function createPeakWeatherMap({ getFrame, getMap }) {
     const suspend = () => {
         doc?.removeEventListener('contextmenu', context, true);
         doc?.removeEventListener('pointerdown', dismiss, true);
+        doc?.removeEventListener('wheel', dismiss, true);
+        doc?.removeEventListener('scroll', dismiss, true);
         doc = null; dismiss();
     };
     const attach = () => {
@@ -32,6 +34,8 @@ export function createPeakWeatherMap({ getFrame, getMap }) {
         try { doc = getFrame().contentDocument; } catch { return; }
         doc?.addEventListener('contextmenu', context, true);
         doc?.addEventListener('pointerdown', dismiss, true);
+        doc?.addEventListener('wheel', dismiss, { capture: true, passive: true });
+        doc?.addEventListener('scroll', dismiss, true);
     };
     attach();
     return { attach, suspend };

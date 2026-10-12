@@ -1146,7 +1146,12 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     focused.handlers.get('contextmenu')({ lngLat: { lat: 46.8, wrap: () => ({ lng: -121.7 }) }, originalEvent: { clientX: 30, clientY: 40 } });
     assert.equal(messages.at(-1).type, 'weatherContext');
     assert.equal(messages.at(-1).latitude, 46.8); assert.equal(messages.at(-1).longitude, -121.7);
-    focused.handlers.get('mousedown')(); assert.equal(messages.at(-1).type, 'weatherDismiss');
+    const pickerPointer = new window.Event('pointerdown', { bubbles: true, cancelable: true });
+    window.document.querySelector('.bpb-terrain-picker').dispatchEvent(pickerPointer);
+    assert.equal(pickerPointer.defaultPrevented, false); assert.equal(messages.at(-1).type, 'weatherDismiss');
+    const weatherWheel = new window.Event('wheel', { bubbles: true, cancelable: true });
+    window.document.querySelector('#bpb-terrain-map').dispatchEvent(weatherWheel);
+    assert.equal(weatherWheel.defaultPrevented, false); assert.equal(messages.at(-1).type, 'weatherDismiss');
     assert.deepEqual(JSON.parse(JSON.stringify(focused.options.center)), [-121.60214, 48.83115]);
     assert.equal(focused.options.zoom, 13);
     assert.equal(focused.options.bounds, undefined, 'a summit view does not synthesize route bounds');

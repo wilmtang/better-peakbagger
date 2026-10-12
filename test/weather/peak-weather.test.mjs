@@ -179,6 +179,41 @@ test('known rate limits keep the map menu dismissible and prevent location reque
     } finally { env.close(); }
 });
 
+test('Tab and Shift+Tab dismiss the menu back to the map; blur and outside focus do not trap keyboard navigation', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false }); const menu = env.doc.querySelector('#bpb-peak-weather-menu');
+        for (const shiftKey of [false, true]) {
+            openLocationMenu(env);
+            const key = new env.win.KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
+            env.doc.activeElement.dispatchEvent(key);
+            assert.equal(key.defaultPrevented, true); assert.equal(menu.hidden, true);
+            assert.equal(env.doc.activeElement, env.doc.getElementById('Gmap'));
+        }
+        const normalTab = new env.win.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+        env.doc.activeElement.dispatchEvent(normalTab); assert.equal(normalTab.defaultPrevented, false);
+        openLocationMenu(env); env.win.dispatchEvent(new env.win.Event('blur')); assert.equal(menu.hidden, true);
+        openLocationMenu(env); env.doc.querySelector('.bpb-week-refresh').focus();
+        assert.equal(menu.hidden, true); assert.equal(env.doc.activeElement, env.doc.querySelector('.bpb-week-refresh'));
+    } finally { env.close(); }
+});
+
+test('an open menu becomes usable when the known cooldown expires without reopening it', async () => {
+    let limited = false;
+    const env = setup({ fetchFn: url => limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : reply(url) });
+    try {
+        await settled(env, { past: false }); limited = true; env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').dataset.kind === 'rate-limit');
+        openLocationMenu(env); const menu = env.doc.querySelector('#bpb-peak-weather-menu'), action = menu.querySelector('button');
+        assert.equal(action.disabled, true); assert.equal(env.doc.activeElement, menu);
+        env.setNow('2024-11-05T12:03:00Z');
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'imperial' } } }, 'sync'));
+        assert.equal(action.disabled, false); assert.equal(action.title, ''); assert.equal(env.doc.activeElement, action);
+        limited = false; action.click();
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
+    } finally { env.close(); }
+});
+
 test('failed location selection can retry the same map point and names the actual retry target', async () => {
     let fail = false;
     const env = setup({ fetchFn: url => fail ? new Response('', { status: 503 }) : reply(url) });

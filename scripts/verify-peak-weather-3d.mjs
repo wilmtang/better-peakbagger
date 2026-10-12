@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, chrome, requestAnimationFrame */
+/* global document, window, chrome, requestAnimationFrame */
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -51,6 +51,12 @@ try {
         const gl = node.getContext('webgl2'), info = gl?.getExtension('WEBGL_debug_renderer_info');
         return info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null;
     });
+    await page.evaluate(() => {
+        window.__bpbWeatherCameraSettled = 0;
+        window.addEventListener('message', event => {
+            if (event.data?.__bpbTerrain && event.data.dir === 'toPage' && event.data.type === 'camera') window.__bpbWeatherCameraSettled++;
+        });
+    });
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware WebGL required: ${renderer}`);
     if (output) await mkdir(output, { recursive: true });
     for (const width of [1440, 375]) {
@@ -67,6 +73,32 @@ try {
         await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
         await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
         if (output) await page.screenshot({ path: path.join(output, `chrome-peak-3d-location-menu-${width}.png`) });
+        const scroll = await page.evaluate(() => window.scrollY);
+        await page.keyboard.press('Tab');
+        await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
+        assert.equal(await page.evaluate(() => window.scrollY), scroll);
+        assert.equal(await page.evaluate(() => document.activeElement === document.getElementById('bpb-terrain-frame')), true);
+        await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
+        await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
+        const cameraBeforeWheel = await page.evaluate(() => window.__bpbWeatherCameraSettled);
+        // The menu overlaps the original click. Zoom an exposed canvas pixel,
+        // otherwise the wheel scrolls the parent page and never moves the map.
+        await page.mouse.move(bounds.x + bounds.width * .15, bounds.y + bounds.height * .25);
+        await page.mouse.wheel(0, 120);
+        await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
+        await page.waitForFunction(count => window.__bpbWeatherCameraSettled > count, cameraBeforeWheel);
+        await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
+        await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
+        const picker = page.frameLocator('#bpb-terrain-frame').locator('.bpb-terrain-picker');
+        const pickerBounds = await picker.boundingBox();
+        await page.mouse.click(pickerBounds.x + pickerBounds.width / 2, pickerBounds.y + pickerBounds.height / 2);
+        await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'hidden' });
+        // Close the native picker without exercising the separately audited
+        // 3D Escape handler. Its control ownership regression has its own unit.
+        await page.keyboard.press('Tab');
+        assert.equal(await page.locator('#bpb-terrain-toggle').textContent(), '2D');
+        await page.mouse.click(bounds.x + bounds.width * .35, bounds.y + bounds.height * .45, { button: 'right' });
+        await page.locator('#bpb-peak-weather-menu').waitFor({ state: 'visible' });
         await page.locator('#bpb-peak-weather-menu button').click();
         await page.waitForFunction(() => document.querySelector('.bpb-week-location-name').textContent !== 'At the summit'
             && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false');
@@ -80,12 +112,19 @@ try {
         await page.mouse.down({ button: 'right' });
         await page.mouse.move(drag.x + drag.width * .35 + 55, drag.y + drag.height * .45 + 45, { steps: 8 });
         await page.mouse.up({ button: 'right' });
-        await page.waitForFunction(value => document.querySelector('.bpb-map-compass-disc').getAttribute('style') !== value, beforeView);
+        try { await page.waitForFunction(value => document.querySelector('.bpb-map-compass-disc').getAttribute('style') !== value, beforeView); }
+        catch (error) {
+            const state = await page.evaluate(() => ({ toggle: document.getElementById('bpb-terrain-toggle').textContent,
+                frame: document.getElementById('bpb-terrain-frame')?.style.cssText,
+                compass: document.querySelector('.bpb-map-compass-disc').getAttribute('style'),
+                menu: document.getElementById('bpb-peak-weather-menu').hidden }));
+            throw new Error(`${error.message}: ${JSON.stringify(state)}`);
+        }
         await page.evaluate(async () => { for (let frame = 0; frame < 5; frame++) await new Promise(resolve => requestAnimationFrame(resolve)); });
         assert.equal(await page.locator('#bpb-peak-weather-menu').evaluate(node => node.hidden), true, 'right-drag rotates without opening a weather menu');
     }
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, profile, renderer,
-        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation'] }));
+        viewports: [1440, 375], weatherRequests: requests.length, checks: ['3D context menu', 'selected coordinates', 'terrain elevation', 'reset', 'right-drag rotation', 'Tab focus', 'wheel and control dismissal'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);

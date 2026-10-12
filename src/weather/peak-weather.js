@@ -78,7 +78,7 @@ export function mountPeakWeather() {
     const updateClient = createPeakModelUpdateClient();
     let updatesController = null, updatesGeneration = 0;
     let preference = settings.DEFAULTS, current = null, controller = null, generation = 0, visibilityObserver = null, lifecycle;
-    let settingsReady = false, modelsReady = false;
+    let settingsReady = false, modelsReady = false, locationMenu = null;
     const enabled = () => settingsReady && modelsReady && preference.showWeather;
     const cancelUpdates = () => { updatesGeneration++; updatesController?.abort(); updatesController = null; };
     async function loadUpdates() {
@@ -128,7 +128,7 @@ export function mountPeakWeather() {
     const choices = { past: 'gfs_global', forecast: 'gfs_global' };
     let summitChoices = null;
     const openDates = new Map();
-    const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; });
+    const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; locationMenu?.updateAvailability(); });
     const populateModels = () => {
         const window = requestedWindow || weatherPeakWindow(zone);
         select.replaceChildren(...eligiblePeakWeatherModels(requestedSubject, window, period).map(model => element('option', { value: model.id,
@@ -363,7 +363,7 @@ export function mountPeakWeather() {
             requestedWindow = current.window; renderResult();
         } else void load();
     };
-    const locationMenu = createWeatherLocationMenu({ enabled: () => enabled() && lifecycle.state === 'active', canSelect: () => !cooldown.active(), onSelect: chooseLocation });
+    locationMenu = createWeatherLocationMenu({ enabled: () => enabled() && lifecycle.state === 'active', canSelect: () => !cooldown.active(), onSelect: chooseLocation });
     resetLocation.addEventListener('click', () => chooseLocation(summit));
     const beginWhenVisible = () => {
         visibilityObserver?.disconnect();

@@ -13,8 +13,11 @@ group is committed after its checks pass. Preserve unrelated working-tree edits.
 | L2 | Reset failure can hide the only reset control. | Select a point before the first summit response, then fail the summit reset: point readings remain and Reset is disabled/hidden. | Failed reset remains retryable; pending and displayed location identities determine the control state. | Fixed in location-state unit |
 | L3 | Cached reset erases the cooldown explanation while controls stay disabled. | After a 429 at a selected point, Reset restores summit readings and replaces the rate-limit warning with a partial-day notice. | Reset preserves the warning; suspension, preferences and visibility cannot bypass the known cooldown. | Fixed in location-state unit |
 | L4 | Reset fails to restore the summit's regional-model choices. | HRRR summit → Tokyo point → Reset shows GFS in the picker above cached HRRR readings. | Restore both summit period choices with the summit result, without writing a synthetic preference. | Fixed in location-state unit |
-| L5 | Tab from the popup restarts navigation at the page's first link and scrolls to the top. | Hidden Chrome: scrollY 921 → 0; focus moves to the Peakbagger logo link. `src/weather/peak-weather-location.js` hides the focused button before default Tab traversal. | Tab and Shift+Tab dismiss and return focus to the map without moving the viewport. | Open |
-| L6 | Map wheel zoom does not dismiss the menu for the old point. | Hidden Chrome: a wheel event in the native frame leaves the popup visible; `src/maps/peak-weather-map.js` only observes pointerdown. | Zoom/scroll and interactions with 3D controls dismiss the menu without affecting the map gesture. | Open |
+| L5 | Tab from the popup restarts navigation at the page's first link and scrolls to the top. | Hidden Chrome: scrollY 921 → 0; focus moves to the Peakbagger logo link. `src/weather/peak-weather-location.js` hides the focused button before default Tab traversal. | Tab and Shift+Tab dismiss and return focus to the map without moving the viewport. | Fixed in menu unit |
+| L6 | Map wheel zoom does not dismiss the menu for the old point. | Hidden Chrome: a wheel event in the native frame leaves the popup visible; `src/maps/peak-weather-map.js` only observes pointerdown. | Zoom/scroll and interactions with 3D controls dismiss the menu without affecting the map gesture. | Fixed in menu unit |
+| L7 | An open popup stays disabled after a cooldown expires. | Bundled probe: Refresh disabled=false while the popup item disabled=true after the cooldown refresh. | Update the open item's availability and restore usable keyboard focus without reopening or fetching. | Fixed in menu unit |
+| L8 | Escape on the 3D layer picker exits the entire terrain view. | Hardware Chrome integration: after picker Escape, the toggle reads 3D and the frame has opacity 0/pointer-events none. `src/terrain/terrain-frame-runtime.js` handles Escape from every control. | Native editable/control Escape stays local; canvas Escape still exits and closes nearer extension popups first. | Open |
+| L9 | A suspended 3D renderer can still open a weather context menu. | Bundled bridge probe: a valid generation's weatherContext is forwarded after destroy parks the frame at opacity 0. `src/terrain/terrain-map.js` checks loaded state but not suspended state. | Ignore context/dismiss messages from a suspended renderer and preserve active-generation checks on resume. | Open |
 
 Menu/focus and visual findings will be added only after reproduction. Location
 state fixes form one commit; menu interaction and visual fixes form separate
@@ -29,6 +32,14 @@ coherent commits if needed.
   summit model choices, and cooldown/BFCache preservation. Hidden Chrome
   153.0.8010.12 passes the real-extension weather suite at 375/768/1440×1100,
   including same-point failure recovery, with light/dark screenshot inspection.
+- L5/L7: 96/96 focused map/weather/terrain tests; hidden Chrome 153.0.8010.12
+  and Firefox 157.0.1 weather suites at 375/768/1440×1100 include Tab, Shift+Tab,
+  viewport preservation, and native-frame wheel dismissal. Cooldown expiry,
+  blur, outside focus and passive native/3D handlers have bundled regressions.
+- L6: real 3D popup, Tab, exposed-canvas wheel zoom, layer control dismissal,
+  location/reset and right-drag rotation pass in hidden Chrome on Apple M3 Pro
+  Metal at 375/1440×1100. The verifier waits for camera settlement rather than
+  starting a gesture while a previous zoom is still active.
 
 ### Intentionally not changed
 
