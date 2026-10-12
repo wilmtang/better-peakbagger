@@ -14,9 +14,11 @@ const svgElement = (tag, attrs = {}, text) => {
     return node;
 };
 
-export function createPeakHourlyChart({ container, day, samples, zone, metric = 'temperature', format, onMetric, state }) {
+export const resolvePeakHourlyMetric = value => metrics.some(([key]) => key === value) ? value : 'code';
+
+export function createPeakHourlyChart({ container, day, samples, zone, metric = 'code', format, onMetric, state }) {
     const id = `bpb-week-${day.window.date}`;
-    if (!metrics.some(([key]) => key === metric)) metric = 'temperature';
+    metric = resolvePeakHourlyMetric(metric);
     let disposed = false, observer, rows = [], geometry, hover = -1, selected = -1;
     const tabs = element('div', { class: 'bpb-week-tabs', role: 'tablist', 'aria-label': 'Hourly weather data' });
     const buttons = metrics.map(([key, label]) => element('button', { type: 'button', role: 'tab', id: `${id}-${key}`, 'data-metric': key,
@@ -97,8 +99,9 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         }
         drawCursor();
     }
-    function choose(next) {
-        metric = next; hover = -1; selected = -1; onMetric(metric);
+    function choose(next, remember = true) {
+        metric = next; hover = -1; selected = -1;
+        if (remember) onMetric(metric);
         frame.dataset.weatherMetric = metric;
         rows = hourlyWeatherSeries(day.window, samples, metric);
         for (const button of buttons) {
@@ -151,7 +154,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         else selected = Math.max(0, Math.min(rows.length - 1, selected < 0 ? event.key === 'ArrowRight' ? 0 : rows.length - 1 : selected + (event.key === 'ArrowRight' ? 1 : -1)));
         drawCursor();
     };
-    choose(metric);
+    choose(metric, false);
     if (state) {
         selected = rows.findIndex(row => row.sourceTime === state.selectedTime);
         conditions.scrollLeft = state.conditionsScrollLeft || 0;

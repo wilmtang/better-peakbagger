@@ -23,7 +23,10 @@ day's most severe available condition, temperature low/high, precipitation
 water equivalent (rain, showers and snow), and maximum wind. Missing values
 remain unavailable and incomplete hours are labelled. A native keyboard-
 accessible disclosure opens one day's hourly graphs; expanding another day
-closes the previous one and retains the chosen data tab. Temperature, rain/snow,
+closes the previous one and retains the chosen data tab. **Conditions** is the
+initial data tab; the last explicit data-tab selection is saved in extension-local
+storage on this device and restored across peak pages and reloads. Missing or
+invalid saved selections fall back to Conditions. Temperature, rain/snow,
 wind and gusts use responsive line graphs; Conditions shows a horizontally scrollable hourly table of condition icons,
 temperature, feels-like, rain/snow, wind, gusts and wind direction. Row labels
 stay visible while scrolling; clear hours use a Moon icon at night.

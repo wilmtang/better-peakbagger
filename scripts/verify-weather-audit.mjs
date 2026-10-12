@@ -122,6 +122,7 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('.bpb-week-day').length === 16);
     await page.locator('.bpb-week-day:first-child > summary').click();
     await page.locator('.bpb-week-day:nth-child(2) > summary').click();
+    await page.locator('.bpb-week-day[open] [data-metric="temperature"]').click();
     await page.waitForFunction(() => document.querySelector('.bpb-week-day:nth-child(2)[open] .bpb-week-line'));
     if (output) await page.locator('.bpb-week-day:nth-child(2)').screenshot({ path: path.join(output, 'peak-day-switch-375.png') });
     console.log(JSON.stringify({ browser: context.browser().version(), hidden: true, rain, requests: requests.length, profile: temporaryRoot }));

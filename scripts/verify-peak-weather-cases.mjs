@@ -54,11 +54,24 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     if (!live) {
         assert.equal(await evaluate(() => document.querySelector('[data-period="past"]').textContent), 'Past 16 days');
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('16 completed days')));
-        const before = evidence.length;
         await click(`${card} .bpb-week-day:last-child > summary`);
+        await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="code"][aria-selected="true"]'), 'Conditions is the initial hourly tab');
+        await verifyWeatherConditions(evaluate);
+        for (const width of [1440, 375]) {
+            await resize(width, 1100); assertGeometry(await evaluate(geometry));
+            if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-default-conditions-${width}.png`));
+        }
+        await click(`${card} .bpb-week-day[open] [data-metric="wind"]`);
+        await press(firefoxMode ? '\uE014' : 'ArrowRight');
+        await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="gust"][aria-selected="true"]'), 'keyboard gust choice');
+        await openPage();
+        await click(`${card} .bpb-week-day:last-child > summary`);
+        await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="gust"][aria-selected="true"]'), 'saved hourly tab survives navigation');
+        const restoredRequests = evidence.length;
+        await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
         await wait(() => document.querySelector('.bpb-week-day:last-child[open] .bpb-week-line'), 'oldest historical day has an hourly graph');
         assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day:last-child .bpb-week-point').length), 24);
-        assert.equal(evidence.length, before, 'oldest history expansion reuses the combined response');
+        assert.equal(evidence.length, restoredRequests, 'oldest history expansion reuses the combined response');
         await click(`${card} .bpb-week-day:last-child > summary`);
     }
     const assertForecastInfo = async () => {
@@ -74,6 +87,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         await click(`${card} [data-period="past"]`); assertGeometry(await evaluate(geometry));
         await click(`${card} [data-period="forecast"]`); assertGeometry(await evaluate(geometry));
         await click(`${card} .bpb-week-day:first-child > summary`);
+        await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
         await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'live forecast hourly graph');
         await click(`${card} .bpb-week-source > summary`);
         await wait(() => document.querySelectorAll('[data-update-model]').length > 1 && !document.querySelector('.bpb-week-updates').textContent.includes('Loading'), 'live model metadata settles');
@@ -97,6 +111,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${width}.png`));
             const before = evidence.length;
             await click(`${card} .bpb-week-day:first-child > summary`);
+            await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
             await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'selected day’s hourly line graph');
             await assertHourlyTabOrder();
             await wait(() => {
@@ -238,6 +253,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await openPage();
     await wait(() => document.querySelector('.bpb-week-temp').textContent.includes('°F'), 'initial weather unit preference applied');
     await click('.bpb-week-day:first-child > summary');
+    await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
     await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-chart').focus());
     await press(firefoxMode ? '\uE011' : 'Home');
     const pinned = await evaluate(() => {
@@ -289,6 +305,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
     await click(`${card} [data-period="past"]`);
     await click(`${card} .bpb-week-day:nth-last-child(2) > summary`);
+    await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
     await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'negative precipitation day retains its temperature graph');
     await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
     await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="precipitation"]').getAttribute('aria-selected') === 'true', 'negative precipitation graph selected');
@@ -306,6 +323,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 16);
     assert.ok(await evaluate(() => [...document.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —'))));
     await click(`${card} .bpb-week-day:first-child > summary`);
+    await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
     await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'partial day graph');
     await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
     await wait(() => !document.querySelector('.bpb-week-day[open] .bpb-week-chart-empty').hidden, 'missing hourly field has no fabricated zero line');
@@ -342,5 +360,5 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['best_match', 'best_match,gfs_global', 'gfs_global,best_match', 'gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global', 'meteofrance_arpege_world,gfs_global'].includes(request.model)));
     assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'best-match', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'best-match', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'local-hourly-tab', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
 }

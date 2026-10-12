@@ -7,7 +7,7 @@ import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { createPeakHourlyChart } from './peak-weather-hourly.js';
+import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.js';
 import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';
 import { readPeakWeatherSubject } from './peak-weather-subject.js';
@@ -17,6 +17,7 @@ import { createWeatherIcon } from './weather-icon.js';
 
 const ID = 'bpb-peak-weather', element = dom.element;
 const modelKeys = { past: 'bpbPeakWeatherModelPast', forecast: 'bpbPeakWeatherModelForecast' };
+const hourlyMetricKey = 'bpbPeakWeatherHourlyMetric';
 const dateLabel = (date, options) => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { ...options, timeZone: 'UTC' });
 
 export function mountPeakWeather() {
@@ -104,7 +105,7 @@ export function mountPeakWeather() {
         if (owner === updatesGeneration) updatesController = null;
     }
     source.addEventListener('toggle', () => { if (source.open) void loadUpdates(); else cancelUpdates(); });
-    let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'temperature';
+    let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'code';
     let period = 'forecast', notice = null, requestedWindow = null;
     const choices = { past: 'gfs_global', forecast: 'gfs_global' };
     const openDates = new Map();
@@ -152,7 +153,12 @@ export function mountPeakWeather() {
         if (activeDay === detail && hourlyChart) return;
         clearChart(); activeDay = detail;
         hourlyChart = createPeakHourlyChart({ container, day, samples: current.data[period].samples, zone, metric: hourlyMetric, format,
-            onMetric: metric => { hourlyMetric = metric; }, state });
+            onMetric: metric => {
+                hourlyMetric = metric;
+                // Persist explicit choices only; mounting or redrawing a day
+                // must not overwrite a newer choice from another open page.
+                try { void chrome.storage.local.set({ [hourlyMetricKey]: metric }).catch(() => {}); } catch { /* Storage failure keeps the tabs usable. */ }
+            }, state });
     };
     function renderResult(openDate = days.querySelector('details[open]')?.dataset.date) {
         if (!current) return;
@@ -349,13 +355,14 @@ export function mountPeakWeather() {
     // settings read/notification. Regional choices may not cover this summit.
     void (async () => {
         try {
-            const saved = await chrome.storage.local.get(Object.values(modelKeys));
+            const saved = await chrome.storage.local.get([...Object.values(modelKeys), hourlyMetricKey]);
+            hourlyMetric = resolvePeakHourlyMetric(saved?.[hourlyMetricKey]);
             const window = weatherPeakWindow(zone);
             for (const key of Object.keys(modelKeys)) {
                 const value = saved?.[modelKeys[key]];
                 if (eligiblePeakWeatherModels(subject, window, key).some(model => model.id === value)) choices[key] = value;
             }
-        } catch { /* Use GFS when local storage is unavailable. */ }
+        } catch { /* Use GFS and Conditions when local storage is unavailable. */ }
         if (lifecycle.state === 'disposed') return;
         modelsReady = true; populateModels();
         if (settingsReady) applyPreference(preference);
