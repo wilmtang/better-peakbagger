@@ -91,6 +91,23 @@ test('response contract validates units, aligned arrays, coordinate/elevation an
     assert.equal(validateWeatherResponse(body, summit, window, model).samples[0].temperature, null);
 });
 
+test('negative precipitation becomes unavailable without weakening other value checks', () => {
+    const body = weatherResponse();
+    body.hourly.precipitation.splice(0, 4, -0.1, -100, 0, null);
+    Object.freeze(body.hourly.precipitation);
+    const data = validateWeatherResponse(body, summit, window, model);
+    assert.deepEqual(data.samples.slice(0, 4).map(row => row.precipitation), [null, null, 0, null]);
+    assert.equal(data.samples[4].precipitation, 0.1);
+    assert.equal(data.samples[0].temperature, 10);
+    assert.equal(body.hourly.precipitation[0], -0.1, 'the provider response must remain unchanged');
+    for (const value of ['-0.1', NaN, -Infinity, Infinity, 2001]) {
+        const invalid = weatherResponse(); invalid.hourly.precipitation[0] = value;
+        assert.throws(() => validateWeatherResponse(invalid, summit, window, model), { code: 'invalid-response' });
+    }
+    const invalid = weatherResponse(); invalid.hourly.wind_speed_10m[0] = -1;
+    assert.throws(() => validateWeatherResponse(invalid, summit, window, model), { code: 'invalid-response' });
+});
+
 test('per-page client deduplicates and caches valid results with no credentials or referrer', async () => {
     let calls = 0;
     const client = createWeatherClient({ fetchFn: async (url, init) => {

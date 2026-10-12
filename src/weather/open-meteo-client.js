@@ -106,8 +106,12 @@ function validateResponse(body, summit, window, model, maxRows, definitions = fi
     const columns = {};
     for (const [key, definition] of Object.entries(definitions)) {
         if (!model.fields.includes(key)) { columns[definition.name] = times.map(() => null); continue; }
-        const values = hourly[key];
+        let values = hourly[key];
         if (!Array.isArray(values) || values.length !== times.length || body.hourly_units?.[key] !== definition.unit) invalid();
+        // Model processing can return negative precipitation (seen in ARPEGE).
+        // Keep that interval unavailable, so totals stay partial and graphs gap,
+        // rather than inventing zero rain or discarding otherwise usable weather.
+        if (key === 'precipitation') values = values.map(value => Number.isFinite(value) && value < 0 ? null : value);
         if (values.some(value => value !== null && (!Number.isFinite(value) || value < definition.min || value > definition.max
             || (definition.integer && !Number.isInteger(value))))) invalid();
         columns[definition.name] = values;

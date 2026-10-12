@@ -56,8 +56,12 @@ try {
             else body.hourly.precipitation[40] = null;
         }
         if (mode === 'empty') Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
-        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(peakMode ? weatherModelFixture(body, requested.searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
-            Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
+        const replyBody = peakMode ? weatherModelFixture(body, requested.searchParams.get('models').split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
+            Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body;
+        if (mode === 'negative-precipitation') for (const [key, values] of Object.entries(replyBody.hourly)) {
+            if (key === 'precipitation' || key === 'precipitation_meteofrance_arpege_world') values[45] = -0.1;
+        }
+        return { status: mode === 'error' ? 429 : 200, body: JSON.stringify(replyBody), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.js';
-import { weatherPeakWindow } from '../../src/weather/weather-week.js';
+import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
 import { PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
 import { peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.js';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
@@ -43,6 +43,32 @@ test('one bounded named-model request splits suffix columns without confusing hi
     assert.throws(() => validatePeakWeatherResponse(fixture(['gfs_global']), summit, window, models), { code: 'invalid-response' });
     body.hourly_units.temperature_2m_gfs_global = '°F';
     assert.throws(() => validatePeakWeatherResponse(body, summit, window, models), { code: 'invalid-response' });
+});
+
+test('Fuji negative ARPEGE precipitation leaves both weather periods usable and marks the affected day incomplete', async () => {
+    const fuji = { latitude: 35.360638, longitude: 138.727347, elevation: 3776 };
+    const range = weatherPeakWindow(mountainTime.resolve(fuji.latitude, fuji.longitude), Date.parse('2026-10-12T04:00:00Z'));
+    for (const ids of [['meteofrance_arpege_world'], ['gfs_global', 'meteofrance_arpege_world']]) {
+        const body = weatherModelFixture(weatherFixture({ ...fuji, startDate: range.startDate, hours: 792 }), ids);
+        const key = ids.length === 1 ? 'precipitation' : 'precipitation_meteofrance_arpege_world';
+        assert.equal(new Date(body.hourly.time[45] * 1000).toISOString(), '2026-09-26T21:00:00.000Z');
+        body.hourly[key][45] = -0.1;
+        const client = createPeakWeatherClient({ fetchFn: async () => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }) });
+        const result = await client.request(fuji, range, ids.map(model));
+        const arpege = result.models.meteofrance_arpege_world;
+        assert.equal(arpege.samples[45].precipitation, null);
+        assert.equal(arpege.samples[45].temperature, body.hourly[ids.length === 1 ? 'temperature_2m' : 'temperature_2m_meteofrance_arpege_world'][45]);
+        const past = summarizeWeatherWeek(arpege, range.past), forecast = summarizeWeatherWeek(arpege, range.forecast);
+        assert.equal(past.filter(day => day.useful).length, 16);
+        assert.equal(forecast.filter(day => day.useful).length, 16);
+        const affected = past.find(day => day.window.date === '2026-09-27');
+        assert.equal(affected.precipitation.complete, false);
+        assert.equal(affected.partial, true);
+        assert.ok(affected.precipitation.total >= 0);
+        assert.equal(affected.precipitationHours.filter(hour => hour.value === null).length, 1);
+        if (result.models.gfs_global) assert.equal(result.models.gfs_global.samples[45].precipitation, body.hourly.precipitation_gfs_global[45]);
+        assert.equal(body.hourly[key][45], -0.1);
+    }
 });
 
 test('named-model cache keys separate selections while sharing the rate-limit cooldown', async () => {

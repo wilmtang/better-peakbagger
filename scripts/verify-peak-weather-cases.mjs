@@ -248,6 +248,30 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-cursor'), 'click pins an hourly reading');
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-cursor.png`));
     await openPage('no-map'); assertGeometry(await evaluate(geometry));
+    setMode('negative-precipitation'); await openPage();
+    await chooseModel('meteofrance_arpege_world');
+    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using ARPEGE World')
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'negative ARPEGE precipitation retains usable weather');
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 1);
+    const negativeRequests = evidence.length;
+    await click(`${card} [data-period="forecast"]`);
+    assertGeometry(await evaluate(geometry));
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
+    await click(`${card} [data-period="past"]`);
+    await click(`${card} .bpb-week-day:has(.bpb-week-partial) > summary`);
+    await wait(() => document.querySelector('.bpb-week-day[open] .bpb-week-line'), 'negative precipitation day retains its temperature graph');
+    await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
+    await wait(() => document.querySelector('.bpb-week-day[open] [data-metric="precipitation"]').getAttribute('aria-selected') === 'true', 'negative precipitation graph selected');
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 23);
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-day[open] .bpb-week-metrics').textContent.includes('(partial)')));
+    for (const width of [1440, 375]) {
+        await resize(width, 1100); assertGeometry(await evaluate(geometry));
+        if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-negative-rain-${width}.png`));
+    }
+    assert.equal(evidence.length, negativeRequests, 'period switching and the hourly gap reuse the combined response');
+    await chooseModel('gfs_global');
+    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'reset historical model after negative precipitation');
     setMode('partial'); await openPage();
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 16);
     assert.ok(await evaluate(() => [...document.querySelectorAll('.bpb-week-metrics')].every(node => node.textContent.includes('Rain/snow —'))));
@@ -285,8 +309,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-loading.png`));
     setMode('complete'); release();
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 16, 'held weather response settles');
-    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global'].includes(request.model)));
+    assert.ok(evidence.every(request => request.host === 'api.open-meteo.com' && ['gfs_global', 'gfs_global,gfs_hrrr', 'icon_global,gfs_hrrr', 'icon_global,gfs_global', 'meteofrance_arpege_world,gfs_global'].includes(request.model)));
     assert.ok(metadataEvidence.every(request => request.host === 'api.open-meteo.com' && !request.query));
     assert.deepEqual(networkErrors, []);
-    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
+    return { viewports: widths, themes: ['light', 'dark'], shapes, fixtures: ['right-column', 'forecast', 'single-request-periods', 'hourly-graphs', 'data-tabs', 'conditions', 'keyboard', 'cursor', 'no-map', 'negative-precipitation', 'partial', 'rate-limit', 'empty', 'loading'], requests: evidence, metadataRequests: metadataEvidence };
 }

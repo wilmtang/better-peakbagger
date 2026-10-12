@@ -68,6 +68,34 @@ const chooseModel = (env, id) => {
     select.value = id; select.dispatchEvent(new env.win.Event('change'));
 };
 
+test('a negative historical ARPEGE sample does not hide forecast or history and leaves a gap in its hourly graph', async () => {
+    const env = setup({ now: '2026-10-12T04:00:00Z', storedSettings: { units: 'metric' },
+        localModels: { bpbPeakWeatherModelPast: 'meteofrance_arpege_world' }, fetchFn: url => {
+            const query = new URL(url).searchParams;
+            const body = weatherModelFixture(weatherFixture({ startDate: query.get('start_date'),
+                hours: (Date.parse(query.get('end_date')) - Date.parse(query.get('start_date'))) / 3600_000 + 24 }), query.get('models').split(','));
+            body.hourly.precipitation_meteofrance_arpege_world[45] = -0.1;
+            return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+        } });
+    try {
+        await settled(env, { past: false });
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        env.doc.querySelector('[data-period="past"]').click();
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
+        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using ARPEGE World/);
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /incomplete hours/i);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 1);
+        const affected = env.doc.querySelector('.bpb-week-partial').closest('details');
+        assert.match(affected.querySelector('.bpb-week-metrics').textContent, /Rain\/snow .*\(partial\)/);
+        affected.open = true;
+        await waitFor(() => affected.querySelector('.bpb-week-line'));
+        affected.querySelector('[data-metric="precipitation"]').click();
+        assert.equal(affected.querySelectorAll('.bpb-week-point').length, 23);
+        assert.doesNotMatch(affected.textContent, /-0\.1/);
+        assert.equal(env.requests.length, 1, 'both periods and the hourly gap reuse the combined response');
+    } finally { env.close(); }
+});
+
 test('mixed weather units update live without changing the default or refetching canonical data', async () => {
     const storedSettings = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', elevationUnits: 'metric' };
     const env = setup({ storedSettings });
