@@ -54,7 +54,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.equal(await evaluate(() => document.querySelector('.bpb-week-attribution').textContent), 'Powered by Open-Meteo');
     if (!live) {
         await verifyWeatherLocation({ evaluate, click, clickPoint, press, resize, wait, setSettings,
-            setMode, release, evidence, screenshot, screenshotPage, output, firefoxMode });
+            setMode, release, evidence, screenshot, screenshotPage, output, firefoxMode, navigate, origin });
         assert.equal(await evaluate(() => document.querySelector('[data-period="past"]').textContent), 'Past 16 days');
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('16 completed days')));
         await click(`${card} .bpb-week-day:last-child > summary`);

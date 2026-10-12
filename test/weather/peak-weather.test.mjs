@@ -236,15 +236,37 @@ test('failed reset remains retryable when a point supersedes the first summit re
     try {
         await waitFor(() => held.length === 1); selectLocation(env, 46.8, -121.7);
         await waitFor(() => held.length === 2); held[1].resolve(reply(held[1].url));
-        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000');
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.8000, -121.7000'
+            && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
         assert.equal(held[0].init.signal.aborted, true);
         fail = true; env.doc.querySelector('.bpb-week-location-reset').click();
         await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Could not load summit'));
         assert.equal(env.doc.querySelector('.bpb-week-location-reset').disabled, false);
         assert.equal(env.doc.querySelector('.bpb-week-refresh').getAttribute('aria-label'), 'Retry summit weather');
         fail = hold = false; env.doc.querySelector('.bpb-week-location-reset').click();
-        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === 'At the summit');
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === 'At the summit'
+            && env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
         assert.equal(env.doc.querySelector('.bpb-week-location-reset').disabled, true); assert.equal(env.requests.length, 4);
+    } finally { env.close(); }
+});
+
+test('a point selected before any readings load uses its own identity, elevation and civil day immediately', async () => {
+    const held = [], env = setup({ now: '2024-11-05T02:00:00Z', fetchFn: (url, init) => new Promise(resolve => held.push({ url, init, resolve })) });
+    try {
+        await waitFor(() => held.length === 1); selectLocation(env, 35.68, 139.76);
+        await waitFor(() => held.length === 2);
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, '35.6800, 139.7600');
+        assert.match(env.doc.querySelector('#bpb-peak-weather-heading').textContent, /Location weather/);
+        assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /^Terrain elevation · Today \+ 15 days$/);
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').getAttribute('aria-live'), 'polite');
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 0);
+        env.doc.querySelector('.bpb-week-location-reset').click(); await waitFor(() => held.length === 3);
+        assert.equal(held[1].init.signal.aborted, true);
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
+        held[2].resolve(reply(held[2].url)); await settled(env, { past: false });
+        held[1].resolve(reply(held[1].url));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(env.doc.querySelector('.bpb-week-location-name').textContent, 'At the summit');
     } finally { env.close(); }
 });
 

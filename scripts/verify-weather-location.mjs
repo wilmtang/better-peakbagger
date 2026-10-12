@@ -6,7 +6,7 @@ import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export async function verifyWeatherLocation({ evaluate, click, clickPoint, press, resize, wait, setSettings,
-    setMode, release, evidence, screenshotPage, output, firefoxMode }) {
+    setMode, release, evidence, screenshotPage, output, firefoxMode, navigate, origin }) {
     const measurements = [];
     for (const theme of ['light', 'dark']) {
         await setSettings({ theme, units: 'imperial' });
@@ -131,5 +131,30 @@ export async function verifyWeatherLocation({ evaluate, click, clickPoint, press
         await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-location-retry-375.png`));
     }
     await click('.bpb-week-location-reset');
+    setMode('loading');
+    await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map&location-audit=initial`);
+    await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start', behavior: 'instant' }));
+    await wait(() => document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'true', 'first summit request held');
+    const initialPoint = await evaluate(() => {
+        const frame = document.getElementById('Gmap'); frame.scrollIntoView({ block: 'center', behavior: 'instant' });
+        const rect = frame.getBoundingClientRect(); return { x: rect.right - 151, y: rect.bottom - 169 };
+    });
+    await clickPoint(initialPoint.x, initialPoint.y, 'right');
+    await wait(() => !document.getElementById('bpb-peak-weather-menu').hidden, 'point selected before first summit response');
+    await click('#bpb-peak-weather-menu button');
+    await wait(() => document.querySelector('.bpb-week-location-name').textContent !== 'At the summit', 'initial loading labels identify selected point');
+    assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day').length), 0);
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.startsWith('Terrain elevation')));
+    if (output) {
+        await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start', behavior: 'instant' }));
+        await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-initial-location-loading-375.png`));
+    }
+    setMode('complete'); release();
+    await wait(() => document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false'
+        && document.querySelectorAll('.bpb-week-day').length === 16, 'selected point replaces canceled initial summit request');
+    await click('.bpb-week-location-reset');
+    await wait(() => document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false'
+        && document.querySelector('.bpb-week-location-name').textContent === 'At the summit', 'initial summit reset loads summit readings');
+    await click('[data-period="past"]');
     return measurements;
 }

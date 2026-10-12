@@ -35,6 +35,10 @@ overwriting the stored preference. Coordinates and results stay in page memory;
 reloads start at the summit. A pending or failed location request retains the
 previous weather and its actual location label. Loading feedback and the reset
 action reserve their layout space so they do not push the forecast rows around.
+Before any usable readings exist, loading labels use the requested point's
+identity, terrain elevation and local date. Location changes have a polite
+accessible status announcement; previous readings keep their own label until
+replacement data arrives.
 The location behavior is covered by the peak-weather browser verifier; run
 `node scripts/verify-peak-weather-3d.mjs` after building for the hardware-rendered
 3D context menu, elevation, reset and right-drag checks.

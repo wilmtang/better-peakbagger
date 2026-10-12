@@ -39,7 +39,7 @@ export function mountPeakWeather() {
     let zone = mountainTime.resolve(subject.latitude, subject.longitude);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
     const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
-    const selectedLocation = element('span', { class: 'bpb-week-location-name', text: 'At the summit' });
+    const selectedLocation = element('span', { class: 'bpb-week-location-name', role: 'status', 'aria-label': 'Weather location', 'aria-live': 'polite', 'aria-atomic': 'true', text: 'At the summit' });
     const resetLocation = element('button', { type: 'button', class: 'bpb-week-location-reset', text: 'Reset to summit', disabled: '' });
     const locationControl = element('div', { class: 'bpb-week-location' }, [selectedLocation, resetLocation]);
     const periods = [['forecast', `${PEAK_FORECAST_DAYS}-day forecast`], ['past', `Past ${PEAK_FORECAST_DAYS} days`]];
@@ -306,7 +306,7 @@ export function mountPeakWeather() {
         try {
             const window = weatherPeakWindow(targetZone); requestedWindow = window;
             populateModels();
-            if (!current) renderLabels(window[period]);
+            if (!current) { subject = target; zone = targetZone; renderLabels(window[period]); }
             if (clear) { client.clear(); cancelUpdates(); updateClient.clear(); }
             const models = resolvePeakWeatherModels(target, window, choices);
             const response = await client.request(target, window, [...new Set(Object.values(models))], { signal: controller.signal });
