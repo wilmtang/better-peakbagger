@@ -235,6 +235,7 @@ async function profileBackupCase(page, origin, variant) {
     const before = await page.locator(action).evaluateAll(elements => elements.map(element => {
         const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
     }));
+    const panelBefore = await geometry(page, '#bpb-profile-backup');
     await page.locator(action).first().focus();
     await page.evaluate(() => { globalThis.__focusedAction = document.activeElement; });
     for (let tick = 0; tick < 20; tick++) {
@@ -245,6 +246,7 @@ async function profileBackupCase(page, origin, variant) {
         }));
         before.forEach((rect, index) => stable(rect, after[index], `profile progress ${tick} action ${index}`));
         assert.equal(await page.evaluate(() => document.activeElement === globalThis.__focusedAction), true, 'progress preserves focused node');
+        stable(panelBefore, await geometry(page, '#bpb-profile-backup'), `profile progress panel ${tick}`);
     }
     for (const status of ['pause-requested', 'paused', 'cancel-requested']) {
         await page.evaluate(state => globalThis.__renderBackupProgress(state), { ...state, status, pauseReason: 'github', pauseError: null });
@@ -252,6 +254,15 @@ async function profileBackupCase(page, origin, variant) {
             const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
         }));
         controls.forEach((rect, index) => stable(before[status === 'cancel-requested' ? 1 : index], rect, `profile ${status}`));
+        if (status !== 'paused') {
+            const pendingPanel = await geometry(page, '#bpb-profile-backup');
+            await page.evaluate(() => { globalThis.__pendingControl = document.querySelector('#bpb-profile-backup button'); });
+            for (let tick = 0; tick < 5; tick++) {
+                await page.evaluate(state => globalThis.__renderBackupProgress(state), { ...state, status, uploading: tick % 2, completed: tick });
+                assert.equal(await page.evaluate(() => globalThis.__pendingControl === document.querySelector('#bpb-profile-backup button')), true, 'pending ticks preserve controls');
+                stable(pendingPanel, await geometry(page, '#bpb-profile-backup'), `profile pending panel ${status} ${tick}`);
+            }
+        }
     }
     await capture(page, `${variant.name}-profile-backup`);
 }

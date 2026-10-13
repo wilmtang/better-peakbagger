@@ -16,6 +16,7 @@
 .bpb-profile-body { display: grid; gap: 10px; }
 .bpb-profile-copy, .bpb-profile-progress-copy { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .bpb-profile-copy strong, .bpb-profile-progress-copy strong { font-size: 14px; }
+.bpb-profile-activity { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bpb-profile-note { color: #66665f; font-size: 12px; }
 .bpb-profile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; order: -1; }
 .bpb-profile-actions button { display: grid; min-width: 0; overflow-wrap: anywhere; }

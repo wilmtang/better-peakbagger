@@ -11,6 +11,7 @@ import { githubError as GithubError } from '../github/github-error-copy.js';
 import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { dom as Dom } from '../ui/dom.js';
+import { createStableText } from '../ui/stable-text.js';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
@@ -30,6 +31,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     let workflow = null;
     let workflowGeneration = 0;
     let preparation = null, idleStatus = null;
+    let progressNoteText = null, pendingText = null;
 
     const body = (...children) => panel.querySelector('.bpb-profile-body').replaceChildren(...children.filter(Boolean));
     const button = (text, onclick, primary = false) => node('button', {
@@ -265,17 +267,21 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             const focusWasInPanel = panel.contains(document.activeElement);
             const cancelling = state.status === 'cancel-requested';
             const writing = state.uploading > 0;
+            const title = cancelling ? 'Stopping ascent and TR backup' : 'Pause requested';
+            const message = writing ? cancelling ? 'Stopping after the current GitHub batch…' : 'Pausing after the current GitHub batch…'
+                : cancelling ? 'Stopping…' : 'Pausing…';
+            if (panel.querySelector('.bpb-profile-copy > strong')?.textContent === title && panel.querySelector('progress')) {
+                pendingText.set(message);
+                panel.querySelector('progress').value = state.completed;
+                return;
+            }
+            const pendingLabel = node('span', { text: message });
+            pendingText = createStableText(pendingLabel);
+            pendingText.reserve(['Stopping after the current GitHub batch…', 'Pausing after the current GitHub batch…', 'Stopping…', 'Pausing…']);
             const statusCopy = node('div', {
                 class: 'bpb-profile-copy', tabindex: '-1',
             }, [
-                node('strong', { text: cancelling ? 'Stopping ascent and TR backup' : 'Pause requested' }),
-                node('span', {
-                    text: writing
-                        ? cancelling
-                            ? 'Stopping after the current GitHub batch…'
-                            : 'Pausing after the current GitHub batch…'
-                        : cancelling ? 'Stopping…' : 'Pausing…',
-                }),
+                node('strong', { text: title }), pendingLabel,
             ]);
             body(
                 statusCopy,
@@ -351,17 +357,24 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (existing && panel.querySelector('.bpb-profile-actions button')?.textContent === 'Pause') {
             existing.querySelector('strong').textContent = `${state.completed} of ${state.total}`;
             existing.querySelector('span').textContent = activity;
-            existing.querySelector('.bpb-profile-note').textContent = note;
+            existing.querySelector('.bpb-profile-activity').title = activity;
+            progressNoteText.set(note);
             const progress = panel.querySelector('progress');
             progress.max = Math.max(1, state.total);
             progress.value = state.completed;
             return;
         }
+        const noteLabel = node('span', { class: 'bpb-profile-note', text: note });
+        progressNoteText = createStableText(noteLabel);
+        const countSize = '8'.repeat(String(state.total).length);
+        progressNoteText.reserve([
+            `${countSize} read · ${countSize} ascents ready · uploading ${countSize} · Keep this tab open.`,
+            `${countSize} ascents ready. Reading resumes automatically when GitHub frees space.`,
+        ]);
         body(
             node('div', { class: 'bpb-profile-progress-copy' }, [
                 node('strong', { text: `${state.completed} of ${state.total}` }),
-                node('span', { text: activity }),
-                node('span', { class: 'bpb-profile-note', text: note }),
+                node('span', { class: 'bpb-profile-activity', text: activity, title: activity }), noteLabel,
             ]),
             node('progress', { class: 'bpb-profile-progress', max: Math.max(1, state.total), value: state.completed }),
             node('div', { class: 'bpb-profile-actions' }, [

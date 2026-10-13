@@ -136,6 +136,12 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
   pause/request/cancellation geometry in hidden Chrome/Firefox, both themes at
   390×900 and 1280×900. The narrow pending screenshot was inspected. This view
   fixture does not make live GitHub writes; the behavior tests cover the pipeline.
+- **J06 final repeated-state check:** pending pause/cancel ticks also retain
+  their controls. Reserve all batch-note/pending messages; show the activity
+  name on one line with its complete title and live text retained. The entire
+  panel now keeps its bounds across 20 long/short reading ticks and repeated
+  pending updates, preventing the ascent table below from bouncing. All 21
+  profile tests and the Chrome/Firefox width/theme geometry matrix passed.
 - **J05 saved-ascent backup:** preserve one button across checking, writing,
   completion and retry, reserve its widest label and put long feedback below
   without contributing to its width. Completed/current backups disable the
