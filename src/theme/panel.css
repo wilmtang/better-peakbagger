@@ -187,7 +187,6 @@ a:focus-visible,
 .nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .nav-item[aria-current] {
     color: var(--text);
-    font-weight: 650;
     background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 /* A parent whose sub-item is the active one: accent text, but no filled pill —
@@ -218,7 +217,6 @@ a:focus-visible,
 .nav-subitem:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .nav-subitem[aria-current] {
     color: var(--text);
-    font-weight: 650;
     background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 

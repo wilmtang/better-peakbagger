@@ -37,6 +37,8 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         'drafts-copy-fallback-value': copyFallbackValueEl,
         'drafts-copy-fallback-dismiss': copyFallbackDismissEl,
     })) return { refresh() {} };
+    // Manual-copy recovery must not push the draft's original actions away.
+    listEl.after(copyFallbackEl);
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     const UNDO_MS = 6000;
@@ -222,10 +224,10 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('Clipboard unavailable');
             await clipboard.writeText(markdown);
             if (!copyFallbackEl.hidden) dismissCopyFallback({ restoreFocus: false });
-            control.textContent = 'Copied';
+            control.querySelector('span').textContent = 'Copied';
             flash('Copied');
             globalThis.setTimeout(() => {
-                if (control.isConnected) control.textContent = 'Copy Markdown';
+                if (control.isConnected) control.querySelector('span').textContent = 'Copy Markdown';
             }, 1400);
         } catch {
             showCopyFallback(markdown, draft, control);
@@ -268,6 +270,8 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         open.setAttribute('aria-label', `Open ${title}`);
 
         const copy = OptionsUtils.actionButton('secondary', 'Copy Markdown', `Copy ${title} as Markdown`);
+        const copyLabel = document.createElement('span'); copyLabel.textContent = copy.textContent;
+        copy.replaceChildren(copyLabel);
         copy.dataset.action = 'copy';
         copy.addEventListener('click', () => { void copyDraft(draft, copy); });
         const remove = OptionsUtils.actionButton('secondary', 'Delete', `Delete ${title}`);

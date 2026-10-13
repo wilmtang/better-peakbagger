@@ -13,6 +13,17 @@ export function initUnitSettings({ save }) {
     const controls = [...root.querySelectorAll('[data-unit]')];
     let current = Schema.clean({});
     let previousCount = null;
+    const sizing = [
+        ['.unit-example-heading', 'Example readings · Imperial Peakbagger page'],
+        ['#unit-example-gpx', `${Units.formatDistance(20000, 'metric')} · ${Units.formatElevation(800, 'imperial')} ascent`],
+        ['#unit-example-weather', `${Units.formatWeather(9, 'temperature', 'imperial')} · ${Units.formatWeather(4.2, 'precipitation', 'metric')} · ${Units.formatWeather(16, 'wind', 'metric')}`],
+    ];
+    for (const [selector, label] of sizing) {
+        const element = root.querySelector(selector);
+        element.dataset.sizingLabel = label;
+        element.replaceChildren(document.createElement('span'));
+    }
+    const example = selector => root.querySelector(`${selector} > span`);
 
     const populate = settings => {
         current = Schema.clean(settings);
@@ -29,10 +40,10 @@ export function initUnitSettings({ save }) {
                 ? 'Default (Peakbagger)' : `Default (${Units.symbol(measurement, current.units)})`;
         }
         const system = measurement => Units.resolveUnits(current, null, measurement);
-        root.querySelector('.unit-example-heading').textContent = current.units === 'auto'
+        example('.unit-example-heading').textContent = current.units === 'auto'
             ? 'Example readings · Imperial Peakbagger page' : 'Example readings';
-        root.querySelector('#unit-example-gpx').textContent = `${Units.formatDistance(20000, system('distance'))} · ${Units.formatElevation(800, system('elevation'))} ascent`;
-        root.querySelector('#unit-example-weather').textContent = [
+        example('#unit-example-gpx').textContent = `${Units.formatDistance(20000, system('distance'))} · ${Units.formatElevation(800, system('elevation'))} ascent`;
+        example('#unit-example-weather').textContent = [
             Units.formatWeather(9, 'temperature', system('temperature')),
             Units.formatWeather(4.2, 'precipitation', system('precipitation')),
             Units.formatWeather(16, 'wind', system('wind'))

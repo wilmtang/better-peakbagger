@@ -20,6 +20,12 @@ import { initUnitSettings } from './unit-settings.js';
 (() => {
     'use strict';
     const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
+    // Variable feedback belongs below controls, including in stacked rows.
+    for (const id of ['terrain-cache-usage', 'settings-backup-github-status', 'favorites-github-status',
+        'ignored-github-status', 'photos-github-status']) {
+        const feedback = document.getElementById(id);
+        feedback?.closest('.row')?.append(feedback);
+    }
     try {
         const registration = extensionApi.runtime.sendMessage({ type: 'OPTIONS_TAB_REGISTER' });
         if (registration?.catch) void registration.catch(() => {});

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Transition geometry checks against shipped UI assets with controlled APIs.
 // Fixtures are isolated HTTPS Peakbagger pages; no live data or accounts are used.
-/* global document */
+/* global document, location */
 import assert from 'node:assert/strict';
 import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -30,7 +30,7 @@ function stable(before, after, label, keys = ['x', 'y', 'width', 'height']) {
         `${label}: ${key} shifted ${after[key] - before[key]}px; ${JSON.stringify({ before, after })}`);
 }
 async function capture(page, label) {
-    if (output) await page.screenshot({ path: path.join(output, `${label}.png`), fullPage: true });
+    if (output) await page.screenshot({ path: path.join(output, `${label}.png`) });
 }
 async function load(page, origin, file, initialize, argument) {
     await page.addInitScript(initialize, argument);
@@ -253,7 +253,75 @@ async function profileBackupCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-profile-backup`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase };
+async function settingsCase(page, origin, variant) {
+    await load(page, origin, 'options/options.html', ({ theme }) => {
+        const settings = { theme, units: 'auto', enable3dMap: true };
+        const listeners = [];
+        const area = { get: async () => ({ bpbSettings: settings }), set: async value => {
+            const oldValue = { ...settings }; Object.assign(settings, value.bpbSettings);
+            listeners.forEach(listener => listener({ bpbSettings: { oldValue, newValue: { ...settings } } }, 'sync'));
+        }, remove: async () => {} };
+        globalThis.chrome = { storage: { sync: area, local: area, session: area,
+            onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
+        permissions: { contains: async () => false, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
+        runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.0' }), getURL: file => new URL(`/dist/${file}`, location.origin).href,
+            sendMessage: async message => {
+                if (message.type === 'SETTINGS_PATCH') { Object.assign(settings, message.patch); return { ok: true, settings: { ...settings } }; }
+                return { ok: true, configured: false, connected: false };
+            } } };
+    }, variant);
+    await page.locator('#unit-example-gpx').filter({ hasText: '12.4 mi' }).waitFor();
+    await page.locator('.content').evaluate(content => {
+        const fixture = document.createElement('section'); fixture.id = 'jitter-component-fixture';
+        fixture.innerHTML = '<div class="github-code"><span class="github-code-value">AAAA-BBBB</span><span class="github-code-copy">Copy</span></div>'
+            + '<div class="draft-actions"><button class="secondary" data-action="copy"><span>Copy Markdown</span></button><button class="secondary">Delete</button></div>'
+            + '<div class="favorites-source-filter"><button>All <span>123</span></button><button>Custom <span>99</span></button></div>';
+        content.append(fixture);
+    });
+    for (const zoom of [1, 2]) {
+        await page.locator('body').evaluate((body, zoom) => { body.style.zoom = String(zoom); }, zoom);
+        await page.locator('#units').scrollIntoViewIfNeeded();
+        const before = await geometry(page, '#units');
+        for (const units of ['metric', 'imperial', 'auto']) {
+            await page.selectOption('#units', units);
+            await page.waitForFunction(units => document.getElementById('units').value === units, units);
+            stable(before, await geometry(page, '#units'), `units example ${units} zoom ${zoom}`);
+        }
+        await capture(page, `${variant.name}-units-${zoom}`);
+        for (const id of ['terrain-cache-usage', 'settings-backup-github-status', 'favorites-github-status', 'ignored-github-status', 'photos-github-status']) {
+            await page.locator(`#${id}`).evaluate(element => {
+                const row = element.closest('.row'); row.hidden = false;
+                row.querySelectorAll('.control').forEach(control => { control.hidden = false; });
+            });
+            const row = page.locator(`#${id}`).locator('..');
+            await row.scrollIntoViewIfNeeded();
+            const action = row.locator('button, input').first();
+            const rect = await action.boundingBox();
+            await page.locator(`#${id}`).evaluate(element => { element.textContent = 'A long error from the connected backup service. Check your connection and review the current backup before retrying. '.repeat(3); });
+            stable(rect, await action.boundingBox(), `${id} feedback zoom ${zoom}`);
+        }
+        const nav = page.locator('.nav-item').first();
+        const navBefore = await nav.boundingBox();
+        await nav.evaluate(element => { element.toggleAttribute('aria-current', !element.hasAttribute('aria-current')); });
+        stable(navBefore, await nav.boundingBox(), `navigation selected zoom ${zoom}`);
+        await page.locator('#jitter-component-fixture').scrollIntoViewIfNeeded();
+        for (const [selector, labels] of [['.github-code-copy', ['Copied', 'Select and copy']], ['[data-action="copy"] > span', ['Copied', 'Copy Markdown']]]) {
+            const target = page.locator(`#jitter-component-fixture ${selector}`);
+            const parent = target.locator('..');
+            const rect = await parent.boundingBox();
+            for (const label of labels) {
+                await target.evaluate((element, label) => { element.textContent = label; }, label);
+                stable(rect, await parent.boundingBox(), `${selector} ${label} zoom ${zoom}`);
+            }
+        }
+        const filter = page.locator('#jitter-component-fixture .favorites-source-filter button').first();
+        const filterRect = await filter.boundingBox();
+        await filter.evaluate(element => { element.setAttribute('aria-pressed', 'true'); });
+        stable(filterRect, await filter.boundingBox(), `favorites selected zoom ${zoom}`);
+    }
+    await capture(page, `${variant.name}-settings`);
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase };
 const resources = createResourceStack();
 let failure = null;
 try {
@@ -281,6 +349,8 @@ try {
                             catch { await route.fulfill({ status: 404, body: 'Missing shipped fixture asset' }); }
                         });
                         const page = await context.newPage();
+                        page.setDefaultTimeout(10000);
+                        page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
                         const variant = { theme, width, name: `${name}-${theme}-${width}` };
                         await check(page, origin, variant);
                         console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,

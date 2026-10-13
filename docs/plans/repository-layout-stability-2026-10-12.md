@@ -63,6 +63,16 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J07 Settings/workspaces:** place backup/cache feedback after controls in
+  wide and stacked rows; align ImgBB and buddy feedback with the top of actions.
+  Reserve unit-preview, copy-code, draft-copy and My Ascents label geometry;
+  keep navigation/filter font weight constant. Manual draft-copy recovery follows
+  the list instead of pushing its buttons down. Build, 203 options/draft tests,
+  ESLint and diff checks passed. Hidden Chrome/Firefox passed actual Settings
+  unit changes and long feedback plus component copy/selection states, both
+  themes at 390×900 and 1280×900 with 100% and 200% UI scaling. Unit and copy
+  screenshots were inspected; component fixtures do not establish native
+  clipboard permission prompts or live GitHub authorization.
 - **J06 profile backup:** progress ticks update the existing readout and progress
   bar while retaining focused Pause/Cancel nodes. Actions occupy stable slots
   above feedback; preparation and cancellation retain Cancel's slot, and sizing

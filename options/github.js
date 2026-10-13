@@ -111,8 +111,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const el = Dom.element;
     const button = (label, { primary = false, onClick } = {}) =>
-        el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label,
-            onclick: event => withConnectionOperation(() => onClick(event)) });
+        el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', 'data-sizing-label': label,
+            onclick: event => withConnectionOperation(() => onClick(event)) }, [el('span', { text: label })]);
     // One way out to an external page. tabs.create is preferred and cannot be
     // popup-blocked; window.open is the last resort for a context without the
     // tabs API, and no longer swallows its failure — "Open
@@ -415,7 +415,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const openMyAscents = async event => {
             const control = event.currentTarget;
             control.disabled = true;
-            control.textContent = 'Opening…';
+            control.querySelector('span').textContent = 'Opening…';
             historyStatus.hidden = true;
             const response = await send({ type: 'PEAKBAGGER_MY_ASCENTS' });
             if (response && response.ok && response.url) {
@@ -432,7 +432,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 showHistoryError(message, { offerSignIn: response && response.error && response.error.code === 'peakbagger-signed-out' });
             }
             control.disabled = false;
-            control.textContent = 'Open My Ascents';
+            control.querySelector('span').textContent = 'Open My Ascents';
         };
         const deleteToggle = el('label', { class: 'github-auto', for: 'github-delete-backup' }, [
             el('input', {
@@ -448,7 +448,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         });
         const historyHint = el('p', { class: 'github-hint github-history' }, [
             document.createTextNode('New and edited ascents and TRs are backed up automatically. To back up earlier ascents and TRs, '),
-            el('button', { type: 'button', class: 'github-link', text: 'Open My Ascents', onclick: openMyAscents }),
+            el('button', { type: 'button', class: 'github-link', 'data-sizing-label': 'Open My Ascents', onclick: openMyAscents },
+                [el('span', { text: 'Open My Ascents' })]),
             document.createTextNode(' and choose Back up all ascents and TRs (it covers every year).'),
         ]);
         renderAscent(

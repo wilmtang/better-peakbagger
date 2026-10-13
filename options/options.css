@@ -63,6 +63,9 @@ body.standalone-page .content { height: 100%; }
     border-top: 1px solid var(--border);
 }
 .row:first-child { border-top: none; }
+.row:has(> [role="status"]) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.row > [role="status"] { grid-column: 1 / -1; max-width: none; overflow-wrap: anywhere; }
+.row:has(.imgbb-key-control) { align-items: flex-start; }
 .viewport-setting-row { align-items: flex-start; }
 
 .label { display: flex; flex-direction: column; gap: 3px; }
@@ -99,6 +102,9 @@ select { min-width: 168px; }
 .unit-example dl { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; margin: 0; }
 .unit-example dt { color: var(--sub); }
 .unit-example dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.unit-example [data-sizing-label] { display: grid; }
+.unit-example [data-sizing-label] > span, .unit-example [data-sizing-label]::after { grid-area: 1 / 1; }
+.unit-example [data-sizing-label]::after { content: attr(data-sizing-label); visibility: hidden; }
 input[type="number"] { min-width: 96px; text-align: right; }
 
 .route-style { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -189,7 +195,7 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-source input { width: 15px; height: 15px; margin: 0; }
 .favorites-panel { padding: 16px 18px; border-top: 1px solid var(--border); }
 .favorites-panel[hidden] { display: none; }
-.favorites-summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.favorites-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .favorites-status, .favorites-hint, .favorites-empty { margin: 0; color: var(--sub); font-size: 12.5px; }
 .favorites-status { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; color: var(--text); }
 .favorites-status a { color: var(--link); }
@@ -303,6 +309,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
     font-size: 12px;
     cursor: pointer;
 }
+.favorites-source-filter button { font-weight: 650; }
 .favorites-source-filter button:hover { color: var(--text); border-color: var(--input-border); }
 .favorites-source-filter button[aria-pressed="true"] {
     color: var(--link);
@@ -399,6 +406,13 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .github-code:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .github-code-value { font: 700 22px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; user-select: all; }
 .github-code-copy { color: var(--sub); font: 600 11px/1 system-ui, sans-serif; letter-spacing: 0; }
+.github-code-copy { min-inline-size: 15ch; text-align: end; }
+.github-actions button[data-sizing-label] { display: grid; }
+.github-actions button[data-sizing-label] > span, .github-actions button[data-sizing-label]::after { grid-area: 1 / 1; }
+.github-actions button[data-sizing-label]::after { content: attr(data-sizing-label); visibility: hidden; }
+.github-link[data-sizing-label] { display: inline-grid; }
+.github-link[data-sizing-label] > span, .github-link[data-sizing-label]::after { grid-area: 1 / 1; }
+.github-link[data-sizing-label]::after { content: attr(data-sizing-label); visibility: hidden; }
 .github-repo-list { display: flex; flex-direction: column; gap: 6px; }
 button.github-repo {
     font: inherit;
@@ -469,6 +483,9 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     line-height: 1.2;
 }
 .draft-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
+.draft-actions [data-action="copy"] { display: grid; }
+.draft-actions [data-action="copy"] > span, .draft-actions [data-action="copy"]::after { grid-area: 1 / 1; }
+.draft-actions [data-action="copy"]::after { content: "Copy Markdown"; visibility: hidden; }
 .draft-undo {
     appearance: none;
     padding: 2px 3px;
@@ -615,6 +632,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 @media (max-width: 480px) {
+    .row:has(> [role="status"]) { grid-template-columns: minmax(0, 1fr); }
     #general-units select { width: 100%; }
     .unit-custom-count { float: none; display: block; margin: 4px 0 0 17px; }
     .unit-example dl { grid-template-columns: 1fr; }
