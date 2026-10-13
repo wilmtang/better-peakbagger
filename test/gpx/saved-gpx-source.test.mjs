@@ -13,6 +13,7 @@ import {
 import { MAX_GAIA_GPX_BYTES } from '../../src/gaia/gaia-import.js';
 import { MAX_ALLTRAILS_GPX_BYTES } from '../../src/alltrails/alltrails-import.js';
 import { MAX_ONX_GPX_BYTES } from '../../src/onx/onx-import.js';
+import { fetchPeakbaggerResource } from '../../src/peakbagger/peakbagger-request.js';
 
 const ascent = 'https://www.peakbagger.com/climber/ascent.aspx?aid=42';
 const download = 'https://www.peakbagger.com/climber/GPXFile.aspx?aid=42&sep=1';
@@ -102,5 +103,19 @@ test('same-ascent download normalization preserves the exact GPX', async () => {
         assert.equal(result.ok, true, url);
         assert.equal(result.gpx, gpx);
         assert.equal(result.filename, 'peakbagger-42.gpx');
+    }
+});
+
+test('the production request helper preserves final identity for the source gate', async () => {
+    for (const finalUrl of [download, download.replace('aid=42', 'aid=43')]) {
+        const result = await readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
+            fetchResource: (url, options) => fetchPeakbaggerResource(url, { ...options,
+                fetchFn: async requested => {
+                    assert.equal(requested, download);
+                    return { ok: true, status: 200, url: finalUrl, redirected: finalUrl !== download,
+                        headers: new Headers({ 'content-type': 'application/gpx+xml' }), text: async () => gpx };
+                } }) });
+        assert.equal(result.ok, finalUrl === download);
+        assert.equal(result.gpx, finalUrl === download ? gpx : undefined);
     }
 });
