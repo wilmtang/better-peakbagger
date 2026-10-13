@@ -63,6 +63,16 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J10 GPX/maps:** place stable GPX actions before variable metrics/diagnostics;
+  reserve the source-view label and put coordinate feedback after the chart.
+  Retry remains visible while pending. Sentinel feedback grows above its
+  bottom-anchored picker and reserved retry slot. Terrain consent anchors near
+  the top, keeps the enable label's size and puts errors after actions. All 104
+  GPX/Sentinel/terrain tests passed with build and ESLint; hidden Chrome/Firefox
+  passed controlled Sentinel requests and GPX/consent component geometry in
+  both themes at 390×900 and 1280×900. Narrow screenshots were inspected.
+  The full Chrome run exercised native GPX source selection and Sun & Moon;
+  its two obsolete placement assertions were updated and its rerun is pending.
 - **J09 weather:** reserve hourly-readout wrapping from every actual possible
   reading, with hidden CSS sizing text excluded from the live region. Empty
   graphs retain plot height; Refresh/Retry retains width and ascent retry
@@ -146,5 +156,5 @@ No dispositions yet. Record evidence for every deliberate layout transition.
 
 ### Changed but not fully proven
 
-No runtime changes yet. Live authenticated provider/native-browser behavior and
-any blocked fixture paths must remain explicit rather than being called closed.
+- The final broad manifest verification is pending. Authenticated provider
+  dialogs and onscreen window/focus placement are outside hidden fixture proof.

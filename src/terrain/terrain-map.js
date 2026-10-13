@@ -293,10 +293,12 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         const cancel = createTextElement('button', 'bpb-terrain-consent-secondary', 'Not now');
         cancel.type = 'button';
         const enable = createTextElement('button', 'bpb-terrain-consent-primary', 'Enable and open 3D');
+        const enableLabel = createTextElement('span', '', enable.textContent);
+        enable.replaceChildren(enableLabel);
         enable.type = 'button';
         actions.append(cancel, enable);
 
-        dialog.append(eyebrow, title, summary, providerList, selectedProvider, later, error, actions);
+        dialog.append(eyebrow, title, summary, providerList, selectedProvider, later, actions, error);
         backdrop.append(dialog);
         consentElement = backdrop;
         consentReturnFocus = document.getElementById('bpb-terrain-toggle');
@@ -311,7 +313,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             if (!event.isTrusted) return;
             enable.disabled = true;
             cancel.disabled = true;
-            enable.textContent = 'Enabling…';
+            enableLabel.textContent = 'Enabling…';
             error.textContent = '';
             try {
                 const next = await settings.set({ enable3dMap: true });
@@ -321,7 +323,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             } catch (exception) {
                 enable.disabled = false;
                 cancel.disabled = false;
-                enable.textContent = 'Try again';
+                enableLabel.textContent = 'Try again';
                 error.textContent = '3D maps could not be enabled. Try again or use Better Peakbagger Settings.';
                 enable.focus();
             }

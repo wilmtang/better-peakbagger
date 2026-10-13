@@ -46,7 +46,9 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     retry.textContent = 'Try again';
     retry.hidden = true;
     metadata.append(summary, stats);
-    element.append(select, metadata, retry);
+    // Feedback grows upward in the bottom-anchored map control. The capture
+    // picker and reserved retry slot remain next to the same map pixels.
+    element.append(metadata, select, retry);
     let active = false;
     let revision = 0;
     let controller = null;

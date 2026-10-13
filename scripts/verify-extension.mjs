@@ -1066,8 +1066,8 @@ try {
         `the report display choice changed pixels or failed to resize the stage: ${
             JSON.stringify(reportSizeState)
         }`);
-        check(reportSizeState.footer.box?.height < 210
-            && reportSizeState.footer.summary?.right < reportSizeState.footer.options?.left
+        check(reportSizeState.footer.estimate?.top >= reportSizeState.footer.actions?.bottom
+            && reportSizeState.footer.summary?.top >= reportSizeState.footer.actions?.bottom
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'left')
             && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'right')
             && aligned(reportSizeState.footer.format, reportSizeState.footer.reportSize, 'left')
@@ -1080,7 +1080,7 @@ try {
                 === reportSizeState.estimateColors.neutral.strong
             && reportSizeState.estimateColors.warning.note
                 === reportSizeState.estimateColors.neutral.note,
-        `the wide photo footer lost its two-row control and action grid: ${
+        `photo feedback precedes actions or the control grid is misaligned: ${
             JSON.stringify({
                 footer: reportSizeState.footer,
                 estimateColors: reportSizeState.estimateColors,
@@ -2917,8 +2917,9 @@ try {
             summary: sun?.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
             events: sun?.querySelector('.bpb-sun-calculator__header-events')?.textContent || '',
             disabled: sun?.querySelector('.bpb-sun-calculator__toggle')?.disabled === true,
-            coordinatesBeforeLegend: coordinates?.nextElementSibling === legend,
-            afterChart: canvasContainer?.nextElementSibling === sun,
+            legendBeforeChart: Boolean(legend?.compareDocumentPosition(canvasContainer) & Node.DOCUMENT_POSITION_FOLLOWING),
+            feedbackAfterChart: Boolean(canvasContainer?.compareDocumentPosition(coordinates) & Node.DOCUMENT_POSITION_FOLLOWING),
+            afterChart: Boolean(coordinates?.compareDocumentPosition(sun) & Node.DOCUMENT_POSITION_FOLLOWING),
             insidePanel: Boolean(rootRect) && rootRect.left >= panel.getBoundingClientRect().left
                 && rootRect.right <= panel.getBoundingClientRect().right + 1,
             borderStyle: sun ? getComputedStyle(sun).borderStyle : null,
@@ -2928,7 +2929,7 @@ try {
         && analyzerSunState.collapsed && !analyzerSunState.disabled
         && /Trailhead/.test(analyzerSunState.summary)
         && /Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/.test(analyzerSunState.events)
-        && analyzerSunState.coordinatesBeforeLegend && analyzerSunState.afterChart
+        && analyzerSunState.legendBeforeChart && analyzerSunState.feedbackAfterChart && analyzerSunState.afterChart
         && analyzerSunState.insidePanel && analyzerSunState.borderStyle === 'solid',
     `the packaged GPX Sun calculator is missing, misplaced, unstyled, or exposed a date picker: ${JSON.stringify(analyzerSunState)}`);
     const analyzerSunToggle = offPage.locator('.bpb-sun-calculator__toggle');

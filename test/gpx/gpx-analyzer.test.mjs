@@ -1936,8 +1936,10 @@ test('GPX Sun previews chart hover and restores timed selections across mountain
     assert.equal(calculator.querySelector('input[type="date"]'), null);
     assert.ok(controls.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
     assert.ok(legend.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
-    assert.equal(canvasContainer.nextElementSibling, calculator,
-        'the Sun card follows the chart so expanding a hover preview cannot move its pointer target');
+    assert.equal(canvasContainer.nextElementSibling, controls,
+        'coordinate feedback follows the chart so it cannot move its pointer target');
+    assert.equal(controls.nextElementSibling, calculator,
+        'the Sun card follows chart feedback so expanding a preview cannot move its pointer target');
     assert.equal(button.disabled, false, 'the disclosure explains how to choose its route subject');
     const initialSummary = calculator.querySelector('.bpb-sun-calculator__summary').textContent;
     const initialEvents = calculator.querySelector('.bpb-sun-calculator__header-events').textContent;

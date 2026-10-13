@@ -37,13 +37,25 @@ export async function verifyGpxSegments({ navigate, evaluate, resize, click, pre
     await press('.bpb-gpx-segment-disclosure', 'Enter');
     await wait(() => !document.querySelector('#bpb-gpx-segment-details').hidden);
     await screenshot?.('open');
+    const actionGeometry = () => evaluate(() => {
+        const rect = document.querySelector('.bpb-gpx-segment-view').getBoundingClientRect();
+        return { x: rect.x + globalThis.scrollX, y: rect.y + globalThis.scrollY, width: rect.width, height: rect.height };
+    });
+    const before = await actionGeometry();
+    const assertActionStable = async () => {
+        const after = await actionGeometry();
+        for (const key of Object.keys(before)) assert.ok(Math.abs(before[key] - after[key]) <= 1,
+            `source-view action ${key}: ${before[key]} → ${after[key]}`);
+    };
     await press('.bpb-gpx-segment-view', 'Enter');
     await wait(() => /Time: 68h 28m/.test(document.querySelector('.bpb-gpx-stats').textContent));
     assert.equal(await evaluate(() => document.activeElement.className), 'bpb-gpx-segment-view');
+    await assertActionStable();
     await press('#bpb-gpx-analysis canvas', 'ArrowRight');
     await wait(() => !document.querySelector('.bpb-gpx-coordinate-controls button').disabled);
     await click('.bpb-gpx-segment-view');
     await wait(() => /Time: 12h 32m/.test(document.querySelector('.bpb-gpx-stats').textContent));
+    await assertActionStable();
     assert.ok(await evaluate(() => document.querySelector('.bpb-gpx-coordinate-controls button').disabled));
     assert.match(await evaluate(() => document.querySelector('.bpb-gpx-hint').textContent), /excluded/);
     await screenshot?.('excluded-selection');

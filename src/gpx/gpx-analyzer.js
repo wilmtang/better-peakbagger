@@ -160,7 +160,7 @@ const run = async () => {
         const headerBox = document.createElement('div');
         headerBox.className = 'bpb-gpx-header';
         Object.assign(headerBox.style, {
-            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', alignItems: 'start',
             flexWrap: 'wrap', gap: '10px', marginBottom: '10px'
         });
 
@@ -184,7 +184,7 @@ const run = async () => {
         retryButton.textContent = 'Try loading again';
         retryButton.hidden = true;
 
-        statsContainer.append(stats, subStats, retryButton);
+        statsContainer.append(retryButton, stats, subStats);
 
         const segmentDetailsButton = document.createElement('button');
         segmentDetailsButton.type = 'button';
@@ -199,7 +199,10 @@ const run = async () => {
         const segmentViewButton = document.createElement('button');
         segmentViewButton.type = 'button';
         segmentViewButton.className = 'bpb-gpx-segment-view';
-        segmentDetails.append(segmentExplanation, segmentViewButton);
+        const segmentViewLabel = document.createElement('span');
+        segmentViewButton.append(segmentViewLabel);
+        segmentViewButton.dataset.label = 'Show all source segments';
+        segmentDetails.append(segmentViewButton, segmentExplanation);
         segmentDetailsButton.addEventListener('click', () => {
             segmentDetails.hidden = !segmentDetails.hidden;
             segmentDetailsButton.setAttribute('aria-expanded', String(!segmentDetails.hidden));
@@ -301,7 +304,7 @@ const run = async () => {
 
         coordinateControls.append(copyCoordinatesButton, hintText, coordinateFallback);
         controlsContainer.append(unitSelect, routeStyleControls);
-        headerBox.append(statsContainer, controlsContainer);
+        headerBox.append(controlsContainer, segmentDetails, statsContainer);
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
         terrainMessage.setAttribute('role', 'status');
@@ -325,7 +328,7 @@ const run = async () => {
         chartLegend.hidden = true;
 
         canvasContainer.append(canvas);
-        container.append(headerBox, segmentDetails, terrainMessage, coordinateControls, chartLegend, canvasContainer);
+        container.append(headerBox, terrainMessage, chartLegend, canvasContainer, coordinateControls);
         const ascentDate = AscentPage.parseDate(document);
         const sunState = SunState.create();
         let sunCalculator = null;
@@ -1383,7 +1386,7 @@ const run = async () => {
                 boundary.textContent = 'The GPX download and files sent to map providers are unchanged. Peakbagger’s native map may still show the source route.';
                 segmentExplanation.replaceChildren(summary, ...(d.excludedSegmentCount ? [comparison] : []), inventory, boundary);
                 segmentViewButton.hidden = !d.excludedSegmentCount;
-                segmentViewButton.textContent = sourceView ? 'Use interpreted view' : 'Show all source segments';
+                segmentViewLabel.textContent = sourceView ? 'Use interpreted view' : 'Show all source segments';
             }
 
             // Map adjusted arrays
@@ -1865,7 +1868,6 @@ const run = async () => {
             const generation = ++loadGeneration;
             timeCursor.select(null);
             resetSun('Loading GPX data…');
-            retryButton.hidden = true;
             retryButton.disabled = true;
             delete stats.dataset.state;
             stats.textContent = 'Analyzing GPX data…';

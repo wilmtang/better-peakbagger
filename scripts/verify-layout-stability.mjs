@@ -12,6 +12,7 @@ import { JSDOM } from 'jsdom';
 import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -411,7 +412,73 @@ async function weatherCase(page, origin, variant) {
         await capture(page, `${variant.name}-weather-${zoom}`);
     }
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase };
+async function mapCase(page, origin, variant) {
+    await page.goto(`${origin}/dist/photos/guide.html`);
+    await page.evaluate(({ theme }) => {
+        document.documentElement.dataset.bpbTheme = theme;
+        document.body.innerHTML = '<div id="bpb-gpx-analysis"><div class="bpb-gpx-header" style="display:grid">'
+            + '<div class="bpb-gpx-controls"><button>Units</button></div><section id="bpb-gpx-segment-details">'
+            + '<button class="bpb-gpx-segment-view" data-label="Show all source segments"><span>Show all source segments</span></button><p>Interpreted view</p></section>'
+            + '<button class="bpb-gpx-retry">Try loading again</button><div class="bpb-gpx-stats">Metrics</div></div>'
+            + '<canvas style="width:100%;height:150px"></canvas><div class="bpb-gpx-coordinate-controls"><button class="bpb-gpx-copy-coordinates">Copy coordinates</button><div class="bpb-gpx-hint">Choose a point</div></div></div>'
+            + '<div id="sentinel-fixture" style="position:fixed;bottom:12px;left:12px"></div>';
+    }, variant);
+    await page.addStyleTag({ content: gpxPanelCss });
+    await page.addStyleTag({ content: (await asset('css/sentinel.css')).toString() });
+    const source = (await asset('content/sentinel-map.js')).toString();
+    const end = source.lastIndexOf('})();');
+    await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__createSentinel = createSentinelLayer;' + source.slice(end) });
+    await page.evaluate(() => {
+        globalThis.__sentinel = globalThis.__createSentinel({ document, readView: () => ({ zoom: 12,
+            bounds: { getWest: () => -122, getEast: () => -121, getNorth: () => 48, getSouth: () => 47 } }), replaceScenes() {}, clearScenes() {},
+        search: () => new Promise((resolve, reject) => { globalThis.__finishScenes = ok => ok ? resolve([])
+            : reject(new Error('Satellite imagery is temporarily unavailable. Please check your connection and try another capture. '.repeat(2))); }) });
+        document.getElementById('sentinel-fixture').append(globalThis.__sentinel.element);
+        globalThis.__sentinel.activate();
+    });
+    await page.waitForFunction(() => typeof globalThis.__finishScenes === 'function');
+    const picker = await geometry(page, '.bpb-sentinel select');
+    await page.evaluate(() => globalThis.__finishScenes(false));
+    await page.locator('.bpb-sentinel button').waitFor();
+    stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel failure picker');
+    const retry = await geometry(page, '.bpb-sentinel button');
+    await page.click('.bpb-sentinel button');
+    stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel retry picker');
+    await page.evaluate(() => globalThis.__finishScenes(true));
+    await page.locator('.bpb-sentinel-summary').filter({ hasText: 'No captures found' }).waitFor();
+    stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel completed picker');
+    await page.evaluate(() => globalThis.__sentinel.tileError());
+    stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel imagery retry');
+    await capture(page, `${variant.name}-sentinel`);
+    await page.evaluate(() => globalThis.__sentinel.dispose());
+    const selectors = ['.bpb-gpx-segment-view', '.bpb-gpx-controls button'];
+    const baseline = await Promise.all(selectors.map(selector => geometry(page, selector)));
+    await page.locator('.bpb-gpx-segment-view > span').evaluate(element => { element.textContent = 'Use interpreted view'; });
+    await page.locator('.bpb-gpx-stats, #bpb-gpx-segment-details p').evaluateAll(elements => elements.forEach(element => {
+        element.textContent = 'Long diagnostic and coordinate recovery information that wraps over several lines. '.repeat(4);
+    }));
+    for (let index = 0; index < selectors.length; index++) stable(baseline[index], await geometry(page, selectors[index]), `GPX ${selectors[index]}`);
+    await page.locator('#bpb-gpx-segment-details').evaluate(element => { element.hidden = true; });
+    const retryBefore = await geometry(page, '.bpb-gpx-retry');
+    await page.locator('.bpb-gpx-stats').evaluate(element => { element.textContent = 'Analyzing GPX data…'; });
+    stable(retryBefore, await geometry(page, '.bpb-gpx-retry'), 'GPX loading retry');
+    const copyBefore = await geometry(page, '.bpb-gpx-copy-coordinates'), plotBefore = await geometry(page, '#bpb-gpx-analysis canvas');
+    await page.locator('.bpb-gpx-hint').evaluate(element => { element.textContent = 'Coordinate copying is unavailable. Select the complete coordinates and use your system copy shortcut. '.repeat(4); });
+    stable(copyBefore, await geometry(page, '.bpb-gpx-copy-coordinates'), 'GPX coordinate recovery');
+    stable(plotBefore, await geometry(page, '#bpb-gpx-analysis canvas'), 'GPX coordinate recovery plot');
+    await page.addStyleTag({ content: (await asset('css/terrain-map.css')).toString() });
+    await page.evaluate(() => {
+        document.body.innerHTML = '<div class="bpb-terrain-consent-backdrop"><section class="bpb-terrain-consent-dialog"><h2>Turn on 3D maps?</h2><p>Map requests go to the displayed tile providers.</p><div class="bpb-terrain-consent-actions"><button class="bpb-terrain-consent-secondary">Not now</button><button class="bpb-terrain-consent-primary"><span>Enable and open 3D</span></button></div><p class="bpb-terrain-consent-error"></p></section></div>';
+    });
+    const button = '.bpb-terrain-consent-primary', consentBefore = await geometry(page, button);
+    for (const label of ['Enabling…', 'Try again']) {
+        await page.locator(`${button} > span`).evaluate((element, label) => { element.textContent = label; }, label);
+        await page.locator('.bpb-terrain-consent-error').evaluate(element => { element.textContent = '3D maps could not be enabled. Try again or use Better Peakbagger Settings.'; });
+        stable(consentBefore, await geometry(page, button), `terrain consent ${label}`);
+    }
+    await capture(page, `${variant.name}-consent`);
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase, maps: mapCase };
 const resources = createResourceStack();
 let failure = null;
 try {

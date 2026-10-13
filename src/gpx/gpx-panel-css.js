@@ -191,6 +191,9 @@ export const gpxPanelCss = `
 #bpb-gpx-segment-details p { margin: 0 0 8px; }
 #bpb-gpx-segment-details ul { padding-left: 20px; margin: 0 0 8px; }
 #bpb-gpx-analysis .bpb-gpx-segment-view { padding: 5px 10px; border: 1px solid var(--bpb-gpx-input-border); border-radius: 5px; background: var(--bpb-gpx-input-bg); color: var(--bpb-gpx-text); cursor: pointer; }
+#bpb-gpx-analysis .bpb-gpx-segment-view { display: grid; margin-bottom: 8px; }
+#bpb-gpx-analysis .bpb-gpx-segment-view > span, #bpb-gpx-analysis .bpb-gpx-segment-view::after { grid-area: 1 / 1; }
+#bpb-gpx-analysis .bpb-gpx-segment-view::after { content: attr(data-label); visibility: hidden; }
 #bpb-gpx-analysis .bpb-gpx-hint { color: var(--bpb-gpx-faint); }
 #bpb-gpx-analysis .bpb-gpx-hint[data-state="success"] {
     color: var(--bpb-gpx-success);
@@ -216,7 +219,7 @@ export const gpxPanelCss = `
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-start;
-    align-items: center;
+    align-items: flex-start;
     gap: 5px 8px;
     margin: 0 0 8px;
 }

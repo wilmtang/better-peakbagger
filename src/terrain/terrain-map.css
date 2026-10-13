@@ -230,7 +230,7 @@
     inset: 0;
     z-index: 2147483646;
     display: grid;
-    place-items: center;
+    place-items: start center;
     box-sizing: border-box;
     padding: 20px;
     background: rgb(15 20 18 / 48%);
@@ -243,7 +243,7 @@
     width: min(440px, 100%);
     max-height: calc(100vh - 40px);
     overflow: auto;
-    margin: 0;
+    margin: clamp(0px, 5vh, 48px) 0 0;
     padding: 22px;
     border: 1px solid rgb(33 39 35 / 16%);
     border-radius: 16px;
@@ -396,9 +396,12 @@
 }
 
 .bpb-terrain-consent-primary {
+    display: grid;
     background: #2867bd;
     color: #ffffff;
 }
+.bpb-terrain-consent-primary > span, .bpb-terrain-consent-primary::after { grid-area: 1 / 1; }
+.bpb-terrain-consent-primary::after { content: "Enable and open 3D"; visibility: hidden; }
 
 .bpb-terrain-consent-actions button:hover:not(:disabled) {
     filter: brightness(1.06);
