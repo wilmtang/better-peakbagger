@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Transition geometry checks against shipped UI assets with controlled APIs.
 // Fixtures are isolated HTTPS Peakbagger pages; no live data or accounts are used.
-/* global document, location */
+/* global document, location, getComputedStyle */
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -334,6 +334,50 @@ async function settingsCase(page, origin, variant) {
     for (const zoom of [1, 2]) {
         // Browser zoom reduces the CSS viewport and re-evaluates media queries.
         // CSS zoom on body alone misses that reflow and clips narrow fixtures.
+        await page.setViewportSize({ width: variant.width, height: 900 });
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        let gripLeft;
+        for (const id of ['map-provider-order', 'beta-peak-order', 'beta-personal-order']) {
+            const list = page.locator(`#${id}`);
+            const row = list.locator('..');
+            if (zoom === 2) await row.evaluate(element => {
+                for (const text of element.querySelectorAll('.title, .desc, .order-setting-label')) {
+                    text.style.fontSize = `${parseFloat(getComputedStyle(text).fontSize) * 2}px`;
+                }
+            });
+            await row.scrollIntoViewIfNeeded();
+            if (output) await row.screenshot({ path: path.join(output, `${variant.name}-${id}-${zoom}.png`) });
+            const label = await row.locator('.label').boundingBox();
+            const bounds = await list.boundingBox();
+            const grip = await list.locator('.order-grip').first().boundingBox();
+            assert.ok(bounds.y >= label.y + label.height + 8, `${id}: the reorder list must sit below its description`);
+            assert.ok(Math.abs(bounds.x - label.x) <= 1, `${id}: the list must align with its heading`);
+            if (gripLeft !== undefined) assert.ok(Math.abs(grip.x - gripLeft) <= 1, `${id}: all reorder lists must share a grip alignment`);
+            gripLeft = grip.x;
+            assert.ok(bounds.x + bounds.width <= (await row.boundingBox()).x + (await row.boundingBox()).width,
+                `${id}: the reorder list must fit within its setting row`);
+            const handle = list.locator('li').nth(1).locator('.order-grip');
+            const item = await handle.locator('..').getAttribute('data-order-item');
+            await handle.scrollIntoViewIfNeeded();
+            const before = await row.boundingBox();
+            await page.evaluate(() => { globalThis.__holdUnitSave = true; });
+            for (const success of [false, true]) {
+                await handle.press('ArrowUp');
+                await page.waitForFunction(() => typeof globalThis.__finishUnitSave === 'function');
+                stable(before, await row.boundingBox(), `${id} pending zoom ${zoom}`);
+                await page.evaluate(success => globalThis.__finishUnitSave(success), success);
+                await page.waitForFunction(({ id, item, success }) => {
+                    const list = document.getElementById(id);
+                    return !list.querySelector('.order-grip').disabled
+                        && (list.firstElementChild.dataset.orderItem === item) === success;
+                }, { id, item, success });
+                stable(before, await row.boundingBox(), `${id} save ${success} zoom ${zoom}`);
+            }
+            await page.evaluate(() => { globalThis.__holdUnitSave = false; });
+            await row.evaluate(element => {
+                element.querySelectorAll('.title, .desc, .order-setting-label').forEach(text => { text.style.fontSize = ''; });
+            });
+        }
         await page.setViewportSize({ width: Math.floor(variant.width / zoom), height: Math.floor(900 / zoom) });
         await page.locator('#units').scrollIntoViewIfNeeded();
         const selectors = ['#units', '#general-units .card', '.unit-example', '#unit-customize summary'];

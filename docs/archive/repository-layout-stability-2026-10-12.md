@@ -291,6 +291,16 @@ evidence alongside the real-manifest and capture gates.
   at 2048×900 and 4052×900. Refresh confirmation, preparation, running, twenty
   progress ticks and pause/cancel transitions retain action geometry. Dark site
   rules are included; wide and narrow screenshots were inspected.
+- **J07 reorder alignment:** the generic status-row selector matched the
+  visually hidden reorder announcement and replaced all three editors' stacked
+  layout with a grid. Exclude that announcement from feedback layout rules.
+  The new desktop assertion reproduced the original failure. All 26 options
+  settings tests, build, focused ESLint and diff checks passed. Hidden Chrome
+  153.0.8010.12 and Firefox 155.0 passed both themes at 390×900 and 1280×900,
+  with normal and doubled reorder text, held saves, failure/rollback and retry.
+  Assertions require lists below their descriptions, matching left alignment,
+  contained widths and stable setting-row bounds. Desktop and narrow enlarged
+  renders were inspected; the existing settings feedback matrix also passed.
 
 ### Intentionally not changed
 
@@ -301,5 +311,5 @@ evidence alongside the real-manifest and capture gates.
 
 - The profile correction uses controlled APIs, so it does not prove live GitHub
   writes, native browser focus/window placement or screen-reader speech.
-- The reported reorder-list alignment and saved-ascent completion semantics
-  remain under investigation in this follow-up.
+- The reported saved-ascent completion semantics remain under investigation
+  in this follow-up.

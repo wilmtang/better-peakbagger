@@ -63,8 +63,10 @@ body.standalone-page .content { height: 100%; }
     border-top: 1px solid var(--border);
 }
 .row:first-child { border-top: none; }
-.row:has(> [role="status"]) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
-.row > [role="status"] { grid-column: 1 / -1; max-width: none; overflow-wrap: anywhere; }
+/* Only visible feedback changes the row layout. Reorder announcements are
+ * visually hidden and must not turn the stacked editor into two columns. */
+.row:has(> [role="status"]:not(.order-settings-sr)) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+.row > [role="status"]:not(.order-settings-sr) { grid-column: 1 / -1; max-width: none; overflow-wrap: anywhere; }
 .row:has(.imgbb-key-control) { align-items: flex-start; }
 .viewport-setting-row { align-items: flex-start; }
 
@@ -637,7 +639,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 @media (max-width: 480px) {
-    .row:has(> [role="status"]) { grid-template-columns: minmax(0, 1fr); }
+    .row:has(> [role="status"]:not(.order-settings-sr)) { grid-template-columns: minmax(0, 1fr); }
     #general-units select { min-width: 0; width: 100%; }
     .unit-custom-count { float: none; display: block; margin: 4px 0 0 17px; }
     .unit-example dl { grid-template-columns: 1fr; }
