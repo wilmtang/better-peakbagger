@@ -5,20 +5,23 @@
  * read-only current-state check and inline action results. */
 
 .bpb-gh-control {
-    display: inline-flex;
-    align-items: center;
+    display: inline-grid;
     margin-left: 8px;
-    vertical-align: middle;
+    vertical-align: top;
     font: 11px/1.35 Verdana, Arial, Helvetica, sans-serif;
     color: #1c1c1a;
 }
-.bpb-gh-body { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bpb-gh-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.bpb-gh-feedback { contain: inline-size; overflow-wrap: anywhere; }
+.bpb-gh-feedback[hidden] { display: none; }
+.bpb-gh-feedback > * + * { margin-left: 6px; }
 .bpb-gh-label { font-weight: 600; }
 .bpb-gh-ok { color: #2f6b3f; }
 .bpb-gh-err { color: #b42318; font-weight: 500; }
 .bpb-gh-link { color: #2f6b3f; font-weight: 600; text-decoration: underline; }
 
 .bpb-gh-btn {
+    display: grid;
     font: inherit;
     color: #1c1c1a;
     background: #fff;
@@ -27,6 +30,8 @@
     padding: 2px 7px;
     cursor: pointer;
 }
+.bpb-gh-btn > span, .bpb-gh-btn::after { grid-area: 1 / 1; }
+.bpb-gh-btn::after { content: attr(data-label); visibility: hidden; }
 .bpb-gh-btn:hover {
     color: #2f6b3f;
     background: #f3f6f3;

@@ -36,11 +36,26 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
     const el = Dom.element;
 
     let control = null;
+    let backupInfo = null;
     let operationGeneration = 0;
     let operationTimer = null;
     let pendingWrite = null;
     let reconcileOnResume = false;
-    const setBody = (...nodes) => { if (control) control.querySelector('.bpb-gh-body').replaceChildren(...nodes.filter(Boolean)); };
+    const setBody = (...nodes) => {
+        if (!control) return;
+        const action = control.querySelector('.bpb-gh-btn');
+        const nextAction = nodes.find(node => node?.tagName === 'BUTTON');
+        action.disabled = !nextAction;
+        action.onclick = nextAction ? event => runBackup(backupInfo, { event }) : null;
+        action.querySelector('span').textContent = nextAction?.textContent
+            || (nodes[0]?.textContent.includes('Checking') ? 'Checking GitHub…'
+                : nodes[0]?.classList.contains('bpb-gh-ok') ? nodes[0].textContent : 'Backing up to GitHub…');
+        const feedback = control.querySelector('.bpb-gh-feedback');
+        feedback.replaceChildren(...nodes.filter(node => node && node !== nextAction
+            && (!node.classList.contains('bpb-gh-label') || node.classList.contains('bpb-gh-err')
+                || node.textContent.includes('longer than usual'))));
+        feedback.hidden = !feedback.childNodes.length;
+    };
 
     const clearOperationTimer = () => {
         if (operationTimer !== null && typeof globalThis.clearTimeout === 'function') {
@@ -288,12 +303,17 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
     };
 
     const mountControl = (info, { auto = false, resumed = false } = {}) => {
+        backupInfo = info;
         if (!control) {
             const editLink = AscentPage.ascentEditLink(document, info.ascentId);
             const actions = editLink && editLink.parentElement;
             if (!actions) return;
             control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'Ascent and TR backup' }, [
-                el('span', { class: 'bpb-gh-body', 'aria-live': 'polite' }),
+                el('span', { class: 'bpb-gh-body' }, [
+                    el('button', { type: 'button', class: 'bpb-gh-btn', disabled: true, 'aria-live': 'polite',
+                        'data-label': 'Back up ascent and TR' }, [el('span', { text: 'Checking…' })]),
+                    el('span', { class: 'bpb-gh-feedback', 'aria-live': 'polite', hidden: true }),
+                ]),
             ]);
             actions.append(document.createTextNode(' '), control);
         }

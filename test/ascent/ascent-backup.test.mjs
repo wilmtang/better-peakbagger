@@ -75,9 +75,28 @@ const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = tr
 
 const control = dom => dom.window.document.querySelector('.bpb-gh-control');
 
+test('pending backup and retry preserve the action node and keyboard focus', async t => {
+    let finish;
+    const { dom } = await loadSurface({ status: { enabled: true, connected: true },
+        onBackup: () => new Promise(resolve => { finish = resolve; }) });
+    t.after(() => dom.window.close());
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
+    const action = control(dom).querySelector('.bpb-gh-btn');
+    action.focus();
+    fireTrustedEvent(action, 'click');
+    await waitFor(dom, () => finish);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn'), action);
+    assert.equal(action.disabled, true);
+    finish({ ok: false, error: { code: 'network' } });
+    await waitFor(dom, () => !action.disabled);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn'), action);
+    assert.equal(dom.window.document.activeElement, action);
+    assert.equal(action.textContent, 'Try again');
+});
+
 test('the affordance mounts as a compact control beside the native ascent actions', async () => {
     const { dom } = await loadSurface({ status: { enabled: true, connected: true } });
-    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     const actions = dom.window.document.getElementById('owneractions');
     assert.equal(control(dom).parentElement, actions);
     assert.equal(control(dom).textContent.trim(), 'Back up ascent and TR');
@@ -95,7 +114,7 @@ test('a current GitHub payload renders an affirmative state without writing', as
     assert.equal(checked.pageComplete, true);
     assert.equal(checked.page.ascent.id, 7654321);
     assert.match(checked.gpx, /<gpx>/);
-    assert.equal(control(dom).querySelector('.bpb-gh-btn'), null);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false);
 });
 
@@ -115,7 +134,7 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
         status: { enabled: true, connected: true },
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/abc', isUpdate: false } }; },
     });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
 
@@ -155,7 +174,7 @@ test('a synthetic host-page click cannot read or send a manual backup', async ()
             };
         },
     });
-    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     const readsBeforeClick = editReads;
 
     control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
@@ -183,7 +202,7 @@ test('a 200 error page for a displayed track aborts without replacing the backup
         },
         onBackup: message => { received = message; return { ok: true, result: {} }; },
     });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /unexpected page instead of the GPS track/i.test(control(dom).textContent));
 
@@ -196,7 +215,7 @@ test('an incomplete edit-form response aborts without sending a sparse backup', 
         status: { enabled: true, connected: true },
         editOk: false,
     });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /temporarily unavailable \(HTTP 500\)/i.test(control(dom).textContent));
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
@@ -207,7 +226,7 @@ test('a typed backup error shows an actionable message with a retry', async () =
         status: { enabled: true, connected: true },
         onBackup: () => ({ ok: false, error: { code: 'rate-limit' } }),
     });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /GitHub request limit reached/.test(control(dom).textContent));
     assert.match(control(dom).textContent, /Wait a few minutes, then try again/);
@@ -219,7 +238,7 @@ test('an unexpected backup error shows GitHub\'s bounded detail', async () => {
         status: { enabled: true, connected: true },
         onBackup: () => ({ ok: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } }),
     });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
     await waitFor(dom, () => /Repository service is temporarily unavailable/.test(control(dom).textContent));
     assert.doesNotMatch(control(dom).textContent, /something went wrong/i);
@@ -305,7 +324,7 @@ test('slow-backup feedback includes the persisted Peakbagger read', async () => 
         },
         onBackup: () => ({ ok: true, result: {} }),
     });
-    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
 
     await waitFor(dom, () => /This backup is taking longer than usual/.test(control(dom).textContent));
@@ -326,7 +345,7 @@ test('a timed-out backup reconciles a commit that reached GitHub before reportin
 
     await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
     assert.equal(checked.reconcile, true);
-    assert.equal(control(dom).querySelector('.bpb-gh-btn'), null);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
 });
 
 test('a timed-out backup offers retry only after reconciliation proves it is not current', async () => {
@@ -348,7 +367,7 @@ test('automatic preflight carries the complete persisted identity without source
         onPreflight: () => ({ ok: true, fresh: false }),
         onCheck: () => ({ ok: true, current: false }),
     });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     const preflight = sent.find(message => message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT');
     assert.equal(preflight.pageComplete, true);
     assert.equal(preflight.page.ascent.id, 7654321);
@@ -364,7 +383,7 @@ test('automatic mode on an unchanged revisit reports the existing backup', async
         onCheck: () => ({ ok: true, current: true }),
     });
     await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
-    assert.equal(control(dom).querySelector('.bpb-gh-btn'), null);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
 });
 
 test('a visitor viewing someone else’s ascent gets no affordance', async () => {

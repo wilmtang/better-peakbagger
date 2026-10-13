@@ -63,6 +63,13 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J05 saved-ascent backup:** preserve one button across checking, writing,
+  completion and retry, reserve its widest label and put long feedback below
+  without contributing to its width. Completed/current backups disable the
+  action; ownership and reconciliation gates remain intact. Twenty-four tests
+  passed, including node/focus preservation and trusted writes, plus build and
+  ESLint. Hidden Chrome/Firefox passed pending/error/retry/success geometry in
+  both themes at 390×900 and 1280×900; the narrow completion was inspected.
 - **J04 report photo upload:** the pending banner moved Save 2 down 43.5 px.
   Manual-popover feedback now leaves the form in place, appears on the opposite
   viewport edge from the clicked Save, and permits dismissal after failure.

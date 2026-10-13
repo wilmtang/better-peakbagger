@@ -8,6 +8,7 @@ import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
+import { JSDOM } from 'jsdom';
 import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
@@ -167,7 +168,49 @@ async function handoffCase(page, origin, variant) {
     await page.waitForFunction(() => !document.querySelector('[data-provider="gaia"]').disabled);
     stable(collapsed, await geometry(page, '[data-provider="gaia"]'), 'handoff GPX details completion');
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase };
+async function ascentBackupCase(page, origin, variant) {
+    const html = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
+    const edit = new JSDOM(await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'));
+    edit.window.document.getElementById('PeakListBox').innerHTML = '<option value="2296" selected>Mount Rainier</option>';
+    edit.window.document.getElementById('DateText').setAttribute('value', '2026-07-12');
+    edit.window.document.getElementById('PointFt').setAttribute('value', '14411');
+    const editHtml = edit.serialize();
+    edit.window.close();
+    await page.route('**/climber/ascent.aspx?aid=7654321', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.route('**/climber/ascentedit.aspx**', route => route.fulfill({ contentType: 'text/html', body: editHtml }));
+    await page.route('**/climber/GPXFile.aspx**', route => route.fulfill({ contentType: 'application/gpx+xml',
+        body: '<gpx><trk><trkseg></trkseg></trk></gpx>' }));
+    await page.addInitScript(({ theme }) => {
+        document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
+        globalThis.chrome = { runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.0' }), sendMessage: async message => {
+            if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, auto: false };
+            if (message.type === 'GITHUB_CHECK_ASCENT_BACKUP') return { ok: true, current: false };
+            if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'fixture' };
+            if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'fixture' };
+            if (message.type === 'GITHUB_BACKUP_ASCENT') return new Promise(resolve => {
+                globalThis.__finishBackup = ok => resolve(ok ? { ok: true, result: { commitUrl: 'https://github.com/example/backup/commit/123' } }
+                    : { ok: false, error: { code: 'network', message: 'A long backup failure. Check your connection before trying this ascent again.' } });
+            });
+            return { ok: true };
+        } } };
+    }, variant);
+    await page.goto(`${origin}/climber/ascent.aspx?aid=7654321`);
+    await page.addStyleTag({ content: (await asset('css/ascent-backup.css')).toString() });
+    await page.addScriptTag({ content: (await asset('content/ascent-backup.js')).toString() });
+    const action = '.bpb-gh-btn';
+    await page.locator(action).filter({ hasText: 'Back up ascent and TR' }).waitFor();
+    const before = await geometry(page, action);
+    for (const success of [false, true]) {
+        await page.click(action);
+        await page.waitForFunction(() => typeof globalThis.__finishBackup === 'function');
+        stable(before, await geometry(page, action), 'ascent backup pending');
+        await page.evaluate(success => { globalThis.__finishBackup(success); globalThis.__finishBackup = null; }, success);
+        await page.locator(action).filter({ hasText: success ? 'Backed up' : 'Try again' }).waitFor();
+        stable(before, await geometry(page, action), `ascent backup complete ${success}`);
+    }
+    await capture(page, `${variant.name}-ascent-backup`);
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase };
 const resources = createResourceStack();
 let failure = null;
 try {
