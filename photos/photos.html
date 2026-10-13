@@ -320,13 +320,7 @@
         </div>
 
         <footer class="editor-footer">
-          <div class="editor-summary">
-            <strong id="export-summary">Local draft</strong>
-            <span id="save-status" class="fine-print">Not yet saved</span>
-            <button id="save-conflicted-draft" type="button" class="secondary-button" hidden>
-              Replace other tab’s edits
-            </button>
-          </div>
+
           <div class="upload-options" aria-label="ImgBB upload options">
             <label class="upload-option">
               <span>Upload format</span>
@@ -347,10 +341,7 @@
                 Lower quality makes a smaller file.
               </span>
             </label>
-            <div class="upload-estimate" role="status" aria-live="polite" aria-atomic="true">
-              <strong id="upload-estimate">Estimating upload…</strong>
-              <span id="upload-estimate-note">Full resolution · annotations included</span>
-            </div>
+
           </div>
           <div class="footer-actions">
             <label class="report-width-control" data-report-width-control hidden>
@@ -361,6 +352,17 @@
             <button id="clear-annotations" type="button" class="quiet-button">Clear annotations</button>
             <button id="upload-insert" type="button" class="primary-button">Upload and insert</button>
           </div>
+          <div class="editor-summary">
+            <strong id="export-summary">Local draft</strong>
+            <span id="save-status" class="fine-print">Not yet saved</span>
+            <button id="save-conflicted-draft" type="button" class="secondary-button" hidden>
+              Replace other tab’s edits
+            </button>
+          </div>
+            <div class="upload-estimate" role="status" aria-live="polite" aria-atomic="true">
+              <strong id="upload-estimate">Estimating upload…</strong>
+              <span id="upload-estimate-note">Full resolution · annotations included</span>
+            </div>
         </footer>
       </div>
     </section>

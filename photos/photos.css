@@ -603,7 +603,7 @@ kbd {
 
 .editor-footer {
   display: grid;
-  grid-template-columns: minmax(210px, 0.65fr) minmax(638px, 2.35fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
   gap: 12px 24px;
   border-top: 1px solid var(--border);
@@ -611,14 +611,16 @@ kbd {
 
 .editor-summary {
   display: grid;
-  grid-row: 1 / span 2;
+  grid-row: 3;
   gap: 2px;
 }
 
 .upload-options {
   display: grid;
+  grid-column: 1 / -1;
+  grid-row: 1;
   min-width: 0;
-  grid-template-columns: minmax(210px, 0.8fr) minmax(190px, 1fr) minmax(210px, 1.1fr);
+  grid-template-columns: minmax(210px, 0.8fr) minmax(190px, 1fr);
   align-items: end;
   gap: 8px 14px;
 }
@@ -652,8 +654,9 @@ kbd {
 }
 
 .upload-estimate {
-  grid-column: 3;
-  align-self: end;
+  grid-column: 2;
+  grid-row: 3;
+  align-self: start;
 }
 
 .upload-estimate strong {
@@ -663,6 +666,8 @@ kbd {
 
 .footer-actions {
   display: grid;
+  grid-column: 1 / -1;
+  grid-row: 2;
   grid-template-columns: minmax(210px, 0.8fr) 1fr auto auto;
   align-items: end;
   gap: 8px;
@@ -745,7 +750,7 @@ kbd {
 
 .backup-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -883,16 +888,19 @@ kbd {
   right: 18px;
   bottom: 18px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 10px;
-  max-width: min(440px, calc(100vw - 36px));
+  width: min(440px, calc(100vw - 36px));
   padding: 11px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card);
   box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
 }
+#toast-action { order: 1; justify-self: end; display: grid; }
+#toast-action > span, #toast-action::after { grid-area: 1 / 1; }
+#toast-action::after { content: attr(data-sizing-label); visibility: hidden; }
 
 .toast-copy-value,
 .toast-copy-status {
@@ -926,8 +934,11 @@ kbd {
   }
 
   .editor-summary {
-    grid-row: auto;
+    grid-column: 1;
+    grid-row: 3;
   }
+  .upload-options, .footer-actions, .upload-estimate { grid-column: 1; }
+  .upload-estimate { grid-row: 4; }
 }
 
 @media (max-width: 900px) {
@@ -989,7 +1000,7 @@ kbd {
   }
 
   .upload-estimate {
-    grid-column: 1 / -1;
+    grid-column: 1;
   }
 }
 
@@ -1065,12 +1076,7 @@ kbd {
 
 @media (prefers-reduced-motion: no-preference) {
   button {
-    transition: background-color 120ms ease, transform 120ms ease;
-  }
-
-  .primary-button:active,
-  .file-button:active {
-    transform: scale(0.98);
+    transition: background-color 120ms ease;
   }
 }
 

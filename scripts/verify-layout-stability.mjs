@@ -321,7 +321,51 @@ async function settingsCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-settings`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase };
+async function photoCase(page, origin, variant) {
+    const html = (await asset('photos/photos.html')).toString().replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
+    await page.route(`${origin}/dist/photos/photos.html`, route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.goto(`${origin}/dist/photos/photos.html`);
+    await page.evaluate(({ theme }) => {
+        document.documentElement.dataset.bpbTheme = theme;
+        document.getElementById('editor-view').hidden = false;
+        document.querySelector('.editor-footer').closest('[hidden]')?.removeAttribute('hidden');
+        document.getElementById('jpeg-quality-control').hidden = false;
+    }, variant);
+    const upload = '#upload-insert';
+    await page.locator(upload).scrollIntoViewIfNeeded();
+    // Page coordinates exclude deliberate scrolling to reach a recovery field.
+    const rect = async selector => page.locator(selector).evaluate(element => {
+        const r = element.getBoundingClientRect(); return { x: r.x + globalThis.scrollX, y: r.y + globalThis.scrollY, width: r.width, height: r.height };
+    });
+    const before = await rect(upload);
+    for (const message of ['Estimating upload…', 'Estimated upload · 25.6 MB · JPEG', 'Upload estimate unavailable']) {
+        await page.locator('#upload-estimate').evaluate((element, message) => { element.textContent = message; }, message);
+        await page.locator('#upload-estimate-note').evaluate(element => { element.textContent = 'A long image warning and recovery message that wraps over several lines at a narrow viewport. '.repeat(3); });
+        await page.locator('#save-status').evaluate(element => { element.textContent = 'The draft could not be saved yet. Check local storage and retry. '.repeat(4); });
+        stable(before, await rect(upload), `photo estimate ${message}`);
+    }
+    await page.locator(upload).hover();
+    stable(before, await rect(upload), 'photo upload hover');
+    await page.locator(upload).evaluate(element => { element.dispatchEvent(new globalThis.PointerEvent('pointerdown')); });
+    stable(before, await rect(upload), 'photo upload pointerdown');
+    await capture(page, `${variant.name}-photo-footer`);
+    await page.evaluate(() => {
+        const toast = document.getElementById('toast'); toast.hidden = false;
+        document.getElementById('toast-message').textContent = 'Your image is ready. Copy the URL.';
+        const action = document.getElementById('toast-action'); action.hidden = false; action.dataset.sizingLabel = 'Try copy again';
+        action.innerHTML = '<span>Copy URL</span>';
+    });
+    const action = '#toast-action';
+    const actionRect = await geometry(page, action);
+    for (const label of ['Copy again', 'Try copy again']) {
+        await page.locator(`${action} > span`).evaluate((element, label) => { element.textContent = label; }, label);
+        await page.locator('#toast-message').evaluate(element => { element.textContent = 'Copy unavailable. The complete URL is selected for manual copying. '.repeat(3); });
+        await page.locator('#toast-copy-value, #toast-copy-status').evaluateAll(elements => elements.forEach(element => { element.hidden = false; }));
+        stable(actionRect, await geometry(page, action), `photo toast ${label}`);
+    }
+    await capture(page, `${variant.name}-photo-toast`);
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase };
 const resources = createResourceStack();
 let failure = null;
 try {

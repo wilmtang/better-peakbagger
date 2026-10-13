@@ -63,6 +63,14 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J08 Photo Topos:** estimates and save feedback follow upload actions;
+  toast recovery keeps a fixed width and places its reserved action at the bottom.
+  Remove pressed scaling. Existing fixed canvas/status-row and chip sizing
+  remain intact. All 138 photo behavior/page tests passed; final page checks,
+  build and ESLint passed. Hidden Chrome/Firefox component checks covered long
+  estimates, save errors, hover and copy recovery at both widths/themes, with
+  footer/toast screenshots inspected. The real-extension report-photo verifier
+  passed edit/selection, narrow layout, upload and exactly-once insertion.
 - **J07 Settings/workspaces:** place backup/cache feedback after controls in
   wide and stacked rows; align ImgBB and buddy feedback with the top of actions.
   Reserve unit-preview, copy-code, draft-copy and My Ascents label geometry;

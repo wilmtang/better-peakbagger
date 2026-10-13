@@ -414,7 +414,9 @@ const toast = (message, { action = '', onAction = null, duration = 5000 } = {}) 
     ui.toastMessage.textContent = message;
     ui.toastAction.hidden = !action;
     ui.toastAction.disabled = false;
-    ui.toastAction.textContent = action;
+    const label = document.createElement('span'); label.textContent = action;
+    ui.toastAction.replaceChildren(label);
+    ui.toastAction.dataset.sizingLabel = /copy/i.test(action) ? 'Try copy again' : action;
     ui.toastAction.onclick = onAction;
     resetToastCopy();
     ui.toast.hidden = false;
@@ -461,7 +463,7 @@ const copyTextWithFallback = async (text, {
         if (keepVisible) {
             ui.toastCopyStatus.textContent = 'Image URL copied.';
             ui.toastCopyStatus.hidden = false;
-            if (control) control.textContent = 'Copy again';
+            if (control) (control.querySelector('span') || control).textContent = 'Copy again';
         } else {
             toast('Image URL copied.');
         }
@@ -474,7 +476,7 @@ const copyTextWithFallback = async (text, {
         ui.toastCopyStatus.textContent = 'The complete URL is selected; press Ctrl/Cmd+C.';
         ui.toastCopyStatus.hidden = false;
         showToastCopyValue(text, generation, { select: true });
-        if (control) control.textContent = 'Try copy again';
+        if (control) (control.querySelector('span') || control).textContent = 'Try copy again';
         return false;
     } finally {
         if (control?.isConnected && (ownerGeneration == null || ownsToast(generation))) {
