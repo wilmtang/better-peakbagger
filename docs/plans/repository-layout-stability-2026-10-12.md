@@ -63,6 +63,14 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J04 report photo upload:** the pending banner moved Save 2 down 43.5 px.
+  Manual-popover feedback now leaves the form in place, appears on the opposite
+  viewport edge from the clicked Save, and permits dismissal after failure.
+  Both Save controls retain their geometry during upload, failure and dismissal.
+  The real unpacked extension passed hidden Chrome upload success and rate-limit
+  fixtures at 1280×900 and 720×900, including exactly one native submission on
+  success and none on failure. Twelve photo behavior tests, build and ESLint
+  passed; the narrow dark error screenshot was inspected.
 - **J03 saved-GPX handoffs:** Gaia preparation shrank its button by 5.5 px in
   the baseline. Reserve each provider's longest label with a hidden sizing
   label; keep feedback below the action row without affecting its intrinsic

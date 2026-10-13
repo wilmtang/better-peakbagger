@@ -1338,19 +1338,41 @@ html[data-bpb-theme="dark"] .bpb-re-conversion button:hover {
 }
 .bpb-re-local-photo-actions button:focus-visible { outline: 2px solid currentColor; }
 .bpb-re-local-photo-status {
+    position: fixed;
+    inset: auto 12px 12px auto;
+    width: min(420px, calc(100vw - 24px));
+    max-height: calc(50vh - 24px);
+    overflow: auto;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 9px;
-    margin: 0 0 6px;
+    margin: 0;
     padding: 8px 11px;
     border: 1px solid transparent;
     border-radius: 6px;
     font: 13px/1.5 system-ui, sans-serif;
+    background: #fff;
+    color: #30352d;
+    box-shadow: 0 4px 18px #0003;
 }
+.bpb-re-local-photo-status[data-edge="top"] { top: 12px; bottom: auto; }
+.bpb-re-local-photo-status > span { flex: 1; min-width: 0; }
+.bpb-re-photo-status-dismiss {
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+.bpb-re-photo-status-dismiss::before { content: "×"; font-size: 20px; }
+.bpb-re-photo-status-dismiss:focus-visible { outline: 2px solid currentColor; }
 .bpb-re-local-photo-status[hidden] { display: none !important; }
 .bpb-re-local-photo-status[data-state="busy"] {
-    position: relative;
-    z-index: 3;
     border-color: #a9c9e8;
     background: #eef7ff;
     color: #164e7a;
@@ -1368,8 +1390,6 @@ html[data-bpb-theme="dark"] .bpb-re-conversion button:hover {
     animation: bpb-re-photo-spin 0.8s linear infinite;
 }
 .bpb-re-local-photo-status[data-state="error"] {
-    position: relative;
-    z-index: 3;
     border-color: #e6b4b0;
     background: #fff3f2;
     color: #9b241c;
@@ -1385,6 +1405,7 @@ html[data-bpb-theme="dark"] .bpb-re-conversion button:hover {
 
 html[data-bpb-theme="dark"] .bpb-re-local-photo-actions { color: #aaa; }
 html[data-bpb-theme="dark"] .bpb-re-local-photo-actions button { color: #8ab4f8; }
+html[data-bpb-theme="dark"] .bpb-re-local-photo-status { background: #23262a; color: #eee; }
 html[data-bpb-theme="dark"] .bpb-re-local-photo-status[data-state="busy"] {
     border-color: #315b7d;
     background: #182b3a;

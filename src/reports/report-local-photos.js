@@ -12,13 +12,24 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.setAttribute('aria-atomic', 'true');
+    status.setAttribute('popover', 'manual');
     status.hidden = true;
+    const statusMessage = document.createElement('span');
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'bpb-re-photo-status-dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss photo message');
+    dismiss.onclick = () => { status.hidePopover?.(); status.hidden = true; };
+    status.append(statusMessage, dismiss);
     ui.prepend(status);
     const say = (message, state = '') => {
-        status.textContent = message;
+        statusMessage.textContent = message;
         status.hidden = !message;
         if (state) status.dataset.state = state;
         else delete status.dataset.state;
+        dismiss.hidden = state === 'busy';
+        if (message && typeof status.showPopover === 'function') status.showPopover();
+        else if (!message) status.hidePopover?.();
     };
     const send = async message => {
         const result = await ext.runtime.sendMessage(message);
@@ -143,6 +154,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         if (typeof form.reportValidity === 'function' && !form.reportValidity()) return;
         const savePageGeneration = pageGeneration;
         const failuresBeforeSave = pasteFailures;
+        status.dataset.edge = control?.getBoundingClientRect().top > window.innerHeight / 2 ? 'top' : 'bottom';
         saving = true;
         const wasInert = form.inert;
         const wasBusy = form.getAttribute('aria-busy');

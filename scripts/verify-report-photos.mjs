@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global chrome, document, ClipboardItem, getComputedStyle, getSelection */
+/* global chrome, document, window, ClipboardItem, getComputedStyle, getSelection */
 // Hidden packaged-extension coverage. ImgBB responses and its optional
 // permission check are fixture-owned; no real upload or permission prompt.
 import assert from 'node:assert/strict';
@@ -299,6 +299,18 @@ try {
     await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, 'caption-narrow-dark.png') });
     await report.locator('.bpb-re-surface figcaption').fill(originalCaption);
     await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
+    const saveGeometry = () => report.locator('#SaveButton, #SaveButton2').evaluateAll(elements => elements.map(element => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: rect.width, height: rect.height };
+    }));
+    const beforeSave = await saveGeometry();
+    const assertSaveStable = async state => {
+        const after = await saveGeometry();
+        beforeSave.forEach((rect, index) => {
+            for (const key of Object.keys(rect)) assert.ok(Math.abs(rect[key] - after[index][key]) <= 1,
+                `${state}: Save ${index + 1} ${key}: ${rect[key]} → ${after[index][key]}`);
+        });
+    };
     await report.locator('#SaveButton').click();
     await uploadStarted;
     const uploadStatus = report.locator('.bpb-re-local-photo-status');
@@ -316,6 +328,7 @@ try {
     assert.notEqual(uploadPresentation.background, 'rgba(0, 0, 0, 0)');
     assert.notEqual(uploadPresentation.border, 'rgba(0, 0, 0, 0)');
     assert.equal(uploadPresentation.animation, 'bpb-re-photo-spin');
+    await assertSaveStable('upload pending');
     for (const saveId of ['SaveButton', 'SaveButton2']) {
         const saveControl = report.locator(`#${saveId}`);
         assert.equal(await saveControl.inputValue(), 'Uploading 1/1…');
@@ -326,6 +339,7 @@ try {
     if (rateLimit) {
         await uploadStatus.filter({ hasText: 'ImgBB request limit reached' }).waitFor();
         assert.match(await uploadStatus.textContent(), /Try again after/);
+        await assertSaveStable('upload failed');
         assert.equal(await report.locator('#SaveButton').isEnabled(), true);
         assert.equal(posts.length, 0);
         assert.equal(uploads, 1);
@@ -333,8 +347,12 @@ try {
         for (const theme of ['light', 'dark']) {
             await report.locator('html').evaluate((element, value) => { element.dataset.bpbTheme = value; }, theme);
             await uploadStatus.scrollIntoViewIfNeeded();
-            await report.locator('#bpb-report-editor').screenshot({ path: path.join(output, `rate-limit-${theme}.png`) });
+            await report.screenshot({ path: path.join(output, `rate-limit-${theme}.png`) });
         }
+        await report.locator('html').evaluate(element => { element.dataset.bpbTheme = 'light'; });
+        await uploadStatus.getByRole('button', { name: 'Dismiss photo message' }).click();
+        assert.equal(await uploadStatus.isVisible(), false);
+        await assertSaveStable('feedback dismissed');
     } else {
         await report.waitForURL(url, { waitUntil: 'domcontentloaded' });
         await report.waitForFunction(() => !document.querySelector('.bpb-re-local-photo-status')?.textContent.includes('Uploading'));
