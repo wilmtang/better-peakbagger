@@ -3,13 +3,13 @@
 //
 // Better Peakbagger — focused external planning links for Peak.aspx.
 // Reads only the peak's displayed WGS84 decimal coordinates and fails closed
-// if either the coordinate row or native Links section is missing/ambiguous.
+// if the coordinate row is missing/ambiguous. General and map links each
+// require their own unambiguous native section.
 
 (() => {
     'use strict';
 
     const PANEL_ID = 'bpb-peak-links';
-    if (document.getElementById(PANEL_ID)) return;
 
     const normalize = text => (text || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
     const coordinateRows = Array.from(document.querySelectorAll('tr')).filter(row => {
@@ -42,6 +42,48 @@
     // coordinate row. A generic bold "Links" elsewhere is not enough evidence.
     const peakTable = coordinateRow.closest('table');
     if (!peakTable) return;
+
+    // Web Map Links lives in the other native details table. Keep these
+    // additions distinct, and do not depend on the general Links section.
+    const mapRows = Array.from(document.querySelectorAll('tr')).filter(row =>
+        row.cells.length === 2 && normalize(row.cells[0].textContent).toLowerCase() === 'web map links'
+        && row.closest('table')?.matches('table.gray[align="right" i]')
+        && row.closest('table').parentElement === peakTable.parentElement);
+    if (mapRows.length === 1 && !document.getElementById('bpb-peak-map-links')) {
+        const group = document.createElement('div');
+        group.id = 'bpb-peak-map-links';
+        group.setAttribute('role', 'group');
+        group.setAttribute('aria-label', 'Maps added by Better Peakbagger');
+        const badge = document.createElement('abbr');
+        badge.className = 'bpb-peak-map-links__badge';
+        badge.title = 'Better Peakbagger';
+        badge.textContent = 'BPB';
+        group.append(badge);
+        // AllTrails uses a visible bounding box; clip it at the coordinate
+        // limits so peaks near a pole or the date line still produce valid URLs.
+        const bounds = new URLSearchParams({
+            b_tl_lat: Math.min(90, latitude + .05).toFixed(6),
+            b_tl_lng: Math.max(-180, longitude - .05).toFixed(6),
+            b_br_lat: Math.max(-90, latitude - .05).toFixed(6),
+            b_br_lng: Math.min(180, longitude + .05).toFixed(6),
+            mobileMap: 'true',
+        });
+        for (const [label, href] of [
+            ['Gaia GPS', `https://www.gaiagps.com/map/?loc=13/${lon}/${lat}`],
+            ['AllTrails', `https://www.alltrails.com/explore?${bounds}`],
+            ['onX Backcountry', `https://webmap.onxmaps.com/backcountry/map?latlon=${lat},${lon},13`],
+        ]) {
+            const anchor = document.createElement('a');
+            anchor.textContent = label;
+            anchor.href = href;
+            anchor.target = '_blank';
+            anchor.rel = 'noopener noreferrer';
+            group.append(anchor);
+        }
+        mapRows[0].cells[1].append(group);
+    }
+
+    if (document.getElementById(PANEL_ID)) return;
 
     // Read Peakbagger's own "Nation" row to gate country-specific services.
     // Absent or unexpected values simply omit those links (fail closed).

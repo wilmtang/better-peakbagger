@@ -19,6 +19,55 @@ const loadPeak = fixture => loadPage(fixture, {
 const linkByText = (document, text) => Array.from(document.querySelectorAll('#bpb-peak-links a'))
     .find(anchor => anchor.textContent === text);
 
+test('web map additions identify BPB, preserve native links and target the displayed peak', async () => {
+    for (const fixture of ['peak-rainier.html', 'peak-garibaldi.html']) {
+        const dom = await loadPeak(fixture);
+        const doc = dom.window.document, group = doc.getElementById('bpb-peak-map-links');
+        const coordinate = [...doc.querySelectorAll('tr')].find(row => row.cells[0]?.textContent.trim() === 'Latitude/Longitude (WGS84)')
+            .cells[1].textContent.match(/^([\d.-]+), ([\d.-]+)/);
+        const [, lat, lon] = coordinate;
+        assert.equal(group.getAttribute('aria-label'), 'Maps added by Better Peakbagger');
+        assert.equal(group.closest('tr').cells[0].textContent, 'Web Map Links');
+        const nativeLinks = [...group.parentElement.querySelectorAll('a')].filter(link => !group.contains(link));
+        assert.ok(nativeLinks.some(link => link.textContent === 'CalTopo'));
+        const originalLinks = nativeLinks.map(link => link.outerHTML);
+        const [gaia, alltrails, onx] = group.querySelectorAll('a');
+        assert.deepEqual([gaia, alltrails, onx].map(link => link.textContent), ['Gaia GPS', 'AllTrails', 'onX Backcountry']);
+        assert.equal(new URL(gaia.href).searchParams.get('loc'), `13/${lon}/${lat}`);
+        assert.equal(new URL(onx.href).searchParams.get('latlon'), `${lat},${lon},13`);
+        const bounds = new URL(alltrails.href).searchParams;
+        assert.ok(Number(bounds.get('b_br_lat')) < Number(lat) && Number(bounds.get('b_tl_lat')) > Number(lat));
+        assert.ok(Number(bounds.get('b_tl_lng')) < Number(lon) && Number(bounds.get('b_br_lng')) > Number(lon));
+        for (const link of group.querySelectorAll('a')) {
+            assert.equal(link.target, '_blank');
+            assert.equal(link.rel, 'noopener noreferrer');
+        }
+        dom.window.eval(source);
+        assert.equal(doc.querySelectorAll('#bpb-peak-map-links').length, 1);
+        assert.deepEqual(nativeLinks.map(link => link.outerHTML), originalLinks);
+        dom.window.close();
+    }
+});
+
+test('web map additions work without general Links, clip geographic bounds and reject ambiguous rows', () => {
+    for (const [lat, lon] of [[90, 180], [-90, -180], [0, 0]]) {
+        const dom = new JSDOM(`<table><tr><td>Latitude/Longitude (WGS84)</td><td>${lat}, ${lon} (Dec Deg)</td></tr></table>
+            <table class="gray" align="right"><tr><td>Web Map Links</td><td><a href="https://caltopo.com/">CalTopo</a></td></tr></table>`,
+        { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only' });
+        dom.window.eval(source);
+        const group = dom.window.document.getElementById('bpb-peak-map-links');
+        const bounds = new URL([...group.querySelectorAll('a')].find(link => link.textContent === 'AllTrails').href).searchParams;
+        for (const key of ['b_tl_lat', 'b_br_lat']) assert.ok(Math.abs(Number(bounds.get(key))) <= 90);
+        for (const key of ['b_tl_lng', 'b_br_lng']) assert.ok(Math.abs(Number(bounds.get(key))) <= 180);
+        group.remove();
+        const table = dom.window.document.querySelector('table[align]');
+        table.rows[0].after(table.rows[0].cloneNode(true));
+        dom.window.eval(source);
+        assert.equal(dom.window.document.getElementById('bpb-peak-map-links'), null);
+        dom.window.close();
+    }
+});
+
 test('Peak.aspx gains location-specific Windy and Copernicus links', async () => {
     const cases = [
         {

@@ -3,7 +3,8 @@
 
 /* A quiet extension-owned inset. The heading and links intentionally inherit
    Peakbagger's native type size; the slim rule is the only branded accent. */
-#bpb-peak-links {
+#bpb-peak-links,
+#bpb-peak-map-links {
     box-sizing: border-box;
     margin: 0 0 1.35em;
     padding: .4em .75em .5em;
@@ -40,7 +41,7 @@
     line-height: 1.35;
 }
 
-html[data-bpb-theme="dark"] #bpb-peak-links {
+html[data-bpb-theme="dark"] :is(#bpb-peak-links, #bpb-peak-map-links) {
     border-left-color: #6eadd4;
     background: #22282c;
 }
@@ -48,3 +49,24 @@ html[data-bpb-theme="dark"] #bpb-peak-links {
 html[data-bpb-theme="dark"] #bpb-peak-links .bpb-peak-links__detail {
     color: #aeb9bf;
 }
+
+#bpb-peak-map-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .3em 1em;
+    margin: .5em 0 .2em;
+    padding: .45em .65em;
+}
+
+#bpb-peak-map-links .bpb-peak-map-links__badge {
+    color: #526873;
+    font-size: .8em;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-decoration: none;
+}
+
+#bpb-peak-map-links a { white-space: nowrap; }
+#bpb-peak-map-links a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+html[data-bpb-theme="dark"] #bpb-peak-map-links .bpb-peak-map-links__badge { color: #aeb9bf; }
