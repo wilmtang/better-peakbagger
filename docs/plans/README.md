@@ -1,15 +1,6 @@
 # Active plans
 
 
-- [Repository bugs, engineering, and UX audit — 2026-10-12](codebase-audit-2026-10-12.md) —
-  eight new findings, led by draft data preservation, ignored-report startup
-  ordering, and final GPX response identity; an optional preparation-control
-  improvement, current test/browser evidence, failed Firefox integration,
-  focused acceptance checks, and earlier open findings remain explicit.
-- [New features and UI audit — 2026-10-10](new-features-ui-audit-2026-10-10.md) —
-  two reproduced open UI findings since 3.9.2: Sentinel capture selection on
-  3D resume and climber-card keyboard focus during row cleanup. Current unit,
-  Chrome/Firefox, responsive visual evidence and proof limits are recorded.
 - [Climber hover card](climber-hover-card.md) — direct Favorite, Ignore, and
   Buddy actions implemented with fixture verification; authenticated live Buddy
   mutation remains a release proof gap.
@@ -24,6 +15,13 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [October 12 repository audit](../archive/codebase-audit-2026-10-12.md)
+is closed locally: eight new findings, preparation cancellation, and the two
+carried [October 10 UI findings](../archive/new-features-ui-audit-2026-10-10.md)
+are implemented in focused commits. The closure ledger records 2,708 passing
+tests, 14 scale checks, real Chrome/Firefox and Metal rendering evidence, and
+retained upstream advisory/native/live verification gaps.
 
 The [peak weather location audit](../archive/peak-weather-location-audit-2026-10-12.md)
 is closed locally: twelve reproduced state, focus, map lifecycle, keyboard and

@@ -4,7 +4,9 @@ Compared `v3.9.2` (`e12f351`) with `620929b`: 69 commits and 207 changed
 files. The release baseline is the latest local version tag and the changelog's
 last released section; GitHub's Release listing returned no Release objects.
 Store publication/version was not independently established. The initial
-working tree was clean. This is an audit, with no runtime remediation.
+working tree was clean. The initial review was an audit; the user subsequently
+authorized remediation. Both findings are now closed locally, with the
+verification and remaining proof limits recorded in the closure ledger.
 
 The review covered new climber cards and inline Buddy transactions, Sentinel-2
 in native 2D and extension 3D maps, panel styling and popup sizing, Photo Topos
@@ -168,8 +170,8 @@ The runtime change and repeatable Sentinel browser coverage are recorded above.
 This pass does not establish native browser menus/window placement or focus,
 screen-reader speech, physical touch behavior, store acceptance, hosted CI,
 declared minimum browser versions, live Garmin/Strava/export behavior, live
-Peakbagger Buddy form transactions. Sentinel provider longevity and every geography/date are not
-established by the bounded live sample.
+Peakbagger Buddy form transactions. Sentinel provider longevity and every
+geography/date are not established by the bounded live sample.
 
 Sentinel now has explicit repeatable Chrome real-manifest and Firefox hardware
 fixture cases. The Firefox fixture uses instrumented authorization and storage;

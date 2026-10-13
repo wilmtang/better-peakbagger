@@ -1,9 +1,10 @@
 # Repository bugs, engineering, and UX audit — 2026-10-12
 
-Baseline: clean `main` at `19c00b5c`, version 4.0.0. This is a
-documentation-only audit. Runtime code and regression tests were not changed.
-Existing audit ledgers were reconciled against current source before reporting
-new findings; their historical test results are not counted as current evidence.
+Audit baseline: clean `main` at `19c00b5c`, version 4.0.0. The initial review was
+documentation-only; the user subsequently authorized implementation. All eight
+new findings, optional O1, and the two carried UI findings are implemented
+locally. The closure ledger separates current verification from the baseline
+audit evidence and remaining upstream/manual proof gaps.
 
 ## Findings
 
@@ -11,7 +12,7 @@ P1 is a data-preservation defect to address first. P2 is a reproduced functional
 or usability defect suitable for a focused fix. P3 is a boundedness or maintenance
 improvement without demonstrated immediate data loss or quota exhaustion.
 
-| ID | Priority | Finding | Current evidence |
+| ID | Priority | Finding | Evidence at audit baseline |
 | --- | --- | --- | --- |
 | F1 | P1 | An untouched report editor can erase newer draft work when it leaves the page. | Shipped editor bundle plus production draft mutation handlers; both blank and nonblank old editors reproduced. |
 | F2 | P2 | Climber-card decoration can prevent ignored ascent reports from being hidden. | Full Firefox verifier failed; focused real-extension Firefox navigation and deterministic adapter probe reproduced the conflicting DOM contract. |
@@ -282,22 +283,22 @@ boundary subject to the existing “stop after this batch” rule.
 
 ## Existing open work, kept separate
 
-The [October 10 UI audit](new-features-ui-audit-2026-10-10.md) already owns two
-P2 findings. Their problematic current source remains present:
+The [October 10 UI audit](new-features-ui-audit-2026-10-10.md) owned two carried
+P2 findings, now fixed in independent commits with its acceptance ledger retained:
 
-- A 3D Sentinel capture choice is still not connected to `userPickedBasemap`:
+- A 3D Sentinel capture choice was not connected to `userPickedBasemap`:
   `src/terrain/terrain-frame-runtime.js` (lines 1865–1867 and 2220–2226).
   Resume can reapply the inherited 2D capture. This is distinct from F4.
-- Climber-card cleanup still searches only the immediate next row and closes
+- Climber-card cleanup searched only the immediate next row and closed
   without replacement/removal focus recovery:
   `src/favorites/climber-hover-card.js` (lines 123–132 and 185–194).
   The earlier audit owns the consecutive-hidden-row and replacement evidence.
 
 These are carried findings, not eight additional new defects or fresh full
 reproductions. Keep their acceptance criteria and independent commits in the
-existing plan rather than duplicating the execution ledger.
+earlier plan rather than duplicating the execution ledger.
 
-The [October 3 CI ledger](ci-ux-maintainability-audit-2026-10-03.md) retains the
+The [October 3 CI ledger](../plans/ci-ux-maintainability-audit-2026-10-03.md) retains the
 dependency and historical-tag recovery work. Current strict npm audit still
 rejects exactly `@devicefarmer/adbkit`, `node-forge`, and `web-ext`. The existing
 explicit reviewed exception passes and expires **2026-10-17 00:00 PDT**
@@ -365,6 +366,41 @@ launched for the continuation.
 
 ## Execution order and closure ledger
 
+Implementation commits:
+
+| Item | Focused commit |
+| --- | --- |
+| F1 draft ownership | `5edece5d` |
+| F2 report/hover/layout integration | `82b55e31` |
+| F3 passive settings ownership | `82129313` |
+| F4 failed satellite tile retry | `e495298e` |
+| F5 satellite warning layout | `2c748253` |
+| F6 photo insertion references | `c50a3677` |
+| F7 bounded deletion barriers | `b8286d31` |
+| F8 final GPX identity | `8e903351`, request-helper regression `7cfe3904` |
+| Carried 3D capture ownership | `70bf09f1` |
+| Carried card focus recovery | `4d42fce0`, live-identity edge `3b0ee225` |
+| O1 cancelable preparation | `9a85d78e` |
+
+Final repository gates: `npm test` passed **2,708** tests; `test:scale` passed
+**14**; full `lint` passed with the unchanged six owned vendor/manifest warnings.
+Hidden real-manifest Chrome **153.0.8010.12** and Firefox **157.0.1** passed,
+including the shared card-focus, ignored-report and
+preparation transport-abort regressions. Focused render sizes/themes and hardware
+proof are recorded with each item below. Chrome's base content viewport was
+1000×760. Firefox's base window was 1000×760 (page 1000×675 in the focused
+detail probe); explicit card/preparation viewport overrides used the named
+content sizes. Production Chrome/Firefox archives
+each passed structural validation (99 entries) and **two consecutive** hidden
+Chrome/Firefox real-manifest runs against unchanged archive bytes, including
+BFCache restoration and teardown. Saved package bytes are verification artifacts,
+not a published release or version bump.
+
+Archive SHA-256:
+
+- Chrome: `2f88a2089e94b23488995b60e0d9345213d5271db44005c004e26b15d668ba5e`
+- Firefox: `dd8fa52abfcca46fee6d16615f317a8e34861646fdbaf95bbc476fc57534191f`
+
 Implement F1 first, then F2, F8, F3, F4, F5, F6, and F7. Each independent completed
 unit needs its own focused commit after appropriate checks. The two carried
 UI findings retain their existing independent acceptance checks. Extend tests
@@ -430,6 +466,7 @@ by file size.
   starts a fresh read. The stylesheet/mirror order and message allowlists remain
   unchanged. Build, 129 theme/settings/map tests and affected ESLint passed;
   the final real-manifest browser run remains an integration gate.
+  Final Chrome and Firefox real-manifest checks subsequently passed.
 
 - **F8:** the saved-GPX helper now checks the final response against the same
   exact download-path, origin, credentials, and ascent-ID rules as the request.
@@ -437,6 +474,8 @@ by file size.
   harmless case/query normalization retains the original GPX bytes.
   Build, 42 source/provider/worker-route tests, affected ESLint and diff checks
   passed. Live destination-provider imports remain outside this evidence.
+  A checked-in production-request-helper regression also passed; a changed
+  ascent identity returns no GPX bytes through that transport.
 
 - **F1:** editor snapshots now use worker-checked record/deletion versions,
   serialize their own writes, and skip unchanged lifecycle flushes. Conflicting
@@ -454,6 +493,8 @@ by file size.
   Firefox 157.0.1 passed the formerly failing detail reproduction on all three
   navigations (actual page viewport 1000×675); broader Firefox rerun remains
   part of final integration verification.
+  The broader final Firefox verifier subsequently passed the ignored-report,
+  shared card-focus and profile-cancellation cases.
 
 ### Intentionally not changed
 
@@ -463,17 +504,30 @@ by file size.
   recovery constraints, and separate active plan ledgers.
 - No live Buddy mutation, upload, GitHub write, push, tag, release, store
   submission, or merge was performed.
+- Verification ZIPs were saved separately from existing release artifacts.
+  The development build was restored after archive checks. Exact disposable
+  browser-process prefixes and temporary profile directories were inspected;
+  none remained. Managed screenshots and verification ZIPs are retained as
+  chat evidence; user browsers and unrelated artifacts were not cleanup targets.
 
 ### Changed but not fully proven
 
-The remaining findings are open until their implementation checks complete.
-Hidden fixture results do not
-establish native focus/window placement, browser chrome/permission prompts,
-screen-reader speech, physical touch behavior, live provider DOM/export,
-live Peakbagger layouts, store acceptance, or hosted CI. Chrome smoke success
-does not cancel the Firefox failure. F3's latency was controlled; F6's exact
-library badge still needs rendered end-to-end proof. Minimum supported browsers,
-Firefox Android, packaged production artifacts, and hardware 3D rendering were
-not reverified here.
-F8's changed-identity transport was controlled; live redirect behavior and the
-destination providers were not exercised by that probe.
+All scoped runtime findings are closed locally. The separate October 3 CI
+ledger still owns the upstream development-tool advisory and historical release
+recovery constraints. Fresh npm registry checks returned node-forge 1.4.0 and
+web-ext 10.7.0 as current releases. The [reviewed upstream advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv)
+still lists no patched version. Strict `audit:ci` fails on the same three high
+findings; the existing exact reviewed mode passes only until October 17
+00:00 PDT. No exception or dependency policy was expanded or renewed.
+
+Hidden fixture results establish DOM focus and the named render/behavior
+postconditions, not native focus/window placement, browser chrome/permission
+prompts, screen-reader speech, physical touch behavior, live provider DOM/export,
+live Peakbagger layouts, store acceptance, or hosted CI. Controlled settings
+latency and changed-identity GPX transport do not establish live timing or
+redirect behavior. F6 now has rendered end-to-end fixture evidence for its
+library badge. Declared minimum browser versions and Firefox Android were not
+run. Firefox BFCache admission varies by navigation/run; the final unpacked run
+used fresh-page fallback, while both production-archive runs restored BFCache.
+Chrome's unpacked and archive runs restored BFCache. Hardware Sentinel evidence uses synthetic
+imagery/DEM and does not establish live service availability in every geography.
