@@ -1,6 +1,9 @@
 # Active plans
 
 
+- [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
+  — proposed; worldwide issuing-service links first, then opt-in regional
+  overlays with verified provider contracts, coverage, and expiry handling.
 - [Climber hover card](climber-hover-card.md) — direct Favorite, Ignore, and
   Buddy actions implemented with fixture verification; authenticated live Buddy
   mutation remains a release proof gap.
