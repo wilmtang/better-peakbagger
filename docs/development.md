@@ -359,6 +359,56 @@ Keep degradation tests for genuinely absent third-party globals where the
 runtime supports that fallback. Do not recreate removed `BPB*` module globals
 as test seams.
 
+### Peak planning link order
+
+The **Better Peakbagger links** panel on `Peak.aspx` is rendered by
+`src/maps/peak-links.js`; `src/maps/peak-link-order.js` owns grip dragging,
+keyboard movement, cancellation, and persistence. The saved `peakLinkOrder`
+contains link IDs only, with its allowed IDs and default order defined by
+`PEAK_LINK_ORDER` in `src/settings/settings-schema.js`.
+
+The order is an extension setting in `chrome.storage.sync`, so it can follow
+the browser profile across devices when browser sync is enabled. It is also
+included in **Settings → Backup & sync → Settings backup → Export settings**
+and in the GitHub `settings.json` backup. Importing or restoring either file
+restores the order. GitHub writes require a connected repository and either
+**Back up settings** or **Keep settings backed up automatically**; storing an
+order in browser sync does not by itself establish a GitHub backup.
+
+When adding or changing a planning link:
+
+1. Give the link a unique, stable key in the `addLink(key, label, description,
+   href)` call in `src/maps/peak-links.js`, and register that same key in
+   `PEAK_LINK_ORDER`. Adding markup alone does not make its order persist.
+2. Keep existing keys unchanged when editing labels or destinations. A renamed
+   key is treated as a removed link followed by a new link, losing its saved
+   position. Set the default position for the new key in `PEAK_LINK_ORDER`.
+3. Preserve the schema's order normalization: keep recognized saved IDs in
+   their existing sequence, remove duplicates and unknown IDs, then append
+   recognized IDs missing from the saved array. Existing users therefore get
+   new links at the end of their saved order, even if the new default places
+   them elsewhere. Users without a saved order get the current default.
+4. Keep temporarily unavailable services registered in the schema. The
+   controller replaces only visible slots when saving, retaining positions
+   for links hidden by country. The first forecast uses the `avalanche` slot
+   across countries; additional border-peak sources use `avalanche-2` through
+   `avalanche-8`. These are forecast positions rather than provider identities.
+   Remove a key from the schema only when the link is permanently retired.
+
+Older files containing `peakLinkOrder` receive newly registered IDs at the end
+when imported by the newer extension. Files predating that setting use the
+current default. This supports upgrades, but mixed-version browser sync is not
+lossless: an older extension can discard IDs it does not recognize when writing
+settings, so newer links can lose their custom positions.
+
+After changes, build and run the planning-link, settings-schema, and
+settings-transfer tests. For interaction or styling changes, also run
+`node scripts/verify-peak-link-order.mjs` and its `--firefox` variant after the
+build. These use hidden HTTPS fixtures; Chrome loads the real extension, while
+Firefox checks shipped assets with controlled settings. Use
+`npm run verify:browsers` separately for both browsers' real manifest and worker
+coverage. Follow the browser launch and teardown rules below.
+
 ## Vendor libraries
 
 Vendor libraries are dev dependencies declared in `package.json` and resolved

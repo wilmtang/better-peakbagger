@@ -963,10 +963,14 @@ and peak-feed replies for Peak pages. Its Dynamic Map shares the pointer/keyboar
 viewport control with the analyzer in 2D and 3D, while saving its size separately
 in Peakbagger page-local storage. Double-click resets the native starting size.
 The compact Sun & Moon panel follows the map without overlaying it.
-`src/maps/peak-links.js` separately owns
-user-invoked weather, snow, fire/smoke, and imagery links. Keeping planning
-links separate from the map coordinator prevents remote navigation features
-from acquiring map or settings privileges.
+`src/maps/peak-links.js` separately owns user-invoked weather, avalanche,
+fire/smoke, and imagery links. They remain ordinary external anchors, separate
+from the map coordinator, without fetching provider data. Its ordering
+controller, `src/maps/peak-link-order.js`, saves validated link IDs as the
+`peakLinkOrder` extension setting through the settings worker. That order is
+included in browser sync, settings file transfer, and GitHub settings backups.
+See [Peak planning link order](development.md#peak-planning-link-order) for
+stable IDs, future-link compatibility, and the mixed-version sync limitation.
 
 ## Deep dive: ascent filtering and in-page sorting
 
