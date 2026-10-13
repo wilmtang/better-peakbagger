@@ -45,11 +45,16 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
         if (!control) return;
         const action = control.querySelector('.bpb-gh-btn');
         const nextAction = nodes.find(node => node?.tagName === 'BUTTON');
+        const complete = nodes[0]?.classList.contains('bpb-gh-ok');
         action.disabled = !nextAction;
+        action.hidden = !!complete;
         action.onclick = nextAction ? event => runBackup(backupInfo, { event }) : null;
-        action.querySelector('span').textContent = nextAction?.textContent
+        action.querySelector('span').textContent = complete ? '' : nextAction?.textContent
             || (nodes[0]?.textContent.includes('Checking') ? 'Checking GitHub…'
-                : nodes[0]?.classList.contains('bpb-gh-ok') ? nodes[0].textContent : 'Backing up to GitHub…');
+                : 'Backing up to GitHub…');
+        const status = control.querySelector('.bpb-gh-status');
+        status.hidden = !complete;
+        status.textContent = complete ? nodes[0].textContent : '';
         const feedback = control.querySelector('.bpb-gh-feedback');
         feedback.replaceChildren(...nodes.filter(node => node && node !== nextAction
             && (!node.classList.contains('bpb-gh-label') || node.classList.contains('bpb-gh-err')
@@ -310,8 +315,11 @@ import { createPageLifecycle } from '../ui/page-lifecycle.js';
             if (!actions) return;
             control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'Ascent and TR backup' }, [
                 el('span', { class: 'bpb-gh-body' }, [
-                    el('button', { type: 'button', class: 'bpb-gh-btn', disabled: true, 'aria-live': 'polite',
-                        'data-label': 'Back up ascent and TR' }, [el('span', { text: 'Checking…' })]),
+                    el('span', { class: 'bpb-gh-action', 'data-label': 'Back up ascent and TR' }, [
+                        el('button', { type: 'button', class: 'bpb-gh-btn', disabled: true, 'aria-live': 'polite' },
+                            [el('span', { text: 'Checking…' })]),
+                        el('span', { class: 'bpb-gh-status bpb-gh-label bpb-gh-ok', role: 'status', hidden: true }),
+                    ]),
                     el('span', { class: 'bpb-gh-feedback', 'aria-live': 'polite', hidden: true }),
                 ]),
             ]);

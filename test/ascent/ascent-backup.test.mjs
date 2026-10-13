@@ -115,6 +115,13 @@ test('a current GitHub payload renders an affirmative state without writing', as
     assert.equal(checked.page.ascent.id, 7654321);
     assert.match(checked.gpx, /<gpx>/);
     assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').hidden, true,
+        'a current backup must not present an inert button');
+    const status = control(dom).querySelector('[role="status"]');
+    assert.equal(status.tagName, 'SPAN');
+    assert.equal(status.hidden, false);
+    assert.equal(status.textContent, 'Backed up ✓');
+    assert.equal(status.hasAttribute('tabindex'), false);
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false);
 });
 
@@ -154,6 +161,8 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     // Success state links to the commit.
     const link = control(dom).querySelector('.bpb-gh-link');
     assert.equal(link.getAttribute('href'), 'https://github.com/me/backup/commit/abc');
+    assert.equal(control(dom).querySelector('.bpb-gh-btn').hidden, true);
+    assert.equal(control(dom).querySelector('[role="status"]').textContent, 'Backed up ✓');
     // Never touched a Peakbagger Save control (there are none on this page).
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 1);
 });

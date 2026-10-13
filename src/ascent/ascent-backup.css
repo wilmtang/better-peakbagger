@@ -12,6 +12,12 @@
     color: #1c1c1a;
 }
 .bpb-gh-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+/* The footprint belongs to the slot; completion can be plain status text. */
+.bpb-gh-action { display: grid; }
+.bpb-gh-action > *, .bpb-gh-action::after { grid-area: 1 / 1; }
+.bpb-gh-action::after { content: attr(data-label); visibility: hidden; border: 1px solid transparent; padding: 2px 7px; }
+.bpb-gh-action > [hidden] { display: none; }
+.bpb-gh-status { align-self: center; padding: 3px 8px; cursor: default; }
 .bpb-gh-feedback { contain: inline-size; overflow-wrap: anywhere; }
 .bpb-gh-feedback[hidden] { display: none; }
 .bpb-gh-feedback > * + * { margin-left: 6px; }
@@ -30,9 +36,8 @@
     padding: 2px 7px;
     cursor: pointer;
 }
-.bpb-gh-btn > span, .bpb-gh-btn::after { grid-area: 1 / 1; }
-.bpb-gh-btn::after { content: attr(data-label); visibility: hidden; }
-.bpb-gh-btn:hover {
+.bpb-gh-btn:disabled { cursor: default; }
+.bpb-gh-btn:hover:not(:disabled) {
     color: #2f6b3f;
     background: #f3f6f3;
     border-color: #2f6b3f;
@@ -45,7 +50,7 @@
     .bpb-gh-err { color: #f2a099; }
     .bpb-gh-link { color: #7ac78d; }
     .bpb-gh-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
-    .bpb-gh-btn:hover { color: #7ac78d; background: #23262a; border-color: #7ac78d; }
+    .bpb-gh-btn:hover:not(:disabled) { color: #7ac78d; background: #23262a; border-color: #7ac78d; }
     .bpb-gh-btn:focus-visible { outline-color: #7ac78d; }
 }
 
@@ -57,7 +62,7 @@
 :root[data-bpb-theme="dark"] .bpb-gh-err { color: #f2a099; }
 :root[data-bpb-theme="dark"] .bpb-gh-link { color: #7ac78d; }
 :root[data-bpb-theme="dark"] .bpb-gh-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
-:root[data-bpb-theme="dark"] .bpb-gh-btn:hover { color: #7ac78d; background: #23262a; border-color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-btn:hover:not(:disabled) { color: #7ac78d; background: #23262a; border-color: #7ac78d; }
 :root[data-bpb-theme="dark"] .bpb-gh-btn:focus-visible { outline-color: #7ac78d; }
 /* A light preference must win even when the OS is dark. */
 :root[data-bpb-theme="light"] .bpb-gh-control { color: #1c1c1a; }
@@ -65,5 +70,5 @@
 :root[data-bpb-theme="light"] .bpb-gh-err { color: #b42318; }
 :root[data-bpb-theme="light"] .bpb-gh-link { color: #2f6b3f; }
 :root[data-bpb-theme="light"] .bpb-gh-btn { color: #1c1c1a; background: #fff; border-color: #c8c8c2; }
-:root[data-bpb-theme="light"] .bpb-gh-btn:hover { color: #2f6b3f; background: #f3f6f3; border-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-btn:hover:not(:disabled) { color: #2f6b3f; background: #f3f6f3; border-color: #2f6b3f; }
 :root[data-bpb-theme="light"] .bpb-gh-btn:focus-visible { outline-color: #2f6b3f; }

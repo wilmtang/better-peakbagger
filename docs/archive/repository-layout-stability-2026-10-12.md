@@ -301,6 +301,18 @@ evidence alongside the real-manifest and capture gates.
   Assertions require lists below their descriptions, matching left alignment,
   contained widths and stable setting-row bounds. Desktop and narrow enlarged
   renders were inspected; the existing settings feedback matrix also passed.
+- **J05 completion semantics:** keep a sized action slot while displaying
+  current/successful backups as a plain `role="status"` span. Hide the retained
+  button on completion and restrict pointer/hover affordances to enabled actions.
+  Regression assertions failed on the original current/success states. All 24
+  ascent-backup and 11 theme tests, build, focused ESLint and diff checks passed.
+  Hidden Chrome 153.0.8010.12 and Firefox 155.0 passed both themes at 390×900
+  and 1280×900 with normal/doubled backup text. Controlled checking, slow writes,
+  error, keyboard retry, completion and existing-backup states retain slot and
+  neighboring-link geometry. Status hover has no button chrome or pointer cursor,
+  the accessible button is absent, and clicking status sends no write. Completion
+  renders were inspected. The real unpacked extension passed hidden Chrome at
+  1000×760, including BFCache restoration and verifier teardown.
 
 ### Intentionally not changed
 
@@ -311,5 +323,6 @@ evidence alongside the real-manifest and capture gates.
 
 - The profile correction uses controlled APIs, so it does not prove live GitHub
   writes, native browser focus/window placement or screen-reader speech.
-- The reported saved-ascent completion semantics remain under investigation
-  in this follow-up.
+- The full Firefox manifest verifier was not rerun for this follow-up; Firefox
+  evidence here is the shipped-asset fixture matrix. Hidden checks do not prove
+  onscreen focus/window placement, native browser zoom or screen-reader speech.

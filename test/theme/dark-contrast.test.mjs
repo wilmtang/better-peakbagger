@@ -298,7 +298,7 @@ test('the backup control light preference overrides every dark semantic color', 
     ));
     for (const selector of [
         '.bpb-gh-control', '.bpb-gh-ok', '.bpb-gh-err', '.bpb-gh-link',
-        '.bpb-gh-btn', '.bpb-gh-btn:hover', '.bpb-gh-btn:focus-visible'
+        '.bpb-gh-btn', '.bpb-gh-btn:hover:not(:disabled)', '.bpb-gh-btn:focus-visible'
     ]) {
         assert.ok(lightSelectors.has(selector), `${selector} must override OS-dark colors when the extension theme is light`);
     }
