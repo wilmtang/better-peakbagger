@@ -520,10 +520,11 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 
 .about { font-size: 13px; padding: 0 2px; }
 .about-version { margin: 0 0 10px; color: var(--sub); }
+.about-license { margin: 0 0 18px; color: var(--sub); line-height: 1.5; }
 .about-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.about-links a { color: var(--link); text-decoration: none; }
-.about-links a:hover { text-decoration: underline; }
-.about-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.about a { color: var(--link); text-decoration: none; }
+.about a:hover { text-decoration: underline; }
+.about a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
 
 /* Feedback dock. .content is the scroll container and this is the last thing
  * in .wrap, so sticky bottom keeps the message on screen from any scroll
