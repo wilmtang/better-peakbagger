@@ -519,7 +519,17 @@ html:has(.bpb-terrain-frame-body),
     align-items: flex-end;
     gap: 6px;
     max-width: calc(100% - 20px);
+    max-height: calc(100% - 20px);
+    overflow: auto;
+    scrollbar-gutter: stable;
 }
+#bpb-terrain-map .bpb-terrain-controls > * { flex-shrink: 0; }
+/* The 3D stack is anchored at the top; the 2D control is anchored at the
+   bottom. In each engine, put variable feedback away from its picker/actions. */
+#bpb-terrain-map .bpb-sentinel select { grid-row: 1; }
+#bpb-terrain-map .bpb-sentinel button,
+#bpb-terrain-map .bpb-sentinel::after { grid-area: 2 / 1; }
+#bpb-terrain-map .bpb-sentinel-metadata { grid-row: 3; }
 
 #bpb-terrain-map .bpb-terrain-status,
 #bpb-terrain-map .bpb-terrain-picker,

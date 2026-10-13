@@ -99,6 +99,13 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
   both themes at 390×900 and 1280×900. Narrow screenshots were inspected.
   The full Chrome run exercised native GPX source selection and Sun & Moon;
   its two obsolete placement assertions were updated and its rerun is pending.
+- **J10 map-anchor follow-up:** the 3D frame anchors its stack at the top, so
+  its picker/retry precede feedback while the 2D stack uses the opposite order.
+  Bound the 3D stack to the frame with scrolling, preserving full error text.
+  Build, 44 Sentinel/terrain tests and ESLint passed. Hidden Chrome/Firefox
+  passed error/retry/completion geometry in both themes/widths, including a
+  180-pixel-high frame with long errors and scroll access. Narrow renders were
+  inspected; this component fixture does not render WebGL.
 - **J09 weather:** reserve hourly-readout wrapping from every actual possible
   reading, with hidden CSS sizing text excluded from the live region. Empty
   graphs retain plot height; Refresh/Retry retains width and ascent retry

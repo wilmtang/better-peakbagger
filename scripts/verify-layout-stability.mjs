@@ -463,6 +463,75 @@ async function mapCase(page, origin, variant) {
     stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel imagery retry');
     await capture(page, `${variant.name}-sentinel`);
     await page.evaluate(() => globalThis.__sentinel.dispose());
+    await page.addStyleTag({ content: (await asset('css/terrain-map.css')).toString() });
+    await page.evaluate(({ theme }) => {
+        // The production 3D controls live in their own frame. Hide the unrelated
+        // analyzer fixture while checking that frame's layout and pointer path.
+        document.getElementById('bpb-gpx-analysis').hidden = true;
+        const root = document.createElement('div'); root.id = 'bpb-terrain-map'; root.dataset.theme = theme;
+        // The renderer enables pointer events when its map finishes loading.
+        root.style.cssText = 'position:fixed;inset:0;pointer-events:auto';
+        root.innerHTML = '<div class="bpb-terrain-controls"><select class="bpb-terrain-picker"><option>Sentinel-2 imagery</option></select></div>';
+        document.body.append(root);
+        globalThis.__topSentinel = globalThis.__createSentinel({ document, readView: () => ({ zoom: 12,
+            bounds: { getWest: () => -122, getEast: () => -121, getNorth: () => 48, getSouth: () => 47 } }), replaceScenes() {}, clearScenes() {},
+        search: () => new Promise((resolve, reject) => { globalThis.__finishTopScenes = ok => ok ? resolve([])
+            : reject(new Error('Satellite imagery is temporarily unavailable. Check your connection and try another capture. '.repeat(2))); }) });
+        root.querySelector('.bpb-terrain-controls').append(globalThis.__topSentinel.element);
+        globalThis.__topSentinel.activate();
+    }, variant);
+    await page.waitForFunction(() => typeof globalThis.__finishTopScenes === 'function');
+    const topPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
+    await page.evaluate(() => globalThis.__finishTopScenes(false));
+    await page.locator('#bpb-terrain-map .bpb-sentinel button').waitFor();
+    stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel failure picker');
+    const topRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
+    await page.click('#bpb-terrain-map .bpb-sentinel button');
+    await page.evaluate(() => globalThis.__finishTopScenes(true));
+    await page.locator('#bpb-terrain-map .bpb-sentinel-summary').filter({ hasText: 'No captures found' }).waitFor();
+    stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel completed picker');
+    await page.evaluate(() => globalThis.__topSentinel.tileError());
+    stable(topRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel imagery retry');
+    await capture(page, `${variant.name}-3d-sentinel`);
+    await page.evaluate(() => {
+        const root = document.getElementById('bpb-terrain-map');
+        root.style.height = '180px'; root.style.bottom = 'auto';
+    });
+    const shortPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
+    const shortRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
+    await page.locator('#bpb-terrain-map .bpb-sentinel-summary').evaluate(element => {
+        element.textContent = 'Satellite imagery is temporarily unavailable. Please check your connection and try another capture. '.repeat(6);
+    });
+    stable(shortPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), 'short 3D Sentinel picker');
+    stable(shortRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), 'short 3D Sentinel retry');
+    const overflow = await page.locator('#bpb-terrain-map .bpb-terrain-controls').evaluate(element => ({
+        scrollable: element.scrollHeight > element.clientHeight,
+        bounded: element.getBoundingClientRect().bottom <= 180,
+        overflow: element.ownerDocument.defaultView.getComputedStyle(element).overflowY,
+    }));
+    assert.deepEqual(overflow, { scrollable: true, bounded: true, overflow: 'auto' }, 'long feedback remains readable in a short map');
+    await capture(page, `${variant.name}-3d-sentinel-short`);
+    const stack = await geometry(page, '#bpb-terrain-map .bpb-terrain-controls');
+    await page.mouse.move(stack.x + stack.width / 2, stack.y + stack.height - 12);
+    const scrollState = () => page.locator('#bpb-terrain-map .bpb-terrain-controls').evaluate(element => ({
+        top: element.scrollTop, height: element.clientHeight, total: element.scrollHeight,
+    }));
+    for (let gesture = 0; gesture < 8; gesture++) {
+        const beforeScroll = await scrollState();
+        if (beforeScroll.top + beforeScroll.height >= beforeScroll.total - 1) break;
+        await page.mouse.wheel(0, 2000);
+        await page.waitForFunction(previous => {
+            const element = document.querySelector('#bpb-terrain-map .bpb-terrain-controls');
+            return element.scrollTop > previous;
+        }, beforeScroll.top).catch(async error => { throw new Error(`3D feedback scroll did not advance: ${JSON.stringify(await scrollState())}`, { cause: error }); });
+    }
+    const afterScroll = await scrollState();
+    assert.ok(afterScroll.top + afterScroll.height >= afterScroll.total - 1, `3D feedback scroll did not reach the end: ${JSON.stringify(afterScroll)}`);
+    await capture(page, `${variant.name}-3d-sentinel-scrolled`);
+    await page.evaluate(() => {
+        globalThis.__topSentinel.dispose(); document.getElementById('bpb-terrain-map').remove();
+        document.getElementById('bpb-gpx-analysis').hidden = false;
+    });
     const selectors = ['.bpb-gpx-segment-view', '.bpb-gpx-controls button'];
     const baseline = await Promise.all(selectors.map(selector => geometry(page, selector)));
     await page.locator('.bpb-gpx-segment-view > span').evaluate(element => { element.textContent = 'Use interpreted view'; });
