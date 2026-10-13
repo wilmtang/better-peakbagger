@@ -82,7 +82,33 @@ async function popupCase(page, origin, variant) {
     stable(clearBefore, await geometry(page, '#clear-capture'), 'popup clear error');
     await capture(page, `${variant.name}-popup-error`);
 }
-const cases = { popup: popupCase };
+async function accessCase(page, origin, variant) {
+    for (const id of ['gaia', 'onx', 'alltrails', 'caltopo']) {
+        await load(page, origin, `${id}/access.html`, ({ theme }) => {
+            globalThis.chrome = {
+                storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
+                    onChanged: { addListener() {} } },
+                permissions: { request: () => new Promise((resolve, reject) => {
+                    globalThis.__finishPermission = result => result === 'error' ? reject(new Error('Unavailable')) : resolve(result);
+                }) },
+            };
+        }, variant);
+        const selector = `#allow-${id}`;
+        const before = await geometry(page, selector);
+        for (const result of ['error', false, true]) {
+            await page.click(selector);
+            await page.waitForFunction(id => document.getElementById(`allow-${id}`).disabled, id);
+            stable(before, await geometry(page, selector), `${id} pending`);
+            await page.evaluate(result => globalThis.__finishPermission(result), result);
+            await page.waitForFunction(({ id, result }) => result === true
+                ? !document.getElementById(`close-${id}`).hidden
+                : !document.getElementById(`allow-${id}`).disabled, { id, result });
+            stable(before, await geometry(page, selector), `${id} ${result}`);
+        }
+        await capture(page, `${variant.name}-${id}-access`);
+    }
+}
+const cases = { popup: popupCase, access: accessCase };
 const resources = createResourceStack();
 let failure = null;
 try {

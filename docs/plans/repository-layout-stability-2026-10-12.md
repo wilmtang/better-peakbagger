@@ -63,6 +63,13 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J02 map-access pages:** the Gaia error path moved its action upward by
+  17.3 px at 390 px before the fix. Anchor the shared card near the top of the
+  viewport and use full-width actions with the completion action below it.
+  All four providers now pass pending/error/denial/retry/success geometry checks
+  in hidden Chrome and Firefox, both themes at 390×900 and 1280×900. The narrow
+  AllTrails completion screenshot was inspected; four access behavior tests,
+  build, focused ESLint and diff checks passed.
 - **J01 capture popup:** feedback follows the persistent actions; opening and
   deletion failures retain the result list and original controls. The new
   `scripts/verify-layout-stability.mjs` reproduced disappearing actions before
