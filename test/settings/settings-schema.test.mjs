@@ -262,3 +262,12 @@ test('provider and filter lists validate duplicates, unknown IDs, and explicit a
     assert.deepEqual(Schema.clean({}).mapProvidersEnabled, Schema.MAP_PROVIDERS);
     assert.notEqual(Schema.clean({}).mapProviderOrder, Schema.DEFAULTS.mapProviderOrder);
 });
+
+test('planning link order removes unknown and duplicate IDs and fills missing slots', () => {
+    const clean = Schema.clean({ peakLinkOrder: ['avalanche', 'unknown', 'windy', 'windy', 'avalanche-2'] });
+    assert.deepEqual(clean.peakLinkOrder, ['avalanche', 'windy', 'avalanche-2', 'copernicus', 'airnow',
+        'avalanche-3', 'avalanche-4', 'avalanche-5', 'avalanche-6', 'avalanche-7', 'avalanche-8']);
+    assert.deepEqual(Schema.clean(clean), clean);
+    assert.deepEqual(Schema.clean({ peakLinkOrder: 'windy' }).peakLinkOrder, Schema.PEAK_LINK_ORDER);
+    assert.notEqual(Schema.clean({}).peakLinkOrder, Schema.DEFAULTS.peakLinkOrder);
+});

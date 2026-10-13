@@ -25,6 +25,7 @@ const FAIL_SOFT = Object.freeze({
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/favorites/climber-favorite.js': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
     'src/maps/big-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],
+    'src/maps/peak-link-order.js': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
     'src/maps/peak-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],
     'src/reports/report-editor.js': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
     'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],

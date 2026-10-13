@@ -8,6 +8,8 @@
 
 import { readPeakNations } from '../avalanche/avalanche-location.js';
 import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
+import { settings } from '../settings/settings.js';
+import { enablePeakLinkOrder } from './peak-link-order.js';
 
 (() => {
     'use strict';
@@ -111,9 +113,10 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
     const linkList = document.createElement('div');
     linkList.className = 'bpb-peak-links__list';
 
-    const addLink = (label, description, href) => {
+    const addLink = (key, label, description, href) => {
         const item = document.createElement('div');
         item.className = 'bpb-peak-links__item';
+        item.dataset.linkKey = key;
 
         const anchor = document.createElement('a');
         anchor.href = href;
@@ -130,11 +133,13 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
     };
 
     addLink(
+        'windy',
         'Windy summit forecast',
         'Weather detail at this peak',
         `https://www.windy.com/${lat}/${lon}`
     );
     addLink(
+        'copernicus',
         'Copernicus satellite imagery',
         'Browse images by date and cloud cover, or choose Sentinel-2 in the map’s layer menu.',
         `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
@@ -143,6 +148,7 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
     // AirNow's Fire and Smoke Map covers the United States, Canada, and Mexico.
     if (nations.some(nation => ['united states', 'canada', 'mexico'].includes(nation))) {
         addLink(
+            'airnow',
             'AirNow fire & smoke',
             'Active wildfires and smoke near this peak',
             `https://fire.airnow.gov/#9/${lat}/${lon}`
@@ -150,7 +156,8 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
     }
 
     const avalanche = resolveAvalancheLinks({ nations, latitude, longitude });
-    for (const link of avalanche.links) addLink(link.label, link.detail, link.href);
+    avalanche.links.forEach((link, index) => addLink(index === 0 ? 'avalanche' : `avalanche-${index + 1}`,
+        link.label, link.detail, link.href));
     if (avalanche.unconfigured) {
         const item = document.createElement('div');
         item.className = 'bpb-peak-links__item';
@@ -173,4 +180,5 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
     let insertionPoint = linksHeading;
     while (insertionPoint.nextSibling?.nodeName === 'BR') insertionPoint = insertionPoint.nextSibling;
     insertionPoint.parentNode.insertBefore(section, insertionPoint.nextSibling);
+    enablePeakLinkOrder({ section, list: linkList, settings });
 })();

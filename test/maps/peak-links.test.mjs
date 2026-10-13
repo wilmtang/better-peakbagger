@@ -5,7 +5,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { loadPage, PAGE_FIXTURES } from '../helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, makeChromeStub } from '../helpers/load-page.mjs';
+import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.js';
+import { settingsSchema } from '../../src/settings/settings-schema.js';
 
 // The built bundle (IIFE) stands in for the injected content script.
 const source = await readFile(new URL('../../dist/content/peak-links.js', import.meta.url), 'utf8');
@@ -163,7 +165,7 @@ test('avalanche links and unconfigured notices follow all other planning links',
     for (const [nation, avalancheLabels] of cases) {
         const document = renderNationPeak(nation);
         const labels = [...document.querySelectorAll('.bpb-peak-links__item')]
-            .map(item => item.firstElementChild.textContent);
+            .map(item => item.querySelector('a')?.textContent || item.firstElementChild.textContent);
         const expected = ['Windy summit forecast', 'Copernicus satellite imagery'];
         if (nation && /United States|Canada|Mexico/.test(nation)) expected.push('AirNow fire & smoke');
         assert.deepEqual(labels, [...expected, ...avalancheLabels], nation ?? 'missing Nation row');
@@ -234,4 +236,147 @@ test('integer coordinates keep Windy-required decimal parts and injection is ide
         linkByText(dom.window.document, 'Windy summit forecast').href,
         'https://www.windy.com/46.0/-121.0'
     );
+});
+
+const settleOrder = async () => {
+    // Storage uses a promise queue. A task boundary lets its acknowledgments run.
+    await new Promise(resolve => setImmediate(resolve));
+};
+const orderKeys = doc => [...doc.querySelectorAll('#bpb-peak-links [data-link-key]')].map(item => item.dataset.linkKey);
+const grip = (doc, key) => doc.querySelector(`[data-link-key="${key}"] .bpb-peak-links__grip`);
+const press = (doc, key, code) => grip(doc, key).dispatchEvent(new doc.defaultView.KeyboardEvent('keydown',
+    { key: code, bubbles: true, cancelable: true }));
+const reorderedPeak = async (nation = 'United States', saved = {}) => {
+    const doc = renderNationPeak(nation);
+    // Recreate the bundle with extension storage available at module startup.
+    doc.getElementById('bpb-peak-links').remove();
+    const chrome = makeChromeStub({ bpbSettings: saved });
+    doc.defaultView.chrome = chrome;
+    doc.defaultView.eval(source);
+    await settleOrder();
+    return { doc, chrome };
+};
+
+test('grips reorder with the keyboard, retain focus, save only IDs and preserve link behavior', async () => {
+    const { doc, chrome } = await reorderedPeak();
+    const originalLinks = [...doc.querySelectorAll('#bpb-peak-links a')].map(a => a.outerHTML).sort();
+    const handle = grip(doc, 'avalanche');
+    assert.equal(handle.type, 'button');
+    assert.match(handle.getAttribute('aria-label'), /Reorder Avalanche forecasts/);
+    assert.match(doc.getElementById(handle.getAttribute('aria-describedby')).textContent, /Up and Down/);
+    handle.focus();
+    press(doc, 'avalanche', 'Home');
+    await settleOrder();
+    assert.deepEqual(orderKeys(doc), ['avalanche', 'windy', 'copernicus', 'airnow']);
+    assert.equal(doc.activeElement, handle);
+    assert.deepEqual(chrome._store.bpbSettings.peakLinkOrder.slice(0, 4), orderKeys(doc));
+    assert.equal(JSON.stringify(chrome._store).includes('46.851'), false);
+    assert.deepEqual([...doc.querySelectorAll('#bpb-peak-links a')].map(a => a.outerHTML).sort(), originalLinks);
+    press(doc, 'avalanche', 'ArrowUp');
+    assert.match(doc.querySelector('[role="status"]').textContent, /already first/);
+    press(doc, 'avalanche', 'ArrowDown');
+    await settleOrder();
+    assert.deepEqual(orderKeys(doc), ['windy', 'avalanche', 'copernicus', 'airnow']);
+    doc.defaultView.close();
+});
+
+test('saved order follows forecast slots across countries and retains unavailable links', async () => {
+    const saved = { peakLinkOrder: ['avalanche', 'windy', 'airnow', 'copernicus', 'avalanche-2'] };
+    const { doc, chrome } = await reorderedPeak('France', saved);
+    assert.deepEqual(orderKeys(doc), ['avalanche', 'windy', 'copernicus']);
+    press(doc, 'windy', 'Home');
+    await settleOrder();
+    assert.deepEqual(chrome._store.bpbSettings.peakLinkOrder.slice(0, 4), ['windy', 'avalanche', 'airnow', 'copernicus']);
+    const border = await reorderedPeak('United States; Canada; Chile', chrome._store.bpbSettings);
+    assert.deepEqual(orderKeys(border.doc), ['windy', 'avalanche', 'airnow', 'copernicus', 'avalanche-2']);
+    assert.equal(border.doc.querySelectorAll('.bpb-peak-links__grip').length, 5);
+    assert.match(border.doc.querySelector('.bpb-peak-links__list').lastElementChild.textContent, /No forecast source/);
+    doc.defaultView.close(); border.doc.defaultView.close();
+});
+
+const pointer = (doc, type, x, y, pointerId = 1) => {
+    const event = new doc.defaultView.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
+    Object.defineProperty(event, 'pointerId', { value: pointerId });
+    return event;
+};
+const mockLayout = doc => {
+    const list = doc.querySelector('.bpb-peak-links__list');
+    list.getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 240 });
+    for (const item of list.querySelectorAll('[data-link-key]')) {
+        Object.defineProperty(item, 'offsetTop', { get: () => orderKeys(doc).indexOf(item.dataset.linkKey) * 60 });
+        Object.defineProperty(item, 'offsetHeight', { get: () => 60 });
+        item.getBoundingClientRect = () => ({ top: item.offsetTop });
+    }
+};
+
+test('pointer preview never saves; cancellation, outside drops and release respect the transaction', async () => {
+    const { doc, chrome } = await reorderedPeak();
+    mockLayout(doc);
+    const original = orderKeys(doc), stored = JSON.stringify(chrome._store);
+    for (const cancel of ['Escape', 'pointercancel', 'blur', 'outside']) {
+        grip(doc, 'windy').dispatchEvent(pointer(doc, 'pointerdown', 12, 10));
+        doc.defaultView.dispatchEvent(pointer(doc, 'pointermove', 12, 230));
+        assert.deepEqual(orderKeys(doc), ['copernicus', 'airnow', 'avalanche', 'windy']);
+        assert.equal(JSON.stringify(chrome._store), stored);
+        if (cancel === 'Escape') doc.defaultView.dispatchEvent(new doc.defaultView.KeyboardEvent('keydown', { key: cancel }));
+        else if (cancel === 'outside') doc.defaultView.dispatchEvent(pointer(doc, 'pointerup', 500, 230));
+        else doc.defaultView.dispatchEvent(cancel === 'blur' ? new doc.defaultView.Event('blur') : pointer(doc, cancel, 12, 230));
+        assert.deepEqual(orderKeys(doc), original, cancel);
+        assert.equal(doc.querySelector('[data-dragging]'), null);
+        assert.equal(JSON.stringify(chrome._store), stored);
+    }
+    grip(doc, 'windy').dispatchEvent(pointer(doc, 'pointerdown', 12, 10));
+    doc.defaultView.dispatchEvent(pointer(doc, 'pointermove', 12, 13));
+    assert.equal(doc.querySelector('[data-dragging]'), null, 'small pointer movements are clicks');
+    doc.defaultView.dispatchEvent(pointer(doc, 'pointermove', 12, 230, 2));
+    assert.deepEqual(orderKeys(doc), original, 'another pointer cannot take over');
+    doc.defaultView.dispatchEvent(pointer(doc, 'pointermove', 12, 230));
+    doc.defaultView.dispatchEvent(pointer(doc, 'pointerup', 12, 230));
+    await settleOrder();
+    assert.deepEqual(chrome._store.bpbSettings.peakLinkOrder.slice(0, 4), ['copernicus', 'airnow', 'avalanche', 'windy']);
+    doc.defaultView.close();
+});
+
+test('save failure is visible and a subsequent successful move clears it', async () => {
+    const { doc, chrome } = await reorderedPeak();
+    const save = chrome.storage.sync.set;
+    chrome.storage.sync.set = async () => { throw new Error('Unavailable'); };
+    press(doc, 'avalanche', 'Home');
+    await settleOrder();
+    const status = doc.querySelector('.bpb-peak-links__status');
+    assert.match(status.textContent, /could not be saved/);
+    assert.ok(status.hasAttribute('data-error'));
+    assert.equal(status.classList.contains('bpb-peak-links__sr'), false);
+    chrome.storage.sync.set = save;
+    press(doc, 'avalanche', 'ArrowDown');
+    await settleOrder();
+    assert.equal(status.hasAttribute('data-error'), false);
+    assert.match(status.textContent, /position 2 of 4/);
+    doc.defaultView.close();
+});
+
+test('late hydration and an older failed save cannot override a newer move', async () => {
+    const dom = new JSDOM('<section id="bpb-peak-links"><div class="bpb-peak-links__list">'
+        + ['windy', 'copernicus', 'airnow', 'avalanche'].map(key => `<div data-link-key="${key}"><a>${key}</a></div>`).join('')
+        + '</div></section>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=1' });
+    const doc = dom.window.document;
+    let hydrate;
+    const writes = [];
+    enablePeakLinkOrder({ section: doc.querySelector('section'), list: doc.querySelector('.bpb-peak-links__list'), settings: {
+        DEFAULTS: settingsSchema.DEFAULTS,
+        get: () => new Promise(resolve => { hydrate = resolve; }),
+        set: patch => new Promise((resolve, reject) => { writes.push({ patch, resolve, reject }); }),
+    } });
+    press(doc, 'avalanche', 'Home');
+    hydrate(settingsSchema.clean({ peakLinkOrder: ['windy', 'airnow', 'copernicus', 'avalanche'] }));
+    await settleOrder();
+    assert.deepEqual(orderKeys(doc), ['avalanche', 'windy', 'copernicus', 'airnow']);
+    press(doc, 'avalanche', 'ArrowDown');
+    writes[1].resolve();
+    await settleOrder();
+    writes[0].reject(new Error('old write failed'));
+    await settleOrder();
+    assert.deepEqual(orderKeys(doc), ['windy', 'avalanche', 'copernicus', 'airnow']);
+    assert.equal(doc.querySelector('.bpb-peak-links__status').hasAttribute('data-error'), false);
+    dom.window.close();
 });

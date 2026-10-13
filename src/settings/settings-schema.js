@@ -20,6 +20,10 @@ const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
 const MAP_PROVIDERS = Object.freeze(['gaia', 'onx', 'alltrails', 'caltopo']);
 const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
 const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
+// The first forecast slot follows the user's preference across countries.
+// Border peaks can have up to eight distinct sources (one per Nation entry).
+const PEAK_LINK_ORDER = Object.freeze(['windy', 'copernicus', 'airnow', 'avalanche',
+    ...Array.from({ length: 7 }, (_, index) => `avalanche-${index + 2}`)]);
 
 const REPORT_EDITOR_MODES = Object.freeze(['rich', 'markdown', 'plain']);
 const UNIT_KEYS = Object.freeze({
@@ -100,6 +104,7 @@ const DEFAULTS = {
     rememberMapLayer: false, mapLastLayer: '',
     mapProviderOrder: MAP_PROVIDERS,
     mapProvidersEnabled: MAP_PROVIDERS,
+    peakLinkOrder: PEAK_LINK_ORDER,
     // null preserves legacy site-local ordering until the first list visit.
     betaPeakFilterOrder: null,
     betaPersonalFilterOrder: null,
@@ -230,6 +235,7 @@ const clean = raw => {
         s.removeGithubBackupOnDelete = false;
     }
     s.mapProviderOrder = orderedIds(s.mapProviderOrder, MAP_PROVIDERS);
+    s.peakLinkOrder = orderedIds(s.peakLinkOrder, PEAK_LINK_ORDER);
     s.mapProvidersEnabled = Array.isArray(s.mapProvidersEnabled)
         ? [...new Set(s.mapProvidersEnabled.filter(id => MAP_PROVIDERS.includes(id)))] : [...MAP_PROVIDERS];
     s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);
@@ -262,6 +268,7 @@ const API = {
     MAP_PROVIDERS,
     PEAK_FILTER_ORDER,
     PERSONAL_FILTER_ORDER,
+    PEAK_LINK_ORDER,
     REPORT_EDITOR_MODES,
     ROUTE_STYLE,
     VIEWPORT,
