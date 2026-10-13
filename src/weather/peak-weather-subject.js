@@ -17,8 +17,8 @@ export function readPeakWeatherSubject(doc, pageUrl) {
     try {
         const summit = readWeatherSummit(doc, { peak: { id, name } }, url.href);
         const nativeMap = doc.getElementById('Gmap');
-        // A new row in the native right table stays below the map and its
-        // later Sun & Moon insertion. Never float a second full-page card.
+        // The card owns a row immediately after the map, wherever the native
+        // page places it. Mapless pages use the native right table's end.
         const rightTables = [...doc.querySelectorAll('table.gray[align]')]
             .filter(candidate => candidate.getAttribute('align').toLowerCase() === 'right'
                 && candidate.parentElement === headings[0].parentElement);

@@ -735,6 +735,22 @@ test('peak identity and unique native coordinates fail closed without remote geo
     assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
 });
 
+test('weather stays beside the map when native peak details follow it', async () => {
+    const fixture = new JSDOM(peak);
+    const mapRow = fixture.window.document.getElementById('Gmap').closest('tr');
+    mapRow.parentElement.prepend(mapRow);
+    const nativeDetails = mapRow.nextElementSibling.textContent;
+    const env = setup({ html: fixture.serialize() });
+    fixture.window.close();
+    try {
+        await settled(env);
+        const map = env.doc.getElementById('Gmap').closest('tr');
+        const weather = env.doc.getElementById('bpb-peak-weather-row');
+        assert.equal(map.nextElementSibling, weather);
+        assert.equal(weather.nextElementSibling.textContent, nativeDetails);
+    } finally { env.close(); }
+});
+
 test('card stays in the right native table below map and includes sixteen completed local days', async () => {
     const env = setup();
     try {
@@ -742,6 +758,7 @@ test('card stays in the right native table below map and includes sixteen comple
         const card = env.doc.getElementById('bpb-peak-weather'), map = env.doc.getElementById('Gmap');
         assert.equal(card.closest('table'), map.closest('table'));
         assert.equal(card.closest('table').getAttribute('align'), 'right');
+        assert.equal(map.closest('tr').nextElementSibling, card.closest('tr'));
         assert.ok(map.compareDocumentPosition(card) & env.win.Node.DOCUMENT_POSITION_FOLLOWING);
         assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date), ['2024-11-04', '2024-11-03', '2024-11-02', '2024-11-01', '2024-10-31', '2024-10-30', '2024-10-29', '2024-10-28', '2024-10-27', '2024-10-26', '2024-10-25', '2024-10-24', '2024-10-23', '2024-10-22', '2024-10-21', '2024-10-20']);
         assert.match(card.querySelector('.bpb-week-range').textContent, /Oct 20.*Nov 4, 2024/);

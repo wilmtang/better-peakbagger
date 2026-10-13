@@ -6,9 +6,10 @@ included in settings export/import and GitHub settings backup. Turning it off
 hides both cards on open pages and cancels pending weather work. Disabled pages
 make no weather requests; summit lookup for the archive is also skipped.
 
-The isolated `content/peak-weather.js` bundle adds **Summit weather** below
-the native map, in a new row of the right-hand table. The existing map, Sun &
-Moon panel, links and left-column metadata remain in their native flow. A peak
+The isolated `content/peak-weather.js` bundle adds **Summit weather** immediately
+after the native map row in the right-hand table, whether the map is above or
+below the peak details. Sun & Moon follows the map's complete native legend and
+full-screen link, so those controls stay together. A peak
 without a map uses its native right table. Unrecognized layouts or ambiguous
 coordinates fail closed rather than mounting a full-page fallback or guessing
 a location. Peak name, coordinates and elevation come from the current page;

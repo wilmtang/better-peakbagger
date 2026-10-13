@@ -22,6 +22,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const openPage = async (kind = 'map') => {
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=${kind}`);
         await wait(() => document.getElementById('bpb-peak-weather'), 'real isolated peak weather bundle mounts');
+        if (kind !== 'no-map') await wait(() => document.querySelector('.bpb-sun-calculator'), 'peak map and Sun & Moon mount together');
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
         await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
             && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'sixteen summit-local forecast days');
@@ -55,6 +56,9 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             summaryHeight: card.querySelector('.bpb-week-days').getBoundingClientRect().top - r.top,
             hiddenModelHintHeight: hint.hidden ? hint.getBoundingClientRect().height : 0,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
+            groupedWithMap: !frame || frame.closest('tr').nextElementSibling === card.closest('tr'),
+            legendBeforeSun: !frame || [...frame.closest('td').querySelectorAll('a')].filter(link => /Full Screen Map/.test(link.textContent))
+                .every(link => link.getBoundingClientRect().bottom <= document.querySelector('.bpb-sun-calculator').getBoundingClientRect().top),
             overflow: [...card.querySelectorAll('select, .bpb-week-model-description, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 if (!node.getClientRects().length) return false;
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
@@ -66,6 +70,8 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const assertGeometry = state => {
         assert.equal(state.nativeAlign, 'right', JSON.stringify(state));
         assert.equal(state.belowMap, true, JSON.stringify(state));
+        assert.equal(state.groupedWithMap, true, JSON.stringify(state));
+        assert.equal(state.legendBeforeSun, true, JSON.stringify(state));
         assert.ok(state.left >= state.parentLeft - 1 && state.right <= state.parentRight + 1, JSON.stringify(state));
         assert.deepEqual(state.overflow, [], JSON.stringify(state));
         assert.deepEqual(state.rowAlignment, [], `temperature and chevron alignment: ${JSON.stringify(state.rowAlignment)}`);
@@ -129,7 +135,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const widths = [1440, 768, 375], shapes = [];
     for (const theme of ['light', 'dark']) {
         await setSettings({ theme, units: theme === 'dark' ? 'metric' : 'imperial' });
-        await openPage(); await resize(1440, 1100);
+        await openPage('map-first'); await resize(1440, 1100);
         await waitForCondition(async () => await evaluate(() => document.documentElement.getAttribute('data-bpb-theme')) === theme,
             { description: 'peak weather theme', timeoutMs: 20_000 });
         for (const width of widths) {
@@ -140,6 +146,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assert.ok(state.summaryHeight <= (state.width > 662 ? 240 : 350), `weather summary is too tall: ${JSON.stringify(state)}`);
             shapes.push({ theme, viewport: width, cardWidth: state.width, summaryHeight: state.summaryHeight });
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${width}.png`));
+            if (output) {
+                await evaluate(() => document.getElementById('Gmap').closest('tr').scrollIntoView({ block: 'start' }));
+                await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-map-and-weather-${width}.png`));
+            }
             const before = evidence.length;
             await click(`${card} .bpb-week-day:first-child > summary`);
             await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);

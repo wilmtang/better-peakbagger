@@ -76,7 +76,9 @@ export function mountPeakWeather() {
         element('span', { class: 'bpb-week-attribution' }, [document.createTextNode('Powered by '), element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' })])]));
     const cell = element('td', { colspan: '2', class: 'bpb-week-cell' }, [card]);
     const row = element('tr', { id: `${ID}-row`, hidden: '' }, [cell]);
-    subject.table.tBodies[0].append(row);
+    const mapRow = document.getElementById('Gmap')?.closest('tr');
+    if (mapRow?.closest('table') === subject.table) mapRow.after(row);
+    else subject.table.tBodies[0].append(row);
 
     const client = createPeakWeatherClient();
     const updateClient = createPeakModelUpdateClient();

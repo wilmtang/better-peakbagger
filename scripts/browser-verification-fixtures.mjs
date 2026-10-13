@@ -790,6 +790,12 @@ export async function createBrowserFixtureServer({
             if (url.searchParams.has('week-weather')) {
                 let html = ignoredPeakHtml.replaceAll('/map/BigMap.aspx?t=P&amp;d=2296&amp;c=900001', '/map/BigMap.aspx?cy=46.851731&amp;cx=-121.760395&amp;z=10&amp;t=P&amp;d=2296&amp;c=900001');
                 if (url.searchParams.get('week-weather') === 'no-map') html = html.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, '');
+                if (url.searchParams.get('week-weather') === 'map-first') {
+                    const mapRow = html.match(/<tr><td colspan="2" align="center"><b>Dynamic Map<\/b>[\s\S]*?<\/tr>/)?.[0];
+                    if (!mapRow) throw new Error('The peak fixture has no native Dynamic Map row');
+                    html = html.replace(mapRow, '').replace('<table class="gray" align="right" width="50%"><tbody>',
+                        `<table class="gray" align="right" width="50%"><tbody>${mapRow}`);
+                }
                 return send('text/html; charset=utf-8', html);
             }
             return send('text/html; charset=utf-8', url.searchParams.has('ignored') || url.searchParams.get('pid') === '2296' ? ignoredPeakHtml : peakHtml);

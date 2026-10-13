@@ -147,16 +147,15 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
         sunState.setMapBearing(Number.isFinite(bearing) ? bearing : 0)
     );
     sunCalculator = SunCalculator.create({
-        mount: mapRegion.parentElement,
+        // Keep the native map, marker legend and full-screen link together.
+        // The panel belongs after the entire map cell's native content.
+        mount: iframe.closest('td') || mapRegion.parentElement,
         mode: 'peak',
         onDateChange: date => renderSun(sunState.setPeakDate(date)),
         onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
     });
     if (sunCalculator) {
         sunCalculator.element.hidden = true;
-        // create() appends safely; move the root beside the validated map so it
-        // cannot cover native controls or attribution inside the viewport.
-        mapRegion.after(sunCalculator.element);
         renderSun(sunState.setPeakSubject({ lat, lon, zone: sunZone }));
     }
 

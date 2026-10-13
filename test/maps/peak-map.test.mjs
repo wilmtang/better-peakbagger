@@ -144,8 +144,9 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(toggle.textContent, '3D');
     assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
     assert.ok(sun, 'a calculator is created from the same validated summit subject');
-    assert.equal(mount.parentElement.nextElementSibling, sun,
-        'the calculator sits immediately below the viewport instead of overlaying the map');
+    assert.equal(iframe.closest('td').lastElementChild, sun,
+        'the calculator follows the complete native map legend and full-screen link');
+    assert.equal(sun.previousElementSibling.textContent.trim(), 'Click Here for a Full Screen Map');
     assert.equal(sun.querySelector('.bpb-sun-calculator__panel').hidden, false,
         'Peak-page Sun & Moon opens automatically below the map');
     assert.equal(sun.querySelector('.bpb-sun-calculator__toggle').getAttribute('aria-expanded'), 'true');
