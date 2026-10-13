@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Cancel backup preparation.** Stop complete-list and repository preparation
+  before a runner starts; the panel and its Cancel control fit narrow pages.
+
 - **Keep your keyboard place around climber cards.** Hidden, removed, or
   replaced rows return owned focus to a surviving link or control.
 

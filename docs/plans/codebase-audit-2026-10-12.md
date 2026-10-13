@@ -375,6 +375,17 @@ by file size.
 
 ### Fixed and verified
 
+- **O1:** preparation now exposes Cancel, aborts complete-list reads, and
+  invalidates its owner generation before returning to the entry action.
+  Late list/preflight replies cannot start or borrow a newer runner. Pagehide
+  also cancels preparation. Worker preflight already dispatched may complete
+  read-only; its result is discarded. Running batch stop semantics are unchanged.
+  The panel is constrained to the viewport rather than the native page's wide
+  minimum. Build, 28 profile/runner tests plus 12 project/documentation checks
+  and affected ESLint passed. Hidden real Chrome 153.0.8010.12 and Firefox
+  157.0.1 verified actual list transport abort, focus return, and rendered
+  1000×760 light / 375×760 dark states with geometry checks and inspection.
+
 - **F7:** lazy pruning now expires markers after 14 days and bounds older
   markers to 60, preserving the active key and a one-minute Undo protection
   window. Physical key retirement first advances one durable deletion epoch;
@@ -450,7 +461,6 @@ by file size.
   raw-provider GPX containment, optional host permissions, and manual final Save.
 - Previous accepted design decisions, exact advisory scope/expiry, historical
   recovery constraints, and separate active plan ledgers.
-- O1's optional preparation-control choice remains unimplemented.
 - No live Buddy mutation, upload, GitHub write, push, tag, release, store
   submission, or merge was performed.
 

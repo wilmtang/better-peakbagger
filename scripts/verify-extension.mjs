@@ -49,6 +49,7 @@ import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
+import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
@@ -5004,6 +5005,23 @@ try {
         }), surfaceSelectors.profileBackup);
         check(state?.primary === 'Back up all ascents and TRs' && /fixture\/backup/.test(state.copy),
             `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(diagnostics)}`);
+        fixture.holdProfileLists();
+        const readsBefore = fixture.requests.profileListReads, abortsBefore = fixture.requests.cancelledProfileReads;
+        try {
+            await profilePage.goto(`https://www.peakbagger.com:${port}/climber/ClimbListC.aspx?cid=900001&y=2024`);
+            if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
+            await verifyProfilePreparation({
+                evaluate: fn => profilePage.evaluate(fn), wait: fn => profilePage.waitForFunction(fn),
+                click: selector => profilePage.locator(selector).click(),
+                key: (selector, value) => profilePage.locator(selector).press(value),
+                resize: (width, height) => profilePage.setViewportSize({ width, height }),
+                screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? name => profilePage.locator(surfaceSelectors.profileBackup).screenshot({
+                    path: path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, `chrome-${name}.png`),
+                }) : null,
+                readStarted: () => waitForCondition(() => fixture.requests.profileListReads > readsBefore, { description: 'held profile-list request' }),
+                readAborted: () => waitForCondition(() => fixture.requests.cancelledProfileReads > abortsBefore, { description: 'cancelled profile-list transport' }),
+            });
+        } finally { fixture.releaseProfileLists(); }
         await profilePage.close();
     }
 

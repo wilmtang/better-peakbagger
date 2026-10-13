@@ -529,6 +529,11 @@ disclosure.
 
 ### Pause, challenge, cancel, and closure
 
+- **Cancel during preparation:** the complete-list fetch is aborted and the
+  preparation generation is invalidated. A repository preflight already sent
+  to the worker may finish, but its reply cannot start a runner or borrow a
+  newer workflow. The entry action returns immediately; the existing running
+  pipeline's stop-after-current-write rule remains unchanged.
 - **User Pause:** the runner immediately publishes `pause-requested`. An owned
   Peakbagger read, retry backoff, pacing delay, or producer-buffer wait is
   interrupted; prepared ascents remain in memory. An already-issued GitHub

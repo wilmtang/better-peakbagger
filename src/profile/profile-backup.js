@@ -29,6 +29,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     let ownerId;
     let workflow = null;
     let workflowGeneration = 0;
+    let preparation = null, idleStatus = null;
 
     const body = (...children) => panel.querySelector('.bpb-profile-body').replaceChildren(...children.filter(Boolean));
     const button = (text, onclick, primary = false) => node('button', {
@@ -69,7 +70,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         ? String(error.message).replace(/\s+/g, ' ').trim().slice(0, 220)
         : messageFor(error);
 
-    const endWorkflow = async () => {
+    const endWorkflow = async (expected = workflow) => {
+        if (workflow !== expected) return;
         const ending = workflow;
         workflow = null;
         if (ending) await TrustedAction.end(ext, ending, ending.generation);
@@ -89,16 +91,20 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return workflow;
     };
 
-    const renderIdle = status => body(
-        node('div', { class: 'bpb-profile-copy' }, [
-            node('strong', { text: 'Back up your ascents and TRs' }),
-            node('span', { text: `Archive every ascent and its TR from every year to ${status.repo.fullName}, even when this page shows only one year. Existing backups are skipped.` }),
-        ]),
-        node('div', { class: 'bpb-profile-actions' }, [
-            button('Back up all ascents and TRs', event => startBackup(false, event), true),
-            button('Refresh all', renderRefreshConfirmation),
-        ]),
-    );
+    const renderIdle = status => {
+        idleStatus = status;
+        panel.setAttribute('aria-busy', 'false');
+        body(
+            node('div', { class: 'bpb-profile-copy' }, [
+                node('strong', { text: 'Back up your ascents and TRs' }),
+                node('span', { text: `Archive every ascent and its TR from every year to ${status.repo.fullName}, even when this page shows only one year. Existing backups are skipped.` }),
+            ]),
+            node('div', { class: 'bpb-profile-actions' }, [
+                button('Back up all ascents and TRs', event => startBackup(false, event), true),
+                button('Refresh all', renderRefreshConfirmation),
+            ]),
+        );
+    };
 
     const renderRefreshConfirmation = () => body(
         node('div', { class: 'bpb-profile-copy' }, [
@@ -111,12 +117,26 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         ]),
     );
 
-    const renderPreparing = () => body(
-        node('div', { class: 'bpb-profile-copy' }, [
-            node('strong', { text: 'Preparing backup…' }),
-            node('span', { text: 'Reading the complete ascent list and your repository.' }),
-        ]),
-    );
+    const cancelPreparation = (owner, restoreFocus = true) => {
+        if (preparation !== owner) return;
+        const ownedFocus = restoreFocus && panel.contains(document.activeElement);
+        preparation = null;
+        workflowGeneration++;
+        owner.controller.abort();
+        void endWorkflow(owner.workflow);
+        renderIdle(idleStatus);
+        if (ownedFocus && document.activeElement === document.body) panel.querySelector('.bpb-profile-primary')?.focus({ preventScroll: true });
+    };
+    const renderPreparing = owner => {
+        panel.setAttribute('aria-busy', 'true');
+        body(
+            node('div', { class: 'bpb-profile-copy' }, [
+                node('strong', { text: 'Preparing backup…' }),
+                node('span', { text: 'Reading the complete ascent list and your repository.' }),
+            ]),
+            node('div', { class: 'bpb-profile-actions' }, [button('Cancel', () => cancelPreparation(owner))]),
+        );
+    };
 
     const renderDeletionResult = (status, response) => {
         if (!response?.ok) {
@@ -346,13 +366,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         return { kind: 'wrong-content', url, error, reason: PeakbaggerError.message(error) };
     };
 
-    const completeList = async () => {
+    const completeList = async signal => {
         const target = Core.fullListUrl(location.href);
         const current = new URL(location.href);
         if (current.searchParams.get('j') === '-1' && current.searchParams.get('y') === '9999') {
             return Core.parseAscentList(document, { url: location.href });
         }
-        const result = await responseDocument(target, 'list');
+        const result = await responseDocument(target, 'list', signal);
         if (result.kind !== 'ok') return result;
         const parsed = Core.parseAscentList(result.document, { url: target });
         return parsed.isOwner && parsed.climberId === ownerId
@@ -467,10 +487,16 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 button('Try again', retryEvent => startBackup(refreshAll, retryEvent), true),
             );
         }
-        renderPreparing();
-        const list = await completeList();
+        const owner = { workflow: activeWorkflow, generation: workflowGeneration, controller: new AbortController() };
+        preparation = owner;
+        const ownsPreparation = () => preparation === owner && workflow === activeWorkflow && workflowGeneration === owner.generation;
+        renderPreparing(owner);
+        const list = await completeList(owner.controller.signal);
+        if (!ownsPreparation()) return;
         if (!list || list.kind) {
-            await endWorkflow();
+            preparation = null;
+            panel.setAttribute('aria-busy', 'false');
+            void endWorkflow(activeWorkflow);
             if (list && list.kind === 'challenged') return renderListChallenge(list, refreshAll);
             return body(
                 node('span', { class: 'bpb-profile-error', text: (list && list.reason) || 'Could not read the complete ascent list.' }),
@@ -478,13 +504,17 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             );
         }
         const status = await sendBg({ type: 'GITHUB_BACKUP_PROFILE_STATUS' });
+        if (!ownsPreparation()) return;
         if (!status || !status.ok) {
-            await endWorkflow();
+            preparation = null;
+            panel.setAttribute('aria-busy', 'false');
+            void endWorkflow(activeWorkflow);
             return body(
                 node('span', { class: 'bpb-profile-error', text: messageFor(status && status.error) }),
                 button('Try again', retryEvent => startBackup(refreshAll, retryEvent)),
             );
         }
+        preparation = null;
         runner = Core.createRunner({
             ascents: list.ascents,
             existingFolders: status.folders,
@@ -526,6 +556,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const start = () => { void initialize(); };
+    window.addEventListener('pagehide', () => { if (preparation) cancelPreparation(preparation, false); });
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', start, { once: true });
     else start();
 })();

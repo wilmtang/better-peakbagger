@@ -24,6 +24,73 @@ const prepareRuntime = (dom, handler) => {
     };
 };
 
+test('preparation cancellation aborts the full-list read and a late list cannot start a newer workflow', async t => {
+    const reads = [], sent = [];
+    const dom = await loadPage('climber-ascents.html', { fixtures: PAGE_FIXTURES, url: YEAR_PAGE_URL,
+        bundles: ['content/profile-backup.js'], prepare: dom => {
+            const folders = Core.parseAscentList(dom.window.document, { url: PAGE_URL }).ascents.map(item => `2020-01-01-peak-a${item.aid}`);
+            prepareRuntime(dom, message => {
+                sent.push(message.type);
+                if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return { ok: true, folders };
+                return null;
+            });
+            dom.window.fetch = (url, options) => new Promise(resolve => reads.push({ signal: options.signal,
+                finish: () => resolve({ ok: true, status: 200, url, headers: { get: () => 'text/html' }, text: async () => listHtml }) }));
+        } });
+    t.after(() => dom.window.close());
+    const panel = () => dom.window.document.getElementById('bpb-profile-backup');
+    await waitFor(dom, () => panel()?.querySelector('.bpb-profile-primary'));
+    fireTrustedEvent(panel().querySelector('.bpb-profile-primary'), 'click');
+    await waitFor(dom, () => reads.length === 1);
+    const cancel = [...panel().querySelectorAll('button')].find(button => button.textContent === 'Cancel');
+    cancel.focus(); cancel.click();
+    assert.equal(reads[0].signal.aborted, true);
+    assert.equal(panel().getAttribute('aria-busy'), 'false');
+    assert.equal(dom.window.document.activeElement, panel().querySelector('.bpb-profile-primary'));
+    fireTrustedEvent(panel().querySelector('.bpb-profile-primary'), 'click');
+    await waitFor(dom, () => reads.length === 2);
+    reads[0].finish();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.match(panel().textContent, /Preparing backup/);
+    assert.equal(sent.filter(type => type === 'GITHUB_BACKUP_PROFILE_STATUS').length, 0);
+    reads[1].finish();
+    await waitFor(dom, () => /backup complete/.test(panel().textContent));
+    assert.equal(sent.filter(type => type === 'GITHUB_BACKUP_PROFILE_STATUS').length, 1);
+    assert.equal(sent.includes('GITHUB_BACKUP_PROFILE_BATCH'), false);
+});
+
+test('cancelled repository preflight cannot start a runner or consume a newer preparation', async t => {
+    const preflights = [], sent = [];
+    let reads = 0;
+    const dom = await loadPage('climber-ascents.html', { fixtures: PAGE_FIXTURES, url: PAGE_URL,
+        bundles: ['content/profile-backup.js'], prepare: dom => {
+            prepareRuntime(dom, message => {
+                sent.push(message.type);
+                if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return new Promise(resolve => preflights.push(resolve));
+                return null;
+            });
+            dom.window.fetch = async () => { reads++; throw new Error('a cancelled runner must not read ascents'); };
+        } });
+    t.after(() => dom.window.close());
+    const panel = () => dom.window.document.getElementById('bpb-profile-backup');
+    await waitFor(dom, () => panel()?.querySelector('.bpb-profile-primary'));
+    fireTrustedEvent(panel().querySelector('.bpb-profile-primary'), 'click');
+    await waitFor(dom, () => preflights.length === 1);
+    [...panel().querySelectorAll('button')].find(button => button.textContent === 'Cancel').click();
+    fireTrustedEvent(panel().querySelector('.bpb-profile-primary'), 'click');
+    await waitFor(dom, () => preflights.length === 2);
+    preflights[0]({ ok: true, folders: [] }); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.match(panel().textContent, /Preparing backup/);
+    assert.equal(reads, 0);
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+    preflights[1]({ ok: true, folders: [] }); await new Promise(resolve => setTimeout(resolve, 0));
+    assert.match(panel().textContent, /Back up your ascents and TRs/);
+    assert.equal(reads, 0);
+    assert.equal(sent.includes('GITHUB_BACKUP_PROFILE_BATCH'), false);
+});
+
 test('owned lists show a restrained full-profile backup entry point', async () => {
     const dom = await loadPage('climber-ascents.html', {
         fixtures: PAGE_FIXTURES,

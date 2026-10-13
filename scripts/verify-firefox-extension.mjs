@@ -47,6 +47,7 @@ import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
+import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
@@ -2660,6 +2661,26 @@ async function main() {
             'Firefox full-profile backup surface did not mount for its verified owner',
             profileBackupState,
         );
+        fixture.holdProfileLists();
+        const profileReadsBefore = fixture.requests.profileListReads, profileAbortsBefore = fixture.requests.cancelledProfileReads;
+        try {
+            await driver.get(`https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&y=2024`);
+            if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
+            await verifyProfilePreparation({
+                evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox profile preparation'),
+                click: selector => driver.findElement(By.css(selector)).click(),
+                key: selector => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
+                resize: (width, height) => setContentViewport(driver, { width, height }),
+                screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? name => writeElementScreenshot(driver, surfaceSelectors.profileBackup,
+                    path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, `firefox-${name}.png`)) : null,
+                readStarted: () => waitForCondition(() => fixture.requests.profileListReads > profileReadsBefore, { description: 'Firefox held profile-list request' }),
+                readAborted: () => waitForCondition(() => fixture.requests.cancelledProfileReads > profileAbortsBefore, { description: 'Firefox cancelled profile-list transport' }),
+            });
+        } finally {
+            fixture.releaseProfileLists();
+            await setContentViewport(driver, null);
+        }
 
         const editorUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?cid=900001`;
         await driver.get(editorUrl);

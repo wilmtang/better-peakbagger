@@ -610,6 +610,15 @@ export async function createBrowserFixtureServer({
         buddyReports: 0,
         buddyReportStates: [],
         analyzerTracks: {},
+        profileListReads: 0,
+        cancelledProfileReads: 0,
+    };
+    let holdProfileLists = false;
+    const heldProfileLists = new Set();
+    const releaseProfileLists = () => {
+        holdProfileLists = false;
+        for (const release of heldProfileLists) release();
+        heldProfileLists.clear();
     };
     const relativeAscentEditHtml = ascentEditHtml.replace(
         /action="https:\/\/www\.peakbagger\.com\/climber\/ascentedit\.aspx\?cid=900001"/i,
@@ -741,6 +750,11 @@ export async function createBrowserFixtureServer({
             return send('text/html; charset=utf-8', url.searchParams.has('compact') ? compactIgnoredHtml : peakAscentsHtml);
         }
         if (/climblistc\.aspx/i.test(url.pathname)) {
+            if (holdProfileLists && url.searchParams.get('j') === '-1' && url.searchParams.get('y') === '9999') {
+                requests.profileListReads++;
+                response.once('close', () => { if (!response.writableEnded) requests.cancelledProfileReads++; });
+                await new Promise(resolve => heldProfileLists.add(resolve));
+            }
             return send('text/html; charset=utf-8', profileAscentsHtml);
         }
         if (/\/climber\/climber\.aspx/i.test(url.pathname)) {
@@ -842,12 +856,15 @@ export async function createBrowserFixtureServer({
     };
     const server = await resources.guard(() => createServer({ key, cert }, handleRequest));
     resources.defer('browser fixture server', () => closeServer(server));
+    resources.defer('held profile list reads', releaseProfileLists);
     await resources.guard(listenServer(server, 0, '127.0.0.1'));
     return {
         port: server.address().port,
         chromeTrustArgs: certificate.chromeTrustArgs,
         gpxPath,
         requests,
+        holdProfileLists: () => { holdProfileLists = true; },
+        releaseProfileLists,
         close: () => resources.dispose(),
     };
 }
