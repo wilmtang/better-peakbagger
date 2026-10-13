@@ -10,6 +10,11 @@ in focused commits. The final runtime snapshot and CI integration are recorded
 by `40b0b20d`; no confirmed occurrence remains open in this inventory. This is
 evidence for the exercised transitions, not proof of every possible live state.
 
+2026-10-13 follow-up: user screenshots exposed presentation and interaction
+regressions missed by the geometry matrix. Its original closure does not prove
+compact action sizing, reorder-list alignment or correct completion semantics.
+Corrections and their evidence are recorded below.
+
 ## Baseline and method
 
 The starting tree contained unrelated in-progress avalanche and climber-card
@@ -272,3 +277,29 @@ Reproduce with `npm run verify:layout-stability`; use `-- --surface=maps` to
 isolate one group and `BPB_JITTER_ARTIFACTS` to retain renders. The ordinary
 Chrome CI job now runs the complete Chrome/Firefox matrix and retains failure
 evidence alongside the real-manifest and capture gates.
+
+## 2026-10-13 correction ledger
+
+### Fixed and verified
+
+- **J06 compact actions:** replace full-page fractional button columns with
+  content-sized slots. Reserve both primary labels and the secondary cancellation
+  label, including the empty first slot during cancellation. The new compactness
+  assertion failed on the original implementation. All 41 profile tests, build,
+  focused ESLint and diff checks passed. Hidden Chrome 153.0.8010.12 and Firefox
+  155.0 passed both themes at 390×900 and 1280×900, with additional idle checks
+  at 2048×900 and 4052×900. Refresh confirmation, preparation, running, twenty
+  progress ticks and pause/cancel transitions retain action geometry. Dark site
+  rules are included; wide and narrow screenshots were inspected.
+
+### Intentionally not changed
+
+- Existing ownership, trusted activation, manual Save and backup transaction
+  boundaries remain unchanged. Legacy host-page overflow remains out of scope.
+
+### Changed but not fully proven
+
+- The profile correction uses controlled APIs, so it does not prove live GitHub
+  writes, native browser focus/window placement or screen-reader speech.
+- The reported reorder-list alignment and saved-ascent completion semantics
+  remain under investigation in this follow-up.

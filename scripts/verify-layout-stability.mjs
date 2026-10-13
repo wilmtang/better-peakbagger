@@ -13,6 +13,7 @@ import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './b
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
+import { darkCss } from '../src/theme/site-dark-css.js';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -221,20 +222,49 @@ async function profileBackupCase(page, origin, variant) {
             ? { enabled: true, connected: true, repo: { fullName: 'fixture/backup' } } : { ok: true } } };
     }, variant);
     await page.goto(`${origin}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`);
+    await page.addStyleTag({ content: darkCss });
     await page.addStyleTag({ content: (await asset('css/profile-backup.css')).toString() });
     const source = (await asset('content/profile-backup.js')).toString();
     const seam = 'const responseText = (url, kind, signal) =>';
     assert.ok(source.includes(seam), 'profile callback fixture seam');
     // Expose the actual view callback in this fixture only, avoiding live writes.
-    await page.addScriptTag({ content: source.replace(seam, `globalThis.__renderBackupProgress = renderState; ${seam}`) });
+    await page.addScriptTag({ content: source.replace(seam, `globalThis.__renderBackupProgress = renderState;
+        globalThis.__prepareBackup = renderPreparing;
+        ${seam}`) });
     await page.locator('#bpb-profile-backup .bpb-profile-primary').waitFor();
+    const action = '#bpb-profile-backup .bpb-profile-actions button';
+    for (const width of variant.width === 1280 ? [1280, 2048, 4052] : [variant.width]) {
+        await page.setViewportSize({ width, height: 900 });
+        await capture(page, `${variant.name}-profile-idle-${width}`);
+        const primary = await geometry(page, `${action}:first-child`);
+        const secondary = await geometry(page, `${action}:nth-child(2)`);
+        assert.ok(primary.width <= 260 && secondary.width <= 180,
+            `profile actions must stay compact at ${width}px: ${JSON.stringify({ primary, secondary })}`);
+        assert.ok(secondary.width < primary.width, 'the secondary action should not occupy a primary-sized slot');
+    }
+    await page.setViewportSize({ width: variant.width, height: 900 });
+    const idle = await page.locator(action).evaluateAll(elements => elements.map(element => {
+        const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+    }));
+    await page.getByRole('button', { name: 'Refresh all', exact: true }).click();
+    const confirmation = await page.locator(action).evaluateAll(elements => elements.map(element => {
+        const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+    }));
+    idle.forEach((rect, index) => stable(rect, confirmation[index], `profile refresh confirmation ${index}`));
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('button', { name: 'Back up all ascents and TRs', exact: true }).waitFor();
+    await page.evaluate(() => globalThis.__prepareBackup({}));
+    const preparing = await page.locator(action).evaluateAll(elements => elements.map(element => {
+        const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+    }));
+    idle.forEach((rect, index) => stable(rect, preparing[index], `profile preparing ${index}`));
     const state = { status: 'running', current: null, completed: 1, total: 99, fetched: 1, buffered: 0, uploading: 0,
         failures: [], backedUp: 0, skipped: 0, notReached: 98 };
     await page.evaluate(state => globalThis.__renderBackupProgress(state), state);
-    const action = '#bpb-profile-backup .bpb-profile-actions button';
     const before = await page.locator(action).evaluateAll(elements => elements.map(element => {
         const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
     }));
+    idle.forEach((rect, index) => stable(rect, before[index], `profile running ${index}`));
     const panelBefore = await geometry(page, '#bpb-profile-backup');
     await page.locator(action).first().focus();
     await page.evaluate(() => { globalThis.__focusedAction = document.activeElement; });

@@ -18,10 +18,16 @@
 .bpb-profile-copy strong, .bpb-profile-progress-copy strong { font-size: 14px; }
 .bpb-profile-activity { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bpb-profile-note { color: #66665f; font-size: 12px; }
-.bpb-profile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; order: -1; }
+.bpb-profile-actions { display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 8px; align-items: start; order: -1; }
 .bpb-profile-actions button { display: grid; min-width: 0; overflow-wrap: anywhere; }
 .bpb-profile-actions button > span, .bpb-profile-actions button::after { grid-area: 1 / 1; }
-.bpb-profile-actions button::after { content: "Refresh all ascents and TRs"; visibility: hidden; font-weight: 600; }
+/* Reserve each action's labels without stretching it across the page. The empty
+ * first slot keeps Cancel anchored while cancellation is pending. */
+.bpb-profile-actions > [aria-hidden="true"] { display: grid; min-width: 0; overflow-wrap: anywhere; padding: 5px 12px; border: 1px solid transparent; }
+.bpb-profile-actions > :first-child::before, .bpb-profile-actions > :first-child::after { grid-area: 1 / 1; visibility: hidden; font-weight: 600; }
+.bpb-profile-actions > :first-child::before { content: "Refresh all ascents and TRs"; }
+.bpb-profile-actions > :first-child::after { content: "Back up all ascents and TRs"; }
+.bpb-profile-actions button:not(:first-child)::after { content: "Cancel requested"; visibility: hidden; font-weight: 600; }
 .bpb-profile-btn {
     font: inherit;
     color: #1c1c1a;
