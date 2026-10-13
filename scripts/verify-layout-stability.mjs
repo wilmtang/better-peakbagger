@@ -279,12 +279,22 @@ async function settingsCase(page, origin, variant) {
         permissions: { contains: async () => false, onAdded: { addListener() {} }, onRemoved: { addListener() {} } },
         runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.0' }), getURL: file => new URL(`/dist/${file}`, location.origin).href,
             sendMessage: async message => {
-                if (message.type === 'SETTINGS_PATCH') { Object.assign(settings, message.patch); return { ok: true, settings: { ...settings } }; }
+                if (message.type === 'SETTINGS_PATCH') {
+                    if (globalThis.__holdUnitSave) return new Promise(resolve => {
+                        globalThis.__finishUnitSave = success => {
+                            if (success) Object.assign(settings, message.patch);
+                            globalThis.__finishUnitSave = null;
+                            resolve(success ? { ok: true, settings: { ...settings } } : { ok: false });
+                        };
+                    });
+                    Object.assign(settings, message.patch); return { ok: true, settings: { ...settings } };
+                }
                 return { ok: true, configured: false, connected: false };
             } } };
     }, variant);
     await page.locator('#unit-example-gpx').filter({ hasText: '12.4 mi' }).waitFor();
     await page.locator('.content').evaluate(content => {
+        content.style.scrollBehavior = 'auto';
         const fixture = document.createElement('section'); fixture.id = 'jitter-component-fixture';
         fixture.innerHTML = '<div class="github-code"><span class="github-code-value">AAAA-BBBB</span><span class="github-code-copy">Copy</span></div>'
             + '<div class="draft-actions"><button class="secondary" data-action="copy"><span>Copy Markdown</span></button><button class="secondary">Delete</button></div>'
@@ -292,15 +302,78 @@ async function settingsCase(page, origin, variant) {
         content.append(fixture);
     });
     for (const zoom of [1, 2]) {
-        await page.locator('body').evaluate((body, zoom) => { body.style.zoom = String(zoom); }, zoom);
+        // Browser zoom reduces the CSS viewport and re-evaluates media queries.
+        // CSS zoom on body alone misses that reflow and clips narrow fixtures.
+        await page.setViewportSize({ width: Math.floor(variant.width / zoom), height: Math.floor(900 / zoom) });
         await page.locator('#units').scrollIntoViewIfNeeded();
-        const before = await geometry(page, '#units');
-        for (const units of ['metric', 'imperial', 'auto']) {
+        const selectors = ['#units', '#general-units .card', '.unit-example', '#unit-customize summary'];
+        const before = await Promise.all(selectors.map(selector => geometry(page, selector)));
+        const checkUnitsStable = async label => {
+            for (const [index, selector] of selectors.entries()) {
+                stable(before[index], await geometry(page, selector), `${selector} ${label} zoom ${zoom}`);
+            }
+        };
+        for (const [units, gpx, weather] of [
+            ['metric', '20.0 km · 800 m ascent', '9°C · 4.2 mm · 16 km/h'],
+            ['imperial', '12.4 mi · 2625 ft ascent', '48°F · 0.17 in · 10 mph'],
+            ['auto', '12.4 mi · 2625 ft ascent', '48°F · 0.17 in · 10 mph'],
+        ]) {
             await page.selectOption('#units', units);
-            await page.waitForFunction(units => document.getElementById('units').value === units, units);
-            stable(before, await geometry(page, '#units'), `units example ${units} zoom ${zoom}`);
+            await page.waitForFunction(({ gpx, weather }) => document.getElementById('unit-example-gpx').textContent === gpx
+                && document.getElementById('unit-example-weather').textContent === weather, { gpx, weather });
+            await checkUnitsStable(`units example ${units}`);
+            assert.equal(await page.locator('#unit-customize').evaluate(details => details.open), false,
+                'default changes keep the customization disclosure closed');
         }
-        await capture(page, `${variant.name}-units-${zoom}`);
+        await page.locator('.unit-example').evaluate(element => {
+            const card = element.closest('.card');
+            const preview = element.getBoundingClientRect();
+            const bounds = card.getBoundingClientRect();
+            if (!card || preview.top < bounds.top || preview.bottom > bounds.bottom) throw new Error('unit preview is detached from its controls');
+            for (const child of element.querySelectorAll('dt, dd, .unit-example-heading')) {
+                const rect = child.getBoundingClientRect();
+                if (rect.left < preview.left || rect.right > preview.right || child.scrollWidth > child.clientWidth + 1) {
+                    throw new Error(`unit preview clipped ${child.textContent} at ${JSON.stringify(rect.toJSON())}`);
+                }
+            }
+        });
+        await page.evaluate(() => { globalThis.__holdUnitSave = true; });
+        for (const success of [false, true]) {
+            await page.selectOption('#units', 'metric');
+            await page.waitForFunction(() => typeof globalThis.__finishUnitSave === 'function'
+                && document.getElementById('unit-example-gpx').textContent === '20.0 km · 800 m ascent');
+            await checkUnitsStable('pending save');
+            await page.evaluate(success => globalThis.__finishUnitSave(success), success);
+            await page.waitForFunction(success => document.getElementById('units').value === (success ? 'metric' : 'auto')
+                && document.getElementById('unit-example-gpx').textContent === (success ? '20.0 km · 800 m ascent' : '12.4 mi · 2625 ft ascent')
+                && document.getElementById('status-error').hidden === success, success);
+            await checkUnitsStable(success ? 'retry saved' : 'failed save restored');
+        }
+        await page.evaluate(() => { globalThis.__holdUnitSave = false; });
+        if (output) await page.locator('#status').waitFor({ state: 'hidden' });
+        await page.locator('#general-units').evaluate(element => element.scrollIntoView({ block: 'start' }));
+        await capture(page, `${variant.name}-units-collapsed-${zoom}`);
+        if (output) {
+            if (zoom === 1) await page.locator('#general-units').screenshot({ path: path.join(output, `${variant.name}-units-card-${zoom}.png`) });
+            await page.locator('.unit-example').scrollIntoViewIfNeeded();
+            await page.locator('.unit-example').screenshot({ path: path.join(output, `${variant.name}-units-preview-${zoom}.png`) });
+        }
+        await page.locator('#unit-customize summary').press('Enter');
+        await page.waitForFunction(() => document.getElementById('unit-customize').open);
+        const previewBefore = await geometry(page, '.unit-example');
+        const cardBefore = await geometry(page, '#general-units .card');
+        await page.selectOption('#temperature-units', 'imperial');
+        await page.selectOption('#precipitation-units', 'imperial');
+        await page.locator('#unit-example-weather').filter({ hasText: '48°F · 0.17 in · 16 km/h' }).waitFor();
+        stable(previewBefore, await geometry(page, '.unit-example'), `mixed unit preview zoom ${zoom}`, ['width', 'height']);
+        stable(cardBefore, await geometry(page, '#general-units .card'), `mixed unit card zoom ${zoom}`, ['width', 'height']);
+        if (output) await page.locator('#status').waitFor({ state: 'hidden' });
+        await page.locator('#general-units').evaluate(element => element.scrollIntoView({ block: 'start' }));
+        await capture(page, `${variant.name}-units-custom-${zoom}`);
+        await page.locator('#unit-reset').press('Enter');
+        await page.locator('#unit-example-weather').filter({ hasText: '9°C · 4.2 mm · 16 km/h' }).waitFor();
+        await page.locator('#unit-customize summary').press('Enter');
+        await page.waitForFunction(() => !document.getElementById('unit-customize').open);
         for (const id of ['terrain-cache-usage', 'settings-backup-github-status', 'favorites-github-status', 'ignored-github-status', 'photos-github-status']) {
             await page.locator(`#${id}`).evaluate(element => {
                 const row = element.closest('.row'); row.hidden = false;
@@ -332,6 +405,7 @@ async function settingsCase(page, origin, variant) {
         await filter.evaluate(element => { element.setAttribute('aria-pressed', 'true'); });
         stable(filterRect, await filter.boundingBox(), `favorites selected zoom ${zoom}`);
     }
+    await page.setViewportSize({ width: variant.width, height: 900 });
     await capture(page, `${variant.name}-settings`);
 }
 async function photoCase(page, origin, variant) {

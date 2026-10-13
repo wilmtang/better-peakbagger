@@ -97,9 +97,14 @@ select { min-width: 168px; }
 .unit-customize summary { padding: 14px 18px; color: var(--link); font-weight: 600; cursor: pointer; }
 .unit-custom-count { float: right; font-size: 12px; font-weight: 400; color: var(--sub); }
 .unit-reset-row { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
-.unit-example { padding: 0 18px 14px; }
-.unit-example-heading { color: var(--sub); font-size: 12px; margin-bottom: 6px; }
-.unit-example dl { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+.unit-example {
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg) 35%, var(--card));
+    font-size: 12.5px;
+}
+.unit-example-heading { color: var(--sub); font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.unit-example dl { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 12px; margin: 0; }
 .unit-example dt { color: var(--sub); }
 .unit-example dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .unit-example [data-sizing-label] { display: grid; }
@@ -633,7 +638,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 
 @media (max-width: 480px) {
     .row:has(> [role="status"]) { grid-template-columns: minmax(0, 1fr); }
-    #general-units select { width: 100%; }
+    #general-units select { min-width: 0; width: 100%; }
     .unit-custom-count { float: none; display: block; margin: 4px 0 0 17px; }
     .unit-example dl { grid-template-columns: 1fr; }
     .unit-example dd + dt { margin-top: 6px; }
