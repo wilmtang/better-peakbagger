@@ -102,6 +102,9 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         assert.equal(avalanche.href, fixture === 'peak-rainier.html'
             ? 'https://avalanche.org/' : `https://avalanche.ca/map?lat=${lat}&lng=${lon}`);
         assert.equal(avalanche.nextElementSibling.textContent, 'Find the regional bulletin for this peak.');
+        assert.deepEqual([...panel.querySelectorAll('a')].map(link => link.textContent), [
+            'Windy summit forecast', 'Copernicus satellite imagery', 'AirNow fire & smoke', avalanche.textContent,
+        ]);
 
         const windy = linkByText(document, 'Windy summit forecast');
         assert.equal(windy.href, `https://www.windy.com/${lat}/${lon}`);
@@ -147,6 +150,26 @@ const renderNationPeak = nation => {
     dom.window.eval(source);
     return dom.window.document;
 };
+
+test('avalanche links and unconfigured notices follow all other planning links', () => {
+    const cases = [
+        ['France', ['Avalanche forecasts — EAWS bulletin map']],
+        ['United States; Canada', ['Avalanche forecasts — Avalanche.org', 'Avalanche forecasts — Avalanche Canada']],
+        ['United States; Chile', ['Avalanche forecasts — Avalanche.org', 'Avalanche forecasts']],
+        ['Mexico', ['Avalanche forecasts']],
+        ['Chile', ['Avalanche forecasts']],
+        [null, ['Avalanche forecasts']],
+    ];
+    for (const [nation, avalancheLabels] of cases) {
+        const document = renderNationPeak(nation);
+        const labels = [...document.querySelectorAll('.bpb-peak-links__item')]
+            .map(item => item.firstElementChild.textContent);
+        const expected = ['Windy summit forecast', 'Copernicus satellite imagery'];
+        if (nation && /United States|Canada|Mexico/.test(nation)) expected.push('AirNow fire & smoke');
+        assert.deepEqual(labels, [...expected, ...avalancheLabels], nation ?? 'missing Nation row');
+        document.defaultView.close();
+    }
+});
 
 test('AirNow links follow the service coverage area', () => {
     const hasLink = (document, text) => Boolean(linkByText(document, text));

@@ -129,22 +129,6 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
         linkList.appendChild(item);
     };
 
-    const avalanche = resolveAvalancheLinks({ nations, latitude, longitude });
-    for (const link of avalanche.links) addLink(link.label, link.detail, link.href);
-    if (avalanche.unconfigured) {
-        const item = document.createElement('div');
-        item.className = 'bpb-peak-links__item';
-        const label = document.createElement('span');
-        label.textContent = 'Avalanche forecasts';
-        const detail = document.createElement('span');
-        detail.className = 'bpb-peak-links__detail';
-        detail.textContent = avalanche.links.length
-            ? 'No forecast source configured for one of the listed countries.'
-            : 'No forecast source configured for this location.';
-        item.append(label, detail);
-        linkList.append(item);
-    }
-
     addLink(
         'Windy summit forecast',
         'Weather detail at this peak',
@@ -163,6 +147,22 @@ import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
             'Active wildfires and smoke near this peak',
             `https://fire.airnow.gov/#9/${lat}/${lon}`
         );
+    }
+
+    const avalanche = resolveAvalancheLinks({ nations, latitude, longitude });
+    for (const link of avalanche.links) addLink(link.label, link.detail, link.href);
+    if (avalanche.unconfigured) {
+        const item = document.createElement('div');
+        item.className = 'bpb-peak-links__item';
+        const label = document.createElement('span');
+        label.textContent = 'Avalanche forecasts';
+        const detail = document.createElement('span');
+        detail.className = 'bpb-peak-links__detail';
+        detail.textContent = avalanche.links.length
+            ? 'No forecast source configured for one of the listed countries.'
+            : 'No forecast source configured for this location.';
+        item.append(label, detail);
+        linkList.append(item);
     }
 
     section.appendChild(linkList);

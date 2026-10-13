@@ -4123,8 +4123,11 @@ try {
         check(peakState?.isolatedWorldReady,
             `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
         check(peakState?.planningLinks?.length === 4
-            && peakState.planningLinks[0].label === 'Avalanche forecasts — Avalanche.org'
-            && peakState.planningLinks[0].href === 'https://avalanche.org/'
+            && peakState.planningLinks[0].label === 'Windy summit forecast'
+            && peakState.planningLinks[1].label === 'Copernicus satellite imagery'
+            && peakState.planningLinks[2].label === 'AirNow fire & smoke'
+            && peakState.planningLinks[3].label === 'Avalanche forecasts — Avalanche.org'
+            && peakState.planningLinks[3].href === 'https://avalanche.org/'
             && peakState.planningLinks.every(link => link.rel === 'noopener noreferrer' && link.target === '_blank'),
         `the packaged Peak planning links are missing or unsafe (state=${JSON.stringify(peakState?.planningLinks)})`);
         const peakSunToggle = peakPage.locator('.bpb-sun-calculator__toggle');

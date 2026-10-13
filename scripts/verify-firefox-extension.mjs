@@ -2220,10 +2220,10 @@ async function main() {
             /^rotate\(/.test(state?.moonMarker || '') && state?.moonBand === true);
         assertState(
             peakState.links?.length === 4
-        && peakState.links[0] === 'Avalanche forecasts — Avalanche.org'
-        && peakState.links[1] === 'Windy summit forecast'
-        && peakState.links[2] === 'Copernicus satellite imagery'
-        && peakState.links[3] === 'AirNow fire & smoke'
+        && peakState.links[0] === 'Windy summit forecast'
+        && peakState.links[1] === 'Copernicus satellite imagery'
+        && peakState.links[2] === 'AirNow fire & smoke'
+        && peakState.links[3] === 'Avalanche forecasts — Avalanche.org'
         && peakState.theme !== null && peakState.framePreserved
         && peakState.sunAfterLegend && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
