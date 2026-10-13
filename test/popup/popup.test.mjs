@@ -618,12 +618,10 @@ test('popup explains when every previewed draft tab is gone and offers recovery'
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Show opened drafts');
     openButton.click();
-    await waitFor(() => /Draft opening stopped/.test(dom.window.document.getElementById('state').textContent));
-    assert.match(dom.window.document.getElementById('state').textContent, /Capture the activity again/);
-    const back = [...dom.window.document.querySelectorAll('#state button')]
-        .find(element => element.textContent === 'Back to results');
-    assert.ok(back);
-    back.click();
+    await waitFor(() => !dom.window.document.getElementById('open-note').hidden);
+    assert.match(dom.window.document.getElementById('open-note').textContent, /Capture the activity again/);
+    assert.equal(dom.window.document.getElementById('results').hidden, false);
+    assert.equal(dom.window.document.querySelector('.peak-name').textContent, 'Closed Peak');
     assert.equal(openButton.textContent, 'Show opened drafts');
     assert.equal(openButton.disabled, false);
     dom.window.close();
@@ -657,7 +655,7 @@ test('popup restores the singular draft label after opening fails', async () => 
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Open 1 draft');
     openButton.click();
-    await waitFor(() => /Draft opening stopped/.test(dom.window.document.getElementById('state').textContent));
+    await waitFor(() => !dom.window.document.getElementById('open-note').hidden);
     assert.equal(openButton.textContent, 'Open 1 draft');
     assert.equal(openButton.disabled, false);
     dom.window.close();
@@ -1318,15 +1316,15 @@ test('an unreachable worker never explains a failed popup action with messaging 
         const control = dom.window.document.getElementById(controlId);
         await waitFor(() => ready(control));
         control.click();
-        await waitFor(() => /Try again in a moment/.test(stateText(dom)));
+        await waitFor(() => /Try again in a moment/.test(dom.window.document.getElementById('open-note').textContent));
 
-        assert.doesNotMatch(stateText(dom), /Receiving end does not exist/,
+        assert.doesNotMatch(dom.window.document.getElementById('open-note').textContent, /Receiving end does not exist/,
             `${type}: browser messaging internals reached the popup`);
-        assert.match(stateText(dom), /The extension couldn’t be reached\. Try again in a moment\./,
+        assert.match(dom.window.document.getElementById('open-note').textContent, /The extension couldn’t be reached\. Try again in a moment\./,
             `${type}: the transport failure needs plain, recoverable copy`);
-        assert.ok([...dom.window.document.querySelectorAll('#state button')]
-            .some(button => button.textContent === 'Back to results'),
-        `${type}: the user must be able to get back to the results`);
+        assert.equal(dom.window.document.getElementById('results').hidden, false,
+            `${type}: retain results and the original actions for recovery`);
+        assert.equal(control.disabled, false);
         dom.window.close();
     }
 });
@@ -1364,10 +1362,10 @@ test('a failure the worker itself reports keeps its own copy on screen', async (
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Open 1 draft');
     openButton.click();
-    await waitFor(() => /Draft opening stopped/.test(stateText(dom)));
+    await waitFor(() => !dom.window.document.getElementById('open-note').hidden);
 
-    assert.match(stateText(dom), /Capture results are no longer available/);
-    assert.doesNotMatch(stateText(dom), /couldn’t be reached/);
+    assert.match(dom.window.document.getElementById('open-note').textContent, /Capture results are no longer available/);
+    assert.doesNotMatch(dom.window.document.getElementById('open-note').textContent, /couldn’t be reached/);
     dom.window.close();
 });
 
@@ -1381,9 +1379,9 @@ test('a worker-reported delete failure keeps its own copy on screen', async () =
     const clearButton = dom.window.document.getElementById('clear-capture');
     await waitFor(() => clearButton.hidden === false);
     clearButton.click();
-    await waitFor(() => /Couldn’t delete captured track data/.test(stateText(dom)));
+    await waitFor(() => !dom.window.document.getElementById('open-note').hidden);
 
-    assert.match(stateText(dom), /Wait for the current capture to finish/);
-    assert.doesNotMatch(stateText(dom), /couldn’t be reached/);
+    assert.match(dom.window.document.getElementById('open-note').textContent, /Wait for the current capture to finish/);
+    assert.doesNotMatch(dom.window.document.getElementById('open-note').textContent, /couldn’t be reached/);
     dom.window.close();
 });

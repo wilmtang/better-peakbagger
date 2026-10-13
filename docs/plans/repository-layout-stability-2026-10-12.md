@@ -63,7 +63,15 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
-None yet.
+- **J01 capture popup:** feedback follows the persistent actions; opening and
+  deletion failures retain the result list and original controls. The new
+  `scripts/verify-layout-stability.mjs` reproduced disappearing actions before
+  the fix and now compares button geometry through controlled pending, failure,
+  retry, grouping completion and deletion failure. Hidden Chrome 153.0.8010.12
+  and Playwright Firefox 155.0 passed in light/dark at 390×900 and 1280×900;
+  the narrow dark screenshot was inspected. All 48 popup tests, focused ESLint
+  and the build passed. Native popup sizing was established by the preflight;
+  fixture geometry does not establish native window focus or placement.
 
 ### Intentionally not changed
 

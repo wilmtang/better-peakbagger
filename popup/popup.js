@@ -463,10 +463,9 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
             );
         } catch (error) {
             if (revision !== captureRevision) return;
-            stateCard('Couldn’t delete captured track data', publicMessage(error), {
-                kind: 'error',
-                action: { label: 'Back to results', onClick: () => renderResults(currentJob) }
-            });
+            renderResults(currentJob);
+            openNote.textContent = publicMessage(error);
+            openNote.hidden = false;
         }
     });
 
@@ -499,7 +498,8 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         } catch (error) {
             if (revision !== captureRevision) return;
             refreshSelection();
-            stateCard('Draft opening stopped', publicMessage(error), { kind: 'error', action: { label: 'Back to results', onClick: () => renderResults(currentJob) } });
+            openNote.textContent = publicMessage(error);
+            openNote.hidden = false;
         }
     });
 
