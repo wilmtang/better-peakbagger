@@ -36,7 +36,7 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 #bpb-peak-weather .bpb-week-refresh { min-width: 70px; }
 #bpb-peak-weather .bpb-week-location-name { display: block; margin-top: 2px; min-width: 0; font-size: 12px; color: var(--week-sub); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 #bpb-peak-weather .bpb-week-map-hint { display: block; margin-top: 2px; font-size: 12px; color: var(--week-sub); }
-#bpb-peak-weather .bpb-week-location-reset { flex: 0 0 auto; font-size: 12px; padding: 5px 8px; }
+#bpb-peak-weather .bpb-week-actions button { flex: 0 0 auto; }
 /* Reserve the reset action's space while the summit is selected. */
 #bpb-peak-weather .bpb-week-location-reset:disabled { visibility: hidden; }
 #bpb-peak-weather :is(button, select, summary, a, [tabindex]):focus-visible { outline: 2px solid var(--week-accent); outline-offset: 3px; }

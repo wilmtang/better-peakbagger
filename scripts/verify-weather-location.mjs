@@ -13,13 +13,17 @@ export async function verifyWeatherLocation({ evaluate, click, clickPoint, press
         const title = header.querySelector('h2').lastChild, location = card.querySelector('.bpb-week-location-name');
         const reset = card.querySelector('.bpb-week-location-reset');
         const previous = { style: card.style.cssText, title: title.textContent, location: location.textContent, disabled: reset.disabled };
-        const failures = [];
+        const failures = [], actionMismatches = [];
         try {
             card.style.maxWidth = 'none'; card.style.minWidth = '0';
             for (let width = 280; width <= 500; width += 2) {
                 card.style.width = `${width}px`;
                 const heights = ['Summit weather', 'Location weather'].map((label, index) => {
                     title.textContent = label; location.textContent = index ? '35.3946, 139.0917' : 'At the summit'; reset.disabled = !index;
+                    const refresh = card.querySelector('.bpb-week-refresh');
+                    if (Math.abs(reset.getBoundingClientRect().height - refresh.getBoundingClientRect().height) > 1) {
+                        actionMismatches.push({ width, label, reset: reset.getBoundingClientRect().height, refresh: refresh.getBoundingClientRect().height });
+                    }
                     return header.getBoundingClientRect().height;
                 });
                 if (Math.abs(heights[0] - heights[1]) > 1) failures.push({ width, heights });
@@ -28,9 +32,10 @@ export async function verifyWeatherLocation({ evaluate, click, clickPoint, press
             card.style.cssText = previous.style; title.textContent = previous.title;
             location.textContent = previous.location; reset.disabled = previous.disabled;
         }
-        return { failures, locationInHeader: header.contains(location) };
+        return { failures, actionMismatches, locationInHeader: header.contains(location) };
     });
     assert.equal(wrapping.locationInHeader, true, 'location belongs with the weather title');
+    assert.deepEqual(wrapping.actionMismatches, [], 'weather header actions share the same height');
     assert.deepEqual(wrapping.failures, [], 'location changes must not add a header row at intermediate card widths');
     for (const theme of ['light', 'dark']) {
         await setSettings({ theme, units: 'imperial' });
