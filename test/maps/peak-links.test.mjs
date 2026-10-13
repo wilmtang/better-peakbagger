@@ -75,14 +75,14 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             lat: '46.851731',
             lon: '-121.760395',
             // United States also gains the AirNow link.
-            expectedLinks: 3
+            expectedLinks: 4
         },
         {
             fixture: 'peak-garibaldi.html',
             lat: '49.850562',
             lon: '-123.004672',
             // Canada also gains the AirNow link.
-            expectedLinks: 3
+            expectedLinks: 4
         }
     ];
 
@@ -97,6 +97,11 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             'Better Peakbagger links'
         );
         assert.equal(panel.querySelectorAll('.bpb-peak-links__item').length, expectedLinks);
+        const avalanche = linkByText(document, fixture === 'peak-rainier.html'
+            ? 'Avalanche forecasts — Avalanche.org' : 'Avalanche forecasts — Avalanche Canada');
+        assert.equal(avalanche.href, fixture === 'peak-rainier.html'
+            ? 'https://avalanche.org/' : `https://avalanche.ca/map?lat=${lat}&lng=${lon}`);
+        assert.equal(avalanche.nextElementSibling.textContent, 'Find the regional bulletin for this peak.');
 
         const windy = linkByText(document, 'Windy summit forecast');
         assert.equal(windy.href, `https://www.windy.com/${lat}/${lon}`);
@@ -115,7 +120,7 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         assert.equal(fireSmoke.href, `https://fire.airnow.gov/#9/${lat}/${lon}`);
         assert.equal(linkByText(document, 'NOAA snow depth'), undefined);
 
-        for (const anchor of [windy, copernicus, fireSmoke]) {
+        for (const anchor of [avalanche, windy, copernicus, fireSmoke]) {
             assert.equal(anchor.target, '_blank');
             assert.equal(anchor.rel, 'noopener noreferrer');
         }
@@ -123,6 +128,7 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         const linksHeading = Array.from(panel.closest('td').querySelectorAll('b'))
             .find(element => element.textContent.trim() === 'Links');
         assert.ok(linksHeading.compareDocumentPosition(panel) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+        dom.window.close();
     }
 });
 
@@ -176,7 +182,8 @@ test('coordinate parsing fails closed for ambiguous, malformed, or out-of-range 
         '46° 51\' 6\'\' N, 121° 45\' 37\'\' W (DMS)',
         'unknown (Dec Deg)',
         '91.0, -121.0 (Dec Deg)',
-        '46.0, -181.0 (Dec Deg)'
+        '46.0, -181.0 (Dec Deg)',
+        '46.0, -121.0 (Dec Deg) 47.0, -122.0 (Dec Deg)'
     ]) {
         const dom = renderMinimalPeak(coordinate);
         assert.equal(dom.window.document.getElementById('bpb-peak-links'), null, coordinate);

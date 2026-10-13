@@ -6,6 +6,9 @@
 // if the coordinate row is missing/ambiguous. General and map links each
 // require their own unambiguous native section.
 
+import { readPeakNations } from '../avalanche/avalanche-location.js';
+import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
+
 (() => {
     'use strict';
 
@@ -23,6 +26,7 @@
     // same cell also contains DMS and UTM forms, which must never be mistaken
     // for the summit coordinate.
     const coordinateText = normalize(coordinateRow.cells[1].textContent);
+    if ((coordinateText.match(/\(Dec Deg\)/gi) || []).length !== 1) return;
     const match = /^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\(Dec Deg\)/i.exec(coordinateText);
     if (!match) return;
 
@@ -87,11 +91,10 @@
 
     // Read Peakbagger's own "Nation" row to gate country-specific services.
     // Absent or unexpected values simply omit those links (fail closed).
-    const nationRow = Array.from(peakTable.querySelectorAll('tr')).find(row =>
-        row.cells.length >= 2 && normalize(row.cells[0].textContent).toLowerCase() === 'nation');
-    const nation = nationRow ? normalize(nationRow.cells[1].textContent).toLowerCase() : '';
+    const nations = readPeakNations(peakTable);
     const linksHeadings = Array.from(peakTable.querySelectorAll('b, strong'))
-        .filter(element => normalize(element.textContent).toLowerCase() === 'links');
+        .filter(element => element.closest('table') === peakTable
+            && normalize(element.textContent).toLowerCase() === 'links');
     if (linksHeadings.length !== 1 || !linksHeadings[0].closest('td')) return;
     const [linksHeading] = linksHeadings;
 
@@ -126,6 +129,22 @@
         linkList.appendChild(item);
     };
 
+    const avalanche = resolveAvalancheLinks({ nations, latitude, longitude });
+    for (const link of avalanche.links) addLink(link.label, link.detail, link.href);
+    if (avalanche.unconfigured) {
+        const item = document.createElement('div');
+        item.className = 'bpb-peak-links__item';
+        const label = document.createElement('span');
+        label.textContent = 'Avalanche forecasts';
+        const detail = document.createElement('span');
+        detail.className = 'bpb-peak-links__detail';
+        detail.textContent = avalanche.links.length
+            ? 'No forecast source configured for one of the listed countries.'
+            : 'No forecast source configured for this location.';
+        item.append(label, detail);
+        linkList.append(item);
+    }
+
     addLink(
         'Windy summit forecast',
         'Weather detail at this peak',
@@ -138,7 +157,7 @@
     );
 
     // AirNow's Fire and Smoke Map covers the United States, Canada, and Mexico.
-    if (nation === 'united states' || nation === 'canada' || nation === 'mexico') {
+    if (nations.some(nation => ['united states', 'canada', 'mexico'].includes(nation))) {
         addLink(
             'AirNow fire & smoke',
             'Active wildfires and smoke near this peak',

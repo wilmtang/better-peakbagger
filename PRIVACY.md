@@ -529,6 +529,16 @@ The user can export and import settings without GitHub:
 | YouTube or a user-provided media host | Remote report media requested by the editor, preview, published report, or report reader. |
 | GitHub | User-triggered backups, automatic ascent backups when enabled, and default-on settings/favorites/photo metadata backups with opt-outs, all to the selected repository; validation reads for an imported connection; explicit restores. |
 | Windy, Copernicus Browser, and AirNow | Only when the user follows the corresponding summit link. |
+| Avalanche forecast and backcountry conditions sites | Only when the user opens a planning link. Canada links include the summit coordinates; EAWS map links include a small area around the summit. Other configured destinations are gateways without coordinates. |
+
+Avalanche links are resolved from the peak's displayed coordinates and Nation
+row using a packaged source registry. The extension does not fetch forecasts,
+prefetch these destinations, embed their pages, or request geolocation. Links
+use `noopener noreferrer` and send no peak ID, climber identity, ascent date, or
+GPX. Opening a link reveals its URL parameters to the destination; that site's
+own data handling applies to subsequent browsing. Country routing helps find
+regional bulletins and does not establish forecast coverage or avalanche danger
+at the summit or on a route.
 
 All extension code and libraries are packaged locally. A YouTube player is
 remote page content isolated in YouTube's cross-origin iframe; it is never

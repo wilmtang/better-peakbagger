@@ -201,7 +201,11 @@ an ascent on Peakbagger.
 
 Jump from a peak page to location-aware forecasts, recent satellite imagery,
 modeled snow depth, and fire or smoke information. Planning links open the
-supported service at the mountain you're researching.
+supported service at the mountain you're researching. **Avalanche forecasts**
+links help find regional bulletins through the configured issuing service or
+aggregator, with both sources shown for recognized border countries. These
+gateways do not establish coverage or assess a summit or route's avalanche
+danger. Australian peaks link to alpine backcountry conditions reports.
 
 ### Make Peakbagger easier on the eyes
 

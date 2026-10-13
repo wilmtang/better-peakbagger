@@ -4103,7 +4103,10 @@ try {
                 // peak-markers, and schema via ES imports, so its toggle existing
                 // (this state being truthy) proves those loaded. The isolated
                 // theme bundle is confirmed separately by the theme attribute.
-                isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme') !== null
+                isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme') !== null,
+                planningLinks: Array.from(document.querySelectorAll('#bpb-peak-links a'), link => ({
+                    label: link.textContent, href: link.href, rel: link.rel, target: link.target,
+                }))
             } : false;
         }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
         check(peakState?.text === '3D',
@@ -4118,6 +4121,11 @@ try {
         `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
         check(peakState?.isolatedWorldReady,
             `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
+        check(peakState?.planningLinks?.length === 4
+            && peakState.planningLinks[0].label === 'Avalanche forecasts — Avalanche.org'
+            && peakState.planningLinks[0].href === 'https://avalanche.org/'
+            && peakState.planningLinks.every(link => link.rel === 'noopener noreferrer' && link.target === '_blank'),
+        `the packaged Peak planning links are missing or unsafe (state=${JSON.stringify(peakState?.planningLinks)})`);
         const peakSunToggle = peakPage.locator('.bpb-sun-calculator__toggle');
         if (await peakSunToggle.getAttribute('aria-expanded') !== 'true') await peakSunToggle.click();
         const peakSunTarget = await peakPage.locator('.bpb-sun-calculator__time').evaluate(slider => ({

@@ -1,8 +1,9 @@
 # Avalanche forecast links and regional map layer
 
-Status: proposed design; research completed on October 12, 2026. Documentation
-only; runtime implementation remains proposed. Requested scope: worldwide,
-where issuing organizations publish public avalanche forecasts.
+Status: first-release source links implemented on October 12, 2026; exact zone
+links and regional overlays remain proposed. Requested scope: worldwide, where
+issuing organizations publish public avalanche forecasts. The implementation
+ledger below records the initial source set and remaining proof gaps.
 
 ## Findings and recommendation
 
@@ -147,9 +148,8 @@ link become visible to its destination when opened. Retain the existing anchor
 privacy behavior and update [PRIVACY.md](../../PRIVACY.md) during implementation.
 No new host permissions or settings are needed for ordinary links.
 
-The first implementation should be confined to the existing peak-links entry
-and a pure, locally maintained source registry. Proposed files, not current
-repository paths:
+The first implementation is confined to the existing peak-links entry and a
+pure, locally maintained source registry. Implemented files:
 
 ```text
 src/avalanche/avalanche-links.js       provider registry and safe URL builders
@@ -305,7 +305,7 @@ raise a test window over the user's work.
   worlds, current link styles/tests, public provider documentation, listed
   project source/licensing metadata, EAWS bbox implementation, and EAWS region
   LICENSE. Documentation checks are recorded in the handoff.
-- **Intentionally deferred:** runtime code, live danger badges, permission
+- **Intentionally deferred:** live danger badges, permission
   changes, provider contacts, hosted infrastructure, slope/runout/route risk
   modelling, and historical avalanche reconstruction.
 - **Not yet proven:** browser-visible external map centers and zone selection;
@@ -318,3 +318,71 @@ raise a test window over the user's work.
 The preferred decision is therefore **worldwide links now, official regional
 overlays incrementally**, with source links retained wherever an overlay cannot
 be safely supported.
+
+## First-release implementation ledger — October 12, 2026
+
+### Fixed and verified
+
+- Added the quiet peak planning entry with a packaged registry. US and Canada,
+  the listed European nations, NZ, Japan, and Australia resolve locally. Border
+  values separated by native line breaks, commas, semicolons, or slashes retain
+  all known sources in native order; shared aggregators are deduplicated.
+- Nation rows must be unique and belong directly to the coordinate row's table.
+  Missing, duplicate, nested, malformed, and unknown values report extension
+  coverage explicitly. Existing Windy, Copernicus, native map links, and AirNow
+  coverage remain; AirNow additionally handles recognized border countries.
+- Canada uses the published `lat`/`lng` navigation parameters; supported EAWS
+  map countries use its documented `bbox`. Wrapped or polar boxes fall back to
+  the EAWS gateway. No zone selection, ascent date, or coverage polygon is
+  inferred. Duplicate decimal-coordinate values fail closed.
+- Rechecked destination pages and the EAWS member directory and map source.
+  Norway, Switzerland, and Iceland retain direct national gateways. Romania
+  uses the EAWS issuing-service directory because it is absent from the map's
+  default region list. SAIS explicitly names Scotland; MSC names backcountry
+  conditions and limits its detail to Victoria and New South Wales.
+- Links retain HTTPS and `noopener noreferrer`; the shipped-bundle tests reject
+  automatic fetches, privileged messaging, or geolocation. No new permissions
+  or settings were added. README and PRIVACY.md describe routing and URL data.
+- Built `dist/`; focused avalanche, existing link, and manifest tests passed
+  **39/39**. The complete rebuilt suite initially passed 2716/2717 while an
+  unrelated concurrent npm-script/documentation change was incomplete; after
+  that change settled, the full suite rerun passed **2717/2717**. Focused ESLint
+  (including both modified browser verifiers), `git diff --check`, documentation
+  tests (3/3), and web-ext lint passed; web-ext retained six existing owned
+  warnings and added none.
+- Real unpacked-extension verifiers passed in **hidden Chrome for Testing
+  153.0.8010.12** and **hidden Firefox 157.0.1**, each at **1000 × 760**. HTTPS
+  masked peak fixtures were separately rendered in both browsers at exact
+  **390 × 900** and **1280 × 900**, light/dark, for Canada, US/Canada borders,
+  shared European sources, Australia, and unknown locations. Screenshots were
+  inspected, text had no internal overflow, keyboard outlines were visible, and
+  panel/link geometry stayed within 1 CSS pixel across hover, pressed, and
+  keyboard focus states. Border and Australian entries also passed at doubled
+  panel text size (26px) at 390 × 900 in both themes and browsers. These are
+  native HTML/CSS surfaces, with no forecast
+  WebGL layer. Disposable profiles, servers, and certificates were removed;
+  exact owned process paths were checked after teardown.
+
+### Intentionally not changed
+
+- India remains unconfigured: the DGRE directory still displayed no results;
+  no old PDF substitutes for a current directory. Other unconfigured countries
+  get a coverage message, including the unsupported side of mixed borders.
+- No exact-zone resolver, danger badge, feed integration, regional map layer,
+  permission request, setting, provider contact, or runtime third-party request.
+  These remain separate later releases with the contracts described above.
+
+### Changed but not fully proven
+
+- Live Canada and EAWS navigation opened their map controls and retained the
+  parameters. The basemap captures remained blank, so a browser-visible center
+  or selected zone was **not** established. Canada reported hardware ANGLE Metal
+  on Apple M3 Pro; this does not prove the destination finished rendering. URL
+  construction is covered by tests and published parameter/source evidence.
+- Exact native border markup beyond the masked single-country pages remains
+  unobserved; multiple-country and malformed variants are synthetic regression
+  fixtures. Undelimited or annotated country prose deliberately remains unknown.
+- No exhaustive worldwide inventory, seasonal bulletin correctness, native
+  window/focus placement, screen-reader speech, or native browser-zoom proof is
+  claimed. Hidden protocol focus and screenshots establish only the checked
+  page behavior and layouts. Links have no pending/success/error transaction.
