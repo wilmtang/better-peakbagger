@@ -33,11 +33,11 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const body = (...children) => panel.querySelector('.bpb-profile-body').replaceChildren(...children.filter(Boolean));
     const button = (text, onclick, primary = false) => node('button', {
-        type: 'button', class: `bpb-profile-btn${primary ? ' bpb-profile-primary' : ''}`, text, onclick,
-    });
+        type: 'button', class: `bpb-profile-btn${primary ? ' bpb-profile-primary' : ''}`, onclick,
+    }, [node('span', { text })]);
     const disabledButton = text => node('button', {
-        type: 'button', class: 'bpb-profile-btn', text, disabled: true,
-    });
+        type: 'button', class: 'bpb-profile-btn', disabled: true,
+    }, [node('span', { text })]);
     const removePanel = () => {
         if (panel) panel.remove();
         panel = null;
@@ -134,7 +134,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 node('strong', { text: 'Preparing backup…' }),
                 node('span', { text: 'Reading the complete ascent list and your repository.' }),
             ]),
-            node('div', { class: 'bpb-profile-actions' }, [button('Cancel', () => cancelPreparation(owner))]),
+            node('div', { class: 'bpb-profile-actions' }, [disabledButton('Preparing…'), button('Cancel', () => cancelPreparation(owner))]),
         );
     };
 
@@ -283,7 +283,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                     class: 'bpb-profile-progress', max: Math.max(1, state.total), value: state.completed,
                 }),
                 node('div', { class: 'bpb-profile-actions' }, cancelling
-                    ? [disabledButton('Cancel requested')]
+                    ? [node('span', { 'aria-hidden': 'true' }), disabledButton('Cancel requested')]
                     : [disabledButton('Pause requested'), button('Cancel', () => runner.cancel())]),
             );
             if (focusWasInPanel) {
@@ -346,6 +346,17 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         const note = state.producerWaiting
             ? `${readyLabel}. Reading resumes automatically when GitHub frees space.`
             : `${state.fetched} read${state.buffered ? ` · ${readyLabel}` : ''}${state.uploading ? ` · uploading ${state.uploading}` : ''} · Keep this tab open.`;
+        // Progress ticks must not replace the focused Pause/Cancel controls.
+        const existing = panel.querySelector('.bpb-profile-progress-copy');
+        if (existing && panel.querySelector('.bpb-profile-actions button')?.textContent === 'Pause') {
+            existing.querySelector('strong').textContent = `${state.completed} of ${state.total}`;
+            existing.querySelector('span').textContent = activity;
+            existing.querySelector('.bpb-profile-note').textContent = note;
+            const progress = panel.querySelector('progress');
+            progress.max = Math.max(1, state.total);
+            progress.value = state.completed;
+            return;
+        }
         body(
             node('div', { class: 'bpb-profile-progress-copy' }, [
                 node('strong', { text: `${state.completed} of ${state.total}` }),

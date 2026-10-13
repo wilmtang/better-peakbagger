@@ -210,7 +210,50 @@ async function ascentBackupCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-ascent-backup`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase };
+async function profileBackupCase(page, origin, variant) {
+    const html = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascents.html'), 'utf8');
+    await page.route('**/climber/ClimbListC.aspx**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.addInitScript(({ theme }) => {
+        document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
+        globalThis.chrome = { runtime: { sendMessage: async message => message.type === 'GITHUB_BACKUP_STATUS'
+            ? { enabled: true, connected: true, repo: { fullName: 'fixture/backup' } } : { ok: true } } };
+    }, variant);
+    await page.goto(`${origin}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`);
+    await page.addStyleTag({ content: (await asset('css/profile-backup.css')).toString() });
+    const source = (await asset('content/profile-backup.js')).toString();
+    const seam = 'const responseText = (url, kind, signal) =>';
+    assert.ok(source.includes(seam), 'profile callback fixture seam');
+    // Expose the actual view callback in this fixture only, avoiding live writes.
+    await page.addScriptTag({ content: source.replace(seam, `globalThis.__renderBackupProgress = renderState; ${seam}`) });
+    await page.locator('#bpb-profile-backup .bpb-profile-primary').waitFor();
+    const state = { status: 'running', current: null, completed: 1, total: 99, fetched: 1, buffered: 0, uploading: 0,
+        failures: [], backedUp: 0, skipped: 0, notReached: 98 };
+    await page.evaluate(state => globalThis.__renderBackupProgress(state), state);
+    const action = '#bpb-profile-backup .bpb-profile-actions button';
+    const before = await page.locator(action).evaluateAll(elements => elements.map(element => {
+        const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+    }));
+    await page.locator(action).first().focus();
+    await page.evaluate(() => { globalThis.__focusedAction = document.activeElement; });
+    for (let tick = 0; tick < 20; tick++) {
+        await page.evaluate(state => globalThis.__renderBackupProgress(state), { ...state, completed: tick,
+            current: { peakName: tick % 2 ? 'Short peak' : 'An extremely long mountain name repeated through progress updates without moving the active buttons' } });
+        const after = await page.locator(action).evaluateAll(elements => elements.map(element => {
+            const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+        }));
+        before.forEach((rect, index) => stable(rect, after[index], `profile progress ${tick} action ${index}`));
+        assert.equal(await page.evaluate(() => document.activeElement === globalThis.__focusedAction), true, 'progress preserves focused node');
+    }
+    for (const status of ['pause-requested', 'paused', 'cancel-requested']) {
+        await page.evaluate(state => globalThis.__renderBackupProgress(state), { ...state, status, pauseReason: 'github', pauseError: null });
+        const controls = await page.locator(action).evaluateAll(elements => elements.map(element => {
+            const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+        }));
+        controls.forEach((rect, index) => stable(before[status === 'cancel-requested' ? 1 : index], rect, `profile ${status}`));
+    }
+    await capture(page, `${variant.name}-profile-backup`);
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase };
 const resources = createResourceStack();
 let failure = null;
 try {

@@ -63,6 +63,15 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J06 profile backup:** progress ticks update the existing readout and progress
+  bar while retaining focused Pause/Cancel nodes. Actions occupy stable slots
+  above feedback; preparation and cancellation retain Cancel's slot, and sizing
+  labels reserve wrapping height. Twenty-one pipeline/interaction tests passed
+  with build and ESLint. The shipped view callback (exposed only by the fixture)
+  passed 20 alternating long/short ticks with exact focused-node retention and
+  pause/request/cancellation geometry in hidden Chrome/Firefox, both themes at
+  390×900 and 1280×900. The narrow pending screenshot was inspected. This view
+  fixture does not make live GitHub writes; the behavior tests cover the pipeline.
 - **J05 saved-ascent backup:** preserve one button across checking, writing,
   completion and retry, reserve its widest label and put long feedback below
   without contributing to its width. Completed/current backups disable the
