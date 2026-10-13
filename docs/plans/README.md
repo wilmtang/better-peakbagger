@@ -32,6 +32,12 @@ fixture findings are corrected in seven focused commits. Its ledger records
 2,666 passing tests, Chrome/Firefox and Metal evidence, retained boundaries and
 manual proof limits.
 
+The [peak-page presentation follow-up](../archive/peak-page-presentation-2026-10-12.md)
+corrects the map/legend/weather order, weather actions and source coordinates,
+Settings presentation, and BPB map links. It records the earlier fixture and
+assertion gaps, 2,712 passing tests, rendered Chrome/Firefox evidence, and an
+unresolved Chrome helper-adoption smoke failure.
+
 The [weather feature audit](../archive/weather-feature-audit-2026-10-11.md)
 has eight implemented fixes and local browser/regression evidence. Its closure
 ledger retains screen-reader/live-provider proof gaps and two pre-existing
