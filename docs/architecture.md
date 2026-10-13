@@ -1044,7 +1044,9 @@ below remains independent of ignored membership.
 | `src/favorites/ignored-client.js` | Subscribe before read; generation/revision guards retain the latest valid local list after read errors |
 | `src/favorites/favorite-source.js` | Shared custom-or-Buddy source, positive account ownership, stale-cache use, bounded authenticated refresh, cancellation and late-response rejection |
 | `src/favorites/climber-ignore.js`, `options/ignored.js` | Independent public-profile Ignore control and accessible manager tab, verified lookup, search/sort and entry Undo |
-| `src/favorites/climber-card-state.js`, `src/favorites/climber-hover-card.js` | Pure link identity/membership presenter and top-level isolated name-link card; existing worker Favorite/Ignore operations, explicit authenticated Buddy absence check before Ignore, and native-profile Buddy navigation |
+| `src/favorites/climber-card-state.js`, `src/favorites/climber-hover-card.js` | Pure link identity/membership presenter and top-level isolated name-link card; worker Favorite/Ignore operations, authenticated Buddy absence check before Ignore, and explicit inline Buddy actions |
+| `src/favorites/buddy-client.js`, `src/favorites/buddy-state.js` | Exact owner/target/native-form validation, narrowly scoped Buddy POST, uncached confirmation and bounded intent schema; status recovery never repeats a POST |
+| `src/background/buddy-store.js` | Pending Buddy reservations in the shared climber-list lane; confirmed target cache reconciliation and configured custom-favorite updates, with partial-success recovery |
 | `src/favorites/report-adapters.js`, `src/favorites/peak-report-filter.js` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
 | `src/ascent/ascent-filter.js` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
 | `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
@@ -1054,19 +1056,34 @@ below remains independent of ignored membership.
 `bpbIgnoredClimbers`, `bpbPeakReportFilter` and `bpbIgnoredSyncState` live in
 `storage.local`. No ignored-list preference is added to the MAIN-world settings
 bridge or browser-synced settings. Ignores are device-wide across Peakbagger
-accounts; only Buddy-cache ownership is account-scoped. Personal ascent lists,
-Buddy reports, editors, native maps/GPX and server totals remain independent.
+accounts; Buddy cache and pending Buddy intents are owner-scoped. Personal ascent
+lists, Buddy reports, editors, native maps/GPX and server totals remain independent.
 
 The name-link card loads at `document_end` on both supported HTTPS hosts with its
 own stylesheet. It uses a manual nonmodal browser popover and fixed-position
 fallback, preserves the original anchors, and subscribes to coherent membership
-and authoritative settings. Hover is local and read-only. Only an explicit Ignore
+and authoritative settings. Hover is local and read-only. An explicit Ignore
 addition revalidates signed-in Buddy membership through the bounded shared
 request boundary; failures do not become an empty Buddy List. Favorite and Ignore
-writes use the existing worker lane. Buddy writes stay on the native profile;
-no new authenticated POST adapter, page-world capability, or storage schema is
-introduced. Dismissed writes remain bound to their original climber, and BFCache
-restoration refreshes lists and settings before enabling actions.
+writes use the existing worker lane. Explicit Buddy actions in the card and
+supported native profile controls use the same isolated-world adapter: fetch a
+fresh owner/target-matching profile, validate its exact Add/Remove form, submit
+only the selected Buddy control and allowed hidden fields with redirects refused,
+then confirm through an uncached profile GET. Native form tokens stay in memory;
+no page-world messaging capability is added.
+
+`bpbBuddyIntents` in `storage.local` retains at most 100 minimal owner/target,
+action, operation-token, tab, status and lease records. The shared climber-list
+lane reserves unresolved targets against Ignore and conflicting Buddy actions
+across tabs. Lease expiry and worker restart allow status-only recovery, never
+another POST. Confirmation reconciles only that target without refreshing the
+full Buddy cache's age; custom favorites follow the authoritative source/removal
+settings. A failed local update retains a confirmed intent and reports partial
+success so Retry can reconcile locally without repeating the server write.
+Dismissed writes remain bound to their original climber, and BFCache restoration
+refreshes lists and settings before enabling actions. See the
+[hover-card delivery ledger](archive/climber-hover-card.md) for local evidence and
+remaining live-server/native accessibility release checks.
 
 The new peak and detail bundles run isolated at `document_start`. They conceal
 only a positively identified region during a bounded initial read and recover

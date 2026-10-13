@@ -1,9 +1,26 @@
 # Climber hover card
 
-Status: name-link card implemented with direct Buddy, Favorite and Ignore actions.
-Buddy writes use the inspected native form contract and have fixture verification;
-authenticated live mutation remains a release proof gap.
-Date: 2026-10-10.
+Status: implementation complete and verified locally; archived 2026-10-12.
+Buddy, Favorite and Ignore actions have regression and real-extension fixture
+evidence in Chrome and Firefox. Authenticated live mutation and native
+accessibility evidence remain release proof gaps in the delivery ledger below.
+Created: 2026-10-10.
+
+## Closure decision — 2026-10-12
+
+The plan remained active because live Buddy mutation was still unproven, despite
+the card, adapter and transaction coordination already being implemented. That
+release proof gap was being treated as unfinished implementation. The remaining
+local coverage gap was direct Buddy POSTs in Firefox; the shared verifier now
+exercises the same masked contract and cross-tab scenario in both browsers.
+
+Archive the completed implementation while retaining the three-part ledger and
+the explicit release checks below. The maintained behavior belongs in
+[climber lists](../climber-lists.md), the module boundaries in
+[architecture](../architecture.md), and the repeatable
+`npm run verify:inline-buddies` command in [development](../development.md).
+Earlier design and inspection sections remain historical checkpoints. No live
+Buddy List was changed during closure.
 
 ## Findings that shape the feature
 
@@ -391,6 +408,20 @@ masked fixture covering the observed contract before implementing the adapter.
   Card rendering uses native HTML/CSS, with no WebGL. Disposable profiles,
   certificates, servers and browser processes were removed; the live Buddy List
   was not changed.
+- Closure verification on 2026-10-12, implemented in `614c328a`: the shared
+  inline Buddy verifier passed in hidden Chrome for Testing 153.0.8010.12 and
+  Firefox 157.0.1 with the real built extension and masked HTTPS Peakbagger form.
+  Each browser performed six native/card Add/Remove POSTs, checked cross-tab
+  Buddy/Ignore protection during a held POST, reconciled custom favorites and
+  cleared confirmed intents. Both rendered 1000 × 760 light and 320 × 760 dark
+  content viewports; all four screenshots were visually inspected for wrapping,
+  clipping, conflict guidance and viewport containment. This surface uses native
+  HTML/CSS, with no WebGL. The final check also passed in both browsers without
+  screenshot output; viewport/theme checks now always run. Build, 38 focused
+  Buddy/card/report regressions, ESLint for the changed verifier, and all three
+  documentation checks passed. Exact disposable profile paths and process
+  command lines were checked after teardown; no owned test browser remained.
+  This closes the previous Firefox direct-POST fixture gap.
 
 ### Intentionally not changed
 
@@ -408,6 +439,24 @@ masked fixture covering the observed contract before implementing the adapter.
   or window placement, or all live Peakbagger markup variants. Those remain
   release proof gaps. The fixed-position fallback is exercised in jsdom;
   current Chrome and Firefox use the native popover top layer.
-- The new direct Buddy POST flow has Chrome fixture evidence; the general
-  Firefox check covers startup and card interactions, not direct Buddy POSTs.
-  Authenticated live form submission and response behavior remain untested.
+- Fixture POSTs in both browsers establish the supported contract locally;
+  they cannot establish Peakbagger's actual acceptance of full-page POSTs or
+  its live rejection, timeout and final-buddy response behavior. Hosted CI was
+  not run for this closure. These limits are preserved rather than inferred
+  away from green local checks.
+
+## Remaining release evidence
+
+Before advertising live Buddy mutation as verified, use an explicitly chosen
+climber and user-initiated Add/Remove actions in the existing authenticated
+browser profile. Record the browser, account/target match, intended operation,
+card result and fresh native profile confirmation. Confirm the Buddy List and
+configured custom-favorite behavior agree; record an observed rejection or
+uncertain outcome separately, without automatically replaying it. Do not select
+or mutate a real relationship merely to exercise this fixture checklist.
+
+Native screen-reader speech, physical touch and visible focus/window behavior
+require separate evidence. Hidden protocol interactions and screenshots do not
+establish those behaviors. Keep these release checks attached to this archived
+ledger; reopening implementation work is appropriate only when one reproduces
+a product defect or requires a code change.

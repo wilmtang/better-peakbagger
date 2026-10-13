@@ -4,9 +4,6 @@
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
   — proposed; worldwide issuing-service links first, then opt-in regional
   overlays with verified provider contracts, coverage, and expiry handling.
-- [Climber hover card](climber-hover-card.md) — direct Favorite, Ignore, and
-  Buddy actions implemented with fixture verification; authenticated live Buddy
-  mutation remains a release proof gap.
 - [CI, UX, and maintainability audit](ci-ux-maintainability-audit-2026-10-03.md) —
   in progress; release recovery, verifier timing, focused UI simplification,
   and removal of duplicated runtime code, with an explicit closure ledger.
@@ -18,6 +15,12 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [climber hover card](../archive/climber-hover-card.md) is complete locally:
+direct Buddy, Favorite and Ignore actions are implemented, and direct Buddy POST
+coverage now passes in hidden Chrome and Firefox. The archive retains the live
+Buddy mutation and native accessibility release checks; those proof limits no
+longer keep a completed implementation in the active-plan list.
 
 The [October 12 repository audit](../archive/codebase-audit-2026-10-12.md)
 is closed locally: eight new findings, preparation cancellation, and the two

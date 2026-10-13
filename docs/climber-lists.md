@@ -169,3 +169,6 @@ native accessibility gaps, is recorded in the
 [archived delivery ledger](archive/ignored-climbers.md).
 The mutual-exclusion change and its verification boundaries are recorded in the
 [membership delivery ledger](archive/climber-membership-2026-10-04.md).
+The name-link card and direct Buddy adapter, including Chrome/Firefox contract
+evidence and the remaining authenticated live-write checks, are recorded in the
+[hover-card delivery ledger](archive/climber-hover-card.md).
