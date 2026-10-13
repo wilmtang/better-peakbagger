@@ -55,6 +55,7 @@ export function mountPeakWeather() {
     const days = element('div', { class: 'bpb-week-days' });
     const help = element('p', { class: 'bpb-week-help', hidden: '', text: 'Select a day for hourly weather. Rain/snow is water equivalent; wind is the daily maximum.' });
     const sourceText = element('p', { class: 'bpb-week-models' });
+    const sourceLocation = element('p', { class: 'bpb-week-source-location' });
     const select = element('select', { id: `${ID}-model`, 'aria-describedby': `${ID}-model-description` });
     const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description', hidden: '' });
     const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select, modelDescription]);
@@ -64,7 +65,7 @@ export function mountPeakWeather() {
             element('thead', {}, [element('tr', {}, ['Model', 'Last update', 'Next expected', 'Update interval'].map(text => element('th', { scope: 'col', text })))]), updatesBody]),
     ]);
     const updatesNote = element('p', { class: 'bpb-week-updates-note', text: 'Summit local time. Next updates are estimates. Provider-wide availability may vary between servers.' });
-    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Source details' }), sourceText, updates, updatesNote]);
+    const source = element('details', { class: 'bpb-week-source', hidden: '' }, [element('summary', { text: 'Source details' }), sourceLocation, sourceText, updates, updatesNote]);
     const overview = element('div', { class: 'bpb-week-overview' }, [element('div', {}, [range, locationLabel]), modelControl]);
     const periodPanel = element('div', { id: `${ID}-period`, role: 'tabpanel' }, [overview, status, accuracy, days, help]);
     const headingText = document.createTextNode('Summit weather');
@@ -268,7 +269,8 @@ export function mountPeakWeather() {
             (target || periodButtons.find(button => button.dataset.period === period)).focus({ preventScroll: true });
         }
         const loaded = `${mountainTime.localDate(zone, current.loadedAt)} ${mountainTime.formatClock(zone, current.loadedAt)} ${mountainTime.zoneLabel(zone, current.loadedAt)}`;
-        sourceText.textContent = `${modelDetails} ${forecast ? 'Hourly forecast estimates.' : 'Model estimates, not station observations.'} ${subject === summit ? 'Summit' : 'Selected location'} timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. Response grid: ${data.grid.latitude.toFixed(4)}, ${data.grid.longitude.toFixed(4)}.${current.sharedGrid ? ' Model grids may differ.' : ''} ${subject.elevation === null ? 'Terrain elevation' : 'Temperature adjusted to'} ${data.grid.elevation.toFixed(0)} m. Loaded ${loaded}.${summaries.some(day => day.precipitation.allocationEstimated) ? ' Partial-hour rain/snow totals are estimated.' : ''}`;
+        sourceLocation.textContent = `${subject === summit ? 'Summit' : 'Selected location'}: ${weatherLocationLabel(subject)}. Weather grid point: ${weatherLocationLabel(data.grid)}. Weather is calculated on a grid, so this point can differ from your location.${current.sharedGrid ? ' Model grids may differ.' : ''}`;
+        sourceText.textContent = `${modelDetails} ${forecast ? 'Hourly forecast estimates.' : 'Model estimates, not station observations.'} ${subject === summit ? 'Summit' : 'Selected location'} timezone: ${zone.timeZone || mountainTime.zoneLabel(zone, current.window[period].days[0].start)}${zone.estimated ? ' (longitude estimate)' : ''}. ${subject.elevation === null ? 'Terrain elevation' : 'Temperature adjusted to'} ${data.grid.elevation.toFixed(0)} m. Loaded ${loaded}.${summaries.some(day => day.precipitation.allocationEstimated) ? ' Partial-hour rain/snow totals are estimated.' : ''}`;
         paintStatus();
         if (source.open) void loadUpdates();
     }

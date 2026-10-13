@@ -59,7 +59,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             groupedWithMap: !frame || frame.closest('tr').nextElementSibling === card.closest('tr'),
             legendBeforeSun: !frame || [...frame.closest('td').querySelectorAll('a')].filter(link => /Full Screen Map/.test(link.textContent))
                 .every(link => link.getBoundingClientRect().bottom <= document.querySelector('.bpb-sun-calculator').getBoundingClientRect().top),
-            overflow: [...card.querySelectorAll('select, .bpb-week-model-description, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] .bpb-week-models, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
+            overflow: [...card.querySelectorAll('select, .bpb-week-model-description, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] p, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 if (!node.getClientRects().length) return false;
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),

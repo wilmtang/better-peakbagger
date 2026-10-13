@@ -1052,6 +1052,28 @@ test('forecast and history both show sixteen days and share one response, retain
     } finally { env.close(); }
 });
 
+test('source details distinguish the clicked location from the returned weather grid', async () => {
+    const env = setup({ fetchFn: async url => {
+        const body = await (await reply(url)).json();
+        body.latitude = 46.5074; body.longitude = -121.4852;
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+        await settled(env, { past: false });
+        selectLocation(env, 46.4947, -121.4636);
+        await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.4947, -121.4636');
+        const request = new URL(env.requests.at(-1).url);
+        assert.equal(request.searchParams.get('latitude'), '46.4947');
+        assert.equal(request.searchParams.get('longitude'), '-121.4636');
+        const source = env.doc.querySelector('.bpb-week-source-location').textContent;
+        assert.match(source, /Selected location: 46\.4947, -121\.4636/);
+        assert.match(source, /Weather grid point: 46\.5074, -121\.4852/);
+        assert.match(source, /calculated on a grid.*differ from your location/);
+        env.doc.querySelector('.bpb-week-location-reset').click();
+        assert.match(env.doc.querySelector('.bpb-week-source-location').textContent, /^Summit: 46\.8517, -121\.7604/);
+    } finally { env.close(); }
+});
+
 test('accuracy warning and accessible source disclosure identify the requested named model', async () => {
     const env = setup();
     try {
@@ -1064,7 +1086,7 @@ test('accuracy warning and accessible source disclosure identify the requested n
         const model = source.querySelector('.bpb-week-models').textContent;
         assert.match(model, /^GFS, 13 km\. Hourly forecast estimates\./);
         assert.match(model, /Summit timezone: America\/Los_Angeles/);
-        assert.match(model, /Response grid: [\d.-]+, [\d.-]+/);
+        assert.match(source.querySelector('.bpb-week-source-location').textContent, /Summit: [\d.-]+, [\d.-]+\. Weather grid point: [\d.-]+, [\d.-]+/);
         assert.match(model, /Temperature adjusted to 4391 m\. Loaded/);
         assert.doesNotMatch(source.textContent, /Model grids may differ/);
         env.doc.querySelector('[data-period="past"]').click();
@@ -1332,7 +1354,7 @@ test('peak Best Match choices persist independently, share requests and disclose
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelector('select').value, 'best_match');
         assert.match(env.doc.querySelector('.bpb-week-models').textContent, /Best Match\. Open-Meteo automatic blend; source models vary/);
-        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /Model grids may differ/);
+        assert.match(env.doc.querySelector('.bpb-week-source-location').textContent, /Model grids may differ/);
         assert.equal(env.requests.length, 1);
         env.doc.querySelector('.bpb-week-source').open = true;
         await waitFor(() => env.doc.querySelector('[data-update-model="best_match"]'));

@@ -116,9 +116,10 @@ back; a failure preserves the previous dated/model-labelled result. Model
 changes abort superseded requests; known rate-limit cooldowns disable both
 Refresh and the model dropdown while period tabs remain usable.
 
-**Source details** uses one compact paragraph for the displayed model and
-resolution, forecast or historical estimate type, summit timezone, response grid,
-elevation adjustment and load time. Best Match identifies its automatic blend;
+**Source details** first distinguishes the requested summit or selected location
+from the provider's weather grid point and explains why they may differ. A second
+paragraph identifies the displayed model and resolution, forecast or historical
+estimate type, local timezone, elevation adjustment and load time. Best Match identifies its automatic blend;
 combined responses disclose that model grids may differ, and estimated timezone
 or partial-hour precipitation remains labelled. Default selection, saved-choice
 behavior and summary calculation explanations stay in this documentation.
