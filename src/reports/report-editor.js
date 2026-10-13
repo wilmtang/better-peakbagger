@@ -23,6 +23,7 @@
 // therefore keep the local recovery copy.
 
 import { installReportLocalPhotos } from './report-local-photos.js';
+import { createStableText } from '../ui/stable-text.js';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
@@ -336,6 +337,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     captionBar.setAttribute('aria-label', 'Image caption controls');
     captionBar.hidden = true;
     const editCaption = button('bpb-re-tablebtn', 'Add caption');
+    const captionText = createStableText(editCaption);
+    captionText.reserve(['Add caption', 'Edit caption']);
     const removeCaption = button('bpb-re-tablebtn', 'Remove caption');
     captionBar.append(editCaption, removeCaption);
     for (const [control, command] of [[editCaption, 'editCaption'], [removeCaption, 'removeCaption']]) {
@@ -350,6 +353,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     linkInput.placeholder = 'https://example.com/…';
     linkInput.setAttribute('aria-label', 'Link URL');
     const linkApply = button('bpb-re-linkapply', 'Add link');
+    const linkText = createStableText(linkApply);
+    linkText.reserve(['Add link', 'Update link']);
     const linkRemove = button('bpb-re-linkremove', 'Remove link');
     const linkError = el('div', 'bpb-re-field-error');
     linkError.id = 'bpb-re-link-error';
@@ -1126,7 +1131,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             control.setAttribute('aria-pressed', String(snapshot.color === control.dataset.color));
         }
         captionBar.hidden = !snapshot.imageSelected || manualBoxes.some(box => !box.hidden);
-        editCaption.textContent = snapshot.captionActive ? 'Edit caption' : 'Add caption';
+        captionText.set(snapshot.captionActive ? 'Edit caption' : 'Add caption');
         editCaption.setAttribute('aria-label', editCaption.textContent);
         editCaption.title = editCaption.textContent;
         removeCaption.hidden = !snapshot.captionActive;
@@ -1140,7 +1145,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         closeBoxes();
         linkInput.value = snapshot.linkHref;
         linkRemove.hidden = !snapshot.linkActive;
-        linkApply.textContent = snapshot.linkActive ? 'Update link' : 'Add link';
+        linkText.set(snapshot.linkActive ? 'Update link' : 'Add link');
         linkBox.hidden = false;
         linkInput.focus();
         linkInput.select();

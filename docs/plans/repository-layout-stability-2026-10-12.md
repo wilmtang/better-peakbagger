@@ -65,6 +65,13 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J13 report controls:** reserve caption/link labels and unavailable Remove
+  slots. Bottom-anchored validation expands above fields/actions; recovery and
+  manager feedback follow their triggers. Existing contextual overlays still
+  leave the writing surface in place. Build, 117 report-editor tests and ESLint
+  passed. Hidden Chrome/Firefox passed validation, link/caption states and
+  recovery/manager geometry at both widths/themes. The real-extension photo
+  verifier passed contextual editing, Save geometry and upload failure recovery.
 - **J12 ascent processing:** reserve Process progress and picker selection
   labels; remove pressed scaling. Top-align the Preview cell and preserve the
   native Preview/Remove action row above feedback. The wide baseline exposed

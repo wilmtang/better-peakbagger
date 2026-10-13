@@ -610,7 +610,56 @@ async function uploadCase(page, origin, variant) {
         stable(cancelBefore, await geometry(page, '.bpb-summit-cancel'), 'summit neighboring Cancel');
     }
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase, maps: mapCase, climbers: climberCase, upload: uploadCase };
+async function reportCase(page, origin, variant) {
+    await page.addInitScript(() => {
+        const area = { get: async () => ({ bpbSettings: {} }), set: async () => {} };
+        globalThis.chrome = { runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.0' }),
+            getURL: file => new URL(`/dist/${file}`, location.origin).href,
+            onMessage: { addListener() {}, removeListener() {} }, sendMessage: async () => ({ ok: true }) },
+        storage: { sync: area, local: area, onChanged: { addListener() {}, removeListener() {} } } };
+    });
+    await page.goto(`${origin}/dist/photos/guide.html`);
+    await page.evaluate(({ theme }) => {
+        document.documentElement.dataset.bpbTheme = theme;
+        document.body.innerHTML = '<div class="bpb-re" id="bpb-report-editor" style="margin:350px 16px 0"><div class="bpb-re-toolbar"><div class="bpb-re-bar">Editor toolbar</div><div class="bpb-re-contextual"><div class="bpb-re-box bpb-re-linkbox"><input value="https://example.com"><button class="bpb-re-linkapply">Add link</button><button class="bpb-re-linkremove" hidden>Remove link</button><div class="bpb-re-field-error" hidden></div></div></div></div><div class="bpb-re-surface" style="height:120px">Report</div><div class="bpb-re-save-recovery"><span>This draft isn’t saved. Keep this page open until saving works.</span><button class="bpb-re-save-copy">Copy Markdown</button><span class="bpb-re-save-feedback"></span><textarea class="bpb-re-save-manual" hidden></textarea></div><div class="bpb-re-foot"><span class="bpb-re-status">Draft saved</span><button class="bpb-re-manage">Manage TR drafts</button></div></div>';
+    }, variant);
+    await page.addStyleTag({ content: (await asset('css/report-editor.css')).toString() });
+    const source = (await asset('content/ascent-editor.js')).toString(), end = source.lastIndexOf('})();');
+    await page.addScriptTag({ content: (await asset('vendor/marked.umd.js')).toString() });
+    await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__reserveReport = createStableText;' + source.slice(end) });
+    await page.evaluate(() => {
+        globalThis.__linkText = globalThis.__reserveReport(document.querySelector('.bpb-re-linkapply'));
+        globalThis.__linkText.reserve(['Add link', 'Update link']);
+    });
+    const selectors = ['.bpb-re-linkapply', '.bpb-re-linkbox input', '.bpb-re-surface', '.bpb-re-save-copy', '.bpb-re-manage'];
+    const before = await Promise.all(selectors.map(selector => geometry(page, selector)));
+    await page.evaluate(() => {
+        globalThis.__linkText.set('Update link'); document.querySelector('.bpb-re-linkremove').hidden = false;
+        const error = document.querySelector('.bpb-re-field-error'); error.hidden = false;
+        error.textContent = 'This link uses a scheme that cannot be saved. Enter a complete HTTPS address and try again. '.repeat(3);
+    });
+    for (let index = 0; index < 3; index++) stable(before[index], await geometry(page, selectors[index]), `report ${selectors[index]}`);
+    const manageBefore = await geometry(page, '.bpb-re-manage');
+    await page.locator('.bpb-re-status').evaluate(element => { element.textContent = 'The draft manager could not be opened. Please check your browser and try again. '.repeat(2); });
+    stable(manageBefore, await geometry(page, '.bpb-re-manage'), 'report manager feedback');
+    const copyBefore = await geometry(page, '.bpb-re-save-copy');
+    await page.locator('.bpb-re-save-feedback').evaluate(element => { element.textContent = 'Clipboard unavailable. The complete report is selected below for manual copying.'; });
+    stable(copyBefore, await geometry(page, '.bpb-re-save-copy'), 'report recovery copy');
+    await capture(page, `${variant.name}-report-validation`);
+    await page.evaluate(() => {
+        document.querySelector('.bpb-re-linkbox').hidden = true;
+        const caption = document.createElement('div'); caption.className = 'bpb-re-box bpb-re-captionbar';
+        caption.innerHTML = '<button class="bpb-re-tablebtn">Add caption</button><button class="bpb-re-tablebtn" hidden>Remove caption</button>';
+        document.querySelector('.bpb-re-contextual').append(caption);
+        globalThis.__captionText = globalThis.__reserveReport(caption.firstElementChild);
+        globalThis.__captionText.reserve(['Add caption', 'Edit caption']);
+    });
+    const captionBefore = await geometry(page, '.bpb-re-captionbar button:first-child');
+    await page.evaluate(() => { globalThis.__captionText.set('Edit caption'); document.querySelector('.bpb-re-captionbar button:nth-child(2)').hidden = false; });
+    stable(captionBefore, await geometry(page, '.bpb-re-captionbar button:first-child'), 'report caption state');
+    await capture(page, `${variant.name}-report-feedback`);
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase, maps: mapCase, climbers: climberCase, upload: uploadCase, reports: reportCase };
 const resources = createResourceStack();
 let failure = null;
 try {
