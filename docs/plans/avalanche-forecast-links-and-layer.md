@@ -94,7 +94,7 @@ country membership never proves that a forecast covers every mountain.
 | New Zealand | [NZ Avalanche Advisory](https://www.avalanche.net.nz/) | The [issuing service](https://www.avalanche.net.nz/about-us/what-is-the-avalanche-advisory) identifies 13 public forecast regions. Exact region URL patterns exist, but stable coordinate resolution and a supported redistribution/API contract remain to be verified. Link first. |
 | Japan | [Japan Avalanche Network bulletins](https://data.nadare.jp/avalanche_informations/?locale=ja) | The issuing site lists specific forecast areas, not all of Japan. Retain the issuer's language and validity; API and polygon contract not established here. Link first. |
 | Australian Alps in Victoria / NSW | [Mountain Safety Collective reports](https://mountainsafetycollective.org/backcountry-conditions-reports) | Professional public reports include several alpine hazards. [MSC's integration announcement](https://mountainsafetycollective.org/blog/msc-skida-backcountry-app) confirms an API is available to integrators; schema and usage arrangement were not established here. Label as backcountry conditions, not an avalanche-only government forecast. |
-| Indian Himalayan forecast districts | Candidate: [DGRE avalanche bulletin directory](https://drdo.gov.in/drdo/en/documents/avalanche-warning-bulletin?page=0) | [Government bulletins](https://drdo.gov.in/drdo/sites/default/files/avalanche_warning_bulletin/DGRE_AWB_14-Mar-2026.pdf) exist with district and altitude applicability, but the directory returned “No results Found” in the research snapshot. Withhold configured routing until a useful current directory is verified; do not substitute a dated PDF. Preserve DGRE's terminology rather than assuming its numbers equal NAADS/EAWS categories. |
+| Indian Himalayan forecast districts | [DGRE avalanche bulletin directory](https://drdo.gov.in/drdo/en/documents/avalanche-warning-bulletin?page=0) | [Government bulletins](https://drdo.gov.in/drdo/sites/default/files/avalanche_warning_bulletin/DGRE_AWB_14-Mar-2026.pdf) exist with district and altitude applicability. Configure the directory gateway even when it lists no current entries, as requested by the owner; available bulletins remain the issuer's responsibility. Do not substitute a dated PDF or imply peak coverage. Preserve DGRE's terminology rather than assuming its numbers equal NAADS/EAWS categories. |
 | Other locations | No source-specific link until a verified issuer is added | This investigation is a worldwide architecture and initial source set, not an exhaustive world inventory. Additional services, including South America and other Asian ranges, need issuer, destination, coverage, and usage verification. “Source not configured” must not imply “no avalanche danger.” |
 
 For the European link registry, source-review country aliases for Andorra,
@@ -279,7 +279,7 @@ distinction between unavailable data and a successful empty result required here
    renderer unit with its own verification.
 
 Required tests for the link phase: US/Canada, each configured European nation,
-NZ, Japan, Australia and India candidate gating; aliases; border countries;
+NZ, Japan, Australia and India's directory gateway; aliases; border countries;
 unknown and duplicate Nation rows; malformed/duplicate coordinates; preservation of existing
 links; deduplication; HTTPS/no-referrer anchors; no background third-party
 requests. Exact-zone tests additionally cover holes, overlaps, boundary points,
@@ -324,7 +324,7 @@ be safely supported.
 ### Fixed and verified
 
 - Added the quiet peak planning entry with a packaged registry. US and Canada,
-  the listed European nations, NZ, Japan, and Australia resolve locally. Border
+  the listed European nations, NZ, Japan, India, and Australia resolve locally. Border
   values separated by native line breaks, commas, semicolons, or slashes retain
   all known sources in native order; shared aggregators are deduplicated.
 - Nation rows must be unique and belong directly to the coordinate row's table.
@@ -340,6 +340,17 @@ be safely supported.
   uses the EAWS issuing-service directory because it is absent from the map's
   default region list. SAIS explicitly names Scotland; MSC names backcountry
   conditions and limits its detail to Victoria and New South Wales.
+- India now links to the DGRE directory regardless of current entries, following
+  the owner's first-release correction. Its detail says “Find avalanche warning
+  bulletins for Indian Himalayan districts”; no dated bulletin or peak-specific
+  coverage is inferred. Registry and shipped-bundle regressions cover this
+  gateway and mixed India/unsupported-country borders.
+  DGRE follow-up verification: rebuilt `dist/`, 43 focused link/manifest/document
+  tests passed, changed-file ESLint and `git diff --check` passed. The real
+  extension's India entry rendered in hidden Chrome 153.0.8010.12 and Firefox
+  157.0.1 at 390 × 900 and 1280 × 900, light/dark, normal and doubled text;
+  screenshots showed no clipping and hover/press/focus geometry stayed stable.
+  No forecast WebGL layer or native window/focus behavior was exercised.
 - Links retain HTTPS and `noopener noreferrer`; the shipped-bundle tests reject
   automatic fetches, privileged messaging, or geolocation. No new permissions
   or settings were added. README and PRIVACY.md describe routing and URL data.
@@ -365,9 +376,9 @@ be safely supported.
 
 ### Intentionally not changed
 
-- India remains unconfigured: the DGRE directory still displayed no results;
-  no old PDF substitutes for a current directory. Other unconfigured countries
-  get a coverage message, including the unsupported side of mixed borders.
+- Unconfigured countries get a coverage message, including the unsupported side
+  of mixed borders. A directory's lack of current entries does not disable a
+  configured gateway, and no old PDF substitutes for a current directory.
 - No exact-zone resolver, danger badge, feed integration, regional map layer,
   permission request, setting, provider contact, or runtime third-party request.
   These remain separate later releases with the contracts described above.

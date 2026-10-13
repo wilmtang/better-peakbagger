@@ -42,6 +42,7 @@ test('the reviewed worldwide registry routes every configured country without as
         ['United Kingdom', 'https://www.sais.gov.uk/', 'professional'],
         ['New Zealand', 'https://www.avalanche.net.nz/', 'professional'],
         ['Japan', 'https://data.nadare.jp/avalanche_informations/', 'professional'],
+        ['India', 'https://drdo.gov.in/drdo/en/documents/avalanche-warning-bulletin', 'government'],
         ['Australia', 'https://mountainsafetycollective.org/backcountry-conditions-reports', 'professional'],
     ];
     for (const [country, destination, kind] of cases) {
@@ -76,7 +77,7 @@ test('aliases use exact country identities and border destinations deduplicate b
     assert.deepEqual(resolve('Canada / United States; USA').links.map(link => link.id), ['ca', 'us']);
     assert.deepEqual(resolve('France, Italy\nSwitzerland').links.map(link => link.id), ['eaws', 'ch']);
     assert.equal(resolve('France; Italy').unconfigured, false);
-    for (const text of ['India', 'Chile', 'Mexico', '', 'United States of Atlantis',
+    for (const text of ['Chile', 'Mexico', '', 'United States of Atlantis',
         'Canada United States', 'Canada (maybe)', 'Canada,', 'Canada;;France', 'x'.repeat(801)]) {
         const result = resolve(text);
         assert.deepEqual(result.links, [], text);
@@ -84,6 +85,32 @@ test('aliases use exact country identities and border destinations deduplicate b
     }
     assert.equal(resolve('Canada / Chile').unconfigured, true);
     assert.equal(resolve('Canada / Chile').links[0].id, 'ca');
+});
+
+test('India offers the DGRE directory without requiring current bulletins or asserting peak coverage', () => {
+    const result = resolve(' India ', 30.92, 79.59);
+    assert.equal(result.unconfigured, false);
+    assert.equal(result.links.length, 1);
+    assert.deepEqual(result.links[0], {
+        id: 'in', kind: 'government', label: 'Avalanche forecasts — DGRE (India)',
+        detail: 'Find avalanche warning bulletins for Indian Himalayan districts.',
+        href: 'https://drdo.gov.in/drdo/en/documents/avalanche-warning-bulletin?page=0',
+    });
+    assert.equal(resolve('India / Nepal').unconfigured, true);
+    assert.deepEqual(resolve('India / Nepal').links.map(link => link.id), ['in']);
+    const dom = render({ rows: nationRow('India') });
+    try {
+        const panel = dom.window.document.querySelector('#bpb-peak-links');
+        const anchor = [...panel.querySelectorAll('a')].find(link => /DGRE/.test(link.textContent));
+        assert.equal(anchor.href, result.links[0].href);
+        assert.equal(anchor.nextElementSibling.textContent, result.links[0].detail);
+        assert.equal(anchor.rel, 'noopener noreferrer');
+        assert.equal(anchor.target, '_blank');
+        assert.doesNotMatch(panel.textContent, /No forecast source configured/);
+        assert.equal(panel.querySelectorAll('a').length, 3);
+    } finally {
+        dom.window.close();
+    }
 });
 
 test('Canada receives only navigation coordinates and EAWS receives bounded, unwrapped navigation boxes', () => {
