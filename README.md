@@ -208,51 +208,119 @@ chosen services. [Privacy and data handling](PRIVACY.md) explains each connectio
 
 ### Is this an official Peakbagger extension?
 
-No. It's an independent passion project. Share bugs in
-[GitHub Issues](https://github.com/wilmtang/better-peakbagger/issues) or ideas on
-the [discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
-**Settings → About** also links to feedback and store ratings.
+No. Better Peakbagger is an independent passion project. Ideas and bug reports
+are welcome in [GitHub Issues](https://github.com/wilmtang/better-peakbagger/issues)
+and the [discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+**Settings → About** links to feedback, bug reports, source code, the license,
+and the rating page for your browser's store.
 
-### How are the 3D maps free?
+### How can Better Peakbagger offer 3D maps for free? What's the catch?
 
-[MapLibre](https://maplibre.org/projects/gl-js/) renders the map locally using
-public elevation tiles from [Mapterhorn](https://mapterhorn.com/). There's no
-Better Peakbagger subscription. Community services can have outages, and tile
-providers receive the viewed area and ordinary request data, including your
-IP address. Peakbagger's 2D maps remain available.
+Most elevation data is public or openly licensed; the costly part is turning it
+into map tiles and serving them at scale. Better Peakbagger renders 3D locally
+with open-source [MapLibre](https://maplibre.org/projects/gl-js/) and uses
+public terrain tiles from
+[Mapterhorn](https://mapterhorn.com/), a project supported by grants, sponsors,
+and donated infrastructure. Better Peakbagger runs no map server and has no
+subscription, advertising, or sale of user data.
 
-### Does it make extra requests to Peakbagger?
+The trade-off is relying on community-supported services without guaranteed
+availability. Better Peakbagger reuses a bounded local elevation cache and may
+show less distant detail at steep angles to limit traffic. After you enable 3D,
+tile providers receive the area viewed and ordinary request data such as your
+IP address. You can disable 3D at any time; Peakbagger's 2D maps remain
+available.
 
-Yes—for summit lookup, saved tracks, nearby peaks, Buddy lists, weather context,
-and backups. Requests are bounded and cached where practical; full-history
-backups read one ascent at a time and skip existing backups by default. The
-extension uses your signed-in page session and respects rate limits and human
-checks. It never solves CAPTCHAs or bypasses blocks.
+### Does Better Peakbagger place extra demand on Peakbagger or bypass its protections?
+
+Some features make additional requests, so zero impact would be misleading.
+Activity capture searches small areas along the route; the GPX Analyzer reads
+the track linked from an ascent page; 3D requests Peakbagger's nearby-peak feed
+after the camera settles; and Buddy or backup features read only the account
+data they need. Buddy data is cached for seven days, and full-profile backups
+are explicit, read Peakbagger ascents one at a time, and skip existing backups
+by default.
+
+Better Peakbagger is an interactive client, not a crawler. It uses your normal
+signed-in session through a Peakbagger page, without requesting permission to
+read cookie values, and stops or pauses for rate limits or human checks. It
+never solves CAPTCHAs, rotates identities or proxies, or evades blocks.
 
 ### Why doesn't Better Peakbagger update Peakbagger ascents automatically?
 
-Capture starts with your toolbar click and grants temporary access to that
-activity. Better Peakbagger never receives your password or keeps permanent
-Garmin or Strava access. Summit matches need your judgment, so the extension
-prepares drafts and leaves every final Save to you.
+There is no safe, reliable hook for a small independent extension to receive new
+activities automatically. [Strava requires a subscription][strava-api] to
+create an API application, even when the developer reads only their own data.
+The [Garmin Connect Developer Program][garmin-api] is limited to approved
+business and enterprise integrations. An unattended workaround would require
+brittle login automation and another copy of sensitive activity data.
+
+Better Peakbagger instead works through the provider page you already opened
+and signed in to. A toolbar click grants temporary access to that one activity;
+the extension never receives your password or keeps permanent Garmin or Strava
+access.
+
+Summit matching is also evidence, not certainty, and an ascent log is your
+record. Better Peakbagger does the repetitive work, then stops before Save so
+you can review every ascent.
+
+[strava-api]: https://developers.strava.com/docs/getting-started/
+[garmin-api]: https://developer.garmin.com/gc-developer-program/program-faq/
 
 ### Can it capture any Garmin or Strava activity?
 
-Only your own activities while signed in. Capture stops if ownership cannot
-be verified. Click the toolbar icon for each activity you want to capture.
+No. You must be signed in, the activity must belong to your account, and the
+page must provide unambiguous ownership signals. Better Peakbagger fails closed
+if it cannot verify those conditions. You must click the toolbar icon for each
+capture; the extension does not keep permanent provider access.
 
 ### What should I do when a capture stops?
 
-Follow the popup's suggested action, such as signing in, reloading, or completing
-a Peakbagger human check. Then return to the activity and click the icon again.
-If a retry time is shown, wait until it passes.
+Follow the one action shown in the popup. Depending on the cause, Better
+Peakbagger will ask you to reload the activity, sign in, return to the provider,
+open the exact Peakbagger human-check page, wait until a rate limit passes, try
+again after a temporary outage, or use a shorter track. After completing a
+sign-in, reload, or human check, return to the activity and click the extension
+again; the new click rechecks the page instead of replaying the old failure.
+Better Peakbagger never solves a CAPTCHA or retries through a stated cooldown.
 
 ### What do Strong and Probable mean for a captured activity?
 
-**Strong** means several route signals agree; these matches are selected by
-default. **Probable** means the evidence is weaker or ambiguous and needs your
-selection. Neither proves you reached the summit. Review matches and every
-draft before Save.
+They describe the evidence that your recorded route encountered a summit—not a
+claim that you reached it. Better Peakbagger compares closest approach, the
+track's elevation near the summit, whether it forms a local high point, and
+track quality. **Strong** means several signals agree and is selected by
+default. **Probable** means the route is close enough to consider but the
+evidence is weaker or ambiguous, so it is never selected automatically. Review
+both before opening drafts, and review every draft before Save.
+
+### Which third-party services can receive my information?
+
+Better Peakbagger has no developer data server, account, analytics, advertising,
+or telemetry. Garmin or Strava is accessed only after your toolbar click, and
+the raw activity GPX is processed on that page rather than sent to the
+developer.
+
+Optional services are contacted only for the feature you use. Map tiles are
+requested from Mapterhorn and your selected map provider after you enable 3D.
+GitHub receives only the backups you authorize for your chosen repository.
+ImgBB receives a flattened image only when you provide an API key and choose
+**Upload & insert**. Gaia or onX receives the saved ascent GPX only when you
+click that destination's **Send** button. Remote report media contacts its host when displayed. See
+[Privacy and data handling](PRIVACY.md) for the complete field-level list.
+
+### Will Better Peakbagger add a developer-run server or telemetry in the future?
+
+There are no plans to. Running a reliable service costs money and creates a
+long-term maintenance commitment, so Better Peakbagger is designed to work
+without a developer-run data server or telemetry. This is also why it favors
+backups you control: if Peakbagger or Better Peakbagger ever disappears, your
+backed-up trip reports can remain in your GitHub repository.
+
+If a future feature truly requires a service, it will not be introduced
+silently. The feature will require your explicit choice, collect and retain
+only the data it needs, and be documented in the README and privacy policy
+before you use it.
 
 ## Development
 
