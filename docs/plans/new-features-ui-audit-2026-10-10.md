@@ -149,6 +149,9 @@ That failure was in the temporary check, not a product failure or flaky pass.
   157.0.1 manifest verifiers passed the shared native-input DOM focus probes.
   Base viewport 1000×760; existing card checks cover 1000, 480, 360 and 320px
   in light/dark. These results prove DOM focus, not native window focus.
+  Final acceptance also covers a live link changing its climber ID: closing
+  restores owned trigger focus and suppresses an automatic reopen. Both real
+  manifest verifiers and the full 2,708-test suite passed that follow-up.
 
 ### Intentionally not changed
 

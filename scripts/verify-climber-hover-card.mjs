@@ -117,6 +117,11 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
     assert.equal(await evaluate(() => document.getElementById('bpb-climber-card-favorite').hidden), true);
     await click('.bpb-climber-card-close');
     const focusCases = [
+        { expected: 'focus-first-trigger', alter: () => {
+            const link = document.getElementById('focus-first');
+            link.nextElementSibling.id = 'focus-first-trigger';
+            link.href = '/climber/climber.aspx?cid=900010';
+        } },
         { expected: 'focus-third', alter: () => {
             document.getElementById('focus-first-row').hidden = true;
             document.getElementById('focus-second-row').hidden = true;

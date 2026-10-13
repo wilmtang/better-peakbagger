@@ -230,6 +230,8 @@ test('changed identities close the card; hiding its report returns focus to the 
     const anchor = dom.window.document.getElementById('casey');
     anchor.href = '/climber/climber.aspx?cid=900004';
     await waitFor(dom, () => card.hidden);
+    assert.equal(dom.window.document.activeElement, anchor.nextElementSibling,
+        'changing a live identity preserves owned focus without reopening its card');
     await open(dom);
     card.querySelector('.bpb-climber-card-close').focus();
     anchor.closest('article').hidden = true;
