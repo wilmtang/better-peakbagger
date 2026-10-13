@@ -39,6 +39,7 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 | J10 | GPX Analyzer, Sun & Moon, maps | Dynamic metrics, coordinate feedback, source/interpreted buttons, Moon/readout text and map status overlays need state geometry coverage. | Inspect and exercise existing contracts. |
 | J11 | Climber actions and report filters | Pending labels, membership details and feedback affect card height and placement; pressed filter font weight may reflow controls. | Inspect current shared-tree implementation and reproduce. |
 | J12 | Ascent GPX processing and summit picker | Final inventory pass found pressed scaling, intrinsic-width Process progress labels, centered inline status and selection-dependent picker labels. | Confirm and fix after the climber unit. |
+| J13 | Report editor contextual controls | Final report pass found caption/link label resizing and validation growth in bottom-anchored popovers; narrow footer feedback precedes Manage drafts. | Fix targeted control geometry; preserve existing overlays. |
 
 ## Surface inventory and coverage
 
@@ -64,6 +65,13 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J12 ascent processing:** reserve Process progress and picker selection
+  labels; remove pressed scaling. Top-align the Preview cell and preserve the
+  native Preview/Remove action row above feedback. The wide baseline exposed
+  a 24.6 px Preview shift when its cell centered against a tall neighboring
+  map. Forty-one tests, build and ESLint passed. Hidden Chrome/Firefox passed
+  trusted file selection, held lookup, long-error fallback and picker/Cancel
+  geometry at both widths/themes. The narrow screenshot was inspected.
 - **J11 climber UI:** reserve action labels, keep card placement fixed during
   operations, and scroll overflowing feedback within its available viewport
   side. Retry precedes variable feedback and remains during pending recovery.

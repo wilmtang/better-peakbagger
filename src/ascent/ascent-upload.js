@@ -26,6 +26,7 @@ import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
+import { createStableText } from '../ui/stable-text.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 import tzlookup from 'tz-lookup';
 
@@ -125,6 +126,14 @@ import tzlookup from 'tz-lookup';
         const upload = document.getElementById('GPXUpload');
         const nativePreview = document.getElementById('GPXPreview');
         if (!upload || !nativePreview) return;
+        const nativeRemove = document.getElementById('GPXRemove');
+        const sharedNativeActions = nativeRemove?.parentElement === nativePreview.parentElement;
+        const actionGroup = document.createElement('span');
+        actionGroup.className = 'bpb-upload-actions';
+        nativePreview.closest('td')?.classList.add('bpb-upload-cell');
+        nativePreview.before(actionGroup);
+        actionGroup.append(nativePreview);
+        if (sharedNativeActions) actionGroup.append(nativeRemove);
 
         const uploadCell = upload.closest('td');
         if (uploadCell && !document.getElementById('bpb-capture-hint')) {
@@ -173,6 +182,7 @@ import tzlookup from 'tz-lookup';
         let button = null;
         let attachButton = null;
         let labelElement = null;
+        let processText = null;
         let status = null;
         let card = null;
         let requestToken = 0;
@@ -218,7 +228,7 @@ import tzlookup from 'tz-lookup';
             status.className = `bpb-upload-status bpb-upload-status-${kind}`;
             status.setAttribute('role', kind === 'error' ? 'alert' : 'status');
             status.textContent = message;
-            (button || nativePreview).insertAdjacentElement('afterend', status);
+            actionGroup.insertAdjacentElement('afterend', status);
         };
 
         const removeCard = () => {
@@ -233,6 +243,7 @@ import tzlookup from 'tz-lookup';
             button?.remove();
             button = null;
             labelElement = null;
+            processText = null;
             nativePreview.classList.remove('bpb-native-preview-hidden');
         };
 
@@ -269,14 +280,14 @@ import tzlookup from 'tz-lookup';
             if (!button) return;
             button.disabled = true;
             button.setAttribute('aria-busy', 'true');
-            labelElement.textContent = label;
+            processText.set(label);
         };
 
         const setIdle = () => {
             if (!button) return;
             button.disabled = false;
             button.removeAttribute('aria-busy');
-            labelElement.textContent = 'Process';
+            processText.set('Process');
         };
 
         const showProcessButton = ({ attachmentOnly = false } = {}) => {
@@ -315,6 +326,8 @@ import tzlookup from 'tz-lookup';
                 glyph.textContent = '✦';
                 labelElement = document.createElement('span');
                 labelElement.className = 'bpb-process-label';
+                processText = createStableText(labelElement);
+                processText.reserve(['Process', 'Reading track…', 'Finding summits…', 'Filling form…', 'Opening drafts…', 'Restoring…']);
                 button.append(glyph, labelElement);
                 button.addEventListener('click', () => void processFile());
                 nativePreview.parentNode.insertBefore(button, nativePreview);
@@ -465,6 +478,8 @@ import tzlookup from 'tz-lookup';
             const applyButton = document.createElement('button');
             applyButton.type = 'button';
             applyButton.className = 'bpb-summit-apply';
+            const applyText = createStableText(applyButton), countLabel = '8'.repeat(String(checkboxes.size).length);
+            applyText.reserve(['Fill this ascent', `Open ${countLabel} drafts`, `Fill + open ${countLabel} drafts`]);
             const cancelButton = document.createElement('button');
             cancelButton.type = 'button';
             cancelButton.className = 'bpb-summit-cancel';
@@ -488,11 +503,11 @@ import tzlookup from 'tz-lookup';
                 const { selectedIds, primaryId } = selection();
                 const siblingCount = selectedIds.length - (primaryId === null ? 0 : 1);
                 applyButton.disabled = !selectedIds.length;
-                applyButton.textContent = primaryId === null
+                applyText.set(primaryId === null
                     ? (siblingCount ? `Open ${siblingCount} draft${siblingCount === 1 ? '' : 's'}` : 'Fill this ascent')
                     : siblingCount
                         ? `Fill + open ${siblingCount} draft${siblingCount === 1 ? '' : 's'}`
-                        : 'Fill this ascent';
+                        : 'Fill this ascent');
             };
             for (const checkbox of checkboxes.values()) checkbox.addEventListener('change', updateAction);
             updateAction();
@@ -509,7 +524,7 @@ import tzlookup from 'tz-lookup';
                 restoreNative();
             });
 
-            (button || nativePreview).insertAdjacentElement('afterend', card);
+            actionGroup.insertAdjacentElement('afterend', card);
         };
 
         const handleProcessResult = async (response, token, units) => {

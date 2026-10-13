@@ -17,6 +17,8 @@
 .bpb-native-preview-hidden { display: none !important; }
 
 .bpb-attach-gpx-button { margin-inline: 8px 0; }
+.bpb-upload-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; max-width: 100%; vertical-align: middle; font: 13px/1.6 system-ui, sans-serif; min-height: calc(1.6em + 4px); }
+.bpb-upload-cell { vertical-align: top; }
 
 .bpb-process-button {
     position: relative;
@@ -33,7 +35,7 @@
     cursor: pointer;
     vertical-align: middle;
     box-shadow: 0 0 8px rgba(139, 92, 246, 0.18);
-    transition: box-shadow 0.2s ease, transform 0.08s ease;
+    transition: box-shadow 0.2s ease;
 }
 
 /* The gradient ring: a masked conic border drawn by the pseudo-element, so it
@@ -72,8 +74,6 @@
     outline: 2px solid #6366f1;
     outline-offset: 2px;
 }
-
-.bpb-process-button:active:not(:disabled) { transform: scale(0.97); }
 
 .bpb-process-button:disabled { cursor: default; }
 
@@ -159,8 +159,8 @@
 }
 
 .bpb-upload-status {
-    display: inline-block;
-    margin-left: 8px;
+    display: block;
+    margin: 6px 0 0;
     max-width: 46em;
     font: 12px/1.5 system-ui, -apple-system, sans-serif;
     vertical-align: middle;

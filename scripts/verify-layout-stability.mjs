@@ -4,7 +4,7 @@
 // Fixtures are isolated HTTPS Peakbagger pages; no live data or accounts are used.
 /* global document, location */
 import assert from 'node:assert/strict';
-import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
@@ -18,6 +18,7 @@ const selected = process.argv.find(value => value.startsWith('--surface='))?.spl
 const output = process.env.BPB_JITTER_ARTIFACTS;
 if (output) await mkdir(output, { recursive: true });
 const assets = new Map();
+let fixtureDirectory;
 async function asset(file) {
     if (!assets.has(file)) assets.set(file, await readFile(path.join(projectRoot, 'dist', file)));
     return assets.get(file);
@@ -550,11 +551,71 @@ async function climberCase(page, origin, variant) {
         }
     }
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase, maps: mapCase, climbers: climberCase };
+async function uploadCase(page, origin, variant) {
+    const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'))
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+    await page.route('**/climber/ascentedit.aspx**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.addInitScript(({ theme }) => {
+        document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
+        globalThis.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
+            onChanged: { addListener() {}, removeListener() {} } }, runtime: { getManifest: () => ({ version: '4.0.0' }),
+            onMessage: { addListener() {}, removeListener() {} }, sendMessage: async message => {
+                if (message.type === 'GPX_PROCESS_START') return new Promise(resolve => {
+                    globalThis.__finishTrack = () => resolve({ phase: 'error', pageSessionId: message.pageSessionId,
+                        selectionGeneration: message.selectionGeneration, selectionNonce: message.selectionNonce,
+                        error: { message: 'This track could not be processed. Check your connection and try again. '.repeat(3) } });
+                });
+                return { ok: true };
+            } } };
+    }, variant);
+    await page.goto(`${origin}/climber/ascentedit.aspx?pid=2296`);
+    await page.addStyleTag({ content: (await asset('css/ascent-upload.css')).toString() });
+    await page.addStyleTag({ content: (await asset('css/report-editor.css')).toString() });
+    await page.addScriptTag({ content: (await asset('vendor/marked.umd.js')).toString() });
+    const source = (await asset('content/ascent-editor.js')).toString(), end = source.lastIndexOf('})();');
+    await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__reservePicker = createStableText;' + source.slice(end) });
+    await page.locator('.bpb-re-surface[contenteditable="true"]').waitFor();
+    const documentRect = selector => page.locator(selector).evaluate(element => {
+        const r = element.getBoundingClientRect(); return { x: r.x + globalThis.scrollX, y: r.y + globalThis.scrollY, width: r.width, height: r.height };
+    });
+    const originalPreview = await documentRect('#GPXPreview');
+    const originalRemove = await documentRect('#GPXRemove');
+    const file = path.join(fixtureDirectory, `upload-${variant.name}.gpx`);
+    await writeFile(file, '<gpx><trk><trkseg><trkpt lat="46.8" lon="-121.7"><ele>100</ele><time>2025-01-01T01:00:00Z</time></trkpt><trkpt lat="46.9" lon="-121.8"><ele>200</ele><time>2025-01-01T02:00:00Z</time></trkpt></trkseg></trk></gpx>');
+    await page.locator('#GPXUpload').setInputFiles(file);
+    const action = '.bpb-process-button';
+    await page.locator(action).waitFor(); await page.locator(action).scrollIntoViewIfNeeded();
+    const rect = () => documentRect(action);
+    const before = await rect();
+    await page.click(action);
+    await page.waitForFunction(() => typeof globalThis.__finishTrack === 'function');
+    stable(before, await rect(), 'GPX Process pending');
+    await page.evaluate(() => globalThis.__finishTrack());
+    await page.locator('#GPXPreview').waitFor();
+    stable(originalPreview, await documentRect('#GPXPreview'), 'GPX native fallback after failure');
+    stable(originalRemove, await documentRect('#GPXRemove'), 'GPX neighboring Remove after failure');
+    await capture(page, `${variant.name}-process`);
+    await page.evaluate(() => {
+        const card = document.createElement('div'); card.className = 'bpb-summit-card';
+        card.innerHTML = '<div class="bpb-summit-actions"><button class="bpb-summit-apply">Fill this ascent</button><button class="bpb-summit-cancel">Cancel</button></div>';
+        document.body.append(card);
+        globalThis.__pickerText = globalThis.__reservePicker(card.querySelector('.bpb-summit-apply'));
+        globalThis.__pickerText.reserve(['Fill this ascent', 'Open 8 drafts', 'Fill + open 8 drafts']);
+    });
+    const picker = '.bpb-summit-apply'; await page.locator(picker).scrollIntoViewIfNeeded();
+    const pickerBefore = await geometry(page, picker), cancelBefore = await geometry(page, '.bpb-summit-cancel');
+    for (const label of ['Open 1 draft', 'Fill + open 8 drafts', 'Fill this ascent']) {
+        await page.evaluate(label => globalThis.__pickerText.set(label), label);
+        stable(pickerBefore, await geometry(page, picker), `summit picker ${label}`);
+        stable(cancelBefore, await geometry(page, '.bpb-summit-cancel'), 'summit neighboring Cancel');
+    }
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase, maps: mapCase, climbers: climberCase, upload: uploadCase };
 const resources = createResourceStack();
 let failure = null;
 try {
     const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'bpb-jitter-fixture-'));
+    fixtureDirectory = temporaryRoot;
     resources.defer('jitter fixture directory', () => rm(temporaryRoot, { recursive: true, force: true }));
     const fixture = await createBrowserFixtureServer({ temporaryRoot });
     resources.defer('jitter fixture server', () => fixture.close());
