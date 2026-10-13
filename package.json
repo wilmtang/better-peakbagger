@@ -20,6 +20,7 @@
     "test": "npm run build && node --test \"test/**/*.test.mjs\"",
     "test:scale": "npm run build && node --test --test-concurrency=1 \"test/scale/**/*.scale.mjs\"",
     "verify:capture-popup": "npm run build && node scripts/verify-capture-popup.mjs",
+    "verify:layout-stability": "npm run build && node scripts/verify-layout-stability.mjs",
     "verify:multi-summit": "npm run build && node scripts/verify-multi-summit.mjs",
     "verify:inline-buddies": "npm run build && node scripts/verify-inline-buddies.mjs && node scripts/verify-inline-buddies.mjs --firefox",
     "verify:capture-flow": "npm run build && node scripts/verify-capture-flow.mjs",

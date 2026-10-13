@@ -106,6 +106,13 @@ jobs:
       - name: Verify packages and capture flows
         uses: ./.github/actions/verify-package
 
+      - name: Verify interaction layout stability in Chrome and Firefox
+        env:
+          BPB_JITTER_ARTIFACTS: browser-evidence/layout-stability
+        run: |
+          mkdir -p browser-evidence
+          npm run verify:layout-stability 2>&1 | tee browser-evidence/layout-stability.log
+
       - name: Retain browser failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

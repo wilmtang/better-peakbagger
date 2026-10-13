@@ -40,6 +40,20 @@ test('shared package gate builds once and exercises capture against the producti
     }
 });
 
+test('ordinary CI gates on interaction geometry and retains layout evidence', async () => {
+    const ordinary = await load('workflows/test.yml');
+    const job = ordinary.jobs.chrome;
+    const geometry = job.steps.find(step => step.run?.includes('npm run verify:layout-stability'));
+    assert.ok(geometry, 'state transitions must be checked beyond static manifest smoke');
+    assert.equal(geometry.if, undefined);
+    assert.equal(geometry['continue-on-error'], undefined);
+    assert.equal(ordinary.defaults.run.shell, 'bash', 'pipefail must preserve a verifier failure through tee');
+    assert.equal(geometry.env.BPB_JITTER_ARTIFACTS, 'browser-evidence/layout-stability');
+    assert.match(geometry.run, /2>&1 \| tee browser-evidence\/layout-stability\.log/);
+    const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+    assert.equal(packageJson.scripts['verify:layout-stability'], 'npm run build && node scripts/verify-layout-stability.mjs');
+});
+
 test('shared setup exports the installed paths and versions and keeps exact toolchain pins', async () => {
     const setup = await load('actions/setup-verification/action.yml');
     const steps = setup.runs.steps;
