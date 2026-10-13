@@ -85,7 +85,7 @@ test('one-second hover dwell cancels on departure; Escape suppresses the same se
     assert.ok(opens.length >= 2);
     const trigger = name.nextElementSibling;
     fireTrustedEvent(trigger, 'click');
-    assert.equal(dom.window.document.activeElement.className, 'bpb-climber-card-action bpb-climber-card-buddy');
+    assert.equal(dom.window.document.activeElement.id, 'bpb-climber-card-buddy');
     fireTrustedEvent(card, 'keydown', { key: 'Escape', bubbles: true });
     assert.equal(card.hidden, true);
     assert.equal(dom.window.document.activeElement, trigger);

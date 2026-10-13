@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { dom as D } from '../ui/dom.js';
+import { createStableText } from '../ui/stable-text.js';
 import { settings as S } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { trustedAction } from '../ui/trusted-action.js';
@@ -44,6 +45,10 @@ const mount = () => {
     const source = D.element('div', { class: 'bpb-climber-card-source' }, [sourceText, sourceSettings]);
     const ignore = button('Ignore climber', { id: 'bpb-climber-card-ignore', class: 'bpb-climber-card-action bpb-climber-card-ignore',
         'aria-describedby': 'bpb-climber-card-ignore-detail' });
+    const actionLabels = ['Add climbing buddy', 'Remove climbing buddy', 'Check buddy status',
+        'Add favorite climber', 'Remove favorite climber', 'Ignore climber', 'Unignore climber', 'Saving…', 'Checking…', 'Removing…', 'Adding…'];
+    const buddyText = createStableText(buddy), favoriteText = createStableText(favorite), ignoreText = createStableText(ignore);
+    for (const text of [buddyText, favoriteText, ignoreText]) text.reserve(actionLabels);
     const detail = D.element('div', { id: 'bpb-climber-card-ignore-detail', class: 'bpb-climber-card-detail' });
     const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' });
     const retry = button('Retry', { class: 'bpb-climber-card-retry', hidden: '' });
@@ -51,7 +56,7 @@ const mount = () => {
         'data-bpb-climber-ui': '', 'aria-labelledby': title.id }, [
         D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, profile]), closeButton]),
         buddy, signIn, favorite, source,
-        D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore, detail]), feedback, retry,
+        D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore]), retry, detail, feedback,
     ]);
     const announcement = D.element('div', { id: 'bpb-climber-card-announcement', role: 'status',
         'aria-live': 'polite', 'data-bpb-climber-ui': '' });
@@ -81,21 +86,21 @@ const mount = () => {
         const signedOut = ownerClimberId(document) == null;
         buddy.hidden = view.self || signedOut;
         signIn.hidden = view.self || !signedOut;
-        buddy.textContent = operation?.kind === 'buddy' ? operation.checkOnly ? 'Checking…'
+        buddyText.set(operation?.kind === 'buddy' ? operation.checkOnly ? 'Checking…'
             : operation.removing ? 'Removing…' : 'Adding…' : view.buddyIntent && view.buddyIntent.status !== 'confirmed' ? 'Check buddy status'
-            : view.buddy ? 'Remove climbing buddy' : 'Add climbing buddy';
+            : view.buddy ? 'Remove climbing buddy' : 'Add climbing buddy');
         buddy.disabled = !!operation || (!view.buddyIntent && view.buddyBlocked);
         buddy.setAttribute('aria-busy', String(operation?.kind === 'buddy'));
         buddy.setAttribute('aria-pressed', String(view.buddy));
         favorite.hidden = view.self || view.custom !== true;
-        favorite.textContent = operation?.kind === 'favorite' ? 'Saving…'
-            : view.favorite ? 'Remove favorite climber' : 'Add favorite climber';
+        favoriteText.set(operation?.kind === 'favorite' ? 'Saving…'
+            : view.favorite ? 'Remove favorite climber' : 'Add favorite climber');
         favorite.disabled = view.favoriteDisabled;
         favorite.setAttribute('aria-pressed', String(view.favorite));
         favorite.setAttribute('aria-busy', String(operation?.kind === 'favorite'));
         source.hidden = view.self || view.custom !== false;
         ignore.parentElement.hidden = view.self;
-        ignore.textContent = operation?.kind === 'ignore' ? 'Saving…' : view.ignored ? 'Unignore climber' : 'Ignore climber';
+        ignoreText.set(operation?.kind === 'ignore' ? 'Saving…' : view.ignored ? 'Unignore climber' : 'Ignore climber');
         ignore.disabled = view.ignoreDisabled;
         ignore.setAttribute('aria-pressed', String(view.ignored));
         ignore.setAttribute('aria-busy', String(operation?.kind === 'ignore'));
@@ -103,9 +108,11 @@ const mount = () => {
         feedback.textContent = error || settingsError || view.note || (view.favoriteLimit
             ? 'Favorites can hold up to 1,500 climbers.' : notice);
         feedback.hidden = !feedback.textContent;
-        retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed');
+        retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed' || (operation && !retry.hidden));
         card.setAttribute('aria-busy', String(!!operation));
-        schedulePosition();
+        // Feedback may grow, but must not flip or lift a card under an active
+        // pointer. Scrolling/resizing still repositions it against its anchor.
+        if (card.hidden || !card.style.top) schedulePosition();
     };
     const clearTimers = () => { clearTimeout(openTimer); clearTimeout(closeTimer); openTimer = closeTimer = null; };
     const rememberFocusContext = record => {
@@ -174,11 +181,16 @@ const mount = () => {
         card.style.maxWidth = `${Math.max(0, width - 24)}px`;
         card.style.maxHeight = `${Math.max(0, height - 24)}px`;
         const size = card.getBoundingClientRect();
-        const below = topEdge + height - rect.bottom - 8;
-        const top = below >= size.height || rect.top - topEdge < size.height + 8
-            ? Math.min(rect.bottom + 6, topEdge + height - size.height - 12) : rect.top - size.height - 6;
+        const below = Math.max(0, topEdge + height - rect.bottom - 18);
+        const above = Math.max(0, rect.top - topEdge - 18);
+        const placeBelow = below >= size.height || below >= above;
+        const available = placeBelow ? below : Math.min(above, size.height);
+        const top = placeBelow ? rect.bottom + 6 : rect.top - available - 6;
         card.style.left = `${Math.max(leftEdge + 12, Math.min(rect.left, leftEdge + width - size.width - 12))}px`;
         card.style.top = `${Math.max(topEdge + 12, top)}px`;
+        // Grow below the fixed top edge; above-anchor placement scrolls before
+        // overlapping the link that opened it. Reserve the scrollbar gutter.
+        card.style.maxHeight = `${available}px`;
     };
     function schedulePosition() {
         if (positionFrame == null) positionFrame = requestAnimationFrame(position);

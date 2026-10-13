@@ -38,6 +38,7 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 | J09 | Peak/ascent weather | Retry/Refresh labels, conditional status content, chart-empty states and variable hover readings can change geometry. | Reproduce refresh/retry, model/day/metric switches and hover. |
 | J10 | GPX Analyzer, Sun & Moon, maps | Dynamic metrics, coordinate feedback, source/interpreted buttons, Moon/readout text and map status overlays need state geometry coverage. | Inspect and exercise existing contracts. |
 | J11 | Climber actions and report filters | Pending labels, membership details and feedback affect card height and placement; pressed filter font weight may reflow controls. | Inspect current shared-tree implementation and reproduce. |
+| J12 | Ascent GPX processing and summit picker | Final inventory pass found pressed scaling, intrinsic-width Process progress labels, centered inline status and selection-dependent picker labels. | Confirm and fix after the climber unit. |
 
 ## Surface inventory and coverage
 
@@ -63,6 +64,16 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J11 climber UI:** reserve action labels, keep card placement fixed during
+  operations, and scroll overflowing feedback within its available viewport
+  side. Retry precedes variable feedback and remains during pending recovery.
+  Profile membership text follows stable buttons; remove favorite hover motion
+  and reserve report-filter labels/counts. All 104 favorites tests passed, plus
+  build/ESLint. Hidden Chrome/Firefox passed actual card pending/error/retry/
+  success with normal/doubled text and profile feedback/hover at both widths
+  and themes. Screenshots were inspected. Full Firefox passed; Chrome's
+  trusted-click probe needed to accept a button's descendant as its event target
+  and is being rerun with the remaining inventory checks.
 - **J10 GPX/maps:** place stable GPX actions before variable metrics/diagnostics;
   reserve the source-view label and put coordinate feedback after the chart.
   Retry remains visible while pending. Sentinel feedback grows above its

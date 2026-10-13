@@ -1359,8 +1359,9 @@ async function main() {
             summary: calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
             events: calculator?.querySelector(".bpb-sun-calculator__header-events")?.textContent || "",
             disabled: calculator?.querySelector(".bpb-sun-calculator__toggle")?.disabled === true,
-            placed: coordinates?.nextElementSibling === legend
-              && canvasContainer?.nextElementSibling === calculator,
+            placed: Boolean(legend?.compareDocumentPosition(canvasContainer) & Node.DOCUMENT_POSITION_FOLLOWING)
+              && Boolean(canvasContainer?.compareDocumentPosition(coordinates) & Node.DOCUMENT_POSITION_FOLLOWING)
+              && Boolean(coordinates?.compareDocumentPosition(calculator) & Node.DOCUMENT_POSITION_FOLLOWING),
             borderStyle: calculator ? getComputedStyle(calculator).borderStyle : null,
           };
         })(),

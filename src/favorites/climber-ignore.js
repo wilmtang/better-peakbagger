@@ -16,15 +16,17 @@ const mount = () => {
     host.classList.add('bpb-climber-ignore-host');
     const style = document.createElement('style');
     style.textContent = `
-#TitleLabel.bpb-climber-ignore-host { display:inline-flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; max-width:min(100%,calc(100vw - 32px)); }
+#TitleLabel.bpb-climber-ignore-host { display:inline-flex; flex-wrap:wrap; align-items:baseline; justify-content:center; gap:8px; max-width:min(100%,calc(100vw - 32px)); }
 #TitleLabel.bpb-climber-ignore-host h1 { min-width:0; overflow-wrap:anywhere; }
-.bpb-ignore-actions { display:inline-flex; align-items:center; flex-wrap:wrap; gap:8px; font:13px Arial,sans-serif; color:#424b44; }
+.bpb-ignore-actions { display:inline-grid; grid-template-columns:auto auto; align-items:start; gap:8px; font:13px Arial,sans-serif; color:#424b44; }
+.bpb-ignore-actions > button { grid-row:1; }
+.bpb-ignore-actions::after { content:'Retry'; visibility:hidden; grid-area:1/2; min-height:32px; box-sizing:border-box; padding:5px 10px; border:1px solid transparent; }
 .bpb-ignore-actions button { min-height:32px; padding:5px 10px; border:1px solid #9ba79e; border-radius:6px; background:#f6f8f6; color:#354239; font:inherit; cursor:pointer; }
 #bpb-climber-ignore { min-width:83px; }
 .bpb-ignore-actions button:focus-visible { outline:2px solid #2f6b3f; outline-offset:2px; }
 .bpb-ignore-actions button:disabled { opacity:.5; cursor:not-allowed; }
 .bpb-ignore-actions button[aria-busy="true"] { cursor:wait; }
-.bpb-ignore-actions .bpb-membership-note { max-width:34ch; font-size:12px; line-height:1.4; }
+.bpb-ignore-actions .bpb-membership-note { grid-column:1/-1; contain:inline-size; min-width:0; overflow-wrap:anywhere; font-size:12px; line-height:1.4; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions { color:#ced5d0; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions button { color:#d5e0d8; background:#29322b; border-color:#71927a; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-color:#8fc99c; }
@@ -43,7 +45,7 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
     announcement.setAttribute('role', 'status');
     announcement.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)';
     const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.hidden = true;
-    group.append(button, status, retry, announcement); host.append(group);
+    group.append(button, retry, status, announcement); host.append(group);
     let list = null, busy = false, error = '', notice = '', retryWrite = false;
     let membership = null;
     const hasNativeBuddy = () => [...document.querySelectorAll(F.BUDDY_CONTROL_SELECTOR)]

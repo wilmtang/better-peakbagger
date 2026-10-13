@@ -4301,7 +4301,7 @@ try {
                     const bounds = button?.getBoundingClientRect();
                     window.__bpbReportActivationProbe.push({
                         type, target: event.target.tagName,
-                        favorites: event.target === button, trusted: event.isTrusted,
+                        favorites: !!button?.contains(event.target), trusted: event.isTrusted,
                         point: { x: event.clientX, y: event.clientY },
                         button: bounds ? { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } : null,
                     });
