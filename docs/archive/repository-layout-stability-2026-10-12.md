@@ -5,18 +5,32 @@ movement through idle, pending, completion, error and retry states, then fix eac
 confirmed occurrence in a focused commit. Deliberate navigation, disclosures,
 result insertion and user-controlled resizing remain distinct from jitter.
 
+Status: closed locally. All thirteen confirmed finding groups are implemented
+in focused commits. The final runtime snapshot and CI integration are recorded
+by `40b0b20d`; no confirmed occurrence remains open in this inventory. This is
+evidence for the exercised transitions, not proof of every possible live state.
+
 ## Baseline and method
 
-The tree contains unrelated in-progress avalanche and climber-card work. Preserve
-those edits. Audit existing surfaces, inspect changed surfaces too, and record
-which snapshot each check covers. Do not treat static layout or green behavior
-checks as transition evidence.
+The starting tree contained unrelated in-progress avalanche and climber-card
+work. Those edits were preserved; completed shared-tree changes were inspected
+as part of the current surface inventory. Static layout and green behavior
+checks were not treated as transition evidence.
 
 Hidden browser preflight loaded the real unpacked extension in Chrome for Testing
 153.0.8010.12 and rendered shipped popup assets in Chrome and Firefox. Existing
 capture-layout output shows the ready result area ending at 536.1 px and opening
 at 564 px: feedback inserted before the action changes its position. Existing
 checks cover static states but never compare the action between those states.
+
+That coverage gap explains why the popup shift survived: independently valid
+idle and pending screenshots did not assert that the user's action stayed in
+place. Other omissions included replacing focused nodes on progress ticks,
+intrinsic-width labels, vertically centered legacy table cells, and different
+anchors in the 2D and 3D adapters. Existing Sun & Moon and weather checks already
+covered some geometry; the gap was uneven coverage, not a complete absence of
+UI verification. The new CI gate compares state-dependent geometry and repeated
+updates across the inventory.
 
 Use HTTPS fixtures on a real Peakbagger hostname, explicit visible postconditions,
 controlled pending responses, geometry samples during transitions, narrow and
@@ -87,8 +101,8 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
   build/ESLint. Hidden Chrome/Firefox passed actual card pending/error/retry/
   success with normal/doubled text and profile feedback/hover at both widths
   and themes. Screenshots were inspected. Full Firefox passed; Chrome's
-  trusted-click probe needed to accept a button's descendant as its event target
-  and is being rerun with the remaining inventory checks.
+  trusted-click probe was corrected to accept a button's descendant as its event
+  target. Both final real-extension checks passed.
 - **J10 GPX/maps:** place stable GPX actions before variable metrics/diagnostics;
   reserve the source-view label and put coordinate feedback after the chart.
   Retry remains visible while pending. Sentinel feedback grows above its
@@ -98,7 +112,8 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
   passed controlled Sentinel requests and GPX/consent component geometry in
   both themes at 390×900 and 1280×900. Narrow screenshots were inspected.
   The full Chrome run exercised native GPX source selection and Sun & Moon;
-  its two obsolete placement assertions were updated and its rerun is pending.
+  its two obsolete placement assertions were updated. Both final real-extension
+  checks passed.
 - **J10 map-anchor follow-up:** the 3D frame anchors its stack at the top, so
   its picker/retry precede feedback while the 2D stack uses the opposite order.
   Bound the 3D stack to the frame with scrolling, preserving full error text.
@@ -191,9 +206,69 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Intentionally not changed
 
-No dispositions yet. Record evidence for every deliberate layout transition.
+- **User-requested disclosures and views:** Sun & Moon, weather day/source
+  details, GPX diagnostics, Settings navigation, editor tool selection and
+  manager pagination deliberately replace or expand the selected content.
+  Their trigger remains an explicit control; changing those flows to fixed
+  clipped panels would hide useful content. Existing browser checks cover
+  the Sun/weather placements; the new matrix targets variable feedback around
+  actions, not suppression of requested content.
+- **Result and collection changes:** capture results, favorite/ignored lists,
+  report filters, Photo Topos library deletion/restoration and draft-manager
+  deletion update the visible collection. Removing a row or inserting a result
+  is an intended outcome. Label/status/progress changes within those flows now
+  retain action geometry; normal collection mutation remains visible.
+- **Spatial interaction and completion:** dragging/resizing maps, panning,
+  zooming, drawing and selecting geometry intentionally move the viewport or
+  marks. Successful navigation, opening a draft, closing a dialog and native
+  Preview fallback deliberately change the workflow. The fixes retain existing
+  ownership, privacy, manual Save and recovery boundaries.
+- **Legacy Peakbagger minimum widths:** narrow fixtures retain native tables
+  and page overflow. This audit corrects state-dependent movement; it does not
+  redesign the host site's layout or claim that its entire page fits 390 pixels.
 
 ### Changed but not fully proven
 
-- The final broad manifest verification is pending. Authenticated provider
-  dialogs and onscreen window/focus placement are outside hidden fixture proof.
+- Controlled APIs and component fixtures do not establish authenticated live
+  provider DOM, GitHub writes, native clipboard/permission dialogs, screen-reader
+  speech or visible window/focus placement. The hidden checks used modern
+  browsers; browser-floor rendering and hosted CI have not been run for this
+  change. The ordinary CI gate is wired and locally tested, but nothing was
+  pushed or published.
+- The map-control component fixture exercises shipped CSS and Sentinel behavior
+  without WebGL. It proves control geometry and readable overflow, not terrain
+  rendering, live imagery availability or GPU behavior.
+- The matrix uses doubled reading text and 100%/200% UI scaling on selected
+  surfaces. That is not native browser zoom or an accessibility review of every
+  host-page layout. Focus-node retention and keyboard checks are bounded to
+  the exercised paths.
+
+## Final verification and evidence
+
+- `npm test`: **2,720 passed, zero failures**, after all runtime fixes.
+- `npm run lint`: passed, including the shipped `dist/` manifest and the six
+  existing owned web-ext warnings. The added CI guard then passed with all
+  thirteen focused project integration checks and focused ESLint.
+- `scripts/verify-layout-stability.mjs`: **96 passed matrix cases** — twelve
+  surface groups, two browsers, light/dark, 390×900 and 1280×900. Each case
+  exercises multiple transitions, with one CSS pixel rounding tolerance;
+  repeated progress also compares panel bounds and focused node identity.
+  Chrome for Testing 153.0.8010.12 and Playwright Firefox 155.0 ran hidden.
+- The final real-manifest verifiers passed in hidden Chrome 153.0.8010.12 and
+  Firefox 157.0.1 at 1000×760. Both observed BFCache restoration and reported
+  teardown passed. Earlier photo, weather and upload fixtures provide the
+  additional widths/states recorded above. The earlier presentation audit's
+  Chrome helper-adoption failure did not recur in this final run; that does
+  not retrospectively establish the cause of the earlier failure.
+- Relevant narrow rendered screenshots were inspected. Selected screenshots
+  and exact final logs are retained in this task's local
+  `repository-jitter-audit` evidence directory.
+- Owned browser contexts, servers, certificates and profiles use teardown.
+  A final process/path inspection found no remaining audit-owned browser or
+  fixture processes or disposable directories; the user's browsers were not
+  used or closed.
+
+Reproduce with `npm run verify:layout-stability`; use `-- --surface=maps` to
+isolate one group and `BPB_JITTER_ARTIFACTS` to retain renders. The ordinary
+Chrome CI job now runs the complete Chrome/Firefox matrix and retains failure
+evidence alongside the real-manifest and capture gates.

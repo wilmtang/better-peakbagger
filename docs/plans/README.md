@@ -39,7 +39,14 @@ The [peak-page presentation follow-up](../archive/peak-page-presentation-2026-10
 corrects the map/legend/weather order, weather actions and source coordinates,
 Settings presentation, and BPB map links. It records the earlier fixture and
 assertion gaps, 2,712 passing tests, rendered Chrome/Firefox evidence, and an
-unresolved Chrome helper-adoption smoke failure.
+earlier Chrome helper-adoption smoke failure. The final Chrome and Firefox
+checks in the layout-stability audit below both pass.
+
+The [repository layout-stability audit](../archive/repository-layout-stability-2026-10-12.md)
+is closed locally: thirteen confirmed finding groups have focused fixes and a
+new CI transition-geometry gate. Its ledger records 2,720 passing runtime tests,
+96 hidden Chrome/Firefox matrix cases, real-manifest verification, deliberate
+layout changes and remaining live/native proof limits.
 
 The [weather feature audit](../archive/weather-feature-audit-2026-10-11.md)
 has eight implemented fixes and local browser/regression evidence. Its closure
