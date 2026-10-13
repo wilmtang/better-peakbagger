@@ -108,7 +108,66 @@ async function accessCase(page, origin, variant) {
         await capture(page, `${variant.name}-${id}-access`);
     }
 }
-const cases = { popup: popupCase, access: accessCase };
+async function handoffCase(page, origin, variant) {
+    await page.route(`${origin}/climber/ascent.aspx?aid=7654321`, route => route.fulfill({ contentType: 'text/html', body:
+        '<!doctype html><meta charset="utf-8"><style>body{margin:20px;font:14px Arial}html[data-bpb-theme="dark"] body{background:#202222;color:#eee}#gpxlinks{max-width:900px;text-align:center}</style>'
+        + '<a href="/climber/AscentEdit.aspx?aid=7654321">Edit ascent</a><p id="gpxlinks"><a href="/climber/GPXFile.aspx?aid=7654321&sep=1">Download this GPS track</a></p>' }));
+    await page.addInitScript(({ theme }) => {
+        document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
+        globalThis.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { theme } }) },
+            onChanged: { addListener() {}, removeListener() {} } }, runtime: { sendMessage: async message => {
+            if (message.type.endsWith('_PERMISSION_REQUEST')) return new Promise(resolve => {
+                globalThis.__finishPermission = () => resolve({ ok: true });
+            });
+            if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'fixture' };
+            if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'fixture' };
+            if (message.type.endsWith('_IMPORT_PREPARE')) return new Promise(resolve => {
+                globalThis.__finishImport = success => resolve({ ok: success, supplied: success, targetTabId: 9,
+                    message: success ? 'Your track is ready in the map. Review the preview and confirm when ready.'
+                        : 'The map could not prepare this track. Check your connection and try the transfer again.' });
+            });
+            return { ok: true };
+        } } };
+    }, variant);
+    await page.goto(`${origin}/climber/ascent.aspx?aid=7654321`);
+    await page.addStyleTag({ content: (await asset('css/ascent-gaia.css')).toString() });
+    await page.addScriptTag({ content: (await asset('content/ascent-gaia.js')).toString() });
+    await page.locator('.bpb-map-handoff-button').first().waitFor();
+    for (const id of ['gaia', 'onx', 'alltrails', 'caltopo']) {
+        const selector = `[data-provider="${id}"]`;
+        const before = await geometry(page, selector);
+        const allBefore = await page.locator('.bpb-map-handoff-button').evaluateAll(elements => elements.map(element => {
+            const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+        }));
+        for (const success of [false, true]) {
+            await page.click(selector);
+            await page.waitForFunction(() => typeof globalThis.__finishPermission === 'function');
+            stable(before, await geometry(page, selector), `${id} preparing`);
+            await page.evaluate(() => { globalThis.__finishImport = null; globalThis.__finishPermission(); });
+            await page.waitForFunction(() => typeof globalThis.__finishImport === 'function');
+            stable(before, await geometry(page, selector), `${id} opening`);
+            await page.evaluate(success => globalThis.__finishImport(success), success);
+            await page.waitForFunction(id => !document.querySelector(`[data-provider="${id}"]`).disabled, id);
+            stable(before, await geometry(page, selector), `${id} completed ${success}`);
+            const allAfter = await page.locator('.bpb-map-handoff-button').evaluateAll(elements => elements.map(element => {
+                const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+            }));
+            allBefore.forEach((rect, index) => stable(rect, allAfter[index], `${id} neighboring action ${index}`));
+        }
+    }
+    await capture(page, `${variant.name}-handoff`);
+    await page.addStyleTag({ content: (await asset('css/ascent-weather.css')).toString() });
+    await page.locator('#gpxlinks').evaluate(element => { element.id = 'bpb-ascent-gpx-details'; });
+    const collapsed = await geometry(page, '[data-provider="gaia"]');
+    await page.click('[data-provider="gaia"]');
+    await page.evaluate(() => globalThis.__finishPermission());
+    await page.waitForFunction(() => document.querySelector('[data-provider="gaia"]').textContent.includes('Opening'));
+    stable(collapsed, await geometry(page, '[data-provider="gaia"]'), 'handoff GPX details pending');
+    await page.evaluate(() => globalThis.__finishImport(true));
+    await page.waitForFunction(() => !document.querySelector('[data-provider="gaia"]').disabled);
+    stable(collapsed, await geometry(page, '[data-provider="gaia"]'), 'handoff GPX details completion');
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase };
 const resources = createResourceStack();
 let failure = null;
 try {

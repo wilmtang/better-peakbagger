@@ -121,7 +121,7 @@ html[data-bpb-theme="dark"] #bpb-ascent-weather {
 #bpb-ascent-gpx-details > :last-child { margin-bottom: 0; }
 #bpb-ascent-gpx-details font, #bpb-ascent-gpx-details small { font-size: inherit; }
 #bpb-ascent-gpx-details a { color: var(--bpb-weather-accent); }
-#bpb-ascent-gpx-details .bpb-map-handoff-control { display: flex; justify-content: center; max-width: 100%; margin: 10px 0 0; }
+#bpb-ascent-gpx-details .bpb-map-handoff-control { display: grid; max-width: 100%; margin: 10px 0 0; }
 #bpb-ascent-gpx-details .bpb-map-handoff-buttons { justify-content: center; max-width: 100%; }
 #bpb-ascent-gpx-details .bpb-map-handoff-button { max-width: 100%; white-space: normal; }
 @container bpb-ascent-column (min-width: 601px) {

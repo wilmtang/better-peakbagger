@@ -81,7 +81,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         },
     ];
     const providers = new Map(providerConfig.map(config => {
-        const labelElement = el('span', { class: 'bpb-map-handoff-label', text: config.buttonLabel });
+        const labelElement = el('span', { class: 'bpb-map-handoff-label-text', text: config.buttonLabel });
         const button = el('button', {
             type: 'button',
             class: `bpb-map-handoff-button bpb-map-handoff-button-${config.id}`,
@@ -89,7 +89,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             'aria-label': config.ariaLabel,
         }, [
             el('span', { class: 'bpb-map-handoff-icon', 'aria-hidden': 'true' }),
-            labelElement,
+            el('span', { class: 'bpb-map-handoff-label', 'data-label': `Send to ${config.name} again` }, [labelElement]),
         ]);
         return [config.id, { ...config, button, labelElement, targetTabId: null, repeat: false }];
     }));

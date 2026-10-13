@@ -3,12 +3,11 @@
  * Compact saved-GPX handoffs beside Peakbagger's native download link. */
 
 .bpb-map-handoff-control {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
+    display: inline-grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     margin-left: 6px;
-    vertical-align: middle;
+    vertical-align: top;
     max-width: calc(100% - 6px);
     font: 11px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -17,7 +16,13 @@
     display: inline-flex;
     flex-wrap: wrap;
     gap: 5px;
+    max-width: 100%;
 }
+
+.bpb-map-handoff-label { display: grid; min-width: 0; }
+.bpb-map-handoff-label-text,
+.bpb-map-handoff-label::after { grid-area: 1 / 1; }
+.bpb-map-handoff-label::after { content: attr(data-label); visibility: hidden; pointer-events: none; }
 
 .bpb-map-handoff-button {
     display: inline-flex;
@@ -34,7 +39,7 @@
     letter-spacing: 0.01em;
     cursor: pointer;
     transition: background-color 120ms ease, border-color 120ms ease,
-        box-shadow 120ms ease, transform 120ms ease;
+        box-shadow 120ms ease;
 }
 
 :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo) {
@@ -57,7 +62,6 @@
 
 .bpb-map-handoff-button:hover:not(:disabled) {
     box-shadow: 0 2px 4px rgba(24, 37, 29, 0.28), inset 0 1px rgba(255, 255, 255, 0.12);
-    transform: translateY(-1px);
 }
 :is(.bpb-map-handoff-button-gaia, .bpb-map-handoff-button-caltopo):hover:not(:disabled) {
     border-color: #153f2b;
@@ -73,7 +77,6 @@
 }
 .bpb-map-handoff-button:active:not(:disabled) {
     box-shadow: 0 1px 2px rgba(24, 37, 29, 0.18);
-    transform: translateY(0);
 }
 .bpb-map-handoff-button:focus-visible {
     outline: 2px solid #2b7bb9;
@@ -125,7 +128,7 @@
 .bpb-map-handoff-button-success .bpb-map-handoff-icon::before { content: "✓"; transform: none; }
 
 .bpb-map-handoff-status {
-    max-width: 310px;
+    contain: inline-size;
     color: #4d514d;
     font-weight: 500;
 }

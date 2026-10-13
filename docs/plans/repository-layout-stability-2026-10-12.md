@@ -63,6 +63,14 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J03 saved-GPX handoffs:** Gaia preparation shrank its button by 5.5 px in
+  the baseline. Reserve each provider's longest label with a hidden sizing
+  label; keep feedback below the action row without affecting its intrinsic
+  width, and remove the hover translation. Cover the native inline placement
+  and the weather-details placement. All four providers passed pending,
+  error/retry and completion plus neighboring-action geometry in hidden Chrome
+  and Firefox, light/dark at 390×900 and 1280×900. The narrow dark screenshot,
+  13 handoff tests, build, focused ESLint and diff checks passed.
 - **J02 map-access pages:** the Gaia error path moved its action upward by
   17.3 px at 390 px before the fix. Anchor the shared card near the top of the
   viewport and use full-width actions with the completion action below it.
