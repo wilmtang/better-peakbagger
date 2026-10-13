@@ -2200,7 +2200,8 @@ async function main() {
           link => link.textContent.trim()),
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         framePreserved: document.getElementById("Gmap")?.parentElement === mount,
-        sunAfterMap: mount.parentElement.nextElementSibling === sun,
+        sunAfterLegend: document.getElementById("Gmap")?.closest("td")?.lastElementChild === sun
+          && sun.previousElementSibling?.textContent.includes("Full Screen Map"),
         sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
         sunExpanded: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === false,
         sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
@@ -2222,7 +2223,7 @@ async function main() {
         && peakState.links[1] === 'Copernicus satellite imagery'
         && peakState.links[2] === 'AirNow fire & smoke'
         && peakState.theme !== null && peakState.framePreserved
-        && peakState.sunAfterMap && peakState.sunDateInput && peakState.sunExpanded
+        && peakState.sunAfterLegend && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
         && /Moon phase/i.test(peakState.moon)
         && /\d+°\s+[NSEW]{1,3}/.test(peakState.moon)

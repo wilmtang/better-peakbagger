@@ -4072,7 +4072,8 @@ try {
                 nativeMapHeight: iframe.getBoundingClientRect().height,
                 resizeHandle: Boolean(mount.querySelector('#bpb-map-resize-handle')),
                 iframePreserved: iframe.parentElement === mount,
-                sunAfterMap: mount.parentElement.nextElementSibling === sun,
+                sunAfterLegend: iframe.closest('td')?.lastElementChild === sun
+                    && sun.previousElementSibling?.textContent.includes('Full Screen Map'),
                 sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
                 sunExpanded: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === false,
                 sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
@@ -4111,7 +4112,7 @@ try {
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
         check(peakState?.nativeMapHeight === 425 && peakState?.mountHeight === 441 && peakState?.resizeHandle,
             `the Peak map must preserve 425px of native content and add its resize rail (state=${JSON.stringify(peakState)})`);
-        check(peakState?.sunAfterMap && peakState?.sunDateInput && peakState?.sunExpanded
+        check(peakState?.sunAfterLegend && peakState?.sunDateInput && peakState?.sunExpanded
             && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid'
             && peakState?.sunMockHierarchy,
         `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
