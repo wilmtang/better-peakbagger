@@ -365,7 +365,53 @@ async function photoCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-photo-toast`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase };
+async function weatherCase(page, origin, variant) {
+    await page.goto(`${origin}/dist/photos/guide.html`);
+    await page.evaluate(({ theme }) => {
+        document.documentElement.dataset.bpbTheme = theme;
+        document.body.innerHTML = '<section id="bpb-peak-weather"><div id="jitter-hours"></div></section>';
+    }, variant);
+    await page.addStyleTag({ content: (await asset('css/peak-weather.css')).toString() });
+    const source = (await asset('content/peak-weather.js')).toString();
+    const end = source.lastIndexOf('})();');
+    assert.ok(end > 0, 'hourly shipped bundle seam');
+    await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__createHourlyChart = createPeakHourlyChart;' + source.slice(end) });
+    for (const zoom of [1, 2]) {
+        await page.locator('#bpb-peak-weather').evaluate((element, zoom) => {
+            element.style.fontSize = `${13 * zoom}px`;
+            element.querySelectorAll('.bpb-week-readout').forEach(readout => { readout.style.fontSize = `${12 * zoom}px`; });
+        }, zoom);
+        await page.evaluate(() => {
+            const start = Date.parse('2025-01-01T18:15:00Z'), end = start + 24 * 3600_000;
+            globalThis.__chart?.dispose();
+            globalThis.__chart = globalThis.__createHourlyChart({ container: document.getElementById('jitter-hours'),
+                day: { window: { date: '2025-01-02', start, end, cutoff: end } },
+                samples: Array.from({ length: 26 }, (_, index) => ({ time: Math.floor(start / 3600_000) * 3600_000 + index * 3600_000,
+                    temperature: -15 + index, precipitation: index / 10, wind: index * 10, gust: null })),
+                zone: { timeZone: 'Asia/Kathmandu', offsetMs: 20700000 }, metric: 'temperature', onMetric() {},
+                format: (value, key) => `${value.toFixed(1)} ${key === 'temperature' ? '°C' : key === 'precipitation' ? 'mm' : 'km/h'}` });
+        });
+        const frame = '.bpb-week-chart';
+        await page.locator('.bpb-week-readout').evaluate((element, zoom) => { element.style.fontSize = `${12 * zoom}px`; }, zoom);
+        const before = await geometry(page, frame);
+        for (const metric of ['temperature', 'precipitation', 'wind', 'gust']) {
+            await page.click(`[data-metric="${metric}"]`);
+            stable(before, await geometry(page, frame), `weather ${metric} zoom ${zoom}`);
+            if (metric !== 'gust') {
+                await page.locator(frame).focus();
+                for (const key of ['Home', 'End', 'ArrowLeft', 'Escape']) {
+                    await page.keyboard.press(key);
+                    stable(before, await geometry(page, frame), `weather reading ${metric} ${key} zoom ${zoom}`);
+                }
+                const rect = await geometry(page, frame);
+                await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+                stable(before, await geometry(page, frame), `weather hover ${metric}`);
+            }
+        }
+        await capture(page, `${variant.name}-weather-${zoom}`);
+    }
+}
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase };
 const resources = createResourceStack();
 let failure = null;
 try {

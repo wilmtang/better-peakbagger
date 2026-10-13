@@ -38,7 +38,8 @@ export function mountPeakWeather() {
     let requestedSubject = summit, summitResult = null;
     let zone = mountainTime.resolve(subject.latitude, subject.longitude);
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
-    const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', text: 'Refresh', 'aria-label': 'Refresh summit weather' });
+    const refresh = element('button', { type: 'button', class: 'bpb-week-refresh', 'data-label': 'Refresh', 'aria-label': 'Refresh summit weather' },
+        [element('span', { text: 'Refresh' })]);
     const selectedLocation = element('span', { class: 'bpb-week-location-name', role: 'status', 'aria-label': 'Weather location', 'aria-live': 'polite', 'aria-atomic': 'true', text: 'At the summit' });
     const mapHint = element('span', { class: 'bpb-week-map-hint', text: 'Right-click the map for weather at any point.' });
     mapHint.hidden = !document.querySelector('iframe#Gmap');
@@ -168,7 +169,7 @@ export function mountPeakWeather() {
     const updateLocationControls = () => {
         resetLocation.disabled = requestedSubject === summit && (pending || subject === summit);
         const retry = notice?.kind && requestedSubject !== subject;
-        refresh.textContent = retry ? 'Retry' : 'Refresh';
+        refresh.firstElementChild.textContent = retry ? 'Retry' : 'Refresh';
         refresh.setAttribute('aria-label', `${retry ? 'Retry' : 'Refresh'} ${requestedSubject === summit ? 'summit weather' : `weather for ${weatherLocationLabel(requestedSubject)}`}`);
     };
     const paintStatus = () => {

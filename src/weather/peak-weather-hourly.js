@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { dom } from '../ui/dom.js';
+import { createStableText } from '../ui/stable-text.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.js';
 
@@ -26,6 +27,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     tabs.append(...buttons);
     const panel = element('div', { class: 'bpb-week-panel', id: `${id}-panel`, role: 'tabpanel' });
     const readout = element('p', { class: 'bpb-week-readout', 'aria-live': 'off', 'aria-atomic': 'true' });
+    const readingText = createStableText(readout);
     const frame = element('div', { class: 'bpb-week-chart', tabindex: '0', role: 'group', 'aria-describedby': `${id}-hint` });
     const svg = svgElement('svg', { role: 'img', preserveAspectRatio: 'xMidYMid meet' });
     const empty = element('p', { class: 'bpb-week-chart-empty', hidden: '' });
@@ -35,9 +37,16 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     panel.append(readout, frame, conditions, note);
     container.replaceChildren(tabs, panel);
     const localTime = time => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
-    const timeLabel = row => metric === 'precipitation' || metric === 'gust'
+    const timeLabel = (row, key = metric) => key === 'precipitation' || key === 'gust'
         ? `${localTime(row.start)} – ${localTime(row.time)}${row.time === day.window.end ? ' (next midnight)' : ''}` : localTime(row.time);
-    const valueLabel = value => format(value, metric === 'gust' ? 'wind' : metric);
+    const valueLabel = (value, key = metric) => format(value, key === 'gust' ? 'wind' : key);
+    const readingLabel = (row, key = metric) => `${timeLabel(row, key)} · ${Number.isFinite(row.value) ? valueLabel(row.value, key) : 'Unavailable'}${row.partialInterval ? key === 'precipitation' ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}`;
+    readingText.reserve(['Hourly readings unavailable', ...metrics.filter(([key]) => key !== 'code').flatMap(([key]) => {
+        const candidates = hourlyWeatherSeries(day.window, samples, key);
+        const values = candidates.map(row => row.value).filter(Number.isFinite);
+        return [...candidates.map(row => readingLabel(row, key)), ...(values.length
+            ? [`Low ${valueLabel(Math.min(...values), key)} · High ${valueLabel(Math.max(...values), key)}`] : [])];
+    })]);
     const overview = () => {
         const values = rows.map(row => row.value).filter(Number.isFinite);
         if (!values.length) return 'Hourly readings unavailable';
@@ -46,7 +55,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
     function drawCursor() {
         svg.querySelector('.bpb-week-cursor')?.remove();
         const index = hover >= 0 ? hover : selected, row = rows[index];
-        readout.textContent = row ? `${timeLabel(row)} · ${Number.isFinite(row.value) ? valueLabel(row.value) : 'Unavailable'}${row.partialInterval ? metric === 'precipitation' ? ' · Estimated boundary interval' : ' · Gust for the overlapping hour' : ''}` : overview();
+        readingText.set(row ? readingLabel(row) : overview());
         if (!row || !geometry || empty.hidden === false) return;
         const { x, y, top, bottom } = geometry;
         const group = svgElement('g', { class: 'bpb-week-cursor', 'aria-hidden': 'true' });

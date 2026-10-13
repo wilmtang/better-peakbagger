@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { dom } from '../ui/dom.js';
+import { createStableText } from '../ui/stable-text.js';
 import { createWeatherIcon } from '../weather/weather-icon.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
@@ -73,6 +74,7 @@ export function mountAscentWeather() {
     const chart = document.createElementNS(SVG_NS, 'svg');
     chart.setAttribute('class', 'bpb-weather-chart'); chart.setAttribute('role', 'img');
     const readout = element('div', { id: `${ID}-readout`, class: 'bpb-weather-readout', 'aria-live': 'off', 'aria-atomic': 'true' });
+    const readingText = createStableText(readout);
     const readingHint = element('p', { id: `${ID}-reading-hint`, class: 'bpb-weather-sub', text: 'Hover, tap or use ← → for readings. Escape clears selection.' });
     const chartFrame = element('div', { class: 'bpb-weather-chart-frame', tabindex: '0', role: 'group',
         'aria-describedby': `${readout.id} ${readingHint.id}` }, [chart]);
@@ -93,7 +95,7 @@ export function mountAscentWeather() {
     modelRow.hidden = true;
     const attribution = element('a', { href: 'https://open-meteo.com/', target: '_blank', rel: 'noopener noreferrer', text: 'Open-Meteo' });
     const header = element('header', {}, [heading, dateNavigation, moveHandle]);
-    card.append(header, moveStatus, locationLabel, element('div', { class: 'bpb-weather-feedback' }, [status, retry]), resultArea, modelRow, detailsArea,
+    card.append(header, moveStatus, locationLabel, element('div', { class: 'bpb-weather-feedback' }, [retry, status]), resultArea, modelRow, detailsArea,
         element('footer', {}, [element('span', { text: 'Model estimate · Route conditions may differ' }),
             element('span', { class: 'bpb-weather-attribution' }, [document.createTextNode('Powered by '), attribution])]));
 
@@ -265,18 +267,18 @@ export function mountAscentWeather() {
     const format = (value, key) => units.formatWeather(value, key, unitSystem(key));
 
     let readingRows = [], readingSelected = null, readingHover = null, readingGeometry = null;
-    const readingLabel = row => {
+    const readingLabel = (row, key = metric) => {
         const local = time => `${mountainTime.formatClock(dayWindow.zone, time)} ${mountainTime.zoneLabel(dayWindow.zone, time)}`;
-        const timeLabel = metric === 'precipitation' ? `${local(row.start)} – ${local(row.time)}${row.time === dayWindow.end ? ' (next midnight)' : ''}` : local(row.time);
-        return `${timeLabel} · ${numeric(row.value) ? format(row.value, metric) : 'Unavailable'}${row.partialInterval ? ' · Estimated boundary interval' : ''}`;
+        const timeLabel = key === 'precipitation' ? `${local(row.start)} – ${local(row.time)}${row.time === dayWindow.end ? ' (next midnight)' : ''}` : local(row.time);
+        return `${timeLabel} · ${numeric(row.value) ? format(row.value, key) : 'Unavailable'}${row.partialInterval ? ' · Estimated boundary interval' : ''}`;
     };
     const readingPosition = row => metric === 'precipitation' ? (row.start + row.time) / 2 : row.time;
     function drawReading() {
         chart.querySelector('.bpb-weather-reading-cursor')?.remove();
         const row = readingRows.find(sample => sample.sourceTime === (readingHover ?? readingSelected));
         const values = readingRows.map(sample => sample.value).filter(numeric);
-        readout.textContent = row ? readingLabel(row) : values.length
-            ? `Low ${format(Math.min(...values), metric)} · High ${format(Math.max(...values), metric)}` : 'Hourly readings unavailable';
+        readingText.set(row ? readingLabel(row) : values.length
+            ? `Low ${format(Math.min(...values), metric)} · High ${format(Math.max(...values), metric)}` : 'Hourly readings unavailable');
         if (!row || !readingGeometry) return;
         const { x, y, top, bottom } = readingGeometry;
         const group = document.createElementNS(SVG_NS, 'g');
@@ -343,6 +345,13 @@ export function mountAscentWeather() {
                 rows.push({ time, sourceTime: time, value: samples.get(time)?.[metric] ?? null });
         }
         readingRows = rows; readingGeometry = null;
+        readingText.reserve(['Hourly readings unavailable', ...['temperature', 'precipitation', 'wind'].flatMap(key => {
+            const sizingRows = key === 'precipitation' ? current.day.precipitationHours
+                : current.day.hourly.map(row => ({ ...row, value: row[key] }));
+            const values = sizingRows.map(row => row.value).filter(numeric);
+            return [...sizingRows.map(row => readingLabel(row, key)), ...(values.length
+                ? [`Low ${format(Math.min(...values), key)} · High ${format(Math.max(...values), key)}`] : [])];
+        })]);
         if (!rows.some(row => row.sourceTime === readingSelected)) readingSelected = null;
         readingHover = null;
         const finite = rows.filter(row => numeric(row.value));
@@ -474,7 +483,7 @@ export function mountAscentWeather() {
         // Refresh feedback replaces the existing model description. Preserve
         // the result, hourly view and feedback area's footprint until it settles.
         if (!current) {
-            delete status.dataset.kind; retry.hidden = true;
+            delete status.dataset.kind;
             resultArea.hidden = false; condition.textContent = 'Weather conditions'; conditionDetail.textContent = 'Ascent-day model estimate';
             status.textContent = 'Loading ascent-day weather…';
         }

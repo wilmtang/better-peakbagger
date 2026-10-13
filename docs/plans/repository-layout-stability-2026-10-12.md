@@ -63,6 +63,16 @@ hidden, tear down only task-owned processes/profiles, and inspect screenshots.
 
 ### Fixed and verified
 
+- **J09 weather:** reserve hourly-readout wrapping from every actual possible
+  reading, with hidden CSS sizing text excluded from the live region. Empty
+  graphs retain plot height; Refresh/Retry retains width and ascent retry
+  stays above feedback while pending. Build, 155 weather/helper tests, ESLint
+  and diff checks passed. Hidden Chrome/Firefox geometry checks covered all
+  numeric metrics, unavailable data, interval boundaries, hover and keyboard
+  selection with normal/doubled reading text. Actual unpacked ascent weather
+  passed in Chrome and Firefox; peak weather passed in Chrome, including model
+  refresh, date navigation, partial/error/rate-limit states and cursor behavior.
+  The narrow doubled-text empty chart was inspected.
 - **J08 Photo Topos:** estimates and save feedback follow upload actions;
   toast recovery keeps a fixed width and places its reserved action at the bottom.
   Remove pressed scaling. Existing fixed canvas/status-row and chip sizing
