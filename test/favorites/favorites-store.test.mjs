@@ -112,3 +112,27 @@ test('invalid or over-capacity mutations fail without truncating stored favorite
     assert.equal(storage.read().entries.length, F.LIMIT);
     assert.equal(storage.read().entries.at(-1).cid, F.LIMIT);
 });
+
+test('ordinary edits and replacements preserve unreadable saved favorites exactly', async () => {
+    const unreadable = [
+        null, [], { schemaVersion: 2, entries: [entry(1)] },
+        { schemaVersion: 1 }, envelope([entry(1), { cid: 2, name: 'Incomplete' }]),
+        envelope([entry(1), entry(1)]),
+        envelope(Array.from({ length: F.LIMIT + 1 }, (_, index) => entry(index + 1))),
+    ];
+    const mutations = [
+        { kind: 'add', entry: entry(3) },
+        { kind: 'remove', cid: 1 },
+        { kind: 'merge-buddies', entries: [{ cid: 3, name: 'Buddy Three' }] },
+        { kind: 'replace', favorites: envelope([entry(3)]), expectedSignature: F.backupSignature(envelope([])) },
+    ];
+    for (const original of unreadable) {
+        for (const mutation of mutations) {
+            const storage = createStorage(original);
+            const result = await createFavoritesStore({ storage }).mutate(mutation);
+            assert.equal(result.ok, false);
+            assert.equal(result.error.code, 'storage');
+            assert.deepEqual(storage.read(), original);
+        }
+    }
+});

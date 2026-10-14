@@ -65,7 +65,13 @@ const cleanBuddyEntries = value => {
 };
 
 export const applyFavoritesMutation = (stored, mutation, now = Date.now()) => {
-    const current = F.cleanFavorites(stored);
+    // Only an absent key means an empty list. Normalizing an unreadable saved
+    // value would turn the next ordinary edit into a destructive replacement.
+    const current = stored === undefined ? F.cleanFavorites(stored) : cleanCompleteFavorites(stored);
+    if (!current) return {
+        ok: false,
+        error: publicError('storage', 'Favorite climbers are unavailable. Your saved list was kept.'),
+    };
     if (!mutation || typeof mutation !== 'object' || Array.isArray(mutation)) {
         return invalid(current);
     }
