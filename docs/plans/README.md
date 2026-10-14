@@ -2,7 +2,7 @@
 
 
 - [Climber interaction and layout re-audit](climber-layout-reaudit-2026-10-14.md)
-  — audit complete, remediation not started; eight confirmed profile/card UX
+  — remediation in progress; eight confirmed profile/card UX
   defects and verification gaps, plus two carried GPX/report regressions.
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
   — proposed; worldwide issuing-service links first, then opt-in regional

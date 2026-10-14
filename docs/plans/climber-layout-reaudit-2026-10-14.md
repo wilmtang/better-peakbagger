@@ -1,7 +1,7 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
-Status: **audit complete; remediation not started**. Eight confirmed findings
-are open. This is the findings-first re-audit of the Buddy/Favorite/Ignore
+Status: **remediation in progress**. C01/C02/C05 have profile corrections;
+C03/C04/C06/C07 and final C08 integration remain open. This is the re-audit of the Buddy/Favorite/Ignore
 page-jump report; the focused remediation order is recorded separately below.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
@@ -295,23 +295,37 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- C01/C02/C05: profile feedback now has one compact, two-line region outside
+  the centered heading/action host. Short failure summaries and explicit full
+  Details replace tooltip-only failures and automatic error expansion. Ignore
+  labels reserve their actual text geometry; Retry has no title-grid column and
+  is disabled during its operation. No huge fixed-height error spacer or scroll
+  compensation. The new test failed the old bundle on a 24.8px title-row shift;
+  the Favorite failure behavior test also failed the old bundle.
+- Shipped profile transitions passed all 24 hidden Chrome 153.0.8010.12 /
+  Playwright Firefox 155.0 combinations, light/dark, 390/768/1280×900,
+  normal/enlarged text. Three rendered frames per state measure the heading,
+  both controls, Buddy region and following native content within 1px. Enter,
+  Space and pointer recovery cover long errors, repeated failures and deliberate
+  detail expansion/collapse. Focused unit tests passed 31; build and focused
+  ESLint passed. Real unpacked Chrome startup/BFCache/teardown passed hidden at
+  1000×760. Full climber closure is not claimed by this first correction.
 - Audit evidence and priority/acceptance plan are produced; the active index and
-  former closure claim are corrected. **No C01–C08 runtime defect is fixed yet.**
+  former closure claim are corrected. Other finding groups remain open.
 - The independent unfinished peak-name request is completed in `c27e3dad`, with
   its checks and live-proof limits recorded in the archived ledger.
 
 ### Intentionally not changed
 
-- Climber runtime, real lists, Buddy mutation transport, membership safeguards,
+- Real lists, Buddy mutation transport, membership safeguards,
   opt-in Favorite removal, manual Peakbagger Save and current user browser state.
 - No global CSS rollback, large fixed-height spacer, auto-scroll workaround,
   wider permissions or destructive list reconciliation is authorized by an audit.
 
 ### Changed but not fully proven
 
-- Only documentation is changed for the re-audit; remediation is open for all
-  eight findings and two carried items. Hidden controlled probes establish the
-  current defects, not a repaired product or live server compatibility.
+- Native Buddy, pending-intent, hover-card and carried GPX/report remediation
+  remain open. Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
   touch, every native POST failure/check-only recovery and actual multi-window
   worker timing remain unverified. Dependency/security/release readiness was not

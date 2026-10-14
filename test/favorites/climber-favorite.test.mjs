@@ -15,6 +15,25 @@ const buddyFixture = await readFile(new URL('../fixtures/pages/report-buddy-list
 const pageResponse = text => ({ status: 200, headers: {}, text: async () => text });
 const pendingMutation = action => JSON.stringify({ version: 1, action, cid: 900002, at: Date.now() });
 
+test('profile favorite failures expose visible recovery and retain the real list state', async t => {
+    const dom = await loadOther({ settings: { favoritesSource: 'custom' }, prepare(page) {
+        const send = page.chrome.runtime.sendMessage.bind(page.chrome.runtime);
+        Object.defineProperty(page.chrome.runtime, 'sendMessage', { value: message => message.type === 'FAVORITES_MUTATE'
+            ? Promise.resolve({ ok: false, error: { message: 'Storage is unavailable. Your favorites were kept.' } }) : send(message) });
+    } });
+    t.after(() => dom.window.close());
+    const doc = dom.window.document;
+    await waitFor(dom, () => doc.getElementById('bpb-climber-favorite')?.disabled === false);
+    doc.getElementById('bpb-climber-favorite').click();
+    await waitFor(dom, () => /Storage is unavailable/.test(doc.getElementById('bpb-climber-favorite').title));
+    const feedback = doc.getElementById('bpb-climber-profile-feedback');
+    assert.ok(feedback, 'failure must not be tooltip-only');
+    assert.match(feedback.textContent, /Favorites not saved/);
+    assert.equal(feedback.querySelector('button').hidden, false);
+    assert.equal(doc.getElementById('bpb-climber-favorite').getAttribute('aria-pressed'), 'false');
+    assert.match(doc.getElementById('bpb-climber-profile-announcement').textContent, /Storage is unavailable/);
+});
+
 test('supported native profile actions share the confirmed adapter and cross-tab reservation', async t => {
     const html = await readFile(new URL('../fixtures/pages/climber-buddy-form.html', import.meta.url), 'utf8');
     let buddy = false, posts = 0;

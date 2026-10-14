@@ -5,6 +5,8 @@ import * as I from './ignored-climbers.js';
 import { observeIgnored, mutateIgnored } from './ignored-client.js';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
+import { climberProfileFeedback } from './climber-profile-feedback.js';
+import { createStableText } from '../ui/stable-text.js';
 
 const mount = () => {
     const cid = I.profileId(location.href);
@@ -13,20 +15,18 @@ const mount = () => {
     if (!cid || cid === ownerClimberId(document) || !heading || !name
         || document.getElementById('bpb-climber-ignore')) return;
     const host = heading.parentElement;
+    const feedback = climberProfileFeedback();
     host.classList.add('bpb-climber-ignore-host');
     const style = document.createElement('style');
     style.textContent = `
 #TitleLabel.bpb-climber-ignore-host { display:inline-flex; flex-wrap:wrap; align-items:baseline; justify-content:center; gap:8px; max-width:min(100%,calc(100vw - 32px)); }
 #TitleLabel.bpb-climber-ignore-host h1 { min-width:0; overflow-wrap:anywhere; }
-.bpb-ignore-actions { display:inline-grid; grid-template-columns:auto auto; align-items:start; gap:8px; font:13px Arial,sans-serif; color:#424b44; }
-.bpb-ignore-actions > button { grid-row:1; }
-.bpb-ignore-actions::after { content:'Retry'; visibility:hidden; grid-area:1/2; min-height:32px; box-sizing:border-box; padding:5px 10px; border:1px solid transparent; }
+.bpb-ignore-actions { display:inline-flex; align-items:baseline; font:13px Arial,sans-serif; color:#424b44; }
 .bpb-ignore-actions button { min-height:32px; padding:5px 10px; border:1px solid #9ba79e; border-radius:6px; background:#f6f8f6; color:#354239; font:inherit; cursor:pointer; }
 #bpb-climber-ignore { min-width:83px; }
 .bpb-ignore-actions button:focus-visible { outline:2px solid #2f6b3f; outline-offset:2px; }
 .bpb-ignore-actions button:disabled { opacity:.5; cursor:not-allowed; }
 .bpb-ignore-actions button[aria-busy="true"] { cursor:wait; }
-.bpb-ignore-actions .bpb-membership-note { grid-column:1/-1; contain:inline-size; min-width:0; overflow-wrap:anywhere; font-size:12px; line-height:1.4; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions { color:#ced5d0; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions button { color:#d5e0d8; background:#29322b; border-color:#71927a; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-color:#8fc99c; }
@@ -37,15 +37,10 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
     group.className = 'bpb-ignore-actions';
     const button = document.createElement('button');
     button.id = 'bpb-climber-ignore'; button.type = 'button';
+    const label = createStableText(button); label.reserve(['Ignore', 'Unignore']);
     button.title = "Hide this climber's reports on peak and ascent pages.";
-    const status = document.createElement('span');
-    status.id = 'bpb-climber-membership-note'; status.className = 'bpb-membership-note';
-    button.setAttribute('aria-describedby', status.id);
-    const announcement = document.createElement('span');
-    announcement.setAttribute('role', 'status');
-    announcement.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)';
-    const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.hidden = true;
-    group.append(button, retry, status, announcement); host.append(group);
+    button.setAttribute('aria-describedby', 'bpb-climber-membership-note');
+    group.append(button); host.append(group);
     let list = null, busy = false, error = '', notice = '', retryWrite = false;
     let membership = null;
     const hasNativeBuddy = () => [...document.querySelectorAll(F.BUDDY_CONTROL_SELECTOR)]
@@ -59,18 +54,20 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
         const favoriteSaving = document.getElementById('bpb-climber-favorite')?.getAttribute('aria-busy') === 'true';
         const buddyPending = !!document.querySelector('[data-bpb-buddy-pending="true"]');
         const reason = !active && lists ? `Remove from ${lists} to ignore.` : '';
-        button.textContent = active ? 'Unignore' : 'Ignore';
+        label.set(active ? 'Unignore' : 'Ignore');
         button.disabled = busy || !list || (!active && (!membership?.ignored || !!membership.error || !!lists || favoriteSaving || buddyPending));
         button.title = reason || (active ? "Show this climber's reports again." : "Hide this climber's reports on peak and ascent pages.");
         button.setAttribute('aria-pressed', String(active));
         if (button.getAttribute('aria-busy') !== String(busy)) button.setAttribute('aria-busy', String(busy));
-        status.textContent = error || membership?.error
-            || (favoriteSaving ? 'Saving favorites…' : buddyPending ? 'Buddy List change pending · Refresh this page before ignoring.' : '')
-            || (active ? 'Ignored · Unignore to add to favorites or your Buddy List.'
-                : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish sync before adding to favorites or your Buddy List.' : '');
-        status.hidden = !status.textContent;
-        announcement.textContent = error || membership?.error || notice;
-        retry.hidden = !error && !membership?.error;
+        const failure = error || membership?.error;
+        feedback.set('ignore', { text: busy ? 'Saving ignored climbers…' : failure ? 'Ignore not saved.'
+            : favoriteSaving ? 'Saving favorites…' : buddyPending ? 'Buddy List change pending.'
+                : active ? 'Unignore to add to lists.' : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish list sync.' : '',
+        error: failure, busy, priority: busy ? 100 : failure ? 80 : 30,
+        retry: failure || busy && retryWrite ? () => {
+            if (retryWrite) void toggle(); else { void observer.refresh(); void membershipObserver.refresh(); }
+        } : null });
+        if (failure || notice) feedback.announce(failure || notice);
     };
     const toggle = async () => {
         if (button.disabled || busy || !list) return;
@@ -102,9 +99,6 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
     });
     pendingObserver.observe(document.documentElement, { attributes: true, subtree: true,
         attributeFilter: ['data-bpb-buddy-pending', 'aria-busy'] });
-    retry.addEventListener('click', () => {
-        if (retryWrite) void toggle(); else { void observer.refresh(); void membershipObserver.refresh(); }
-    });
     paint();
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, { once: true });

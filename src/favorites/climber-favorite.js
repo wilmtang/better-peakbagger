@@ -11,6 +11,7 @@ import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
+import { climberProfileFeedback } from './climber-profile-feedback.js';
 
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
@@ -25,6 +26,7 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
     const host = heading?.parentElement;
     const name = F.climberNameFromDocument(document);
     if (pageCid == null || pageCid === ownCid || !heading || !host || !name) return;
+    const feedback = climberProfileFeedback();
 
     const store = chrome.storage.local;
     let mode = Schema.DEFAULTS.favoritesSource;
@@ -328,12 +330,18 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         button.title = errorMessage || (!active && favorites.entries.length >= F.LIMIT
             ? `Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
             : actionLabel);
+        button.setAttribute('aria-describedby', 'bpb-climber-membership-note');
+        feedback.set('favorite', { text: busy ? 'Saving favorites…' : errorMessage ? 'Favorites not saved.' : '',
+            error: errorMessage, busy, priority: busy ? 100 : 80,
+            retry: errorMessage || busy ? () => { void toggle(); } : null });
+        if (errorMessage) feedback.announce(errorMessage);
     };
 
     const unmount = () => {
         if (button) button.remove();
         button = null;
         host.classList.remove('bpb-climber-favorite-host');
+        feedback.set('favorite', null);
     };
 
     const toggle = async () => {
@@ -350,6 +358,7 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
                     entry: { cid: pageCid, name, addedAt: Date.now(), source: 'manual' },
                 });
             }
+            feedback.announce(included() ? 'Favorite added.' : 'Favorite removed.');
         } catch (error) {
             errorMessage = error.message || 'Favorite climbers are unavailable. Try again.';
         } finally {
