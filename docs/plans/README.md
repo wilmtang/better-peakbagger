@@ -16,6 +16,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [October 14 bug audit remediation](../archive/bug-audit-remediation-2026-10-14.md)
+closes three reproduced Buddy-cache, capture-save identity, and saved-favorites
+findings locally, with focused commits, regression tests, and Chrome/Firefox
+extension checks. Its ledger retains live-server and native verification limits.
+
 The [climber hover card](../archive/climber-hover-card.md) is complete locally:
 direct Buddy, Favorite and Ignore actions are implemented, and direct Buddy POST
 coverage now passes in hidden Chrome and Firefox. The archive retains the live

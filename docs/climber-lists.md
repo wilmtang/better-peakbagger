@@ -68,6 +68,12 @@ the climber and required removal. Concurrent extension list edits share one
 worker transaction lane; pending ignored-sync results reserve their IDs against
 favorite additions until reconciliation or review.
 
+Buddy report refreshes publish through that same lane. A delayed response cannot
+replace a newer confirmed Buddy change; a superseded refresh asks you to refresh
+again. Rendered Buddy reports keep their original navigation timestamp when read
+by the Settings helper. Unreadable or unsupported saved favorites block edits
+and preserve the saved list instead of silently replacing it with an empty list.
+
 Peakbagger owns the Buddy List. Protection uses the native profile controls and
 the last saved Buddy cache, even when the custom favorite source is selected.
 Refresh your Buddy List after changing it elsewhere. Changes through other

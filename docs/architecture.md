@@ -643,7 +643,9 @@ fallback, limited to 200 characters.
 Multi-summit drafts advance after a confirmed manual Save, not after Preview.
 The save-success content script reads the owned saved ascent, its actual trip
 selection, and its stored GPX. The complete ordered coordinates must match the
-retained upload. A missing/empty/different GPX or ambiguous trip keeps the queue
+retained upload. Final display, edit-form, and GPX response URLs must retain the
+requested origin, resource path, and one matching ascent ID; matching coordinates
+from another ascent cannot confirm a save. A missing/empty/different GPX or ambiguous trip keeps the queue
 pending with an explicit repair and recheck action. The first saved trip ID is
 reused by subsequent ascents; each next form is opened afresh so its native
 Trip dropdown and WebForms validation contain that trip. Queued or preparing
@@ -1058,6 +1060,7 @@ below remains independent of ignored membership.
 | `src/favorites/climber-card-state.js`, `src/favorites/climber-hover-card.js` | Pure link identity/membership presenter and top-level isolated name-link card; worker Favorite/Ignore operations, authenticated Buddy absence check before Ignore, and explicit inline Buddy actions |
 | `src/favorites/buddy-client.js`, `src/favorites/buddy-state.js` | Exact owner/target/native-form validation, narrowly scoped Buddy POST, uncached confirmation and bounded intent schema; status recovery never repeats a POST |
 | `src/background/buddy-store.js` | Pending Buddy reservations in the shared climber-list lane; confirmed target cache reconciliation and configured custom-favorite updates, with partial-success recovery |
+| `src/favorites/buddy-cache.js`, `src/background/buddy-cache-store.js` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
 | `src/favorites/report-adapters.js`, `src/favorites/peak-report-filter.js` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
 | `src/ascent/ascent-filter.js` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
 | `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
@@ -1339,6 +1342,16 @@ The cache can be populated through four paths:
    the Buddy cache even when an action is unconfirmed; request, identity, parse,
    or storage failure preserves both previously stored datasets.
 
+All full-report publications share the worker lane with confirmed Buddy changes.
+Readers take a persistent cache-version snapshot before fetching; publication
+compares it with the current `bpbBuddyCacheEpoch` version. Confirmations and
+accepted refreshes advance that device-local marker. A superseded response leaves
+the cache unchanged and asks for another refresh. Rendered reports also carry
+their navigation time, so a document older than the last cache update cannot
+replace it. Repeated helper reads retain that report's original timestamp;
+Options can acknowledge an identical already-published result without writing it
+again. The version marker is not part of favorite exports or GitHub backups.
+
 Cache states have precise behavior:
 
 | State | Filter behavior | Refresh behavior |
@@ -1376,6 +1389,9 @@ Every custom-list write is a `FAVORITES_MUTATE` request to the extension worker.
 latest `bpbFavoriteClimbers` value for each one, and writes only the computed
 result. Add, remove, and Buddy merge messages carry intent, not a UI-computed
 whole-list snapshot, so independent operations from different tabs compose.
+Only an absent key represents an empty list. Unsupported schemas, malformed
+entries, duplicates, and over-capacity saved lists reject every mutation while
+preserving the stored value.
 Mirror, GitHub restore, and bulk Undo are intentionally destructive replacements:
 they carry `backupSignature()` for the exact list the user reviewed. A different
 current signature produces a visible stale-list error and returns the latest
