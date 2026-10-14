@@ -14,6 +14,7 @@ import { observeClimberMembership } from './climber-membership.js';
 import { mutateIgnored } from './ignored-client.js';
 import { climberCardTarget, climberCardState } from './climber-card-state.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
+import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
 const OPEN_DELAY = 1000, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
@@ -367,13 +368,14 @@ const mount = () => {
             // explicit Ignore addition reads the signed-in Buddy List.
             if (kind === 'ignore' && !removing && owner != null) {
                 readController = new AbortController();
+                const snapshot = await beginBuddyCacheRead(chrome);
                 const result = await fetchPeakbaggerDocument(F.buddyListUrl(owner, location.origin),
                     { kind: 'buddies', signal: readController.signal });
                 if (active && result.kind !== 'ok') throw peakbaggerError.exception(result.error);
                 if (!active || ownerClimberId(document) !== owner
                     || ownerClimberId(result.document) !== owner) throw new Error("Couldn't verify your Buddy List. Try again.");
                 const entries = F.parseBuddyDocument(result.document);
-                await chrome.storage.local.set({ [F.BUDDY_CACHE_KEY]: { ownerCid: owner, entries, fetchedAt: Date.now() } });
+                await publishBuddyCache(chrome, snapshot, { ownerCid: owner, entries, fetchedAt: Date.now() });
                 if (entries.some(entry => entry.cid === target.cid)) throw new Error('Remove from your Buddy List before ignoring.');
             }
             if (!active || ownerClimberId(document) !== owner) throw new Error('Your account changed. Review the climber and try again.');

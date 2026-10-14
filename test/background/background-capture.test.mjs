@@ -158,7 +158,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 set: async patch => Object.assign(syncValues, structuredClone(patch))
             },
             local: {
-                get: async key => ({ [key]: structuredClone(localValues[key]) }),
+                get: async key => key === null ? structuredClone(localValues)
+                    : Array.isArray(key) ? Object.fromEntries(key.map(item => [item, structuredClone(localValues[item])]))
+                        : { [key]: structuredClone(localValues[key]) },
                 set: async patch => Object.assign(localValues, structuredClone(patch))
             },
             onChanged: event()
@@ -1388,6 +1390,25 @@ test('ignored mutations and device report preferences reject unrelated senders',
     assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: true }, sender)).ok, true);
     assert.equal(harness.localValues.bpbPeakReportFilter.favoritesOnly, true);
     assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: false }, foreign)).ok, false);
+});
+
+test('Buddy cache publication is worker-owned and rejects stale snapshots and unrelated senders', async () => {
+    const h = createHarness();
+    const options = { url: 'chrome-extension://test-extension/options/favorites.html' };
+    const site = { tab: { id: 5 }, url: 'https://www.peakbagger.com/peak.aspx?pid=7' };
+    const begin = { type: 'BUDDY_CACHE_UPDATE', phase: 'begin', observedAt: null };
+    const original = await h.send(begin, options);
+    const candidate = { ownerCid: 77, entries: [{ cid: 82, name: 'Climber 82' }], fetchedAt: 1 };
+    const publish = { type: 'BUDDY_CACHE_UPDATE', phase: 'publish', snapshot: original.snapshot, cache: candidate };
+    assert.equal((await h.send(publish, site)).written, true);
+    assert.deepEqual(h.localValues.bpbBuddyCache, candidate);
+    const late = await h.send({ ...publish, cache: { ...candidate, entries: [] } }, options);
+    assert.equal(late.written, false);
+    assert.deepEqual(h.localValues.bpbBuddyCache, candidate);
+    for (const message of [begin, publish]) {
+        const response = await h.send(message, { tab: { id: 8 }, url: 'https://example.com/peak.aspx' });
+        assert.equal(response.ok, false); assert.equal(response.error.code, 'forbidden');
+    }
 });
 
 test('worker settings patches serialize and reject unrelated senders', async () => {

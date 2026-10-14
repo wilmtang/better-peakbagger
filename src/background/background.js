@@ -20,6 +20,8 @@ import {
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createBuddyStore } from './buddy-store.js';
 import { BUDDY_MESSAGE } from '../favorites/buddy-state.js';
+import { BUDDY_CACHE_MESSAGE } from '../favorites/buddy-cache.js';
+import { createBuddyCacheStore } from './buddy-cache-store.js';
 import { createIgnoredStore } from './ignored-store.js';
 import * as Ignored from '../favorites/ignored-climbers.js';
 import { createGithubRoutes } from './github-routes.js';
@@ -3438,6 +3440,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
     const buddyMutations = createBuddyStore({ storage: ext.storage.local, settings: () => Settings.requireCurrent(), now });
+    const buddyCache = createBuddyCacheStore({ storage: ext.storage.local, now });
 
     const openDraftsManager = async (message, sender) => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
@@ -3613,6 +3616,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             const onxHandler = onxRoutes.handlers[type];
             if (onxHandler) return onxHandler(message, sender);
             switch (type) {
+            case BUDDY_CACHE_MESSAGE:
+                if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
+                    return { ok: false, error: { code: 'forbidden', message: 'This page cannot refresh your Buddy List.' } };
+                }
+                return buddyCache.action(message);
             case BUDDY_MESSAGE:
                 if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
                     return { ok: false, error: { code: 'forbidden', message: 'Use a Peakbagger climber action to change buddies.' } };

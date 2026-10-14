@@ -14,6 +14,7 @@ import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
 import { climberProfileFeedback } from './climber-profile-feedback.js';
 import { reserveBuddyPresentation } from './buddy-presentation.js';
 import { buddyIntentState } from './climber-card-state.js';
+import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
@@ -30,7 +31,6 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
     if (pageCid == null || pageCid === ownCid || !heading || !host || !name) return;
     const feedback = climberProfileFeedback();
 
-    const store = chrome.storage.local;
     let mode = Schema.DEFAULTS.favoritesSource;
     let favorites = F.cleanFavorites(null);
     let button = null;
@@ -264,6 +264,7 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
     const refreshAfterBuddyMutation = async mutation => {
         if (!mutation || ownCid == null) return;
         try {
+            const snapshot = await beginBuddyCacheRead(chrome);
             const [settings, result] = await Promise.all([
                 S.get(),
                 fetchPeakbaggerDocument(F.signedInBuddyListUrl(location.origin), { kind: 'buddies' }),
@@ -285,9 +286,7 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
             feedback.set('buddy', null);
             const target = entries.find(entry => entry.cid === pageCid);
             const confirmed = mutation.action === 'add' ? !!target : !target;
-            await store.set({
-                [F.BUDDY_CACHE_KEY]: { ownerCid: ownCid, entries, fetchedAt: Date.now() },
-            });
+            await publishBuddyCache(chrome, snapshot, { ownerCid: ownCid, entries, fetchedAt: Date.now() });
             if (confirmed && settings.favoritesSource === 'custom') {
                 if (mutation.action === 'add') {
                     await mutateFavorites({

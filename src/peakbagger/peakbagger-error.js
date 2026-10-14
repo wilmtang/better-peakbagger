@@ -49,6 +49,7 @@ const message = (error, { resource, fallback = 'Peakbagger could not complete th
         'identity-mismatch': `The ${name} belongs to a different Peakbagger account. Nothing was changed.`,
         'invalid-request': 'Better Peakbagger refused an invalid Peakbagger request.',
         storage: `The ${name} loaded, but Better Peakbagger could not save it on this device.`,
+        'buddy-cache-stale': 'Your Buddy List changed during refresh. Refresh again.',
     };
     return messages[code] || fallback;
 };

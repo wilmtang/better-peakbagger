@@ -70,6 +70,11 @@ function install({ theme, textScale = 1 }) {
     } };
     const sendMessage = async message => {
         globalThis.__climber.requests.push(message);
+        if (message.type === 'BUDDY_CACHE_UPDATE') {
+            if (message.phase === 'begin') return { ok: true, snapshot: { version: null, observedAt: null } };
+            publish({ bpbBuddyCache: message.cache });
+            return { ok: true, written: true };
+        }
         if (message.type === 'FAVORITES_MUTATE' || message.type === 'IGNORED_MUTATE') {
             const key = message.type === 'FAVORITES_MUTATE' ? 'favorite' : 'ignore';
             return new Promise(resolve => pending.set(key, { resolve, message }));

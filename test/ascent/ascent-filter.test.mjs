@@ -636,6 +636,10 @@ test('only the favorites page can read a signed-in Buddy helper snapshot', async
     assert.equal(result.url, 'https://peakbagger.com/report/report.aspx?r=b');
     assert.equal(result.cache.ownerCid, 900001);
     assert.equal(result.cache.entries.length, 6);
+    const published = structuredClone(dom.chrome._localStore[BUDDY_CACHE_KEY]);
+    dom.window.Date.now = () => published.fetchedAt + 1000;
+    assert.deepEqual(JSON.parse(JSON.stringify(read(sender).cache)), published,
+        'reading the helper later acknowledges the exact published report without refreshing its age');
     assert.equal(read({ ...sender, id: 'another-extension' }), undefined);
     assert.equal(read({ ...sender, url: 'https://peakbagger.com/report/report.aspx?r=b' }), undefined);
     dom.window.close();

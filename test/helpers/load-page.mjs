@@ -17,6 +17,8 @@ import { createFavoritesStore, favoritesStore } from '../../src/background/favor
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
 import { createBuddyStore } from '../../src/background/buddy-store.js';
 import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.js';
+import { BUDDY_CACHE_MESSAGE } from '../../src/favorites/buddy-cache.js';
+import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.js';
 import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
 import { isPeakbaggerSenderUrl } from '../../src/peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../../src/settings/settings-schema.js';
@@ -98,6 +100,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}, { getSender = ()
     const ignoredMutations = createIgnoredStore({ storage: chrome.storage.local });
     const buddyMutations = createBuddyStore({ storage: chrome.storage.local,
         settings: async () => settingsSchema.clean(store.bpbSettings) });
+    const buddyCache = createBuddyCacheStore({ storage: chrome.storage.local });
     // Exercise the production mutation queue and identity/tombstone rules.
     // Save-confirmation lifecycle messages remain explicitly delegated below.
     const draftRoutes = createReportDraftRoutes({
@@ -114,7 +117,9 @@ export const makeChromeStub = (initial = {}, localInitial = {}, { getSender = ()
     ]);
     const routedSendMessage = (message, callback) => {
         let operation;
-        if (message?.type === BUDDY_MESSAGE) {
+        if (message?.type === BUDDY_CACHE_MESSAGE) {
+            operation = buddyCache.action(message);
+        } else if (message?.type === BUDDY_MESSAGE) {
             operation = buddyMutations.action(message, { tab: { id: 1 } });
         } else if (message?.type === 'IGNORED_MUTATE') {
             operation = ignoredMutations.mutate(message.mutation);

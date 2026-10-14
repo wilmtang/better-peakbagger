@@ -4,13 +4,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createFavoriteSource } from '../../src/favorites/favorite-source.js';
+import { makeChromeStub } from '../helpers/load-page.mjs';
+import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.js';
 const harness = (cache, owner = 1) => {
     const dom = new JSDOM(owner ? `<a href="/climber/climber.aspx?cid=${owner}">My Home Page</a>` : '',
         { url: 'https://www.peakbagger.com/peak.aspx?pid=1' });
-    const callbacks = new Set(); let config = { favoritesSource: 'buddies' }; const states = [];
-    const values = { bpbBuddyCache: cache };
-    const api = { storage: { local: { get: async () => values, set: async patch => Object.assign(values, patch) },
-        onChanged: { addListener: fn => callbacks.add(fn), removeListener: fn => callbacks.delete(fn) } } };
+    let config = { favoritesSource: 'buddies' }; const states = [];
+    const api = makeChromeStub({}, { bpbBuddyCache: cache });
     let settingListener;
     const settings = { requireCurrent: async () => config, subscribe: fn => {
         settingListener = fn; return () => {};
@@ -41,14 +41,16 @@ test('stale matching cache remains available on refresh error and does not loop 
     source.stop(); h.close();
 });
 test('source switch invalidates a late buddy response before it can replace local cache', async () => {
-    const h = harness(null); let finish;
-    const source = createFavoriteSource({ ...h, fetchDocument: () => new Promise(resolve => { finish = resolve; }) });
+    const h = harness(null); let finish, started;
+    const fetching = new Promise(resolve => { started = resolve; });
+    const source = createFavoriteSource({ ...h, fetchDocument: () => { started(); return new Promise(resolve => { finish = resolve; }); } });
     await source.ready; const pending = source.refresh({ active: true });
+    await fetching;
     h.changeSource('custom');
     finish({ kind: 'ok', document: h.doc }); await pending;
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(h.states.at(-1).mode, 'custom');
-    assert.equal((await h.api.storage.local.get()).bpbBuddyCache, null);
+    assert.equal((await h.api.storage.local.get('bpbBuddyCache')).bpbBuddyCache, null);
     source.stop(); h.close();
 });
 
@@ -78,5 +80,30 @@ test('an ordinary Buddy server failure retains typed recovery without claiming a
         assert.match(h.states.at(-1).error, /Peakbagger is temporarily unavailable \(HTTP 503\).*Try again later/);
         assert.doesNotMatch(h.states.at(-1).error, /request limit|rate.limit/i);
         await source.refresh({ active: true }); assert.equal(requests, 1);
+    } finally { source.stop(); h.close(); }
+});
+
+test('a delayed report response cannot undo a confirmed Buddy change or weaken Ignore protection', async () => {
+    const h = harness({ ownerCid: 1, entries: [], fetchedAt: 0 });
+    let finish, started;
+    const fetching = new Promise(resolve => { started = resolve; });
+    const source = createFavoriteSource({ ...h, fetchDocument: () => {
+        started(); return new Promise(resolve => { finish = resolve; });
+    } });
+    try {
+        await source.ready;
+        const refresh = source.refresh({ active: true }); await fetching;
+        const lease = await h.api.runtime.sendMessage({ type: BUDDY_MESSAGE, phase: 'begin',
+            cid: 3, ownerCid: 1, name: 'New Buddy', action: 'add' });
+        await h.api.runtime.sendMessage({ type: BUDDY_MESSAGE, phase: 'dispatch', token: lease.token });
+        await h.api.runtime.sendMessage({ type: BUDDY_MESSAGE, phase: 'complete', token: lease.token, buddy: true });
+        finish({ kind: 'ok', document: h.doc }); await refresh;
+        assert.deepEqual(h.api._localStore.bpbBuddyCache.entries, [{ cid: 3, name: 'New Buddy' }]);
+        assert.equal(h.api._localStore.bpbBuddyCache.fetchedAt, 0);
+        assert.ok(h.states.at(-1).ids.has(3)); assert.equal(h.states.at(-1).loading, false);
+        assert.match(h.states.at(-1).error, /changed during refresh/);
+        const ignore = await h.api.runtime.sendMessage({ type: 'IGNORED_MUTATE',
+            mutation: { kind: 'add', entry: { cid: 3, name: 'New Buddy', addedAt: 1 } } });
+        assert.equal(ignore.ok, false);
     } finally { source.stop(); h.close(); }
 });

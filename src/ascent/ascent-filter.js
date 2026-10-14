@@ -18,6 +18,7 @@ import { reportStyle, utilityButton, paintReveal } from '../favorites/report-con
 import { authorInCell } from '../favorites/report-adapters.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
+import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.js';
 
 const pageParams = new URLSearchParams(location.search);
 const pagePathname = location.pathname.toLowerCase();
@@ -634,7 +635,9 @@ const readRenderedBuddyList = () => {
     // another climber's report can never replace the local cache.
     if (ownCid == null || (pageParams.has('cid') && (pageParams.getAll('cid').length !== 1 || pageCid !== ownCid))) return null;
     const entries = F.parseBuddyDocument(document);
-    return { ownerCid: ownCid, entries, fetchedAt: Date.now() };
+    // Reading the same rendered report again cannot make its data newer.
+    // Keep helper acknowledgements identical to the page's cache publication.
+    return { ownerCid: ownCid, entries, fetchedAt: Math.floor(performance.timeOrigin) };
 };
 
 // Options reads only its own helper tab. A storage notification from another
@@ -648,9 +651,8 @@ if (isBuddyListPage) chrome.runtime.onMessage.addListener((message, sender, send
 const cacheRenderedBuddyList = async () => {
     const cache = readRenderedBuddyList();
     if (!cache) return;
-    await chrome.storage.local.set({
-        [F.BUDDY_CACHE_KEY]: cache
-    });
+    const snapshot = await beginBuddyCacheRead(chrome, performance.timeOrigin);
+    await publishBuddyCache(chrome, snapshot, cache);
 };
 
 // The compact view (no y= in the URL) only renders Climber + Date columns,

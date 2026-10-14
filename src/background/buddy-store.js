@@ -4,6 +4,7 @@ import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import { BUDDY_INTENTS_KEY, readBuddyIntents } from '../favorites/buddy-state.js';
 import { climberListLane, assertFavoriteMembership } from './climber-list-policy.js';
 import { applyFavoritesMutation } from './favorites-store.js';
+import { BUDDY_CACHE_EPOCH_KEY, newBuddyCacheEpoch } from '../favorites/buddy-cache.js';
 
 export const createBuddyStore = ({ storage, settings, now = Date.now, token = () => crypto.randomUUID() }) => {
     const run = climberListLane(storage);
@@ -47,10 +48,11 @@ export const createBuddyStore = ({ storage, settings, now = Date.now, token = ()
             }
             const entries = cache?.ownerCid === entry.ownerCid ? cache.entries.filter(item => item.cid !== entry.cid) : [];
             if (message.buddy) entries.push({ cid: entry.cid, name: entry.name });
-            const patch = { [F.BUDDY_CACHE_KEY]: { ownerCid: entry.ownerCid, entries,
+            const patch = { [BUDDY_CACHE_EPOCH_KEY]: newBuddyCacheEpoch(now()),
+                [F.BUDDY_CACHE_KEY]: { ownerCid: entry.ownerCid, entries,
                 // A target profile proves only this target; it cannot refresh
                 // the age or completeness of the full Buddy report cache.
-                fetchedAt: cache?.ownerCid === entry.ownerCid ? cache.fetchedAt : 0 } };
+                    fetchedAt: cache?.ownerCid === entry.ownerCid ? cache.fetchedAt : 0 } };
             let warning = '';
             const config = await settings().catch(() => {
                 warning = 'Buddy change saved. Favorites could not be updated; check buddy status to retry.';

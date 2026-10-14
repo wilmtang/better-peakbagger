@@ -383,6 +383,26 @@ test('a Buddy cache write failure is not mislabeled as a Peakbagger request fail
         'a local storage failure must not send the user to Peakbagger');
 });
 
+test('an options refresh cannot replace a Buddy change confirmed while its report was loading', async () => {
+    let release;
+    const dom = await loadFavoritesPage({ favoritesSource: 'buddies' }, {
+        prepareWindow: window => { window.fetch = () => new Promise(resolve => { release = resolve; }); },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => release);
+    const send = message => dom.chrome.runtime.sendMessage({ type: 'CLIMBER_BUDDY_ACTION', ...message });
+    const lease = await send({ phase: 'begin', ownerCid: 900001, cid: 900002, name: 'Confirmed Buddy', action: 'add' });
+    await send({ phase: 'dispatch', token: lease.token });
+    await send({ phase: 'complete', token: lease.token, buddy: true });
+    const confirmed = structuredClone(dom.chrome._localStore[buddyCacheKey]);
+    release(pageResponse('<a href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">My Home Page</a>'
+        + '<h1>Buddy List</h1><table id="RGridView"><tr><th>Climber</th></tr></table>'));
+    await waitFor(dom, () => !el(dom, 'favorites-refresh-buddies').disabled
+        && /1 buddy.*changed during refresh/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.deepEqual(dom.chrome._localStore[buddyCacheKey], confirmed);
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /1 buddy.*changed during refresh/);
+});
+
 test('Buddy refresh fails closed when the report has no signed-in owner identity', async () => {
     const signedOutReport = buddyPageFixture.replace('>My Home Page<', '>Public profile<');
     const dom = await loadFavoritesPage({}, {

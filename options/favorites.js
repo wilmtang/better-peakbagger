@@ -4,6 +4,7 @@
 // Better Peakbagger — Favorite climbers settings manager.
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
+import { beginBuddyCacheRead, publishBuddyCache } from '../src/favorites/buddy-cache.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
 import { isPeakbaggerPageOrigin, PEAKBAGGER_HOSTS, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
@@ -582,14 +583,17 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         setBusy(true);
         renderBuddyStatus();
         refreshPromise = (async () => {
-            const { ownerCid, entries } = await loadSignedInBuddies();
-            const next = { ownerCid, entries, fetchedAt: Date.now() };
-            buddyCache = next;
-            try {
-                await store.set({ [F.BUDDY_CACHE_KEY]: next });
-            } catch {
+            const snapshot = await beginBuddyCacheRead(extensionApi);
+            const refreshed = await loadSignedInBuddies();
+            const next = { ownerCid: refreshed.ownerCid, entries: refreshed.entries, fetchedAt: refreshed.fetchedAt ?? Date.now() };
+            try { await publishBuddyCache(extensionApi, snapshot, next); }
+            catch (error) {
+                if (error.code !== 'storage') throw error;
+                if (!buddyCache) buddyCache = next;
                 buddyError = PeakbaggerError.failure('storage', { resource: 'buddies' });
+                return next;
             }
+            acceptBuddyCache((await store.get(F.BUDDY_CACHE_KEY))[F.BUDDY_CACHE_KEY]);
             return next;
         })().catch(error => {
             buddyError = error && error.code

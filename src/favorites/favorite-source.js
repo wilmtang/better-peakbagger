@@ -5,6 +5,7 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
 // One source policy for peak reports and full ascent lists. Empty is valid;
 // unavailable is separate. Buddy caches are useful only for the current owner.
@@ -28,8 +29,11 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
         const ownCid = owner();
         if (ownCid == null) { error = 'Sign in to Peakbagger to load your climbing buddies.'; loading = false; emit(); return; }
         const token = ++requestGeneration;
+        const beforeRead = generation;
         controller = new AbortController(); loading = true; error = ''; emit();
         try {
+            const snapshot = await beginBuddyCacheRead(api);
+            if (stopped || token !== requestGeneration) return;
             const result = await fetchDocument(F.buddyListUrl(ownCid, doc.location?.origin),
                 { kind: 'buddies', signal: controller.signal });
             if (stopped || token !== requestGeneration || mode !== 'buddies' || ownCid !== owner()) return;
@@ -40,9 +44,16 @@ export const createFavoriteSource = ({ api, settings, doc, onState,
                 throw new Error('The Buddy List belongs to a different Peakbagger account.');
             }
             const next = { ownerCid: ownCid, entries: F.parseBuddyDocument(result.document), fetchedAt: Date.now() };
-            cache = next;
-            try { await api.storage.local.set({ [F.BUDDY_CACHE_KEY]: next }); }
-            catch { error = 'Your Buddy List loaded, but Better Peakbagger could not save it. Try again.'; }
+            const beforePublish = generation;
+            try { await publishBuddyCache(api, snapshot, next); }
+            catch (failure) {
+                if (failure.code !== 'storage') throw failure;
+                if (beforeRead === generation && token === requestGeneration) cache = next;
+                error = 'Your Buddy List loaded, but Better Peakbagger could not save it. Try again.';
+                return;
+            }
+            // A storage notification may already carry an even newer result.
+            if (beforePublish === generation && token === requestGeneration) cache = next;
         } catch (failure) {
             if (token === requestGeneration) error = validCache(cache)
                 ? `Using your saved Buddy List (saved climbing buddies). ${failure.message}` : failure.message;
