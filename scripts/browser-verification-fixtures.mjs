@@ -407,7 +407,7 @@ const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head>
 <b>Dynamic Map</b><br>
 <iframe id="Gmap" src="/map/MasterMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300"
   width="100%" height="425px"></iframe><br>
-<img src="/image/MainPeakPinkCircle.gif">&nbsp;Mount Shuksan&nbsp;(Unclimbed!)<br>
+<img src="/image/MainPeakPinkCircle.gif">&nbsp;Mount Shuksan&nbsp;&nbsp;&nbsp;(<img src="/image/ThinMagentaSquare.gif">&nbsp;<span style="font-size:smaller">Key Col</span>)<br>
 <a href="/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&l=L_CT|L_OT&t=P&d=2829&c=0&hj=300">
   Click Here for a Full Screen Map
 </a>

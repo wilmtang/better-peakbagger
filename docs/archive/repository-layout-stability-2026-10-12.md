@@ -552,3 +552,44 @@ must not be mistaken for optional cleanup or a complete audit closure.
   native scroll-range clamp; that boundary was not exercised. Intentional
   expansion below a trigger and deliberate period navigation can still change
   downstream layout. The two unrelated README failures are not repaired here.
+
+## 2026-10-14 split peak-legend name correction
+
+### Fixed and verified
+
+- The MAIN-world Peak map read the text node after the main-peak icon. An
+  unannotated legend splits `Mount Thomson (Key Col)` around a second icon,
+  leaving `Mount Thomson   (` in that node. The old regex required a complete
+  parenthesis pair and also stripped legitimate parenthesized summit names.
+- Remove the unmatched opening delimiter only at a `ThinMagentaSquare.gif`
+  icon boundary. Remove only a trailing Climbed!/Unclimbed! status annotation;
+  preserve real parenthesized names, IDs, marker colors and popup URLs.
+  Five of eight new name cases failed on the old shipped bundle.
+- Build, focused ESLint and diff checks passed; 78 focused Peak map, marker,
+  terrain and showcase tests passed. The generic real-extension Chrome
+  153.0.8010.12 verifier passed hidden at 1000×760 with the split legend and
+  exact name-handoff assertion, including BFCache and teardown.
+- Hardware-rendered popup checks passed hidden Chrome 153.0.8010.12 on Apple
+  M3 Pro Metal at 820/375×900, and Playwright Firefox 155.0 on Apple M3 Pro
+  Metal at 1000/375×760, light/dark. Chrome uses an exposed marker pointer
+  target; Firefox uses native keyboard activation because synthetic neighboring
+  markers overlap narrowly. Exact name/link assertions and captures reject
+  samples interrupted by the renderer's intentional marker reconciliation.
+  Wide/narrow popup screenshots were inspected. The existing real-extension
+  peak-layout fixture preflight passed before implementation. Owned browser
+  processes were absent after teardown.
+
+### Intentionally not changed
+
+- The native legend remains intact; this is parsing for the extension-owned
+  focus marker only. Nearby peak-feed names and genuine parenthetical text
+  are not generically stripped. No new request, setting or privileged boundary.
+
+### Changed but not fully proven
+
+- The precise live Mount Thomson DOM was not fetched: the read-only page fetch
+  returned HTTP 403. The reported shape was reproduced and the same structure
+  was added to controlled fixtures; popup renders use the synthetic Shuksan
+  subject, not a fresh live Brave capture. Full repository tests were not
+  rerun; the two unchanged README failures remain known. Hidden rendering does
+  not establish native window placement or screen-reader speech.

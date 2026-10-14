@@ -58,9 +58,15 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
     const markerImage = document.querySelector('img[src*="MainPeak" i]');
     const markerText = markerImage && markerImage.nextSibling && markerImage.nextSibling.textContent;
     const fallbackName = document.querySelector('h1')?.textContent;
-    const peakName = String(markerText || fallbackName || '')
-        .replace(/\u00a0/g, ' ')
-        .replace(/\s+\([^)]*\).*$/, '')
+    const keyColImage = markerImage?.nextElementSibling;
+    let legendName = String(markerText || fallbackName || '').replace(/\u00a0/g, ' ');
+    // The Key Col annotation starts in this text node but continues after its
+    // icon. Strip that opening delimiter only at the actual icon boundary.
+    if (keyColImage?.tagName === 'IMG' && /\/thinmagentasquare\.gif(?:$|[?#])/i.test(keyColImage.src)) {
+        legendName = legendName.replace(/\s+\(\s*$/, '');
+    }
+    const peakName = legendName
+        .replace(/\s+\((?:Climbed!|Unclimbed!)\)\s*$/i, '')
         .trim()
         .slice(0, 120);
     if (!peakName || /[\u0000-\u001f\u007f]/.test(peakName)) return;

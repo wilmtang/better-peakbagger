@@ -1919,6 +1919,54 @@ try {
     })()`);
     console.log('Peak 3D resize: native/frame/canvas sizes agree; camera and Sun panel remain stable.');
     await capture(cdp, path.join(outputDir, 'peak-page-resized-3d.png'));
+    // The native legend splits "(Key Col)" around its icon. An unannotated
+    // summit must reach the real rendered popup without the orphan delimiter.
+    for (const width of [820, 375]) for (const theme of ['light', 'dark']) {
+        await cdp.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+        await evaluate(cdp, `(() => {
+            document.getElementById('bpb-map-viewport').scrollIntoView({ block: 'start' });
+            window.postMessage({ __bpbTerrain: true, dir: 'toCS', type: 'update', theme: '${theme}' }, location.origin);
+        })()`);
+        let captured = false;
+        for (let attempt = 0; attempt < 5 && !captured; attempt++) {
+            const marker = await waitForPageState(cdp, `(() => {
+            const frame = document.getElementById('bpb-terrain-frame'), doc = frame.contentDocument;
+            const map = frame.contentWindow.__bpbTerrainTestMap;
+            const dot = doc.querySelector('.bpb-terrain-peak-marker[aria-label="Mount Shuksan"]');
+            frame.contentWindow.__bpbPeakNameMarker = dot;
+            const r = dot?.getBoundingClientRect(), f = frame.getBoundingClientRect();
+            return { ready: doc.getElementById('bpb-terrain-map').dataset.theme === '${theme}'
+                && map.loaded() && !map.isMoving() && map.getCanvas().clientWidth === frame.clientWidth
+                && r?.width > 0 && doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === dot,
+                x: r ? f.left + r.left + r.width / 2 : null, y: r ? f.top + r.top + r.height / 2 : null };
+        })()`);
+            await clickAt(cdp, marker.x, marker.y);
+            const popup = await waitForPageState(cdp, `(() => {
+            const win = document.getElementById('bpb-terrain-frame').contentWindow;
+            const link = win.document.querySelector('.bpb-peak-popup a');
+            return { ready: Boolean(link) || !win.__bpbPeakNameMarker.isConnected,
+                replaced: !win.__bpbPeakNameMarker.isConnected, text: link?.textContent, href: link?.href };
+        })()`);
+            if (popup.replaced) continue;
+            if (popup.text !== 'Mount Shuksan' || !/\/peak\.aspx\?pid=2829$/.test(popup.href || '')) {
+                throw new Error('The unannotated Peak legend reached the popup incorrectly: ' + JSON.stringify(popup));
+            }
+            await capture(cdp, path.join(outputDir, `peak-name-${theme}-${width}.png`));
+            const finalState = await evaluate(cdp, `(() => {
+            const win = document.getElementById('bpb-terrain-frame').contentWindow;
+            return { replaced: !win.__bpbPeakNameMarker.isConnected,
+                name: win.document.querySelector('.bpb-peak-popup a')?.textContent };
+        })()`);
+            // A delayed viewport reconciliation rebuilds dots and deliberately
+            // closes their popup. Reject that sample, then capture the settled dot.
+            if (finalState.replaced) continue;
+            if (finalState.name !== 'Mount Shuksan') throw new Error('Popup disappeared without a marker refresh: ' + JSON.stringify(finalState));
+            captured = true;
+            await evaluate(cdp, "document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.maplibregl-popup-close-button')?.click()");
+        }
+        if (!captured) throw new Error(`Peak popup never settled after marker reconciliation: ${theme}/${width}`);
+    }
+    console.log('Peak names: split Key Col legend preserved the exact summit name in light/dark 820/375px hardware-rendered popups.');
     // Provider warnings use the real rendered controls on the hardware map.
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.

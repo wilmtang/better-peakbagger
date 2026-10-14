@@ -17,24 +17,25 @@ const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'peak-map
 const peakMapBundle = await readFile(path.join(root, 'dist', 'content', 'peak-map.js'), 'utf8');
 
 const peakHtml = ({ mapPid = 2829, mapType = 'P', includeCoordinates = true,
-    fullMapOrigin = 'https://www.peakbagger.com' } = {}) => `<!doctype html><body>
+    fullMapOrigin = 'https://www.peakbagger.com',
+    legend = '<img src="https://www.peakbagger.com/image/MainPeakPinkCircle.gif">&nbsp;Mount Shuksan&nbsp;(Unclimbed!)' } = {}) => `<!doctype html><body>
   <h1>Mount Shuksan, Washington</h1>
   <table><tbody><tr><td align="center">
     <b>Dynamic Map</b><br>
     <iframe id="Gmap"
       src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.83115&amp;cx=-121.60214&amp;z=14&amp;t=${mapType}&amp;d=${mapPid}&amp;c=0"
       width="100%" height="425px"></iframe><br>
-    <img src="https://www.peakbagger.com/image/MainPeakPinkCircle.gif">&nbsp;Mount Shuksan&nbsp;(Unclimbed!)<br>
+    ${legend}<br>
     <a href="${fullMapOrigin}/map/BigMap.aspx?${includeCoordinates ? 'cy=48.83115&amp;cx=-121.60214&amp;' : ''}z=14&amp;l=L_CT|L_OT&amp;t=${mapType}&amp;d=${mapPid}&amp;c=0">Click Here for a Full Screen Map</a>
   </td></tr></tbody></table>
 </body>`;
 
 const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
-    showSunMoon = true,
+    showSunMoon = true, legend,
     storedSize = null, storageBlocked = false, coarsePointer = false,
     includeCoordinates = true, fullMapOrigin = 'https://www.peakbagger.com',
     nowMs = Date.parse('2026-08-25T18:45:00Z') } = {}) => {
-    const dom = new JSDOM(peakHtml({ mapPid, mapType, includeCoordinates, fullMapOrigin }), {
+    const dom = new JSDOM(peakHtml({ mapPid, mapType, includeCoordinates, fullMapOrigin, legend }), {
         url: 'https://www.peakbagger.com/Peak.aspx?pid=2829',
         runScripts: 'outside-only',
         pretendToBeVisual: true
@@ -66,6 +67,32 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
     window.eval(peakMapBundle);
     return { dom, window, messages };
 };
+
+const keyCol = '&nbsp;&nbsp;&nbsp;(<img src="https://www.peakbagger.com/image/ThinMagentaSquare.gif">&nbsp;<span style="font-size:smaller">Key Col</span>)';
+for (const [label, text, expected] of [
+    ['unannotated key col', 'Mount Thomson' + keyCol, 'Mount Thomson'],
+    ['climbed key col', 'Mount Thomson&nbsp;(Climbed!)' + keyCol, 'Mount Thomson'],
+    ['unclimbed key col', 'Mount Thomson&nbsp;(Unclimbed!)' + keyCol, 'Mount Thomson'],
+    ['parenthesized name', 'Mount Thomson (East Summit)' + keyCol, 'Mount Thomson (East Summit)'],
+    ['parenthesized climbed name', 'Mount Thomson (East Summit)&nbsp;(Climbed!)' + keyCol, 'Mount Thomson (East Summit)'],
+    ['parenthetical text within a name', 'Peak (Climbed!) East' + keyCol, 'Peak (Climbed!) East'],
+    ['no key col', 'Mount Thomson (East Summit)', 'Mount Thomson (East Summit)'],
+    ['non-annotation parenthesis', 'Peak&nbsp;(', 'Peak ('],
+]) {
+    test(`Peak focus name separates the ${label} legend from the summit name`, async () => {
+        const { dom, window, messages } = loadPeakMap({ legend: '<img src="https://www.peakbagger.com/image/MainPeakCircle.gif">&nbsp;' + text });
+        try {
+            const toggle = window.document.getElementById('bpb-terrain-toggle');
+            await waitFor(dom, () => !toggle.disabled);
+            toggle.click();
+            await waitFor(dom, () => messages.some(message => message.__bpbTerrain && message.type === 'init'));
+            const init = messages.find(message => message.__bpbTerrain && message.type === 'init');
+            assert.equal(init.focusPeak.name, expected);
+            assert.equal(init.focusPeak.state, 'unknown');
+            assert.equal(init.focusPeak.id, 2829);
+        } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+    });
+}
 
 test('native map right-click projects the live point only with a visible weather card and survives frame reloads', async () => {
     const { window, messages } = loadPeakMap();

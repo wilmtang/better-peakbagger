@@ -4190,6 +4190,7 @@ try {
         check(JSON.stringify(peakInit?.focus) === JSON.stringify([48.83115, -121.60214])
             && peakInit?.focusZoom === 13
             && peakInit?.focusPeak?.id === 2829
+            && peakInit?.focusPeak?.name === 'Mount Shuksan'
             && !Object.hasOwn(peakInit || {}, 'routeSegments'),
         `the real Peak-page click did not start a route-free summit view (init=${JSON.stringify(peakInit)})`);
         const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })

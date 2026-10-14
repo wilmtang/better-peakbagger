@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, location, requestAnimationFrame */
+/* global document, window, location, requestAnimationFrame */
 
 import { createServer } from 'node:https';
 import assert from 'node:assert/strict';
@@ -533,6 +533,49 @@ async function main() {
             const map = frame?.contentWindow?.__bpbTerrainTestMap;
             return frame?.style.opacity === '1' && map?.isStyleLoaded() && map.areTilesLoaded();
         }, null, { timeout: 45_000 });
+        const peakNameOutput = process.env.BPB_VERIFY_PEAK_NAME_SCREENSHOT_DIR;
+        if (peakNameOutput) await mkdir(peakNameOutput, { recursive: true });
+        for (const width of [1000, 375]) for (const theme of ['light', 'dark']) {
+            await page.setViewportSize({ width, height: 760 });
+            await page.evaluate(theme => {
+                document.getElementById('bpb-map-viewport').scrollIntoView({ block: 'start' });
+                window.postMessage({ __bpbTerrain: true, dir: 'toCS', type: 'update', theme }, location.origin);
+            }, theme);
+            await page.waitForFunction(theme => {
+                const frame = document.getElementById('bpb-terrain-frame'), map = frame?.contentWindow?.__bpbTerrainTestMap;
+                return frame?.contentDocument?.getElementById('bpb-terrain-map')?.dataset.theme === theme
+                    && map.loaded() && !map.isMoving() && map.getCanvas().clientWidth === frame.clientWidth;
+            }, theme);
+            const peakFrame = page.frameLocator('#bpb-terrain-frame');
+            let captured = false;
+            for (let attempt = 0; attempt < 5 && !captured; attempt++) {
+                await peakFrame.locator('.bpb-terrain-peak-marker[aria-label="Mount Shuksan"]').evaluate(node => {
+                    window.__bpbPeakNameMarker = node;
+                });
+                // Synthetic neighboring dots can overlap at narrow widths.
+                // Exercise the marker's native keyboard activation directly;
+                // pointer hit-testing is covered by the Chrome popup matrix.
+                await peakFrame.locator('.bpb-terrain-peak-marker[aria-label="Mount Shuksan"]').focus();
+                await page.keyboard.press('Enter');
+                const link = peakFrame.locator('.bpb-peak-popup a');
+                const state = await page.waitForFunction(() => {
+                    const win = document.getElementById('bpb-terrain-frame').contentWindow;
+                    return win.document.querySelector('.bpb-peak-popup a') || !win.__bpbPeakNameMarker.isConnected;
+                }).then(() => peakFrame.locator('body').evaluate(() => ({ replaced: !window.__bpbPeakNameMarker.isConnected })));
+                if (state.replaced) continue;
+                assert.equal(await link.textContent(), 'Mount Shuksan');
+                assert.match(await link.getAttribute('href'), /\/peak\.aspx\?pid=2829$/);
+                if (peakNameOutput) await page.screenshot({ path: `${peakNameOutput}/firefox-peak-name-${theme}-${width}.png` });
+                const finalState = await peakFrame.locator('body').evaluate(() => ({ replaced: !window.__bpbPeakNameMarker.isConnected,
+                    name: document.querySelector('.bpb-peak-popup a')?.textContent }));
+                if (finalState.replaced) continue;
+                assert.equal(finalState.name, 'Mount Shuksan', 'popup vanished without a marker refresh');
+                captured = true;
+                await peakFrame.locator('body').evaluate(() => document.querySelector('.maplibregl-popup-close-button')?.click());
+            }
+            assert.equal(captured, true, `Peak popup never settled after marker reconciliation: ${theme}/${width}`);
+        }
+        await page.setViewportSize(viewport);
         const peakSunToggle = page.locator('.bpb-sun-calculator__toggle');
         if (await peakSunToggle.getAttribute('aria-expanded') !== 'true') {
             await peakSunToggle.click();
@@ -688,6 +731,7 @@ async function main() {
         console.log('  - synthetic activation and direct-frame authorization negatives passed');
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right-drag tilt, bearing sync, Ctrl-drag, and resize passed');
         console.log('  - Analyzer and Peak Sun and Moon compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
+        console.log('  - split Key Col legend preserved the exact summit name in light/dark 1000/375px hardware-rendered popups');
         console.log('  - inherited/explicit Sentinel captures survived real toggles; loaded MapLibre sources and light/dark warning geometry passed');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
     } catch (error) {
