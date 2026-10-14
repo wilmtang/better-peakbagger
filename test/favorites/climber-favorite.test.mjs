@@ -293,10 +293,10 @@ test('legacy buddy refresh reports limits without replacing saved favorites or t
             page.window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
         } });
     try {
-        await waitFor(dom, () => dom.window.document.getElementById('bpb-buddy-refresh-limit')?.textContent.includes('Peakbagger request limit reached'));
+        await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-profile-feedback')?.textContent.includes('Peakbagger request limit reached'));
         assert.equal(dom.chrome._localStore[key].entries.length, 1);
         assert.equal(dom.chrome._localStore[cacheKey], undefined);
-        assert.match(dom.window.document.getElementById('bpb-buddy-refresh-limit').textContent, /saved favorites were kept/);
-        assert.match(dom.window.document.getElementById('bpb-buddy-refresh-limit').previousElementSibling.value, /Buddy List/);
+        assert.match(dom.window.document.getElementById('bpb-climber-profile-feedback').textContent, /saved favorites were kept/);
+        assert.equal(dom.window.document.getElementById('bpb-climber-profile-feedback').querySelector('details').open, false);
     } finally { dom.window.close(); }
 });

@@ -1,7 +1,7 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
-Status: **remediation in progress**. C01/C02/C05 have profile corrections;
-C03/C04/C06/C07 and final C08 integration remain open. This is the re-audit of the Buddy/Favorite/Ignore
+Status: **remediation in progress**. C01/C02/C03/C05 have profile corrections;
+C04/C06/C07 and final C08 integration remain open. This is the re-audit of the Buddy/Favorite/Ignore
 page-jump report; the focused remediation order is recorded separately below.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
@@ -295,6 +295,21 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- C03: native Buddy inputs retain their exact identity, accessible value and form
+  association while visible captions reserve the largest real alternative and
+  can wrap. The relationship label reserves its alternatives too. Save, warning,
+  uncertainty and legacy request-limit feedback use the existing profile region,
+  not newly appended native rows. Recovery is explicitly status-only.
+- The native Buddy check failed the preceding bundle on a 16px first-activation
+  row shift. The combined profile/supported/legacy matrix passed 24 hidden
+  browser/theme/width/text-scale variants. Supported checks cover add/remove,
+  failed begin, uncertain POST, read-only recovery and confirmed-with-warning;
+  recovery sends no additional POST. Existing Buddy adapter/store safety tests
+  and the new exact native-form preservation test passed (40 focused tests).
+  Build, focused ESLint/diff checks, the integrated eight-case gate and real
+  unpacked hidden Chrome startup/BFCache/teardown passed. Wide dark and narrow
+  light warning renders were inspected; a dark caption repaint conflict was
+  corrected and now has a computed-color regression assertion.
 - C01/C02/C05: profile feedback now has one compact, two-line region outside
   the centered heading/action host. Short failure summaries and explicit full
   Details replace tooltip-only failures and automatic error expansion. Ignore
@@ -324,7 +339,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Changed but not fully proven
 
-- Native Buddy, pending-intent, hover-card and carried GPX/report remediation
+- Pending-intent, hover-card and carried GPX/report remediation
   remain open. Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
   touch, every native POST failure/check-only recovery and actual multi-window

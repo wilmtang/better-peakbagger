@@ -15,7 +15,7 @@ import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
-import { verifyProfileFeedback } from './verify-climber-transitions.mjs';
+import { verifyProfileFeedback, verifyBuddyPresentation } from './verify-climber-transitions.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -883,7 +883,11 @@ async function climberCase(page, origin, variant) {
 }
 async function profileTransitionCase(page, origin, variant) {
     await climberCase(page, origin, variant);
-    await verifyProfileFeedback(page, origin, variant);
+    for (const check of [verifyProfileFeedback, verifyBuddyPresentation]) {
+        const target = await page.context().newPage();
+        try { await check(target, origin, variant); }
+        finally { await target.close(); }
+    }
 }
 async function uploadCase(page, origin, variant) {
     const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'))

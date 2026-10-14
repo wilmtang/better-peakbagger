@@ -12,6 +12,7 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
 import { observeClimberMembership } from './climber-membership.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
 import { climberProfileFeedback } from './climber-profile-feedback.js';
+import { reserveBuddyPresentation } from './buddy-presentation.js';
 
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
@@ -91,6 +92,7 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
             const action = buddyActionForControl(control);
             if (!action) continue;
             control.classList.add('bpb-native-buddy-action');
+            reserveBuddyPresentation(control);
             if (action === 'add' && additionBlocked()) {
                 if (!buddyTitles.has(control)) buddyTitles.set(control, {
                     title: control.getAttribute('title'), disabled: control.getAttribute('aria-disabled'),
@@ -163,26 +165,30 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         // Supported real-site controls use the same reserved, confirmed path
         // as the card. Keep the legacy observer for other native markup.
         let savingBuddy = false;
-        const buddyStatus = document.createElement('span');
-        buddyStatus.setAttribute('role', 'status');
-        const checkStatus = document.createElement('button');
-        checkStatus.type = 'button'; checkStatus.textContent = 'Check buddy status'; checkStatus.hidden = true;
+        let buddyError = '', buddyWarning = '';
         const saveBuddy = async (control, checkOnly = false) => {
             if (savingBuddy) return;
             savingBuddy = true; control.disabled = true; control.dataset.bpbBuddyPending = 'true';
-            buddyStatus.textContent = 'Saving…'; checkStatus.disabled = true;
+            const retry = event => { if (event.isTrusted === true) void saveBuddy(control, true); };
+            feedback.set('buddy', { text: checkOnly ? 'Checking buddy status…' : 'Saving buddy…', busy: true, priority: 110,
+                retry: buddyError || buddyWarning ? retry : null, retryLabel: 'Check status', retryName: 'Check buddy status' });
             try {
                 const result = await changeBuddy({ api: chrome, target: { cid: pageCid, name }, ownerCid: ownCid,
                     action: control.id === 'RemoveBuddy' ? 'remove' : 'add', checkOnly,
                     origin: location.origin, currentOwner: () => ownerClimberId(document) });
                 applyBuddyProfileState(document, result.buddy);
-                buddyStatus.textContent = result.warning || (result.buddy ? 'Climbing buddy added.' : 'Climbing buddy removed.');
-                checkStatus.hidden = !result.warning;
+                reserveBuddyPresentation(control);
+                buddyError = ''; buddyWarning = result.warning || '';
+                feedback.set('buddy', { text: buddyWarning ? 'Check lists.' : result.buddy ? 'Buddy added.' : 'Buddy removed.',
+                    error: buddyWarning, retry: buddyWarning ? retry : null, retryLabel: 'Check status', retryName: 'Check buddy status', priority: buddyWarning ? 80 : 20 });
+                feedback.announce(buddyWarning || (result.buddy ? 'Climbing buddy added.' : 'Climbing buddy removed.'));
             } catch (error) {
-                buddyStatus.textContent = error.message; checkStatus.hidden = false;
+                buddyError = error.message;
+                feedback.set('buddy', { text: 'Unconfirmed.', error: buddyError, retry, retryLabel: 'Check status', retryName: 'Check buddy status', priority: 80 });
+                feedback.announce(buddyError);
             } finally {
                 control.disabled = false; delete control.dataset.bpbBuddyPending;
-                savingBuddy = false; checkStatus.disabled = false;
+                savingBuddy = false;
             }
         };
         const interceptBuddy = event => {
@@ -191,15 +197,10 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
             event.preventDefault(); event.stopImmediatePropagation();
             const pending = membership?.buddyIntents?.some(entry => entry.cid === pageCid && entry.status !== 'confirmed');
             if (event.isTrusted !== true || savingBuddy || (control.id === 'AddBuddy' && additionBlocked() && !pending)) return;
-            if (!buddyStatus.isConnected) control.after(buddyStatus, checkStatus);
             void saveBuddy(control, pending);
         };
         document.addEventListener('click', interceptBuddy, true);
         document.addEventListener('submit', interceptBuddy, true);
-        checkStatus.addEventListener('click', event => {
-            const control = document.querySelector('#AddBuddy, #RemoveBuddy');
-            if (event.isTrusted === true && control) void saveBuddy(control, true);
-        });
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 if (record.type === 'attributes') decorateBuddyControls(record.target);
@@ -250,21 +251,19 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
             ]);
             if (result.kind !== 'ok') {
                 if (result.error?.code === 'rate-limit') {
-                    let notice = document.getElementById('bpb-buddy-refresh-limit');
-                    if (!notice) {
-                        notice = document.createElement('p');
-                        notice.id = 'bpb-buddy-refresh-limit';
-                        notice.setAttribute('role', 'status');
-                        (buddyControls(document).find(control => buddyActionForControl(control)) || host).after(notice);
-                    }
-                    notice.textContent = `${peakbaggerError.message(result.error)} Your saved favorites were kept.`;
+                    const message = `${peakbaggerError.message(result.error)} Your saved favorites were kept.`;
+                    feedback.set('buddy', { text: 'Unavailable.', error: message, priority: 80,
+                        retryLabel: 'Check status', retryName: 'Check buddy status', retry: event => {
+                            if (event.isTrusted === true) void refreshAfterBuddyMutation(mutation);
+                        } });
+                    feedback.announce(message);
                 }
                 return;
             }
             const responseOwner = ownerClimberId(result.document);
             if (responseOwner !== ownCid) return;
             const entries = F.parseBuddyDocument(result.document);
-            document.getElementById('bpb-buddy-refresh-limit')?.remove();
+            feedback.set('buddy', null);
             const target = entries.find(entry => entry.cid === pageCid);
             const confirmed = mutation.action === 'add' ? !!target : !target;
             await store.set({

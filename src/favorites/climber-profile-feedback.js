@@ -46,6 +46,7 @@ html[data-bpb-theme="dark"] #bpb-climber-profile-feedback :is(button,summary) { 
             // Preserve an existing recovery target while that same action is busy.
             retry.hidden = !current?.retry; retry.disabled = !!current?.busy;
             retry.textContent = current?.retryLabel || 'Retry';
+            retry.setAttribute('aria-label', current?.retryName || retry.textContent);
             if (current?.error) full.textContent = current.error;
             details.hidden = !current?.error && !details.open;
         },
