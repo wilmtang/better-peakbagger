@@ -388,3 +388,48 @@ evidence alongside the real-manifest and capture gates.
 
 These are confirmed findings from the 2026-10-13 review, still unfixed; they
 must not be mistaken for optional cleanup or a complete audit closure.
+
+## 2026-10-14 ascent-backup commit-row correction
+
+### Fixed and verified
+
+- The completion-semantics correction did not repair the audit's one-column
+  backup grid: its commit link still occupied a separate feedback row. The
+  new browser assertion failed before the fix, with the link center 22.92 px
+  below the status center at 390×900.
+- Keep plain completion status and View commit in two content-sized columns.
+  Reserve the compact link footprint before completion so it does not enlarge
+  the control or displace neighboring links when it appears. Progress/errors
+  remain below the action; constrain the control to its available width.
+- Build, all 25 ascent-backup tests, 11 contrast tests and six theme-injection
+  tests passed (42 total), as did focused ESLint and diff checks. Hidden
+  Chrome 153.0.8010.12 and Firefox 155.0 passed at 390×900 and 1280×900 in
+  light/dark with normal/doubled backup text. New-backup, updated-backup and
+  existing-backup completion remain non-button status. Assert status/link
+  alignment, no overlap or clipping, stable completion/control bounds and
+  native-link positions, including a representative following Add Photos link.
+  Existing checking, pending, slow, error and keyboard-retry checks remain.
+  Desktop and narrow enlarged completion renders were visually inspected.
+- The real unpacked extension passed hidden Chrome 153.0.8010.12 at 1000×760,
+  including BFCache restoration and verifier teardown.
+
+### Intentionally not changed
+
+- Necessary long error text may expand below the anchored backup action. If
+  the native page has already wrapped its following photo link onto another
+  line, that line may move by exactly that error expansion. The regression
+  explicitly distinguishes this predictable disclosure from completion,
+  which must restore the original row bounds and native-link positions.
+- Backup ownership, trusted activation, persistence, commit URLs and manual
+  Peakbagger Save boundaries are unchanged. The four earlier review findings
+  remain open; this corrects the newly reported commit-row defect only.
+
+### Changed but not fully proven
+
+- Controlled backup responses prove presentation, not live GitHub writes.
+  The fixture's following photo link is representative, not a captured live
+  owner-page DOM. Firefox evidence is shipped-asset fixtures, not a new full
+  manifest run. Enlarged text is not native browser zoom; hidden checks do not
+  prove native window focus, placement or screen-reader speech.
+- The full unit suite was not rerun for this CSS-only runtime correction. Its
+  two unchanged README documentation failures recorded above remain known.

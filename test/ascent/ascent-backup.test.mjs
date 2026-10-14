@@ -167,6 +167,27 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 1);
 });
 
+test('an updated backup retains the commit link beside plain completion status', async () => {
+    const { dom, sent } = await loadSurface({
+        status: { enabled: true, connected: true },
+        onBackup: () => ({ ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/updated', isUpdate: true } }),
+    });
+    try {
+        await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
+        fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
+        await waitFor(dom, () => control(dom)?.querySelector('[role="status"]')?.textContent === 'Backup updated ✓');
+        const status = control(dom).querySelector('[role="status"]');
+        assert.equal(status.tagName, 'SPAN');
+        assert.equal(status.hidden, false);
+        assert.equal(control(dom).querySelector('.bpb-gh-btn').hidden, true);
+        const link = control(dom).querySelector('.bpb-gh-link');
+        assert.equal(link.textContent, 'View commit');
+        assert.equal(link.href, 'https://github.com/me/backup/commit/updated');
+        assert.equal(link.target, '_blank');
+        assert.equal(sent.filter(message => message.type === 'GITHUB_BACKUP_ASCENT').length, 1);
+    } finally { dom.window.close(); }
+});
+
 test('a synthetic host-page click cannot read or send a manual backup', async () => {
     let editReads = 0;
     const { dom, sent } = await loadSurface({

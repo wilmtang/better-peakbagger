@@ -195,7 +195,7 @@ async function ascentBackupCase(page, origin, variant) {
             if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'fixture' };
             if (message.type === 'GITHUB_BACKUP_ASCENT') return new Promise(resolve => {
                 globalThis.__backupWrites = (globalThis.__backupWrites || 0) + 1;
-                globalThis.__finishBackup = ok => resolve(ok ? { ok: true, result: { commitUrl: 'https://github.com/example/backup/commit/123' } }
+                globalThis.__finishBackup = ok => resolve(ok ? { ok: true, result: { commitUrl: 'https://github.com/example/backup/commit/123', isUpdate: !!globalThis.__backupUpdate } }
                     : { ok: false, error: { code: 'network', message: 'A long backup failure. Check your connection before trying this ascent again.' } });
             });
             return { ok: true };
@@ -204,7 +204,7 @@ async function ascentBackupCase(page, origin, variant) {
     await page.clock.install();
     const action = '.bpb-gh-btn';
     const slot = '.bpb-gh-action';
-    const neighbors = ['#owneractions > a:first-child', '#owneractions > a:nth-child(2)'];
+    const neighbors = ['#owneractions > a:first-child', '#owneractions > a:nth-child(2)', '#jitter-native-photos'];
     const mount = async scale => {
         await page.goto(`${origin}/climber/ascent.aspx?aid=7654321`);
         await page.addStyleTag({ content: darkCss });
@@ -212,9 +212,14 @@ async function ascentBackupCase(page, origin, variant) {
             + `\n.bpb-gh-control { font-size: ${11 * scale}px; }` });
         await page.addScriptTag({ content: (await asset('content/ascent-backup.js')).toString() });
         await page.waitForFunction(() => typeof globalThis.__finishBackupCheck === 'function');
+        await page.evaluate(() => {
+            const photos = document.createElement('a'); photos.id = 'jitter-native-photos';
+            photos.href = '#fixture-photos'; photos.textContent = 'Add Photos';
+            document.querySelector('.bpb-gh-control').after(document.createTextNode(' '), photos);
+        });
     };
     const plainCompletion = async () => {
-        const status = page.getByRole('status').filter({ hasText: 'Backed up ✓' });
+        const status = page.getByRole('status').filter({ hasText: /Backed up ✓|Backup updated ✓/ });
         await status.waitFor();
         assert.equal(await page.locator('.bpb-gh-control').getByRole('button').count(), 0,
             'completed backup must expose status text instead of a button');
@@ -234,6 +239,19 @@ async function ascentBackupCase(page, origin, variant) {
         }), before, 'status hover must not acquire button affordances');
         await status.click();
         assert.equal(await page.evaluate(() => globalThis.__backupWrites || 0), writes, 'clicking status must not write');
+        if (await page.locator('.bpb-gh-link').count()) {
+            const layout = await page.locator('.bpb-gh-control').evaluate(element => {
+                const status = element.querySelector('.bpb-gh-status').getBoundingClientRect();
+                const link = element.querySelector('.bpb-gh-link').getBoundingClientRect();
+                const bounds = element.getBoundingClientRect();
+                return { status: { x: status.x, right: status.right, centerY: status.y + status.height / 2 },
+                    link: { x: link.x, right: link.right, centerY: link.y + link.height / 2 }, right: bounds.right };
+            });
+            assert.ok(Math.abs(layout.link.centerY - layout.status.centerY) <= 1,
+                `commit link must share the completion row: ${JSON.stringify(layout)}`);
+            assert.ok(layout.link.x >= layout.status.right + 4 && layout.link.right <= layout.right + 1,
+                `commit link must follow the status without overlap or clipping: ${JSON.stringify(layout)}`);
+        }
     };
     for (const scale of [1, 2]) {
         await mount(scale);
@@ -241,6 +259,7 @@ async function ascentBackupCase(page, origin, variant) {
         await page.evaluate(() => globalThis.__finishBackupCheck(false));
         await page.getByRole('button', { name: 'Back up ascent and TR' }).waitFor();
         const before = await geometry(page, slot);
+        const controlBefore = await geometry(page, '.bpb-gh-control');
         stable(checking, before, `ascent passive check text ${scale}`);
         const neighborBefore = await Promise.all(neighbors.map(selector => geometry(page, selector)));
         for (const success of [false, true]) {
@@ -255,8 +274,19 @@ async function ascentBackupCase(page, origin, variant) {
             if (success) await plainCompletion();
             else await page.getByRole('button', { name: 'Try again' }).waitFor();
             stable(before, await geometry(page, slot), `ascent backup complete ${success} text ${scale}`);
+            if (success) stable(controlBefore, await geometry(page, '.bpb-gh-control'), `ascent completed row text ${scale}`);
             for (const [index, selector] of neighbors.entries()) {
-                stable(neighborBefore[index], await geometry(page, selector), `ascent neighboring link ${index}`);
+                const after = await geometry(page, selector);
+                if (!success && index === 2) {
+                    // A necessary error grows below the anchored action. If
+                    // the host wraps its following link onto another line,
+                    // that line may move by exactly the disclosed error size.
+                    stable(neighborBefore[index], after, 'wrapped photo link error', ['x', 'width', 'height']);
+                    const expansion = (await geometry(page, '.bpb-gh-control')).height - controlBefore.height;
+                    assert.ok(Math.abs(after.y - neighborBefore[index].y) <= 1
+                        || Math.abs(after.y - neighborBefore[index].y - expansion) <= 1,
+                    'only a necessary below-action error expansion may move a wrapped native link');
+                } else stable(neighborBefore[index], after, `ascent neighboring link ${index}`);
             }
         }
         await capture(page, `${variant.name}-ascent-backup-${scale}`);
@@ -267,6 +297,21 @@ async function ascentBackupCase(page, origin, variant) {
         stable(currentBefore, await geometry(page, slot), `ascent already backed up text ${scale}`);
         assert.equal(await page.evaluate(() => globalThis.__backupWrites || 0), 0, 'passive completion must never write');
         await capture(page, `${variant.name}-ascent-current-${scale}`);
+        await mount(scale);
+        await page.evaluate(() => { globalThis.__backupUpdate = true; globalThis.__finishBackupCheck(false); });
+        await page.getByRole('button', { name: 'Back up ascent and TR' }).waitFor();
+        const updateBefore = await geometry(page, '.bpb-gh-control');
+        const updateNeighbors = await Promise.all(neighbors.map(selector => geometry(page, selector)));
+        await page.locator(action).press('Enter');
+        await page.waitForFunction(() => typeof globalThis.__finishBackup === 'function');
+        await page.evaluate(() => globalThis.__finishBackup(true));
+        await page.getByRole('status').filter({ hasText: 'Backup updated ✓' }).waitFor();
+        await plainCompletion();
+        stable(updateBefore, await geometry(page, '.bpb-gh-control'), `ascent updated row text ${scale}`);
+        for (const [index, selector] of neighbors.entries()) {
+            stable(updateNeighbors[index], await geometry(page, selector), `ascent updated neighboring link ${index}`);
+        }
+        await capture(page, `${variant.name}-ascent-updated-${scale}`);
     }
 }
 async function profileBackupCase(page, origin, variant) {

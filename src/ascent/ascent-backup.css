@@ -7,18 +7,23 @@
 .bpb-gh-control {
     display: inline-grid;
     margin-left: 8px;
+    max-width: calc(100% - 8px);
     vertical-align: top;
     font: 11px/1.35 Verdana, Arial, Helvetica, sans-serif;
     color: #1c1c1a;
 }
-.bpb-gh-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.bpb-gh-body { display: grid; grid-template-columns: minmax(0, max-content) max-content; align-items: center; gap: 6px; }
+/* Reserve the compact link slot before completion so native neighbors stay
+   anchored. Only long progress/error feedback belongs on the second row. */
+.bpb-gh-body::after { content: "View commit"; grid-area: 1 / 2; visibility: hidden; font-weight: 600; pointer-events: none; }
 /* The footprint belongs to the slot; completion can be plain status text. */
-.bpb-gh-action { display: grid; }
+.bpb-gh-action { display: grid; grid-area: 1 / 1; min-width: 0; }
 .bpb-gh-action > *, .bpb-gh-action::after { grid-area: 1 / 1; }
 .bpb-gh-action::after { content: attr(data-label); visibility: hidden; border: 1px solid transparent; padding: 2px 7px; }
 .bpb-gh-action > [hidden] { display: none; }
 .bpb-gh-status { align-self: center; padding: 3px 8px; cursor: default; }
-.bpb-gh-feedback { contain: inline-size; overflow-wrap: anywhere; }
+.bpb-gh-feedback { grid-column: 1 / -1; grid-row: 2; contain: inline-size; overflow-wrap: anywhere; }
+.bpb-gh-feedback:has(> .bpb-gh-link) { grid-area: 1 / 2; contain: none; }
 .bpb-gh-feedback[hidden] { display: none; }
 .bpb-gh-feedback > * + * { margin-left: 6px; }
 .bpb-gh-label { font-weight: 600; }
