@@ -170,7 +170,7 @@ export function createPeakHourlyChart({ container, day, samples, zone, metric = 
         drawCursor();
     }
     if (typeof ResizeObserver === 'function') { observer = new ResizeObserver(draw); observer.observe(frame); }
-    return { snapshot: () => ({ selectedTime: rows[selected]?.sourceTime ?? null, conditionsScrollLeft: conditions.scrollLeft }), dispose() {
+    return { snapshot: () => ({ metric, selectedTime: rows[selected]?.sourceTime ?? null, conditionsScrollLeft: conditions.scrollLeft }), dispose() {
         disposed = true; observer?.disconnect();
         tabs.onclick = tabs.onkeydown = frame.onpointermove = frame.onpointerleave = frame.onclick = frame.onkeydown = null;
         container.replaceChildren();

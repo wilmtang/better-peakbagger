@@ -637,7 +637,7 @@ test('model loading reuses one live feedback row and preserves expanded weather 
     } finally { finish?.(); env.close(); }
 });
 
-test('summary activation switches the day and mounts Conditions synchronously without double expansion', async () => {
+test('summary activation expands only the requested day without collapsing context or scrolling the page', async () => {
     const env = setup();
     try {
         await settled(env, { past: false });
@@ -648,13 +648,78 @@ test('summary activation switches the day and mounts Conditions synchronously wi
         const scrolls = []; env.win.scrollBy = value => scrolls.push(value.top);
         second.getBoundingClientRect = () => ({ top: days[0].open ? 500 : 200 });
         second.click();
-        assert.equal(days[0].open, false); assert.equal(days[1].open, true);
-        assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]').length, 1);
+        assert.equal(days[0].open, true); assert.equal(days[1].open, true);
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]').length, 2);
         assert.ok(days[1].querySelector('.bpb-weather-hourly-table')); assert.equal(env.doc.activeElement, second);
-        assert.deepEqual(scrolls, [-300]);
-        await waitFor(() => env.resizeObservers.filter(observer => !observer.disconnected).length === 1);
+        assert.deepEqual(scrolls, []);
+        await waitFor(() => env.resizeObservers.filter(observer => !observer.disconnected).length === 2);
         assert.ok(days[1].querySelector('.bpb-weather-hourly-table'), 'queued close toggle cannot dispose the new hourly panel');
         second.click(); assert.equal(days[1].open, false); assert.equal(days[1].querySelector('[role="tabpanel"]'), null);
+        assert.equal(days[0].open, true); assert.ok(days[0].querySelector('.bpb-weather-hourly-table'));
+        assert.equal(env.resizeObservers.filter(observer => !observer.disconnected).length, 1);
+        assert.equal(env.requests.length, 1);
+    } finally { env.close(); }
+});
+
+test('each expanded day preserves its own tab, pinned reading and scroll through refresh and period changes', async () => {
+    const env = setup();
+    try {
+        await settled(env, { past: false });
+        const days = [...env.doc.querySelectorAll('.bpb-week-day')], dates = days.slice(0, 2).map(day => day.dataset.date);
+        days[0].querySelector('summary').click();
+        days[0].querySelector('[data-metric="temperature"]').click();
+        const chart = days[0].querySelector('.bpb-week-chart');
+        chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        const reading = days[0].querySelector('.bpb-week-readout').textContent;
+        days[1].querySelector('summary').click();
+        days[1].querySelector('[data-metric="code"]').click();
+        const grid = days[1].querySelector('.bpb-week-conditions'); grid.scrollLeft = 240; grid.focus();
+        const verify = () => {
+            const [first, second] = dates.map(date => env.doc.querySelector(`[data-date="${date}"]`));
+            assert.equal(first.open, true); assert.equal(second.open, true);
+            assert.equal(first.querySelector('[aria-selected="true"]').dataset.metric, 'temperature');
+            assert.equal(first.querySelector('.bpb-week-readout').textContent, reading);
+            assert.ok(first.querySelector('.bpb-week-cursor'));
+            assert.equal(second.querySelector('[aria-selected="true"]').dataset.metric, 'code');
+            assert.equal(second.querySelector('.bpb-week-conditions').scrollLeft, 240);
+        };
+        env.doc.querySelector('.bpb-week-refresh').click();
+        await waitFor(() => env.doc.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        verify(); assert.ok(env.doc.activeElement.matches('.bpb-week-conditions'));
+        env.doc.querySelector('[data-period="past"]').click();
+        env.doc.querySelector('.bpb-week-day > summary').click();
+        env.doc.querySelector('[data-period="forecast"]').click(); verify();
+        const before = env.requests.length;
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]').length, 2);
+        assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'temperature');
+        assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]')[1].querySelector('[aria-selected="true"]').dataset.metric, 'code');
+        assert.equal(env.requests.length, before);
+    } finally { env.close(); }
+});
+
+test('multiple open days release every chart on close, opt-out and page lifecycle transitions', async () => {
+    const env = setup();
+    const count = () => env.resizeObservers.filter(observer => !observer.disconnected).length;
+    try {
+        await settled(env, { past: false });
+        const days = [...env.doc.querySelectorAll('.bpb-week-day')];
+        for (const [index, metric] of ['temperature', 'gust', 'code'].entries()) {
+            days[index].querySelector('summary').click(); days[index].querySelector(`[data-metric="${metric}"]`).click();
+        }
+        assert.equal(count(), 3);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(count(), 0);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
+        await settled(env, { past: false });
+        assert.equal(count(), 3);
+        assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day[open] [aria-selected="true"]')].map(tab => tab.dataset.metric), ['temperature', 'gust', 'code']);
+        env.doc.querySelector('.bpb-week-day > summary').click(); assert.equal(count(), 2);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        assert.equal(count(), 0);
+        env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { showWeather: true } } }, 'sync'));
+        await settled(env, { past: false }); assert.equal(count(), 2);
+        env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide')); assert.equal(count(), 0);
     } finally { env.close(); }
 });
 
@@ -803,7 +868,7 @@ test('card stays in the right native table below map and includes sixteen comple
     } finally { env.close(); }
 });
 
-test('hourly disclosure retains local DST folds, closes other days and changes units without fetching', async () => {
+test('independent hourly disclosures retain local DST folds and change units without fetching', async () => {
     const env = setup();
     try {
         await settled(env);
@@ -817,13 +882,15 @@ test('hourly disclosure retains local DST folds, closes other days and changes u
         assert.ok([...fold.querySelectorAll('[data-weather-row="code"] [role="img"]')].some(icon => icon.getAttribute('aria-label') === 'Light snow'));
         assert.equal(env.requests.length, 1);
         const previous = env.doc.querySelector('[data-date="2024-11-02"]'); previous.open = true;
-        await waitFor(() => !fold.open && previous.querySelectorAll('.bpb-weather-conditions-hour').length === 24);
+        await waitFor(() => previous.querySelectorAll('.bpb-weather-conditions-hour').length === 24);
+        assert.equal(fold.open, true);
         assert.equal(previous.querySelector('[aria-selected="true"]').dataset.metric, 'code');
         previous.querySelector('[data-metric="temperature"]').click();
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync'));
         const next = env.doc.querySelector('[data-date="2024-11-02"]');
         assert.equal(next.open, true); assert.match(next.textContent, /°C/); assert.match(next.textContent, /km\/h/);
         assert.match(next.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /°C/);
+        assert.equal(env.doc.querySelector('[data-date="2024-11-03"]').open, true);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
 });

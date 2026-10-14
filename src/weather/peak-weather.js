@@ -132,7 +132,8 @@ export function mountPeakWeather() {
         if (owner === updatesGeneration) updatesController = null;
     }
     source.addEventListener('toggle', () => { if (source.open) void loadUpdates(); else cancelUpdates(); });
-    let started = false, pending = false, hourlyChart = null, activeDay = null, hourlyMetric = 'code';
+    let started = false, pending = false, hourlyMetric = 'code';
+    const hourlyCharts = new Map(), hourlyStates = new Map();
     let period = 'forecast', notice = null, requestedWindow = null;
     const choices = { past: 'gfs_global', forecast: 'gfs_global' };
     let summitChoices = null;
@@ -196,25 +197,32 @@ export function mountPeakWeather() {
         if (notice?.kind === 'rate-limit') status.dataset.kind = 'rate-limit';
         else delete status.dataset.kind;
     };
-    const clearChart = () => { hourlyChart?.dispose(); hourlyChart = null; activeDay = null; };
+    const clearChart = detail => {
+        for (const [owner, chart] of detail ? [[detail, hourlyCharts.get(detail)]] : hourlyCharts) {
+            if (!chart) continue;
+            hourlyStates.set(owner.dataset.date, chart.snapshot());
+            chart.dispose(); hourlyCharts.delete(owner);
+        }
+    };
     const renderHours = (day, detail, container, state) => {
-        if (activeDay === detail && hourlyChart) return;
-        clearChart(); activeDay = detail;
-        hourlyChart = createPeakHourlyChart({ container, day, samples: current.data[period].samples, zone, metric: hourlyMetric, format,
+        if (hourlyCharts.has(detail)) return;
+        state ??= hourlyStates.get(detail.dataset.date);
+        const chart = createPeakHourlyChart({ container, day, samples: current.data[period].samples, zone, metric: state?.metric ?? hourlyMetric, format,
             onMetric: metric => {
                 hourlyMetric = metric;
                 // Persist explicit choices only; mounting or redrawing a day
                 // must not overwrite a newer choice from another open page.
                 try { void chrome.storage.local.set({ [hourlyMetricKey]: metric }).catch(() => {}); } catch { /* Storage failure keeps the tabs usable. */ }
             }, state });
+        hourlyCharts.set(detail, chart);
     };
-    function renderResult(openDate = days.querySelector('details[open]')?.dataset.date) {
+    const expandedDates = () => [...days.querySelectorAll('details[open]')].map(day => day.dataset.date);
+    function renderResult(openDays = expandedDates()) {
         if (!current) return;
         const focused = days.contains(document.activeElement) ? document.activeElement : null;
         const focusedDate = focused?.closest('details')?.dataset.date;
         const focusSelector = focused?.matches('summary') ? 'summary' : focused?.matches('.bpb-week-chart') ? '.bpb-week-chart'
             : focused?.matches('.bpb-week-conditions') ? '.bpb-week-conditions' : focused?.dataset.metric ? `[data-metric="${focused.dataset.metric}"]` : null;
-        const stateDate = activeDay?.dataset.date, chartState = hourlyChart?.snapshot();
         const summaries = current.days[period], forecast = period === 'forecast';
         const model = current.models[period], data = current.data[period];
         const forecastLabel = `${current.window.forecast.days.length}-day forecast`;
@@ -227,6 +235,9 @@ export function mountPeakWeather() {
         help.textContent = `Select a day for hourly ${forecast ? 'forecast' : 'weather'}. Rain/snow is water equivalent; wind is the daily maximum.`;
         renderLabels(current.window[period]);
         clearChart();
+        // Keep per-day exploration bounded to the current combined window.
+        const availableDates = new Set([...current.window.past.days, ...current.window.forecast.days].map(day => day.date));
+        for (const date of hourlyStates.keys()) if (!availableDates.has(date)) hourlyStates.delete(date);
         days.replaceChildren();
         for (const day of help.hidden ? [] : forecast ? summaries : [...summaries].reverse()) {
             const date = day.window.date;
@@ -245,33 +256,26 @@ export function mountPeakWeather() {
             if (!day.useful || day.partial || (day.gust.high !== null && !day.gust.complete)) summary.append(element('span', { class: 'bpb-week-partial', text: day.useful ? 'Incomplete hours' : 'Data unavailable' }));
             const hourly = element('div', { class: 'bpb-week-hourly' });
             detail.append(summary, hourly);
-            // Native toggle is asynchronous: opening first paints an empty
-            // panel beside the old one. Handle native summary activation's
-            // click (including Enter/Space) as a single update instead.
+            // Mount in the same update as native summary activation (including
+            // Enter/Space), so the first expanded frame has usable content.
             summary.addEventListener('click', event => {
                 if (!enabled() || lifecycle.state !== 'active' || event.button > 0) return;
                 event.preventDefault();
                 const opening = !detail.open;
-                const top = summary.getBoundingClientRect().top;
-                clearChart();
-                days.querySelectorAll('details[open]').forEach(other => { other.open = false; });
                 detail.open = opening;
                 if (opening) renderHours(day, detail, hourly);
+                else clearChart(detail);
                 summary.focus({ preventScroll: true });
-                // Keep the heading under the pointer. Revealing the entire
-                // hourly panel forcibly scrolled the page on every activation.
-                const displacement = summary.getBoundingClientRect().top - top;
-                if (Math.abs(displacement) > 1) window.scrollBy({ top: displacement, behavior: 'instant' });
+                // Do not collapse another day or scroll to compensate: both
+                // would move the surrounding page while anchoring only this row.
             });
             detail.addEventListener('toggle', () => {
                 if (!enabled() || !detail.isConnected || lifecycle.state !== 'active') return;
-                if (!detail.open) { if (activeDay === detail) clearChart(); return; }
-                if (activeDay === detail) return;
-                days.querySelectorAll('details[open]').forEach(other => { if (other !== detail) other.open = false; });
+                if (!detail.open) { clearChart(detail); return; }
                 renderHours(day, detail, hourly);
             });
             days.append(detail);
-            if (date === openDate) { detail.open = true; renderHours(day, detail, hourly, date === stateDate ? chartState : undefined); }
+            if (openDays.includes(date)) { detail.open = true; renderHours(day, detail, hourly); }
         }
         if (focused && focusSelector) {
             const target = [...days.children].find(day => day.dataset.date === focusedDate)?.querySelector(focusSelector);
@@ -285,10 +289,10 @@ export function mountPeakWeather() {
     }
     const choosePeriod = next => {
         if (next !== period) {
-            openDates.set(period, days.querySelector('details[open]')?.dataset.date);
+            openDates.set(period, expandedDates());
             period = next;
             populateModels();
-            if (current) renderResult(openDates.get(period) || null);
+            if (current) renderResult(openDates.get(period) || []);
             else if (requestedWindow) renderLabels(requestedWindow[period]);
         }
         for (const button of periodButtons) {

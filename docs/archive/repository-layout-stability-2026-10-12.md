@@ -487,3 +487,68 @@ must not be mistaken for optional cleanup or a complete audit closure.
   placement, browser zoom or screen-reader speech.
 - The full repository unit suite was not rerun; the two previously recorded
   unchanged README assertions remain known and outside this change.
+
+## 2026-10-14 weather-day disclosure context
+
+### Fixed and verified
+
+- The previous accordion collapsed the already-open day, then scrolled the
+  document to keep only the clicked summary anchored. The new regression
+  reproduced a 321-pixel scroll and matching displacement of surrounding
+  content on the original shipped bundle. Holding one target still was not
+  sufficient evidence of a stable reading experience.
+- Days now expand independently. Opening Thursday leaves Today in place;
+  activation neither closes a neighboring day nor compensates with a page
+  scroll. Hourly content mounts synchronously for pointer and native keyboard
+  activation. Explicit collapse releases that day's chart only.
+- Each day owns its chart and a snapshot of its metric, pinned instant and
+  horizontal table position. Refresh, units, period switches, opt-out and
+  BFCache retain the appropriate exploration state while disposing all old
+  observers. Snapshots are bounded to dates in the current combined window
+  and remain page-memory only. No new storage key or weather request is added.
+- Build and focused ESLint/diff checks passed. All 119 focused ascent, peak
+  and hourly-weather tests passed, including independent expansion, distinct
+  per-day state, refresh/period/unit updates, opt-out and lifecycle cleanup.
+  The full built-bundle unit suite was also run: it failed only the two known,
+  unchanged photo-documentation README assertions recorded above.
+- Hidden real-extension Chrome 153.0.8010.12 and Firefox 157.0.1 passed the
+  HTTPS fixture suite and teardown. Each exercised 216 transition cases:
+  forecast/history × light/dark × normal/enlarged day labels × 375/768/1440
+  widths × Conditions/temperature/rain × pointer/Enter/Space. At 1000-pixel
+  viewport height, rendered-frame assertions compare document scroll, the
+  clicked summary's position/dimensions, Sun & Moon, the weather header and
+  overview, and existing panels above the trigger within 1 pixel. Viewport-edge
+  opening checks passed too; disclosure made no additional weather request.
+- Before/after forecast renders were inspected in wide dark Chrome and
+  narrow light Firefox, plus enlarged-label narrow Chrome. The ordinary
+  weather fixture matrix also passed at 375/768/1440×1100 in both themes.
+  Single-graph sizing fixtures now explicitly prepare one open day rather
+  than assuming the product will close others. Firefox's geometry check now
+  excludes hidden descendants of closed native details while still checking
+  the visible summary and expanded source content.
+- The generic real-manifest Chrome verifier passed hidden at 1000×760,
+  including worker/content startup, BFCache restore and teardown. Final
+  process/profile inspection found no owned verification browser or disposable
+  profile remaining.
+
+### Intentionally not changed
+
+- Multiple days may remain open, so the card can be longer by explicit user
+  choice. Only content below the activated day expands/collapses. There is no
+  fixed empty spacer, reflow animation, automatic scroll or new collapse-all
+  control. Source disclosure, weather data, forecast/date policy, model memory
+  and manual Peakbagger Save boundaries are unchanged.
+- Earlier open audit findings remain open; this fixes the newly reported
+  accordion/context movement, not the entire UX audit.
+
+### Changed but not fully proven
+
+- Provider responses are controlled; this is presentation/interaction evidence,
+  not forecast accuracy or a live Brave-profile reproduction. Enlargement
+  covers day-summary text at 26 pixels, not native browser zoom or all chart
+  typography. Hidden checks do not establish onscreen window focus/placement
+  or screen-reader speech.
+- Closing a panel at the absolute end of a document can invoke the browser's
+  native scroll-range clamp; that boundary was not exercised. Intentional
+  expansion below a trigger and deliberate period navigation can still change
+  downstream layout. The two unrelated README failures are not repaired here.

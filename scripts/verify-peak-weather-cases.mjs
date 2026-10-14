@@ -59,6 +59,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
                 .every(link => link.getBoundingClientRect().bottom <= document.querySelector('.bpb-sun-calculator').getBoundingClientRect().top),
             overflow: [...card.querySelectorAll('select, .bpb-week-models, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] p, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 if (!node.getClientRects().length) return false;
+                // Firefox can report boxes for content inside a closed native
+                // details element. Only its summary participates in layout QA.
+                const closed = node.closest('details:not([open])');
+                if (closed && !closed.querySelector(':scope > summary')?.contains(node)) return false;
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
             pageWidth: document.documentElement.scrollWidth, bg: getComputedStyle(card).backgroundColor,
@@ -185,9 +189,12 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             assert.ok(await evaluate(() => document.querySelector('.bpb-week-sub').textContent.includes('Today + 15 days')));
             await assertForecastInfo();
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-forecast-${width}.png`));
-            if (!await evaluate(() => document.querySelector('.bpb-week-day').open)) await click(`${card} .bpb-week-day:first-child > summary`);
+            // This graph-sizing fixture targets one day explicitly; day
+            // independence and multi-panel geometry are checked below.
+            await evaluate(() => document.querySelectorAll('.bpb-week-day').forEach(day => { day.open = false; }));
+            await click(`${card} .bpb-week-day:first-child > summary`);
             await wait(() => document.querySelector('.bpb-week-day:first-child[open] .bpb-week-line')
-                && document.querySelectorAll('.bpb-week-day[open]').length === 1, 'first forecast day replaces the remembered final-day graph');
+                && document.querySelectorAll('.bpb-week-day[open]').length === 1, 'explicit first forecast day has its hourly graph');
             await assertHourlyTabOrder();
             assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-day[open] .bpb-week-point').length), 24);
             await click(`${card} .bpb-week-day[open] [data-metric="precipitation"]`);
@@ -338,8 +345,10 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await chooseModel('gfs_global');
     await wait(() => document.querySelectorAll('.bpb-week-day').length === 16 && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'reset saved models');
     await openPage();
-    const daySwitches = await verifyWeatherDaySwitches({ evaluate, click, press, resize, firefoxMode });
-    assert.equal(daySwitches.length, 27);
+    const dayRequests = evidence.length;
+    const daySwitches = await verifyWeatherDaySwitches({ evaluate, click, press, resize, setSettings, screenshotPage, output, firefoxMode });
+    assert.equal(daySwitches.length, 216);
+    assert.equal(evidence.length, dayRequests, 'independent disclosures reuse loaded weather');
     await setSettings({ theme: 'light', units: 'imperial', fillTripInfo: true });
     await openPage();
     await wait(() => document.querySelector('.bpb-week-temp').textContent.includes('°F'), 'initial weather unit preference applied');

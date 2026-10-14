@@ -49,13 +49,16 @@ The location behavior is covered by the peak-weather browser verifier; run
 The card defaults to **16-day forecast**, covering today plus fifteen days in forward
 order. **Past 16 days** shows sixteen completed local days, latest first, excluding
 today. Both views share one weather request; period tabs support arrow keys, Home and End
-and retain each view's expanded day. Forecast conditions use expected rather
+and retain each view's expanded days. Forecast conditions use expected rather
 than past-tense rain/snow labels. Each compact row has the
 day's most severe available condition, temperature low/high, precipitation
 water equivalent (rain, showers and snow), and maximum wind. Missing values
 remain unavailable and incomplete hours are labelled. A native keyboard-
-accessible disclosure opens one day's hourly graphs; expanding another day
-closes the previous one and retains the chosen data tab. **Conditions** is the
+accessible disclosure opens that day's hourly graphs independently. Opening
+another day leaves existing panels and the surrounding reading position in
+place, without scrolling the page; only explicit collapse closes a day. Each
+day retains its own data tab, pinned reading and hourly-table scroll through
+refresh, unit changes and period switches. **Conditions** is the
 initial data tab; the last explicit data-tab selection is saved in extension-local
 storage on this device and restored across peak pages and reloads. Missing or
 invalid saved selections fall back to Conditions. Temperature, rain/snow,
