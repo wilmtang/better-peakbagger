@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Shipped UI, isolated HTTPS fixtures, held responses, no live list mutations.
-/* global document, location, requestAnimationFrame, innerWidth, getComputedStyle */
+/* global document, location, requestAnimationFrame, innerWidth, innerHeight, getComputedStyle */
 import assert from 'node:assert/strict';
 import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -32,11 +32,16 @@ function install({ theme, textScale = 1 }) {
         bpbIgnoredClimbers: { schemaVersion: 1, revision: 0, entries: [] },
         bpbBuddyCache: { ownerCid: 900001, entries: [], fetchedAt: Date.now() }, bpbBuddyIntents: [] };
     const pending = new Map();
+    const reads = [];
+    const read = (value, key) => globalThis.__climber?.holdReads ? new Promise((resolve, reject) => reads.push({ resolve, reject, value, key })) : Promise.resolve(value);
     const publish = values => {
         Object.assign(store, structuredClone(values));
         listeners.forEach(listener => listener(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { newValue: value }])), 'local'));
     };
-    globalThis.__climber = { store, requests: [], publish, pending, release: (key, success = true) => {
+    globalThis.__climber = { store, requests: [], publish, pending, releaseReads: failed => {
+        globalThis.__climber.holdReads = false;
+        for (const item of reads.splice(0)) { if (item.key === failed) item.reject(new Error('Read unavailable')); else item.resolve(item.value); }
+    }, release: (key, success = true) => {
         const item = pending.get(key); if (!item) throw new Error(`No held ${key}`);
         pending.delete(key);
         if (!success) { item.resolve({ ok: false, error: { message: 'The change could not be saved. Your list is unchanged. Check the connection and try again. '.repeat(3) } }); return; }
@@ -65,8 +70,8 @@ function install({ theme, textScale = 1 }) {
         }
         return { ok: true, token: 'fixture-token', grantToken: 'fixture-token' };
     };
-    globalThis.chrome = { storage: { local: { get: async () => structuredClone(store), set: async values => publish(values) },
-        sync: { get: async () => ({ bpbSettings: { theme, favoritesSource: 'custom', removeFavoriteWhenBuddyRemoved: false } }) },
+    globalThis.chrome = { storage: { local: { get: () => read(structuredClone(store), 'local'), set: async values => publish(values) },
+        sync: { get: () => read({ bpbSettings: { theme, favoritesSource: 'custom', removeFavoriteWhenBuddyRemoved: false } }, 'settings') },
         onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); } } },
     runtime: { id: 'transition-fixture', onMessage: { addListener() {}, removeListener() {} },
         getURL: file => new URL(`/dist/${file}`, location.origin).href, sendMessage } };
@@ -88,14 +93,16 @@ async function frame(page, selectors = regions) {
             const r = document.querySelector(selector).getBoundingClientRect();
             boxes[selector] = { x: r.x, y: r.y, width: r.width, height: r.height };
         }
-        return { boxes, scroll: globalThis.scrollY };
+        const card = document.getElementById('bpb-climber-card'), main = document.querySelector('.bpb-climber-card-main');
+        return { boxes, scroll: globalThis.scrollY, cardScroll: card?.scrollTop, mainScroll: main?.scrollTop,
+            mainClient: main?.clientHeight, mainHeight: main?.scrollHeight, focus: document.activeElement.id };
     }, selectors);
 }
 function stable(before, after, label) {
     assert.equal(after.scroll, before.scroll, `${label}: document scroll moved`);
     for (const selector of Object.keys(before.boxes)) for (const key of ['x', 'y', 'width', 'height']) {
         const delta = after.boxes[selector][key] - before.boxes[selector][key];
-        assert.ok(Math.abs(delta) <= 1, `${label}: ${selector} ${key} shifted ${delta}px`);
+        assert.ok(Math.abs(delta) <= 1, `${label}: ${selector} ${key} shifted ${delta}px; ${JSON.stringify({ before, after })}`);
     }
 }
 async function sample(page, before, label, selectors) {
@@ -316,9 +323,118 @@ export async function verifyPendingMembership(page, origin, variant) {
     await page.waitForFunction(() => document.getElementById('bpb-climber-card-ignore').disabled === false);
     assert.equal(page.__buddyPosts(), 0, 'both surfaces reconcile without a POST');
 }
+export async function verifyCardFeedback(page, origin, variant, retryOnly = false, anchorTop = 720) {
+    await boot(page, origin, variant);
+    await page.addStyleTag({ content: await asset('css/climber-hover-card.css') });
+    await page.addStyleTag({ content: `.bpb-climber-link:has(#transition-person){position:fixed;left:30px;top:${anchorTop}px}` + (variant.textScale === 2
+        ? '#bpb-climber-card{font-size:28px}#bpb-climber-card .bpb-climber-card-name{font-size:34px}#bpb-climber-card :is(.bpb-climber-card-detail,.bpb-climber-card-feedback){font-size:24px}' : '') });
+    await page.addScriptTag({ content: await asset('content/climber-hover-card.js') });
+    await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite')?.disabled === false);
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
+    await page.locator('#bpb-climber-card-favorite').scrollIntoViewIfNeeded();
+    const selectors = ['#bpb-climber-card', '#bpb-climber-card-buddy', '#bpb-climber-card-favorite', '#bpb-climber-card-ignore'];
+    if (await page.locator('.bpb-climber-card-favorite-slot').count()) selectors.push('.bpb-climber-card-favorite-slot');
+    const before = await frame(page, selectors);
+    if (anchorTop === 20 || anchorTop === 820) {
+        await page.locator('#bpb-climber-card-favorite').focus();
+        await page.keyboard.press(anchorTop === 20 ? 'Enter' : 'Space');
+    } else await page.locator('#bpb-climber-card-favorite').click();
+    await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'bpb-climber-card-favorite', 'pending card action retains keyboard focus');
+    const writes = await page.evaluate(() => globalThis.__climber.requests.filter(message => message.type === 'FAVORITES_MUTATE').length);
+    await page.keyboard.press('Space');
+    assert.equal(await page.evaluate(() => globalThis.__climber.requests.filter(message => message.type === 'FAVORITES_MUTATE').length), writes, 'repeat keys cannot queue another write');
+    await page.evaluate(() => globalThis.__climber.release('favorite', false));
+    const retry = page.locator('.bpb-climber-card-retry');
+    await retry.waitFor({ state: 'visible' });
+    const recoveryBefore = await frame(page, ['.bpb-climber-card-retry']);
+    if (!retryOnly) {
+        const visible = await page.locator('.bpb-climber-card-feedback').evaluate(element => {
+            const r = element.getBoundingClientRect(), c = document.getElementById('bpb-climber-card').getBoundingClientRect();
+            return r.top >= c.top && r.bottom <= c.bottom && r.top >= 0 && r.bottom <= innerHeight;
+        });
+        assert.equal(visible, true, 'the error/recovery region must be visible without scrolling to discover it');
+        await sample(page, before, 'card visible error', selectors);
+        await capture(page, variant, `card-error-${anchorTop}`);
+        const details = page.locator('.bpb-climber-card-feedback-details');
+        assert.ok((await details.locator('p').textContent()).length > 250);
+        assert.equal(await details.evaluate(element => element.open), false);
+        await details.locator('summary').click();
+        await page.waitForFunction(() => {
+            const p = document.querySelector('.bpb-climber-card-feedback-details p'), r = p.getBoundingClientRect();
+            const c = document.getElementById('bpb-climber-card').getBoundingClientRect();
+            return r.top >= c.top && r.bottom <= c.bottom && r.height >= parseFloat(getComputedStyle(p).lineHeight) + 16;
+        });
+        await capture(page, variant, `card-details-${anchorTop}`);
+        await details.locator('summary').click();
+        await sample(page, before, 'card details closed', selectors);
+        await page.evaluate(() => { globalThis.__climber.holdReads = true; });
+        await retry.click();
+        await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAttribute('aria-busy') === 'true');
+        assert.equal(await page.evaluate(() => document.activeElement.classList.contains('bpb-climber-card-retry')), true, 'pending read check retains focus');
+        assert.equal(await retry.isDisabled(), true);
+        await sample(page, before, 'card read-only pending', selectors);
+        await sample(page, recoveryBefore, 'card anchored recovery control', ['.bpb-climber-card-retry']);
+        await page.evaluate(() => globalThis.__climber.releaseReads('settings'));
+        await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAttribute('aria-busy') === 'false');
+        const readingRegions = selectors.filter(selector => selector !== '#bpb-climber-card-favorite');
+        const readingBefore = { ...before, boxes: Object.fromEntries(Object.entries(before.boxes).filter(([selector]) => readingRegions.includes(selector))) };
+        await sample(page, readingBefore, 'card settings failure with preserved slot', readingRegions);
+        assert.equal(await page.locator('#bpb-climber-card-favorite').isVisible(), false, 'unknown source stays fail closed');
+        await retry.click();
+        await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite').disabled === false
+            && document.getElementById('bpb-climber-card').getAttribute('aria-busy') === 'false');
+        await sample(page, before, 'card settings recovery', selectors);
+        await page.locator('#bpb-climber-card-favorite').click();
+        await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+        await page.evaluate(() => globalThis.__climber.release('favorite', false));
+        await retry.waitFor({ state: 'visible' });
+    }
+    await page.locator('#bpb-climber-card-favorite').click();
+    await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+    assert.equal(await retry.isDisabled(), true, 'Retry must not advertise a click that the handler refuses');
+    await sample(page, recoveryBefore, 'card disabled recovery target', ['.bpb-climber-card-retry']);
+    await sample(page, before, 'card pending recovery', selectors);
+    await page.evaluate(() => globalThis.__climber.release('favorite'));
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAttribute('aria-busy') === 'false');
+    await sample(page, before, 'card completion', selectors);
+    await capture(page, variant, 'card');
+    if (!retryOnly) {
+        await page.evaluate(() => globalThis.__climber.publish({ bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
+            bpbIgnoredClimbers: { schemaVersion: 1, revision: 3, entries: [{ cid: 900002, name: 'Damon Up', addedAt: 1 }] } }));
+        await page.waitForFunction(() => document.getElementById('bpb-climber-card-ignore').textContent === 'Unignore climber');
+        const scroll = await page.evaluate(() => globalThis.scrollY);
+        await page.keyboard.press('Escape');
+        await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'bpb-climber-card-ignore');
+        assert.equal(await page.evaluate(() => globalThis.scrollY), scroll, 'explicit focus reveals only the local body');
+        assert.equal(await page.locator('#bpb-climber-card-ignore').evaluate(element => {
+            const r = element.getBoundingClientRect(), b = element.closest('.bpb-climber-card-main').getBoundingClientRect();
+            return r.top >= b.top - 1 && r.bottom <= b.bottom + 1;
+        }), true, 'the chosen enabled keyboard action must actually be visible');
+        // Wheel is an independent user gesture. Do not restore its scroll
+        // while the compositor may still be processing that gesture, then
+        // misreport its remaining motion as a save/recovery layout shift.
+        const main = page.locator('.bpb-climber-card-main');
+        if (await main.evaluate(element => element.scrollHeight > element.clientHeight + 2)) {
+            await main.evaluate(element => { element.scrollTop = element.scrollHeight; });
+            const box = await main.boundingBox(), scroll = await page.evaluate(() => globalThis.scrollY);
+            await page.evaluate(() => { globalThis.__wheelDone = new Promise(resolve => globalThis.addEventListener('wheel', () =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)), { once: true, passive: true })); });
+            const hit = await page.evaluate(({ x, y }) => ({ target: document.elementFromPoint(x, y)?.outerHTML.slice(0, 180),
+                overflow: getComputedStyle(document.querySelector('.bpb-climber-card-main')).overscrollBehaviorY,
+                open: document.getElementById('bpb-climber-card').matches(':popover-open') }), { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.wheel(0, 600); await page.evaluate(() => globalThis.__wheelDone);
+            assert.equal(await page.evaluate(() => globalThis.scrollY), scroll, `body boundary scrolling must not jump the page; ${JSON.stringify(hit)}`);
+        }
+    }
+}
 
 async function run() {
     const resources = createResourceStack(); let failure;
+    const onlyVariant = process.argv.find(value => value.startsWith('--variant='))?.split('=')[1];
     try {
         const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'bpb-climber-transitions-'));
         resources.defer('fixture directory', () => rm(temporaryRoot, { recursive: true, force: true }));
@@ -333,6 +449,7 @@ async function run() {
                 : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
             try {
                 for (const theme of ['light', 'dark']) for (const width of [390, 768, 1280]) for (const textScale of [1, 2]) {
+                    if (onlyVariant && onlyVariant !== `${name}-${theme}-${width}-${textScale}`) continue;
                     const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width, height: 900 }, colorScheme: theme });
                     try {
                         const page = await context.newPage(); page.setDefaultTimeout(10000);
@@ -346,6 +463,19 @@ async function run() {
                         if (checks === 'pending' || checks === 'all') {
                             const pendingPage = await context.newPage(); pendingPage.setDefaultTimeout(10000);
                             await verifyPendingMembership(pendingPage, origin, variant);
+                        }
+                        if (checks === 'card' || checks === 'card-retry' || checks === 'all') {
+                            for (const anchor of checks === 'card-retry' ? [720] : [20, 440, 820]) {
+                                const cardPage = await context.newPage(); cardPage.setDefaultTimeout(10000);
+                                await verifyCardFeedback(cardPage, origin, variant, checks === 'card-retry', anchor);
+                                await cardPage.close();
+                            }
+                            if (checks !== 'card-retry') for (const anchor of [20, 270, 500]) {
+                                const cardPage = await context.newPage(); cardPage.setDefaultTimeout(10000);
+                                await cardPage.setViewportSize({ width, height: 540 });
+                                await verifyCardFeedback(cardPage, origin, { ...variant, name: `${variant.name}-h540` }, false, anchor);
+                                await cardPage.close();
+                            }
                         }
                         console.log(JSON.stringify({ ...variant, version: browser.version(), hidden: true, result: 'passed' }));
                     } finally { await context.close(); }

@@ -25,7 +25,7 @@ const mount = () => {
     let observer = null, unsubscribe = null, settingsGeneration = 0;
     let openTimer = null, closeTimer = null, positionFrame = null, mutationFrame = null;
     let hovered = null, suppressed = null, operation = null, readController = null;
-    let error = '', notice = '', active = true, explicitOpen = false;
+    let error = '', notice = '', fullFailure = '', noticeNeedsCheck = false, active = true, explicitOpen = false;
     let focusedRecord = null;
     const listen = (node, type, handler, options) => {
         node.addEventListener(type, handler, options);
@@ -43,20 +43,39 @@ const mount = () => {
     const sourceText = D.element('span', { text: 'Favorites follow your Buddy List.' });
     const sourceSettings = button('Use custom favorites…', { class: 'bpb-climber-card-settings' });
     const source = D.element('div', { class: 'bpb-climber-card-source' }, [sourceText, sourceSettings]);
+    const favoriteSizing = D.element('div', { class: 'bpb-climber-card-action bpb-climber-card-sizing', 'aria-hidden': 'true' });
+    const sourceSizing = D.element('div', { class: 'bpb-climber-card-source-sizing bpb-climber-card-sizing', 'aria-hidden': 'true' }, [
+        D.element('span', { text: sourceText.textContent }), D.element('span', { class: 'bpb-climber-card-settings-sizing', text: sourceSettings.textContent }),
+    ]);
+    const favoriteSlot = D.element('div', { class: 'bpb-climber-card-favorite-slot' }, [favoriteSizing, sourceSizing, favorite, source]);
     const ignore = button('Ignore climber', { id: 'bpb-climber-card-ignore', class: 'bpb-climber-card-action bpb-climber-card-ignore',
         'aria-describedby': 'bpb-climber-card-ignore-detail' });
     const actionLabels = ['Add climbing buddy', 'Remove climbing buddy', 'Check buddy status',
         'Add favorite climber', 'Remove favorite climber', 'Ignore climber', 'Unignore climber', 'Saving…', 'Checking…', 'Removing…', 'Adding…'];
     const buddyText = createStableText(buddy), favoriteText = createStableText(favorite), ignoreText = createStableText(ignore);
     for (const text of [buddyText, favoriteText, ignoreText]) text.reserve(actionLabels);
+    createStableText(favoriteSizing).reserve(actionLabels);
     const detail = D.element('div', { id: 'bpb-climber-card-ignore-detail', class: 'bpb-climber-card-detail' });
-    const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' });
+    const detailText = createStableText(detail);
+    detailText.reserve(['Show their reports again', 'Remove from both lists to ignore', 'Remove from favorites to ignore',
+        'Remove from your Buddy List to ignore', 'Refresh your Buddy List before ignoring', 'Ignored climbers can hold up to 1,500 entries.', 'Hide their reports']);
+    const summaryText = D.element('div', { class: 'bpb-climber-card-feedback-summary' });
     const retry = button('Retry', { class: 'bpb-climber-card-retry', hidden: '' });
+    const retryText = createStableText(retry); retryText.reserve(['Check status', 'Check lists']);
+    const failureText = D.element('p');
+    const failureDetails = D.element('details', { class: 'bpb-climber-card-feedback-details', hidden: '' }, [
+        D.element('summary', { text: 'Details' }), failureText,
+    ]);
+    const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [summaryText,
+        D.element('div', { class: 'bpb-climber-card-recovery' }, [retry, failureDetails]),
+    ]);
+    const heading = D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, profile]), closeButton]);
+    const main = D.element('div', { class: 'bpb-climber-card-main' }, [buddy, signIn, favoriteSlot,
+        D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore, detail]),
+    ]);
     const card = D.element('div', { id: 'bpb-climber-card', role: 'dialog', popover: 'manual', hidden: '',
         'data-bpb-climber-ui': '', 'aria-labelledby': title.id }, [
-        D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, profile]), closeButton]),
-        buddy, signIn, favorite, source,
-        D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore]), retry, detail, feedback,
+        heading, main, feedback,
     ]);
     const announcement = D.element('div', { id: 'bpb-climber-card-announcement', role: 'status',
         'aria-live': 'polite', 'data-bpb-climber-ui': '' });
@@ -78,6 +97,13 @@ const mount = () => {
     };
     const viewState = () => climberCardState({ cid: current?.target.cid, ownerCid: ownerClimberId(document),
         settings: settingsError ? null : settings, membership, busy: !!operation, ...pageBuddy(current?.target.cid) });
+    const unavailable = (control, disabled, ownsOperation = false) => {
+        // Firefox blurs a physically disabled active button. Its explicit
+        // operation guard plus aria-disabled preserves focus without permitting
+        // another activation; unrelated unavailable controls still leave Tab order.
+        control.disabled = disabled && !ownsOperation;
+        control.setAttribute('aria-disabled', String(disabled));
+    };
     const paint = () => {
         if (!current || !active) return;
         const view = viewState();
@@ -89,26 +115,44 @@ const mount = () => {
         buddyText.set(view.buddyInFlight && !operation ? 'Saving…' : operation?.kind === 'buddy' ? operation.checkOnly ? 'Checking…'
             : operation.removing ? 'Removing…' : 'Adding…' : view.buddyIntent && view.buddyIntent.status !== 'confirmed' ? 'Check buddy status'
             : view.buddy ? 'Remove climbing buddy' : 'Add climbing buddy');
-        buddy.disabled = !!operation || view.buddyInFlight || view.buddyCheckBlocked || (!view.buddyIntent && view.buddyBlocked);
+        unavailable(buddy, !!operation || view.buddyInFlight || view.buddyCheckBlocked || (!view.buddyIntent && view.buddyBlocked),
+            operation?.kind === 'buddy' && !operation.recovery);
         buddy.setAttribute('aria-busy', String(operation?.kind === 'buddy'));
         buddy.setAttribute('aria-pressed', String(view.buddy));
         favorite.hidden = view.self || view.custom !== true;
         favoriteText.set(operation?.kind === 'favorite' ? 'Saving…'
             : view.favorite ? 'Remove favorite climber' : 'Add favorite climber');
-        favorite.disabled = view.favoriteDisabled;
+        unavailable(favorite, view.favoriteDisabled, operation?.kind === 'favorite');
         favorite.setAttribute('aria-pressed', String(view.favorite));
         favorite.setAttribute('aria-busy', String(operation?.kind === 'favorite'));
         source.hidden = view.self || view.custom !== false;
+        main.hidden = view.self;
         ignore.parentElement.hidden = view.self;
         ignoreText.set(operation?.kind === 'ignore' ? 'Saving…' : view.ignored ? 'Unignore climber' : 'Ignore climber');
-        ignore.disabled = view.ignoreDisabled;
+        unavailable(ignore, view.ignoreDisabled, operation?.kind === 'ignore');
         ignore.setAttribute('aria-pressed', String(view.ignored));
         ignore.setAttribute('aria-busy', String(operation?.kind === 'ignore'));
-        detail.textContent = view.ignoreDetail;
-        feedback.textContent = error || settingsError || view.note || (view.favoriteLimit
-            ? 'Favorites can hold up to 1,500 climbers.' : notice);
-        feedback.hidden = !feedback.textContent;
+        detailText.set(view.ignoreDetail);
+        const failure = error || settingsError || membership?.error || (noticeNeedsCheck ? notice : '');
+        if (failure && announcement.textContent !== failure) announcement.textContent = failure;
+        summaryText.textContent = operation?.kind === 'check' ? 'Checking lists…'
+            : error ? /buddy/i.test(error) ? 'Check buddy status.' : "Couldn't finish."
+                : settingsError ? 'Settings unavailable.' : membership?.error ? 'Lists unavailable.'
+                    : !membership?.ignored ? 'Loading lists…' : view.buddyInFlight ? 'Buddy change in progress.'
+                        : view.buddyCheckBlocked ? 'Check original account.' : view.buddyIntent?.status !== 'confirmed' && view.buddyIntent ? 'Check buddy status.'
+                            : view.ignored ? 'Unignore to add to lists.' : view.pending ? 'Finish list sync first.'
+                                : view.favoriteLimit ? 'Favorites are full.' : noticeNeedsCheck ? 'Saved; check lists.' : notice ? 'Saved.' : '';
+        summaryText.hidden = !summaryText.textContent;
+        if (failure) { fullFailure = failure; failureText.textContent = failure; }
+        else if (failureDetails.open && fullFailure) failureText.textContent = notice || `Previous message: ${fullFailure}`;
+        failureDetails.hidden = !failure && !failureDetails.open;
+        feedback.hidden = view.self;
         retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed' || (operation && !retry.hidden));
+        unavailable(retry, !!operation || !!view.buddyIntent && (view.buddyInFlight || view.buddyCheckBlocked),
+            operation?.kind === 'check' || operation?.recovery);
+        retry.setAttribute('aria-busy', String(operation?.kind === 'check' || !!operation?.recovery));
+        retryText.set(view.buddyIntent ? 'Check status' : 'Check lists');
+        retry.setAttribute('aria-label', view.buddyIntent ? 'Check buddy status' : 'Check lists and settings');
         card.setAttribute('aria-busy', String(!!operation));
         // Feedback may grow, but must not flip or lift a card under an active
         // pointer. Scrolling/resizing still repositions it against its anchor.
@@ -179,17 +223,31 @@ const mount = () => {
         const width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
         if (rect.bottom < topEdge || rect.top > topEdge + height) { close({ restore: true }); return; }
         card.style.maxWidth = `${Math.max(0, width - 24)}px`;
-        card.style.maxHeight = `${Math.max(0, height - 24)}px`;
         const size = card.getBoundingClientRect();
+        const styles = getComputedStyle(card);
+        const spacing = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom)
+            + parseFloat(styles.borderTopWidth) + parseFloat(styles.borderBottomWidth);
+        const block = node => node.hidden ? 0 : node.getBoundingClientRect().height
+            + parseFloat(getComputedStyle(node).marginTop) + parseFloat(getComputedStyle(node).marginBottom);
+        const fixedHeight = spacing + block(heading) + block(feedback);
+        const naturalHeight = fixedHeight + (main.hidden ? 0 : main.scrollHeight);
         const below = Math.max(0, topEdge + height - rect.bottom - 18);
         const above = Math.max(0, rect.top - topEdge - 18);
-        const placeBelow = below >= size.height || below >= above;
-        const available = placeBelow ? below : Math.min(above, size.height);
-        const top = placeBelow ? rect.bottom + 6 : rect.top - available - 6;
+        const placeBelow = below >= naturalHeight || below >= above;
+        const side = placeBelow ? below : above;
+        const primaryRoom = main.hidden ? 0 : Math.min(main.scrollHeight,
+            Math.max(buddy.getBoundingClientRect().height, favoriteSlot.getBoundingClientRect().height, ignore.getBoundingClientRect().height));
+        const readingRoom = Math.max(primaryRoom, failureDetails.open ? Math.min(120, parseFloat(getComputedStyle(feedback).fontSize) * 3 + 20) : 0);
+        const overlay = side < fixedHeight + readingRoom;
+        const available = Math.max(0, Math.min(overlay ? height - 24 : side, naturalHeight));
+        const top = overlay ? Math.max(topEdge + 12, Math.min(rect.top - available / 2, topEdge + height - available - 12))
+            : placeBelow ? rect.bottom + 6 : rect.top - available - 6;
         card.style.left = `${Math.max(leftEdge + 12, Math.min(rect.left, leftEdge + width - size.width - 12))}px`;
         card.style.top = `${Math.max(topEdge + 12, top)}px`;
-        // Grow below the fixed top edge; above-anchor placement scrolls before
-        // overlapping the link that opened it. Reserve the scrollbar gutter.
+        card.style.setProperty('--bpb-card-detail-space', `${Math.max(0, available - fixedHeight - 8)}px`);
+        card.style.setProperty('--bpb-card-footer-height', `${feedback.getBoundingClientRect().height}px`);
+        // The footer never scrolls away with the action body. Limited viewports
+        // scroll the body/details independently, not the whole card or page.
         card.style.maxHeight = `${available}px`;
     };
     function schedulePosition() {
@@ -201,7 +259,8 @@ const mount = () => {
         clearTimers();
         if (current !== record) {
             if (current && card.contains(document.activeElement) && !explicit) return;
-            close(); current = record; error = ''; notice = '';
+            close(); current = record; error = ''; notice = ''; noticeNeedsCheck = false;
+            failureDetails.open = false; fullFailure = ''; failureText.textContent = '';
             rememberFocusContext(record);
             record.target = targetFor(record.anchor);
             record.host.append(card); // Natural keyboard order follows the actions trigger.
@@ -216,6 +275,13 @@ const mount = () => {
             const first = [buddy, signIn, favorite, ignore, profile].find(control => !control.hidden
                 && !control.disabled && control.getAttribute('aria-disabled') !== 'true');
             first?.focus({ preventScroll: true });
+            if (first && main.contains(first)) {
+                const target = first.getBoundingClientRect(), body = main.getBoundingClientRect();
+                // Explicit opening must reveal its chosen keyboard target in
+                // the local scroller, without scrolling the document.
+                if (target.top < body.top) main.scrollTop += target.top - body.top;
+                else if (target.bottom > body.bottom) main.scrollTop += target.bottom - body.bottom;
+            }
         }
     };
     const requestOpen = (record, delay = OPEN_DELAY) => {
@@ -295,7 +361,7 @@ const mount = () => {
             || (kind === 'ignore' && view.ignoreDisabled)) return;
         const target = { ...current.target }, owner = ownerClimberId(document);
         const removing = kind === 'favorite' ? view.favorite : view.ignored;
-        operation = { kind, cid: target.cid }; error = ''; notice = ''; paint();
+        operation = { kind, cid: target.cid }; error = ''; notice = ''; noticeNeedsCheck = false; paint();
         try {
             // A saved absence is not proof of current server absence. Only an
             // explicit Ignore addition reads the signed-in Buddy List.
@@ -339,8 +405,8 @@ const mount = () => {
         const view = viewState(), target = { ...current.target }, owner = ownerClimberId(document);
         if (owner == null || view.self) return;
         checkOnly ||= !!view.buddyIntent && view.buddyIntent.status !== 'confirmed';
-        operation = { kind: 'buddy', cid: target.cid, removing: view.buddy, checkOnly };
-        error = notice = ''; paint();
+        operation = { kind: 'buddy', cid: target.cid, removing: view.buddy, checkOnly, recovery: event.currentTarget === retry };
+        error = notice = ''; noticeNeedsCheck = false; paint();
         try {
             const result = await changeBuddy({ api: chrome, target, ownerCid: owner, origin: location.origin,
                 currentOwner: () => ownerClimberId(document), action: view.buddy ? 'remove' : 'add', checkOnly });
@@ -349,6 +415,7 @@ const mount = () => {
                 applyBuddyProfileState(document, result.buddy);
             }
             notice = result.warning || `${target.name} ${result.buddy ? 'is now a climbing buddy' : 'is no longer a climbing buddy'}.`;
+            noticeNeedsCheck = !!result.warning;
             announcement.textContent = notice;
             await observer?.refresh();
         } catch (failure) {
@@ -370,12 +437,16 @@ const mount = () => {
             activationToken: activation.token, disposition: 'foreground-tab' }).catch(() => null);
         if (!response?.ok) { error = 'Settings could not be opened. Try again.'; paint(); }
     });
-    listen(retry, 'click', event => {
-        if (event.isTrusted !== true || operation) return;
+    listen(retry, 'click', async event => {
+        if (event.isTrusted !== true || operation || retry.disabled || !current || !active) return;
         if (viewState().buddyIntent) { void mutateBuddy(event, true); return; }
-        error = ''; notice = ''; void observer?.refresh(); void refreshSettings(); paint();
+        const target = current?.target.cid;
+        operation = { kind: 'check', cid: target }; error = ''; notice = ''; noticeNeedsCheck = false; paint();
+        try { await Promise.all([observer?.refresh(), refreshSettings()]); }
+        finally { operation = null; if (current?.target.cid === target) paint(); }
     });
     listen(closeButton, 'click', () => close({ restore: true, suppress: true }));
+    listen(failureDetails, 'toggle', schedulePosition);
     listen(document, 'pointerover', event => {
         if (!active || event.pointerType === 'touch') return;
         const record = recordAt(event.target);
@@ -411,7 +482,15 @@ const mount = () => {
     listen(document, 'pointerdown', event => {
         if (current && !current.host.contains(event.target)) close({ suppress: true });
     });
-    listen(window, 'scroll', schedulePosition, true);
+    listen(window, 'scroll', event => { if (!card.contains(event.target)) schedulePosition(); }, true);
+    listen(card, 'wheel', event => {
+        const scroller = event.target.closest?.('.bpb-climber-card-main, .bpb-climber-card-name, .bpb-climber-card-feedback-details p');
+        if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return;
+        // Firefox can chain wheel events from controls inside a popover despite
+        // CSS containment. Consume only boundary gestures, not normal scrolling.
+        if (event.deltaY > 0 && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
+            || event.deltaY < 0 && scroller.scrollTop <= 0) event.preventDefault();
+    }, { passive: false });
     listen(window, 'resize', schedulePosition);
     if (window.visualViewport) {
         listen(window.visualViewport, 'resize', schedulePosition);

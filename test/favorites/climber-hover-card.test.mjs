@@ -119,6 +119,32 @@ test('favorite and Ignore changes use operation APIs and confirmed reverse actio
     await waitFor(dom, () => ignore.textContent === 'Ignore climber' && !ignore.disabled);
     assert.deepEqual(dom.chrome._localStore[ignoredKey].entries, []);
 });
+test('card recovery is disabled while work is pending and full error details stay explicit', async t => {
+    let finish;
+    const dom = await load({ prepare(page) {
+        const send = page.chrome.runtime.sendMessage.bind(page.chrome.runtime);
+        Object.defineProperty(page.chrome.runtime, 'sendMessage', { value: message => message.type === 'FAVORITES_MUTATE'
+            ? new Promise(resolve => { finish = resolve; }) : send(message) });
+    } }); t.after(() => dom.window.close());
+    const card = await open(dom), favorite = card.querySelector('#bpb-climber-card-favorite');
+    await waitFor(dom, () => !favorite.disabled);
+    fireTrustedEvent(favorite, 'click');
+    finish({ ok: false, error: { message: 'Full failure '.repeat(40) } });
+    const retry = card.querySelector('.bpb-climber-card-retry');
+    await waitFor(dom, () => !retry.hidden);
+    assert.equal(retry.textContent, 'Check lists', 'recovery reads state; it does not pretend to repeat the failed write');
+    const details = card.querySelector('details');
+    assert.equal(details.open, false);
+    assert.match(card.querySelector('.bpb-climber-card-feedback-summary').textContent, /Couldn't finish/);
+    assert.equal(details.querySelector('p').textContent.length, 520);
+    details.open = true;
+    fireTrustedEvent(favorite, 'click');
+    assert.match(details.querySelector('p').textContent, /^Previous message:/, 'kept-open details cannot masquerade as the current result');
+    assert.equal(retry.hidden, false); assert.equal(retry.disabled, true);
+    finish({ ok: false, error: { message: 'Retry failure' } });
+    await waitFor(dom, () => !retry.disabled);
+    assert.equal(details.querySelector('p').textContent, 'Retry failure');
+});
 
 test('Buddy action is inline; source mode never silently creates ineffective custom favorites', async t => {
     const dom = await load({ settings: { favoritesSource: 'buddies' } }); t.after(() => dom.window.close());

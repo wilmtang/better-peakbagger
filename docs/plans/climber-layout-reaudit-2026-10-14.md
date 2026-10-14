@@ -1,7 +1,7 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
-Status: **remediation in progress**. C01–C05 have profile/membership corrections;
-C06/C07 and final C08 integration remain open. This is the re-audit of the Buddy/Favorite/Ignore
+Status: **remediation in progress**. C01–C07 have focused corrections;
+final C08 baseline/integration proof and O01/O02 remain open. This is the re-audit of the Buddy/Favorite/Ignore
 page-jump report; the focused remediation order is recorded separately below.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
@@ -295,6 +295,33 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- C06/C07: the card now scrolls its action body independently of its reserved
+  feedback footer. A short visible summary and explicit full-details pane
+  replace invisible errors. Favorite/source and Ignore-detail readings reserve
+  real alternatives, including a fail-closed settings error. Small viewports
+  allocate at least one readable primary control; explicit details scroll inside
+  their pane without moving the page. Body/detail scrolling does not reposition
+  the anchor. Error announcements retain the complete message.
+- Recovery is disabled through mutations and slow read-only checks. "Check
+  lists" describes actual reconciliation rather than implying a repeated write;
+  Buddy recovery remains "Check status". Both captions reserve their dimensions.
+  The visibility and unavailable-recovery tests independently failed the old
+  card. All 25 focused card/state/feedback/membership tests passed; build and
+  focused ESLint passed. The initial 24×3 placement matrix and replacement
+  eight-case gate passed; the expanded check covers 144 positions across both
+  engines, themes, 390/768/1280 widths, normal/enlarged text and 900/540 heights.
+  Pointer, slow reads, settings failure, repeated mutation failure, full details
+  and recovery target geometry are exercised. Wide/narrow error and details
+  renders were inspected. Real unpacked Chrome startup/BFCache/teardown passed.
+- The final 144-position card run passed with Enter/Space, repeated-key write
+  suppression, preserved focus and visible initial keyboard targets. Firefox
+  focus loss from physically disabling the active action was reproduced and
+  corrected with guarded `aria-disabled` ownership; unrelated unavailable
+  controls remain physically disabled. A real Firefox boundary-wheel probe
+  moved the document 508px despite CSS containment; the card now consumes only
+  actual scroller-boundary gestures. Normal scrolling is unchanged. Wheel
+  testing is isolated from save geometry so compositor gestures cannot corrupt
+  those comparisons. Profile/native busy-focus coverage remains for final C08.
 - C04: Ignore now uses the shared validated card eligibility and durable intent
   protection. Profile/card/native Buddy actions agree on live leases and other
   accounts; expired intents remain protected but permit explicit status checks.
@@ -354,7 +381,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Changed but not fully proven
 
-- Hover-card and carried GPX/report remediation
+- Final C08 integration/baseline proof and carried GPX/report remediation
   remain open. Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
   touch, every native POST failure/check-only recovery and actual multi-window

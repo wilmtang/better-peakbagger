@@ -11,12 +11,19 @@
 #bpb-climber-card { --bpb-cc-surface: #fcfbf5; --bpb-cc-text: #233629; --bpb-cc-sub: #5b685b;
     --bpb-cc-border: #d6dccb; --bpb-cc-accent: #2c6244; --bpb-cc-link: #23593e; --bpb-cc-hover: #eaf0e5;
     box-sizing: border-box; position: fixed; inset: auto; z-index: 2147483646; margin: 0; padding: 16px;
-    width: 312px; max-width: calc(100vw - 24px); overflow: auto; border: 1px solid var(--bpb-cc-border);
+    display:flex; flex-direction:column; width: 312px; max-width: calc(100vw - 24px); overflow: hidden; border: 1px solid var(--bpb-cc-border);
     border-radius: 12px; background: var(--bpb-cc-surface); color: var(--bpb-cc-text); text-align: left;
     box-shadow: 0 8px 28px rgb(29 42 28 / 16%), 0 2px 6px rgb(29 42 28 / 10%);
     font: 14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space: normal; }
 #bpb-climber-card[hidden], #bpb-climber-card [hidden] { display: none !important; }
 #bpb-climber-card .bpb-climber-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+#bpb-climber-card .bpb-climber-card-heading, #bpb-climber-card .bpb-climber-card-feedback { flex:0 0 auto; }
+#bpb-climber-card .bpb-climber-card-main { min-height:0; overflow:auto; scrollbar-gutter:stable; flex:0 1 auto; }
+#bpb-climber-card :is(.bpb-climber-card-main,.bpb-climber-card-name,.bpb-climber-card-feedback-details p) { overscroll-behavior:contain; }
+#bpb-climber-card .bpb-climber-card-name { max-height:30vh; overflow:auto; }
+#bpb-climber-card .bpb-climber-card-favorite-slot { display:grid; grid-template-columns:minmax(0,1fr); margin-top:8px; }
+#bpb-climber-card .bpb-climber-card-favorite-slot > :is(.bpb-climber-card-action,.bpb-climber-card-source,.bpb-climber-card-source-sizing) { grid-area:1/1; margin-top:0; }
+#bpb-climber-card .bpb-climber-card-sizing { visibility:hidden; pointer-events:none; }
 #bpb-climber-card .bpb-climber-card-name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
 #bpb-climber-card a { color: var(--bpb-cc-link) !important; }
 #bpb-climber-card .bpb-climber-card-profile { font-size: 12px; text-decoration: none; }
@@ -36,16 +43,19 @@
 #bpb-climber-card .bpb-climber-card-action:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(.94); }
 #bpb-climber-card button:disabled, #bpb-climber-card [aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 #bpb-climber-card button[aria-busy="true"] { cursor: wait; }
-#bpb-climber-card .bpb-climber-card-source { margin-top: 10px; color: var(--bpb-cc-sub); font-size: 12px; }
-#bpb-climber-card .bpb-climber-card-settings { display: block; padding: 0; margin: 3px 0 0; background: none;
+#bpb-climber-card :is(.bpb-climber-card-source,.bpb-climber-card-source-sizing) { margin-top: 10px; color: var(--bpb-cc-sub); font-size: 12px; }
+#bpb-climber-card :is(.bpb-climber-card-settings,.bpb-climber-card-settings-sizing) { display: block; padding: 0; margin: 3px 0 0; background: none;
     border: 0; color: var(--bpb-cc-link); text-align: left; font-size: 12px; }
 #bpb-climber-card .bpb-climber-card-ignore-section { border-top: 1px solid var(--bpb-cc-border); padding-top: 10px; margin-top: 16px; }
 #bpb-climber-card .bpb-climber-card-ignore { margin-top: 0; }
 #bpb-climber-card .bpb-climber-card-detail { margin-top: 6px; }
 #bpb-climber-card .bpb-climber-card-detail, #bpb-climber-card .bpb-climber-card-feedback { color: var(--bpb-cc-sub);
     font-size: 12px; overflow-wrap: anywhere; }
-#bpb-climber-card .bpb-climber-card-feedback { margin-top: 12px; }
-#bpb-climber-card .bpb-climber-card-retry { margin-top: 6px; border: 0; background: none; color: var(--bpb-cc-link); padding: 3px 0; }
+#bpb-climber-card .bpb-climber-card-feedback { margin-top:12px; display:grid; grid-template-rows:minmax(2.8em,auto) minmax(2em,auto); }
+#bpb-climber-card .bpb-climber-card-feedback-summary { grid-row:1; }
+#bpb-climber-card .bpb-climber-card-recovery { grid-row:2; display:flex; align-items:flex-start; gap:12px; min-height:2em; }
+#bpb-climber-card .bpb-climber-card-retry, #bpb-climber-card .bpb-climber-card-feedback-details summary { box-sizing:border-box; min-height:2em; margin:0; border:0; background:none; color:var(--bpb-cc-link); padding:0; font:inherit; cursor:pointer; }
+#bpb-climber-card .bpb-climber-card-feedback-details p { position:absolute; inset-inline:16px; bottom:calc(16px + var(--bpb-card-footer-height,4.8em) + 8px); box-sizing:border-box; margin:0; padding:8px 10px; max-height:min(25vh,var(--bpb-card-detail-space,12em)); overflow:auto; border:1px solid var(--bpb-cc-border); border-radius:8px; background:var(--bpb-cc-surface); box-shadow:0 3px 12px rgb(0 0 0 / 12%); }
 #bpb-climber-card :is(a,button):focus-visible { outline: 2px solid var(--bpb-cc-link); outline-offset: 2px; }
 #bpb-climber-card-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 html[data-bpb-theme="dark"] .bpb-climber-actions-trigger { color: #a6b3a3; }
@@ -57,6 +67,8 @@ html[data-bpb-theme="dark"] #bpb-climber-card { --bpb-cc-surface: #1e2b23; --bpb
     .bpb-climber-actions-trigger { width: 44px; height: 44px; opacity: 1; }
     #bpb-climber-card .bpb-climber-card-close { width: 44px; height: 44px; }
     #bpb-climber-card :is(.bpb-climber-card-action,.bpb-climber-card-ignore,.bpb-climber-card-settings,.bpb-climber-card-retry) { min-height: 44px; }
+    #bpb-climber-card .bpb-climber-card-recovery, #bpb-climber-card .bpb-climber-card-feedback-details summary { min-height:44px; }
+    #bpb-climber-card .bpb-climber-card-settings-sizing { min-height:44px; }
 }
 @media (prefers-reduced-motion: no-preference) {
     #bpb-climber-card:popover-open { animation: bpb-climber-card-appear 100ms ease-out; }

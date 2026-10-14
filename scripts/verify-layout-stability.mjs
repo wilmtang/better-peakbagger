@@ -15,7 +15,7 @@ import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
-import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership } from './verify-climber-transitions.mjs';
+import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -809,84 +809,25 @@ async function mapCase(page, origin, variant) {
     }
     await capture(page, `${variant.name}-consent`);
 }
-async function climberCase(page, origin, variant) {
-    const html = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-other.html'), 'utf8');
-    await page.route('**/climber/climber.aspx?cid=900002', route => route.fulfill({ contentType: 'text/html', body: html
-        + '<a id="jitter-person" style="position:fixed;left:30px;top:400px" href="/climber/climber.aspx?cid=900002">A long climber name for stable actions</a>' }));
-    await page.addInitScript(({ theme }) => {
-        const listeners = [], store = { bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
-            bpbIgnoredClimbers: { schemaVersion: 1, revision: 0, entries: [] } };
-        globalThis.__changeIgnored = () => {
-            store.bpbIgnoredClimbers = { schemaVersion: 1, revision: 1, entries: [{ cid: 900002, name: 'Casey Alpine', addedAt: Date.now() }] };
-            listeners.forEach(listener => listener({ bpbIgnoredClimbers: { newValue: store.bpbIgnoredClimbers } }, 'local'));
-        };
-        document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
-        globalThis.chrome = { storage: { local: { get: async () => store },
-            sync: { get: async () => ({ bpbSettings: { theme, favoritesSource: 'custom' } }) },
-            onChanged: { addListener: listener => listeners.push(listener), removeListener() {} } },
-        runtime: { id: 'fixture', onMessage: { addListener() {}, removeListener() {} }, getURL: file => new URL(`/dist/${file}`, location.origin).href, sendMessage: async message => {
-            if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'fixture' };
-            if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'fixture' };
-            if (message.type === 'FAVORITES_MUTATE') return new Promise(resolve => {
-                globalThis.__finishFavorite = success => {
-                    if (success) {
-                        const value = { schemaVersion: 1, entries: [{ cid: 900002, name: 'Casey Alpine', addedAt: Date.now(), source: 'manual' }] };
-                        store.bpbFavoriteClimbers = value;
-                        listeners.forEach(listener => listener({ bpbFavoriteClimbers: { newValue: value } }, 'local'));
-                        resolve({ ok: true, favorites: value });
-                    } else resolve({ ok: false, error: { message: 'A long saving failure. Your list has not been changed; check local storage and retry the operation. '.repeat(3) } });
-                };
-            });
-            return { ok: true };
-        } } };
-    }, variant);
-    for (const textScale of [1, 2]) {
-        await page.goto(`${origin}/climber/climber.aspx?cid=900002`);
-        await page.addStyleTag({ content: (await asset('css/climber-hover-card.css')).toString() });
-        if (textScale === 2) await page.addStyleTag({ content: '#bpb-climber-card{font-size:28px}#bpb-climber-card .bpb-climber-card-name{font-size:34px}' });
-        await page.addScriptTag({ content: (await asset('content/climber-hover-card.js')).toString() });
-        await page.locator('#jitter-person + .bpb-climber-actions-trigger').waitFor({ state: 'attached' });
-        await page.click('#jitter-person + .bpb-climber-actions-trigger');
-        const action = '#bpb-climber-card-favorite';
-        await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite')?.disabled === false);
-        await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
-        const before = await geometry(page, action), buddyBefore = await geometry(page, '#bpb-climber-card-buddy');
-        await page.click(action);
-        await page.waitForFunction(() => typeof globalThis.__finishFavorite === 'function');
-        stable(before, await geometry(page, action), 'climber favorite pending');
-        await page.evaluate(() => globalThis.__finishFavorite(false));
-        await page.locator('.bpb-climber-card-feedback').filter({ hasText: 'A long saving failure' }).waitFor();
-        stable(before, await geometry(page, action), 'climber favorite failure');
-        stable(buddyBefore, await geometry(page, '#bpb-climber-card-buddy'), 'climber neighboring action after failure');
-        await page.evaluate(() => { globalThis.__finishFavorite = null; });
-        await page.click(action);
-        await page.waitForFunction(() => typeof globalThis.__finishFavorite === 'function');
-        stable(before, await geometry(page, action), 'climber favorite retry');
-        await page.evaluate(() => globalThis.__finishFavorite(true));
-        await page.locator(action).filter({ hasText: 'Remove favorite climber' }).waitFor();
-        stable(before, await geometry(page, action), 'climber favorite completion');
-        await capture(page, `${variant.name}-climber-card-${textScale}`);
-        await page.keyboard.press('Escape');
-        if (textScale === 1) {
-            await page.addScriptTag({ content: (await asset('content/climber-favorite.js')).toString() });
-            await page.locator('#bpb-climber-ignore').waitFor();
-            const profileBefore = await geometry(page, '#bpb-climber-ignore'), star = await geometry(page, '#bpb-climber-favorite');
-            await page.evaluate(() => globalThis.__changeIgnored());
-            await page.locator('#bpb-climber-ignore').filter({ hasText: 'Unignore' }).waitFor();
-            stable(profileBefore, await geometry(page, '#bpb-climber-ignore'), 'profile membership feedback');
-            stable(star, await geometry(page, '#bpb-climber-favorite'), 'profile neighboring favorite');
-            await page.locator('#bpb-climber-favorite').hover();
-            stable(star, await geometry(page, '#bpb-climber-favorite'), 'profile favorite hover');
-            await capture(page, `${variant.name}-climber-profile`);
-        }
-    }
-}
 async function profileTransitionCase(page, origin, variant) {
-    await climberCase(page, origin, variant);
-    for (const check of [verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership]) {
-        const target = await page.context().newPage();
-        try { await check(target, origin, variant); }
-        finally { await target.close(); }
+    for (const textScale of [1, 2]) {
+        for (const check of [verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership]) {
+            const target = await page.context().newPage();
+            try { await check(target, origin, { ...variant, textScale }); }
+            finally { await target.close(); }
+        }
+        for (const anchor of [20, 440, 820]) {
+            const target = await page.context().newPage();
+            try { await verifyCardFeedback(target, origin, { ...variant, textScale }, false, anchor); }
+            finally { await target.close(); }
+        }
+        for (const anchor of [20, 270, 500]) {
+            const target = await page.context().newPage();
+            try {
+                await target.setViewportSize({ width: variant.width, height: 540 });
+                await verifyCardFeedback(target, origin, { ...variant, textScale, name: `${variant.name}-h540` }, false, anchor);
+            } finally { await target.close(); }
+        }
     }
 }
 async function uploadCase(page, origin, variant) {
