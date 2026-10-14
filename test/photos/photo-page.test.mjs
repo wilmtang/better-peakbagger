@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
+import { marked } from 'marked';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mjs';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
 
@@ -19,8 +20,9 @@ const doc = dom.window.document;
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const optionsDoc = new JSDOM(optionsHtml).window.document;
 const guideHtml = await fs.readFile(new URL('../../photos/guide.html', import.meta.url), 'utf8');
-const maintainedPhotoDocs = Object.fromEntries(await Promise.all([
-    ['README.md', '../../README.md'],
+const readme = await fs.readFile(new URL('../../README.md', import.meta.url), 'utf8');
+// The README is an overview, not another copy of the detailed photo contract.
+const detailedPhotoDocs = Object.fromEntries(await Promise.all([
     ['PRIVACY.md', '../../PRIVACY.md'],
     ['docs/architecture.md', '../../docs/architecture.md'],
     ['docs/photo-topo-editor.md', '../../docs/photo-topo-editor.md'],
@@ -28,6 +30,23 @@ const maintainedPhotoDocs = Object.fromEntries(await Promise.all([
     name,
     await fs.readFile(new URL(relative, import.meta.url), 'utf8'),
 ])));
+
+const assertReadmePhotoOverview = contents => {
+    const base = 'https://readme.invalid/', targets = new Set();
+    marked.walkTokens(marked.lexer(contents), token => {
+        if (token.type !== 'link') return;
+        const target = new URL(token.href, base);
+        if (target.origin === new URL(base).origin) targets.add(target.pathname);
+    });
+    for (const target of ['/docs/photo-topo-editor.md', '/PRIVACY.md'])
+        assert.ok(targets.has(target), `README.md must link to ${target}`);
+    const normalized = contents.replace(/\s+/g, ' ');
+    assert.doesNotMatch(normalized,
+        /images follow ImgBB's 32 MiB|refuses source or export blobs over 32 MiB|through exactly 32 MiB/i,
+        'README.md must not restore the obsolete local upload limit');
+    assert.doesNotMatch(normalized, /no page can read it back|neither page can read a saved key back/i,
+        'README.md must not restore the false key disclosure');
+};
 
 test('the packaged photo page exposes the editor, library, and credential boundaries', () => {
     const entry = ENTRIES.find(candidate => candidate.out === 'photos/photos.js');
@@ -306,8 +325,28 @@ test('the photo chooser states decode bounds separately from provider and projec
     assert.match(source, /above the 40 MiB project limit/);
 });
 
-test('maintained photo documentation separates decode, upload, and project-archive bounds', () => {
-    for (const [name, contents] of Object.entries(maintainedPhotoDocs)) {
+test('README points to detailed photo and privacy documentation without duplicating their copy', () => {
+    assertReadmePhotoOverview(readme);
+});
+
+test('README overview checks accept rewording, renamed links and section anchors', () => {
+    for (const summary of [
+        'Edit photos with your own ImgBB key. [Help](docs/photo-topo-editor.md) · [Privacy](PRIVACY.md)',
+        'Your saved ImgBB key stays on this device. [Photo details](./docs/photo-topo-editor.md#limits) and [Data handling](./PRIVACY.md#photos)',
+    ]) assertReadmePhotoOverview(summary);
+});
+
+test('README overview checks still reject missing guides and known false claims', () => {
+    const links = '[Photos](docs/photo-topo-editor.md) [Privacy](PRIVACY.md)';
+    for (const target of ['docs/photo-topo-editor.md', 'PRIVACY.md']) {
+        assert.throws(() => assertReadmePhotoOverview(links.replace(target, `https://elsewhere.invalid/${target}`)), /must link to/);
+    }
+    assert.throws(() => assertReadmePhotoOverview(`${links} Better Peakbagger refuses source or export blobs over 32 MiB.`), /obsolete local upload limit/);
+    assert.throws(() => assertReadmePhotoOverview(`${links} No page can read it back.`), /false key disclosure/);
+});
+
+test('detailed photo documentation separates decode, upload, and project-archive bounds', () => {
+    for (const [name, contents] of Object.entries(detailedPhotoDocs)) {
         assert.match(contents, /128 MiB/i, `${name} must state the encoded-source budget`);
         assert.match(contents, /64 megapixels/i, `${name} must state the decoded-pixel budget`);
         assert.match(contents, /16,384 pixels/i, `${name} must state the per-axis budget`);
@@ -322,7 +361,7 @@ test('maintained photo documentation separates decode, upload, and project-archi
 
 test('every detailed photo surface states the exact saved-key disclosure boundary', () => {
     const surfaces = {
-        ...maintainedPhotoDocs,
+        ...detailedPhotoDocs,
         'photos/photos.html': html,
         'photos/guide.html': guideHtml,
     };
