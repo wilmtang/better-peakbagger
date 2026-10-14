@@ -5,6 +5,18 @@ import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/
 import { ascentPage } from './ascent-page.js';
 import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
 
+const matchesAscentResource = (value, origin, aid, path) => {
+    try {
+        const url = new URL(value);
+        return isPeakbaggerUrl(url.href) && url.origin === origin && !url.username && !url.password
+            && path.test(url.pathname) && url.searchParams.getAll('aid').length === 1
+            && url.searchParams.get('aid') === String(aid);
+    } catch { return false; }
+};
+const DISPLAY_PATH = /^\/climber\/ascent\.aspx$/i;
+const EDIT_PATH = /^\/climber\/ascentedit\.aspx$/i;
+const GPX_PATH = /^\/climber\/(?:GPXFile|GetAscentGPX)\.aspx$/i;
+
 // Compare the whole retained route, tolerating only coordinate formatting.
 // An HTTP 200, a GPX element, or a preview map does not prove saved points.
 export const sameSavedTrack = (expected, actual, Parser = globalThis.DOMParser) => {
@@ -35,22 +47,26 @@ export const verifyCaptureSave = async ({ aid, send, origin,
     const displayUrl = new URL(`/climber/ascent.aspx?aid=${aid}`, origin).href;
     const display = await readDocument(displayUrl, { kind: 'html' });
     if (display.kind !== 'ok') throw new Error(display.reason || 'The saved ascent could not be read.');
+    if (!matchesAscentResource(display.url, origin, aid, DISPLAY_PATH)) {
+        throw new Error('The saved ascent response no longer matches this ascent. Reload and check again.');
+    }
     const saved = ascentPage.read({ doc: display.document, search: `?aid=${aid}` });
     if (!saved.isOwner || String(saved.peak.id) !== String(context.pid)) {
         throw new Error('The saved ascent identity could not be confirmed.');
     }
     const editUrl = new URL(saved.editUrl, displayUrl);
     const gpxUrl = saved.gpxUrl ? new URL(saved.gpxUrl, displayUrl) : null;
-    if (!isPeakbaggerUrl(editUrl.href) || !/\/climber\/ascentedit\.aspx$/i.test(editUrl.pathname)
-        || editUrl.searchParams.get('aid') !== String(aid)
-        || !gpxUrl || !isPeakbaggerUrl(gpxUrl.href) || !/\/climber\/(?:GPXFile|GetAscentGPX)\.aspx$/i.test(gpxUrl.pathname)
-        || gpxUrl.searchParams.get('aid') !== String(aid)) {
+    if (!matchesAscentResource(editUrl.href, origin, aid, EDIT_PATH)
+        || !gpxUrl || !matchesAscentResource(gpxUrl.href, origin, aid, GPX_PATH)) {
         throw new Error('The saved ascent has no verified GPX download.');
     }
     let tripId = null;
     if (context.tripRequired) {
         const edit = await readDocument(editUrl.href, { kind: 'edit' });
         if (edit.kind !== 'ok') throw new Error(edit.reason || 'The saved trip could not be read.');
+        if (!matchesAscentResource(edit.url, origin, aid, EDIT_PATH)) {
+            throw new Error('The saved trip response no longer matches this ascent. Reload and check again.');
+        }
         const trip = edit.document.getElementById('TripDD');
         tripId = /^[1-9]\d*$/.test(trip?.value || '') ? trip.value : null;
         if (!tripId || (context.tripId && tripId !== context.tripId)) {
@@ -59,6 +75,9 @@ export const verifyCaptureSave = async ({ aid, send, origin,
     }
     const track = await readResource(gpxUrl.href, { kind: 'gpx' });
     if (track.kind !== 'ok') throw new Error(track.reason || 'The saved GPX could not be read.');
+    if (!matchesAscentResource(track.url, origin, aid, GPX_PATH)) {
+        throw new Error('The saved GPX response no longer matches this ascent. Reload and check again.');
+    }
     if (!sameSavedTrack(context.gpx, track.text, Parser)) {
         throw new Error('The saved GPX is empty or differs from the prepared track. Edit this saved ascent and use Attach GPX to repair it, then check again.');
     }

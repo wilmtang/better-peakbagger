@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { sameSavedTrack, verifyCaptureSave } from '../../src/ascent/capture-save-verification.js';
+import { fetchPeakbaggerResource } from '../../src/peakbagger/peakbagger-request.js';
 
 const dom = new JSDOM('');
 const Parser = dom.window.DOMParser;
@@ -24,11 +25,11 @@ const harness = ({ track = GPX, tripId = '44', expectedTripId = null, peak = 7, 
             },
             readDocument: async url => {
                 reads.push(url);
-                return { kind: 'ok', document: document(url.includes('ascentedit')
+                return { kind: 'ok', url, document: document(url.includes('ascentedit')
                     ? `<form id="Form1"><select id="TripDD"><option selected value="${tripId}">Shared trip</option></select></form>`
                     : `<a href="https://www.peakbagger.com/peak.aspx?pid=${peak}">Peak</a><a href="https://www.peakbagger.com/climber/ascentedit.aspx?aid=123">Edit Ascent</a><a href="https://www.peakbagger.com/climber/GPXFile.aspx?aid=${gpxAid}">Download this GPS track</a>`) };
             },
-            readResource: async url => { reads.push(url); return { kind: 'ok', text: track }; },
+            readResource: async url => { reads.push(url); return { kind: 'ok', url, text: track }; },
         },
     };
 };
@@ -62,4 +63,47 @@ test('a challenged save read leaves the retained draft pending and ordinary save
     assert.equal(h.messages.length, 1);
     h.args.send = async () => ({ action: 'ignore' });
     assert.equal(await verifyCaptureSave(h.args), null);
+});
+
+test('changed response identities never confirm a saved ascent, trip, or matching track', async () => {
+    for (const stage of ['ascent.aspx', 'ascentedit.aspx', 'GPXFile.aspx']) {
+        for (const responseUrl of [undefined,
+            `https://www.peakbagger.com/climber/${stage}?aid=456`,
+            `https://www.peakbagger.com/climber/${stage}?aid=123&aid=456`,
+            `https://example.com/climber/${stage}?aid=123`,
+            'https://www.peakbagger.com/Default.aspx?aid=123',
+            `https://user@www.peakbagger.com/climber/${stage}?aid=123`]) {
+            const h = harness();
+            const original = stage === 'GPXFile.aspx' ? h.args.readResource : h.args.readDocument;
+            const read = async (...args) => {
+                const response = await original(...args);
+                return new URL(args[0]).pathname.endsWith(`/${stage}`) ? { ...response, url: responseUrl } : response;
+            };
+            if (stage === 'GPXFile.aspx') h.args.readResource = read;
+            else h.args.readDocument = read;
+            await assert.rejects(verifyCaptureSave(h.args), /no longer matches/);
+            assert.equal(h.messages.length, 1, 'no save confirmation can reach the worker');
+        }
+    }
+});
+
+test('the real request helper cannot confirm a matching track redirected to another ascent', async () => {
+    const h = harness();
+    h.args.readResource = (url, options) => fetchPeakbaggerResource(url, { ...options, fetchFn: async () => {
+        const response = new Response(GPX, { headers: { 'content-type': 'application/gpx+xml' } });
+        Object.defineProperties(response, {
+            url: { value: 'https://www.peakbagger.com/climber/GPXFile.aspx?aid=456' },
+            redirected: { value: true },
+        });
+        return response;
+    } });
+    await assert.rejects(verifyCaptureSave(h.args), /GPX response no longer matches/);
+    assert.equal(h.messages.length, 1);
+});
+
+test('same-ascent legacy GPX redirects and query options remain supported', async () => {
+    const h = harness();
+    h.args.readResource = async () => ({ kind: 'ok', text: GPX,
+        url: 'https://www.peakbagger.com/climber/GetAscentGPX.aspx?aid=123&sep=1' });
+    assert.deepEqual(await verifyCaptureSave(h.args), { ok: true });
 });
