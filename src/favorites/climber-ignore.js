@@ -26,7 +26,7 @@ const mount = () => {
 .bpb-ignore-actions button { min-height:32px; padding:5px 10px; border:1px solid #9ba79e; border-radius:6px; background:#f6f8f6; color:#354239; font:inherit; cursor:pointer; }
 #bpb-climber-ignore { min-width:83px; }
 .bpb-ignore-actions button:focus-visible { outline:2px solid #2f6b3f; outline-offset:2px; }
-.bpb-ignore-actions button:disabled { opacity:.5; cursor:not-allowed; }
+.bpb-ignore-actions button:is(:disabled,[aria-disabled="true"]) { opacity:.5; cursor:not-allowed; }
 .bpb-ignore-actions button[aria-busy="true"] { cursor:wait; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions { color:#ced5d0; }
 html[data-bpb-theme="dark"] .bpb-ignore-actions button { color:#d5e0d8; background:#29322b; border-color:#71927a; }
@@ -59,7 +59,9 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
         const buddyIntent = view.buddyIntent;
         const reason = !active && lists ? `Remove from ${lists} to ignore.` : '';
         label.set(active ? 'Unignore' : 'Ignore');
-        button.disabled = busy || !list || (!active && view.ignoreDisabled);
+        const unavailable = busy || !list || (!active && view.ignoreDisabled);
+        button.disabled = unavailable && !busy;
+        button.setAttribute('aria-disabled', String(unavailable));
         button.title = reason || (!active && buddyIntent ? view.buddyCheckBlocked ? 'Check from the original account.'
             : view.buddyInFlight ? 'Buddy change in progress.' : 'Check buddy status before ignoring.'
             : active ? "Show this climber's reports again." : "Hide this climber's reports on peak and ascent pages.");

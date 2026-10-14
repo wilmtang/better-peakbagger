@@ -49,7 +49,8 @@ test('supported native profile actions share the confirmed adapter and cross-tab
     t.after(() => dom.window.close());
     await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-favorite')?.disabled === false);
     fireTrustedEvent(dom.window.document.getElementById('AddBuddy'), 'click', { bubbles: true, cancelable: true });
-    await waitFor(dom, () => dom.window.document.getElementById('RemoveBuddy')?.disabled === false);
+    await waitFor(dom, () => dom.window.document.getElementById('RemoveBuddy')?.disabled === false
+        && dom.window.document.getElementById('RemoveBuddy')?.getAttribute('aria-disabled') !== 'true');
     assert.equal(posts, 1);
     assert.ok(dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
     assert.deepEqual(dom.chrome._localStore.bpbBuddyIntents, []);

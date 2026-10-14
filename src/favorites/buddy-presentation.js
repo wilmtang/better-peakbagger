@@ -15,7 +15,7 @@ export const reserveBuddyPresentation = control => {
 .bpb-buddy-shell { position:relative; vertical-align:middle; max-width:100%; min-width:0; color:#111; }
 .bpb-buddy-shell > span { box-sizing:border-box; padding:2px 6px; overflow-wrap:anywhere; pointer-events:none; position:relative; z-index:1; }
 .bpb-buddy-shell > input.bpb-native-buddy-action { position:absolute; inset:0; box-sizing:border-box; min-width:0; width:100%; height:100%; margin:0; color:transparent !important; text-shadow:none !important; }
-.bpb-buddy-shell:has(:disabled), .bpb-buddy-shell:has([data-bpb-buddy-blocked]) { opacity:.5; }
+.bpb-buddy-shell:has(:disabled), .bpb-buddy-shell:has([data-bpb-buddy-blocked]), .bpb-buddy-shell:has([data-bpb-buddy-pending="true"]) { opacity:.5; }
 .bpb-buddy-shell > input:disabled { cursor:wait; }
 .bpb-buddy-shell > input[data-bpb-buddy-blocked] { opacity:1; }
 .bpb-buddy-relationship { vertical-align:middle; max-width:100%; min-width:0; }

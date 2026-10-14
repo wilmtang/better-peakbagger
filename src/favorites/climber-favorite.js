@@ -39,6 +39,7 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
     let activeBuddyMutation = null;
     let membership = null;
     const buddyTitles = new WeakMap();
+    const busyBuddyAria = new WeakMap();
     const ignoreSaving = () => document.getElementById('bpb-climber-ignore')?.getAttribute('aria-busy') === 'true';
     const buddyLock = () => buddyIntentState({ cid: pageCid, ownerCid: ownerClimberId(document), membership });
     const buddyActionBlocked = () => { const view = buddyLock(); return view.buddyInFlight || view.buddyCheckBlocked; };
@@ -98,7 +99,8 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
             reserveBuddyPresentation(control);
             if (buddyActionBlocked() || action === 'add' && additionBlocked()) {
                 if (!buddyTitles.has(control)) buddyTitles.set(control, {
-                    title: control.getAttribute('title'), disabled: control.getAttribute('aria-disabled'),
+                    title: control.getAttribute('title'), disabled: busyBuddyAria.has(control)
+                        ? busyBuddyAria.get(control) : control.getAttribute('aria-disabled'),
                     description: control.getAttribute('aria-describedby'),
                 });
                 control.dataset.bpbBuddyBlocked = 'true';
@@ -125,9 +127,10 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
         style.textContent = `
 .bpb-native-buddy-action { transition: filter 120ms ease; }
 .bpb-native-buddy-action[data-bpb-buddy-blocked] { opacity:.5; cursor:not-allowed; }
-.bpb-native-buddy-action:hover:not(:disabled) { filter: brightness(.92); }
+.bpb-native-buddy-action[data-bpb-buddy-pending="true"] { cursor:wait; }
+.bpb-native-buddy-action:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(.92); }
 .bpb-native-buddy-action:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
-html[data-bpb-theme="dark"] .bpb-native-buddy-action:hover:not(:disabled) { filter: brightness(1.18); }
+html[data-bpb-theme="dark"] .bpb-native-buddy-action:hover:not(:disabled):not([aria-disabled="true"]) { filter: brightness(1.18); }
 html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-color: #8fc99c; }
 @media (prefers-reduced-motion: reduce) { .bpb-native-buddy-action { transition: none; } }
 `;
@@ -172,7 +175,8 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         let buddyError = '', buddyWarning = '';
         const saveBuddy = async (control, checkOnly = false) => {
             if (savingBuddy) return;
-            savingBuddy = true; control.disabled = true; control.dataset.bpbBuddyPending = 'true';
+            busyBuddyAria.set(control, control.getAttribute('aria-disabled'));
+            savingBuddy = true; control.setAttribute('aria-disabled', 'true'); control.dataset.bpbBuddyPending = 'true';
             const retry = event => { if (event.isTrusted === true) void saveBuddy(control, true); };
             feedback.set('buddy', { text: checkOnly ? 'Checking buddy status…' : 'Saving buddy…', busy: true, priority: 110,
                 retry: buddyError || buddyWarning ? retry : null, retryLabel: 'Check status', retryName: 'Check buddy status' });
@@ -194,7 +198,10 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
                 feedback.announce(buddyError);
             } finally {
                 control.disabled = false; delete control.dataset.bpbBuddyPending;
+                control.setAttribute('aria-disabled', 'false');
                 savingBuddy = false;
+                busyBuddyAria.delete(control);
+                decorateBuddyControls(document);
             }
         };
         if (document.querySelector('#AddBuddy, #RemoveBuddy')) feedback.registerBuddyCheck(event => {
@@ -317,7 +324,7 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
 #bpb-climber-favorite:hover { border-color: #2f6b3f; background: #e7f1e9; }
 #bpb-climber-favorite:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
 #bpb-climber-favorite[aria-pressed="true"] { border-color: #2f6b3f; background: #2f6b3f; color: #fff; }
-#bpb-climber-favorite:disabled { cursor: not-allowed; opacity: .58; }
+#bpb-climber-favorite:is(:disabled,[aria-disabled="true"]) { cursor: not-allowed; opacity: .58; }
 #bpb-climber-favorite[aria-busy="true"] { cursor: wait; }
 html[data-bpb-theme="dark"] #bpb-climber-favorite { border-color: #71927a; background: #29322b; color: #b5e0bf; }
 html[data-bpb-theme="dark"] #bpb-climber-favorite:hover { border-color: #9ad5a7; background: #334238; }
@@ -337,7 +344,9 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         button.setAttribute('aria-pressed', String(active));
         button.setAttribute('aria-label', actionLabel);
         setAttribute(button, 'aria-busy', String(busy));
-        button.disabled = busy || (!active && (additionBlocked() || favorites.entries.length >= F.LIMIT));
+        const unavailable = busy || (!active && (additionBlocked() || favorites.entries.length >= F.LIMIT));
+        button.disabled = unavailable && !busy;
+        button.setAttribute('aria-disabled', String(unavailable));
         button.title = errorMessage || (!active && favorites.entries.length >= F.LIMIT
             ? `Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
             : actionLabel);

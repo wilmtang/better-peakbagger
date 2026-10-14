@@ -25,7 +25,8 @@ export const climberProfileFeedback = (doc = document) => {
 #bpb-climber-membership-note { min-width:0; overflow-wrap:anywhere; }
 .bpb-profile-feedback-actions { display:flex; align-items:flex-start; justify-content:center; gap:12px; min-height:2.8em; }
 #bpb-climber-profile-feedback button, #bpb-climber-profile-feedback summary { box-sizing:border-box; min-height:2em; border:0; background:none; color:#23593e; margin:0; padding:0; font:inherit; cursor:pointer; }
-#bpb-climber-profile-feedback button:disabled { opacity:.5; cursor:wait; }
+#bpb-climber-profile-feedback button:is(:disabled,[aria-disabled="true"]) { opacity:.5; cursor:not-allowed; }
+#bpb-climber-profile-feedback button[aria-busy="true"] { cursor:wait; }
 #bpb-climber-profile-feedback :is(button,summary):focus-visible { outline:2px solid #2f6b3f; outline-offset:2px; }
 #bpb-climber-profile-feedback details[open] { max-width:100%; }
 .bpb-profile-feedback-actions:has(details[open]) { flex-wrap:wrap; }
@@ -37,7 +38,7 @@ html[data-bpb-theme="dark"] #bpb-climber-profile-feedback { color:#ced5d0; }
 html[data-bpb-theme="dark"] #bpb-climber-profile-feedback :is(button,summary) { color:#7ac78d; }
 `;
     doc.head.append(style);
-    const channels = new Map(); let current = null, buddyCheck = null, sequence = 0;
+    const channels = new Map(); let current = null, buddyCheck = null, sequence = 0, lastError = '';
     const surface = {
         registerBuddyCheck(handler) { buddyCheck = handler; },
         get canCheckBuddy() { return !!buddyCheck; },
@@ -51,16 +52,20 @@ html[data-bpb-theme="dark"] #bpb-climber-profile-feedback :is(button,summary) { 
             current = [...channels.values()].sort((a, b) => (b.priority || 0) - (a.priority || 0) || b.sequence - a.sequence)[0] || null;
             note.textContent = current?.text || ''; note.hidden = !current;
             // Preserve an existing recovery target while that same action is busy.
-            retry.hidden = !current?.retry; retry.disabled = !!current?.busy
-                || (typeof current?.disabled === 'function' ? current.disabled() : !!current?.disabled);
+            const unavailable = !!current?.busy || (typeof current?.disabled === 'function' ? current.disabled() : !!current?.disabled);
+            retry.hidden = !current?.retry;
+            retry.disabled = unavailable && !(current?.busy && doc.activeElement === retry);
+            retry.setAttribute('aria-disabled', String(unavailable));
+            retry.setAttribute('aria-busy', String(!!current?.busy));
             retry.textContent = current?.retryLabel || 'Retry';
             retry.setAttribute('aria-label', current?.retryName || retry.textContent);
-            if (current?.error) full.textContent = current.error;
+            if (current?.error) { lastError = current.error; full.textContent = lastError; }
+            else if (details.open && lastError) full.textContent = `Previous message: ${lastError}`;
             details.hidden = !current?.error && !details.open;
         },
         announce(message) { if (announcement.textContent !== message) announcement.textContent = message; },
     };
-    retry.addEventListener('click', event => { if (!retry.disabled) current?.retry?.(event); });
+    retry.addEventListener('click', event => { if (!retry.disabled && retry.getAttribute('aria-disabled') !== 'true') current?.retry?.(event); });
     surfaces.set(doc, surface);
     return surface;
 };

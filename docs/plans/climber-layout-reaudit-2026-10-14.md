@@ -295,6 +295,20 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- C08 keyboard follow-up: the new focus assertions independently reproduced
+  Firefox blur on profile Favorite and native Buddy pending states. Profile,
+  Ignore, native Buddy and recovery now preserve their active control using
+  guarded `aria-disabled` busy state. Unavailable actions still leave Tab order,
+  and repeated activation cannot queue another mutation. Native presentation
+  decoration excludes transient own-busy ARIA from its saved baseline, so real
+  lease publication cannot leave completion permanently disabled. The fixture
+  now publishes the same live-lease presentation phases. Completion predicates
+  require the visible pending marker to clear, not merely `disabled === false`.
+  All 38 focused profile/adapter/presentation tests and three documentation
+  tests passed; build and focused ESLint passed. Each 24-variant profile and
+  native Buddy matrix passed with live-lease publication; real unpacked Chrome
+  startup/BFCache checks passed;
+  final broad integration/baseline proof remains below.
 - C06/C07: the card now scrolls its action body independently of its reserved
   feedback footer. A short visible summary and explicit full-details pane
   replace invisible errors. Favorite/source and Ignore-detail readings reserve

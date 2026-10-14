@@ -44,7 +44,10 @@ function install({ theme, textScale = 1 }) {
     }, release: (key, success = true) => {
         const item = pending.get(key); if (!item) throw new Error(`No held ${key}`);
         pending.delete(key);
-        if (!success) { item.resolve({ ok: false, error: { message: 'The change could not be saved. Your list is unchanged. Check the connection and try again. '.repeat(3) } }); return; }
+        if (!success) {
+            if (key === 'buddy') publish({ bpbBuddyIntents: item.beforeIntents });
+            item.resolve({ ok: false, error: { message: 'The change could not be saved. Your list is unchanged. Check the connection and try again. '.repeat(3) } }); return;
+        }
         if (key === 'favorite') {
             const value = { schemaVersion: 1, entries: item.message.mutation.kind === 'add' ? [entry] : [] };
             publish({ bpbFavoriteClimbers: value }); item.resolve({ ok: true, favorites: value });
@@ -61,7 +64,14 @@ function install({ theme, textScale = 1 }) {
             return new Promise(resolve => pending.set(key, { resolve, message }));
         }
         if (message.type === 'CLIMBER_BUDDY_ACTION') {
-            if (message.phase === 'begin') return new Promise(resolve => pending.set('buddy', { resolve, message }));
+            if (message.phase === 'begin') {
+                const beforeIntents = structuredClone(store.bpbBuddyIntents), previous = beforeIntents.find(entry => entry.cid === 900002);
+                publish({ bpbBuddyIntents: [{ cid: 900002, ownerCid: 900001, name: 'Damon Up', action: previous?.action || message.action,
+                    token: 'fixture-lease', tabId: 1, status: previous?.status || 'prepared',
+                    checkOnly: !!message.checkOnly, leaseUntil: Date.now() + 60000 }] });
+                return new Promise(resolve => pending.set('buddy', { resolve, message, beforeIntents }));
+            }
+            if (message.phase === 'failed') publish({ bpbBuddyIntents: store.bpbBuddyIntents.map(entry => ({ ...entry, status: 'dispatched', leaseUntil: 0 })) });
             if (message.phase === 'complete') {
                 publish({ bpbBuddyCache: { ownerCid: 900001, entries: message.buddy ? [entry] : [], fetchedAt: Date.now() }, bpbBuddyIntents: [] });
                 return { ok: true, warning: globalThis.__climber.completeWarning || '' };
@@ -108,6 +118,10 @@ function stable(before, after, label) {
 async function sample(page, before, label, selectors) {
     for (let index = 0; index < 3; index++) stable(before, await frame(page, selectors), `${label} frame ${index}`);
 }
+const nativeReady = () => {
+    const control = document.querySelector('#AddBuddy, #RemoveBuddy');
+    return !!control && !control.disabled && control.dataset.bpbBuddyPending !== 'true' && control.getAttribute('aria-disabled') !== 'true';
+};
 async function capture(page, variant, state) {
     if (process.env.BPB_JITTER_ARTIFACTS && variant.textScale !== 2 && variant.width !== 768) {
         await page.screenshot({ path: path.join(process.env.BPB_JITTER_ARTIFACTS, `${variant.name}-${state}.png`) });
@@ -153,16 +167,17 @@ export async function verifyBuddyPresentation(page, origin, variant) {
         const control = page.locator('#AddBuddy, #RemoveBuddy');
         await control.focus(); await page.keyboard.press(action === 'add' ? 'Enter' : 'Space');
         await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
+        assert.equal(await page.evaluate(() => document.activeElement.id), action === 'add' ? 'AddBuddy' : 'RemoveBuddy', 'pending native action retains focus');
         await sample(page, before, `buddy ${action} pending`, selectors);
         await page.evaluate(() => globalThis.__climber.release('buddy'));
-        await page.waitForFunction(() => document.querySelector('#AddBuddy, #RemoveBuddy').disabled === false);
+        await page.waitForFunction(nativeReady);
         await sample(page, before, `buddy ${action} completion`, selectors);
     }
     assert.equal(page.__buddyPosts(), 2);
     await page.locator('#AddBuddy').click();
     await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
     await page.evaluate(() => globalThis.__climber.release('buddy', false));
-    await page.waitForFunction(() => document.getElementById('AddBuddy').disabled === false);
+    await page.waitForFunction(nativeReady);
     await sample(page, before, 'buddy failure', selectors);
     const check = page.locator('#bpb-climber-profile-retry');
     await check.filter({ hasText: 'Check status' }).waitFor();
@@ -171,27 +186,27 @@ export async function verifyBuddyPresentation(page, origin, variant) {
     assert.equal(await page.evaluate(() => globalThis.__climber.pending.get('buddy').message.checkOnly), true);
     await sample(page, before, 'buddy check-only pending', selectors);
     await page.evaluate(() => globalThis.__climber.release('buddy'));
-    await page.waitForFunction(() => document.getElementById('AddBuddy').disabled === false);
+    await page.waitForFunction(nativeReady);
     await sample(page, before, 'buddy check-only completion', selectors);
     assert.equal(page.__buddyPosts(), 2, 'recovery never repeats a POST');
     page.__failBuddyPost();
     await page.locator('#AddBuddy').click();
     await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
     await page.evaluate(() => globalThis.__climber.release('buddy'));
-    await page.waitForFunction(() => document.getElementById('AddBuddy').disabled === false);
+    await page.waitForFunction(nativeReady);
     await check.waitFor({ state: 'visible' });
     await sample(page, before, 'buddy uncertain POST', selectors);
     await check.focus(); await page.keyboard.press('Enter');
     await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
     await page.evaluate(() => globalThis.__climber.release('buddy'));
-    await page.waitForFunction(() => document.getElementById('AddBuddy').disabled === false);
+    await page.waitForFunction(nativeReady);
     assert.equal(page.__buddyPosts(), 3, 'uncertain recovery does not replay the failed POST');
     await sample(page, before, 'buddy uncertainty reconciled', selectors);
     await page.evaluate(() => { globalThis.__climber.completeWarning = 'Buddy saved but the favorite could not be saved. Check the local list before trying again. '.repeat(3); });
     await page.locator('#AddBuddy').click();
     await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
     await page.evaluate(() => globalThis.__climber.release('buddy'));
-    await page.waitForFunction(() => document.getElementById('RemoveBuddy')?.disabled === false);
+    await page.waitForFunction(nativeReady);
     await sample(page, before, 'buddy confirmed with warning', selectors);
     await capture(page, variant, 'buddy-warning');
     await capture(page, variant, 'buddy');
@@ -223,6 +238,7 @@ export async function verifyProfileFeedback(page, origin, variant) {
             await page.locator(selector).focus();
             await page.keyboard.press(success ? 'Space' : 'Enter');
             await page.waitForFunction(key => globalThis.__climber.pending.has(key), key);
+            assert.equal(await page.evaluate(() => document.activeElement.id), `bpb-climber-${key}`, 'pending profile action retains focus');
             await sample(page, before, `${key} pending`);
             await page.evaluate(({ key, success }) => globalThis.__climber.release(key, success), { key, success });
             await page.waitForFunction(selector => document.querySelector(selector).getAttribute('aria-busy') === 'false', selector);
@@ -255,7 +271,7 @@ export async function verifyProfileFeedback(page, origin, variant) {
                 await sample(page, before, `${key} recovery pending`);
                 assert.equal(await retry.isDisabled(), true, 'pending Retry is unavailable');
                 await page.evaluate(key => globalThis.__climber.release(key, false), key);
-                await page.waitForFunction(() => document.getElementById('bpb-climber-profile-retry')?.disabled === false);
+                await page.waitForFunction(() => document.getElementById('bpb-climber-profile-retry')?.getAttribute('aria-disabled') === 'false');
                 await sample(page, before, `${key} repeated error`);
             }
         }
@@ -287,7 +303,7 @@ export async function verifyPendingMembership(page, origin, variant) {
     assert.equal(await page.evaluate(() => globalThis.__climber.pending.get('buddy').message.checkOnly), true);
     await sample(page, before, 'other-tab status check pending');
     await page.evaluate(() => globalThis.__climber.release('buddy', false));
-    await page.waitForFunction(() => document.getElementById('AddBuddy').disabled === false);
+    await page.waitForFunction(nativeReady);
     await sample(page, before, 'other-tab failed confirmation');
     assert.equal(await page.locator('#bpb-climber-ignore').isDisabled(), true);
     await check.click(); await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));

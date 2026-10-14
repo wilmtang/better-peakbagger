@@ -24,6 +24,13 @@ test('profile feedback has one owner outside the heading and does not auto-expan
     button.click(); assert.equal(attempts, 0);
     ui.set('favorite', null);
     button.click(); assert.equal(attempts, 1);
+    button.focus();
+    ui.set('ignore', { text: 'Saving…', retry, busy: true, priority: 100 });
+    assert.equal(doc.activeElement, button);
+    assert.equal(button.disabled, false);
+    assert.equal(button.getAttribute('aria-disabled'), 'true');
+    button.click(); assert.equal(attempts, 1, 'focused busy recovery cannot activate again');
+    ui.set('ignore', null);
     ui.announce('Not saved.'); ui.announce('Not saved.');
     assert.equal(doc.getElementById('bpb-climber-profile-announcement').textContent, 'Not saved.');
     region.querySelector('details').open = true;
