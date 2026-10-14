@@ -295,6 +295,31 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- C08: the transition gate now checks heading/native rows, following content,
+  visible feedback, recovery availability, focus and repeated activation rather
+  than selected button coordinates alone. The standalone climber command
+  defaults to all transitions; unknown/empty selections fail before launch.
+  A read-only reconstruction of the audited `fdee876e` graph independently
+  reproduced C01, C02, C03, C06 and C07 with five exact expected-failure contracts.
+  Compilation/setup failures do not count as reproduction. Those same five
+  contracts passed against the fixed build in both engines. The final standalone
+  run passed all 24 engine/theme/width/text-scale variants, including 144 card
+  placements at 900/540px heights and held writes/reads/live leases. The layout
+  gate also passed all 112 integrated cases (14 surfaces × two engines × two
+  themes × 390/1280×900), including earlier backup, weather, Settings and editor
+  corrections. These layout fixtures do not render terrain WebGL; no GPU proof
+  is inferred from them. The CLI regression test and three documentation
+  tests passed; full ESLint and the
+  shipped web-ext lint gate passed (six documented owned warnings). The full
+  suite ran: 2,756 passed, two unchanged photo README assertions failed.
+  Both README and their test file are unchanged from the audited revision.
+  Real unpacked Chrome 153.0.8010.12 and derived Firefox 157.0.1 checks passed
+  hidden at 1000×760, with teardown. Chrome restored from BFCache; Firefox
+  cleanly remounted one analyzer instead of restoring it. Wide/narrow final
+  profile/card-error/details and caption states were visually inspected.
+  Final command-line and exact temporary-root checks found no owned browser,
+  helper, certificate or fixture/profile root remaining. Two orphan Playwright
+  profiles dated October 3/10 predate this task and were intentionally untouched.
 - O02: caption columns now size to content and can shrink/wrap in a narrow
   toolbar, retaining the existing reserved Remove caption slot and explicit
   grid placement. Caption commands and report serialization are unchanged.
@@ -303,8 +328,8 @@ not silently re-opened or used as proof that climber UX is now fixed.
   focused ESLint and diff checks passed. Eight hidden Chrome/Firefox × light/dark
   × 390/1280×900 cases passed with 12px/24px control text, repeated Add/Edit and
   Remove visibility transitions, no overflow and stable toolbar/report bounds.
-  The narrow rendered result was inspected. Final wide and recovery renders
-  remain part of integration below.
+  Narrow/wide, light/dark and enlarged caption renders were inspected in the
+  final integrated run.
 - O01: the analyzer's source-view display now explicitly honors `hidden`.
   The shipped warning-only unit assertion failed before the change (`grid`
   instead of `none`); the isolated browser assertion independently failed on
@@ -414,9 +439,10 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Changed but not fully proven
 
-- Final C08 integration/baseline proof
-  remain open. Hidden controlled probes do not prove live server compatibility.
+- Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
-  touch, every native POST failure/check-only recovery and actual multi-window
-  worker timing remain unverified. Dependency/security/release readiness was not
+  touch, all possible server POST-failure classes and actual multi-window
+  worker timing remain unverified. Controlled begin-failure, 503 POST uncertainty,
+  429 legacy read failure and check-only recovery are verified, not live proofs.
+  Dependency/security/release readiness was not
   re-audited. Known full-suite README failures remain separate.

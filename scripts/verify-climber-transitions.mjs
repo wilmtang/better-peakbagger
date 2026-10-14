@@ -12,8 +12,19 @@ import { createBrowserFixtureServer, projectRoot } from './browser-verification-
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { darkCss } from '../src/theme/site-dark-css.js';
+import { auditedClimberAssets } from './climber-regression-baseline.mjs';
 
-const asset = name => readFile(path.join(projectRoot, 'dist', name), 'utf8');
+let historicalAssets = null;
+const asset = name => historicalAssets?.has(name) ? historicalAssets.get(name) : readFile(path.join(projectRoot, 'dist', name), 'utf8');
+export function climberCheckOptions(args) {
+    const checks = args.find(value => value.startsWith('--checks='))?.slice('--checks='.length) || 'all';
+    const onlyVariant = args.find(value => value.startsWith('--variant='))?.slice('--variant='.length);
+    assert.ok(['all', 'profile', 'buddy', 'pending', 'card', 'card-retry', 'baseline', 'regressions'].includes(checks), `Unknown climber checks: ${checks}`);
+    for (const argument of args) assert.match(argument, /^--(?:checks|variant)=.+$/, `Unknown argument: ${argument}`);
+    if (onlyVariant) assert.match(onlyVariant, /^(chrome|firefox)-(light|dark)-(390|768|1280)-(1|2)$/, 'Unknown climber variant');
+    assert.ok(!onlyVariant || !['baseline', 'regressions'].includes(checks), 'Regression contracts use their own explicit viewports');
+    return { checks, onlyVariant };
+}
 const form = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-buddy-form.html'), 'utf8');
 const home = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-home.html'), 'utf8');
 const nativeCss = home.match(/<style[^>]*>([\s\S]*?)<\/style>/i)[1];
@@ -448,10 +459,73 @@ export async function verifyCardFeedback(page, origin, variant, retryOnly = fals
     }
 }
 
+export async function verifyRegressionContracts(context, origin, expectBroken = false) {
+    const contracts = [
+        ['C01', 390, /C01 pending profile.*shifted/, async page => {
+            const before = await frame(page);
+            await page.locator('#bpb-climber-favorite').click();
+            await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+            await sample(page, before, 'C01 pending profile');
+        }],
+        ['C02', 1280, /C02 error shifted the centered title/, async page => {
+            const before = await frame(page);
+            await page.locator('#bpb-climber-ignore').click();
+            await page.waitForFunction(() => globalThis.__climber.pending.has('ignore'));
+            await page.evaluate(() => globalThis.__climber.release('ignore', false));
+            await page.waitForFunction(() => document.getElementById('bpb-climber-ignore').getAttribute('aria-busy') === 'false');
+            const after = await frame(page);
+            for (const selector of ['#TitleLabel h1', '#bpb-climber-favorite', '#bpb-climber-ignore'])
+                assert.ok(Math.abs(after.boxes[selector].x - before.boxes[selector].x) <= 1, 'C02 error shifted the centered title');
+        }],
+        ['C03', 390, /C03 native pending.*shifted/, async page => {
+            const selectors = [...regions, '#AddBuddy', '#BuddyLabel'], before = await frame(page, selectors);
+            await page.locator('#AddBuddy').click();
+            await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
+            await sample(page, before, 'C03 native pending', selectors);
+        }],
+        ['C06', 1280, /C06 error must be visible without scrolling/, async page => {
+            const feedback = page.locator('.bpb-climber-card-feedback');
+            assert.equal(await feedback.evaluate(element => {
+                const r = element.getBoundingClientRect(), c = document.getElementById('bpb-climber-card').getBoundingClientRect();
+                return r.height > 0 && r.top >= c.top && r.bottom <= c.bottom && r.top >= 0 && r.bottom <= innerHeight;
+            }), true, 'C06 error must be visible without scrolling');
+        }],
+        ['C07', 1280, /C07 pending recovery must be unavailable/, async page => {
+            await page.locator('#bpb-climber-card-favorite').click();
+            await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+            assert.equal(await page.locator('.bpb-climber-card-retry').isDisabled(), true, 'C07 pending recovery must be unavailable');
+        }],
+    ];
+    for (const [id, width, failure, check] of contracts) {
+        const page = await context.newPage(); page.setDefaultTimeout(10000);
+        try {
+            await page.setViewportSize({ width, height: 900 });
+            await boot(page, origin, { theme: 'dark', width, textScale: 1 });
+            if (id === 'C06' || id === 'C07') {
+                await page.addStyleTag({ content: await asset('css/climber-hover-card.css') });
+                await page.addStyleTag({ content: '.bpb-climber-link:has(#transition-person){position:fixed;left:30px;top:720px}' });
+                await page.addScriptTag({ content: await asset('content/climber-hover-card.js') });
+                await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
+                await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite')?.disabled === false);
+                await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
+                await page.locator('#bpb-climber-card-favorite').click();
+                await page.waitForFunction(() => globalThis.__climber.pending.has('favorite'));
+                await page.evaluate(() => globalThis.__climber.release('favorite', false));
+                await page.locator('.bpb-climber-card-retry').waitFor({ state: 'visible' });
+            }
+            if (expectBroken) await assert.rejects(() => check(page), failure, `${id}: must fail on the measured UX invariant, not setup`);
+            else await check(page);
+            console.log(JSON.stringify({ contract: id, auditedBaseline: expectBroken, result: expectBroken ? 'expected regression reproduced' : 'passed' }));
+        } finally { await page.close(); }
+    }
+}
+
 async function run() {
     const resources = createResourceStack(); let failure;
-    const onlyVariant = process.argv.find(value => value.startsWith('--variant='))?.split('=')[1];
+    const { checks, onlyVariant } = climberCheckOptions(process.argv.slice(2));
+    let checked = 0;
     try {
+        if (checks === 'baseline') historicalAssets = await auditedClimberAssets();
         const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'bpb-climber-transitions-'));
         resources.defer('fixture directory', () => rm(temporaryRoot, { recursive: true, force: true }));
         const fixture = await createBrowserFixtureServer({ temporaryRoot });
@@ -459,18 +533,24 @@ async function run() {
         if (process.env.BPB_JITTER_ARTIFACTS) await mkdir(process.env.BPB_JITTER_ARTIFACTS, { recursive: true });
         const origin = `https://www.peakbagger.com:${fixture.port}`;
         for (const [name, engine] of [['chrome', chromium], ['firefox', firefox]]) {
+            if (checks === 'baseline' && name !== 'chrome') continue;
             if (engine === chromium) assertChromeLaunchAllowed();
             const browser = await engine.launch({ headless: true, ...(engine === chromium
                 ? { channel: 'chromium', args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] }
                 : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
             try {
+                if (checks === 'baseline' || checks === 'regressions') {
+                    const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 900 } });
+                    try { await verifyRegressionContracts(context, origin, checks === 'baseline'); checked += 5; }
+                    finally { await context.close(); }
+                    continue;
+                }
                 for (const theme of ['light', 'dark']) for (const width of [390, 768, 1280]) for (const textScale of [1, 2]) {
                     if (onlyVariant && onlyVariant !== `${name}-${theme}-${width}-${textScale}`) continue;
                     const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width, height: 900 }, colorScheme: theme });
                     try {
                         const page = await context.newPage(); page.setDefaultTimeout(10000);
                         const variant = { theme, width, textScale, name: `${name}-${theme}-${width}-${textScale}` };
-                        const checks = process.argv.find(value => value.startsWith('--checks='))?.split('=')[1] || 'profile';
                         if (checks === 'profile' || checks === 'all') await verifyProfileFeedback(page, origin, variant);
                         if (checks === 'buddy' || checks === 'all') {
                             const buddyPage = await context.newPage(); buddyPage.setDefaultTimeout(10000);
@@ -494,11 +574,14 @@ async function run() {
                             }
                         }
                         console.log(JSON.stringify({ ...variant, version: browser.version(), hidden: true, result: 'passed' }));
+                        checked++;
                     } finally { await context.close(); }
                 }
             } finally { await browser.close(); }
         }
+        assert.ok(checked > 0, 'No climber checks ran');
     } catch (error) { failure = error; }
+    historicalAssets = null;
     await resources.dispose(failure);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await run();

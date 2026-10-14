@@ -982,6 +982,7 @@ async function reportCase(page, origin, variant) {
                 const remove = await geometry(page, '.bpb-re-captionbar button:nth-child(2)');
                 assert.ok(remove.width < fontSize * 12, 'remove caption remains compact');
                 assert.ok(remove.x + remove.width <= captionBefore[0].x + captionBefore[0].width + 1, 'caption actions must not overflow');
+                await capture(page, `${variant.name}-report-caption-${fontSize}`);
             }
         }
     }
@@ -990,6 +991,10 @@ async function reportCase(page, origin, variant) {
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, reports: reportCase };
+for (const argument of process.argv.slice(2)) {
+    assert.ok(argument === '--chrome-only' || /^--surface=.+$/.test(argument), `Unknown layout argument: ${argument}`);
+}
+assert.ok(!selected || Object.hasOwn(cases, selected), `Unknown layout surface: ${selected}`);
 const resources = createResourceStack();
 let failure = null;
 try {
