@@ -1,7 +1,7 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
 Status: **remediation in progress**. C01–C07 have focused corrections;
-final C08 baseline/integration proof and O02 remain open. This is the re-audit of the Buddy/Favorite/Ignore
+final C08 baseline/integration proof remains open. This is the re-audit of the Buddy/Favorite/Ignore
 page-jump report; the focused remediation order is recorded separately below.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
@@ -280,8 +280,8 @@ explicit disclosures/navigation have documented separate expectations.
   with no excluded segments were confirmed in the earlier ledger. Revalidate
   the rendered warning-only path before a focused fix; no new GPX browser run
   is claimed by this climber audit.
-- **O02 OPEN — stretched report-caption controls:**
-  `src/reports/report-editor.css` (lines 265–271) still gives caption actions two
+- **O02 FIXED — stretched report-caption controls:**
+  The audited `src/reports/report-editor.css` (lines 265–271) gave caption actions two
   equal fractional columns. The earlier review confirmed half-toolbar-width
   buttons. Preserve compact actions and prove hidden/label transitions in a
   separate report fix; no new report-browser run is claimed here.
@@ -295,6 +295,16 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- O02: caption columns now size to content and can shrink/wrap in a narrow
+  toolbar, retaining the existing reserved Remove caption slot and explicit
+  grid placement. Caption commands and report serialization are unchanged.
+  The browser's new compactness assertion independently failed the preceding
+  CSS. All 16 caption behavior and three documentation tests passed; build,
+  focused ESLint and diff checks passed. Eight hidden Chrome/Firefox × light/dark
+  × 390/1280×900 cases passed with 12px/24px control text, repeated Add/Edit and
+  Remove visibility transitions, no overflow and stable toolbar/report bounds.
+  The narrow rendered result was inspected. Final wide and recovery renders
+  remain part of integration below.
 - O01: the analyzer's source-view display now explicitly honors `hidden`.
   The shipped warning-only unit assertion failed before the change (`grid`
   instead of `none`); the isolated browser assertion independently failed on
@@ -404,7 +414,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Changed but not fully proven
 
-- Final C08 integration/baseline proof and carried report remediation
+- Final C08 integration/baseline proof
   remain open. Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
   touch, every native POST failure/check-only recovery and actual multi-window

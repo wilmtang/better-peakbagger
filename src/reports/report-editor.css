@@ -265,7 +265,7 @@
 .bpb-re-linkbox::after, .bpb-re-captionbar::after {
     content: "Remove link"; visibility: hidden; font-size: 12px; padding: 3px 8px; border: 1px solid transparent;
 }
-.bpb-re-captionbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bpb-re-captionbar { display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); justify-content: start; }
 .bpb-re-captionbar .bpb-re-tablebtn:first-child { grid-area: 1 / 1; }
 .bpb-re-captionbar .bpb-re-tablebtn:nth-child(2), .bpb-re-captionbar::after { grid-area: 1 / 2; }
 .bpb-re-captionbar::after { content: "Remove caption"; }

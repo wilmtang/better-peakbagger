@@ -965,9 +965,26 @@ async function reportCase(page, origin, variant) {
         globalThis.__captionText = globalThis.__reserveReport(caption.firstElementChild);
         globalThis.__captionText.reserve(['Add caption', 'Edit caption']);
     });
-    const captionBefore = await geometry(page, '.bpb-re-captionbar button:first-child');
-    await page.evaluate(() => { globalThis.__captionText.set('Edit caption'); document.querySelector('.bpb-re-captionbar button:nth-child(2)').hidden = false; });
-    stable(captionBefore, await geometry(page, '.bpb-re-captionbar button:first-child'), 'report caption state');
+    for (const fontSize of [12, 24]) {
+        await page.addStyleTag({ content: `.bpb-re-captionbar,.bpb-re-captionbar::after,.bpb-re-captionbar button{font-size:${fontSize}px !important}` });
+        const captionSelectors = ['.bpb-re-captionbar', '.bpb-re-captionbar button:first-child', '.bpb-re-toolbar', '.bpb-re-surface'];
+        const captionBefore = await Promise.all(captionSelectors.map(selector => geometry(page, selector)));
+        assert.ok(captionBefore[1].width < fontSize * 12, 'caption actions must be compact, not half-toolbar-width buttons');
+        assert.equal(await page.locator('.bpb-re-captionbar button:nth-child(2)').isVisible(), false);
+        for (const active of [true, false, true, false]) {
+            await page.evaluate(active => {
+                globalThis.__captionText.set(active ? 'Edit caption' : 'Add caption');
+                document.querySelector('.bpb-re-captionbar button:nth-child(2)').hidden = !active;
+            }, active);
+            for (let index = 0; index < captionSelectors.length; index++)
+                stable(captionBefore[index], await geometry(page, captionSelectors[index]), `report caption ${captionSelectors[index]} font ${fontSize}`);
+            if (active) {
+                const remove = await geometry(page, '.bpb-re-captionbar button:nth-child(2)');
+                assert.ok(remove.width < fontSize * 12, 'remove caption remains compact');
+                assert.ok(remove.x + remove.width <= captionBefore[0].x + captionBefore[0].width + 1, 'caption actions must not overflow');
+            }
+        }
+    }
     await capture(page, `${variant.name}-report-feedback`);
 }
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
