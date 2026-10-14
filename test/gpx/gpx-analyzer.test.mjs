@@ -2456,6 +2456,11 @@ test('warning-only segment disclosure never claims to exclude source points', as
         const doc = dom.window.document;
         assert.match(doc.querySelector('.bpb-gpx-segment-disclosure').textContent, /1 segment to review/);
         assert.match(doc.querySelector('#bpb-gpx-segment-details').textContent, /168 points used/);
-        assert.equal(doc.querySelector('.bpb-gpx-segment-view').hidden, true);
+        const sourceView = doc.querySelector('.bpb-gpx-segment-view');
+        assert.equal(sourceView.hidden, true);
+        doc.querySelector('.bpb-gpx-segment-disclosure').click();
+        assert.equal(doc.querySelector('#bpb-gpx-segment-details').hidden, false);
+        assert.equal(dom.window.getComputedStyle(sourceView).display, 'none',
+            'warning-only disclosure must not render an inert source-view button');
     } finally { dom.window.close(); }
 });

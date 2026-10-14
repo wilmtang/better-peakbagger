@@ -674,6 +674,38 @@ async function weatherCase(page, origin, variant) {
         await capture(page, `${variant.name}-weather-${zoom}`);
     }
 }
+async function gpxSourceCase(page, origin, variant) {
+    await page.goto(`${origin}/dist/photos/guide.html`);
+    await page.evaluate(({ theme }) => {
+        // The photo guide's global hidden override would mask the analyzer bug.
+        document.head.querySelectorAll('style,link[rel="stylesheet"]').forEach(element => element.remove());
+        document.documentElement.dataset.bpbTheme = theme;
+        document.body.innerHTML = '<main style="margin:16px;max-width:600px"><div id="bpb-gpx-analysis">'
+            + '<section id="bpb-gpx-segment-details"><button class="bpb-gpx-segment-view" hidden data-label="Show all source segments"><span>Show all source segments</span></button>'
+            + '<p>168 points used. One segment needs review; no points excluded.</p></section></div><p id="source-following">Following reading position</p></main>';
+        document.getElementById('bpb-gpx-analysis').dataset.theme = theme;
+    }, variant);
+    await page.addStyleTag({ content: gpxPanelCss });
+    for (const zoom of [1, 2]) {
+        await page.locator('main').evaluate((element, zoom) => { element.style.zoom = zoom; }, zoom);
+        const control = page.locator('.bpb-gpx-segment-view');
+        assert.equal(await control.isVisible(), false, 'warning-only GPX must not display its hidden source-view control');
+        assert.equal(await control.evaluate(element => element.getClientRects().length), 0, 'hidden source view reserves no empty button gap');
+        const hiddenBefore = await geometry(page, '#source-following');
+        await control.evaluate(element => { element.hidden = false; });
+        await control.waitFor({ state: 'visible' });
+        const before = await geometry(page, '.bpb-gpx-segment-view');
+        const following = await geometry(page, '#source-following');
+        for (const label of ['Use interpreted view', 'Show all source segments']) {
+            await control.evaluate((element, label) => { element.firstElementChild.textContent = label; }, label);
+            stable(before, await geometry(page, '.bpb-gpx-segment-view'), `GPX source label ${label} zoom ${zoom}`);
+            stable(following, await geometry(page, '#source-following'), 'GPX source label reading position');
+        }
+        await control.evaluate(element => { element.hidden = true; });
+        stable(hiddenBefore, await geometry(page, '#source-following'), 'GPX warning-only state restored');
+        await capture(page, `${variant.name}-gpx-warning-${zoom}`);
+    }
+}
 async function mapCase(page, origin, variant) {
     await page.goto(`${origin}/dist/photos/guide.html`);
     await page.evaluate(({ theme }) => {
@@ -940,7 +972,7 @@ async function reportCase(page, origin, variant) {
 }
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
-    maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, reports: reportCase };
+    'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, reports: reportCase };
 const resources = createResourceStack();
 let failure = null;
 try {

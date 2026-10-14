@@ -1,7 +1,7 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
 Status: **remediation in progress**. C01–C07 have focused corrections;
-final C08 baseline/integration proof and O01/O02 remain open. This is the re-audit of the Buddy/Favorite/Ignore
+final C08 baseline/integration proof and O02 remain open. This is the re-audit of the Buddy/Favorite/Ignore
 page-jump report; the focused remediation order is recorded separately below.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
@@ -274,8 +274,8 @@ explicit disclosures/navigation have documented separate expectations.
 
 ## Carry-forward findings outside the climber scope
 
-- **O01 OPEN — GPX source-view hidden-state regression:**
-  `src/gpx/gpx-panel-css.js` (lines 190–196) still sets explicit display for the
+- **O01 FIXED — GPX source-view hidden-state regression:**
+  The audited `src/gpx/gpx-panel-css.js` (lines 190–196) set explicit display for the
   source-view button without honoring its own hidden state. Warning-only tracks
   with no excluded segments were confirmed in the earlier ledger. Revalidate
   the rendered warning-only path before a focused fix; no new GPX browser run
@@ -295,6 +295,15 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- O01: the analyzer's source-view display now explicitly honors `hidden`.
+  The shipped warning-only unit assertion failed before the change (`grid`
+  instead of `none`); the isolated browser assertion independently failed on
+  the visible inert button. The browser fixture removes unrelated photo-guide
+  styles that otherwise mask this defect. All 60 analyzer and three documentation
+  tests passed; build, focused ESLint and diff checks passed. Eight hidden
+  Chrome/Firefox × light/dark × 390/1280×900 variants passed, each at 1×/2× CSS
+  scale, checking true absence, no empty gap, both real labels and restoration
+  of following content. Narrow and wide scaled renders were inspected.
 - C08 keyboard follow-up: the new focus assertions independently reproduced
   Firefox blur on profile Favorite and native Buddy pending states. Profile,
   Ignore, native Buddy and recovery now preserve their active control using
@@ -395,7 +404,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Changed but not fully proven
 
-- Final C08 integration/baseline proof and carried GPX/report remediation
+- Final C08 integration/baseline proof and carried report remediation
   remain open. Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
   touch, every native POST failure/check-only recovery and actual multi-window
