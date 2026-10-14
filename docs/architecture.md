@@ -833,6 +833,13 @@ at the saved ascent date and stopping at today's local date. Pending or failed
 navigation retains the displayed day. Hourly charts and the horizontal Conditions
 table share keyboard sampling and the optional GPX cursor.
 
+The archive's explicit model ID is remembered in device-local
+`bpbAscentWeatherModel`, independently of peak forecast/history choices. A
+bounded startup read restores an eligible choice before the first request;
+an ineligible saved model uses Best Match for that ascent without rewriting
+the preference. Explicit selections serialize local writes. No ascent ID,
+date, coordinates or weather payload enters this preference or sync/exports.
+
 The weather client accepts only packaged model endpoints, omits credentials
 and referrers, and has bounded requests and a small tab-memory cache. It needs
 no API permission or privileged bridge. Historical local-day aggregation uses

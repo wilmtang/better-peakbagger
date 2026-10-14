@@ -9,6 +9,7 @@ import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createCardDrag } from '../ui/card-drag.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
+import { requestDeadline } from '../net/request-deadline.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
@@ -16,13 +17,14 @@ import { peakbaggerCloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
 import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
-import { ARCHIVE_BEST_MATCH, eligibleWeatherModels } from '../weather/weather-models.js';
+import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../weather/weather-models.js';
 import { createWeatherClient } from '../weather/open-meteo-client.js';
 import { createWeatherHourlyTable } from '../weather/weather-hourly-table.js';
 import { GPX_TIME_CURSOR_REQUEST, readGpxTimeCursor } from '../gpx/gpx-time-cursor.js';
 
 const ID = 'bpb-ascent-weather', SVG_NS = 'http://www.w3.org/2000/svg';
 const POSITION_KEY = 'bpbAscentWeatherColumn';
+const MODEL_KEY = 'bpbAscentWeatherModel';
 const element = dom.element;
 const numeric = value => Number.isFinite(value);
 const clean = text => (text || '').replace(/\s+/g, ' ').trim();
@@ -188,6 +190,18 @@ export function mountAscentWeather() {
     let metric = 'conditions', generation = 0, controller = null, started = false, visibilityObserver = null;
     const client = createWeatherClient();
     let lifecycle;
+    let rememberedModel = ARCHIVE_BEST_MATCH.id, modelRevision = 0, modelSaveError = '';
+    let modelWrites = Promise.resolve();
+    const modelReadDeadline = requestDeadline.createRequestDeadline(2000);
+    const modelReady = (async () => {
+        const revision = modelRevision;
+        try {
+            const saved = (await modelReadDeadline.run(chrome.storage.local.get(MODEL_KEY)))?.[MODEL_KEY];
+            if (modelRevision === revision && lifecycle?.state !== 'disposed'
+                && WEATHER_MODELS.some(model => model.id === saved)) rememberedModel = saved;
+        } catch { /* Missing, invalid or unavailable storage keeps Best Match usable. */ }
+        finally { modelReadDeadline.clear(); }
+    })();
     const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked || card.getAttribute('aria-busy') === 'true'; updateNavigation(); });
     function adjacentDay(direction) {
         if (!dayWindow) return null;
@@ -443,8 +457,9 @@ export function mountAscentWeather() {
     function updateModelDescription() {
         if (!current) return;
         const { model } = current, refreshing = card.hasAttribute('data-refreshing');
-        modelName.textContent = refreshing ? refreshLabel : `Using ${model.label} · ${model.resolution}`;
-        modelName.hidden = !refreshing && model.id === select.value;
+        modelName.textContent = refreshing ? refreshLabel : modelSaveError ? 'Not remembered locally' : `Using ${model.label} · ${model.resolution}`;
+        modelName.hidden = !refreshing && !modelSaveError && model.id === select.value;
+        modelName.title = modelSaveError;
         modelType.textContent = `${model.resolution} · ${model.type}`;
     }
     const busy = value => {
@@ -455,13 +470,15 @@ export function mountAscentWeather() {
         updateNavigation();
     };
     const cancel = () => { generation++; controller?.abort(); controller = null; busy(false); };
-    const updateModels = targetDate => {
-        const selected = select.value;
+    const updateModels = (targetDate, restore = false) => {
+        const selected = restore ? rememberedModel : select.value;
         candidates = eligibleWeatherModels(summit, targetDate)
             .sort((a, b) => Number(b === ARCHIVE_BEST_MATCH) - Number(a === ARCHIVE_BEST_MATCH));
         select.replaceChildren(...candidates.map(model => element('option', { value: model.id,
             text: model === ARCHIVE_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}` })));
-        select.value = selected;
+        // Only startup can fall back for a different ascent's coverage. Do not
+        // persist that fallback or silently switch an explicit in-page choice.
+        select.value = restore && !candidates.some(model => model.id === selected) ? ARCHIVE_BEST_MATCH.id : selected;
         modelRow.hidden = false;
     };
     const prepare = async signal => {
@@ -471,7 +488,7 @@ export function mountAscentWeather() {
         summit = readWeatherSummit(response.document, subject, response.url);
         const zone = mountainTime.resolve(summit.latitude, summit.longitude);
         dayWindow = weatherDayWindow(subject.date, zone);
-        updateModels(subject.date);
+        updateModels(subject.date, true);
     };
     async function load(targetDate = dayWindow?.date || subject.date) {
         if (!enabled() || subject.reason || subject.date < '1940-01-01' || lifecycle?.state !== 'active') return;
@@ -488,6 +505,8 @@ export function mountAscentWeather() {
             status.textContent = 'Loading ascent-day weather…';
         }
         try {
+            await modelReady;
+            if (ownGeneration !== generation || signal.aborted) return;
             await prepare(signal);
             if (ownGeneration !== generation) return;
             const requestedWindow = weatherDayWindow(targetDate, mountainTime.resolve(summit.latitude, summit.longitude));
@@ -528,7 +547,20 @@ export function mountAscentWeather() {
             if (ownGeneration === generation) busy(false);
         }
     }
-    select.addEventListener('change', () => { void load(); });
+    select.addEventListener('change', () => {
+        if (!enabled() || lifecycle.state !== 'active' || !candidates.some(model => model.id === select.value)) return;
+        rememberedModel = select.value; modelSaveError = '';
+        const revision = ++modelRevision, choice = rememberedModel;
+        // Persist explicit model IDs only, independently of sync and of the
+        // other weather surfaces. Serialize rapid selections in intent order.
+        modelWrites = modelWrites.catch(() => {}).then(() => chrome.storage.local.set({ [MODEL_KEY]: choice })).catch(() => {
+            if (revision === modelRevision && lifecycle.state !== 'disposed') {
+                modelSaveError = 'For this visit only · Model choice could not be saved';
+                updateModelDescription();
+            }
+        });
+        void load();
+    });
     for (const [button, direction] of [[previousDay, -1], [nextDay, 1]]) button.addEventListener('click', () => {
         if (button.getAttribute('aria-disabled') === 'true') return;
         const target = adjacentDay(direction);
@@ -598,7 +630,7 @@ export function mountAscentWeather() {
     lifecycle = createPageLifecycle({
         onSuspend: () => { cardDrag?.cancel(); cooldown.suspend(); stopCursor(); cursorState = { ...cursorState, hovering: false, hoverTime: null }; cancel(); placementObserver.disconnect(); visibilityObserver?.disconnect(); },
         onResume: () => { place(); placementObserver.observe(mountParent, { childList: true, subtree: true }); if (enabled()) { cooldown.resume(); listenForCursor(); drawChart(); if (!current || started) beginWhenVisible(); } },
-        onDispose: () => { cardDrag?.dispose(); cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
+        onDispose: () => { modelReadDeadline.clear(); cardDrag?.dispose(); cooldown.dispose(); stopCursor(); cancel(); placementObserver.disconnect(); restoreGpsDetails(); visibilityObserver?.disconnect(); resizeObserver?.disconnect(); unsubscribe(); client.clear(); },
     });
     cardDrag = createCardDrag({ card, handle: moveHandle, surface: header, status: moveStatus, name: 'Weather',
         enabled: () => enabled() && lifecycle.state === 'active', getPosition: () => column,

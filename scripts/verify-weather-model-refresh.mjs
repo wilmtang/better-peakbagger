@@ -5,6 +5,48 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
+export async function verifyAscentWeatherModelMemory({ evaluate, navigate, resize, setSettings, readLocal, writeLocal,
+    evidence, origin, screenshotPage, output, firefoxMode }) {
+    const key = 'bpbAscentWeatherModel', url = `${origin}/climber/ascent.aspx?aid=7654321&weather=no-gpx`;
+    const loaded = label => waitForCondition(() => evaluate(() => ({ busy: document.getElementById('bpb-ascent-weather')?.getAttribute('aria-busy'),
+        description: document.querySelector('.bpb-weather-model-description')?.textContent || '' })), {
+        description: `saved archive model ${label}`, timeoutMs: 20_000,
+        isReady: state => state.busy === 'false' && state.description.includes(`Using ${label}`),
+    });
+    for (const theme of ['light', 'dark']) for (const width of [1440, 375]) {
+        await setSettings({ theme, units: 'metric' }); await resize(width, 1100);
+        await navigate(url); await loaded('Best Match');
+        await evaluate(() => {
+            const select = document.querySelector('.bpb-weather-model select');
+            select.focus({ preventScroll: true }); select.value = 'gfs_global'; select.dispatchEvent(new Event('change'));
+        });
+        await loaded('GFS');
+        await waitForCondition(async () => (await readLocal(key))[key] === 'gfs_global', { description: 'explicit archive model saved locally' });
+        const count = evidence.length;
+        await navigate(url, { preserveModel: true });
+        await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView({ block: 'center', behavior: 'instant' }));
+        await loaded('GFS');
+        assert.equal(await evaluate(() => document.querySelector('.bpb-weather-model select').value), 'gfs_global');
+        assert.deepEqual(evidence.slice(count).map(request => request.model), ['gfs_global'], 'reload must not request Best Match before the saved model');
+        if (output) await screenshotPage(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-${theme}-remembered-model-${width}.png`));
+        await evaluate(() => {
+            const select = document.querySelector('.bpb-weather-model select');
+            select.value = 'best_match'; select.dispatchEvent(new Event('change'));
+        });
+        await loaded('Best Match');
+        await waitForCondition(async () => (await readLocal(key))[key] === 'best_match', { description: 'explicit Best Match saved' });
+        await navigate(url, { preserveModel: true }); await loaded('Best Match');
+    }
+    // Rainier is outside ICON D2's region. Startup fallback must not overwrite
+    // a preference which may still be usable on the next ascent.
+    await writeLocal({ [key]: 'icon_d2' });
+    const count = evidence.length;
+    await navigate(url, { preserveModel: true }); await loaded('Best Match');
+    assert.equal((await readLocal(key))[key], 'icon_d2');
+    assert.deepEqual(evidence.slice(count).map(request => request.model), ['best_match']);
+    await writeLocal({ [key]: 'best_match' });
+}
+
 export async function verifyWeatherModelRefresh({ evaluate, navigate, click, resize, wait, setSettings,
     setMode, release, evidence, origin, screenshotPage, output, firefoxMode }) {
     const geometry = () => {

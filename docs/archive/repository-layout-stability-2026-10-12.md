@@ -433,3 +433,57 @@ must not be mistaken for optional cleanup or a complete audit closure.
   prove native window focus, placement or screen-reader speech.
 - The full unit suite was not rerun for this CSS-only runtime correction. Its
   two unchanged README documentation failures recorded above remain known.
+
+## 2026-10-14 archive-weather model preference
+
+### Fixed and verified
+
+- The ascent archive had no persisted model preference: every new document
+  initialized Best Match. Add a separate device-local `bpbAscentWeatherModel`
+  ID, validate it against the packaged registry, and restore an eligible model
+  before the first summit/provider request. The persistence and delayed-read
+  regressions failed on the original shipped bundle.
+- Persist only explicit selections; serialize rapid writes. Initial date or
+  regional fallback uses Best Match for that visit without overwriting the
+  stored model. Provider failures do not silently switch models. A bounded
+  local read keeps storage failure from leaving indefinite loading; generation
+  checks prevent requests after opt-out or disposal. Failed writes leave the
+  active data usable and show “Not remembered locally” in the existing
+  description slot, with full detail in its tooltip.
+- Build, all 52 ascent-weather and 59 peak-weather tests passed (111 total),
+  as did focused ESLint and diff checks. Coverage includes reload/next ascent,
+  ineligible dates/regions, return to eligible coverage, malformed storage,
+  delayed reads, timeout/late response, opt-out, serialized writes and stale
+  write failures. Only the allowlisted model ID is persisted; no ascent ID,
+  date, coordinates, weather payload or peak-weather preference is written.
+- The real unpacked extension passed hidden Chrome 153.0.8010.12 and Firefox
+  157.0.1 at 375, 681, 768 and 1440×1100 in both themes, including teardown.
+  Dedicated reload checks at 375/1440 require the very first provider request
+  to use the saved model, verify explicit Best Match persistence, and verify
+  that a regional fallback leaves the stored model untouched. Existing held
+  model-refresh geometry, error/retry, day navigation and GPX-cursor checks
+  remain. Narrow/desktop remembered-model renders were inspected. Independent
+  fixtures explicitly reset the model; persistence fixtures bypass that reset.
+- The generic real-manifest Chrome 153.0.8010.12 verifier also passed hidden
+  at 1000×760, including worker/content startup, BFCache restore and teardown.
+- Privacy and architecture documentation now distinguish archive-model
+  memory from the separate peak forecast/history preferences.
+
+### Intentionally not changed
+
+- The preference is global to this device, not per ascent and not browser
+  synced. It is excluded from settings exports and GitHub backups. No new
+  setting, banner or weather request is added merely to save a choice.
+- Regional and date coverage, model endpoints, weather opt-out and manual
+  Peakbagger Save boundaries remain unchanged. Earlier audit findings remain
+  open; this is the newly requested archive-preference behavior only.
+
+### Changed but not fully proven
+
+- Browser provider responses are controlled, not live forecast evidence.
+  Storage rejection/timeout paths are driven in unit tests; the local-write
+  failure notification was not fault-injected in a real browser. Hidden
+  verification does not prove native select menus, onscreen focus/window
+  placement, browser zoom or screen-reader speech.
+- The full repository unit suite was not rerun; the two previously recorded
+  unchanged README assertions remain known and outside this change.

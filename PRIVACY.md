@@ -65,7 +65,7 @@ permission to read device location. It covers:
 | Storage | Contents | Retention and sync |
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, weather-card, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
-| `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, summit-weather data-tab selection, and automatic-backup state | Device-local; never browser-synced. |
+| `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, weather-model choices, ascent-weather column, summit-weather data-tab selection, and automatic-backup state | Device-local; never browser-synced. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
@@ -345,10 +345,14 @@ On saved ascent pages, the weather card automatically reads the matching peak
 page on Peakbagger, then requests model estimates from Open-Meteo when the card
 approaches the viewport. This works without a GPX and for other climbers’
 viewable ascents. Invalid or incomplete dates make no weather request.
-The ascent weather card can move between the report and summary columns. Only
-that column choice is saved in extension-local storage on this device; it is
-excluded from browser sync, settings exports and GitHub backups. Moving the
-card reuses the loaded weather and sends no new request.
+The ascent weather card remembers the last explicitly selected archive model
+on this device, separately from peak-page forecast/history choices. Only a
+packaged model identifier is saved, not an ascent ID, date, coordinates or
+weather data. An unsupported model uses Best Match for that visit without
+erasing the saved preference. The card can also move between the report and
+summary columns. The model identifier and column choice use extension-local
+storage and are excluded from browser sync, settings exports and GitHub backups.
+Moving the card reuses the loaded weather and sends no new request.
 
 On peak pages, **Summit weather** reads summit coordinates and elevation
 directly from the current Peakbagger page. One forecast-API request covers sixteen

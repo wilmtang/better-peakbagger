@@ -56,11 +56,19 @@ Archive starts, delays, endpoints and variables live in
 [Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api)
 and [published route definitions](https://github.com/open-meteo/open-meteo/blob/main/Sources/App/Controllers/ForecastapiController.swift).
 
-The default **Best Match (Open-Meteo)** requests `models=best_match` from
+The initial default **Best Match (Open-Meteo)** requests `models=best_match` from
 `archive-api.open-meteo.com/v1/archive`. Open-Meteo combines ECMWF IFS, ERA5 and
 ERA5-Land according to available dates and variables, with coverage back to 1940.
 Source details identify this as a blend and do not invent per-value provenance.
 The ascent archive no longer applies the extension's country recommendation chain.
+
+An explicit model choice is remembered on this device in `storage.local` as
+`bpbAscentWeatherModel`, independently of peak forecast/history preferences.
+Startup waits for a bounded local read before its first request. If the saved
+model does not cover the new ascent's date or region, Best Match is used for
+that visit without overwriting the preference. An explicit request failure
+never switches models. Only model IDs are persisted, not dates, ascent IDs,
+coordinates or weather data; this choice is outside sync, exports and backups.
 
 The dropdown includes global alternatives, overlapping regional candidates,
 with **Best Match (Open-Meteo)** first among eligible choices,

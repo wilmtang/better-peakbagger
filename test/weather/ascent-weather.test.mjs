@@ -18,12 +18,20 @@ async function waitFor(predicate) {
     const until = Date.now() + 2000;
     while (!predicate()) { if (Date.now() > until) throw new Error('Weather UI did not settle'); await pause(); }
 }
-const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings, localPositions = {}, readPositions, savePositions, now } = {}) => {
+const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July 12, 2024'), fetchWeather, fetchPeak, withLayout = true, storedSettings = {}, readSettings, localPositions = {}, readPositions, savePositions,
+    localModels = {}, readModels, saveModels, configureWindow, now } = {}) => {
     const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = jsdom.window, requests = [], listeners = [], positionWrites = [];
+    const win = jsdom.window, requests = [], listeners = [], positionWrites = [], modelWrites = [];
     if (now !== undefined) win.Date.now = () => now;
     win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { local: { get: readPositions || (async () => localPositions), set: async values => {
+    configureWindow?.(win);
+    win.chrome = { storage: { local: { get: async key => key === 'bpbAscentWeatherModel'
+        ? (readModels ? readModels() : localModels) : (readPositions ? readPositions() : localPositions), set: async values => {
+        if ('bpbAscentWeatherModel' in values) {
+            modelWrites.push(values);
+            if (saveModels) return saveModels(values);
+            Object.assign(localModels, values); return;
+        }
         positionWrites.push(values);
         if (savePositions) return savePositions(values);
         Object.assign(localPositions, values);
@@ -37,8 +45,134 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
     };
     if (withLayout) win.eval(layoutBundle);
     win.eval(bundle);
-    return { win, doc: win.document, requests, listeners, positionWrites, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
+    return { win, doc: win.document, requests, listeners, positionWrites, modelWrites, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 };
+
+test('archive model choices persist locally and restore before the first request without storing ascent data', async () => {
+    const localModels = {}, env = setup({ localModels, fetchWeather: archiveResponse });
+    try {
+        await openChart(env);
+        const select = env.doc.querySelector('.bpb-weather-model select');
+        select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => localModels.bpbAscentWeatherModel === 'gfs_global');
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using GFS'));
+        assert.deepEqual(localModels, { bpbAscentWeatherModel: 'gfs_global' });
+        assert.deepEqual(env.modelWrites.map(value => ({ ...value })), [{ bpbAscentWeatherModel: 'gfs_global' }]);
+    } finally { env.close(); }
+    const restored = setup({ localModels, fetchWeather: archiveResponse });
+    try {
+        await waitFor(() => restored.requests.some(request => new URL(request.url).hostname !== 'www.peakbagger.com'));
+        assert.equal(new URL(restored.requests[1].url).searchParams.get('models'), 'gfs_global');
+        assert.equal(restored.doc.querySelector('select').value, 'gfs_global');
+        assert.equal(restored.modelWrites.length, 0, 'restoring must not write a default over the saved choice');
+    } finally { restored.close(); }
+});
+
+test('unsupported archive choices use Best Match for this visit without erasing the preference', async () => {
+    for (const choice of ['gfs_global', 'icon_d2']) {
+        const localModels = { bpbAscentWeatherModel: choice };
+        const env = setup({ localModels, html: ascent.replaceAll('Sunday, July 12, 2026', 'Sunday, July 12, 2020'), fetchWeather: archiveResponse });
+        try {
+            await openChart(env);
+            assert.equal(new URL(env.requests[1].url).searchParams.get('models'), 'best_match');
+            assert.equal(localModels.bpbAscentWeatherModel, choice);
+            assert.equal(env.modelWrites.length, 0);
+        } finally { env.close(); }
+        if (choice === 'gfs_global') {
+            const supported = setup({ localModels, fetchWeather: archiveResponse });
+            try {
+                await waitFor(() => supported.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using GFS'));
+                assert.equal(new URL(supported.requests[1].url).searchParams.get('models'), 'gfs_global');
+                assert.equal(supported.modelWrites.length, 0);
+            } finally { supported.close(); }
+        }
+    }
+});
+
+test('delayed archive preference reads make no premature default request or request after opt-out', async () => {
+    let finish;
+    const env = setup({ readModels: () => new Promise(resolve => { finish = resolve; }), fetchWeather: archiveResponse });
+    try {
+        await waitFor(() => finish);
+        await waitFor(() => env.doc.querySelector('#bpb-ascent-weather').hidden === false);
+        assert.equal(env.requests.length, 0);
+        finish({ bpbAscentWeatherModel: 'gfs_global' });
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using GFS'));
+        assert.equal(new URL(env.requests[1].url).searchParams.get('models'), 'gfs_global');
+    } finally { env.close(); }
+    const optedOut = setup({ readModels: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await waitFor(() => !optedOut.doc.querySelector('#bpb-ascent-weather').hidden);
+        optedOut.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showWeather: false } } }, 'sync'));
+        finish({ bpbAscentWeatherModel: 'gfs_global' }); await pause();
+        assert.equal(optedOut.requests.length, 0);
+    } finally { optedOut.close(); }
+});
+
+test('malformed or failed archive preference reads retain usable Best Match without saving a fallback', async () => {
+    for (const value of ['unknown-model', { id: 'gfs_global' }, null, 123]) {
+        const env = setup({ localModels: { bpbAscentWeatherModel: value }, fetchWeather: archiveResponse });
+        try { await openChart(env); assert.equal(env.modelWrites.length, 0); }
+        finally { env.close(); }
+    }
+    const failed = setup({ readModels: async () => { throw new Error('Unavailable'); }, fetchWeather: archiveResponse });
+    try { await openChart(failed); assert.equal(new URL(failed.requests[1].url).searchParams.get('models'), 'best_match'); }
+    finally { failed.close(); }
+});
+
+test('rapid archive choices serialize local writes and only the latest failure can describe the selection', async () => {
+    const held = [], localModels = {};
+    const env = setup({ localModels, fetchWeather: archiveResponse, saveModels: values => new Promise((resolve, reject) => {
+        held.push({ values, resolve: () => { Object.assign(localModels, values); resolve(); }, reject });
+    }) });
+    try {
+        await openChart(env);
+        const select = env.doc.querySelector('select');
+        select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => held.length === 1);
+        select.value = 'ecmwf_ifs'; select.dispatchEvent(new env.win.Event('change')); await pause();
+        assert.equal(held.length, 1);
+        held[0].reject(new Error('Older write failed'));
+        await waitFor(() => held.length === 2);
+        assert.equal(held[1].values.bpbAscentWeatherModel, 'ecmwf_ifs');
+        held[1].resolve();
+        await waitFor(() => localModels.bpbAscentWeatherModel === 'ecmwf_ifs');
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Using ECMWF IFS'));
+        assert.doesNotMatch(env.doc.querySelector('.bpb-weather-model-description').textContent, /could not be saved/);
+    } finally { held.forEach(item => item.resolve()); env.close(); }
+});
+
+test('a stalled archive preference read times out without a late response changing the active model', async () => {
+    let finish;
+    const env = setup({ fetchWeather: archiveResponse, readModels: () => new Promise(resolve => { finish = resolve; }),
+        configureWindow: win => {
+            const setTimer = win.setTimeout.bind(win);
+            win.setTimeout = (callback, delay, ...args) => setTimer(callback, delay === 2000 ? 0 : delay, ...args);
+        } });
+    try {
+        await openChart(env);
+        assert.equal(new URL(env.requests[1].url).searchParams.get('models'), 'best_match');
+        finish({ bpbAscentWeatherModel: 'gfs_global' }); await pause();
+        assert.equal(env.doc.querySelector('select').value, 'best_match');
+        assert.equal(env.requests.length, 2);
+        assert.equal(env.modelWrites.length, 0);
+    } finally { env.close(); }
+});
+
+test('an archive model save failure keeps the chosen data usable and reports that it was not remembered', async () => {
+    const env = setup({ fetchWeather: archiveResponse, saveModels: async () => { throw new Error('Unavailable'); } });
+    try {
+        await openChart(env);
+        const select = env.doc.querySelector('select');
+        select.value = 'gfs_global'; select.dispatchEvent(new env.win.Event('change'));
+        await waitFor(() => env.doc.querySelector('.bpb-weather-model-description').textContent.includes('Not remembered locally'));
+        await waitFor(() => env.doc.getElementById('bpb-ascent-weather').getAttribute('aria-busy') === 'false');
+        assert.equal(select.value, 'gfs_global');
+        assert.match(env.doc.querySelector('.bpb-weather-source-text').textContent, /^GFS,/);
+        assert.match(env.doc.querySelector('.bpb-weather-model-description span').title, /For this visit only/);
+        assert.equal(env.doc.querySelector('.bpb-weather-model-description span').hidden, false);
+    } finally { env.close(); }
+});
 
 const sendCursor = (env, state, detail = {}) => env.win.dispatchEvent(new env.win.MessageEvent('message', {
     source: env.win, origin: env.win.location.origin,

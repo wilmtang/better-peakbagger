@@ -17,7 +17,7 @@ import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fix
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
-import { verifyWeatherModelRefresh } from './verify-weather-model-refresh.mjs';
+import { verifyWeatherModelRefresh, verifyAscentWeatherModelMemory } from './verify-weather-model-refresh.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -34,7 +34,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readLocal, version;
+    let mode = 'complete', evaluate, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readLocal, writeLocal, version;
     const replyFor = url => {
         const requested = new URL(url);
         if (requested.pathname.startsWith('/data/')) return { status: 200, headers: {}, body: JSON.stringify({
@@ -177,6 +177,13 @@ try {
             if (response.result?.type === 'exception') throw new Error(response.result.exceptionDetails?.text || 'local storage read failed');
             return { [key]: response.result?.result?.value };
         };
+        writeLocal = async values => {
+            const response = await send({ method: 'script.evaluate', params: {
+                expression: `chrome.storage.local.set(${JSON.stringify(values)}).then(() => true)`,
+                target: { context: settingsWindow }, awaitPromise: true, resultOwnership: 'none',
+            } });
+            if (response.result?.type === 'exception') throw new Error(response.result.exceptionDetails?.text || 'local storage write failed');
+        };
     } else {
         const { chromium } = await import('playwright');
         const dist = path.join(root, 'dist');
@@ -212,7 +219,15 @@ try {
         screenshotPage = output => page.screenshot({ path: output });
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
         readLocal = key => worker.evaluate(storageKey => chrome.storage.local.get(storageKey), key);
+        writeLocal = values => worker.evaluate(values => chrome.storage.local.set(values), values);
     }
+    const navigatePage = navigate;
+    navigate = async (url, { preserveModel = false } = {}) => {
+        // Independent archive fixtures begin from an explicit default. The
+        // persistence cases bypass this reset and verify the real saved choice.
+        if (!peakMode && !preserveModel) await writeLocal({ bpbAscentWeatherModel: 'best_match' });
+        return navigatePage(url);
+    };
     const wait = (fn, description) => waitForCondition(() => evaluate(fn), { description, timeoutMs: 20_000 });
     const checkGpxCursor = async () => {
         const before = evidence.length;
@@ -373,6 +388,8 @@ try {
         } else {
             const output = process.env.BPB_VERIFY_WEATHER_SCREENSHOT_DIR;
             if (output) await mkdir(output, { recursive: true });
+            await verifyAscentWeatherModelMemory({ evaluate, navigate, resize, wait, setSettings, readLocal, writeLocal,
+                evidence, origin, screenshotPage, output, firefoxMode });
             await verifyWeatherCardDrag({ evaluate, navigate, click, press, resize, movePointer, pointerDown, pointerUp, wait, readLocal,
                 setSettings, origin, evidence, screenshotPage, output, firefoxMode });
             await verifyWeatherModelRefresh({ evaluate, navigate, click, resize, wait, setSettings,
@@ -647,7 +664,7 @@ try {
             await evaluate(() => document.getElementById('bpb-ascent-weather').scrollIntoView());
             await wait(() => document.querySelector('.bpb-weather-model-description')?.textContent.includes('Using Best Match'), 'weather after verification navigation');
             assert.deepEqual(networkErrors, []);
-            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['model-refresh-layout', 'negative-temperature', 'archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
+            summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['local-model-memory', 'model-refresh-layout', 'negative-temperature', 'archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
         }
     }
 } catch (error) { primaryError = error; }
