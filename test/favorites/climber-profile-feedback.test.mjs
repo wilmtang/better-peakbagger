@@ -31,3 +31,13 @@ test('profile feedback has one owner outside the heading and does not auto-expan
     assert.equal(region.querySelector('details').hidden, false, 'do not collapse user-opened details asynchronously');
     assert.equal(doc.getElementById('bpb-climber-membership-note').hidden, true);
 });
+test('new failures supersede old feedback and unavailable recovery never acts clickable', t => {
+    const dom = new JSDOM('<span id="TitleLabel"><h1>Name</h1></span>'); t.after(() => dom.window.close());
+    const doc = dom.window.document, ui = climberProfileFeedback(doc);
+    const old = { text: 'Old failure', error: 'old', retry() {}, priority: 80 };
+    ui.set('favorite', old); ui.set('ignore', { text: 'New failure', error: 'new', retry() {}, priority: 80 });
+    ui.set('favorite', old);
+    assert.equal(doc.getElementById('bpb-climber-membership-note').textContent, 'New failure');
+    ui.set('ignore', { text: 'New failure', error: 'new', retry() {}, disabled: true, priority: 80 });
+    assert.equal(doc.getElementById('bpb-climber-profile-retry').disabled, true);
+});

@@ -14,6 +14,21 @@ const state = (flags = {}, overrides = {}) => climberCardState({ cid, ownerCid,
         pendingIds: new Set(flags.pending ? [cid] : []), error: '',
     }, ...overrides });
 
+test('active, expired and confirmed intents all protect Ignore but only active work disables checking', () => {
+    const membership = { favorites: { entries: [] }, ignored: { entries: [] }, pendingIds: new Set(), error: '',
+        buddyIntents: [{ cid, status: 'prepared', leaseUntil: Date.now() + 30000 }] };
+    const active = state({}, { membership });
+    assert.equal(active.buddyInFlight, true); assert.equal(active.ignoreDisabled, true);
+    assert.match(active.note, /in progress/);
+    membership.buddyIntents[0].leaseUntil = 0;
+    assert.equal(state({}, { membership }).buddyInFlight, false);
+    assert.equal(state({}, { membership }).ignoreDisabled, true);
+    membership.buddyIntents[0].status = 'confirmed';
+    assert.equal(state({}, { membership }).ignoreDisabled, true);
+    membership.buddyIntents[0].leaseUntil = Date.now() + 30000;
+    assert.equal(state({}, { membership }).buddyInFlight, true, 'confirmed-status recovery can still own a live lease');
+});
+
 test('card targets accept real profile links and reject ambiguous or non-person links', () => {
     assert.deepEqual(climberCardTarget('Climber.aspx?cid=900002', ' Casey\n Alpine ',
         'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1'), {

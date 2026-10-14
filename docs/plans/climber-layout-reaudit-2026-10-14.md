@@ -1,7 +1,7 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
-Status: **remediation in progress**. C01/C02/C03/C05 have profile corrections;
-C04/C06/C07 and final C08 integration remain open. This is the re-audit of the Buddy/Favorite/Ignore
+Status: **remediation in progress**. C01–C05 have profile/membership corrections;
+C06/C07 and final C08 integration remain open. This is the re-audit of the Buddy/Favorite/Ignore
 page-jump report; the focused remediation order is recorded separately below.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
@@ -295,6 +295,21 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Fixed and verified
 
+- C04: Ignore now uses the shared validated card eligibility and durable intent
+  protection. Profile/card/native Buddy actions agree on live leases and other
+  accounts; expired intents remain protected but permit explicit status checks.
+  The membership observer republishes at lease deadlines and cancels its timer
+  on stop. It never clears or writes an intent. Safe removals and independent
+  Favorite actions remain available. Recovery eligibility is rechecked when
+  concurrent list changes invalidate a previous action.
+- Two new profile tests failed the old bundle on unresolved-intent eligibility.
+  All 63 focused profile/card/membership/worker-policy tests passed, including
+  deterministic timer cancellation, confirmed-status live leases, other-tab
+  publication and safe Unignore. The 24-case hidden pending-state matrix passed
+  in both engines: active/expired/failed/reconciled/other-account states, both
+  profile and card recovery, with zero POSTs for reconciliation. The combined
+  profile/native matrix also passed, including invalidated recovery. Build,
+  focused ESLint and real unpacked hidden Chrome startup/BFCache/teardown passed.
 - C03: native Buddy inputs retain their exact identity, accessible value and form
   association while visible captions reserve the largest real alternative and
   can wrap. The relationship label reserves its alternatives too. Save, warning,
@@ -339,7 +354,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
 
 ### Changed but not fully proven
 
-- Pending-intent, hover-card and carried GPX/report remediation
+- Hover-card and carried GPX/report remediation
   remain open. Hidden controlled probes do not prove live server compatibility.
 - Native browser zoom, live Brave/authenticated DOM, screen-reader speech,
   touch, every native POST failure/check-only recovery and actual multi-window

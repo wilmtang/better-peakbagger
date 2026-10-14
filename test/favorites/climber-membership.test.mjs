@@ -16,6 +16,24 @@ const ignored = cid => ({ bpbIgnoredClimbers: { schemaVersion: 1, revision: cid,
     entries: [{ cid, name: `Climber ${cid}`, addedAt: 1 }] } });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('lease expiry republishes unchanged protection and stopping cancels its read', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
+    const { reads, states, observer } = fixture();
+    const values = { ...ignored(2), bpbBuddyIntents: [{ cid: 3, ownerCid: 1, name: 'Pending', action: 'add',
+        token: 'fixture', tabId: 2, status: 'dispatched', checkOnly: false, leaseUntil: 2000 }] };
+    reads[0].resolve(values); await tick();
+    assert.equal(states.length, 1);
+    t.mock.timers.tick(1001);
+    assert.equal(reads.length, 2);
+    reads[1].resolve(values); await tick();
+    assert.equal(states.length, 2);
+    assert.equal(states[1].buddyIntents.length, 1, 'expiry never clears the intent');
+    const refresh = observer.refresh();
+    reads[2].resolve({ ...values, bpbBuddyIntents: [{ ...values.bpbBuddyIntents[0], leaseUntil: 4000 }] }); await refresh;
+    observer.stop(); t.mock.timers.tick(5000);
+    assert.equal(reads.length, 3, 'no post-stop deadline read');
+});
+
 test('membership observer subscribes before reading and rejects superseded snapshots', async () => {
     const { reads, states, observer, change, listeners } = fixture();
     assert.equal(listeners.size, 1);

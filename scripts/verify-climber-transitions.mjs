@@ -224,6 +224,17 @@ export async function verifyProfileFeedback(page, origin, variant) {
                 await page.locator('#bpb-climber-profile-feedback').filter({ hasText: 'not saved' }).waitFor();
                 const retry = page.locator('#bpb-climber-profile-retry');
                 assert.equal(await retry.isVisible(), true, 'visible recovery, not tooltip-only');
+                await page.evaluate(key => {
+                    const entry = { cid: 900002, name: 'Damon Up', addedAt: 1, source: 'manual' };
+                    globalThis.__climber.publish(key === 'favorite' ? { bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: [entry] } }
+                        : { bpbFavoriteClimbers: { schemaVersion: 1, entries: [entry] } });
+                }, key);
+                await page.waitForFunction(() => document.getElementById('bpb-climber-profile-retry').disabled === true);
+                await sample(page, before, `${key} stale recovery blocked`);
+                await page.evaluate(key => globalThis.__climber.publish(key === 'favorite'
+                    ? { bpbIgnoredClimbers: { schemaVersion: 1, revision: 2, entries: [] } }
+                    : { bpbFavoriteClimbers: { schemaVersion: 1, entries: [] } }), key);
+                await page.waitForFunction(() => document.getElementById('bpb-climber-profile-retry').disabled === false);
                 await capture(page, variant, `${key}-error`);
                 const details = page.locator('#bpb-climber-profile-feedback details');
                 assert.equal(await details.evaluate(element => element.open), false, 'long errors never auto-expand');
@@ -244,6 +255,66 @@ export async function verifyProfileFeedback(page, origin, variant) {
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal page overflow');
     await capture(page, variant, 'profile');
+}
+export async function verifyPendingMembership(page, origin, variant) {
+    await boot(page, origin, variant);
+    const before = await frame(page);
+    await page.evaluate(() => globalThis.__climber.publish({ bpbBuddyIntents: [{ cid: 900002, ownerCid: 900001, name: 'Damon Up', action: 'add',
+        token: 'other-tab', tabId: 7, status: 'prepared', checkOnly: false, leaseUntil: Date.now() + 30000 }] }));
+    await page.locator('#bpb-climber-membership-note').filter({ hasText: 'in progress' }).waitFor();
+    assert.equal(await page.locator('#bpb-climber-ignore').isDisabled(), true);
+    assert.equal(await page.locator('#AddBuddy').getAttribute('aria-disabled'), 'true');
+    await sample(page, before, 'other-tab active lease');
+    for (const status of ['dispatched', 'confirmed']) {
+        await page.evaluate(status => globalThis.__climber.publish({ bpbBuddyIntents: globalThis.__climber.store.bpbBuddyIntents.map(entry => ({ ...entry, status })) }), status);
+        await page.waitForFunction(() => document.getElementById('AddBuddy').getAttribute('aria-disabled') === 'true');
+        await sample(page, before, `other-tab ${status} live lease`);
+    }
+    await page.evaluate(() => globalThis.__climber.publish({ bpbBuddyIntents: globalThis.__climber.store.bpbBuddyIntents.map(entry => ({ ...entry, status: 'dispatched', leaseUntil: 0 })) }));
+    await page.locator('#bpb-climber-membership-note').filter({ hasText: 'Check buddy status.' }).waitFor();
+    assert.equal(await page.locator('#bpb-climber-ignore').isDisabled(), true, 'expiry is not confirmed absence');
+    await sample(page, before, 'other-tab unresolved');
+    const check = page.locator('#bpb-climber-profile-retry');
+    await check.focus(); await page.keyboard.press('Space');
+    await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
+    assert.equal(await page.evaluate(() => globalThis.__climber.pending.get('buddy').message.checkOnly), true);
+    await sample(page, before, 'other-tab status check pending');
+    await page.evaluate(() => globalThis.__climber.release('buddy', false));
+    await page.waitForFunction(() => document.getElementById('AddBuddy').disabled === false);
+    await sample(page, before, 'other-tab failed confirmation');
+    assert.equal(await page.locator('#bpb-climber-ignore').isDisabled(), true);
+    await check.click(); await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
+    await page.evaluate(() => globalThis.__climber.release('buddy'));
+    await page.waitForFunction(() => document.getElementById('bpb-climber-ignore').disabled === false);
+    await sample(page, before, 'other-tab confirmation complete');
+    assert.equal(page.__buddyPosts(), 0);
+    await page.evaluate(() => globalThis.__climber.publish({ bpbBuddyIntents: [{ cid: 900002, ownerCid: 900003, name: 'Damon Up', action: 'add',
+        token: 'wrong-owner', tabId: 7, status: 'dispatched', checkOnly: false, leaseUntil: 0 }] }));
+    await page.locator('#bpb-climber-membership-note').filter({ hasText: 'original account' }).waitFor();
+    assert.equal(await check.isVisible(), false);
+    assert.equal(await page.locator('#bpb-climber-ignore').isDisabled(), true);
+    assert.equal(await page.locator('#AddBuddy').getAttribute('aria-disabled'), 'true');
+    await sample(page, before, 'other-account protection');
+    await capture(page, variant, 'pending-membership');
+    await page.addStyleTag({ content: await asset('css/climber-hover-card.css') });
+    await page.addStyleTag({ content: '#transition-person{position:fixed;left:30px;top:250px}' });
+    await page.addScriptTag({ content: await asset('content/climber-hover-card.js') });
+    await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
+    const cardBuddy = page.locator('#bpb-climber-card-buddy');
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card-buddy')?.disabled === true);
+    await page.evaluate(() => globalThis.__climber.publish({ bpbBuddyIntents: [{ cid: 900002, ownerCid: 900001, name: 'Damon Up', action: 'add',
+        token: 'card-other-tab', tabId: 7, status: 'prepared', checkOnly: false, leaseUntil: Date.now() + 30000 }] }));
+    await cardBuddy.filter({ hasText: 'Saving…' }).waitFor();
+    assert.equal(await cardBuddy.isDisabled(), true);
+    await page.evaluate(() => globalThis.__climber.publish({ bpbBuddyIntents: globalThis.__climber.store.bpbBuddyIntents.map(entry => ({ ...entry, status: 'dispatched', leaseUntil: 0 })) }));
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card-buddy').disabled === false);
+    await cardBuddy.filter({ hasText: 'Check buddy status' }).waitFor();
+    assert.equal(await page.locator('#bpb-climber-card-ignore').isDisabled(), true);
+    await cardBuddy.click(); await page.waitForFunction(() => globalThis.__climber.pending.has('buddy'));
+    assert.equal(await page.evaluate(() => globalThis.__climber.pending.get('buddy').message.checkOnly), true);
+    await page.evaluate(() => globalThis.__climber.release('buddy'));
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card-ignore').disabled === false);
+    assert.equal(page.__buddyPosts(), 0, 'both surfaces reconcile without a POST');
 }
 
 async function run() {
@@ -271,6 +342,10 @@ async function run() {
                         if (checks === 'buddy' || checks === 'all') {
                             const buddyPage = await context.newPage(); buddyPage.setDefaultTimeout(10000);
                             await verifyBuddyPresentation(buddyPage, origin, variant);
+                        }
+                        if (checks === 'pending' || checks === 'all') {
+                            const pendingPage = await context.newPage(); pendingPage.setDefaultTimeout(10000);
+                            await verifyPendingMembership(pendingPage, origin, variant);
                         }
                         console.log(JSON.stringify({ ...variant, version: browser.version(), hidden: true, result: 'passed' }));
                     } finally { await context.close(); }

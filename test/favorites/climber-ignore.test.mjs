@@ -25,6 +25,47 @@ test('ignore works in either source mode when the climber is neither a favorite 
 });
 
 const entry = { cid: 900002, name: 'Casey Alpine', addedAt: 1 };
+const intent = status => ({ cid: 900002, ownerCid: 900001, name: 'Casey Alpine', action: 'add',
+    token: 'pending-fixture', tabId: 7, status, checkOnly: false, leaseUntil: 0 });
+test('durable Buddy intents block Ignore after reload, expiry and other-tab publication', async t => {
+    for (const status of ['prepared', 'dispatched', 'confirmed']) {
+        const dom = await load('custom', 900002, { local: { bpbBuddyIntents: [intent(status)] } });
+        t.after(() => dom.window.close());
+        const button = dom.window.document.getElementById('bpb-climber-ignore');
+        await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-favorite')?.disabled === false);
+        assert.equal(button.disabled, true, `${status} intent is not absence of a buddy`);
+        assert.match(dom.window.document.getElementById('bpb-climber-membership-note').textContent, /Check buddy status/);
+        button.click(); assert.equal(dom.chrome._localStore.bpbIgnoredClimbers, undefined);
+        await dom.chrome.storage.local.set({ bpbBuddyIntents: [] });
+        await waitFor(dom, () => !button.disabled);
+        await dom.chrome.storage.local.set({ bpbBuddyIntents: [intent('dispatched')] });
+        await waitFor(dom, () => button.disabled);
+    }
+});
+test('unresolved Buddy protection does not prevent a safe Unignore removal', async t => {
+    const dom = await load('custom', 900002, { local: { bpbBuddyIntents: [intent('dispatched')],
+        bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: [entry] } } });
+    t.after(() => dom.window.close());
+    const button = dom.window.document.getElementById('bpb-climber-ignore');
+    await waitFor(dom, () => button.textContent === 'Unignore' && !button.disabled);
+    button.click();
+    await waitFor(dom, () => button.textContent === 'Ignore' && button.getAttribute('aria-busy') === 'false');
+    assert.equal(button.disabled, true);
+    assert.equal(dom.chrome._localStore.bpbIgnoredClimbers.entries.length, 0);
+    assert.equal(dom.chrome._localStore.bpbBuddyIntents.length, 1);
+});
+test('an active Buddy lease blocks only Buddy/Ignore additions, never unrelated actions', async t => {
+    const dom = await load('custom', 900002, { local: { bpbBuddyIntents: [{ ...intent('prepared'), leaseUntil: Date.now() + 30000 }] } });
+    t.after(() => dom.window.close());
+    const doc = dom.window.document;
+    await waitFor(dom, () => doc.getElementById('BuddyButton').getAttribute('aria-disabled') === 'true'
+        && doc.getElementById('bpb-climber-favorite')?.disabled === false);
+    assert.equal(doc.getElementById('bpb-climber-ignore').disabled, true);
+    assert.match(doc.getElementById('bpb-climber-membership-note').textContent, /in progress/);
+    doc.getElementById('bpb-climber-favorite').click();
+    await waitFor(dom, () => doc.getElementById('bpb-climber-favorite').getAttribute('aria-pressed') === 'true');
+    assert.equal(dom.chrome._localStore.bpbFavoriteClimbers.entries.length, 1);
+});
 for (const first of ['favorite', 'ignore']) {
     test(`a pending ${first} save blocks the conflicting profile action`, async () => {
         let finish;

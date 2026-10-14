@@ -14,6 +14,12 @@ export const climberCardTarget = (href, label, base) => {
 
 // Rendering never authorizes a write. Worker mutations recheck current lists
 // in their shared lane, including inactive custom favorites and sync reserves.
+export const buddyIntentState = ({ cid, ownerCid, membership, now = Date.now() }) => {
+    const buddyIntent = membership?.buddyIntents?.find(entry => entry.cid === cid);
+    return { buddyIntent,
+        buddyInFlight: !!buddyIntent && buddyIntent.leaseUntil > now,
+        buddyCheckBlocked: !!buddyIntent && buddyIntent.ownerCid !== ownerCid };
+};
 export const climberCardState = ({ cid, ownerCid, settings, membership, busy = false,
     nativeBuddy = false, buddyPending = false } = {}) => {
     const favorite = !!membership?.favorites?.entries.some(entry => entry.cid === cid);
@@ -24,17 +30,19 @@ export const climberCardState = ({ cid, ownerCid, settings, membership, busy = f
     // saved cache, without calling those people the current account's buddies.
     const protectedBuddy = nativeBuddy || savedBuddy;
     const pending = !!membership?.pendingIds?.has(cid);
-    const buddyIntent = membership?.buddyIntents?.find(entry => entry.cid === cid);
+    const { buddyIntent, buddyInFlight, buddyCheckBlocked } = buddyIntentState({ cid, ownerCid, membership });
     const unavailable = !membership?.ignored || !!membership.error;
     const self = ownerCid != null && cid === ownerCid;
     const blocked = unavailable || ignored || pending;
     const custom = settings ? settings.favoritesSource === 'custom' : null;
     let note = membership?.error || (!membership?.ignored ? 'Loading climber lists…' : '');
+    if (!note && buddyInFlight) note = 'Buddy change in progress.';
+    if (!note && buddyCheckBlocked) note = 'Check buddy status from the original account.';
     if (!note && (buddyPending || (buddyIntent && buddyIntent.status !== 'confirmed'))) note = 'Check the pending buddy change before ignoring.';
     if (!note && ignored) note = 'Unignore to add to your lists.';
     if (!note && pending) note = 'Finish the pending ignored-climber sync before adding to favorites.';
     return {
-        self, custom, favorite, ignored, buddy, pending, note, buddyIntent,
+        self, custom, favorite, ignored, buddy, pending, note, buddyIntent, buddyInFlight, buddyCheckBlocked,
         buddyBlocked: !buddy && (blocked || buddyPending),
         favoriteDisabled: self || busy || !settings || (favorite ? false : blocked
             || membership.favorites.entries.length >= F.LIMIT),

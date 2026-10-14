@@ -7,6 +7,7 @@ import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { climberProfileFeedback } from './climber-profile-feedback.js';
 import { createStableText } from '../ui/stable-text.js';
+import { climberCardState } from './climber-card-state.js';
 
 const mount = () => {
     const cid = I.profileId(location.href);
@@ -53,18 +54,29 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
         const lists = [favorite && 'favorites', buddy && 'your Buddy List'].filter(Boolean).join(' and ');
         const favoriteSaving = document.getElementById('bpb-climber-favorite')?.getAttribute('aria-busy') === 'true';
         const buddyPending = !!document.querySelector('[data-bpb-buddy-pending="true"]');
+        const view = climberCardState({ cid, ownerCid: ownerClimberId(document), membership,
+            nativeBuddy, buddyPending: buddyPending || favoriteSaving, busy });
+        const buddyIntent = view.buddyIntent;
         const reason = !active && lists ? `Remove from ${lists} to ignore.` : '';
         label.set(active ? 'Unignore' : 'Ignore');
-        button.disabled = busy || !list || (!active && (!membership?.ignored || !!membership.error || !!lists || favoriteSaving || buddyPending));
-        button.title = reason || (active ? "Show this climber's reports again." : "Hide this climber's reports on peak and ascent pages.");
+        button.disabled = busy || !list || (!active && view.ignoreDisabled);
+        button.title = reason || (!active && buddyIntent ? view.buddyCheckBlocked ? 'Check from the original account.'
+            : view.buddyInFlight ? 'Buddy change in progress.' : 'Check buddy status before ignoring.'
+            : active ? "Show this climber's reports again." : "Hide this climber's reports on peak and ascent pages.");
         button.setAttribute('aria-pressed', String(active));
         if (button.getAttribute('aria-busy') !== String(busy)) button.setAttribute('aria-busy', String(busy));
         const failure = error || membership?.error;
-        feedback.set('ignore', { text: busy ? 'Saving ignored climbers…' : failure ? 'Ignore not saved.'
+        const canCheck = buddyIntent && !view.buddyInFlight && buddyIntent.ownerCid === ownerClimberId(document) && !buddyPending
+            && feedback.canCheckBuddy && !!document.querySelector('#AddBuddy, #RemoveBuddy');
+        feedback.set('ignore', { text: busy ? 'Saving ignored climbers…' : failure ? error ? 'Ignore not saved.' : 'Lists unavailable.'
             : favoriteSaving ? 'Saving favorites…' : buddyPending ? 'Buddy List change pending.'
-                : active ? 'Unignore to add to lists.' : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish list sync.' : '',
-        error: failure, busy, priority: busy ? 100 : failure ? 80 : 30,
-        retry: failure || busy && retryWrite ? () => {
+                : !active && buddyIntent ? view.buddyInFlight ? 'Buddy change in progress.'
+                    : buddyIntent.ownerCid === ownerClimberId(document) ? 'Check buddy status.' : 'Check from the original account.'
+                    : active ? 'Unignore to add to lists.' : membership?.pendingIds?.has(cid) ? 'Sync pending · Finish list sync.' : '',
+        error: failure, busy, disabled: retryWrite && button.disabled && !busy, priority: busy ? 100 : failure ? 80 : 30,
+        retryLabel: !failure && canCheck ? 'Check status' : 'Retry',
+        retryName: !failure && canCheck ? 'Check buddy status' : 'Retry',
+        retry: !failure && canCheck ? event => feedback.checkBuddy(event) : failure || busy && retryWrite ? () => {
             if (retryWrite) void toggle(); else { void observer.refresh(); void membershipObserver.refresh(); }
         } : null });
         if (failure || notice) feedback.announce(failure || notice);
@@ -72,7 +84,7 @@ html[data-bpb-theme="dark"] .bpb-ignore-actions button:focus-visible { outline-c
     const toggle = async () => {
         if (button.disabled || busy || !list) return;
         const active = list.entries.some(entry => entry.cid === cid);
-        if (!active && (hasNativeBuddy() || document.getElementById('bpb-climber-favorite')?.getAttribute('aria-busy') === 'true'
+        if (!active && (membership?.buddyIntents?.some(entry => entry.cid === cid) || hasNativeBuddy() || document.getElementById('bpb-climber-favorite')?.getAttribute('aria-busy') === 'true'
             || document.querySelector('[data-bpb-buddy-pending="true"]'))) { nativeBuddy = hasNativeBuddy(); paint(); return; }
         busy = true; error = ''; notice = ''; paint();
         try {

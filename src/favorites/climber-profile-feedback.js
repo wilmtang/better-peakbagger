@@ -37,14 +37,22 @@ html[data-bpb-theme="dark"] #bpb-climber-profile-feedback { color:#ced5d0; }
 html[data-bpb-theme="dark"] #bpb-climber-profile-feedback :is(button,summary) { color:#7ac78d; }
 `;
     doc.head.append(style);
-    const channels = new Map(); let current = null;
+    const channels = new Map(); let current = null, buddyCheck = null, sequence = 0;
     const surface = {
+        registerBuddyCheck(handler) { buddyCheck = handler; },
+        get canCheckBuddy() { return !!buddyCheck; },
+        checkBuddy(event) { buddyCheck?.(event); },
         set(key, state) {
-            if (state?.text) channels.set(key, state); else channels.delete(key);
-            current = [...channels.values()].sort((a, b) => (b.priority || 0) - (a.priority || 0))[0] || null;
+            if (state?.text) {
+                const signature = JSON.stringify([state.text, state.error, state.busy, !!state.retry, state.retryLabel, state.priority]);
+                const previous = channels.get(key);
+                channels.set(key, { ...state, signature, sequence: previous?.signature === signature ? previous.sequence : ++sequence });
+            } else channels.delete(key);
+            current = [...channels.values()].sort((a, b) => (b.priority || 0) - (a.priority || 0) || b.sequence - a.sequence)[0] || null;
             note.textContent = current?.text || ''; note.hidden = !current;
             // Preserve an existing recovery target while that same action is busy.
-            retry.hidden = !current?.retry; retry.disabled = !!current?.busy;
+            retry.hidden = !current?.retry; retry.disabled = !!current?.busy
+                || (typeof current?.disabled === 'function' ? current.disabled() : !!current?.disabled);
             retry.textContent = current?.retryLabel || 'Retry';
             retry.setAttribute('aria-label', current?.retryName || retry.textContent);
             if (current?.error) full.textContent = current.error;

@@ -86,10 +86,10 @@ const mount = () => {
         const signedOut = ownerClimberId(document) == null;
         buddy.hidden = view.self || signedOut;
         signIn.hidden = view.self || !signedOut;
-        buddyText.set(operation?.kind === 'buddy' ? operation.checkOnly ? 'Checking…'
+        buddyText.set(view.buddyInFlight && !operation ? 'Saving…' : operation?.kind === 'buddy' ? operation.checkOnly ? 'Checking…'
             : operation.removing ? 'Removing…' : 'Adding…' : view.buddyIntent && view.buddyIntent.status !== 'confirmed' ? 'Check buddy status'
             : view.buddy ? 'Remove climbing buddy' : 'Add climbing buddy');
-        buddy.disabled = !!operation || (!view.buddyIntent && view.buddyBlocked);
+        buddy.disabled = !!operation || view.buddyInFlight || view.buddyCheckBlocked || (!view.buddyIntent && view.buddyBlocked);
         buddy.setAttribute('aria-busy', String(operation?.kind === 'buddy'));
         buddy.setAttribute('aria-pressed', String(view.buddy));
         favorite.hidden = view.self || view.custom !== true;

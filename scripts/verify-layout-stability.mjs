@@ -15,7 +15,7 @@ import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
-import { verifyProfileFeedback, verifyBuddyPresentation } from './verify-climber-transitions.mjs';
+import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership } from './verify-climber-transitions.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -883,7 +883,7 @@ async function climberCase(page, origin, variant) {
 }
 async function profileTransitionCase(page, origin, variant) {
     await climberCase(page, origin, variant);
-    for (const check of [verifyProfileFeedback, verifyBuddyPresentation]) {
+    for (const check of [verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership]) {
         const target = await page.context().newPage();
         try { await check(target, origin, variant); }
         finally { await target.close(); }

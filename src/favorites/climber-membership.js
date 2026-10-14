@@ -8,8 +8,9 @@ import { BUDDY_INTENTS_KEY, readBuddyIntents } from './buddy-state.js';
 // discard superseded reads; an unavailable list must not permit a new add.
 export const observeClimberMembership = (api, onState) => {
     const keys = [F.FAVORITES_KEY, F.BUDDY_CACHE_KEY, I.IGNORED_KEY, I.SYNC_KEY, BUDDY_INTENTS_KEY];
-    let generation = 0, state = null, stopped = false;
+    let generation = 0, state = null, stopped = false, expiryTimer = null;
     const refresh = async () => {
+        clearTimeout(expiryTimer); expiryTimer = null;
         const token = ++generation;
         try {
             const values = await api.storage.local.get(keys);
@@ -30,6 +31,12 @@ export const observeClimberMembership = (api, onState) => {
                 blockedIds: new Set([...ignored.entries, ...reserved].map(entry => entry.cid)),
                 pendingIds: new Set(reserved.map(entry => entry.cid)), error: '' };
             onState(state);
+            // Expiry permits a status-only check, never an ignored addition.
+            // Publish that transition even if no tab writes storage.
+            const deadlines = state.buddyIntents.filter(entry => entry.leaseUntil > Date.now())
+                .map(entry => entry.leaseUntil - Date.now());
+            if (!stopped && token === generation && deadlines.length) expiryTimer = setTimeout(() => { void refresh(); },
+                Math.min(2147483647, Math.max(1, Math.min(...deadlines) + 1)));
         } catch {
             if (!stopped && token === generation) onState({ ...state, error: "Couldn't load climber lists. Try again." });
         }
@@ -39,5 +46,5 @@ export const observeClimberMembership = (api, onState) => {
     };
     api.storage.onChanged.addListener(changed);
     void refresh();
-    return { refresh, stop: () => { stopped = true; generation++; api.storage.onChanged.removeListener(changed); } };
+    return { refresh, stop: () => { stopped = true; generation++; clearTimeout(expiryTimer); api.storage.onChanged.removeListener(changed); } };
 };
