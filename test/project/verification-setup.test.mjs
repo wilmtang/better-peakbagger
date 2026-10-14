@@ -52,6 +52,9 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.match(geometry.run, /2>&1 \| tee browser-evidence\/layout-stability\.log/);
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(packageJson.scripts['verify:layout-stability'], 'npm run build && node scripts/verify-layout-stability.mjs');
+    const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url), 'utf8');
+    assert.match(verifier, /'weather-models':.*verifyPeakWeatherRefresh/,
+        'ordinary CI must exercise summit model loading, not just hourly readings');
 });
 
 test('shared setup exports the installed paths and versions and keeps exact toolchain pins', async () => {

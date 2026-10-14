@@ -14,6 +14,7 @@ import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
+import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
 const output = process.env.BPB_JITTER_ARTIFACTS;
@@ -942,7 +943,9 @@ async function reportCase(page, origin, variant) {
     stable(captionBefore, await geometry(page, '.bpb-re-captionbar button:first-child'), 'report caption state');
     await capture(page, `${variant.name}-report-feedback`);
 }
-const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase, maps: mapCase, climbers: climberCase, upload: uploadCase, reports: reportCase };
+const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
+    'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
+    maps: mapCase, climbers: climberCase, upload: uploadCase, reports: reportCase };
 const resources = createResourceStack();
 let failure = null;
 try {

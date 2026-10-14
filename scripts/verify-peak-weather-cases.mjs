@@ -33,7 +33,6 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     const geometry = () => {
         const card = document.getElementById('bpb-peak-weather'), right = card.closest('table'), frame = document.getElementById('Gmap');
         const r = card.getBoundingClientRect(), t = right.getBoundingClientRect(), m = frame?.getBoundingClientRect();
-        const hint = card.querySelector('.bpb-week-model-description');
         const rowAlignment = [];
         let temperatureRight, temperatureColumns;
         for (const summary of card.querySelectorAll('.bpb-week-day > summary')) {
@@ -54,12 +53,11 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         return { width: r.width, tableWidth: t.width, left: r.left, right: r.right, parentLeft: t.left, parentRight: t.right,
             rowAlignment,
             summaryHeight: card.querySelector('.bpb-week-days').getBoundingClientRect().top - r.top,
-            hiddenModelHintHeight: hint.hidden ? hint.getBoundingClientRect().height : 0,
             belowMap: !m || r.top >= m.bottom, nativeAlign: right.getAttribute('align'),
             groupedWithMap: !frame || frame.closest('tr').nextElementSibling === card.closest('tr'),
             legendBeforeSun: !frame || [...frame.closest('td').querySelectorAll('a')].filter(link => /Full Screen Map/.test(link.textContent))
                 .every(link => link.getBoundingClientRect().bottom <= document.querySelector('.bpb-sun-calculator').getBoundingClientRect().top),
-            overflow: [...card.querySelectorAll('select, .bpb-week-model-description, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] p, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
+            overflow: [...card.querySelectorAll('select, .bpb-week-models, .bpb-week-map-hint, summary, button, header, footer, .bpb-week-range, .bpb-week-help, .bpb-week-accuracy:not([hidden]), .bpb-week-source[open] p, .bpb-week-tabs, .bpb-week-chart:not([hidden]), .bpb-week-conditions:not([hidden])')].filter(node => {
                 if (!node.getClientRects().length) return false;
                 const n = node.getBoundingClientRect(); return n.left < r.left - 1 || n.right > r.right + 1;
             }).map(node => node.className || node.tagName),
@@ -111,7 +109,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-accuracy').textContent.includes('may be inaccurate')));
         assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS, 13 km')));
         assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
-        assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
+        assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS')));
     };
     if (live) {
         await assertForecastInfo();
@@ -142,7 +140,6 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
             await resize(width, 1100);
             await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'center' }));
             const state = await evaluate(geometry); assertGeometry(state);
-            assert.equal(state.hiddenModelHintHeight, 0, `hidden model text reserves blank space: ${JSON.stringify(state)}`);
             assert.ok(state.summaryHeight <= (state.width > 662 ? 240 : 350), `weather summary is too tall: ${JSON.stringify(state)}`);
             shapes.push({ theme, viewport: width, cardWidth: state.width, summaryHeight: state.summaryHeight });
             if (output) await screenshot(path.join(output, `${firefoxMode ? 'firefox' : 'chrome'}-peak-${theme}-${width}.png`));
@@ -254,7 +251,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     }, id);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').options[0].value), 'best_match');
     await chooseModel('best_match');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('Best Match')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'Best Match history with named forecast');
     assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('Open-Meteo automatic blend; source models vary')));
     const blendMetadataBefore = metadataEvidence.length;
@@ -266,7 +263,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await click(`${card} [data-period="forecast"]`);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
     await chooseModel('best_match');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('Best Match')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'Best Match forecast uses a deduplicated blend request');
     const blendRequests = evidence.length;
     for (const width of [1440, 375]) {
@@ -278,16 +275,16 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await openPage();
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'best_match', 'Best Match choice survives navigation');
     await chooseModel('gfs_global');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('GFS')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'restore named history');
     await click(`${card} [data-period="forecast"]`); await chooseModel('gfs_global');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('GFS')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'restore named forecast');
     await click(`${card} [data-period="past"]`);
     const beforeModels = evidence.length;
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS')));
     await chooseModel('icon_global');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('ICON Global')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'explicit historical model');
     assertGeometry(await evaluate(geometry));
     assert.equal(evidence.length, beforeModels + 1);
@@ -312,7 +309,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.equal(metadataEvidence.length, selectedMetadataBefore + 3);
     assert.equal(await evaluate(() => document.querySelector('#bpb-peak-weather-model').value), 'gfs_global');
     await chooseModel('gfs_hrrr');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using HRRR')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('HRRR')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'short-range explicit forecast');
     await wait(() => document.querySelectorAll('[data-update-model]').length === 1
         && document.querySelector('[data-update-model="gfs_hrrr"]')
@@ -320,7 +317,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     assert.equal(metadataEvidence.length, selectedMetadataBefore + 4);
     assert.equal(metadataEvidence.at(-1).path, '/data/ncep_hrrr_conus/static/meta.json');
     assert.ok(await evaluate(() => document.querySelectorAll('.bpb-week-day').length <= 3));
-    assert.equal(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent), 'Using HRRR · 3 km · up to 2 days');
+    assert.ok(await evaluate(() => document.querySelector('#bpb-peak-weather-model').selectedOptions[0].textContent.includes('HRRR · 3 km · up to 2 days')));
     for (const width of [1440, 375]) {
         await resize(width, 1100);
         const state = await evaluate(geometry);
@@ -390,13 +387,13 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     await openPage('no-map'); assertGeometry(await evaluate(geometry));
     setMode('negative-precipitation'); await openPage();
     await chooseModel('meteofrance_arpege_world');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using ARPEGE World')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('ARPEGE World')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'negative ARPEGE precipitation retains usable weather');
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 0);
     const negativeRequests = evidence.length;
     await click(`${card} [data-period="forecast"]`);
     assertGeometry(await evaluate(geometry));
-    assert.ok(await evaluate(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')));
+    assert.ok(await evaluate(() => document.querySelector('.bpb-week-models').textContent.includes('GFS')));
     await click(`${card} [data-period="past"]`);
     await click(`${card} .bpb-week-day:nth-last-child(2) > summary`);
     await click(`${card} .bpb-week-day[open] [data-metric="temperature"]`);
@@ -411,7 +408,7 @@ export async function verifyPeakWeatherCases({ origin, evaluate, navigate, click
     }
     assert.equal(evidence.length, negativeRequests, 'period switching and the hourly graph reuse the combined response');
     await chooseModel('gfs_global');
-    await wait(() => document.querySelector('.bpb-week-model-description').textContent.includes('Using GFS')
+    await wait(() => document.querySelector('.bpb-week-models').textContent.includes('GFS')
         && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'reset historical model after negative precipitation');
     setMode('partial'); await openPage();
     assert.equal(await evaluate(() => document.querySelectorAll('.bpb-week-partial').length), 16);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { dom } from '../ui/dom.js';
+import { createStableText } from '../ui/stable-text.js';
 import { units } from '../ui/units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
@@ -52,14 +53,14 @@ export function mountPeakWeather() {
     const range = element('p', { class: 'bpb-week-range' });
     const locationLabel = element('p', { class: 'bpb-week-sub' });
     const accuracy = element('p', { class: 'bpb-week-accuracy', text: 'Forecasts may be inaccurate farther ahead and at mountain summits. Check a local mountain forecast before your climb.' });
-    const status = element('p', { class: 'bpb-week-status', role: 'status', 'aria-live': 'polite' });
+    const status = element('p', { id: `${ID}-status`, class: 'bpb-week-status', role: 'status', 'aria-live': 'polite' });
+    const statusText = createStableText(status);
     const days = element('div', { class: 'bpb-week-days' });
     const help = element('p', { class: 'bpb-week-help', hidden: '', text: 'Select a day for hourly weather. Rain/snow is water equivalent; wind is the daily maximum.' });
     const sourceText = element('p', { class: 'bpb-week-models' });
     const sourceLocation = element('p', { class: 'bpb-week-source-location' });
-    const select = element('select', { id: `${ID}-model`, 'aria-describedby': `${ID}-model-description` });
-    const modelDescription = element('p', { id: `${ID}-model-description`, class: 'bpb-week-model-description', hidden: '' });
-    const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select, modelDescription]);
+    const select = element('select', { id: `${ID}-model` });
+    const modelControl = element('div', { class: 'bpb-week-model-control' }, [element('label', { for: select.id, text: 'Weather model' }), select]);
     const updatesBody = element('tbody');
     const updates = element('div', { class: 'bpb-week-updates', tabindex: '0', role: 'region', 'aria-label': 'Model update times' }, [
         element('table', { class: 'bpb-week-updates-table' }, [element('caption', { text: 'Model updates' }),
@@ -139,7 +140,12 @@ export function mountPeakWeather() {
     const cooldown = createRetryCooldown(blocked => { refresh.disabled = blocked || pending; select.disabled = blocked; locationMenu?.updateAvailability(); });
     const populateModels = () => {
         const window = requestedWindow || weatherPeakWindow(zone);
-        select.replaceChildren(...eligiblePeakWeatherModels(requestedSubject, window, period).map(model => element('option', { value: model.id,
+        const models = eligiblePeakWeatherModels(requestedSubject, window, period);
+        // Size the existing feedback row for loading copy before a model is
+        // chosen. Errors can still wrap and grow; neither gets clipped.
+        statusText.reserve(['Refreshing summit weather…', 'Refreshing location weather…',
+            ...models.map(model => `Updating… Showing ${model.label} · ${model.resolution}.`)]);
+        select.replaceChildren(...models.map(model => element('option', { value: model.id,
             text: `${model === PEAK_BEST_MATCH ? 'Best Match (Open-Meteo)' : `${model.label} · ${model.resolution}`}${period === 'forecast' ? ` · up to ${peakModelHorizon(model)}` : ''}` })));
         // Keep a now-ineligible selection visible so a date rollover cannot
         // silently turn an explicit choice into GFS.
@@ -176,14 +182,17 @@ export function mountPeakWeather() {
         updateLocationControls();
         const summaries = current?.days[period];
         const partialCount = summaries?.filter(day => day.partial).length || 0;
-        status.textContent = notice?.text || (summaries && !summaries.some(day => day.useful)
+        const message = notice?.text || (summaries && !summaries.some(day => day.useful)
             ? `${period === 'forecast' ? 'Forecast' : 'Past weather'} is unavailable for this ${subject === summit ? 'summit' : 'location'}. Try the other weather period.`
             : partialCount ? `${partialCount} ${partialCount === 1 ? 'day has' : 'days have'} incomplete hours.` : '');
-        // The select already names the model. Identify retained data only when
-        // it differs from the requested choice, including after a failed load.
-        modelDescription.hidden = !current || current.models[period].id === select.value;
-        if (modelDescription.hidden) select.removeAttribute('aria-describedby');
-        else select.setAttribute('aria-describedby', modelDescription.id);
+        const model = current?.models[period], changedModel = model && model.id !== select.value;
+        const retained = model && (changedModel || (notice && !pending));
+        const showing = retained ? `Showing ${model.label} · ${model.resolution}.` : '';
+        const feedback = pending && changedModel && requestedSubject === subject
+            ? `Updating… ${showing}` : `${message}${showing ? ` ${showing}` : ''}`.trim();
+        statusText.set(feedback);
+        if (feedback) select.setAttribute('aria-describedby', status.id);
+        else select.removeAttribute('aria-describedby');
         if (notice?.kind === 'rate-limit') status.dataset.kind = 'rate-limit';
         else delete status.dataset.kind;
     };
@@ -211,7 +220,6 @@ export function mountPeakWeather() {
         const forecastLabel = `${current.window.forecast.days.length}-day forecast`;
         (periodButtons[0].querySelector('.bpb-week-tab-label') || periodButtons[0]).textContent = forecastLabel;
         periodButtons[0].setAttribute('aria-label', forecastLabel); periodButtons[0].dataset.label = forecastLabel;
-        modelDescription.textContent = `Using ${model.label} · ${model.resolution}${forecast ? ` · up to ${peakModelHorizon(model)}` : ''}`;
         const modelDetails = model === PEAK_BEST_MATCH
             ? 'Best Match. Open-Meteo automatic blend; source models vary.'
             : `${model.label}, ${model.resolution}.`;
@@ -339,10 +347,10 @@ export function mountPeakWeather() {
         } catch (error) {
             if (owner !== generation || lifecycle.state !== 'active' || error.name === 'AbortError') return;
             if (error.code === 'rate-limit') cooldown.set(error.retryAt);
-            notice = { kind: error.code, text: `${changingLocation ? `Could not load ${target === summit ? 'summit weather' : weatherLocationLabel(target)}. ` : ''}${error.message || 'Weather could not be loaded.'}${current ? ' Showing the previous result.' : ' Use Refresh to try again.'}` }; paintStatus();
+            notice = { kind: error.code, text: `${changingLocation ? `Could not load ${target === summit ? 'summit weather' : weatherLocationLabel(target)}. ` : ''}${error.message || 'Weather could not be loaded.'}${current ? '' : ' Use Refresh to try again.'}` }; paintStatus();
             if (source.open) void loadUpdates();
         } finally {
-            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); updateLocationControls(); }
+            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); cooldown.refresh(); paintStatus(); }
         }
     }
     select.addEventListener('change', () => {

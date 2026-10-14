@@ -15,6 +15,12 @@ regressions missed by the geometry matrix. Its original closure does not prove
 compact action sizing, reorder-list alignment or correct completion semantics.
 Corrections and their evidence are recorded below.
 
+2026-10-14 follow-up: model switching still moved the summit-weather results.
+The original model-refresh geometry proof covered the ascent archive, not the
+summit card. This gap and the new regression matrix are recorded below; the
+four additional presentation/affordance findings from the follow-up review
+remain open and are not included in this weather fix.
+
 ## Baseline and method
 
 The starting tree contained unrelated in-progress avalanche and climber-card
@@ -326,3 +332,59 @@ evidence alongside the real-manifest and capture gates.
 - The full Firefox manifest verifier was not rerun for this follow-up; Firefox
   evidence here is the shipped-asset fixture matrix. Hidden checks do not prove
   onscreen focus/window placement, native browser zoom or screen-reader speech.
+
+## 2026-10-14 summit-weather model-switch correction
+
+### Fixed and verified
+
+- A held model response revealed an extra retained-model paragraph inside the
+  overview. It increased the summit card and shifted its day list by 21.39 px
+  at both 390×900 and 1280×900 in hidden Chrome before the fix.
+- Use the existing feedback row for “Updating… Showing GFS” and failed-request
+  model identity. Reserve the actual loading labels before interaction, keep
+  the displayed weather mounted while pending, and associate feedback with
+  the model picker. Remove the redundant paragraph above the results.
+- Add a shipped-asset `weather-models` case to the ordinary CI geometry gate,
+  independent of the hourly-reading case. Hidden Chrome 153.0.8010.12 and
+  Firefox 155.0 passed forecast/history, light/dark, 390×900 and 1280×900,
+  normal/doubled feedback text, held and repeated/superseded selections,
+  completion, failure and keyboard Refresh retry. Check card/picker/Refresh,
+  day-list and footer bounds during loading (1 px rounding tolerance), scroll,
+  focus and retained day nodes. The real unpacked extension also passed the
+  hidden Chrome summit-weather verifier at 375, 768 and 1440×1100 in both
+  themes, with controlled provider responses and teardown. Desktop pending,
+  narrow enlarged feedback, error and real-extension renders were inspected.
+- Build and 64 focused weather/sizing/CI tests passed, as did focused ESLint
+  and diff checks. The full `node --test --test-reporter=dot
+  "test/**/*.test.mjs"` run failed two unchanged README assertions in
+  `test/photos/photo-page.test.mjs`: documented photo budgets and exact
+  saved-key storage disclosure. The README and those tests match HEAD and
+  are outside this correction; the full suite is not green.
+
+### Intentionally not changed
+
+- A necessary error can expand below the anchored picker and Refresh button;
+  it must remain readable, not clipped to preserve the card height. A new
+  model's shorter forecast horizon is a deliberate completed-result change,
+  not a loading placeholder. Provider/cache/cancellation/privacy semantics
+  are unchanged.
+
+### Changed but not fully proven
+
+- Provider data is controlled in these checks, not live forecast evidence.
+  Firefox evidence is the shipped-asset geometry fixture rather than a full
+  Firefox manifest run. Doubled feedback text is not native browser zoom.
+  Hidden checks do not establish onscreen focus/window placement, native
+  select-menu behavior or screen-reader speech. The ascent-archive model
+  switch is a separate surface and its prior proof is not expanded by this fix.
+
+### Outstanding findings outside this weather correction
+
+- Climber-card failure feedback can be below its internal scroll viewport.
+- Climber Retry remains enabled but inert during an operation.
+- GPX source-view button styling overrides its hidden state on warning-only
+  tracks with no excluded segments.
+- Report caption actions stretch to half the toolbar width.
+
+These are confirmed findings from the 2026-10-13 review, still unfixed; they
+must not be mistaken for optional cleanup or a complete audit closure.

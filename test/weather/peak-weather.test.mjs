@@ -301,7 +301,7 @@ test('reset restores both summit model choices without persisting a regional fal
         assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'gfs_global');
         const count = env.requests.length; env.doc.querySelector('.bpb-week-location-reset').click();
         assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'gfs_hrrr');
-        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, true);
+        assert.doesNotMatch(env.doc.querySelector('.bpb-week-status').textContent, /Showing|Updating/);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
         env.doc.querySelector('[data-period="past"]').click(); assert.equal(env.doc.querySelector('#bpb-peak-weather-model').value, 'icon_global');
         assert.equal(env.requests.length, count); assert.deepEqual(writes, []);
@@ -447,10 +447,10 @@ test('a negative historical ARPEGE sample becomes zero without marking the day p
         } });
     try {
         await settled(env, { past: false });
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /GFS/);
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using ARPEGE World/);
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /ARPEGE World/);
         assert.equal(env.doc.querySelector('.bpb-week-status').textContent, '');
         assert.equal(env.doc.querySelectorAll('.bpb-week-partial').length, 0);
         const affected = env.doc.querySelector('[data-date="2026-09-26"]');
@@ -502,22 +502,22 @@ test('named GFS is the default with independent locally remembered period choice
         await settled(env, { past: false });
         assert.equal(env.requests.length, 1); assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'gfs_global');
         assert.equal(env.doc.querySelector('select').value, 'gfs_global');
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS.*16 days/);
+        assert.match(env.doc.querySelector('select').selectedOptions[0].textContent, /GFS.*16 days/);
         assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /68°F/);
         env.doc.querySelector('[data-period="past"]').click();
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /GFS/);
         assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /68°F/);
         chooseModel(env, 'icon_global');
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('ICON Global'));
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.match(env.doc.querySelector('.bpb-week-models').textContent, /ICON Global, 11 km/);
         env.doc.querySelector('[data-period="forecast"]').click();
         assert.equal(env.doc.querySelector('select').value, 'gfs_global');
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /GFS/);
         env.doc.querySelector('[data-period="past"]').click(); assert.equal(env.doc.querySelector('select').value, 'icon_global');
         assert.equal(env.requests.length, 2);
         chooseModel(env, 'gfs_global');
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using GFS'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('GFS'));
         assert.equal(env.requests.length, 2, 'reverting reuses the exact cached model selection');
     } finally { env.close(); }
 });
@@ -531,11 +531,11 @@ test('local choices load before the request, survive navigation and reject unava
         await new Promise(resolve => setTimeout(resolve, 0)); // Sync settings finish before the local read.
         assert.equal(env.requests.length, 0);
         release();
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ICON Global'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('ICON Global'));
         assert.equal(new URL(env.requests[0].url).searchParams.get('models'), 'ecmwf_ifs,icon_global');
         assert.equal(env.doc.querySelector('select').options[0].value, 'best_match');
         chooseModel(env, 'gfs_global');
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using GFS'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('GFS'));
         assert.deepEqual(localModels, { bpbPeakWeatherModelPast: 'ecmwf_ifs', bpbPeakWeatherModelForecast: 'gfs_global' });
     } finally { env.close(); }
     const next = setup({ localModels });
@@ -550,7 +550,7 @@ test('local storage failures retain a usable model picker and forecast', async (
     const env = setup({ readModels: async () => { throw new Error('unavailable'); }, saveModels: async () => { throw new Error('unavailable'); } });
     try {
         await settled(env, { past: false }); chooseModel(env, 'ecmwf_ifs');
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ECMWF IFS'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('ECMWF IFS'));
         assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
     } finally { env.close(); }
 });
@@ -564,7 +564,7 @@ test('explicit short-range forecast labels its horizon and preserves sixteen day
         await waitFor(() => env.doc.querySelector('[data-period="forecast"]').textContent === '2-day forecast');
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 2);
         assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /Today \+ 1 day$/);
-        assert.equal(env.doc.querySelector('.bpb-week-model-description').textContent, 'Using HRRR · 3 km · up to 2 days');
+        assert.match(env.doc.querySelector('select').selectedOptions[0].textContent, /HRRR · 3 km · up to 2 days/);
         assert.equal(new URL(env.requests.at(-1).url).searchParams.get('models'), 'gfs_global,gfs_hrrr');
         env.doc.querySelector('[data-period="past"]').click();
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16); assert.equal(env.doc.querySelector('select').value, 'gfs_global');
@@ -585,25 +585,56 @@ test('model changes cancel stale results; explicit failures keep the visible mod
     } });
     try {
         await settled(env, { past: false });
-        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, true);
-        assert.equal(env.doc.querySelector('select').hasAttribute('aria-describedby'), false);
+        assert.doesNotMatch(env.doc.querySelector('.bpb-week-status').textContent, /Showing|Updating/);
+        assert.equal(env.doc.querySelector('select').getAttribute('aria-describedby'), 'bpb-peak-weather-status');
         chooseModel(env, 'icon_global');
         await waitFor(() => slow); const stale = env.requests.at(-1);
-        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, false);
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /^Updating… Showing GFS · 13 km\.$/);
         unavailable = true; chooseModel(env, 'ecmwf_ifs');
         await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('selection is unavailable'));
         assert.equal(stale.init.signal.aborted, true); assert.equal(env.requests.length, 3);
         assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
-        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, false);
-        assert.equal(env.doc.querySelector('select').getAttribute('aria-describedby'), 'bpb-peak-weather-model-description');
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /Showing GFS · 13 km/);
+        assert.equal(env.doc.querySelector('select').getAttribute('aria-describedby'), 'bpb-peak-weather-status');
         slow(); await new Promise(resolve => setTimeout(resolve, 0));
-        assert.match(env.doc.querySelector('.bpb-week-model-description').textContent, /Using GFS/);
+        assert.match(env.doc.querySelector('.bpb-week-status').textContent, /Showing GFS · 13 km/);
         unavailable = false; env.doc.querySelector('.bpb-week-refresh').click();
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using ECMWF IFS'));
-        assert.equal(env.doc.querySelector('.bpb-week-model-description').hidden, true);
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('ECMWF IFS'));
+        assert.doesNotMatch(env.doc.querySelector('.bpb-week-status').textContent, /Showing|Updating/);
         assert.equal(env.requests.length, 4); assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 15);
     } finally { env.close(); }
+});
+
+test('model loading reuses one live feedback row and preserves expanded weather until replacement', async () => {
+    let finish;
+    const env = setup({ fetchFn: url => new URL(url).searchParams.get('models').includes('best_match')
+        ? new Promise(resolve => { finish = () => resolve(reply(url)); }) : reply(url) });
+    try {
+        await settled(env, { past: false });
+        const day = env.doc.querySelector('.bpb-week-day');
+        day.querySelector('summary').click();
+        day.querySelector('[data-metric="temperature"]').click();
+        const chart = day.querySelector('.bpb-week-chart');
+        const days = [...env.doc.querySelectorAll('.bpb-week-day')];
+        const status = env.doc.querySelector('.bpb-week-status');
+        const reserved = [...status.querySelectorAll('[data-sizing-text]')].map(node => node.dataset.sizingText);
+        assert.ok(reserved.includes('Updating… Showing GFS · 13 km.'));
+        chooseModel(env, 'best_match');
+        await waitFor(() => finish);
+        assert.equal(env.doc.querySelector('.bpb-week-status'), status, 'retain the same live region');
+        assert.match(status.textContent, /^Updating… Showing GFS · 13 km\.$/);
+        assert.equal(status.getAttribute('role'), 'status');
+        assert.equal(env.doc.querySelector('select').getAttribute('aria-describedby'), status.id);
+        assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day')], days);
+        assert.equal(day.querySelector('.bpb-week-chart'), chart);
+        assert.equal(day.open, true);
+        assert.equal(day.querySelector('[aria-selected="true"]').dataset.metric, 'temperature');
+        finish();
+        await waitFor(() => env.doc.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'false');
+        assert.match(env.doc.querySelector('.bpb-week-models').textContent, /^Best Match\./);
+        assert.doesNotMatch(status.textContent, /Updating|Showing GFS/);
+        assert.equal(env.doc.querySelector('.bpb-week-day[open] [aria-selected="true"]').dataset.metric, 'temperature');
+    } finally { finish?.(); env.close(); }
 });
 
 test('summary activation switches the day and mounts Conditions synchronously without double expansion', async () => {
@@ -1178,7 +1209,7 @@ test('model changes cancel old update requests and failed changes keep clocks wi
         await waitFor(() => env.metadataRequests.length === 2);
         failWeather = true; chooseModel(env, 'ecmwf_ifs');
         assert.ok(env.metadataRequests.every(({ init }) => init.signal.aborted), 'selection immediately cancels the old metadata');
-        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Showing the previous result.'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Showing GFS · 13 km.'));
         await waitFor(() => !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
         assert.equal(env.doc.querySelector('select').value, 'ecmwf_ifs');
         assert.deepEqual([...env.doc.querySelectorAll('[data-update-model]')].map(row => row.dataset.updateModel), ['gfs_global', 'gfs_global']);
@@ -1237,7 +1268,7 @@ test('a failed weather refresh cannot leave cancelled model metadata loading for
         await settled(env); env.doc.querySelector('.bpb-week-source').open = true;
         await waitFor(() => env.metadataRequests.length === 2);
         failWeather = true; env.doc.querySelector('.bpb-week-refresh').click();
-        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Showing the previous result.'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-status').textContent.includes('Showing GFS · 13 km.'));
         await waitFor(() => !env.doc.querySelector('.bpb-week-updates').textContent.includes('Loading'));
         assert.ok(env.metadataRequests.slice(0, 2).every(({ init }) => init.signal.aborted));
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
@@ -1362,7 +1393,7 @@ test('peak Best Match choices persist independently, share requests and disclose
         env.doc.querySelector('[data-period="forecast"]').click();
         assert.equal(env.doc.querySelector('select').value, 'gfs_global');
         chooseModel(env, 'best_match');
-        await waitFor(() => env.doc.querySelector('.bpb-week-model-description').textContent.includes('Using Best Match'));
+        await waitFor(() => env.doc.querySelector('.bpb-week-models').textContent.includes('Best Match'));
         assert.equal(new URL(env.requests[1].url).searchParams.get('models'), 'best_match');
         assert.equal(env.doc.querySelectorAll('.bpb-week-day').length, 16);
         assert.equal(localModels.bpbPeakWeatherModelForecast, 'best_match');

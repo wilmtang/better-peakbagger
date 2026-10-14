@@ -48,7 +48,6 @@ html[data-bpb-theme="dark"] #bpb-peak-weather {
 #bpb-peak-weather .bpb-week-model-control label { display: block; color: var(--week-sub); font-size: 12px; margin-bottom: 4px; }
 #bpb-peak-weather select { width: 100%; min-width: 0; max-width: 100%; font: inherit; color: var(--week-text); background: var(--week-bg); border: 1px solid var(--week-border); border-radius: 7px; padding: 8px; }
 #bpb-peak-weather select:disabled { opacity: .65; }
-#bpb-peak-weather .bpb-week-model-description { color: var(--week-sub); font-size: 12px; min-height: 1.45em; margin: 4px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #bpb-peak-weather .bpb-week-days { margin-top: 10px; }
 #bpb-peak-weather .bpb-week-day { border-top: 1px solid var(--week-border); }
 #bpb-peak-weather .bpb-week-day > summary {
