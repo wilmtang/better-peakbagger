@@ -1,8 +1,8 @@
 # Climber interaction and layout re-audit — 2026-10-14
 
-Status: **remediation in progress**. C01–C07 have focused corrections;
-final C08 baseline/integration proof remains open. This is the re-audit of the Buddy/Favorite/Ignore
-page-jump report; the focused remediation order is recorded separately below.
+Status: **implemented and verified locally**. C01–C08 and carried O01/O02 have
+focused fixes and regression evidence. Native/live proof limits and two unrelated
+README failures remain explicit below; this is not universal no-jitter closure.
 
 Audited runtime: `c27e3dad`, including the earlier `95bcaa15` climber
 layout-stability changes. The pending peak-name request was completed separately
@@ -13,8 +13,9 @@ in `c27e3dad`; it is not part of climber remediation.
 The reported page movement is real. The old checks prove that selected buttons
 remain anchored, not that the heading row, native Buddy controls, following
 tables, visible feedback or recovery affordances remain usable. The archived
-[layout-stability audit](../archive/repository-layout-stability-2026-10-12.md)
-cannot be treated as complete UX closure while these findings remain open.
+[layout-stability audit](repository-layout-stability-2026-10-12.md)
+could not be treated as complete UX closure on that evidence. This remediation
+checks the missing invariants; the current evidence is in the closure ledger.
 
 Scope: public other-climber profile Favorite/Ignore controls, supported native
 AddBuddy/RemoveBuddy actions, shared membership/pending-intent presentation,
@@ -22,7 +23,7 @@ hover-card errors/recovery and the gates claiming to verify these interactions.
 This is not a fresh audit of every extension surface. Earlier GPX/report
 regressions remain explicitly carried below.
 
-## Evidence and limitations
+## Original read-only audit evidence and limitations
 
 - `node --test test/favorites/climber-favorite.test.mjs
   test/favorites/climber-ignore.test.mjs
@@ -275,16 +276,15 @@ explicit disclosures/navigation have documented separate expectations.
 ## Carry-forward findings outside the climber scope
 
 - **O01 FIXED — GPX source-view hidden-state regression:**
-  The audited `src/gpx/gpx-panel-css.js` (lines 190–196) set explicit display for the
-  source-view button without honoring its own hidden state. Warning-only tracks
-  with no excluded segments were confirmed in the earlier ledger. Revalidate
-  the rendered warning-only path before a focused fix; no new GPX browser run
-  is claimed by this climber audit.
+  The audited `src/gpx/gpx-panel-css.js` (lines 190–196) set explicit display for
+  the source-view button without honoring its hidden state. The shipped unit
+  and isolated render reproduced this; the focused fix and browser evidence
+  are recorded below.
 - **O02 FIXED — stretched report-caption controls:**
   The audited `src/reports/report-editor.css` (lines 265–271) gave caption actions two
-  equal fractional columns. The earlier review confirmed half-toolbar-width
-  buttons. Preserve compact actions and prove hidden/label transitions in a
-  separate report fix; no new report-browser run is claimed here.
+  equal fractional columns. The new independent compactness assertion
+  reproduced half-toolbar-width buttons; content-sized columns retain the
+  reservation and hidden/label transitions. Evidence is recorded below.
 
 Earlier stretched backup actions, Settings reorder layout, inert completed
 backup status, commit-link wrapping, weather refresh/model memory and independent
@@ -292,6 +292,19 @@ weather-day disclosure corrections remain separate completed commits. They are
 not silently re-opened or used as proof that climber UX is now fixed.
 
 ## Closure ledger
+
+### Focused commits
+
+| Findings | Commit | Correction |
+| --- | --- | --- |
+| C01/C02/C05 | `c5e4d086` | Shared profile feedback outside the title row |
+| C03 | `3e53fda6` | Native Buddy caption/relationship reservations |
+| C04 | `38d9735a` | Shared durable-intent and lease eligibility |
+| C06/C07 | `72778471` | Visible card feedback and guarded recovery |
+| C08 focus follow-up | `724fcd9a` | Preserve active profile/native control focus |
+| O01 | `f984d6bd` | Honor the GPX source-view hidden state |
+| O02 | `53553fed` | Compact, shrinkable caption actions |
+| C08 | `8c97a765` | Baseline rejection and final integrated gate |
 
 ### Fixed and verified
 
@@ -352,7 +365,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
   tests passed; build and focused ESLint passed. Each 24-variant profile and
   native Buddy matrix passed with live-lease publication; real unpacked Chrome
   startup/BFCache checks passed;
-  final broad integration/baseline proof remains below.
+  final broad integration/baseline proof is recorded above.
 - C06/C07: the card now scrolls its action body independently of its reserved
   feedback footer. A short visible summary and explicit full-details pane
   replace invisible errors. Favorite/source and Ignore-detail readings reserve
@@ -379,7 +392,7 @@ not silently re-opened or used as proof that climber UX is now fixed.
   moved the document 508px despite CSS containment; the card now consumes only
   actual scroller-boundary gestures. Normal scrolling is unchanged. Wheel
   testing is isolated from save geometry so compositor gestures cannot corrupt
-  those comparisons. Profile/native busy-focus coverage remains for final C08.
+  those comparisons. Profile/native busy-focus coverage is recorded in C08 above.
 - C04: Ignore now uses the shared validated card eligibility and durable intent
   protection. Profile/card/native Buddy actions agree on live leases and other
   accounts; expired intents remain protected but permit explicit status checks.
@@ -426,7 +439,8 @@ not silently re-opened or used as proof that climber UX is now fixed.
   ESLint passed. Real unpacked Chrome startup/BFCache/teardown passed hidden at
   1000×760. Full climber closure is not claimed by this first correction.
 - Audit evidence and priority/acceptance plan are produced; the active index and
-  former closure claim are corrected. Other finding groups remain open.
+  former closure claim are corrected. All ten scoped findings are locally
+  implemented; this does not close unrelated plans or manual release gates.
 - The independent unfinished peak-name request is completed in `c27e3dad`, with
   its checks and live-proof limits recorded in the archived ledger.
 

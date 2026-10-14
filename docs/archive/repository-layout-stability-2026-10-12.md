@@ -7,12 +7,13 @@ result insertion and user-controlled resizing remain distinct from jitter.
 
 Historical implementation status: the original thirteen finding groups were
 implemented in focused commits, with the runtime snapshot and CI integration
-recorded by `40b0b20d`. **Current UX closure is reopened.** The
-[2026-10-14 climber re-audit](../plans/climber-layout-reaudit-2026-10-14.md)
-confirms profile shifts, hidden error feedback and ineffective recovery despite
-the old geometry gate passing. Eight climber findings and two carried GPX/report
-findings remain open. The results below preserve historical evidence; they do
-not certify these still-broken transitions.
+recorded by `40b0b20d`. **The old gate did not establish UX closure.** The
+[2026-10-14 climber re-audit](climber-layout-reaudit-2026-10-14.md)
+reproduced profile shifts, hidden error feedback and ineffective recovery despite
+that gate passing. All eight scoped climber findings and two carried GPX/report
+findings are now corrected and verified locally. The new ledger retains
+native/live proof limits; the results below preserve historical evidence and
+do not retroactively certify the old transitions.
 
 2026-10-13 follow-up: user screenshots exposed presentation and interaction
 regressions missed by the geometry matrix. Its original closure does not prove
@@ -598,9 +599,9 @@ must not be mistaken for optional cleanup or a complete audit closure.
   rerun; the two unchanged README failures remain known. Hidden rendering does
   not establish native window placement or screen-reader speech.
 
-## 2026-10-14 climber UX re-audit — remediation open
+## 2026-10-14 climber UX re-audit — initial read-only stage
 
-The [active re-audit plan](../plans/climber-layout-reaudit-2026-10-14.md) records
+The [archived re-audit ledger](climber-layout-reaudit-2026-10-14.md) records
 the full sources, provenance, measurements and acceptance checks for C01–C08.
 The former J11 closure measured selected control bounds but missed the heading
 row, following native content, supported Buddy forms and visible error/recovery.
@@ -610,9 +611,10 @@ missed. They must not all be attributed to the same change.
 
 ### Fixed and verified
 
-- Re-audit findings and implementation order are documented; the active index
+- At the initial `fdee876e` read-only stage, findings and implementation order
+  were documented; the active index
   and this ledger now retract unqualified closure. **No climber runtime fix is
-  claimed.** All eight findings remain open, as do the carried GPX source-view
+  claimed.** All eight findings remained open, as did the carried GPX source-view
   hidden-state and stretched report-caption control findings.
 - The focused climber unit checks passed 42 tests. The unchanged climber
   geometry gate passed all eight cases. The separate probe captured 480 profile
@@ -637,3 +639,42 @@ missed. They must not all be attributed to the same change.
   recovery and real multi-window worker timing remain unverified.
 - The full repository suite was not rerun for this documentation-only audit;
   the two previously recorded, unchanged README failures remain separate.
+
+## 2026-10-14 scoped remediation — locally verified
+
+The [climber closure ledger](climber-layout-reaudit-2026-10-14.md) supersedes
+the initial open status above and lists all eight focused implementation/test
+commits. It preserves the original measurements rather than erasing them.
+
+### Fixed and verified
+
+- C01–C08 and O01/O02: profile and native Buddy feedback/labels, durable intent
+  eligibility, visible card feedback, truthful recovery, keyboard focus, the
+  GPX hidden source control, compact report-caption actions and the stronger
+  verification gate are corrected. The new contracts independently reject the
+  original audited code on C01/C02/C03/C06/C07.
+- The final hidden Chrome 153.0.8010.12 / Playwright Firefox 155.0 transition run
+  passed 24 climber variants, including 144 card placements, normal/enlarged
+  text, light/dark and 390/768/1280 widths at 900/540 heights. The integrated
+  gate passed 112 cases across 14 surfaces. Final rendered profile/card/caption
+  states were inspected. Full ESLint and shipped web-ext lint passed.
+- Real unpacked Chrome and derived Firefox 157.0.1 checks passed at 1000×760;
+  Chrome restored BFCache and Firefox cleanly remounted a single analyzer.
+  Both reported teardown. Final process/root inspection found no task-owned
+  browser or temporary fixture/profile root; older unrelated profiles were
+  preserved. No live account writes occurred.
+
+### Intentionally not changed
+
+- Buddy POST confirmation/no-repeat rules, worker list safeguards, opt-in
+  Favorite removal, manual Peakbagger Save, real lists and user browser state.
+- Unrelated active plans and the two baseline photo README assertions.
+
+### Changed but not fully proven
+
+- The full suite ran: 2,756 passed, the same two README assertions failed.
+  Their files are unchanged from `fdee876e`. This is not a globally green suite.
+- Native browser zoom/chrome/OS focus, live authenticated Brave/server behavior,
+  screen-reader speech, touch and actual multi-window worker timing remain
+  manual proof limits. Controlled failures/check-only recovery are tested, not
+  proof of every live server failure. No push or release was performed.

@@ -1,9 +1,6 @@
 # Active plans
 
 
-- [Climber interaction and layout re-audit](climber-layout-reaudit-2026-10-14.md)
-  — remediation in progress; eight confirmed profile/card UX
-  defects and verification gaps, plus two carried GPX/report regressions.
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
   — proposed; worldwide issuing-service links first, then opt-in regional
   overlays with verified provider contracts, coverage, and expiry handling.
@@ -47,11 +44,12 @@ checks in the layout-stability audit below both pass.
 
 The [repository layout-stability audit](../archive/repository-layout-stability-2026-10-12.md)
 records the historical thirteen-group implementation and CI geometry gate,
-not complete current UX closure. The [October 14 climber re-audit](climber-layout-reaudit-2026-10-14.md)
-reproduces profile page shifts and hidden card feedback despite the unchanged
-gate passing. Its eight findings and the two carried GPX/report regressions
-remain open. Earlier test counts and browser results are historical evidence,
-not proof that these transitions are stable.
+not universal UX closure. The [October 14 climber re-audit](../archive/climber-layout-reaudit-2026-10-14.md)
+corrects eight profile/card/gate findings and two carried GPX/report regressions
+in focused commits. Its stronger assertions reject the audited code; 24 climber
+variants and 112 integrated layout cases pass on the fixed build. The archive
+retains native/live proof gaps and the two unchanged README test failures.
+Earlier counts and browser results remain historical evidence.
 
 The [weather feature audit](../archive/weather-feature-audit-2026-10-11.md)
 has eight implemented fixes and local browser/regression evidence. Its closure

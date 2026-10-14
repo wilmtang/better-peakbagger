@@ -16,7 +16,12 @@ In custom-favorites mode, **Add favorite climber** and **Remove favorite climber
 save directly from the card. In Buddy mode, the card explains the active source
 and links to Settings to choose custom favorites. **Ignore climber** and
 **Unignore climber** work in either mode, subject to the membership rules below.
-The labels change after a confirmed save. A failed save stays visible with Retry.
+The labels change after a confirmed save. A failed save keeps a short visible
+message; **Details** shows the complete explanation. **Check lists** refreshes
+the card's list state without repeating a save. Use the original action to try
+a failed Favorite or Ignore save again. On profiles, **Retry** explicitly retries
+the failed local save. Progress and recovery keep the actions and reading
+position anchored; opening Details is a deliberate disclosure.
 
 **Add climbing buddy** and **Remove climbing buddy** save directly from the card.
 An explicit action fetches a fresh authenticated profile, submits only the chosen
@@ -53,7 +58,8 @@ while a profile save or native Buddy addition is pending. If a Buddy change
 cannot be confirmed, use **Check buddy status** before ignoring. Pending changes
 remain protected across tabs and browser restarts until reconciled. If a Buddy
 change succeeds but custom favorites cannot be updated, the card reports that
-partial result; Retry checks status and retries the local update. Buddy removal
+partial result; **Check status** checks the outcome and retries the local update,
+without repeating the Buddy POST. Buddy removal
 remains available after that partial success.
 
 Imports, replacements, GitHub restores, sync merges, and Undo enforce the same
