@@ -54,10 +54,11 @@ Browser capabilities must match the installed versions before
 extension assertions begin; an absent expectation is an error in CI. The
 additional ordinary Firefox matrix continues to cover Linux separately.
 
-Ordinary CI runs the complete Chrome/Firefox interaction-layout matrix in its
-own job, with the same runner and assertion deadlines. The stable required
-Chrome check waits for both package verification and layout success; neither
-gate can consume the other's job budget or be skipped.
+Ordinary CI runs the complete interaction layout matrix in separate Chrome and
+Firefox jobs, with the same runner and assertion deadlines. Each browser keeps
+all themes, viewports, and surfaces. The stable required Chrome check waits for
+package verification and both layout jobs; no gate can be skipped or consume
+another browser's setup and cleanup budget.
 
 Firefox's temporary extension is owned by its disposable profile. Verification
 closes the session, confirms profile-owned processes exited, and removes the

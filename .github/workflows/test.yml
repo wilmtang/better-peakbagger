@@ -116,11 +116,14 @@ jobs:
           retention-days: 7
 
   layout:
-    name: Interaction layout stability
-    # The complete 112-case matrix and package gates each fit their own budget;
-    # combining them exhausts the package job before Firefox's matrix completes.
+    name: Interaction layout stability (${{ matrix.browser }})
+    # Run every case for each browser with independent setup/cleanup headroom.
     runs-on: macos-15-intel
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox]
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -137,13 +140,13 @@ jobs:
           BPB_JITTER_ARTIFACTS: browser-evidence/layout-stability
         run: |
           mkdir -p browser-evidence
-          npm run verify:layout-stability 2>&1 | tee browser-evidence/layout-stability.log
+          npm run verify:layout-stability -- --${{ matrix.browser }}-only 2>&1 | tee browser-evidence/layout-stability.log
 
       - name: Retain layout failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-failure-layout
+          name: browser-failure-layout-${{ matrix.browser }}
           path: browser-evidence/
           if-no-files-found: ignore
           retention-days: 7

@@ -1042,8 +1042,9 @@ const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'asc
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
     'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, reports: reportCase };
 for (const argument of process.argv.slice(2)) {
-    assert.ok(argument === '--chrome-only' || /^--surface=.+$/.test(argument), `Unknown layout argument: ${argument}`);
+    assert.ok(argument === '--chrome-only' || argument === '--firefox-only' || /^--surface=.+$/.test(argument), `Unknown layout argument: ${argument}`);
 }
+assert.ok(!(process.argv.includes('--chrome-only') && process.argv.includes('--firefox-only')), 'Choose only one layout browser');
 assert.ok(!selected || Object.hasOwn(cases, selected), `Unknown layout surface: ${selected}`);
 const resources = createResourceStack();
 let failure = null;
@@ -1056,6 +1057,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     for (const [name, engine] of [['chrome', chromium], ['firefox', firefox]]) {
         if (process.argv.includes('--chrome-only') && name !== 'chrome') continue;
+        if (process.argv.includes('--firefox-only') && name !== 'firefox') continue;
         if (engine === chromium) assertChromeLaunchAllowed();
         const browser = await engine.launch({ headless: true, ...(engine === chromium
             ? { channel: 'chromium', args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] }

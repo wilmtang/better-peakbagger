@@ -3,6 +3,8 @@
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import yaml from 'js-yaml';
 
@@ -47,6 +49,9 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.equal(job['runs-on'], ordinary.jobs.chrome['runs-on']);
     assert.equal(job['timeout-minutes'], 20);
     assert.equal(job.if, undefined);
+    assert.ok(job.strategy?.matrix, 'each complete browser matrix needs its own job budget');
+    assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
+    assert.equal(job.strategy['fail-fast'], false, 'retain independent evidence from both browser matrices');
     assert.equal(ordinary.jobs.chrome.steps.some(step => step.run?.includes('verify:layout-stability')), false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('layout'), 'the existing required check must await layout results');
     const required = ordinary.jobs['chrome-required'].steps[0];
@@ -59,11 +64,26 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.equal(ordinary.defaults.run.shell, 'bash', 'pipefail must preserve a verifier failure through tee');
     assert.equal(geometry.env.BPB_JITTER_ARTIFACTS, 'browser-evidence/layout-stability');
     assert.match(geometry.run, /2>&1 \| tee browser-evidence\/layout-stability\.log/);
+    assert.ok(geometry.run.includes('--${{ matrix.browser }}-only'), 'each job must select its complete browser matrix');
+    assert.ok(job.steps.find(step => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(packageJson.scripts['verify:layout-stability'], 'npm run build && node scripts/verify-layout-stability.mjs');
     const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url), 'utf8');
     assert.match(verifier, /'weather-models':.*verifyPeakWeatherRefresh/,
         'ordinary CI must exercise summit model loading, not just hourly readings');
+});
+
+test('layout browser selections reject conflicting engines and unknown selections before launching', () => {
+    const script = fileURLToPath(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url));
+    for (const [args, expected] of [
+        [['--chrome-only', '--firefox-only'], /Choose only one layout browser/],
+        [['--firefoxx-only'], /Unknown layout argument/],
+        [['--firefox-only', '--surface=missing'], /Unknown layout surface/],
+    ]) {
+        const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, expected);
+    }
 });
 
 test('shared setup exports the installed paths and versions and keeps exact toolchain pins', async () => {
