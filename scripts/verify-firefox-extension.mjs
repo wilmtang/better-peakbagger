@@ -47,6 +47,7 @@ import { verifyGpxSegments } from './verify-gpx-segments.mjs';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mjs';
 import { verifyClimberMembership } from './verify-climber-membership.mjs';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
+import { installClimberCardCloseProbe } from './climber-card-close-diagnostics.mjs';
 import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
@@ -1297,6 +1298,29 @@ async function main() {
                 await driver.takeScreenshot(), 'base64') : null,
         });
         await driver.get(`${otherClimberUrl}&hover=1`);
+        // Observe the actual close call in the same isolated world as the
+        // unchanged package. MAIN-world prototypes cannot see those setters.
+        const hoverHandle = await driver.getWindowHandle();
+        const hoverUrl = await driver.getCurrentUrl();
+        await driver.switchTo().newWindow('tab');
+        try {
+            await driver.get(optionsUrl);
+            const injected = await driver.executeAsyncScript(`
+                const url = arguments[0], done = arguments[1];
+                const api = globalThis.browser || globalThis.chrome;
+                api.tabs.query({}).then(async tabs => {
+                    const tab = tabs.find(tab => tab.url === url);
+                    if (!tab) throw new Error('No exact hover fixture tab');
+                    const result = await api.scripting.executeScript({ target: { tabId: tab.id },
+                        func: (${installClimberCardCloseProbe.toString()}) });
+                    done({ ok: result[0]?.result === true });
+                }).catch(error => done({ error: String(error) }));
+            `, hoverUrl);
+            assertState(injected.ok, 'Firefox close diagnostics did not install', injected);
+        } finally {
+            await driver.close();
+            await driver.switchTo().window(hoverHandle);
+        }
         await withFirefoxContentViewport(driver, async () => {
             await verifyClimberHoverCard({
                 evaluate: fn => driver.executeScript(webdriverScript(fn)),

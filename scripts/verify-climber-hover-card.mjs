@@ -70,6 +70,7 @@ export async function prepareClimberCardViewport({ evaluate, resize, key, wait }
                     viewport: { width: innerWidth, height: innerHeight },
                     visualViewport: { width: window.visualViewport?.width, height: window.visualViewport?.height,
                         top: window.visualViewport?.offsetTop, left: window.visualViewport?.offsetLeft },
+                    closeProbe: card.getAttribute('data-bpb-verifier-close-trace'),
                     events: window.__bpbClimberViewportTrace?.events };
             });
             throw new Error(`Climber card did not reopen at ${width}x${height}: ${JSON.stringify(state)}`, { cause: error });
