@@ -49,6 +49,10 @@
   cannot overwrite a newer confirmed membership change. Buddy List recovery
   also works on Chrome 128 when it omits the sender page URL.
 
+- **Recover an unavailable Buddy List worker.** Missing background replies
+  explain when to reload the extension and page. Failed refreshes preserve
+  saved Favorites and sync times, and Refresh stays steady beside recovery text.
+
 ## 4.0.0 — 2026-10-11
 
 - **Use the same release checks before release.** CI and release share the
