@@ -2501,18 +2501,70 @@ async function main() {
             await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000,
                 `Firefox Settings reset before ${description}`);
             await driver.switchTo().window(filterHandle);
+            await driver.executeScript(() => {
+                window.__bpbSettingsActivationEvents = [];
+                if (window.__bpbSettingsActivationListening) return;
+                window.__bpbSettingsActivationListening = true;
+                for (const type of ['keydown', 'keyup', 'click', 'auxclick']) {
+                    window.addEventListener(type, event => {
+                        if (!event.target?.closest?.('.pbaf-settings-link')) return;
+                        const events = window.__bpbSettingsActivationEvents;
+                        events.push({ at: Date.now(), type, key: event.key, button: event.button,
+                            isTrusted: event.isTrusted, ctrlKey: event.ctrlKey, metaKey: event.metaKey,
+                            shiftKey: event.shiftKey, focused: document.hasFocus() });
+                        if (events.length > 16) events.shift();
+                    }, true);
+                }
+            });
             const control = await driver.findElement(By.css('.pbaf-settings-link'));
             await activate(control);
             await driver.switchTo().window(settingsHandle);
-            await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000,
-                `Firefox Settings beta destination after ${description}`);
+            const readActivation = async () => {
+                const destination = await driver.getCurrentUrl();
+                await driver.switchTo().window(filterHandle);
+                const source = await driver.executeScript(() => ({
+                    events: window.__bpbSettingsActivationEvents,
+                    text: document.querySelector('.pbaf-settings-link')?.textContent,
+                    title: document.querySelector('.pbaf-settings-link')?.title,
+                    focused: document.hasFocus(), visibility: document.visibilityState,
+                    active: document.activeElement?.className,
+                }));
+                await driver.switchTo().window(settingsHandle);
+                return { destination, source };
+            };
+            try {
+                await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#beta'), 5_000,
+                    `Firefox Settings beta destination after ${description}`);
+            } catch (error) {
+                throw new Error(`Firefox Settings beta destination after ${description}: ${JSON.stringify({
+                    ...await readActivation().catch(diagnosticError => ({ diagnosticError: diagnosticError.message })),
+                    cause: error.message,
+                })}`, { cause: error });
+            }
+            const activation = await readActivation();
+            const click = activation.source.events.find(event => event.type === 'click' && event.isTrusted);
+            if (description === 'modifier click') {
+                assertState(click && (click.ctrlKey || click.metaKey),
+                    'Firefox Settings modifier was released before its native click', activation);
+            }
+            if (description === 'Enter') {
+                assertState(click && !click.ctrlKey && !click.metaKey && !click.shiftKey,
+                    'Firefox Settings plain Enter did not produce an unmodified native click', activation);
+            }
+            if (description === 'middle click') {
+                assertState(activation.source.events.some(event => event.type === 'auxclick'
+                    && event.isTrusted && event.button === 1),
+                'Firefox Settings middle click did not produce a native auxiliary activation', activation);
+            }
             const topology = await readSettingsTopology();
             assertState(topology.options?.length === 1,
                 'Firefox Settings activation duplicated the exact options tab', topology);
             return topology;
         };
         const settingsModifier = process.platform === 'darwin' ? Key.COMMAND : Key.CONTROL;
-        const shortcutTopology = await activateSettings(control => driver.actions({ async: true })
+        // Synchronize keyboard and pointer sources: async actions can release
+        // Command/Control before the pointer's click is dispatched.
+        const shortcutTopology = await activateSettings(control => driver.actions()
             .keyDown(settingsModifier).click(control).keyUp(settingsModifier).perform(), 'modifier click');
         const middleTopology = await activateSettings(control => driver.actions({ async: true })
             .move({ origin: control }).press(Button.MIDDLE).release(Button.MIDDLE).perform(), 'middle click');
