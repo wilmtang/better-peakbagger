@@ -3,6 +3,18 @@
 /* global document, innerWidth, innerHeight, getComputedStyle */
 import assert from 'node:assert/strict';
 
+export function climberCardPlacementReady() {
+    const card = document.getElementById('bpb-climber-card');
+    const rect = card?.getBoundingClientRect();
+    const anchor = document.getElementById('hover-climber').getBoundingClientRect();
+    return rect?.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
+        // Firefox can differ by 1/32768px at a shared edge. Permit at most
+        // one CSS pixel of layout rounding while retaining the overlap check.
+        && (rect.bottom <= anchor.top + 1 || rect.top >= anchor.bottom - 1)
+        && getComputedStyle(card).opacity === '1'
+        && card.getAnimations().every(animation => animation.playState === 'finished');
+}
+
 // Drive the actual isolated-world bundle through native input, shared by the
 // full Chrome/Firefox manifest verifiers. No mock runtime or optimistic writes.
 export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key, resize, screenshot }) {
@@ -17,15 +29,7 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                 await evaluate(theme === 'dark'
                     ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
                     : () => { document.documentElement.dataset.bpbTheme = 'light'; });
-                await wait(() => {
-                    const card = document.getElementById('bpb-climber-card');
-                    const rect = card?.getBoundingClientRect();
-                    const anchor = document.getElementById('hover-climber').getBoundingClientRect();
-                    return rect?.width > 0 && rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
-                        && (rect.bottom <= anchor.top || rect.top >= anchor.bottom)
-                        && getComputedStyle(card).opacity === '1'
-                        && card.getAnimations().every(animation => animation.playState === 'finished');
-                }).catch(async error => {
+                await wait(climberCardPlacementReady).catch(async error => {
                     const state = await evaluate(() => {
                         const card = document.getElementById('bpb-climber-card');
                         const bounds = node => node?.getBoundingClientRect().toJSON();
