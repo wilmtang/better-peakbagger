@@ -206,7 +206,7 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-status, .favorites-hint, .favorites-empty { margin: 0; color: var(--sub); font-size: 12.5px; }
 .favorites-status { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; color: var(--text); }
 .favorites-status a { color: var(--link); }
-.favorites-summary button.secondary { align-self: auto; }
+.favorites-summary button.secondary { align-self: auto; flex-shrink: 0; }
 .favorites-add { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
 .favorites-add > label { display: flex; flex-direction: column; gap: 3px; }
 .favorites-add-controls { display: flex; align-items: center; gap: 7px; }

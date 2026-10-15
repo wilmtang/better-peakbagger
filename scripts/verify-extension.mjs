@@ -1224,6 +1224,60 @@ try {
         check(/saved copy of your Buddy List for up to 7 days/.test(buddyCacheHint || '')
             && /may not appear immediately; choose Refresh now/.test(buddyCacheHint || ''),
         `the Buddy source did not explain its saved-copy freshness: ${JSON.stringify(buddyCacheHint)}`);
+        // Reproduce an older worker's null reply before any report fetch. A
+        // missing route must give extension recovery, never a claimed load/save.
+        const beforeMissingWorker = await optionsPage.evaluate(async () => {
+            window.__bpbBuddyNativeRuntimeMessage = chrome.runtime.sendMessage;
+            chrome.runtime.sendMessage = function (...args) {
+                if (args[0]?.type === 'BUDDY_CACHE_UPDATE' && args[0].phase === 'begin') {
+                    return new Promise(resolve => { window.__bpbReleaseMissingBuddyWorker = () => resolve(null); });
+                }
+                return window.__bpbBuddyNativeRuntimeMessage.apply(chrome.runtime, args);
+            };
+            return JSON.stringify(await chrome.storage.local.get(['bpbBuddyCache', 'bpbFavoriteClimbers']));
+        });
+        const buddyAction = optionsPage.locator('#favorites-refresh-buddies');
+        const buddyActionBefore = await buddyAction.boundingBox();
+        const buddyThemeBefore = await optionsPage.locator('html').getAttribute('data-bpb-theme');
+        try {
+            await buddyAction.click();
+            await optionsPage.waitForFunction(() => typeof window.__bpbReleaseMissingBuddyWorker === 'function'
+                && document.getElementById('favorites-buddy-status').textContent === 'Refreshing…');
+            const buddyActionPending = await buddyAction.boundingBox();
+            await optionsPage.evaluate(() => window.__bpbReleaseMissingBuddyWorker());
+            await optionsPage.waitForFunction(() => !document.getElementById('favorites-refresh-buddies').disabled);
+            const missingWorker = await optionsPage.evaluate(async () => ({
+                text: document.getElementById('favorites-buddy-status').textContent,
+                link: !!document.getElementById('favorites-buddy-status').querySelector('a'),
+                requests: window.__bpbBuddyRequests,
+                saved: JSON.stringify(await chrome.storage.local.get(['bpbBuddyCache', 'bpbFavoriteClimbers'])),
+            }));
+            check(/Reload the extension, then reload this page/.test(missingWorker.text)
+                && !/loaded|could not save|reach Peakbagger/.test(missingWorker.text)
+                && !missingWorker.link && missingWorker.requests === 0 && missingWorker.saved === beforeMissingWorker,
+            `an unavailable Buddy worker gave misleading recovery or changed data: ${JSON.stringify(missingWorker)}`);
+            const buddyActionFailed = await buddyAction.boundingBox();
+            check([buddyActionPending, buddyActionFailed].every(box => box && buddyActionBefore
+                && ['x', 'y', 'width', 'height'].every(key => Math.abs(box[key] - buddyActionBefore[key]) <= 1)),
+            `the Buddy refresh action moved through pending/error: ${JSON.stringify({ buddyActionBefore, buddyActionPending, buddyActionFailed })}`);
+            if (buddyScreenshotDir) {
+                await mkdir(buddyScreenshotDir, { recursive: true });
+                for (const width of [1000, 390]) {
+                    await optionsPage.setViewportSize({ width, height: 760 });
+                    for (const theme of ['light', 'dark']) {
+                        await optionsPage.locator('html').evaluate((html, value) => { html.dataset.bpbTheme = value; }, theme);
+                        await optionsPage.screenshot({ path: path.join(buddyScreenshotDir, `buddy-worker-unavailable-${width}-${theme}.png`), fullPage: true });
+                    }
+                }
+            }
+        } finally {
+            await optionsPage.evaluate(() => { chrome.runtime.sendMessage = window.__bpbBuddyNativeRuntimeMessage; });
+            await optionsPage.locator('html').evaluate((html, theme) => {
+                if (theme === null) html.removeAttribute('data-bpb-theme');
+                else html.dataset.bpbTheme = theme;
+            }, buddyThemeBefore);
+            await optionsPage.setViewportSize(verificationViewport);
+        }
         await optionsPage.locator('#favorites-refresh-buddies').click();
         const buddyRefresh = await waitForPageCondition(optionsPage, async () => {
             const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;

@@ -42,6 +42,12 @@ on site pages only when its owner matches the signed-in account; a stale matchin
 cache stays usable if refresh fails. Missing or failed data is distinct from a
 valid empty list.
 
+Opening or refreshing your own signed-in Buddy List updates the saved members
+and their displayed update time from that page, without another network request.
+If the background service is unavailable, the page asks you to reload the
+extension and then the page; it does not claim that the list loaded or its update
+time changed.
+
 **Ignore** appears on another climber's public profile in either source mode.
 After a confirmed save it becomes **Unignore**. Ignored climbers cannot be newly
 added to custom favorites or through the profile's native **Add to My Buddy

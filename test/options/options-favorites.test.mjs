@@ -364,6 +364,61 @@ test('Buddy refresh distinguishes Cloudflare, network, and parser failures', asy
     assert.equal(parserDom.chrome._localStore[buddyCacheKey], undefined);
 });
 
+test('an unavailable Buddy worker reports reload guidance without fetching or importing prematurely', async () => {
+    for (const phase of ['begin', 'publish']) {
+        for (const reply of [null, { ok: true }, 'transport-error']) {
+            let fetches = 0;
+            const originalCache = { ...buddyCacheFrom(), fetchedAt: 1 };
+            const originalFavorites = favoriteStore([{ cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' }]);
+            const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+                local: { [buddyCacheKey]: originalCache, [favoriteKey]: originalFavorites },
+                prepareChrome: chrome => {
+                    const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+                    Object.defineProperty(chrome.runtime, 'sendMessage', { configurable: true, value: async message => {
+                        if (message?.type === 'BUDDY_CACHE_UPDATE' && message.phase === phase) {
+                            if (reply === 'transport-error') throw new Error('Could not establish connection. Receiving end does not exist.');
+                            return reply;
+                        }
+                        return send(message);
+                    } });
+                },
+                prepareWindow: window => {
+                    const fetchBuddies = peakbaggerFetch();
+                    window.fetch = (...args) => { fetches++; return fetchBuddies(...args); };
+                },
+            });
+            el(dom, 'favorites-merge-buddies').click();
+            await waitFor(dom, () => !el(dom, 'favorites-merge-buddies').disabled);
+            assert.match(el(dom, 'favorites-import-status').textContent, /Reload the extension, then reload this page/i,
+                `${phase}: ${JSON.stringify(reply)}`);
+            assert.doesNotMatch(el(dom, 'favorites-import-status').textContent, /loaded|could not save|reach Peakbagger/i);
+            assert.equal(el(dom, 'favorites-import-status').querySelector('a'), null);
+            assert.equal(fetches, phase === 'begin' ? 0 : 1);
+            assert.deepEqual(dom.chrome._localStore[buddyCacheKey], originalCache);
+            assert.deepEqual(dom.chrome._localStore[favoriteKey], originalFavorites);
+            assert.equal(dom.chrome._favoriteMutations.length, 0);
+        }
+    }
+});
+
+test('a failed initial Buddy cache read does not claim the list loaded', async () => {
+    let fetches = 0;
+    const dom = await loadFavoritesPage({}, {
+        prepareChrome: chrome => {
+            const get = chrome.storage.local.get;
+            chrome.storage.local.get = keys => Array.isArray(keys) && keys.includes('bpbBuddyCacheEpoch')
+                ? Promise.reject(new Error('storage unavailable')) : get(keys);
+        },
+        prepareWindow: window => { window.fetch = async () => { fetches++; throw new Error('unexpected fetch'); }; },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => !el(dom, 'favorites-refresh-buddies').disabled);
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /could not read your saved Buddy List/i);
+    assert.doesNotMatch(el(dom, 'favorites-buddy-status').textContent, /loaded|could not save/i);
+    assert.equal(el(dom, 'favorites-buddy-status').querySelector('a'), null);
+    assert.equal(fetches, 0);
+});
+
 test('a Buddy cache write failure is not mislabeled as a Peakbagger request failure', async () => {
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => { window.fetch = peakbaggerFetch(); },

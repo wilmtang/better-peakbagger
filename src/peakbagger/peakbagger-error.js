@@ -49,6 +49,8 @@ const message = (error, { resource, fallback = 'Peakbagger could not complete th
         'identity-mismatch': `The ${name} belongs to a different Peakbagger account. Nothing was changed.`,
         'invalid-request': 'Better Peakbagger refused an invalid Peakbagger request.',
         storage: `The ${name} loaded, but Better Peakbagger could not save it on this device.`,
+        'buddy-cache-unavailable': 'Better Peakbagger could not start this action. Reload the extension, then reload this page and try again.',
+        'buddy-cache-read': 'Better Peakbagger could not read your saved Buddy List. Try again.',
         'buddy-cache-stale': 'Your Buddy List changed during refresh. Refresh again.',
     };
     return messages[code] || fallback;
@@ -56,7 +58,7 @@ const message = (error, { resource, fallback = 'Peakbagger could not complete th
 
 const recovery = (error, { url = 'https://www.peakbagger.com/', label = 'Open Peakbagger' } = {}) => {
     const code = typeof error === 'string' ? error : error && error.code;
-    if (code === 'storage' || code === 'invalid-request') return null;
+    if (['storage', 'invalid-request', 'buddy-cache-unavailable', 'buddy-cache-read'].includes(code)) return null;
     if (code === 'signed-out') {
         return { label: 'Sign in to Peakbagger', href: 'https://www.peakbagger.com/Default.aspx' };
     }

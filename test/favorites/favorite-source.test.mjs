@@ -40,6 +40,29 @@ test('stale matching cache remains available on refresh error and does not loop 
     await source.refresh({ active: true }); assert.equal(requests, 1);
     source.stop(); h.close();
 });
+test('an unavailable Buddy worker preserves saved members and gives reload guidance without looping', async () => {
+    for (const phase of ['begin', 'publish']) {
+        const saved = { ownerCid: 1, entries: [{ cid: 3, name: 'Saved Buddy' }], fetchedAt: 0 };
+        const h = harness(saved);
+        let requests = 0;
+        const send = h.api.runtime.sendMessage.bind(h.api.runtime);
+        Object.defineProperty(h.api.runtime, 'sendMessage', { configurable: true, value: message =>
+            message?.type === 'BUDDY_CACHE_UPDATE' && message.phase === phase ? Promise.resolve(null) : send(message) });
+        const source = createFavoriteSource({ ...h, fetchDocument: async () => {
+            requests++; return { kind: 'ok', document: h.doc };
+        } });
+        try {
+            await source.ready; await source.refresh({ active: true });
+            assert.equal(h.states.at(-1).available, true);
+            assert.deepEqual([...h.states.at(-1).ids], [3]);
+            assert.match(h.states.at(-1).error, /Reload the extension, then reload this page/i);
+            assert.doesNotMatch(h.states.at(-1).error, /loaded|could not save/i);
+            assert.deepEqual(h.api._localStore.bpbBuddyCache, saved);
+            await source.refresh({ active: true });
+            assert.equal(requests, phase === 'begin' ? 0 : 1);
+        } finally { source.stop(); h.close(); }
+    }
+});
 test('source switch invalidates a late buddy response before it can replace local cache', async () => {
     const h = harness(null); let finish, started;
     const fetching = new Promise(resolve => { started = resolve; });
