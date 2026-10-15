@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, innerWidth, innerHeight, getComputedStyle */
+/* global document, innerWidth, innerHeight, getComputedStyle, MutationObserver */
 import assert from 'node:assert/strict';
 
 export function climberCardPlacementReady() {
@@ -16,39 +16,65 @@ export function climberCardPlacementReady() {
 }
 
 export async function prepareClimberCardViewport({ evaluate, resize, key, wait }, width, height) {
-    // Resizing and recentering can legitimately move an open card's anchor
-    // offscreen. Establish each geometry sample before explicitly reopening;
-    // hover travel and keyboard ownership are tested separately below.
-    if (!await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
-        await key('.bpb-climber-card-close', 'Escape');
-        await wait(() => document.getElementById('bpb-climber-card').hidden);
-    }
-    await resize(width, height);
-    await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
-    await wait(() => {
-        const anchor = document.getElementById('hover-climber').getBoundingClientRect();
-        return anchor.top >= 0 && anchor.bottom <= innerHeight;
-    });
-    await key('#hover-climber + .bpb-climber-actions-trigger', 'Enter');
-    await wait(() => {
+    await evaluate(() => {
+        const events = [];
         const card = document.getElementById('bpb-climber-card');
-        return !card.hidden && card.contains(document.activeElement)
-            && !card.querySelector('[aria-busy="true"]');
-    }).catch(async error => {
-        const state = await evaluate(() => {
-            const card = document.getElementById('bpb-climber-card');
-            const trigger = document.querySelector('#hover-climber + .bpb-climber-actions-trigger');
-            const bounds = node => node?.getBoundingClientRect().toJSON();
-            return { hidden: card.hidden, popover: card.matches(':popover-open'),
-                active: document.activeElement?.outerHTML.slice(0, 500),
-                expanded: trigger?.getAttribute('aria-expanded'), busy: !!card.querySelector('[aria-busy="true"]'),
-                anchor: bounds(document.getElementById('hover-climber')), trigger: bounds(trigger), card: bounds(card),
-                viewport: { width: innerWidth, height: innerHeight },
-                visualViewport: { width: globalThis.visualViewport?.width, height: globalThis.visualViewport?.height,
-                    top: globalThis.visualViewport?.offsetTop, left: globalThis.visualViewport?.offsetLeft } };
-        });
-        throw new Error(`Climber card did not reopen at ${width}x${height}: ${JSON.stringify(state)}`, { cause: error });
+        const record = event => {
+            events.push({ time: performance.now(), type: event.type, key: event.key,
+                target: event.target?.id || event.target?.className,
+                active: document.activeElement?.id || document.activeElement?.className,
+                hidden: card.hidden, expanded: document.querySelector('#hover-climber + button')?.getAttribute('aria-expanded'),
+                scroll: globalThis.scrollY, width: innerWidth, height: innerHeight });
+            if (events.length > 60) events.shift();
+        };
+        const names = ['keydown', 'keyup', 'click', 'focusin', 'focusout', 'resize', 'scroll'];
+        for (const name of names) globalThis.addEventListener(name, record, true);
+        const observer = new MutationObserver(() => record({ type: 'card-hidden' }));
+        observer.observe(card, { attributes: true, attributeFilter: ['hidden'] });
+        globalThis.__bpbClimberViewportTrace = { events, stop: () => {
+            observer.disconnect();
+            for (const name of names) globalThis.removeEventListener(name, record, true);
+            delete globalThis.__bpbClimberViewportTrace;
+        } };
     });
+    try {
+        // Resizing and recentering can legitimately move an open card's anchor
+        // offscreen. Establish each geometry sample before explicitly reopening;
+        // hover travel and keyboard ownership are tested separately below.
+        if (!await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
+            await key('.bpb-climber-card-close', 'Escape');
+            await wait(() => document.getElementById('bpb-climber-card').hidden);
+        }
+        await resize(width, height);
+        await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
+        await wait(() => {
+            const anchor = document.getElementById('hover-climber').getBoundingClientRect();
+            return anchor.top >= 0 && anchor.bottom <= innerHeight;
+        });
+        await key('#hover-climber + .bpb-climber-actions-trigger', 'Enter');
+        await wait(() => {
+            const card = document.getElementById('bpb-climber-card');
+            return !card.hidden && card.contains(document.activeElement)
+                && !card.querySelector('[aria-busy="true"]');
+        }).catch(async error => {
+            const state = await evaluate(() => {
+                const card = document.getElementById('bpb-climber-card');
+                const trigger = document.querySelector('#hover-climber + .bpb-climber-actions-trigger');
+                const bounds = node => node?.getBoundingClientRect().toJSON();
+                return { hidden: card.hidden, popover: card.matches(':popover-open'),
+                    active: document.activeElement?.outerHTML.slice(0, 500),
+                    expanded: trigger?.getAttribute('aria-expanded'), busy: !!card.querySelector('[aria-busy="true"]'),
+                    anchor: bounds(document.getElementById('hover-climber')), trigger: bounds(trigger), card: bounds(card),
+                    viewport: { width: innerWidth, height: innerHeight },
+                    visualViewport: { width: globalThis.visualViewport?.width, height: globalThis.visualViewport?.height,
+                        top: globalThis.visualViewport?.offsetTop, left: globalThis.visualViewport?.offsetLeft },
+                    events: globalThis.__bpbClimberViewportTrace?.events };
+            });
+            throw new Error(`Climber card did not reopen at ${width}x${height}: ${JSON.stringify(state)}`, { cause: error });
+        });
+    } finally {
+        await evaluate(() => globalThis.__bpbClimberViewportTrace?.stop());
+    }
 }
 
 // Drive the actual isolated-world bundle through native input, shared by the

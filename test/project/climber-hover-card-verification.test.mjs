@@ -83,4 +83,5 @@ test('failed keyboard reopening reports the live state without retrying or repla
     });
     assert.equal(keys, 1);
     assert.equal(waits, 2);
+    assert.equal(window.__bpbClimberViewportTrace, undefined, 'remove diagnostic listeners after a failed sample');
 });
