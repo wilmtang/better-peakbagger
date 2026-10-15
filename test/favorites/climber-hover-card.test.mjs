@@ -47,6 +47,28 @@ const pointer = (dom, node, type, relatedTarget = null) => {
     node.dispatchEvent(event);
 };
 
+test('large climber lists measure visibility before inserting any action wrappers', async t => {
+    const firstReads = new Map();
+    const dom = await load({ prepare: page => {
+        const section = page.window.document.createElement('section');
+        section.innerHTML = Array.from({ length: 100 }, (_, index) =>
+            `<a data-batch="${index}" href="/climber/climber.aspx?cid=${900100 + index}">Example ${index}</a>`).join(' ');
+        page.window.document.querySelector('main').append(section);
+        const native = page.window.HTMLElement.prototype.getClientRects;
+        page.window.HTMLElement.prototype.getClientRects = function () {
+            if (this.matches('a[data-batch]') && !firstReads.has(this)) {
+                firstReads.set(this, section.querySelectorAll('a[data-batch] + .bpb-climber-actions-trigger').length);
+            }
+            return native.call(this);
+        };
+    } });
+    t.after(() => dom.window.close());
+    assert.equal(firstReads.size, 100);
+    assert.deepEqual([...firstReads.values()], Array(100).fill(0),
+        'visibility reads after wrapper writes force one table layout per climber');
+    assert.equal(dom.window.document.querySelectorAll('a[data-batch] + .bpb-climber-actions-trigger').length, 100);
+});
+
 test('card keeps name links intact and exposes only eligible, visible people', async t => {
     const dom = await load({ prepare: dom => {
         dom.window.document.querySelector('main').insertAdjacentHTML('beforeend',

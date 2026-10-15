@@ -314,8 +314,10 @@ const mount = () => {
     const decorate = root => {
         const anchors = root.matches?.('a[href]') ? [root] : [];
         anchors.push(...(root.querySelectorAll?.('a[href]') || []));
-        for (const anchor of anchors) {
-            if (records.has(anchor) || !targetFor(anchor) || !isVisible(anchor)) continue;
+        // Reading geometry between wrapper insertions repeatedly lays out an
+        // entire ascent table. Measure the batch before changing its DOM.
+        const visible = anchors.filter(anchor => !records.has(anchor) && targetFor(anchor) && isVisible(anchor));
+        for (const anchor of visible) {
             const target = targetFor(anchor);
             const trigger = button('⋯', { class: 'bpb-climber-actions-trigger',
                 'aria-label': `Climber actions for ${target.name}`, 'aria-haspopup': 'dialog',
