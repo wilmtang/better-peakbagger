@@ -732,18 +732,43 @@ async function mapCase(page, origin, variant) {
     });
     await page.waitForFunction(() => typeof globalThis.__finishScenes === 'function');
     const picker = await geometry(page, '.bpb-sentinel select');
+    const compactBottom = async () => {
+        const control = await geometry(page, '.bpb-sentinel');
+        const select = await geometry(page, '.bpb-sentinel select');
+        assert.ok(control.y + control.height - select.y - select.height <= 8,
+            `Sentinel reserves unused space below the picker: ${JSON.stringify({ control, select })}`);
+    };
+    await compactBottom();
     await page.evaluate(() => globalThis.__finishScenes(false));
     await page.locator('.bpb-sentinel button').waitFor();
     stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel failure picker');
     const retry = await geometry(page, '.bpb-sentinel button');
-    await page.click('.bpb-sentinel button');
+    const panel = await geometry(page, '.bpb-sentinel');
+    await page.locator('.bpb-sentinel button').focus();
+    await page.keyboard.press('Enter');
     stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel retry picker');
+    stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel pending retry');
+    stable(panel, await geometry(page, '.bpb-sentinel'), 'Sentinel pending panel');
+    assert.equal(await page.locator('.bpb-sentinel button').isDisabled(), true);
+    await page.evaluate(() => globalThis.__finishScenes(false));
+    await page.waitForFunction(() => !document.querySelector('.bpb-sentinel button').disabled);
+    stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel repeated failure retry');
+    await page.click('.bpb-sentinel button');
     await page.evaluate(() => globalThis.__finishScenes(true));
     await page.locator('.bpb-sentinel-summary').filter({ hasText: 'No captures found' }).waitFor();
     stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel completed picker');
+    await compactBottom();
+    await capture(page, `${variant.name}-sentinel-compact`);
     await page.evaluate(() => globalThis.__sentinel.tileError());
     stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel imagery retry');
     await capture(page, `${variant.name}-sentinel`);
+    await page.locator('.bpb-sentinel').evaluate(element => { element.style.fontSize = '24px'; });
+    const enlargedPicker = await geometry(page, '.bpb-sentinel select');
+    const enlargedRetry = await geometry(page, '.bpb-sentinel button');
+    await page.locator('.bpb-sentinel-summary').evaluate(element => { element.textContent += ' Check your connection and try another capture. '.repeat(2); });
+    stable(enlargedPicker, await geometry(page, '.bpb-sentinel select'), 'Sentinel enlarged text picker');
+    stable(enlargedRetry, await geometry(page, '.bpb-sentinel button'), 'Sentinel enlarged text retry');
+    await capture(page, `${variant.name}-sentinel-enlarged-text`);
     await page.evaluate(() => globalThis.__sentinel.dispose());
     await page.addStyleTag({ content: (await asset('css/terrain-map.css')).toString() });
     await page.evaluate(({ theme }) => {
@@ -764,17 +789,37 @@ async function mapCase(page, origin, variant) {
     }, variant);
     await page.waitForFunction(() => typeof globalThis.__finishTopScenes === 'function');
     const topPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
+    const compactTop = async () => {
+        const select = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
+        const metadata = await geometry(page, '#bpb-terrain-map .bpb-sentinel-metadata');
+        assert.ok(metadata.y - select.y - select.height <= 5,
+            `3D Sentinel reserves an unused retry row: ${JSON.stringify({ select, metadata })}`);
+    };
+    await compactTop();
     await page.evaluate(() => globalThis.__finishTopScenes(false));
     await page.locator('#bpb-terrain-map .bpb-sentinel button').waitFor();
     stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel failure picker');
     const topRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
+    const topPanel = await geometry(page, '#bpb-terrain-map .bpb-sentinel');
     await page.click('#bpb-terrain-map .bpb-sentinel button');
+    stable(topRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel pending retry');
+    stable(topPanel, await geometry(page, '#bpb-terrain-map .bpb-sentinel'), '3D Sentinel pending panel');
     await page.evaluate(() => globalThis.__finishTopScenes(true));
     await page.locator('#bpb-terrain-map .bpb-sentinel-summary').filter({ hasText: 'No captures found' }).waitFor();
     stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel completed picker');
+    await compactTop();
+    await capture(page, `${variant.name}-3d-sentinel-compact`);
     await page.evaluate(() => globalThis.__topSentinel.tileError());
     stable(topRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel imagery retry');
     await capture(page, `${variant.name}-3d-sentinel`);
+    await page.locator('#bpb-terrain-map .bpb-sentinel').evaluate(element => { element.style.fontSize = '24px'; });
+    const enlargedTopPicker = await geometry(page, '#bpb-terrain-map .bpb-sentinel select');
+    const enlargedTopRetry = await geometry(page, '#bpb-terrain-map .bpb-sentinel button');
+    await page.locator('#bpb-terrain-map .bpb-sentinel-summary').evaluate(element => { element.textContent += ' Check your connection and try another capture. '.repeat(2); });
+    stable(enlargedTopPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel enlarged text picker');
+    stable(enlargedTopRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel enlarged text retry');
+    await capture(page, `${variant.name}-3d-sentinel-enlarged-text`);
+    await page.locator('#bpb-terrain-map .bpb-sentinel').evaluate(element => { element.style.fontSize = ''; });
     await page.evaluate(() => {
         const root = document.getElementById('bpb-terrain-map');
         root.style.height = '180px'; root.style.bottom = 'auto';

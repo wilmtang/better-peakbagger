@@ -14,9 +14,8 @@
     font: 12px/1.45 system-ui, sans-serif;
 }
 .bpb-sentinel-metadata { grid-row: 1; }
-.bpb-sentinel select { grid-row: 2; }
-.bpb-sentinel button, .bpb-sentinel::after { grid-area: 3 / 1; }
-.bpb-sentinel::after { content: "Try again"; visibility: hidden; margin-top: 6px; padding: 3px 8px; border: 1px solid transparent; font: inherit; }
+.bpb-sentinel button { grid-area: 2 / 1; }
+.bpb-sentinel select { grid-row: 3; }
 .bpb-sentinel[hidden], .bpb-sentinel [hidden] { display: none; }
 .bpb-sentinel select {
     box-sizing: border-box;
@@ -35,7 +34,7 @@
 .bpb-sentinel-summary[data-kind="rate-limit"] { border-left: 3px solid #b47b26; padding-left: 7px; }
 .bpb-sentinel button:disabled { opacity: .6; cursor: default; }
 .bpb-sentinel button {
-    margin-top: 6px;
+    margin: 6px 0;
     padding: 3px 8px;
     border: 1px solid #aeb7b0;
     border-radius: 5px;

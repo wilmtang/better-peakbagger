@@ -46,8 +46,8 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     retry.textContent = 'Try again';
     retry.hidden = true;
     metadata.append(summary, stats);
-    // Feedback grows upward in the bottom-anchored map control. The capture
-    // picker and reserved retry slot remain next to the same map pixels.
+    // Feedback and retry grow above the bottom-anchored picker. The top-anchored
+    // terrain control reverses that order without reserving an empty retry row.
     element.append(metadata, select, retry);
     let active = false;
     let revision = 0;
@@ -59,7 +59,19 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     let captureZone = null;
     let target = null;
     let limit = null;
-    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked; });
+    let loading = false;
+    const cooldown = createRetryCooldown(blocked => { retry.disabled = blocked || loading; });
+    const showLoading = () => {
+        loading = true;
+        // Retain the current feedback height while a request is pending. A
+        // successful response can then deliberately collapse to the compact UI.
+        metadata.style.minHeight = `${metadata.offsetHeight}px`;
+        summary.textContent = 'Finding captures…';
+        summary.hidden = false;
+        stats.textContent = '';
+        select.disabled = true;
+        retry.disabled = true;
+    };
     const showLimit = error => {
         limit = error;
         summary.hidden = false;
@@ -144,11 +156,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         clearRequest();
         const current = revision;
         controller = new AbortController();
-        summary.textContent = 'Finding captures…';
-        summary.hidden = false;
-        stats.textContent = '';
-        retry.hidden = true;
-        select.disabled = true;
+        showLoading();
         let validView = false;
         try {
             const view = readView();
@@ -162,6 +170,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             if (!active || revision !== current) return;
             captures = result;
             captureZone = zone;
+            retry.hidden = true;
             choose(retryImagery);
         } catch (error) {
             if (!active || revision !== current || error?.name === 'AbortError') return;
@@ -179,6 +188,12 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
             stats.textContent = '';
             retry.hidden = false;
             if (error?.code === 'rate-limit') showLimit(error);
+        } finally {
+            if (revision === current) {
+                loading = false;
+                metadata.style.minHeight = '';
+                cooldown.refresh();
+            }
         }
     };
     select.addEventListener('change', () => {
@@ -202,10 +217,7 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         refresh() {
             if (!active || limit) return;
             clearRequest();
-            summary.textContent = 'Finding captures…';
-            summary.hidden = false;
-            stats.textContent = '';
-            select.disabled = true;
+            showLoading();
             timer = setTimeout(() => { void load(); }, debounceMs);
         },
         deactivate() { active = false; clearRequest(); cooldown.suspend(); element.hidden = true; clearRenderedScenes(); },

@@ -146,6 +146,37 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
     } finally { layer.dispose(); dom.window.close(); }
 });
 
+test('Sentinel keeps retry visible and disabled until its pending request settles', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>');
+    const requests = [];
+    const layer = createSentinelLayer({ document: dom.window.document,
+        readView: () => ({ bounds, zoom: 13 }), replaceScenes() {}, clearScenes() {},
+        search: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
+    try {
+        const retry = layer.element.querySelector('button');
+        layer.activate();
+        requests[0].reject(new Error('Satellite service is unavailable. Try again.'));
+        await tick();
+        assert.equal(retry.hidden, false);
+        assert.equal(retry.disabled, false);
+        retry.click();
+        assert.equal(retry.hidden, false, 'the pointer and keyboard target remains visible while retrying');
+        assert.equal(retry.disabled, true);
+        assert.equal(layer.element.querySelector('.bpb-sentinel-summary').textContent, 'Finding captures…');
+        retry.click();
+        assert.equal(requests.length, 2, 'a pending retry cannot start another request');
+        requests[1].reject(new Error('Still unavailable.'));
+        await tick();
+        assert.equal(retry.hidden, false);
+        assert.equal(retry.disabled, false);
+        retry.click();
+        requests[2].resolve(sentinelCaptures([feature()], view));
+        await tick();
+        assert.equal(retry.hidden, true, 'successful loading returns to the compact control');
+        assert.equal(layer.element.querySelector('.bpb-sentinel-summary').hidden, true);
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
 test('camera refresh updates coverage without rebuilding the same scenes or their reordered tile cache', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const dom = new JSDOM('<!doctype html><body></body>'), applied = [];
