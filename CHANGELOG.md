@@ -2,40 +2,6 @@
 
 ## Unreleased
 
-- **Cancel backup preparation.** Stop complete-list and repository preparation
-  before a runner starts; the panel and its Cancel control fit narrow pages.
-
-- **Keep your keyboard place around climber cards.** Hidden, removed, or
-  replaced rows return owned focus to a surviving link or control.
-
-- **Keep your 3D satellite capture.** Explicit dated and Latest choices survive
-  a return from 2D; untouched 3D views still follow the 2D layer.
-
-- **Bound deleted draft metadata.** Old deletion markers are compacted while
-  recent Undo and stale-tab protection remain intact.
-
-- **Track pasted photos in the library.** Photos show In report after their
-  hosted links are inserted; reference retries reuse the accepted upload.
-
-- **Read satellite warnings clearly.** Capture coverage and failure messages
-  no longer overlap in light or dark map controls.
-
-- **Recover failed satellite imagery.** Try again reloads failed tiles while
-  ordinary camera updates keep healthy captures in place.
-
-- **Keep live settings current.** Delayed reads no longer undo theme or 3D
-  changes on an open page; restored pages refresh their settings.
-
-- **Keep exported tracks tied to their ascent.** Map handoffs reject a GPX
-  response redirected to another ascent or an unexpected download address.
-
-- **Preserve report drafts across tabs.** Leaving an untouched editor keeps
-  newer recovery text; conflicting edits offer a copy instead of overwriting it.
-- **Keep ignored reports concealed.** Climber hover actions no longer prevent
-  ignored-report controls from mounting, including in Firefox.
-
-## 4.0.0 — 2026-10-11
-
 - **Use the same release checks before release.** CI and release share the
   production package and capture gates, exact browser-version checks, and
   bounded scale tests. Rehearsals require consecutive passes of the same archive
@@ -111,6 +77,49 @@
 
 - **Find feedback and ratings in Settings.** About links to discussions, bug
   reports, source code, the license, and the review page for your browser's store.
+
+- **Read weather and satellite choices in local context.** Satellite captures
+  show mountain-local dates and cloud cover. Weather remembers the selected
+  tab, offers Best Match, shows model update intervals, and handles negative
+  precipitation samples without losing the forecast.
+
+- **Choose a weather location from the map.** Request a forecast for a nearby
+  point in 2D or 3D, with the selected location distinguished from the model's
+  grid point. Ascent weather can sit in either page column and remembers its
+  model locally.
+
+- **Preserve report drafts across tabs.** Leaving an untouched editor keeps
+  newer recovery text; conflicting edits offer a copy instead of overwriting it.
+  Ignored-report controls continue to mount beside climber actions in Firefox.
+
+- **Keep exported tracks tied to their ascent.** Map handoffs and captured
+  ascent confirmation reject responses redirected to another ascent or an
+  unexpected address. Delayed settings reads preserve newer theme and 3D choices.
+
+- **Keep your satellite capture.** Try again reloads failed imagery while
+  camera updates retain healthy tiles. Explicit dated and Latest choices survive
+  a return from 2D; warnings remain readable and each capture appears once.
+
+- **Preserve photos, drafts, and keyboard position.** Pasted photos show In
+  report after their hosted links are inserted, and reference retries reuse the
+  accepted upload. Old draft deletion markers are compacted without reviving
+  stale drafts. Removed or replaced climber rows return focus to a surviving action.
+
+- **Cancel backup preparation.** Stop complete-list and repository preparation
+  before a runner starts; the panel and its Cancel control fit narrow pages.
+
+- **Arrange peak planning links.** Gaia GPS, AllTrails, and onX have distinct
+  links. Regional avalanche forecast links follow the peak's location, and
+  Settings supports dragging planning links into your preferred order.
+
+- **Keep actions and reading position steady.** Capture, maps, weather,
+  reports, photos, climber lists, and backup controls preserve their layout
+  through loading, completion, failure, and recovery. Weather day expansion
+  keeps page context, and compact feedback remains visible at narrow widths.
+
+- **Preserve confirmed climber changes.** Pending profile actions retain
+  keyboard focus, unreadable saved Favorites survive edits, and Buddy refreshes
+  cannot overwrite a newer confirmed membership change.
 
 ## 3.9.2 — 2026-10-09
 
