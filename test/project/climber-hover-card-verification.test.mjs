@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { climberCardPlacementReady, prepareClimberCardViewport } from '../../scripts/verify-climber-hover-card.mjs';
 
@@ -84,4 +85,27 @@ test('failed keyboard reopening reports the live state without retrying or repla
     assert.equal(keys, 1);
     assert.equal(waits, 2);
     assert.equal(window.__bpbClimberViewportTrace, undefined, 'remove diagnostic listeners after a failed sample');
+});
+
+test('viewport diagnostics survive Firefox creating a fresh script global for each command', async t => {
+    const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger" aria-expanded="false"></button><div id="bpb-climber-card" hidden></div>');
+    t.after(() => dom.window.close());
+    const { window } = dom;
+    window.document.getElementById('hover-climber').scrollIntoView = () => {};
+    window.document.getElementById('bpb-climber-card').matches = () => false;
+    for (const node of window.document.body.children) node.getBoundingClientRect = () => ({ toJSON: () => ({ top: 0, bottom: 0 }) });
+    let waits = 0;
+    await assert.rejects(prepareClimberCardViewport({
+        evaluate: fn => runInNewContext(`(${fn.toString()})()`, { window, document: window.document,
+            innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+            addEventListener: window.addEventListener.bind(window), removeEventListener: window.removeEventListener.bind(window),
+            MutationObserver: window.MutationObserver, performance: window.performance }),
+        resize: async () => {},
+        key: async () => window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
+        wait: async () => { if (++waits === 2) throw new Error('opening timed out'); },
+    }, 320, 760), error => {
+        assert.match(error.message, /"key":"Enter"/, 'event history must remain on the page Window between commands');
+        return true;
+    });
+    assert.equal(window.__bpbClimberViewportTrace, undefined, 'cleanup must reach the same page-owned trace');
 });
