@@ -6,7 +6,9 @@ import vm from 'node:vm';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { webdriverScript } from '../../scripts/browser-verification-fixtures.mjs';
-import { readRichTableCellSelection, waitForRichTableCellSelection } from '../../scripts/report-table-selection.mjs';
+import {
+    readRichTableCellSelection, readRichTableInput, waitForRichTableCellSelection, waitForRichTableInput,
+} from '../../scripts/report-table-selection.mjs';
 
 test('table input waits for the editor selection, rather than only the native caret', async () => {
     const dom = new JSDOM('<div class="bpb-re-surface" tabindex="0"><table><tr><td><p></p></td><td><p></p></td></tr></table></div>');
@@ -63,4 +65,32 @@ test('table selection rejects invalid targets and reports live state when it nev
     await assert.rejects(waitForRichTableCellSelection({ evaluate: async () => ({
         nativeCell: 0, editorCell: 1, focused: true, ready: false,
     }) }, 77, 0, { timeoutMs: 0, intervalMs: 1 }), /cell 1.*editorCell.*1/);
+});
+
+test('table conversion waits for correctly typed cells and the submitted source, then stops on malformed input', async () => {
+    const dom = new JSDOM('<textarea id="JournalText"></textarea><div class="bpb-re-surface"><table><tr>'
+        + '<td><ul><li>Standard TH</li><li>Outhouse TH</li></ul></td>'
+        + '<td><ol><li>Park</li><li>Walk</li></ol></td></tr></table></div>');
+    try {
+        const document = dom.window.document;
+        const evaluate = fn => vm.runInNewContext(`(() => { ${webdriverScript(fn)} })()`, { document });
+        const cells = [{ bullets: ['Standard TH', 'Outhouse TH'], numbers: [] },
+            { bullets: [], numbers: ['Park', 'Walk'] }];
+        const expected = { saved: 'the exact saved table', cells };
+        assert.deepEqual(JSON.parse(JSON.stringify(evaluate(readRichTableInput))), { saved: '', cells });
+        let reads = 0;
+        await waitForRichTableInput({ evaluate: fn => {
+            if (++reads === 3) document.getElementById('JournalText').value = expected.saved;
+            return evaluate(fn);
+        } }, expected, { intervalMs: 1 });
+        assert.equal(reads, 3, 'painted lists alone cannot prove the submission value is ready');
+        document.querySelectorAll('td')[0].innerHTML = '';
+        document.querySelectorAll('td')[1].innerHTML = '<ol><li>Standard TH</li><li>OuthPark</li><li>Walkouse TH</li></ol>';
+        let conversionAttempted = false;
+        await assert.rejects((async () => {
+            await waitForRichTableInput({ evaluate }, expected, { timeoutMs: 100, intervalMs: 1 });
+            conversionAttempted = true;
+        })(), /typed Rich table fixture before switching editor modes.*OuthPark/s);
+        assert.equal(conversionAttempted, false, 'the reproduced wrong-cell input cannot poison subsequent conversion checks');
+    } finally { dom.window.close(); }
 });

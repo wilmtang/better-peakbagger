@@ -44,3 +44,24 @@ export function waitForRichTableCellSelection(bridgePage, tabId, cellIndex, opti
         timeoutMs: 5000, ...options, isReady: state => state?.ready === true,
     });
 }
+
+export function readRichTableInput() {
+    return {
+        saved: document.getElementById('JournalText')?.value,
+        cells: [...document.querySelectorAll('.bpb-re-surface td')].map(cell => ({
+            bullets: [...cell.querySelectorAll('ul > li')].map(item => item.textContent),
+            numbers: [...cell.querySelectorAll('ol > li')].map(item => item.textContent),
+        })),
+    };
+}
+
+// Prove the fixture was actually typed before attributing later mismatches to
+// Rich/Markdown conversion. A failed prerequisite must stop dependent edits.
+export function waitForRichTableInput(page, expected, options = {}) {
+    return waitForCondition(() => page.evaluate(readRichTableInput), {
+        description: 'the typed Rich table fixture before switching editor modes',
+        timeoutMs: 5000, ...options,
+        isReady: state => state?.saved === expected.saved
+            && JSON.stringify(state.cells) === JSON.stringify(expected.cells),
+    });
+}

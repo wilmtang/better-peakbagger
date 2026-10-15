@@ -22,6 +22,7 @@
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
 import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,7 +59,7 @@ import { retainBrowserFailure, watchFixtureRequests } from './browser-verificati
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
-import { waitForRichTableCellSelection } from './report-table-selection.mjs';
+import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mjs';
 
 assertChromeLaunchAllowed();
 
@@ -6437,6 +6438,10 @@ try {
             const tableLists = '[table border="1"][tr][th]Names[/th][th]Directions[/th][/tr][tr]'
                 + '[td][ul][li]Standard TH[/li][li]Outhouse TH[/li][/ul][/td]'
                 + '[td][ol][li]Park[/li][li]Walk[/li][/ol][/td][/tr][/table]';
+            await waitForRichTableInput(editorPage, { saved: tableLists, cells: [
+                { bullets: ['Standard TH', 'Outhouse TH'], numbers: [] },
+                { bullets: [], numbers: ['Park', 'Walk'] },
+            ] });
             await editorModes.getByRole('button', { name: 'Markdown', exact: true }).click();
             const tableListsState = await editorPage.evaluate(() => ({
                 saved: document.getElementById('JournalText').value,
@@ -6445,7 +6450,7 @@ try {
                 bullets: document.querySelectorAll('.bpb-re-preview td > ul > li').length,
                 numbers: document.querySelectorAll('.bpb-re-preview td > ol > li').length,
             }));
-            check(tableListsState.saved === tableLists && tableListsState.bullets === 2
+            assert.ok(tableListsState.saved === tableLists && tableListsState.bullets === 2
                 && tableListsState.numbers === 2 && tableListsState.source.startsWith('<table'),
             `Rich table lists were lost on the way to Markdown: ${JSON.stringify(tableListsState)}`);
             if (process.env.BPB_VERIFY_EDITOR_TABLE_LIST_SCREENSHOT) {
@@ -6460,10 +6465,10 @@ try {
             await editorPage.keyboard.press(`${modifier}+a`);
             await editorPage.keyboard.insertText(tableListsState.source.replace('Standard TH', 'Lower TH'));
             await editorModes.getByRole('button', { name: 'Plain', exact: true }).click();
-            check(await editorPage.locator('#JournalText').inputValue() === tableLists.replace('Standard TH', 'Lower TH'),
+            assert.ok(await editorPage.locator('#JournalText').inputValue() === tableLists.replace('Standard TH', 'Lower TH'),
                 'a Markdown table edit lost its lists before Plain/submission');
             await editorModes.getByRole('button', { name: 'Rich text', exact: true }).click();
-            check(await editorPage.locator('.bpb-re-surface td > ul > li').count() === 2
+            assert.ok(await editorPage.locator('.bpb-re-surface td > ul > li').count() === 2
                 && await editorPage.locator('.bpb-re-surface td > ol > li').count() === 2,
             're-entering Rich did not reconstruct the saved table lists');
             if (process.env.BPB_VERIFY_EDITOR_TABLE_LIST_RICH_SCREENSHOT) {
