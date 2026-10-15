@@ -58,6 +58,7 @@ import { retainBrowserFailure, watchFixtureRequests } from './browser-verificati
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
+import { waitForRichTableCellSelection } from './report-table-selection.mjs';
 
 assertChromeLaunchAllowed();
 
@@ -5212,10 +5213,11 @@ try {
     {
         const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
         const editorTheme = process.env.BPB_VERIFY_EDITOR_THEME || 'dark';
+        let reportOptionsPage = null;
         if (extensionId) {
-            const optionsPage = await context.newPage();
-            await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
-            await optionsPage.evaluate(async theme => {
+            reportOptionsPage = await context.newPage();
+            await reportOptionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+            await reportOptionsPage.evaluate(async theme => {
                 const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
                 await chrome.storage.sync.set({
                     bpbSettings: {
@@ -5225,7 +5227,6 @@ try {
                     }
                 });
             }, editorTheme || null);
-            await optionsPage.close();
         }
         const editorUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
         const editorPage = await context.newPage();
@@ -6411,17 +6412,24 @@ try {
             // Lists typed inside cells must survive the saved-value boundary,
             // Markdown edits, and reconstruction of the Rich document.
             const editorModes = editorPage.locator('#bpb-report-editor');
+            const reportTabId = await reportOptionsPage.evaluate(async url => {
+                const tabs = (await chrome.tabs.query({})).filter(tab => tab.url === url);
+                if (tabs.length !== 1) throw new Error('The report fixture tab is ambiguous');
+                return tabs[0].id;
+            }, editorUrl);
             await editorModes.getByRole('button', { name: 'Plain', exact: true }).click();
             await editorPage.locator('#JournalText').fill(
                 '[table border="1"][tr][th]Names[/th][th]Directions[/th][/tr]'
                 + '[tr][td][/td][td][/td][/tr][/table]');
             await editorModes.getByRole('button', { name: 'Rich text', exact: true }).click();
             await editorPage.locator('.bpb-re-surface td').nth(0).click();
+            await waitForRichTableCellSelection(reportOptionsPage, reportTabId, 0);
             await editorPage.getByRole('button', { name: 'Bulleted list', exact: true }).click();
             await editorPage.keyboard.type('Standard TH');
             await editorPage.keyboard.press('Enter');
             await editorPage.keyboard.type('Outhouse TH');
             await editorPage.locator('.bpb-re-surface td').nth(1).click();
+            await waitForRichTableCellSelection(reportOptionsPage, reportTabId, 1);
             await editorPage.getByRole('button', { name: 'Numbered list', exact: true }).click();
             await editorPage.keyboard.type('Park');
             await editorPage.keyboard.press('Enter');
@@ -6521,6 +6529,7 @@ try {
             check(editorErrors.length === 0, `the editor page threw: ${JSON.stringify(editorErrors)}`);
         }
         await editorPage.close();
+        await reportOptionsPage?.close();
     }
 
     // --- Real draft-tab handoff --------------------------------------------
