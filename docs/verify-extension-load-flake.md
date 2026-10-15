@@ -172,3 +172,18 @@ the budgets are unchanged — the Buddy probe stays at 20s (≈4x its measured 5
 and the terrain detach at 5s. The durable fixes are to stop blocking
 user-visible state on that round trip, or to run this verifier on a machine that
 is not oversubscribed.
+
+## Firefox card diagnostics
+
+Ordinary Firefox package verification leaves native DOM attribute setters
+unchanged. To capture a card's exact close call and viewport geometry in its
+isolated extension world, run
+`BPB_VERIFY_CLIMBER_CLOSE_PROBE=1 npm run verify:firefox`. The optional probe
+forwards the native setter, retains a bounded history for failure output, and
+restores the setter when the fixture page leaves.
+
+The October 15, 2026 trace caught `visualViewport.offsetTop` temporarily equal
+to `-scrollY` during resize. A visible anchor at 639.5–656.5px was consequently
+classified outside a 760px viewport. The 4.0.1 regression preserves visible
+cards under that condition, legitimate positive panning, and dismissal of
+anchors that are actually offscreen.
