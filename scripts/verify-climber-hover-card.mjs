@@ -15,16 +15,27 @@ export function climberCardPlacementReady() {
         && card.getAnimations().every(animation => animation.playState === 'finished');
 }
 
+export async function prepareClimberCardViewport({ evaluate, resize, click }, width, height) {
+    // Membership buttons can lose native focus while disabled. Keep the
+    // capture's open card owned before resizing moves the pointer elsewhere;
+    // otherwise its legitimate pointer-departure timer can close it mid-probe.
+    await evaluate(() => {
+        const card = document.getElementById('bpb-climber-card');
+        if (!card.hidden) card.querySelector('.bpb-climber-card-close').focus({ preventScroll: true });
+    });
+    await resize(width, height);
+    await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
+    if (await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
+        await click('#hover-climber + .bpb-climber-actions-trigger');
+    }
+}
+
 // Drive the actual isolated-world bundle through native input, shared by the
 // full Chrome/Firefox manifest verifiers. No mock runtime or optimistic writes.
 export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key, resize, screenshot }) {
     const capture = async name => {
         for (const [width, height] of [[1000, 760], [480, 760], [360, 760], [320, 760]]) {
-            await resize(width, height);
-            await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
-            if (await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
-                await click('#hover-climber + .bpb-climber-actions-trigger');
-            }
+            await prepareClimberCardViewport({ evaluate, resize, click }, width, height);
             for (const theme of ['light', 'dark']) {
                 await evaluate(theme === 'dark'
                     ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
