@@ -42,7 +42,16 @@ test('shared package gate builds once and exercises capture against the producti
 
 test('ordinary CI gates on interaction geometry and retains layout evidence', async () => {
     const ordinary = await load('workflows/test.yml');
-    const job = ordinary.jobs.chrome;
+    const job = ordinary.jobs.layout;
+    assert.ok(job, 'the full layout matrix needs a job budget separate from package verification');
+    assert.equal(job['runs-on'], ordinary.jobs.chrome['runs-on']);
+    assert.equal(job['timeout-minutes'], 20);
+    assert.equal(job.if, undefined);
+    assert.equal(ordinary.jobs.chrome.steps.some(step => step.run?.includes('verify:layout-stability')), false);
+    assert.ok(ordinary.jobs['chrome-required'].needs.includes('layout'), 'the existing required check must await layout results');
+    const required = ordinary.jobs['chrome-required'].steps[0];
+    assert.equal(required.env.LAYOUT_RESULT, '${{ needs.layout.result }}');
+    assert.match(required.run, /test "\$LAYOUT_RESULT" = success/, 'failed or skipped layout checks must block the release');
     const geometry = job.steps.find(step => step.run?.includes('npm run verify:layout-stability'));
     assert.ok(geometry, 'state transitions must be checked beyond static manifest smoke');
     assert.equal(geometry.if, undefined);

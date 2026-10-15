@@ -106,6 +106,32 @@ jobs:
       - name: Verify packages and capture flows
         uses: ./.github/actions/verify-package
 
+      - name: Retain browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-failure-chrome
+          path: browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  layout:
+    name: Interaction layout stability
+    # The complete 112-case matrix and package gates each fit their own budget;
+    # combining them exhausts the package job before Firefox's matrix completes.
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
+        with:
+          chrome-version: current
+          firefox-version: latest
+          popup-firefox: 'true'
+
       - name: Verify interaction layout stability in Chrome and Firefox
         env:
           BPB_JITTER_ARTIFACTS: browser-evidence/layout-stability
@@ -113,11 +139,11 @@ jobs:
           mkdir -p browser-evidence
           npm run verify:layout-stability 2>&1 | tee browser-evidence/layout-stability.log
 
-      - name: Retain browser failure evidence
+      - name: Retain layout failure evidence
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-failure-chrome
+          name: browser-failure-layout
           path: browser-evidence/
           if-no-files-found: ignore
           retention-days: 7
@@ -238,6 +264,7 @@ jobs:
       - chrome
       - chrome-floor
       - chrome-terrain
+      - layout
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -248,11 +275,13 @@ jobs:
           COPIED_RUNTIME: ${{ needs.dependency-impact.outputs.copied-runtime }}
           CHROME_RESULT: ${{ needs.chrome.result }}
           CHROME_FLOOR_RESULT: ${{ needs.chrome-floor.result }}
+          LAYOUT_RESULT: ${{ needs.layout.result }}
           GPU_RESULT: ${{ needs.chrome-terrain.result }}
         run: |
           test "$IMPACT_RESULT" = success
           test "$CHROME_RESULT" = success
           test "$CHROME_FLOOR_RESULT" = success
+          test "$LAYOUT_RESULT" = success
           if test "$COPIED_RUNTIME" = true; then
             test "$GPU_RESULT" = success
           else
