@@ -52,6 +52,7 @@ import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure } from './browser-verification-evidence.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
+import { setFirefoxContentViewport as setContentViewport, withFirefoxContentViewport } from './firefox-content-viewport.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxSunTheme = process.env.BPB_VERIFY_FIREFOX_SUN_THEME === 'light' ? 'light' : 'dark';
@@ -135,14 +136,6 @@ async function evaluatePageRealm(driver, expression) {
         throw new Error(response.result.exceptionDetails?.text || 'page-realm script failed');
     }
     return response.result;
-}
-
-async function setContentViewport(driver, viewport) {
-    const response = await (await driver.getBidi()).send({
-        method: 'browsingContext.setViewport',
-        params: { context: await driver.getWindowHandle(), viewport },
-    });
-    if (response.type === 'error') throw new Error(`${response.error}: ${response.message}`);
 }
 
 async function main() {
@@ -1304,7 +1297,7 @@ async function main() {
                 await driver.takeScreenshot(), 'base64') : null,
         });
         await driver.get(`${otherClimberUrl}&hover=1`);
-        try {
+        await withFirefoxContentViewport(driver, async () => {
             await verifyClimberHoverCard({
                 evaluate: fn => driver.executeScript(webdriverScript(fn)),
                 wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox climber hover card'),
@@ -1318,7 +1311,7 @@ async function main() {
                     path.join(process.env.BPB_VERIFY_HOVER_CARD_SCREENSHOT_DIR, `firefox-${name}.png`),
                     await driver.takeScreenshot(), 'base64') : null,
             });
-        } finally { await setContentViewport(driver, null); }
+        });
 
         await driver.get(optionsUrl);
         await driver.executeAsyncScript(done => {
@@ -2667,22 +2660,23 @@ async function main() {
         fixture.holdProfileLists();
         const profileReadsBefore = fixture.requests.profileListReads, profileAbortsBefore = fixture.requests.cancelledProfileReads;
         try {
-            await driver.get(`https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&y=2024`);
-            if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
-            await verifyProfilePreparation({
-                evaluate: fn => driver.executeScript(webdriverScript(fn)),
-                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox profile preparation'),
-                click: selector => driver.findElement(By.css(selector)).click(),
-                key: selector => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
-                resize: (width, height) => setContentViewport(driver, { width, height }),
-                screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? name => writeElementScreenshot(driver, surfaceSelectors.profileBackup,
-                    path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, `firefox-${name}.png`)) : null,
-                readStarted: () => waitForCondition(() => fixture.requests.profileListReads > profileReadsBefore, { description: 'Firefox held profile-list request' }),
-                readAborted: () => waitForCondition(() => fixture.requests.cancelledProfileReads > profileAbortsBefore, { description: 'Firefox cancelled profile-list transport' }),
+            await withFirefoxContentViewport(driver, async () => {
+                await driver.get(`https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&y=2024`);
+                if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
+                await verifyProfilePreparation({
+                    evaluate: fn => driver.executeScript(webdriverScript(fn)),
+                    wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox profile preparation'),
+                    click: selector => driver.findElement(By.css(selector)).click(),
+                    key: selector => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
+                    resize: (width, height) => setContentViewport(driver, { width, height }),
+                    screenshot: process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR ? name => writeElementScreenshot(driver, surfaceSelectors.profileBackup,
+                        path.join(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, `firefox-${name}.png`)) : null,
+                    readStarted: () => waitForCondition(() => fixture.requests.profileListReads > profileReadsBefore, { description: 'Firefox held profile-list request' }),
+                    readAborted: () => waitForCondition(() => fixture.requests.cancelledProfileReads > profileAbortsBefore, { description: 'Firefox cancelled profile-list transport' }),
+                });
             });
         } finally {
             fixture.releaseProfileLists();
-            await setContentViewport(driver, null);
         }
 
         const editorUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?cid=900001`;
