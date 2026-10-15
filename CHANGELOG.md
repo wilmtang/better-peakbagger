@@ -121,7 +121,8 @@
 
 - **Preserve confirmed climber changes.** Pending profile actions retain
   keyboard focus, unreadable saved Favorites survive edits, and Buddy refreshes
-  cannot overwrite a newer confirmed membership change.
+  cannot overwrite a newer confirmed membership change. Buddy List recovery
+  also works on Chrome 128 when it omits the sender page URL.
 
 ## 3.9.2 — 2026-10-09
 

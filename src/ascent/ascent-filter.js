@@ -643,8 +643,12 @@ const readRenderedBuddyList = () => {
 // Options reads only its own helper tab. A storage notification from another
 // page is a wake-up cue, never proof that this navigation succeeded.
 if (isBuddyListPage) chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type !== F.BUDDY_PAGE_READ_TYPE || sender.id !== chrome.runtime.id
-        || sender.url?.split(/[?#]/)[0] !== chrome.runtime.getURL('options/favorites.html')) return;
+    // Chrome 128 omits the URL on tabs.sendMessage but authenticates the
+    // extension origin. Keep the narrower page check whenever a URL exists.
+    const ownPage = sender.url === undefined
+        ? sender.origin === chrome.runtime.getURL('').replace(/\/$/, '')
+        : typeof sender.url === 'string' && sender.url.split(/[?#]/)[0] === chrome.runtime.getURL('options/favorites.html');
+    if (message?.type !== F.BUDDY_PAGE_READ_TYPE || sender.id !== chrome.runtime.id || !ownPage) return;
     sendResponse({ url: location.href, cache: readRenderedBuddyList() });
 });
 

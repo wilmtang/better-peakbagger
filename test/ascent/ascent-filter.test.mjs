@@ -618,7 +618,7 @@ test('visiting the implicit signed-in Buddy List refreshes the cache without ano
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
 });
 
-test('only the favorites page can read a signed-in Buddy helper snapshot', async () => {
+test('Buddy helper snapshots authenticate the extension and favorites URL or legacy extension origin', async () => {
     const listeners = [];
     const dom = await loadPage('report-buddy-list.html', {
         fixtures: PAGE_FIXTURES,
@@ -640,6 +640,17 @@ test('only the favorites page can read a signed-in Buddy helper snapshot', async
     dom.window.Date.now = () => published.fetchedAt + 1000;
     assert.deepEqual(JSON.parse(JSON.stringify(read(sender).cache)), published,
         'reading the helper later acknowledges the exact published report without refreshing its age');
+    const legacy = { id: sender.id, origin: dom.chrome.runtime.getURL('').replace(/\/$/, '') };
+    assert.equal(read(legacy)?.cache?.entries?.length, 6,
+        'Chrome 128 supplies the extension origin but omits the sender URL');
+    for (const untrusted of [
+        { ...legacy, id: 'another-extension' },
+        { ...legacy, origin: 'https://peakbagger.com' },
+        { id: sender.id },
+        { ...legacy, url: dom.chrome.runtime.getURL('options/options.html') },
+        { ...legacy, url: null },
+        { ...legacy, url: '' },
+    ]) assert.equal(read(untrusted), undefined);
     assert.equal(read({ ...sender, id: 'another-extension' }), undefined);
     assert.equal(read({ ...sender, url: 'https://peakbagger.com/report/report.aspx?r=b' }), undefined);
     dom.window.close();
