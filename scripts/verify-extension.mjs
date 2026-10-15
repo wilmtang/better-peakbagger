@@ -1185,9 +1185,28 @@ try {
         await optionsPage.evaluate(({ signedInBuddyUrl, buddyListFixture }) => {
             window.__bpbNativeFetch = window.fetch;
             window.__bpbBuddyRequests = 0;
+            window.__bpbBuddyRequestTimes = [];
+            window.__bpbBuddyHelperReads = [];
+            window.__bpbNativeTabMessage = chrome.tabs.sendMessage;
+            chrome.tabs.sendMessage = function (...args) {
+                if (args[1]?.type !== 'BUDDY_PAGE_READ' || typeof args.at(-1) !== 'function') {
+                    return window.__bpbNativeTabMessage.apply(chrome.tabs, args);
+                }
+                const callback = args.at(-1);
+                const record = { at: Date.now(), tabId: args[0] };
+                window.__bpbBuddyHelperReads.push(record);
+                args[args.length - 1] = response => {
+                    Object.assign(record, { done: Date.now(), error: chrome.runtime.lastError?.message,
+                        url: response?.url, fetchedAt: response?.cache?.fetchedAt,
+                        ownerCid: response?.cache?.ownerCid, entries: response?.cache?.entries?.length });
+                    callback(response);
+                };
+                return window.__bpbNativeTabMessage.apply(chrome.tabs, args);
+            };
             window.fetch = async (input, init) => {
                 if (String(input) !== signedInBuddyUrl) return window.__bpbNativeFetch(input, init);
                 const request = ++window.__bpbBuddyRequests;
+                window.__bpbBuddyRequestTimes.push(Date.now());
                 if (request === 1) {
                     return { status: 200, headers: {}, text: async () => buddyListFixture };
                 }
@@ -1288,11 +1307,16 @@ try {
             timeoutMs: 20_000,
         }).catch(() => readFallbackImport());
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
-        await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
+        await optionsPage.evaluate(() => {
+            window.fetch = window.__bpbNativeFetch;
+            chrome.tabs.sendMessage = window.__bpbNativeTabMessage;
+        });
         const fallbackDebug = await optionsPage.evaluate(async () => ({
             importStatus: document.getElementById('favorites-import-status')?.textContent || '',
             cache: (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache || null,
             favorites: (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
+            requestTimes: window.__bpbBuddyRequestTimes,
+            helperReads: window.__bpbBuddyHelperReads,
         }));
         // Import success can precede the asynchronous tabs.remove close event.
         const fallbackCleanup = await waitForBuddyHelperCleanup(context, fallbackBuddyUrl, workingBuddyPage)
