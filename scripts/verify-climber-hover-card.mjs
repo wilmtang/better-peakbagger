@@ -25,6 +25,20 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                         && (rect.bottom <= anchor.top || rect.top >= anchor.bottom)
                         && getComputedStyle(card).opacity === '1'
                         && card.getAnimations().every(animation => animation.playState === 'finished');
+                }).catch(async error => {
+                    const state = await evaluate(() => {
+                        const card = document.getElementById('bpb-climber-card');
+                        const bounds = node => node?.getBoundingClientRect().toJSON();
+                        return { hidden: card?.hidden, card: bounds(card),
+                            anchor: bounds(document.getElementById('hover-climber')),
+                            heading: bounds(card?.querySelector('.bpb-climber-card-heading')),
+                            feedback: bounds(card?.querySelector('.bpb-climber-card-feedback')),
+                            main: bounds(card?.querySelector('.bpb-climber-card-main')),
+                            viewport: { width: innerWidth, height: innerHeight },
+                            opacity: card && getComputedStyle(card).opacity,
+                            animations: card?.getAnimations().map(animation => animation.playState) };
+                    });
+                    throw new Error(`Climber card ${name}/${theme}/${width} did not settle: ${JSON.stringify(state)}`, { cause: error });
                 });
                 const geometry = await evaluate(() => {
                     const card = document.getElementById('bpb-climber-card');
