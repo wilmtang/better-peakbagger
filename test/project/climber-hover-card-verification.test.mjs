@@ -60,3 +60,27 @@ test('hover-card placement tolerates Firefox layout rounding while rejecting vis
     card.style.opacity = '0.5';
     assert.equal(ready(), false);
 });
+
+test('failed keyboard reopening reports the live state without retrying or replacing its cause', async t => {
+    const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger" aria-expanded="false"></button><div id="bpb-climber-card" hidden></div>', { runScripts: 'outside-only' });
+    t.after(() => dom.window.close());
+    const { window } = dom;
+    window.document.getElementById('hover-climber').scrollIntoView = () => {};
+    window.document.getElementById('bpb-climber-card').matches = () => false;
+    for (const node of window.document.body.children) node.getBoundingClientRect = () => ({ toJSON: () => ({ top: 0, bottom: 0 }) });
+    const primary = new Error('keyboard opening timed out');
+    let waits = 0, keys = 0;
+    await assert.rejects(prepareClimberCardViewport({
+        evaluate: fn => window.eval(`(${fn.toString()})()`), resize: async () => {},
+        key: async () => { keys++; },
+        wait: async () => { if (++waits === 2) throw primary; },
+    }, 320, 760), error => {
+        assert.equal(error.cause, primary);
+        assert.match(error.message, /did not reopen at 320x760/);
+        assert.match(error.message, /"hidden":true/);
+        assert.match(error.message, /"expanded":"false"/);
+        return true;
+    });
+    assert.equal(keys, 1);
+    assert.equal(waits, 2);
+});

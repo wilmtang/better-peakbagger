@@ -34,6 +34,20 @@ export async function prepareClimberCardViewport({ evaluate, resize, key, wait }
         const card = document.getElementById('bpb-climber-card');
         return !card.hidden && card.contains(document.activeElement)
             && !card.querySelector('[aria-busy="true"]');
+    }).catch(async error => {
+        const state = await evaluate(() => {
+            const card = document.getElementById('bpb-climber-card');
+            const trigger = document.querySelector('#hover-climber + .bpb-climber-actions-trigger');
+            const bounds = node => node?.getBoundingClientRect().toJSON();
+            return { hidden: card.hidden, popover: card.matches(':popover-open'),
+                active: document.activeElement?.outerHTML.slice(0, 500),
+                expanded: trigger?.getAttribute('aria-expanded'), busy: !!card.querySelector('[aria-busy="true"]'),
+                anchor: bounds(document.getElementById('hover-climber')), trigger: bounds(trigger), card: bounds(card),
+                viewport: { width: innerWidth, height: innerHeight },
+                visualViewport: { width: globalThis.visualViewport?.width, height: globalThis.visualViewport?.height,
+                    top: globalThis.visualViewport?.offsetTop, left: globalThis.visualViewport?.offsetLeft } };
+        });
+        throw new Error(`Climber card did not reopen at ${width}x${height}: ${JSON.stringify(state)}`, { cause: error });
     });
 }
 
