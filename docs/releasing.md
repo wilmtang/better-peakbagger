@@ -31,6 +31,11 @@ tests, lint, production packaging, archive validation, and current/floor browser
 checks used for publication. A rehearsal proves package readiness for its commit;
 a later tag still reruns the gates for its own commit.
 
+Keep the candidate fixed while CI and the rehearsal run. Any code, metadata,
+test, or workflow change requires new evidence for the resulting commit. Use a
+fresh rehearsal after a failed rehearsal; rerunning a failed job is diagnostic
+work, not three consecutive successes for a new candidate.
+
 Manual rehearsals require three consecutive successes per browser by default,
 using the same archive bytes with fresh disposable profiles. Choose one or five
 with `-f repetitions=1` or `-f repetitions=5`. Every requested repetition must
@@ -269,16 +274,44 @@ visible in the AMO Developer Hub.
    for Testing and current Firefox. Record all four exact browser versions;
    these desktop checks do not replace the Firefox Android 142+ device step.
 
-4. Review the four stamped files, commit them, and create only the exact tag
-   after every gate above passes:
+4. Review the four stamped files and commit them. Push main, wait for its Test
+   workflow, and run the read-only rehearsal above on that exact commit. Include
+   any coordinated changes before starting this verification; changing the
+   candidate afterward invalidates both runs.
 
    ```sh
    git add manifest.json package.json package-lock.json CHANGELOG.md
    git commit -m "chore: release X.Y.Z"
-   git tag vX.Y.Z
+   git push origin main
+   # Wait for main CI, then dispatch and wait for the three-pass rehearsal.
+   npm run release:preflight -- vX.Y.Z --ci-run CI_RUN_ID --rehearsal-run REHEARSAL_RUN_ID --output /private/tmp/bpb-vX.Y.Z-preflight.json
+   git tag vX.Y.Z COMMIT_SHA_FROM_RECEIPT
    npm run release:check -- vX.Y.Z
    git push --atomic origin main refs/tags/vX.Y.Z
    ```
+
+   `release:preflight` is read-only: it creates no commit, tag, deployment, or
+   store submission. It requires clean local main, its tracking ref, and the
+   live remote main to agree; the candidate tag must be unused. It checks
+   metadata and changelog history, then pins the exact successful main CI and
+   first-attempt rehearsal. All required jobs must succeed, both store jobs
+   must be skipped, and all current/floor browser passes must include teardown.
+   A one-pass rehearsal cannot authorize tagging. It downloads the rehearsal's
+   exact artifact, checks both archive hashes against its commit identity, and
+   removes the temporary download even on failure. The receipt records the
+   run, attempt, artifact, hashes, and active protection IDs. Keep it outside
+   the checkout; an existing output file is never overwritten.
+
+   It also reruns the dependency audit with the release workflow's exact policy,
+   so a green run cannot carry an advisory exception past its expiry.
+
+   The command also requires active strict main checks, deletion/non-fast-forward
+   protections for main and v* tags, no tag-rule bypass, and a required reviewer
+   on the tag-only `browser-stores` environment. It inspects settings without
+   changing them or reading store credentials. It rechecks the candidate and
+   remote main before completing. Run it immediately before tagging and use
+   the receipt's full commit SHA, not a moving branch name. This receipt is
+   preparation evidence; the tag's own checks and store review remain required.
 
    The atomic push prevents the branch and release tag from reaching the
    remote independently and does not include unrelated local tags. Release CI

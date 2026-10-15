@@ -220,6 +220,7 @@ script is added or removed without updating it.
 | `npm run build:firefox -- CHROME.zip FIREFOX.zip` | Derives the Firefox store ZIP from the verified Chrome ZIP, changing only Firefox-specific manifest presentation. |
 | `npm run release:bump X.Y.Z` | From a clean synchronized `main`, validates and stamps release metadata and the UTC changelog date; deliberately creates no commit or tag before verification. |
 | `npm run release:check -- vX.Y.Z` | Validates an exact release tag, synchronized versions, stable Gecko identity, store description, and changelog heading. |
+| `npm run release:preflight -- vX.Y.Z --ci-run ID --rehearsal-run ID` | Read-only pre-tag gate: pins successful CI, fresh consecutive rehearsal passes, archive hashes and publication safeguards to clean synchronized main. Emits a receipt; creates no tag or submission. |
 | `npm run release:check-history` | Fails when already-released changelog sections or tags have been rewritten; CI runs it with full Git history. |
 | `npm run release:check:firefox-version -- X.Y.Z --require-unused` | Authenticates to AMO for a read-only exact-version lookup and fails unless the Firefox version is unused; both release and guarded Firefox-only recovery workflows run it before submission. |
 | `npm run release:metadata:firefox` | Converts the canonical store description into the AMO metadata JSON used for submission. |

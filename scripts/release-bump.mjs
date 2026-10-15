@@ -161,7 +161,9 @@ async function main() {
 
     console.log(`\nStamped release ${tag} metadata with the ${today} UTC release date.`);
     console.log('No commit or tag was created. Review the diff and run every release gate first.');
-    console.log(`After committing and tagging only the verified commit, push with:\n  git ${
+    console.log('Commit and push main, wait for CI and a fresh three-pass rehearsal, then run:');
+    console.log(`  npm run release:preflight -- ${tag} --ci-run CI_RUN_ID --rehearsal-run REHEARSAL_RUN_ID`);
+    console.log(`After tagging the exact commit from that receipt, push with:\n  git ${
         atomicReleasePushArgs(tag).join(' ')}`);
 }
 

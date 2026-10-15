@@ -48,6 +48,7 @@
     "build:firefox": "node scripts/build-firefox-package.mjs",
     "release:bump": "node scripts/release-bump.mjs",
     "release:check": "node scripts/release-check.mjs",
+    "release:preflight": "node scripts/release-preflight.mjs",
     "release:check:firefox-version": "node scripts/check-amo-version.mjs",
     "release:check-history": "node scripts/check-changelog-history.mjs",
     "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
