@@ -5,18 +5,32 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { climberCardPlacementReady, prepareClimberCardViewport } from '../../scripts/verify-climber-hover-card.mjs';
 
-test('viewport captures retain card focus before resizing moves the pointer away', async t => {
-    const dom = new JSDOM('<a id="hover-climber"></a><div id="bpb-climber-card"><button class="bpb-climber-card-close">Close</button></div>', { runScripts: 'outside-only' });
+test('viewport captures close before repositioning and reopen with keyboard focus after the anchor settles', async t => {
+    const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger"></button><div id="bpb-climber-card"><button class="bpb-climber-card-close">Close</button></div>', { runScripts: 'outside-only' });
     t.after(() => dom.window.close());
     const { window } = dom;
     const card = window.document.getElementById('bpb-climber-card');
-    window.document.getElementById('hover-climber').scrollIntoView = () => {};
+    const anchor = window.document.getElementById('hover-climber');
+    const events = [];
+    anchor.scrollIntoView = () => events.push('scroll');
+    anchor.getBoundingClientRect = () => ({ top: 100, bottom: 120 });
+    Object.assign(window, { innerWidth: 1000, innerHeight: 760 });
     await prepareClimberCardViewport({
         evaluate: fn => window.eval(`(${fn.toString()})()`),
-        resize: async () => assert.equal(card.contains(window.document.activeElement), true,
-            'a settled mutation can leave focus on body; resizing then permits the pointer-close timer'),
-        click: async () => assert.fail('an already open card must retain its current state'),
+        resize: async () => {
+            assert.equal(card.hidden, true, 'do not race an open card against viewport and scroll repositioning');
+            events.push('resize');
+        },
+        key: async (selector, value) => {
+            events.push(value);
+            card.hidden = value === 'Escape';
+            if (!card.hidden) card.querySelector('button').focus();
+        },
+        wait: async fn => assert.ok(window.eval(`(${fn.toString()})()`)),
+        click: async () => assert.fail('reopening must use the already verified keyboard action'),
     }, 1000, 760);
+    assert.deepEqual(events, ['Escape', 'resize', 'scroll', 'Enter']);
+    assert.equal(card.contains(window.document.activeElement), true);
 });
 
 test('hover-card placement tolerates Firefox layout rounding while rejecting visible overlap and unfinished paint', t => {

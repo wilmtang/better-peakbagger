@@ -15,19 +15,26 @@ export function climberCardPlacementReady() {
         && card.getAnimations().every(animation => animation.playState === 'finished');
 }
 
-export async function prepareClimberCardViewport({ evaluate, resize, click }, width, height) {
-    // Membership buttons can lose native focus while disabled. Keep the
-    // capture's open card owned before resizing moves the pointer elsewhere;
-    // otherwise its legitimate pointer-departure timer can close it mid-probe.
-    await evaluate(() => {
-        const card = document.getElementById('bpb-climber-card');
-        if (!card.hidden) card.querySelector('.bpb-climber-card-close').focus({ preventScroll: true });
-    });
+export async function prepareClimberCardViewport({ evaluate, resize, key, wait }, width, height) {
+    // Resizing and recentering can legitimately move an open card's anchor
+    // offscreen. Establish each geometry sample before explicitly reopening;
+    // hover travel and keyboard ownership are tested separately below.
+    if (!await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
+        await key('.bpb-climber-card-close', 'Escape');
+        await wait(() => document.getElementById('bpb-climber-card').hidden);
+    }
     await resize(width, height);
     await evaluate(() => document.getElementById('hover-climber').scrollIntoView({ block: 'center' }));
-    if (await evaluate(() => document.getElementById('bpb-climber-card').hidden)) {
-        await click('#hover-climber + .bpb-climber-actions-trigger');
-    }
+    await wait(() => {
+        const anchor = document.getElementById('hover-climber').getBoundingClientRect();
+        return anchor.top >= 0 && anchor.bottom <= innerHeight;
+    });
+    await key('#hover-climber + .bpb-climber-actions-trigger', 'Enter');
+    await wait(() => {
+        const card = document.getElementById('bpb-climber-card');
+        return !card.hidden && card.contains(document.activeElement)
+            && !card.querySelector('[aria-busy="true"]');
+    });
 }
 
 // Drive the actual isolated-world bundle through native input, shared by the
@@ -35,7 +42,7 @@ export async function prepareClimberCardViewport({ evaluate, resize, click }, wi
 export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key, resize, screenshot }) {
     const capture = async name => {
         for (const [width, height] of [[1000, 760], [480, 760], [360, 760], [320, 760]]) {
-            await prepareClimberCardViewport({ evaluate, resize, click }, width, height);
+            await prepareClimberCardViewport({ evaluate, resize, key, wait }, width, height);
             for (const theme of ['light', 'dark']) {
                 await evaluate(theme === 'dark'
                     ? () => { document.documentElement.dataset.bpbTheme = 'dark'; }
