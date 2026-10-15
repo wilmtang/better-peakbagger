@@ -76,6 +76,17 @@ export async function waitForCondition(read, {
     throw new Error(`Timed out waiting for ${description} (${detail})`);
 }
 
+export async function waitForBuddyHelperCleanup(context, buddyUrl, workingPage, options = {}) {
+    return waitForCondition(() => {
+        const pages = context.pages();
+        const urls = pages.map(page => page.url());
+        return { urls, closed: pages.includes(workingPage) && workingPage.url() === buddyUrl
+            && urls.filter(url => url === buddyUrl).length === 1
+            && !urls.some(url => /\/options\/buddy-refresh\.html(?:#|$)/.test(url)) };
+    }, { description: 'Buddy helper teardown with the original page preserved', timeoutMs: 5000,
+        ...options, isReady: state => state.closed });
+}
+
 // Playwright's waitForFunction polls the immediate return value. An async
 // predicate returns a truthy Promise even when it later resolves to false.
 // Await each page read in the driver before deciding whether polling is done.

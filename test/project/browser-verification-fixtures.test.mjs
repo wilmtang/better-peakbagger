@@ -15,6 +15,7 @@ import {
     readScaleChartState,
     readSunCalculatorGeometry,
     waitForCondition,
+    waitForBuddyHelperCleanup,
     waitForPageCondition,
     waitForWindowUrl,
     webdriverScript,
@@ -25,6 +26,21 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('Buddy import waits for asynchronous helper teardown and preserves the original page', async () => {
+    const url = 'https://www.peakbagger.com/report/report.aspx?r=b';
+    const working = { url: () => url }, helper = { url: () => url };
+    let reads = 0;
+    const context = { pages: () => ++reads < 3 ? [working, helper] : [working] };
+    const result = await waitForBuddyHelperCleanup(context, url, working, { intervalMs: 1 });
+    assert.equal(result.closed, true, 'import completion precedes the helper tab close event');
+    assert.ok(reads >= 3);
+    assert.deepEqual(result.urls, [url]);
+    for (const pages of [[helper], [working, { url: () => 'chrome-extension://fixture/options/buddy-refresh.html' }]]) {
+        await assert.rejects(waitForBuddyHelperCleanup({ pages: () => pages }, url, working,
+            { timeoutMs: 0, intervalMs: 1 }), /original page preserved/);
+    }
+});
 
 test('the captured peak report fixture loads a served HTTPS map instead of an MHTML archive frame', async () => {
     const html = await readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8');

@@ -42,6 +42,7 @@ import {
     surfaceSelectors,
     verificationViewport,
     waitForCondition,
+    waitForBuddyHelperCleanup,
     waitForPageCondition
 } from './browser-verification-fixtures.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
@@ -1293,10 +1294,11 @@ try {
             cache: (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache || null,
             favorites: (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
         }));
-        const fallbackPageUrls = context.pages().map(page => page.url());
-        const fallbackTabClosed = context.pages().filter(page => page.url() === fallbackBuddyUrl).length === 1
-            && context.pages().includes(workingBuddyPage)
-            && !fallbackPageUrls.some(url => /\/options\/buddy-refresh\.html(?:#|$)/.test(url));
+        // Import success can precede the asynchronous tabs.remove close event.
+        const fallbackCleanup = await waitForBuddyHelperCleanup(context, fallbackBuddyUrl, workingBuddyPage)
+            .catch(() => ({ closed: false, urls: context.pages().map(page => page.url()) }));
+        const fallbackPageUrls = fallbackCleanup.urls;
+        const fallbackTabClosed = fallbackCleanup.closed;
         check(buddyRequests === 4
             && fixture.requests.buddyReports >= 2
             && fallbackImport?.count === 6
