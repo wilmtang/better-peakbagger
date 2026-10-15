@@ -57,6 +57,7 @@ import { createResourceStack } from './resource-stack.mjs';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
+import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
 
 assertChromeLaunchAllowed();
 
@@ -1183,6 +1184,7 @@ try {
         // The custom-list workspace is its own page now; drive it there, then
         // return optionsPage to Settings for the sidebar and backup checks.
         await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html`);
+        await optionsPage.evaluate(installBuddyTabDiagnostics);
         await optionsPage.evaluate(({ signedInBuddyUrl, buddyListFixture }) => {
             window.__bpbNativeFetch = window.fetch;
             window.__bpbBuddyRequests = 0;
@@ -1370,6 +1372,7 @@ try {
         await optionsPage.evaluate(() => {
             window.fetch = window.__bpbNativeFetch;
             chrome.tabs.sendMessage = window.__bpbNativeTabMessage;
+            window.__bpbBuddyTabDiagnostics.restore();
         });
         const fallbackDebug = await optionsPage.evaluate(async () => ({
             importStatus: document.getElementById('favorites-import-status')?.textContent || '',
@@ -1377,6 +1380,7 @@ try {
             favorites: (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
             requestTimes: window.__bpbBuddyRequestTimes,
             helperReads: window.__bpbBuddyHelperReads,
+            tabCalls: window.__bpbBuddyTabDiagnostics.events,
         }));
         // Import success can precede the asynchronous tabs.remove close event.
         const fallbackCleanup = await waitForBuddyHelperCleanup(context, fallbackBuddyUrl, workingBuddyPage)
