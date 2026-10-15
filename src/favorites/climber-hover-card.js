@@ -220,7 +220,9 @@ const mount = () => {
         rememberFocusContext(current);
         const rect = current.anchor.getBoundingClientRect();
         const viewport = window.visualViewport;
-        const leftEdge = viewport?.offsetLeft || 0, topEdge = viewport?.offsetTop || 0;
+        // Firefox can briefly report -scrollY during a resize. Negative
+        // offsets must not move the visible band away from onscreen anchors.
+        const leftEdge = Math.max(0, viewport?.offsetLeft || 0), topEdge = Math.max(0, viewport?.offsetTop || 0);
         const width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
         if (rect.bottom < topEdge || rect.top > topEdge + height) { close({ restore: true }); return; }
         card.style.maxWidth = `${Math.max(0, width - 24)}px`;

@@ -43,6 +43,7 @@
   through loading, completion, failure, and recovery. Weather day expansion
   keeps page context, and compact feedback remains visible at narrow widths.
   Large ascent lists add climber actions without repeatedly laying out the table.
+  Climber actions remain open for visible names after a Firefox resize.
 
 - **Preserve confirmed climber changes.** Pending profile actions retain
   keyboard focus, unreadable saved Favorites survive edits, and Buddy refreshes

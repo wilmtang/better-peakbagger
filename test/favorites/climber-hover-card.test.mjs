@@ -47,6 +47,45 @@ const pointer = (dom, node, type, relatedTarget = null) => {
     node.dispatchEvent(event);
 };
 
+test('negative visual viewport offsets preserve visible cards while panning and offscreen dismissal remain valid', async t => {
+    const viewport = { offsetTop: -1510.9832763671875, offsetLeft: 0, width: 988, height: 760 };
+    const rect = { left: 24, right: 330.3833312988281, top: 639.5, bottom: 656.5, width: 306.3833312988281, height: 17 };
+    const dom = await load({ prepare: page => {
+        const visual = Object.assign(new page.window.EventTarget(), viewport);
+        Object.defineProperty(page.window, 'visualViewport', { value: visual, configurable: true });
+        Object.assign(page.window, { innerWidth: 1000, innerHeight: 760 });
+        const anchor = page.window.document.getElementById('casey');
+        anchor.getBoundingClientRect = () => ({ ...rect });
+        anchor.getClientRects = () => [{ ...rect }];
+    } });
+    t.after(() => dom.window.close());
+    const visual = dom.window.visualViewport;
+    const card = dom.window.document.getElementById('bpb-climber-card');
+    const trigger = dom.window.document.getElementById('casey').nextElementSibling;
+    fireTrustedEvent(trigger, 'click');
+    assert.equal(card.hidden, false, 'captured Firefox resize geometry must not dismiss an onscreen anchor');
+    assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+    assert.equal(card.contains(dom.window.document.activeElement), true);
+    visual.offsetLeft = -1200;
+    dom.window.dispatchEvent(new dom.window.Event('resize'));
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+    assert.ok(parseFloat(card.style.left) >= 12);
+    assert.equal(card.hidden, false);
+    fireTrustedEvent(card, 'keydown', { key: 'Escape', bubbles: true });
+    Object.assign(visual, { offsetTop: 200, offsetLeft: 100, width: 800, height: 400 });
+    Object.assign(rect, { left: 125, right: 255, top: 250, bottom: 267, width: 130 });
+    fireTrustedEvent(trigger, 'click');
+    assert.equal(card.hidden, false, 'positive viewport panning remains supported');
+    assert.ok(parseFloat(card.style.left) >= 112);
+    Object.assign(rect, { top: 50, bottom: 67 });
+    dom.window.document.dispatchEvent(new dom.window.Event('scroll'));
+    await waitFor(dom, () => card.hidden);
+    Object.assign(visual, { offsetTop: -1510.9832763671875, offsetLeft: 0, width: 988, height: 760 });
+    Object.assign(rect, { top: 1000, bottom: 1017 });
+    fireTrustedEvent(trigger, 'click');
+    assert.equal(card.hidden, true, 'a genuinely offscreen anchor must still dismiss');
+});
+
 test('large climber lists measure visibility before inserting any action wrappers', async t => {
     const firstReads = new Map();
     const dom = await load({ prepare: page => {
