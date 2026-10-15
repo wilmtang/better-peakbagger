@@ -3671,7 +3671,7 @@ test('peak response structure and route-match fanout fail closed at their exact 
     });
 });
 
-test('production-point analysis yields to status and cancellation messages', async () => {
+test('production-point analysis yields to status and cancellation messages', { timeout: 15_000 }, async () => {
     const baseTime = Date.UTC(2026, 6, 1, 15);
     const segment = Array.from({ length: 20_000 }, (_, index) => ({
         lat: Math.sin(index / 7) * 0.0001,
@@ -3681,6 +3681,8 @@ test('production-point analysis yields to status and cancellation messages', asy
     }));
     const peakXml = `<p>${Array.from({ length: 5_000 }, (_, index) =>
         `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="${-0.3 + index * 0.6 / 4_999}" e="4265.1" r="100"/>`).join('')}</p>`;
+    const analysisYield = Promise.withResolvers();
+    let analysisYielded = false;
     const harness = createHarness({
         captureResult: {
             ok: true,
@@ -3690,24 +3692,68 @@ test('production-point analysis yields to status and cancellation messages', asy
             segments: [segment],
         },
         peakXml,
+        workerTimer: (callback, delay, ...args) => {
+            // A request being dispatched is too early: cancellation could pass
+            // without ever competing with CPU analysis. Observe the real task
+            // yield after all summit responses, without delaying its callback.
+            if (delay === 0 && harness.values.bpbCaptureJobs?.['1']?.phase === 'preparing-results') {
+                analysisYielded = true;
+                analysisYield.resolve();
+            }
+            return setTimeout(callback, delay, ...args);
+        },
     });
     const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
-    await waitForCondition(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
-    const responseStartedAt = Date.now();
-    const [status, cancelled] = await Promise.race([
-        Promise.all([
-            harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
-            harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
-        ]),
-        new Promise((_, reject) => setTimeout(
-            () => reject(new Error('analysis did not yield to status and cancellation')), 500,
-        )),
-    ]);
-    assert.ok(status, 'the concurrent status request observes the live generation');
-    assert.equal(cancelled.cancelled, true);
-    assert.ok(Date.now() - responseStartedAt < 500);
-    assert.equal(await capture, null);
-    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    const state = () => JSON.stringify({
+        phase: harness.values.bpbCaptureJobs?.['1']?.phase,
+        providerCalls: harness.providerCaptureCalls.length,
+        summitRequests: harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length,
+        analysisYielded,
+    });
+    let timer;
+    try {
+        // Setup is not the responsiveness measurement. Give the production-size
+        // fixture its own bounded budget and preserve the actual phase on error.
+        await Promise.race([
+            analysisYield.promise,
+            capture.then(result => {
+                if (!analysisYielded) throw new Error(
+                    `capture finished before an analysis task yield: ${state()}; result=${JSON.stringify(result)}`,
+                );
+            }),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`analysis setup timed out: ${state()}`)), 10_000);
+            }),
+        ]);
+        clearTimeout(timer);
+        const responseStartedAt = Date.now();
+        const [status, cancelled] = await Promise.race([
+            Promise.all([
+                harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
+                harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+            ]),
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(
+                    `analysis did not yield to status and cancellation: ${state()}`,
+                )), 500);
+            }),
+        ]);
+        assert.ok(status, 'the concurrent status request observes the live generation');
+        assert.equal(status.phase, 'preparing-results');
+        assert.equal(cancelled.cancelled, true);
+        assert.ok(Date.now() - responseStartedAt < 500);
+        assert.equal(await capture, null);
+        assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    } finally {
+        clearTimeout(timer);
+        // A setup/assertion failure must not leave analysis running into later
+        // tests. Cleanup is bounded and must not replace the original failure.
+        await Promise.race([
+            harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }).then(() => capture),
+            new Promise(resolve => { timer = setTimeout(resolve, 1000); }),
+        ]);
+        clearTimeout(timer);
+    }
 });
 
 test('successful captures are reused but recoverable errors are re-evaluated on the next gesture', async t => {
