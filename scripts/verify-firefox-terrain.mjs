@@ -9,6 +9,7 @@ import { mkdir } from 'node:fs/promises';
 
 import { firefox } from 'playwright';
 import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
+import { waitForPeakPopupSnapshot } from './verify-terrain-popup.mjs';
 
 import {
     createFixtureCertificate,
@@ -557,14 +558,10 @@ async function main() {
                 // pointer hit-testing is covered by the Chrome popup matrix.
                 await peakFrame.locator('.bpb-terrain-peak-marker[aria-label="Mount Shuksan"]').focus();
                 await page.keyboard.press('Enter');
-                const link = peakFrame.locator('.bpb-peak-popup a');
-                const state = await page.waitForFunction(() => {
-                    const win = document.getElementById('bpb-terrain-frame').contentWindow;
-                    return win.document.querySelector('.bpb-peak-popup a') || !win.__bpbPeakNameMarker.isConnected;
-                }).then(() => peakFrame.locator('body').evaluate(() => ({ replaced: !window.__bpbPeakNameMarker.isConnected })));
+                const state = await waitForPeakPopupSnapshot(page);
                 if (state.replaced) continue;
-                assert.equal(await link.textContent(), 'Mount Shuksan');
-                assert.match(await link.getAttribute('href'), /\/peak\.aspx\?pid=2829$/);
+                assert.equal(state.name, 'Mount Shuksan');
+                assert.match(state.href, /\/peak\.aspx\?pid=2829$/);
                 if (peakNameOutput) await page.screenshot({ path: `${peakNameOutput}/firefox-peak-name-${theme}-${width}.png` });
                 const finalState = await peakFrame.locator('body').evaluate(() => ({ replaced: !window.__bpbPeakNameMarker.isConnected,
                     name: document.querySelector('.bpb-peak-popup a')?.textContent }));
