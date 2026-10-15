@@ -723,9 +723,12 @@ async function mapCase(page, origin, variant) {
     const end = source.lastIndexOf('})();');
     await page.addScriptTag({ content: source.slice(0, end) + 'globalThis.__createSentinel = createSentinelLayer;' + source.slice(end) });
     await page.evaluate(() => {
+        globalThis.__layoutCaptures = [0, 1].map(index => ({ key: `capture-${index}`,
+            time: Date.parse('2026-10-08T01:27:00Z') - index * 86400000, platform: 'Sentinel-2B', orbit: '13',
+            scenes: [], coverage: 1, cloud: 98 }));
         globalThis.__sentinel = globalThis.__createSentinel({ document, readView: () => ({ zoom: 12,
             bounds: { getWest: () => -122, getEast: () => -121, getNorth: () => 48, getSouth: () => 47 } }), replaceScenes() {}, clearScenes() {},
-        search: () => new Promise((resolve, reject) => { globalThis.__finishScenes = ok => ok ? resolve([])
+        search: () => new Promise((resolve, reject) => { globalThis.__finishScenes = ok => ok ? resolve(globalThis.__layoutCaptures)
             : reject(new Error('Satellite imagery is temporarily unavailable. Please check your connection and try another capture. '.repeat(2))); }) });
         document.getElementById('sentinel-fixture').append(globalThis.__sentinel.element);
         globalThis.__sentinel.activate();
@@ -755,7 +758,8 @@ async function mapCase(page, origin, variant) {
     stable(retry, await geometry(page, '.bpb-sentinel button'), 'Sentinel repeated failure retry');
     await page.click('.bpb-sentinel button');
     await page.evaluate(() => globalThis.__finishScenes(true));
-    await page.locator('.bpb-sentinel-summary').filter({ hasText: 'No captures found' }).waitFor();
+    await page.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage 100%' }).waitFor();
+    assert.equal(await page.locator('.bpb-sentinel select option').count(), 2, 'each capture appears once');
     stable(picker, await geometry(page, '.bpb-sentinel select'), 'Sentinel completed picker');
     await compactBottom();
     await capture(page, `${variant.name}-sentinel-compact`);
@@ -782,7 +786,7 @@ async function mapCase(page, origin, variant) {
         document.body.append(root);
         globalThis.__topSentinel = globalThis.__createSentinel({ document, readView: () => ({ zoom: 12,
             bounds: { getWest: () => -122, getEast: () => -121, getNorth: () => 48, getSouth: () => 47 } }), replaceScenes() {}, clearScenes() {},
-        search: () => new Promise((resolve, reject) => { globalThis.__finishTopScenes = ok => ok ? resolve([])
+        search: () => new Promise((resolve, reject) => { globalThis.__finishTopScenes = ok => ok ? resolve(globalThis.__layoutCaptures)
             : reject(new Error('Satellite imagery is temporarily unavailable. Check your connection and try another capture. '.repeat(2))); }) });
         root.querySelector('.bpb-terrain-controls').append(globalThis.__topSentinel.element);
         globalThis.__topSentinel.activate();
@@ -805,7 +809,8 @@ async function mapCase(page, origin, variant) {
     stable(topRetry, await geometry(page, '#bpb-terrain-map .bpb-sentinel button'), '3D Sentinel pending retry');
     stable(topPanel, await geometry(page, '#bpb-terrain-map .bpb-sentinel'), '3D Sentinel pending panel');
     await page.evaluate(() => globalThis.__finishTopScenes(true));
-    await page.locator('#bpb-terrain-map .bpb-sentinel-summary').filter({ hasText: 'No captures found' }).waitFor();
+    await page.locator('#bpb-terrain-map .bpb-sentinel-stats').filter({ hasText: 'Coverage 100%' }).waitFor();
+    assert.equal(await page.locator('#bpb-terrain-map .bpb-sentinel select option').count(), 2, '3D shares the unique capture list');
     stable(topPicker, await geometry(page, '#bpb-terrain-map .bpb-sentinel select'), '3D Sentinel completed picker');
     await compactTop();
     await capture(page, `${variant.name}-3d-sentinel-compact`);

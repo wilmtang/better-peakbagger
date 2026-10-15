@@ -136,14 +136,17 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
         const latest = captures[0] ? captureOption(captures[0], 'latest', true) : ownerDocument.createElement('option');
         if (!captures[0]) { latest.value = 'latest'; latest.textContent = 'Latest capture'; }
         options.push(latest);
-        for (const candidate of captures) {
+        // The latest option already represents the first capture. Keep only
+        // older captures as dated choices, including when a pinned date becomes
+        // the newest capture in a different view.
+        for (const candidate of captures.slice(1)) {
             options.push(captureOption(candidate, candidate.key));
         }
         if (target && !capture) {
             options.push(captureOption(target, 'missing'));
         }
         select.replaceChildren(...options);
-        select.value = target ? capture?.key || 'missing' : 'latest';
+        select.value = target && (!capture || capture !== captures[0]) ? capture?.key || 'missing' : 'latest';
         select.title = select.selectedOptions[0]?.title || select.selectedOptions[0]?.textContent || '';
         select.disabled = false;
         renderCapture(capture, retryImagery);

@@ -676,7 +676,7 @@ async function main() {
         await toggle.click();
         const sentinelFrame = page.frameLocator('#bpb-terrain-frame');
         await sentinelFrame.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage' }).waitFor();
-        const dateKey = await sentinelFrame.locator('.bpb-sentinel select option').nth(2).getAttribute('value');
+        const dateKey = await sentinelFrame.locator('.bpb-sentinel select option:not([value="latest"])').first().getAttribute('value');
         const settle = async value => {
             await page.waitForFunction(expected => {
                 const win = document.getElementById('bpb-terrain-frame').contentWindow;

@@ -105,7 +105,7 @@ test('shared Sentinel UI guards late responses, dates, unknown clouds, and dispo
     await tick();
     assert.deepEqual(applied, [['new']]);
     const select = layer.element.querySelector('select');
-    select.value = select.options[2].value;
+    select.value = select.options[1].value;
     select.dispatchEvent(new dom.window.Event('change'));
     assert.deepEqual(applied.at(-1), ['old'], 'a late catalog cannot overwrite current capture choices');
     assert.match(layer.element.textContent, /Clouds unknown/);
@@ -135,7 +135,7 @@ test('compact Sentinel keeps the capture date in the selector and reuses one met
         assert.equal(select.title, 'Latest · 2026-10-07 18:27 PDT · Clouds 41%');
         assert.equal(summary.hidden, true, 'the capture date is not duplicated in a third row');
         assert.match(stats.textContent, /Coverage 100% · Clouds 41%/);
-        select.value = select.options[2].value;
+        select.value = select.options[1].value;
         select.dispatchEvent(new dom.window.Event('change'));
         assert.equal(summary.hidden, true, 'pinned and latest captures use the same layout');
         layer.refresh();
@@ -194,7 +194,7 @@ test('camera refresh updates coverage without rebuilding the same scenes or thei
         assert.equal(cleared, 0);
         assert.match(layer.element.textContent, /Coverage 25%/);
         const select = layer.element.querySelector('select');
-        select.value = select.options[1].value; select.dispatchEvent(new dom.window.Event('change'));
+        select.value = 'latest'; select.dispatchEvent(new dom.window.Event('change'));
         assert.equal(applied.length, 1, 'choosing the already displayed capture also preserves tiles');
         capture = { ...capture, scenes: capture.scenes.map(scene => ({ ...scene, bounds: [179, 46, 181, 47] })) };
         layer.refresh(); t.mock.timers.tick(300); await tick();
@@ -261,9 +261,8 @@ test('confirmed missing captures clear old imagery instead of retaining a differ
     const layer = createSentinelLayer({ document: dom.window.document, readView: () => ({ bounds, zoom: 13 }),
         replaceScenes: () => applied++, clearScenes: () => cleared++, search: async () => captures });
     try {
-        layer.activate(); await tick();
+        layer.activate(captures[0]); await tick();
         const select = layer.element.querySelector('select');
-        select.value = select.options[1].value; select.dispatchEvent(new dom.window.Event('change'));
         captures = []; layer.refresh(); t.mock.timers.tick(300); await tick();
         assert.equal(cleared, 1);
         assert.equal(select.value, 'missing');
@@ -288,18 +287,60 @@ test('Sentinel options include rounded cloud percentages and honest unknowns wit
         await tick();
         const select = layer.element.querySelector('select');
         assert.deepEqual(Array.from(select.options, option => option.textContent), [
-            'Latest · 10-07 18:27 · ☁ 3%', '2026-10-07 18:27 · ☁ 3%', '2026-10-06 18:27 · ☁ 0%',
+            'Latest · 10-07 18:27 · ☁ 3%', '2026-10-06 18:27 · ☁ 0%',
             '2026-10-05 18:27 · ☁ 100%', '2026-10-04 18:27 · ☁ ?'
         ]);
         for (const capture of captures) {
-            select.value = capture.key;
+            select.value = capture === captures[0] ? 'latest' : capture.key;
             select.dispatchEvent(new dom.window.Event('change'));
             const option = select.selectedOptions[0];
             assert.equal(option.getAttribute('aria-label'), select.title);
             assert.match(select.title, /PDT · Clouds (?:3%|0%|100%|unknown)$/);
-            assert.deepEqual(changes.at(-1), { time: capture.time, platform: capture.platform, orbit: capture.orbit });
+            assert.deepEqual(changes.at(-1), capture === captures[0] ? null
+                : { time: capture.time, platform: capture.platform, orbit: capture.orbit });
         }
         assert.equal(searches, 1, 'changing captures reuses cloud metadata from the existing catalog');
+    } finally { layer.dispose(); dom.window.close(); }
+});
+
+test('Sentinel lists each capture once while latest follows the view and pinned dates retain their identity', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dom = new JSDOM('<!doctype html><body></body>');
+    const changes = [], applied = [];
+    const [newest, older] = sentinelCaptures([
+        feature('newest', { date: '2026-10-08T01:27:00Z' }),
+        feature('older', { date: '2026-10-03T19:02:59Z' })
+    ], view);
+    let catalog = [newest, older];
+    const layer = createSentinelLayer({ document: dom.window.document,
+        readView: () => ({ bounds, zoom: 13 }), clearScenes() {},
+        search: async () => catalog, replaceScenes: scenes => applied.push(scenes.map(scene => scene.id)),
+        onCaptureChange: capture => changes.push(capture) });
+    const refresh = async () => { layer.refresh(); t.mock.timers.tick(300); await tick(); };
+    try {
+        layer.activate(); await tick();
+        const select = layer.element.querySelector('select');
+        assert.deepEqual(Array.from(select.options, option => option.value), ['latest', older.key]);
+        assert.deepEqual(applied.at(-1), ['newest']);
+        catalog = [older]; await refresh();
+        assert.equal(select.options.length, 1);
+        assert.equal(select.value, 'latest');
+        assert.deepEqual(applied.at(-1), ['older'], 'automatic latest follows the current view');
+        catalog = [newest, older]; await refresh();
+        select.value = older.key; select.dispatchEvent(new dom.window.Event('change'));
+        assert.deepEqual(changes.at(-1), { time: older.time, platform: older.platform, orbit: older.orbit });
+        catalog = [older]; await refresh();
+        assert.equal(select.options.length, 1, 'a pinned capture that becomes newest is not duplicated');
+        assert.equal(select.value, 'latest');
+        catalog = [newest, older]; await refresh();
+        assert.equal(select.value, older.key, 'sharing the latest row did not discard the pinned date');
+        assert.deepEqual(applied.at(-1), ['older']);
+        select.value = 'latest'; select.dispatchEvent(new dom.window.Event('change'));
+        assert.equal(changes.at(-1), null, 'choosing latest explicitly clears the pin');
+        assert.deepEqual(applied.at(-1), ['newest']);
+        catalog = []; await refresh();
+        assert.equal(select.options.length, 1);
+        assert.equal(select.value, 'latest');
     } finally { layer.dispose(); dom.window.close(); }
 });
 
@@ -324,10 +365,11 @@ test('Sentinel capture labels use the viewed mountain date, DST, unusual offsets
             const select = layer.element.querySelector('select');
             assert.equal(select.options[0].textContent, `Latest · ${expected.slice(5, 16)} · ☁ 3%`);
             assert.equal(select.options[0].title, `Latest · ${expected} · Clouds 3%`);
-            assert.equal(select.options[1].textContent, `${expected.slice(0, 16)} · ☁ 3%`);
-            select.value = capture.key;
-            select.dispatchEvent(new dom.window.Event('change'));
-            assert.equal(select.title, `${expected} · Clouds 3%`);
+            assert.equal(select.options.length, 1, 'a single capture appears only once');
+            layer.activate(capture);
+            await tick();
+            assert.equal(select.value, 'latest', 'a pinned newest capture uses its existing option');
+            assert.equal(select.title, `Latest · ${expected} · Clouds 3%`);
             assert.equal(layer.element.querySelector('.bpb-sentinel-summary').textContent, expected);
             layer.activate({ ...capture, time: capture.time - 86400000 });
             await tick();
@@ -413,10 +455,10 @@ test('Leaflet Sentinel intercepts only its own option, preserves native layers, 
     const oldTile = [...layers].find(layer => layer !== native);
     assert.match(win.document.body.textContent, /Coverage 100% · Clouds 41%/);
     const captureSelect = win.document.querySelector('.bpb-sentinel select');
-    captureSelect.value = captureSelect.options[1].value;
+    captureSelect.value = 'latest';
     captureSelect.dispatchEvent(new win.Event('change'));
     assert.ok(layers.has(oldTile), 'selecting the displayed capture keeps its loaded tiles');
-    captureSelect.value = captureSelect.options[2].value;
+    captureSelect.value = captureSelect.options[1].value;
     captureSelect.dispatchEvent(new win.Event('change'));
     oldTile.tileError();
     assert.doesNotMatch(win.document.body.textContent, /tiles are unavailable/, 'a removed capture cannot report a tile failure on its replacement');

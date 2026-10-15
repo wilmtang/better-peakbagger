@@ -2233,7 +2233,7 @@ test('explicit Sentinel captures survive resume while untouched captures follow 
             dispatch({ type: 'init', ...payload, basemap: { kind: 'sentinel', capture: choice === 'dated' ? null : dated } });
             map.loadCallback(); await new Promise(resolve => setImmediate(resolve));
             const select = dom.window.document.querySelector('.bpb-sentinel select');
-            const dateKey = select.options[2].value;
+            const dateKey = select.options[1].value;
             if (choice) {
                 select.value = choice === 'dated' ? dateKey : 'latest';
                 select.dispatchEvent(new dom.window.Event('change'));

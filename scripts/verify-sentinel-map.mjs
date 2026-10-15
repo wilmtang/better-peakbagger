@@ -113,6 +113,10 @@ try {
             })), native: window.mapsPlaceholder.hasLayer(window.nativeTiles), route: window.mapsPlaceholder.hasLayer(window.nativeRoute) };
     };
     await wait(() => document.querySelector('.bpb-sentinel-stats').textContent.includes('Coverage 100%'), 'dated capture catalog');
+    const captureLabels = await page.locator('.bpb-sentinel select option').evaluateAll(options =>
+        options.map(option => option.title.replace(/^Latest · /, '')));
+    assert.equal(captureLabels.length, catalog.length, 'one picker entry per capture');
+    assert.equal(new Set(captureLabels).size, captureLabels.length, 'latest is not repeated as a dated entry');
     await wait(() => window.imageryOpacity() >= .99, 'fully painted Sentinel tile at the map center');
     await page.evaluate(() => { window.probing = true; });
     const initial = await page.evaluate(snapshot);
@@ -140,7 +144,8 @@ try {
     await page.locator('.bpb-sentinel button').click();
     await wait(() => document.querySelector('.bpb-sentinel-summary').hidden, 'catalog retry recovers');
     failedTiles = true;
-    await page.locator('.bpb-sentinel select').selectOption({ index: 2 });
+    const olderOption = '.bpb-sentinel select option:not([value="latest"])';
+    await page.locator('.bpb-sentinel select').selectOption(await page.locator(olderOption).first().getAttribute('value'));
     await wait(() => document.querySelector('.bpb-sentinel-summary').textContent.includes('tiles are unavailable'), 'failed imagery exposes retry');
     const failed = await page.evaluate(snapshot), beforeRetry = tileRequests;
     assert.equal(failed.imageAtCenter, false);
@@ -168,6 +173,8 @@ try {
     assert.notDeepEqual((await page.evaluate(snapshot)).ids, initial.ids, 'a different dated capture replaces imagery');
     await page.setViewportSize({ width: 375, height: 700 });
     await wait(() => window.mapsPlaceholder.getSize().x === 375 && window.imageryOpacity() >= .99, 'narrow Leaflet map paints the selected capture');
+    await wait(() => document.querySelector('.bpb-sentinel-summary').hidden
+        && document.querySelector('.bpb-sentinel-stats').textContent.includes('Coverage'), 'narrow capture metadata settles');
     if (output) await page.screenshot({ path: path.join(output, 'narrow.png') });
     catalog = [];
     await page.evaluate(() => window.mapsPlaceholder.panBy([20, 0], { animate: false }));
@@ -194,7 +201,7 @@ try {
     await native.locator('#selmap option[value="BPB_SENTINEL"]').waitFor({ state: 'attached' });
     await native.locator('#selmap').selectOption('BPB_SENTINEL');
     await native.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage' }).waitFor();
-    const oldDate = await native.locator('.bpb-sentinel select option').nth(2).getAttribute('value');
+    const oldDate = await native.locator(olderOption).first().getAttribute('value');
     await native.locator('.bpb-sentinel select').selectOption(oldDate);
     const toggle = page.locator('#bpb-terrain-toggle');
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.disabled === false);
@@ -260,7 +267,7 @@ try {
     assert.deepEqual(errors, []);
     summary = { browser: 'chromium', version: context.browser().version(), hidden: true, leaflet: '1.9.4', renderer,
         viewports: [[1000, 700], [375, 700], [1000, 760]], fadedFrames: 0,
-        gestures: 3, tests: ['same-scenes', 'catalog-delay', 'catalog-failure', 'retry', 'tile-retry', 'capture-switch', 'missing-capture', 'native-layers', '3d-capture-ownership', '3d-tile-retry'], profile: temporaryRoot };
+        gestures: 3, tests: ['unique-capture-choices', 'same-scenes', 'catalog-delay', 'catalog-failure', 'retry', 'tile-retry', 'capture-switch', 'missing-capture', 'native-layers', '3d-capture-ownership', '3d-tile-retry'], profile: temporaryRoot };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));
