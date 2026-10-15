@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 4.0.1 — 2026-10-15
+
 - **Use the same release checks before release.** CI and release share the
   production package and capture gates, exact browser-version checks, and
   bounded scale tests. Rehearsals require consecutive passes of the same archive

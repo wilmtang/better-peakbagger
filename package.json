@@ -1,6 +1,6 @@
 {
   "name": "better-peakbagger",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Captures Garmin and Strava into Peakbagger drafts, plus 3D maps, GPX analysis, beta filters, dark mode, and more.",
   "private": true,
   "type": "module",
