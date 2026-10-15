@@ -550,6 +550,9 @@ async function settingsCase(page, origin, variant) {
         await page.locator('#unit-example-weather').filter({ hasText: '9°C · 4.2 mm · 16 km/h' }).waitFor();
         await page.locator('#unit-customize summary').press('Enter');
         await page.waitForFunction(() => !document.getElementById('unit-customize').open);
+        // Finish the prior unit action before independent component probes.
+        // Its toast dock precedes the synthetic fixture and changes its flow.
+        await page.locator('#status').waitFor({ state: 'hidden' });
         for (const id of ['terrain-cache-usage', 'settings-backup-github-status', 'favorites-github-status', 'ignored-github-status', 'photos-github-status']) {
             await page.locator(`#${id}`).evaluate(element => {
                 const row = element.closest('.row'); row.hidden = false;
