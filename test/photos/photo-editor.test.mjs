@@ -549,7 +549,7 @@ const waitForPhotoStore = async (win, storeName, predicate, ms = 5000) => {
 // The records themselves commit normally; only the page's awaited completion
 // is delayed, which reproduces the browser race where a large blob write
 // finishes after the user has already made another editor mutation.
-const deferNextDraftCompletion = indexedDB => {
+const deferNextDraftCompletion = (indexedDB, matchesStores = () => true) => {
     const raw = indexedDB._databases.get('betterPeakbaggerPhotos');
     const database = raw?.connections.find(connection => !connection._closed);
     assert.ok(database, 'the photo page must have an open IndexedDB connection');
@@ -564,7 +564,8 @@ const deferNextDraftCompletion = indexedDB => {
         const next = transaction(storeNames, mode, options);
         const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
         if (!armed || mode !== 'readwrite'
-            || !['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))) {
+            || !['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))
+            || !matchesStores(names)) {
             return next;
         }
         armed = false;
@@ -847,7 +848,8 @@ test('Edit closes its fallback bitmap after successful ownership transfer', asyn
     });
     const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
-    t.after(() => page.dom.window.close());
+    const deferred = deferNextDraftCompletion(indexedDB, names => names.includes('operations'));
+    t.after(() => { deferred.restore(); deferred.release(); page.dom.window.close(); });
     const edit = [...page.doc.querySelectorAll('.photo-card button')]
         .find(button => button.textContent === 'Edit');
 
@@ -857,7 +859,14 @@ test('Edit closes its fallback bitmap after successful ownership transfer', asyn
             + ` decoded=${page.decodedBitmaps.length} errors=${JSON.stringify(page.errors)}`;
         throw error;
     });
+    await deferred.started;
     await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(edit.getAttribute('aria-busy'), 'true', 'the editor can be visible while pruning is pending');
+    assert.equal(page.decodedBitmaps[0].closed, false, 'the fallback is retained until the Edit transaction completes');
+    deferred.restore();
+    deferred.release();
+    // Workspace visibility precedes pruning and the Edit action's finally.
+    await waitFor(page.dom, () => !edit.disabled && edit.getAttribute('aria-busy') === 'false');
     assert.equal(page.decodedBitmaps.length, 2,
         'thumbnail fallback and editor load each decode their own bitmap');
     assert.equal(page.decodedBitmaps[0].closed, true, 'temporary thumbnail pixels are released');
