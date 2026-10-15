@@ -43,6 +43,7 @@ import {
     verificationViewport,
     waitForCondition,
     waitForBuddyHelperCleanup,
+    waitForBuddyReportCache,
     waitForPageCondition
 } from './browser-verification-fixtures.mjs';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
@@ -1330,6 +1331,11 @@ try {
         const fallbackBuddyUrl = `https://www.peakbagger.com:${port}/report/report.aspx?r=b`;
         const workingBuddyPage = await context.newPage();
         await workingBuddyPage.goto(fallbackBuddyUrl);
+        // Loading this real report also starts its own worker-owned cache
+        // write. Finish that transaction before the independent import takes
+        // its snapshot; racing them correctly trips the product's stale guard.
+        const workingBuddyCache = await waitForBuddyReportCache(optionsPage, workingBuddyPage,
+            { ownerCid: 900001, count: 6 });
         // This models a real Settings click and keeps Chrome from throttling
         // the initiating extension page's fallback deadline as a background
         // tab while the helper itself opens inactive.
@@ -1382,7 +1388,7 @@ try {
             && fallbackImport?.count === 6
             && fallbackTabClosed,
         `the first-party Buddy import fallback failed or leaked its tab: ${JSON.stringify({
-            buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls,
+            buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls, workingBuddyCache,
             fallbackDebug
         })}`);
         await workingBuddyPage.close();

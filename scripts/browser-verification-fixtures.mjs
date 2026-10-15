@@ -87,6 +87,18 @@ export async function waitForBuddyHelperCleanup(context, buddyUrl, workingPage, 
         ...options, isReady: state => state.closed });
 }
 
+export async function waitForBuddyReportCache(optionsPage, reportPage, expected, options = {}) {
+    const fetchedAt = await reportPage.evaluate(() => Math.floor(performance.timeOrigin));
+    if (!Number.isFinite(fetchedAt) || fetchedAt < 0) throw new Error('Buddy report navigation time is unavailable');
+    return waitForCondition(() => optionsPage.evaluate(async target => {
+        const api = globalThis.browser || globalThis.chrome;
+        const cache = (await api.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
+        return cache?.fetchedAt === target.fetchedAt && cache.ownerCid === target.ownerCid
+            && Array.isArray(cache.entries) && cache.entries.length === target.count
+            ? { ownerCid: cache.ownerCid, fetchedAt: cache.fetchedAt, count: cache.entries.length } : false;
+    }, { fetchedAt, ...expected }), { description: 'the working Buddy report cache publication', timeoutMs: 5000, ...options });
+}
+
 // Playwright's waitForFunction polls the immediate return value. An async
 // predicate returns a truthy Promise even when it later resolves to false.
 // Await each page read in the driver before deciding whether polling is done.

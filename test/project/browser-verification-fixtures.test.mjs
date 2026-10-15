@@ -16,6 +16,7 @@ import {
     readSunCalculatorGeometry,
     waitForCondition,
     waitForBuddyHelperCleanup,
+    waitForBuddyReportCache,
     waitForPageCondition,
     waitForWindowUrl,
     webdriverScript,
@@ -26,6 +27,28 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('the working Buddy report finishes its own cache publication before an independent import begins', async () => {
+    let reads = 0;
+    const report = { evaluate: fn => executePageFunction(fn, { performance: { timeOrigin: 1200.75 } }) };
+    const options = { evaluate: (fn, arg) => executePageFunction(fn, { chrome: { storage: { local: {
+        get: async () => ({ bpbBuddyCache: { ownerCid: 900001, entries: Array(6).fill({ cid: 1 }),
+            fetchedAt: ++reads < 3 ? 1100 : 1200 } }),
+    } } } }, arg) };
+    const state = await waitForBuddyReportCache(options, report, { ownerCid: 900001, count: 6 }, { intervalMs: 1 });
+    assert.equal(state.fetchedAt, 1200, 'an already-fresh six-entry cache cannot prove this report visit finished');
+    assert.ok(reads >= 3);
+    for (const cache of [
+        { ownerCid: 900002, fetchedAt: 1200, entries: Array(6).fill({}) },
+        { ownerCid: 900001, fetchedAt: 1200, entries: [] },
+    ]) {
+        const wrong = { evaluate: (fn, arg) => executePageFunction(fn, { chrome: { storage: { local: {
+            get: async () => ({ bpbBuddyCache: cache }),
+        } } } }, arg) };
+        await assert.rejects(waitForBuddyReportCache(wrong, report, { ownerCid: 900001, count: 6 },
+            { timeoutMs: 0, intervalMs: 1 }), /working Buddy report cache publication/);
+    }
+});
 
 test('Buddy import waits for asynchronous helper teardown and preserves the original page', async () => {
     const url = 'https://www.peakbagger.com/report/report.aspx?r=b';
