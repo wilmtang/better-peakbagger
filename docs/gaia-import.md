@@ -244,7 +244,7 @@ test/gpx/saved-gpx-source.test.mjs
 test/project/manifest-capture.test.mjs
 ```
 
-`npm run verify:map-handoffs` (also available as `verify:gaia`) builds and loads
+`npm run verify -- map-handoffs` builds and loads
 the real unpacked `dist/` in hidden Chrome for Testing. It serves masked HTTPS
 fixtures on real Peakbagger, Gaia, and onX hostnames and verifies:
 

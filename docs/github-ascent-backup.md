@@ -1194,7 +1194,7 @@ consumes its own snapshot.
 | `test/github/github-api.test.mjs` | Shared authenticated request policy, origin gate, response parsing, and status taxonomy | GitHub service-side policy changes |
 | `test/github/github-client.test.mjs` | Git tree/root-file construction, owned deletion, root-file decode, and conflicts | GitHub service-side policy changes |
 | `npm test` | Current built IIFE bundles in jsdom plus pure modules | Real manifest interpretation and browser worker lifecycle |
-| `npm run verify:browsers` | Real unpacked Chrome/Firefox startup, worker messaging, content-script load | Signed-in Peakbagger/GitHub flows and visible native chrome |
+| `npm run verify -- browsers` | Real unpacked Chrome/Firefox startup, worker messaging, content-script load | Signed-in Peakbagger/GitHub flows and visible native chrome |
 | Manual release check | Real Add/Edit, device flow, stored GPX, scratch commit | Repeatable regression coverage |
 
 Live checks must remain minimal, owner-only, read-only toward Peakbagger except

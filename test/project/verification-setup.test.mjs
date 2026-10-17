@@ -52,12 +52,12 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.ok(job.strategy?.matrix, 'each complete browser matrix needs its own job budget');
     assert.deepEqual(job.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(job.strategy['fail-fast'], false, 'retain independent evidence from both browser matrices');
-    assert.equal(ordinary.jobs.chrome.steps.some(step => step.run?.includes('verify:layout-stability')), false);
+    assert.equal(ordinary.jobs.chrome.steps.some(step => step.run?.includes('verify -- layout-stability')), false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('layout'), 'the existing required check must await layout results');
     const required = ordinary.jobs['chrome-required'].steps[0];
     assert.equal(required.env.LAYOUT_RESULT, '${{ needs.layout.result }}');
     assert.match(required.run, /test "\$LAYOUT_RESULT" = success/, 'failed or skipped layout checks must block the release');
-    const geometry = job.steps.find(step => step.run?.includes('npm run verify:layout-stability'));
+    const geometry = job.steps.find(step => step.run?.includes('npm run verify -- layout-stability'));
     assert.ok(geometry, 'state transitions must be checked beyond static manifest smoke');
     assert.equal(geometry.if, undefined);
     assert.equal(geometry['continue-on-error'], undefined);
@@ -67,7 +67,7 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.ok(geometry.run.includes('--${{ matrix.browser }}-only'), 'each job must select its complete browser matrix');
     assert.ok(job.steps.find(step => step.name === 'Retain layout failure evidence').with.name.includes('${{ matrix.browser }}'));
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
-    assert.equal(packageJson.scripts['verify:layout-stability'], 'npm run build && node scripts/verify-layout-stability.mjs');
+    assert.equal(packageJson.scripts.verify, 'node scripts/verify.mjs');
     const verifier = await readFile(new URL('../../scripts/verify-layout-stability.mjs', import.meta.url), 'utf8');
     assert.match(verifier, /'weather-models':.*verifyPeakWeatherRefresh/,
         'ordinary CI must exercise summit model loading, not just hourly readings');

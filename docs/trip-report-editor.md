@@ -969,7 +969,7 @@ shows the exact bracket source.
   single/bulk deletion.
 - `test/project/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.
-- `npm run verify:browsers` loads the unpacked extension in hidden Chrome and
+- `npm run verify -- browsers` loads the unpacked extension in hidden Chrome and
   Firefox and exercises each store-specific credit, real typing, Ctrl/Cmd+B,
   the `1. ` input rule in Chrome, live
   toolbar states, the CodeMirror source pane with its live split preview,

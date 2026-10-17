@@ -231,9 +231,9 @@ visible in the AMO Developer Hub.
    npm test
    npm run test:scale
    npm run lint
-   npm run verify:browsers
-   npm run terrain:verify
-   npm run terrain:verify:firefox
+   npm run verify -- browsers
+   npm run verify -- terrain
+   npm run verify -- terrain firefox
    npm run release:verify-packages
    ```
 
@@ -333,7 +333,7 @@ different submission is active, or a recent upload remains ambiguous. Do not
 retry a store mutation until its version is confirmed unused, and do not rerun
 all jobs after either store consumed it.
 
-`npm run terrain:verify:firefox` fails closed on SwiftShader, llvmpipe, and other
+`npm run verify -- terrain firefox` fails closed on SwiftShader, llvmpipe, and other
 software renderers. Run it hidden on representative GPU hardware and record the
 reported Firefox version, renderer, and viewport in the release notes. Hosted
 CI does not run this command until its renderer can satisfy that condition.

@@ -207,7 +207,7 @@ midnight precipitation/gust boundaries, missing coverage and unchanged ascent
 limits. Built-bundle UI tests cover native placement with/without a map,
 lazy loading, hourly DST folds, line gaps, midnight intervals, tab and cursor
 keyboard behavior, unit changes, resize/disposal, failed refresh and stale BFCache
-requests. `npm run verify:peak-weather` loads the real manifest in hidden Chrome
+requests. `npm run verify -- peak-weather` loads the real manifest in hidden Chrome
 and Firefox over HTTPS Peakbagger fixtures with network interception, keyboard
 disclosure, forecast/past period switching without requests, data tabs, cursor interaction and screenshots at wide/narrow
 viewports. It proves those fixtures, not the user's live Brave profile or
@@ -240,7 +240,7 @@ run read the remembered final-day graph while the first-day disclosure was
 settling; its wait now requires the specific first-day graph and one open day,
 and the rerun passed. One live public Rainier request accepted the maximum
 combined interval and rendered both views from exactly one HTTP request.
-The full `npm run verify:chrome` check passed, including BFCache restoration.
+The full `npm run verify -- chrome` check passed, including BFCache restoration.
 Final process and disposable-profile checks found no owned verification
 browser or profile remaining. Hidden fixtures and the live CORS probe do not
 establish forecast accuracy, screen-reader speech or the user's Brave session.

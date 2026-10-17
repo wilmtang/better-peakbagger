@@ -627,7 +627,7 @@ band from an ancestor it has already loaded. Warming the HTTP cache shortens the
 wait for the tile that *was* requested; nothing outside MapLibre can hand it an
 ancestor it never requested. So how *deep* a momentary fallback goes belongs to
 the detail ladder below, and how *long* it lasts belongs to warming.
-`npm run terrain:lod` measures both.
+`npm run verify -- terrain lod` measures both.
 
 ### Why a small tilt can change resolution a lot
 
@@ -885,10 +885,10 @@ receiver check.
 | --- | --- | --- |
 | `npm test` | Builds shipped IIFEs; pure algorithms, jsdom fixtures, protocol/state tests, worker logic | Real manifest interpretation, actual WebGL, browser worker lifecycle |
 | `npm run lint` | Source JavaScript and built extension/package lint | User interaction or renderer output |
-| `npm run verify:chrome` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
-| `npm run verify:browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |
-| `npm run terrain:verify` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, elevation coverage gap, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
-| `npm run terrain:verify:firefox` | Focused Firefox hardware-WebGL terrain and interaction | Full extension workflow or live services |
+| `npm run verify -- chrome` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
+| `npm run verify -- browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |
+| `npm run verify -- terrain` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, elevation coverage gap, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
+| `npm run verify -- terrain firefox` | Focused Firefox hardware-WebGL terrain and interaction | Full extension workflow or live services |
 
 The terrain showcase intentionally stubs storage and bridge protocol, but it is
 served over HTTPS on `www.peakbagger.com` rather than `http://localhost`,
@@ -924,7 +924,7 @@ fail closed on a software renderer; SwiftShader output is not product evidence.
 | First hover does not warm cache | Initial settings promise and worker reply | Bridge startup race or gate |
 | Peak dots disappear on pan | Request supersession, feed context, zoom cutoff | Peak relay; terrain should remain healthy |
 | GPU verification burns CPU | Reported WebGL renderer | Software fallback or wrong launch flags |
-| Small tilt visibly coarsens the map | `npm run terrain:lod`, both `BPB_LOD_DRAPE` values; which band stepped and whether tiles were fetched | Expected in part — see [Why a small tilt can change resolution a lot](#why-a-small-tilt-can-change-resolution-a-lot). Check the layer first: `thriftyLod` layers step more, and OpenTopoMap caps at zoom 15 |
+| Small tilt visibly coarsens the map | `npm run verify -- terrain lod`, both `BPB_LOD_DRAPE` values; which band stepped and whether tiles were fetched | Expected in part — see [Why a small tilt can change resolution a lot](#why-a-small-tilt-can-change-resolution-a-lot). Check the layer first: `thriftyLod` layers step more, and OpenTopoMap caps at zoom 15 |
 
 ## Change checklist
 

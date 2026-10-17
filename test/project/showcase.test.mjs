@@ -141,7 +141,7 @@ test('BigMap showcase contains only synthetic multi-route interaction data', () 
 // security property — and the GPX Analyzer fetches its track through that guard.
 // Served over http://, the analyzer panel renders "Better Peakbagger refused an
 // invalid Peakbagger request.", the route never loads, and the 3D toggle stays
-// disabled: terrain:verify and terrain:verify:firefox time out, and
+// disabled: verify -- terrain and verify -- terrain firefox time out, and
 // showcase:render writes that refusal into the store listing screenshots.
 const FIXTURE_SERVERS = [
     'scripts/verify-terrain-visual.mjs',

@@ -35,7 +35,7 @@ subsystem changes.
 - [Summit forecasts and recent weather](peak-weather.md)
 - [Historical ascent weather](ascent-weather.md)
 - [Dark-mode startup without a light-page flash](dark-mode-flash.md)
-- [`verify:chrome` flakes under machine load](verify-extension-load-flake.md)
+- [`verify -- chrome` flakes under machine load](verify-extension-load-flake.md)
   — what was measured, and the timeout that was wrongly blamed
 
 ## Document lifecycle

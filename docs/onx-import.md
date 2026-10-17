@@ -82,7 +82,7 @@ enabled `[data-test="import-card-import-button"]` after selection. A present
 any file crosses the boundary.
 
 Focused coverage lives in `test/onx/`, `test/background/onx-routes.test.mjs`,
-and `test/ascent/ascent-gaia.test.mjs`. `npm run verify:map-handoffs` loads the
+and `test/ascent/ascent-gaia.test.mjs`. `npm run verify -- map-handoffs` loads the
 real unpacked extension in hidden Chrome for Testing against masked HTTPS
 fixtures. It proves exact file transfer, manual final confirmation, placement,
 failure gates, storage exclusion, and light/dark rendering. It does not inspect

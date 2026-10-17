@@ -189,34 +189,14 @@ script is added or removed without updating it.
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
-| `npm run verify:capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
-| `npm run verify:layout-stability` | Builds and checks state-dependent action geometry across twelve surface groups in hidden Chrome and Firefox at 390×900 and 1280×900, light/dark. Uses controlled pending/error/retry/completion responses, repeated progress and enlarged-text cases; movement tolerance is one CSS pixel. Set `BPB_JITTER_ARTIFACTS` to retain screenshots or pass `-- --surface=maps` for one group. These HTTPS fixtures load shipped assets and selected component layouts; run `verify:browsers` separately for real manifest/worker proof. |
-| `npm run verify:multi-summit` | Verifies sequential Preview and simulated manual Save for multiple summit drafts in hidden Chrome, with isolated HTTPS Peakbagger fixtures. Checks complete GPX retention, shared trip identity, and session payload cleanup. |
-| `npm run verify:inline-buddies` | Builds and runs the real extension in hidden Chrome for Testing and Firefox against the masked HTTPS Buddy form. Each browser verifies six inline/native Add/Remove POSTs, cross-tab Buddy/Ignore protection, custom-favorite reconciliation, and card containment at 1000×760 light and 320×760 dark. Set `BPB_BUDDY_SCREENSHOTS` to retain screenshots; add `--firefox` to `node scripts/verify-inline-buddies.mjs` for Firefox alone. No live account is changed. |
-| `npm run verify:capture-flow` | Exercises the unmodified extension in current hidden Chrome through its actual toolbar action: temporary provider access, Garmin/Strava exports, summit lookup, results, draft Preview, privacy gates, outage retry, cancellation/restart, popup reopening, and track deletion. All sites are isolated HTTPS fixtures; no live provider compatibility or native focus is established. |
-| `npm run verify:capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image and delayed helper navigation. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `-- chrome` or `-- firefox` for one browser. |
-| `npm run verify:provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
-| `npm run verify:provider-performance` | Builds and measures 1,000-, 5,000-, 20,000-, and 100,000-point provider GPX parsing, a 100,000-point Garmin-shaped export with extensions, and over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
-| `npm run verify:map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, AllTrails, and CalTopo HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the four map hosts because hidden automation cannot inspect native permission prompts. |
-| `npm run verify:gaia` | Alias for the combined saved-GPX map-handoff verifier. |
-| `npm run verify:onx` | Alias for the combined saved-GPX map-handoff verifier. |
-| `npm run verify:weather` | Builds and checks the real weather bundle in hidden Chrome and Firefox at 375, 681, 768 and 1440 pixels, with HTTPS ascent fixtures, right-column placement, GPX/no-GPX/no-map, long reports, divider resizing, light/dark, loading, model selection, partial data and errors. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain card and page screenshots. For one optional public-summit live CORS probe, run `node scripts/verify-ascent-weather.mjs --live` (add `--firefox` for Firefox). |
-| `npm run verify:peak-weather` | Builds and checks the real peak weather bundle in hidden Chrome and Firefox at 375, 768 and 1440 pixels: right-column placement, forecast/past period switching from one response, full-day forecasts, responsive hourly graphs, data tabs, keyboard disclosure/sampling, click cursor, conditions timeline, no map, light/dark, loading, partial/empty data and failed refresh. The native fixture retains its existing minimum page width; the 375-pixel check verifies the card and charts fit without widening that layout. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain screenshots. One optional public-summit live CORS probe: `node scripts/verify-ascent-weather.mjs --peak --live`. |
+| `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Requires zero advisories by default, including development dependencies. Ordinary Test CI and store releases explicitly opt into one owner-reviewed, exact-path node-forge exception until October 17, 2026; all other advisories remain rejected. See [releasing](releasing.md) for the policy and the [integration ledger](archive/mainline-dependency-integration-2026-10-03.md) for the original review. |
-| `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
-| `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `node scripts/verify-layout-stability.mjs --surface=timestamps` | After a build, checks local-file timestamp removal, per-file keyboard exceptions, busy/failure recovery, capture exceptions and Options presentation in hidden Chrome/Firefox at 390×900 and 1280×900, light/dark, 100% and simulated 150% zoom using a scaled CSS viewport and device pixel ratio. APIs and summit lookup are stubbed; no live Save or account sync. `BPB_JITTER_ARTIFACTS` retains screenshots. To prove pre-feature failure without changing the worktree, set `BPB_TIMESTAMP_BASELINE` to a full earlier commit SHA; the expected failure is timestamps still attached to the native upload. |
-| `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `node scripts/verify-report-draft-ownership.mjs` | After a build, exercises two editors against one real worker in hidden Chrome: untouched exits and conflicting edits preserve the newest draft. `BPB_DRAFT_OUTPUT` retains desktop/light and narrow/dark conflict screenshots. |
 | `node scripts/verify-report-photos.mjs` | After a build, checks paste, local editing, fixture-owned ImgBB upload, native form resumption, and the acknowledged In report library badge in hidden Chrome. No live upload or server Save proof. |
 | `node scripts/verify-layout-stability.mjs --surface=captions` | After a build, checks caption entry, typing, repeated clicks, clearing and keyboard entry against the shipped editor bundles and masked native form in hidden Chrome/Firefox at 390×900 and 1280×900, light/dark, with normal and 150% editor text. Samples viewport, editor scroll, photo, caption, surrounding panel and native form geometry through each transition (1px rounding tolerance), including compact reports and a final image. Storage and image bytes are stubbed; no live Save or native window-focus proof. `BPB_JITTER_ARTIFACTS` retains screenshots. |
 | `node scripts/verify-sentinel-map.mjs` | After a build, loads the real extension and pinned Leaflet in hidden Chrome, checks camera scene reuse and failed-tile retry, then exercises actual BigMap bridge/MapLibre capture inheritance and explicit choices on hardware WebGL. Synthetic colored PNG/DEM fixtures prove the rendered capture. `BPB_VERIFY_SENTINEL_SCREENSHOT_DIR` retains renders. |
-| `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
-| `npm run terrain:verify` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
-| `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Includes inherited/explicit Sentinel capture resume, loaded source identity and desktop/narrow light/dark warning geometry. Uses instrumented fixture authorization/storage, distinct from the real-manifest check. Same HTTPS showcase host. |
-| `npm run terrain:verify:cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
-| `npm run terrain:lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `terrain:verify`. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run build:firefox -- CHROME.zip FIREFOX.zip` | Derives the Firefox store ZIP from the verified Chrome ZIP, changing only Firefox-specific manifest presentation. |
@@ -230,6 +210,49 @@ script is added or removed without updating it.
 | `npm run release:verify-archive -- ARCHIVE.zip BROWSER` | Checks a Chrome or Firefox archive for required runtime files, licenses, browser-specific manifest policy, and forbidden development artifacts. |
 | `npm run release:verify-packages` | Builds, derives, validates, and executes both exact store archives. The shared CI/release action additionally checks popup and capture flows against that minified build. |
 | `npm run store:description:chrome` | Regenerates Chrome's checked-in plain-text listing from the canonical Markdown description. |
+
+### Verification targets
+
+Pass one target after `npm run verify --`. Arguments after the target go to each
+selected verifier; there is no second npm `--` separator. For example:
+
+```sh
+npm run verify -- browsers
+npm run verify -- layout-stability --surface=maps --firefox-only
+npm run verify -- capture-readiness firefox
+npm run verify -- terrain firefox
+npm run verify -- terrain chrome /private/tmp/bpb-terrain-evidence
+npm run verify -- packages CHROME.zip FIREFOX.zip
+```
+
+`terrain` alone selects Chrome; use `terrain chrome` when supplying an output
+directory. Weather and inline-buddy targets run Chrome and Firefox sequentially.
+The `packages` target checks existing archives without rebuilding `dist/`;
+`release:verify-packages` creates and checks fresh store packages. Missing or
+unknown targets fail before any build or browser launch. Gaia and onX coverage
+is part of `map-handoffs`.
+
+| Target | What it checks |
+| --- | --- |
+| `capture-popup` | Builds and opens the real Chrome toolbar popup without a viewport override; asserts 390px sizing in light/dark over tabs at 100% and 200% zoom. Also renders every recovery family in hidden Chrome and Firefox at 390×620 CSS pixels, including 2x pixel density, asserting one action and no clipping. Runs in CI; does not prove visible chrome or focus. |
+| `layout-stability` | Builds and checks state-dependent action geometry across twelve surface groups in hidden Chrome and Firefox at 390×900 and 1280×900, light/dark. Uses controlled pending/error/retry/completion responses, repeated progress and enlarged-text cases; movement tolerance is one CSS pixel. Set `BPB_JITTER_ARTIFACTS` to retain screenshots or pass `--surface=maps` after the target for one group. These HTTPS fixtures load shipped assets and selected component layouts; run `verify -- browsers` separately for real manifest/worker proof. |
+| `multi-summit` | Verifies sequential Preview and simulated manual Save for multiple summit drafts in hidden Chrome, with isolated HTTPS Peakbagger fixtures. Checks complete GPX retention, shared trip identity, and session payload cleanup. |
+| `inline-buddies` | Builds and runs the real extension in hidden Chrome for Testing and Firefox against the masked HTTPS Buddy form. Each browser verifies six inline/native Add/Remove POSTs, cross-tab Buddy/Ignore protection, custom-favorite reconciliation, and card containment at 1000×760 light and 320×760 dark. Set `BPB_BUDDY_SCREENSHOTS` to retain screenshots; add `--firefox` to `node scripts/verify-inline-buddies.mjs` for Firefox alone. No live account is changed. |
+| `capture-flow` | Exercises the unmodified extension in current hidden Chrome through its actual toolbar action: temporary provider access, Garmin/Strava exports, summit lookup, results, draft Preview, privacy gates, outage retry, cancellation/restart, popup reopening, and track deletion. All sites are isolated HTTPS fixtures; no live provider compatibility or native focus is established. |
+| `capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image and delayed helper navigation. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `chrome` or `firefox` after the target for one browser. |
+| `provider-contracts` | Builds and runs the sanitized provider ownership, SPA navigation, Garmin session-mode, export, redirect, rate-limit, and challenge corpus in hidden Chrome for Testing and Firefox at intercepted Garmin/Strava HTTPS origins. No provider request leaves the browser. |
+| `provider-performance` | Builds and measures 1,000-, 5,000-, 20,000-, and 100,000-point provider GPX parsing, a 100,000-point Garmin-shaped export with extensions, and over-limit rejection in hidden Chrome for Testing and Firefox at 1280×720. It blocks all network traffic and reports the exact browser versions and timings. |
+| `map-handoffs` | Loads the real unpacked extension in hidden Chrome for Testing against masked Peakbagger, Gaia, onX, AllTrails, and CalTopo HTTPS fixtures; verifies exact saved-GPX handoffs, shared placement, manual Save/Import/Upload, membership and uncertain states, storage exclusion, and light/dark rendering. The disposable manifest grants the four map hosts because hidden automation cannot inspect native permission prompts. |
+| `weather` | Builds and checks the real weather bundle in hidden Chrome and Firefox at 375, 681, 768 and 1440 pixels, with HTTPS ascent fixtures, right-column placement, GPX/no-GPX/no-map, long reports, divider resizing, light/dark, loading, model selection, partial data and errors. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain card and page screenshots. For one optional public-summit live CORS probe, run `node scripts/verify-ascent-weather.mjs --live` (add `--firefox` for Firefox). |
+| `peak-weather` | Builds and checks the real peak weather bundle in hidden Chrome and Firefox at 375, 768 and 1440 pixels: right-column placement, forecast/past period switching from one response, full-day forecasts, responsive hourly graphs, data tabs, keyboard disclosure/sampling, click cursor, conditions timeline, no map, light/dark, loading, partial/empty data and failed refresh. The native fixture retains its existing minimum page width; the 375-pixel check verifies the card and charts fit without widening that layout. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain screenshots. One optional public-summit live CORS probe: `node scripts/verify-ascent-weather.mjs --peak --live`. |
+| `chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
+| `firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
+| `browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
+| `packages CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
+| `terrain` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
+| `terrain firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Includes inherited/explicit Sentinel capture resume, loaded source identity and desktop/narrow light/dark warning geometry. Uses instrumented fixture authorization/storage, distinct from the real-manifest check. Same HTTPS showcase host. |
+| `terrain cache-owners` | Uses two same-origin frames in hidden Chrome for Testing and Firefox to verify that distinct and identical DEM writes share one CacheStorage budget and one exact index. This is a non-rendered Web Locks/storage check. |
+| `terrain lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `verify -- terrain`. |
 
 Set `BPB_VERIFY_REPETITIONS=3` for consecutive exact-package verification with
 fresh profiles and the same archive bytes. All repetitions must pass, including
@@ -409,7 +432,7 @@ settings-transfer tests. For interaction or styling changes, also run
 `node scripts/verify-peak-link-order.mjs` and its `--firefox` variant after the
 build. These use hidden HTTPS fixtures; Chrome loads the real extension, while
 Firefox checks shipped assets with controlled settings. Use
-`npm run verify:browsers` separately for both browsers' real manifest and worker
+`npm run verify -- browsers` separately for both browsers' real manifest and worker
 coverage. Follow the browser launch and teardown rules below.
 
 ## Vendor libraries
@@ -689,19 +712,19 @@ add it to the merge-step condition, for example
   CPU, wall time, yields, and range. CI and release use Node 24 on Ubuntu 24.04.
   Cooperative timer waits and runner descheduling are not CPU consumption. It still
   cannot prove native renderer responsiveness or the live MV3 message scheduler.
-- `npm run verify:provider-performance` measures native `DOMParser` and
+- `npm run verify -- provider-performance` measures native `DOMParser` and
   extraction for synthetic 1,000-, 5,000-, 20,000-, and 100,000-point GPX,
   including a Garmin-shaped export with extensions, plus early
   over-limit rejection in hidden Chrome and Firefox. It blocks network and does
   not estimate provider latency or slower hardware. The parser remains
   synchronous; this gate does not measure peak memory or cancellation latency.
-- `npm run verify:provider-contracts` routes sanitized provider-shaped pages to
+- `npm run verify -- provider-contracts` routes sanitized provider-shaped pages to
   the exact Garmin and Strava HTTPS origins, intercepts every request, and
   exercises ownership, loading, sign-out, localization, navigation, Garmin
   session mode, response redirects, rate limits, and challenge markers in
   native browser DOM/fetch implementations. It proves the checked fixture
   contract only—not current live markup, endpoints, sessions, or challenges.
-- `npm run verify:capture-popup` opens the real unpacked Chrome action popup
+- `npm run verify -- capture-popup` opens the real unpacked Chrome action popup
   without a viewport override and asserts its 390px width in light/dark over
   tabs at 100% and 200% zoom. This catches viewport-dependent CSS that collapses
   browser autosizing. It also runs every recovery family using the shipped
@@ -710,14 +733,14 @@ add it to the merge-step condition, for example
   These checks prove sizing, action mapping, and content containment, not visible
   popup chrome, dismissal, browser focus, or screen-reader speech. Firefox's
   native toolbar autosizing is not exercised by this verifier.
-- `npm run verify:capture-flow` invokes Chrome's real toolbar action with the
+- `npm run verify -- capture-flow` invokes Chrome's real toolbar action with the
   unmodified extension, so the provider adapter receives the same temporary
   `activeTab` grant as a user click. Garmin and Strava fixtures go through
   ownership, export, summit lookup, results, and one draft Preview without Save.
   Failure cases cover the privacy gates and recovery actions; held exports
   exercise cancellation, restart, and popup reopening without duplicate work.
   This proves the fixture flow, not current live provider compatibility.
-- `npm run verify:capture-readiness` exercises the real worker and Peakbagger
+- `npm run verify -- capture-readiness` exercises the real worker and Peakbagger
   page helper with a parsed, signed-in page whose image never finishes loading.
   It also delays the first response in an automatically created helper tab to
   exercise its uncommitted URL state. Both paths must progress past session
@@ -728,14 +751,14 @@ add it to the merge-step condition, for example
 - `npm run lint` first checks undeclared names, unused bindings, and unsafe
   equality in source without rewriting it, then checks the built extension
   package. Neither lint stage establishes browser behavior.
-- `npm run terrain:verify` and `npm run terrain:verify:firefox` render the true MapLibre
+- `npm run verify -- terrain` and `npm run verify -- terrain firefox` render the true MapLibre
   frame on a reported hardware GPU, but their
   analyzer showcases load the production settings bridge over stubbed extension
   storage and runtime APIs. Mapterhorn requests are intercepted with a synthetic
   CORS-enabled DEM. These checks exercise the real bridge protocol but not the
   actual extension manifest, worker lifecycle, settings storage, or live terrain
   service.
-- `npm run terrain:lod` measures which elevation level each visible pixel is
+- `npm run verify -- terrain lod` measures which elevation level each visible pixel is
   actually drawn from, on the same real GPU frame, so the tilt detail behaviour is
   a number rather than an impression. It generates its own continuous DEM tiles
   and serves them at a fixed 140 ms delay, so it says nothing about live
@@ -747,13 +770,13 @@ add it to the merge-step condition, for example
   either constant pair — the gap between them is the reason there are two. Its
   per-pitch census counts are stable; the sweep traffic total is not, so compare
   levels-against-ceiling rather than totals.
-- Every fixture server — the terrain verifiers, `terrain:lod`, and `showcase:render` — serves
+- Every fixture server — the terrain verifiers, `verify -- terrain lod`, and `showcase:render` — serves
   over **HTTPS on `www.peakbagger.com`**, with a self-signed certificate minted
   per run and deleted in teardown. This is a product constraint, not a
   preference: `src/peakbagger/peakbagger-request.js` refuses any URL that is not
   `https:` on a Peakbagger host, and the GPX Analyzer fetches its track through
   that guard. See *A plain-HTTP fixture breaks these checks* below.
-- `npm run verify:browsers` loads the real Chrome and derived Firefox manifests.
+- `npm run verify -- browsers` loads the real Chrome and derived Firefox manifests.
   The isolated HTTPS fixtures exercise extension origins, execution worlds,
   worker/background startup, real storage, every manifest surface, store credit,
   report editing, filtering, the owner-only profile-backup entry point, tab
@@ -764,7 +787,7 @@ add it to the merge-step condition, for example
   fixture-only local credential and makes no GitHub request.
   Run it after touching `manifest.json`, bundle composition, execution worlds,
   the worker, or anything a content script relies on at load.
-- `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those same gates against minified store bytes
+- `npm run verify -- packages CHROME.zip FIREFOX.zip` runs those same gates against minified store bytes
   and additionally pins Chrome's full-tab versus Firefox's inline Preferences
   manifest presentation.
 - CI additionally supplies exact `CHROME_BIN` and `FIREFOX_BIN` paths to run
@@ -837,9 +860,9 @@ over `http://localhost` makes the extension refuse *its own fixture*:
   request."** instead of the chart,
 - the route never loads, so the 3D toggle stays disabled with its
   "Available after the GPX route loads" title,
-- `terrain:verify` then times out on
+- `verify -- terrain` then times out on
   `Timed out waiting for page state: {"ready":false,"disclosureExists":false}`,
-  `terrain:verify:firefox` on `Timed out waiting for Firefox terrain readiness`,
+  `verify -- terrain firefox` on `Timed out waiting for Firefox terrain readiness`,
 - and `showcase:render` succeeds while writing that refusal into the
   store-listing screenshots.
 
@@ -867,7 +890,7 @@ npm run package
 npm run build:firefox -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
 npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip chrome
 npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
-npm run verify:packages -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
+npm run verify -- packages web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
 ```
 
 The archive verifier derives required runtime files from

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // The vector drape's style fetch, tested without MapLibre. What the frame does
-// with a resolved style still needs a real renderer (npm run terrain:verify);
+// with a resolved style still needs a real renderer (npm run verify -- terrain);
 // everything below is the part that decides whether a style ever arrives.
 
 import test from 'node:test';

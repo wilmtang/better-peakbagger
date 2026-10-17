@@ -1,6 +1,6 @@
-# `verify:chrome` flakes under machine load
+# `verify -- chrome` flakes under machine load
 
-`npm run verify:chrome` is the Chrome check that loads the real unpacked
+`npm run verify -- chrome` is the Chrome check that loads the real unpacked
 `dist/` in a browser, and it fails intermittently — but only when the machine is
 busy, and not always on the same check. This note records what was measured on
 2026-07-30, because a previous attempt to fix it changed a timeout that
@@ -178,7 +178,7 @@ is not oversubscribed.
 Ordinary Firefox package verification leaves native DOM attribute setters
 unchanged. To capture a card's exact close call and viewport geometry in its
 isolated extension world, run
-`BPB_VERIFY_CLIMBER_CLOSE_PROBE=1 npm run verify:firefox`. The optional probe
+`BPB_VERIFY_CLIMBER_CLOSE_PROBE=1 npm run verify -- firefox`. The optional probe
 forwards the native setter, retains a bounded history for failure output, and
 restores the setter when the fixture page leaves.
 

@@ -325,7 +325,7 @@ Run `npm ci` first. Load and package the built extension from `dist/`.
 npm test
 npm run test:scale
 npm run lint
-npm run verify:browsers
+npm run verify -- browsers
 ```
 
 ## License

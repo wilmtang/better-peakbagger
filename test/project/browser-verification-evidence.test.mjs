@@ -115,6 +115,6 @@ test('CI preserves pipeline failures and uploads bounded browser evidence only o
     assert.match(workflow, /defaults:\s+run:\s+shell: bash/);
     assert.equal(workflow.match(/name: Retain browser failure evidence\s+if: failure\(\)/g)?.length, 5);
     assert.equal(workflow.match(/BPB_VERIFY_ARTIFACTS: browser-evidence/g)?.length, 5);
-    assert.match(workflow, /terrain:verify -- browser-evidence\/terrain 2>&1 \| tee/);
+    assert.match(workflow, /npm run verify -- terrain chrome browser-evidence\/terrain 2>&1 \| tee/);
     assert.doesNotMatch(workflow, /continue-on-error: true/);
 });

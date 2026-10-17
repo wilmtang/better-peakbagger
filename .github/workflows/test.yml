@@ -140,7 +140,7 @@ jobs:
           BPB_JITTER_ARTIFACTS: browser-evidence/layout-stability
         run: |
           mkdir -p browser-evidence
-          npm run verify:layout-stability -- --${{ matrix.browser }}-only 2>&1 | tee browser-evidence/layout-stability.log
+          npm run verify -- layout-stability --${{ matrix.browser }}-only 2>&1 | tee browser-evidence/layout-stability.log
 
       - name: Retain layout failure evidence
         if: failure()
@@ -169,7 +169,7 @@ jobs:
       - name: Verify the real Chrome 128 extension
         run: |
           mkdir -p browser-evidence
-          npm run verify:chrome 2>&1 | tee browser-evidence/verify-chrome.log
+          npm run verify -- chrome 2>&1 | tee browser-evidence/verify-chrome.log
 
       - name: Retain browser failure evidence
         if: failure()
@@ -204,12 +204,12 @@ jobs:
       - name: Verify the real Firefox extension
         run: |
           mkdir -p browser-evidence
-          npm run verify:firefox 2>&1 | tee browser-evidence/verify-firefox.log
+          npm run verify -- firefox 2>&1 | tee browser-evidence/verify-firefox.log
 
       - name: Verify capture with pending page resources
         run: |
           mkdir -p browser-evidence
-          npm run verify:capture-readiness -- firefox 2>&1 | tee browser-evidence/verify-capture-readiness-firefox.log
+          npm run verify -- capture-readiness firefox 2>&1 | tee browser-evidence/verify-capture-readiness-firefox.log
 
       - name: Retain browser failure evidence
         if: failure()
@@ -249,7 +249,7 @@ jobs:
       - name: Verify copied runtime on Chrome GPU
         run: |
           mkdir -p browser-evidence
-          npm run terrain:verify -- browser-evidence/terrain 2>&1 | tee browser-evidence/terrain-verify.log
+          npm run verify -- terrain chrome browser-evidence/terrain 2>&1 | tee browser-evidence/terrain-verify.log
 
       - name: Retain browser failure evidence
         if: failure()
@@ -319,7 +319,7 @@ jobs:
       - name: Verify copied runtime on Firefox GPU
         run: |
           mkdir -p browser-evidence
-          npm run terrain:verify:firefox 2>&1 | tee browser-evidence/terrain-verify-firefox.log
+          npm run verify -- terrain firefox 2>&1 | tee browser-evidence/terrain-verify-firefox.log
 
       - name: Retain browser failure evidence
         if: failure()

@@ -913,7 +913,7 @@ export async function createBrowserFixtureServer({
 // That is the same failure src/gpx/map-route-limits.js and
 // src/capture/upload-limits.js exist to prevent, and this file family is the one
 // where it has already cost something: the plain-HTTP fixture that silently
-// disabled terrain:verify, terrain:verify:firefox, and showcase:render, and
+// disabled verify -- terrain, verify -- terrain firefox, and showcase:render, and
 // rendered "Better Peakbagger refused an invalid Peakbagger request." into the
 // store-listing screenshots. Callers keep their own special routes — the peak
 // feed, the synthetic DEM tiles, the popup mock — and compose them with these.

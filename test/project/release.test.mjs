@@ -559,7 +559,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     );
     assert.match(workflow,
         /chrome-required:\s*\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)/);
-    assert.match(workflow, /firefox:\s*\n[\s\S]*?npm run verify:firefox/);
+    assert.match(workflow, /firefox:\s*\n[\s\S]*?npm run verify -- firefox/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: '128'/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: '128'/);

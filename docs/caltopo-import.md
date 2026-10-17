@@ -29,6 +29,6 @@ to the map and must always stay manual. Provider markup can change.
 
 Regression tests cover adapter admission, exact payloads, one-use grants,
 optional access, populated versus empty reviews, and duplicate attempts.
-`npm run verify:map-handoffs` exercises the packaged worker and source button
+`npm run verify -- map-handoffs` exercises the packaged worker and source button
 against masked HTTPS fixtures, including CalTopo's two-panel flow. This does
 not prove the live parser or native browser permission prompt.

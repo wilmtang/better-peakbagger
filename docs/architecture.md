@@ -1718,16 +1718,16 @@ No single green command proves the extension works:
   or versions, production resolutions, and expiry fail closed. See
   [releasing](releasing.md) and the original
   [integration ledger](archive/mainline-dependency-integration-2026-10-03.md).
-- `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
+- `npm run verify -- browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,
   native file assignment, draft identity, exactly-once Preview, the no-Save
   boundary, 1,500-row favorite search and settings navigation, native Buddy
   synchronization under both removal policies, and the packaged photo page's
   image decode, IndexedDB autosave, and layout boundaries.
-- `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those gates against
+- `npm run verify -- packages CHROME.zip FIREFOX.zip` runs those gates against
   the exact minified store archives.
-- `npm run terrain:verify` and `npm run terrain:verify:firefox` render packaged
+- `npm run verify -- terrain` and `npm run verify -- terrain firefox` render packaged
   MapLibre on a reported hardware GPU with synthetic route, peak, basemap, and
   DEM fixtures. They use stubbed extension storage APIs through the production settings
   bridge and do not contact the live terrain service. Both serve the showcase over HTTPS on a

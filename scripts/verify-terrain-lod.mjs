@@ -5,7 +5,7 @@
 // Better Peakbagger — the repeatable form of the measurement that diagnosed the
 // 3D tilt detail collapse (docs/archive/3d-tilt-detail-blink.md, section 9).
 //
-// It drives the real extension frame — the same dist/ bundle terrain:verify
+// It drives the real extension frame — the same dist/ bundle verify -- terrain
 // loads — on hardware GL, headless, with locally generated Terrarium DEM tiles
 // served at a realistic per-tile delay. For every camera it reads MapLibre's own
 // coords framebuffer, which encodes the render-to-texture tile each screen pixel
@@ -15,7 +15,7 @@
 //
 // What it cannot see: the real Mapterhorn service, the real drape providers, and
 // anything about native focus or window placement. A live spot-check through
-// `npm run terrain:verify` is still required before release.
+// `npm run verify -- terrain` is still required before release.
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:https';
@@ -55,7 +55,7 @@ const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
 // purpose — an unknown host on unknown terms does not get tripled tile requests.
 // So this check swaps the fixture's layer for a drape code carrying a known spec,
 // and answers that host locally. The swap is done in this server, not in the
-// shared fixture file, so terrain:verify and showcase:render keep rendering
+// shared fixture file, so verify -- terrain and showcase:render keep rendering
 // exactly what they rendered before.
 //
 // BPB_LOD_DRAPE picks which spec. The two are the two drape LOD settings the
@@ -879,7 +879,7 @@ try {
 
     console.log('\nThis ran hidden (headless Chrome, hardware GL) against the built dist/ frame with locally'
         + '\ngenerated DEM tiles. It does not exercise the real Mapterhorn service or the real drape'
-        + '\nproviders; `npm run terrain:verify` remains the live spot-check.');
+        + '\nproviders; `npm run verify -- terrain` remains the live spot-check.');
 
     if (failures.length) {
         console.error(`\n${failures.length} acceptance criterion failure(s):`);
