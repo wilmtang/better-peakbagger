@@ -1163,7 +1163,10 @@ const renderInspector = () => {
     document.querySelectorAll('.route-only').forEach(node => { node.hidden = !route; });
     document.querySelectorAll('.scale-only').forEach(node => { node.hidden = route; });
     // Content belongs to the placed mark; appearance can be preset per tool.
-    document.querySelectorAll('.point-only').forEach(node => { node.hidden = route; });
+    // Anchor and Belay are circular, so rotation cannot change their appearance.
+    document.querySelectorAll('.point-only').forEach(node => {
+        node.hidden = route || type === 'anchor' || type === 'belay';
+    });
     document.querySelectorAll('.pitch-only').forEach(node => { node.hidden = !pitch || !object; });
     document.querySelectorAll('.text-only').forEach(node => { node.hidden = !text || !object; });
     document.querySelectorAll('.label-only').forEach(node => { node.hidden = !label; });

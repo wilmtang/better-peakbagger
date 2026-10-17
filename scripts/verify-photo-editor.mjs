@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Hidden packaged-editor checks. Synthetic pixels stay on the extension page;
 // no live site, user browser, API key, or upload is involved.
-/* global document, DataTransfer, chrome, innerWidth, innerHeight, scrollY, getComputedStyle, HTMLCanvasElement, FileReader, navigator, indexedDB */
+/* global document, DataTransfer, chrome, innerWidth, innerHeight, scrollX, scrollY, getComputedStyle, HTMLCanvasElement, FileReader, navigator, indexedDB */
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -303,12 +303,12 @@ try {
                 if (!label?.textContent.includes('Upper gully')) return false;
                 const visible = element => {
                     const rect = element.getBoundingClientRect();
+                    // scrollTop rounds to CSS pixels at viewport and ancestor edges.
                     if (!(rect.width > 0 && rect.height > 0 && rect.top >= header.bottom
-                        && rect.bottom <= innerHeight && rect.left >= 0 && rect.right <= innerWidth)) return false;
+                        && rect.bottom <= innerHeight + 1 && rect.left >= 0 && rect.right <= innerWidth)) return false;
                     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
                         const style = getComputedStyle(parent);
                         const bounds = parent.getBoundingClientRect();
-                        // scrollTop rounds to CSS pixels; tolerate the final fraction.
                         if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowY)
                             && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1)) return false;
                     }
@@ -421,6 +421,53 @@ try {
     await savedEditor.keyboard.press('Control+z');
     assert.equal(await savedEditor.locator('#annotation-list button').count(), markCount);
     await savedEditor.close();
+    // Circular symbols have no orientation, including when an existing mark
+    // is selected while a different tool is armed. Check actual CSS hiding,
+    // keyboard access, and stable geometry through repeated style changes.
+    for (const theme of ['light', 'dark']) {
+        await page.evaluate(async value => {
+            const { bpbSettings } = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+        }, theme);
+        await page.waitForFunction(value => document.documentElement.dataset.bpbTheme === value, theme);
+        for (const [width, height, zoom] of [[1440, 1100, 1], [720, 900, 1.25]]) {
+            await page.setViewportSize({ width, height });
+            await page.locator('body').evaluate((body, value) => { body.style.zoom = value; }, String(zoom));
+            for (const type of ['anchor', 'belay', 'bolt', 'piton', 'rappel', 'pitch', 'text']) {
+                const hidden = type === 'anchor' || type === 'belay';
+                const tool = page.locator(`[data-tool="${type}"]`);
+                await tool.focus(); await tool.press('Enter');
+                assert.equal(await page.locator('#object-rotation').isHidden(), hidden, `${type} preset`);
+                await page.locator('#add-at-center').click();
+                const id = await page.locator('#annotation-list button').last().getAttribute('data-object-id');
+                await page.locator(`[data-tool="${hidden ? 'piton' : 'belay'}"]`).click();
+                await page.locator(`#annotation-list [data-object-id="${id}"]`).click();
+                assert.equal(await page.locator('#object-rotation').isHidden(), hidden, `${type} selection`);
+                assert.equal(await page.locator('#object-scale').isVisible(), true);
+                if (hidden) {
+                    assert.equal(await page.getByRole('slider', { name: /Rotation/ }).count(), 0);
+                    assert.equal(await page.locator('#object-rotation').evaluate(input => {
+                        input.focus(); return document.activeElement === input;
+                    }), false, 'hidden rotation cannot receive focus');
+                    const opacity = page.locator('#object-opacity');
+                    await opacity.focus();
+                    const stableGeometry = async () => ({ ...await geometry(),
+                        actions: await page.locator('#object-actions').boundingBox(),
+                        heading: await page.locator('#inspector-heading').boundingBox(),
+                        scroll: await page.evaluate(() => ({ x: scrollX, y: scrollY,
+                            sidebar: document.querySelector('.editor-sidebar').scrollTop })),
+                    });
+                    const beforeStyle = await stableGeometry();
+                    for (let tick = 0; tick < 3; tick++) await opacity.press('ArrowLeft');
+                    assert.deepEqual(await stableGeometry(), beforeStyle, `${type} restyling stays anchored`);
+                    await capture(`rotation-${type}-${theme}-${width}`);
+                }
+                await page.locator('#delete-object').click();
+            }
+        }
+    }
+    await page.locator('body').evaluate(body => { body.style.zoom = ''; });
+    await page.setViewportSize({ width: 1440, height: 1100 });
     const renderer = await page.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl');
         const extension = gl?.getExtension('WEBGL_debug_renderer_info');

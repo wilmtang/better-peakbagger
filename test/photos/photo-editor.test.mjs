@@ -2387,6 +2387,35 @@ test('a slider drag is one undo step, and it does not evict the edits behind it'
     assert.deepEqual(page.errors, []);
 });
 
+test('rotation is offered only for tools and selected marks with a visible orientation', async () => {
+    const page = await loadEditor({ localPreferences: {
+        'bpbPhotoTool:anchor': { rotation: 35 },
+        'bpbPhotoTool:belay': { rotation: -40 },
+    } });
+    const { doc } = page;
+    const rotation = doc.getElementById('object-rotation').closest('label');
+    try {
+        for (const type of ['anchor', 'bolt', 'belay', 'piton', 'rappel', 'pitch', 'text', 'route', 'drawing']) {
+            const hidden = ['anchor', 'belay', 'route', 'drawing'].includes(type);
+            page.tool(type);
+            assert.equal(rotation.hidden, hidden, `${type} preset rotation visibility`);
+            if (type === 'route' || type === 'drawing') continue;
+            page.pointer('pointerdown', 100, 100);
+            assert.equal(rotation.hidden, hidden, `${type} placed rotation visibility`);
+            const mark = doc.querySelector('#annotation-list li:last-child button');
+            const id = mark.dataset.objectId;
+            page.tool(hidden ? 'piton' : 'belay');
+            page.click(doc.querySelector(`#annotation-list [data-object-id="${id}"]`));
+            assert.equal(rotation.hidden, hidden, `${type} reselected rotation visibility`);
+            assert.equal(doc.getElementById('object-scale').closest('label').hidden, false,
+                `${type} still offers size`);
+        }
+        assert.deepEqual(page.errors, []);
+    } finally {
+        page.dom.window.close();
+    }
+});
+
 // The style controls used to wait for a mark to exist, so the first symbol was
 // always placed at the previous style and then corrected. Arming a tool shows
 // the style its next mark will take instead.
