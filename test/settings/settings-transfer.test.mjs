@@ -284,3 +284,13 @@ test('provider visibility and both filter orders survive settings transfer', () 
     assert.deepEqual(defaults.betaPeakFilterOrder, Schema.PEAK_FILTER_ORDER);
     assert.deepEqual(defaults.betaPersonalFilterOrder, Schema.PERSONAL_FILTER_ORDER);
 });
+
+test('GPX timestamp privacy survives export/import and changes the GitHub settings signature', () => {
+    const payload = Transfer.buildPayload({ removeGpxTimestamps: true, includeTimestampsOnce: true });
+    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.removeGpxTimestamps, true);
+    assert.equal('includeTimestampsOnce' in payload.settings, false);
+    assert.notEqual(Transfer.signature({}), Transfer.signature({ removeGpxTimestamps: true }));
+    delete payload.settings.removeGpxTimestamps;
+    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.removeGpxTimestamps, false);
+    for (const invalid of ['true', 1, null]) assert.equal(Schema.clean({ removeGpxTimestamps: invalid }).removeGpxTimestamps, false);
+});

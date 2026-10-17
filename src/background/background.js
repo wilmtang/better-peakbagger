@@ -139,6 +139,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
         return {
             retainWaypoints: settings.retainWaypoints,
+            removeGpxTimestamps: settings.removeGpxTimestamps,
             fillAscentDetails: settings.fillAscentDetails,
             fillTripInfo: settings.fillTripInfo,
             fillWildernessNights: settings.fillWildernessNights,
@@ -200,9 +201,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const key = referencedPayloadKey(job);
         if (!key) return null;
         const record = (await storage().get(key))[key];
-        return record?.jobId === job.id && typeof record.gpx === 'string' && record.gpx.length > 0
-            ? record.gpx
-            : null;
+        const gpx = job.capturePreferences?.removeGpxTimestamps && job.includeTimestampsOnce !== true
+            ? record?.gpxWithoutTimestamps : record?.gpx;
+        return record?.jobId === job.id && typeof gpx === 'string' && gpx.length > 0 ? gpx : null;
     };
     const removePayloadKeys = async keys => {
         const owned = [...new Set((Array.isArray(keys) ? keys : [keys])
@@ -217,7 +218,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
     };
 
-    const installCapturePayload = (tabId, generation, gpx, patch) => {
+    const installCapturePayload = (tabId, generation, gpx, patch, gpxWithoutTimestamps) => {
         return enqueueMutation(CAPTURE_MUTATION_QUEUE, async () => {
             const jobs = await readMap(JOBS_KEY);
             const current = jobs[tabId];
@@ -227,7 +228,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 throw new Error('Capture payload is invalid.');
             }
             const previousPayloadKey = referencedPayloadKey(current);
-            await storage().set({ [payloadKey]: { jobId: generation, gpx } });
+            await storage().set({ [payloadKey]: { jobId: generation, gpx, ...(gpxWithoutTimestamps ? { gpxWithoutTimestamps } : {}) } });
             const next = { ...current, ...patch, payloadKey, updatedAt: now() };
             delete next.uploadGpx;
             jobs[tabId] = next;
@@ -344,6 +345,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         payloadKey: undefined,
         uploadGpx: undefined,
         capturePreferences: undefined,
+        timestampsRemoved: job.capturePreferences?.removeGpxTimestamps === true && job.includeTimestampsOnce !== true,
+        timestampChoiceAvailable: job.capturePreferences?.removeGpxTimestamps === true,
         tripName: undefined,
         nightsOut: undefined,
         dayStats: undefined,
@@ -1546,6 +1549,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 { checkpoint: cpu.checkpoint },
             );
             const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
+            const uploadGpxWithoutTimestamps = capturePreferences.removeGpxTimestamps
+                ? Core.serializeUploadGpx(reduced.segments, cleanWaypoints, { includeTimestamps: false }) : null;
             await cpu.checkpoint();
             diagnostics.mark('local.reduction');
             const matches = [];
@@ -1594,7 +1599,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 tripName,
                 nightsOut,
                 dayStats,
-                uploadGpx
+                uploadGpx,
+                uploadGpxWithoutTimestamps
             };
         } catch (error) {
             deadline.abort();
@@ -1817,7 +1823,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 dayStats: analysis.dayStats,
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
-            });
+            }, analysis.uploadGpxWithoutTimestamps);
             diagnostics.mark('storage.publish');
             diagnosticOutcome = 'ready';
         } catch (error) {
@@ -2126,6 +2132,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (!isFresh(job) || job.id !== expectedJobId
                 || (job.phase !== 'ready' && job.phase !== 'opened' && job.phase !== 'previewed')) return null;
             if (job.phase === 'ready') {
+                if (job.provider !== 'upload') job.includeTimestampsOnce = message.includeTimestampsOnce === true;
                 const allowed = new Set(job.matches.map(match => String(match.id)));
                 job.selectedIds = [...new Set((message.selectedIds || []).map(String))]
                     .filter(id => allowed.has(id))
@@ -2741,6 +2748,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 id: makeId(),
                 sourceTabId: tabId,
                 provider: 'upload',
+                includeTimestampsOnce: message.includeTimestampsOnce === true,
                 activityId: null,
                 boundPid: page.pid,
                 cid,
@@ -2816,7 +2824,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 nightsOut: analysis.nightsOut,
                 dayStats: analysis.dayStats,
                 expiresAt: now() + JOB_TTL_MS,
-            });
+            }, analysis.uploadGpxWithoutTimestamps);
             if (!updated) {
                 return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
             }

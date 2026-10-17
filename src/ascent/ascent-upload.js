@@ -20,6 +20,7 @@ import {
     MAX_GPX_TEXT_CHARS,
     gpxLimitMessage,
 } from '../capture/capture-resource-limits.js';
+import { removeGpxTimestamps } from '../gpx/gpx-timestamps.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
 import { boundedText as BoundedText } from '../net/bounded-text.js';
@@ -40,6 +41,7 @@ import tzlookup from 'tz-lookup';
     // selection checks. The page needs a slightly wider backstop around the
     // whole message round trip so a lost worker reply cannot leave Process in
     // a permanent busy state.
+    const GPX_PREPARATION_TIMEOUT_MS = 20_000;
     const GPX_PROCESS_REPLY_TIMEOUT_MS = CORRIDOR_TOTAL_TIMEOUT_MS + 20_000;
 
     const pad = value => String(value).padStart(2, '0');
@@ -141,6 +143,7 @@ import tzlookup from 'tz-lookup';
             hint.id = 'bpb-capture-hint';
             hint.className = 'bpb-capture-hint';
             const captureHint = document.createElement('span');
+            captureHint.id = 'bpb-capture-provider-hint';
             captureHint.textContent = 'Garmin or Strava activity? Open it there, then click Better Peakbagger in the browser toolbar to capture it directly.';
             const dropHint = document.createElement('span');
             dropHint.id = 'bpb-gpx-drop-hint';
@@ -149,6 +152,46 @@ import tzlookup from 'tz-lookup';
             hint.append(captureHint, dropHint);
             uploadCell.append(hint);
         }
+        const providerHint = document.getElementById('bpb-capture-provider-hint');
+        const providerHintText = providerHint?.textContent;
+        const preparationText = providerHint ? createStableText(providerHint) : null;
+        preparationText?.reserve([providerHintText, 'Preparing GPX…']);
+        const timestampChoice = document.createElement('label');
+        timestampChoice.className = 'bpb-timestamp-choice';
+        timestampChoice.hidden = true;
+        const includeTimestamps = document.createElement('input');
+        includeTimestamps.type = 'checkbox';
+        includeTimestamps.id = 'bpb-include-timestamps-once';
+        const timestampLabel = document.createElement('span');
+        timestampLabel.textContent = 'Include timestamps for this file';
+        const timestampHint = document.createElement('small');
+        timestampHint.textContent = 'Removed by default. Applies to this file only.';
+        timestampLabel.append(timestampHint);
+        timestampChoice.append(includeTimestamps, timestampLabel);
+        uploadCell?.insertBefore(timestampChoice, document.getElementById('bpb-capture-hint'));
+        let timestampSourceFile = null;
+        let preparingFile = false;
+        // File replacement is asynchronous. Block native Preview/form submission
+        // while preparing, and exclude the original upload from native postbacks.
+        document.addEventListener('click', event => {
+            if (!event.target.closest?.('#GPXPreview, #SaveButton, #SaveButton2')) return;
+            if (!preparingFile) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+        upload.form?.addEventListener('submit', event => {
+            if (!preparingFile) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+        includeTimestamps.addEventListener('click', event => {
+            if (includeTimestamps.getAttribute('aria-disabled') === 'true') event.preventDefault();
+        });
+        includeTimestamps.addEventListener('change', () => {
+            if (!timestampSourceFile || includeTimestamps.getAttribute('aria-disabled') === 'true') return;
+            void handleFileChange(timestampSourceFile, { keepTimestampChoice: true });
+        });
+
         const dropHint = document.getElementById('bpb-gpx-drop-hint');
         if (dropHint) {
             const describedBy = new Set((upload.getAttribute('aria-describedby') || '')
@@ -244,6 +287,7 @@ import tzlookup from 'tz-lookup';
             button = null;
             labelElement = null;
             processText = null;
+            includeTimestamps.setAttribute('aria-disabled', String(preparingFile));
             nativePreview.classList.remove('bpb-native-preview-hidden');
         };
 
@@ -271,14 +315,15 @@ import tzlookup from 'tz-lookup';
         };
         const currentGpxFile = () => {
             const file = nativeGpxFile();
-            if (!file || !selectedFile || file !== selectedFile.file
-                || !sameFileIdentity(fileIdentity(file), selectedFile.identity)) return null;
-            return file;
+            if (!file || !selectedFile || file !== selectedFile.attachedFile
+                || !sameFileIdentity(fileIdentity(selectedFile.file), selectedFile.identity)) return null;
+            return selectedFile.file;
         };
 
         const setBusy = label => {
             if (!button) return;
             button.disabled = true;
+            includeTimestamps.setAttribute('aria-disabled', 'true');
             button.setAttribute('aria-busy', 'true');
             processText.set(label);
         };
@@ -286,6 +331,7 @@ import tzlookup from 'tz-lookup';
         const setIdle = () => {
             if (!button) return;
             button.disabled = false;
+            includeTimestamps.setAttribute('aria-disabled', String(preparingFile));
             button.removeAttribute('aria-busy');
             processText.set('Process');
         };
@@ -594,6 +640,7 @@ import tzlookup from 'tz-lookup';
                         waypoints: parsed.waypoints,
                         trackName: parsed.trackName,
                         utcOffsetMinutes,
+                        includeTimestampsOnce: selection.includeTimestampsOnce,
                         ...selectionMessage(selection.generation, selection.nonce),
                     }));
                 } finally {
@@ -628,37 +675,80 @@ import tzlookup from 'tz-lookup';
             }
         };
 
-        const handleFileChange = async file => {
+        const handleFileChange = async (file, { keepTimestampChoice = false } = {}) => {
             const token = ++requestToken;
+            const deadline = Deadline.createRequestDeadline(GPX_PREPARATION_TIMEOUT_MS);
             const generation = ++selectionGeneration;
             const identity = fileIdentity(file);
             const nonce = newSelectionNonce();
             selectedFile = null;
+            timestampSourceFile = file;
+            if (!keepTimestampChoice) includeTimestamps.checked = false;
+            preparingFile = true;
+            preparationText?.set('Preparing GPX…');
+            upload.disabled = true;
+            includeTimestamps.setAttribute('aria-disabled', 'true');
             clearStatus();
-            resetNativeUi();
-            let invalidated;
+            if (!keepTimestampChoice) resetNativeUi();
+            else if (button) setBusy('Reading track…');
             try {
-                invalidated = await ext.runtime.sendMessage({
+                // Invalidate the old generation before reading settings or file
+                // bytes; a slow projection must not leave an earlier Apply live.
+                const invalidated = await deadline.run(ext.runtime.sendMessage({
                     type: 'GPX_PROCESS_INVALIDATE',
                     ...selectionMessage(generation, nonce),
-                });
+                }));
+                if (token !== requestToken || generation !== selectionGeneration) return;
+                if (!invalidated?.ok) throw new Error('The selected GPX could not be prepared. Reload the ascent form and try again.');
+                let settings;
+                try { settings = await deadline.run(Settings.requireCurrent()); }
+                catch (error) {
+                    console.error('Better Peakbagger: capture settings read failed', error);
+                    throw Object.assign(new Error('Capture settings could not be read. Reload and try again. Nothing was captured.'), { settingsUnavailable: true });
+                }
+                if (token !== requestToken) return;
+                timestampChoice.hidden = !settings.removeGpxTimestamps || !file || !/\.gpx$/i.test(file.name || '');
+                const includeTimestampsOnce = settings.removeGpxTimestamps && includeTimestamps.checked;
+                let attachedFile = file;
+                if (file && /\.gpx$/i.test(file.name || '') && settings.removeGpxTimestamps && !includeTimestampsOnce) {
+                    const text = await deadline.run(BoundedText.readBoundedBlobText(file, {
+                        maxBytes: MAX_GPX_BYTES, maxChars: MAX_GPX_TEXT_CHARS, label: 'GPX file',
+                    }));
+                    attachedFile = new File([removeGpxTimestamps(text)], file.name, {
+                        type: file.type || 'application/gpx+xml', lastModified: file.lastModified,
+                    });
+                }
+                if (token !== requestToken) return;
+                // Replaces the native upload too: Attach GPX and direct Save must
+                // not accidentally send the original timestamps.
+                if (file && /\.gpx$/i.test(file.name || '') && attachedFile !== nativeGpxFile()) {
+                    const transfer = new DataTransfer();
+                    if (attachedFile) transfer.items.add(attachedFile);
+                    upload.files = transfer.files;
+                }
+                if (!file || !/\.gpx$/i.test(file.name || '')) return;
+                selectedFile = { file, attachedFile, identity, nonce, generation, includeTimestampsOnce };
+                showProcessButton({ attachmentOnly: invalidated.preserved === true });
             } catch (error) {
                 if (token !== requestToken) return;
-                if (file && /\.gpx$/i.test(file.name || '')) {
-                    showStatus('error', 'The selected GPX could not be prepared. Reload the ascent form and try again.');
+                // Clear the native file on failure: fallback must never upload
+                // the unprocessed original while timestamp removal is selected.
+                upload.value = '';
+                timestampSourceFile = null;
+                timestampChoice.hidden = true;
+                resetNativeUi();
+                showStatus('error', error.settingsUnavailable ? error.message
+                    : BoundedText.isLimitError(error) ? gpxLimitMessage()
+                        : 'The selected GPX could not be prepared safely. Choose the file again to retry.');
+            } finally {
+                deadline.clear();
+                if (token === requestToken) {
+                    preparingFile = false;
+                    preparationText?.set(providerHintText);
+                    upload.disabled = false;
+                    includeTimestamps.setAttribute('aria-disabled', 'false');
                 }
-                return;
             }
-            if (token !== requestToken || generation !== selectionGeneration) return;
-            if (!invalidated?.ok) {
-                if (file && /\.gpx$/i.test(file.name || '')) {
-                    showStatus('error', 'The selected GPX could not be prepared. Reload the ascent form and try again.');
-                }
-                return;
-            }
-            if (!file || !/\.gpx$/i.test(file.name || '')) return;
-            selectedFile = { file, identity, nonce, generation };
-            showProcessButton({ attachmentOnly: invalidated.preserved === true });
         };
 
         // Keep drop discovery collection-shaped even while this page admits a
@@ -772,7 +862,16 @@ import tzlookup from 'tz-lookup';
         document.addEventListener('drop', onDrop);
         window.addEventListener('dragend', resetDropCue);
         window.addEventListener('drop', resetDropCue);
-        document.getElementById('GPXRemove')?.addEventListener('click', () => restoreNative());
+        document.getElementById('GPXRemove')?.addEventListener('click', () => {
+            timestampSourceFile = null;
+            timestampChoice.hidden = true;
+            includeTimestamps.checked = false;
+            preparingFile = false;
+            preparationText?.set(providerHintText);
+            upload.disabled = false;
+            includeTimestamps.setAttribute('aria-disabled', 'false');
+            restoreNative();
+        });
         PageLifecycle.create({
             onSuspend: () => {
                 requestToken++;
@@ -788,7 +887,7 @@ import tzlookup from 'tz-lookup';
             },
             onResume: () => {
                 const file = nativeGpxFile();
-                if (file) void handleFileChange(file);
+                if (file) void handleFileChange(timestampSourceFile || file);
                 else restoreNative();
             },
             onDispose: () => {

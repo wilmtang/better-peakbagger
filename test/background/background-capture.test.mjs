@@ -3962,3 +3962,25 @@ test('a nominally successful export with no usable points also ends without an e
     assert.equal(result.hasCachedGpx, false);
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
 });
+
+test('capture timestamp exceptions freeze at opening and reset for a fresh capture', async () => {
+    for (const includeTimestampsOnce of [false, true]) {
+        const harness = createHarness({ settings: { removeGpxTimestamps: true } });
+        const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1 });
+        assert.equal(ready.timestampChoiceAvailable, true);
+        assert.equal(ready.timestampsRemoved, true);
+        const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7], includeTimestampsOnce });
+        const sender = { tab: { id: opened.tabIds[0] } };
+        const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, sender);
+        assert.equal(apply.action, 'apply');
+        assert.equal(/<time>/.test(apply.gpx), includeTimestampsOnce);
+        assert.equal(apply.fields.date, '2026-07-01');
+        assert.match(apply.gpx, /<ele>130<\/ele>/);
+        await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7], includeTimestampsOnce: !includeTimestampsOnce });
+        assert.equal(harness.values.bpbCaptureJobs['1'].includeTimestampsOnce, includeTimestampsOnce);
+        const fresh = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+        assert.equal(fresh.timestampsRemoved, true);
+        assert.equal(fresh.includeTimestampsOnce, undefined);
+        assert.equal(harness.syncValues.bpbSettings.removeGpxTimestamps, true);
+    }
+});

@@ -7,6 +7,7 @@ import { matchLabel } from '../src/capture/match-confidence.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
+import { createStableText } from '../src/ui/stable-text.js';
 import { rateLimitMessage } from '../src/net/rate-limit.js';
 
 (() => {
@@ -17,6 +18,13 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     const results = document.getElementById('results');
     const list = document.getElementById('peak-list');
     const summary = document.getElementById('track-summary');
+    const timestampChoice = document.getElementById('timestamp-choice');
+    const includeTimestampsOnce = document.getElementById('include-timestamps-once');
+    const privacyNote = document.getElementById('capture-privacy-note');
+    const privacyText = createStableText(privacyNote);
+    const timedPrivacy = 'Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends the reduced GPX track with coordinates, elevation, and time to Preview. Save is always manual.';
+    const timelessPrivacy = 'Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends the reduced GPX track with coordinates and elevation, with timestamps removed, to Preview. Save is always manual.';
+    privacyText.reserve([timedPrivacy, timelessPrivacy]);
     const openButton = document.getElementById('open-drafts');
     const clearCaptureButton = document.getElementById('clear-capture');
     const selectionCount = document.getElementById('selection-count');
@@ -262,6 +270,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         if (currentJob?.phase === 'opening') {
             selectionLockHint.hidden = false;
             openButton.textContent = 'Opening drafts…';
+            includeTimestampsOnce.disabled = true;
             openButton.disabled = true;
             return;
         }
@@ -282,6 +291,10 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         clear(state);
         clear(list);
         results.hidden = false;
+        timestampChoice.hidden = !job.timestampChoiceAvailable;
+        includeTimestampsOnce.checked = job.includeTimestampsOnce === true;
+        includeTimestampsOnce.disabled = job.phase !== 'ready';
+        privacyText.set(job.timestampsRemoved ? timelessPrivacy : timedPrivacy);
         // Reset the note; the open handler re-states it for the job it just opened.
         openNote.hidden = true;
         openNote.textContent = '';
@@ -470,16 +483,27 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
     });
 
     settingsButton.addEventListener('click', openSettings);
+    includeTimestampsOnce.addEventListener('change', () => {
+        // The choice stays in this job's UI until the opening transaction freezes it.
+        // No preference write: the next capture starts with the privacy default.
+        if (currentJob?.phase !== 'ready') return;
+        currentJob.selectedIds = selectedIds();
+        currentJob.includeTimestampsOnce = includeTimestampsOnce.checked;
+        currentJob.timestampsRemoved = !includeTimestampsOnce.checked;
+        renderResults(currentJob);
+    });
 
     openButton.addEventListener('click', async () => {
         const revision = replaceOperation();
         openButton.disabled = true;
+        includeTimestampsOnce.disabled = true;
         openButton.textContent = 'Opening drafts…';
         try {
             const response = await ext.runtime.sendMessage({
                 type: 'CAPTURE_OPEN_DRAFTS',
                 tabId: activeTab.id,
-                selectedIds: selectedIds()
+                selectedIds: selectedIds(),
+                includeTimestampsOnce: includeTimestampsOnce.checked
             });
             if (revision !== captureRevision) return;
             if (response?.phase === 'error') throw reportedFailure(response.error?.message || 'Drafts could not be opened.');
@@ -498,6 +522,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
         } catch (error) {
             if (revision !== captureRevision) return;
             refreshSelection();
+            includeTimestampsOnce.disabled = currentJob?.phase !== 'ready';
             openNote.textContent = publicMessage(error);
             openNote.hidden = false;
         }

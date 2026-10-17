@@ -538,3 +538,15 @@ test('a failed drag save restores the confirmed order and reports the failure', 
     assert.equal(list.querySelectorAll('input:checked').length, 4);
     assert.equal(dom.window.document.activeElement, grip);
 });
+
+test('timestamp removal is an Options preference stored in browser sync', async () => {
+    const dom = await loadOptions({});
+    const control = el(dom, 'remove-gpx-timestamps');
+    assert.equal(control.checked, false);
+    assert.equal(control.closest('.subsection').id, 'capture-gpx');
+    control.checked = true;
+    control.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.removeGpxTimestamps === true);
+    const restored = await loadOptions({ removeGpxTimestamps: true });
+    assert.equal(el(restored, 'remove-gpx-timestamps').checked, true);
+});

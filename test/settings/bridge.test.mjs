@@ -39,6 +39,7 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
         enable3dMap: true,
         theme: 'dark',
         retainWaypoints: false,
+        removeGpxTimestamps: true,
         fillAscentDetails: false
     });
     await waitFor(dom, () => dom.chrome._store.bpbSettings);
@@ -50,6 +51,7 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
     assert.equal(stored.mapRouteColor, '#123abc');
     assert.equal(stored.enable3dMap, false, 'page-world writes must not flip extension feature gates');
     assert.equal(stored.theme, 'system', 'page-world writes must not change the theme');
+    assert.equal(stored.removeGpxTimestamps, false, 'page-world writes cannot change timestamp privacy');
     assert.equal(stored.retainWaypoints, true, 'page-world writes must not change capture privacy options');
     assert.equal(stored.fillAscentDetails, true, 'page-world writes must not change capture autofill options');
     dom.window.close();

@@ -1172,3 +1172,17 @@ test('end to end: user file pick → Process → filled form → exactly one GPS
     assert.equal(afterReload.peakName, 'Test Peak');
     assert.equal(previewClicks, 1);
 });
+
+test('local Process removes upload timestamps by default and honors only an explicit per-file exception', async () => {
+    for (const includeTimestampsOnce of [false, true, 'true']) {
+        const harness = createHarness({ settings: { removeGpxTimestamps: true } });
+        const ready = await harness.send({ type: 'GPX_PROCESS_START', segments: SEGMENTS, includeTimestampsOnce });
+        assert.equal(ready.phase, 'ready');
+        const applied = await harness.send({ type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7], primaryId: 7 });
+        assert.equal(applied.ok, true);
+        const draft = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
+        assert.equal(draft.action, 'apply');
+        assert.equal(/<time>/.test(draft.gpx), includeTimestampsOnce === true);
+        assert.equal(draft.fields.date, '2026-07-01');
+    }
+});

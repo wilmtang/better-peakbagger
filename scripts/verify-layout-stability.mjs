@@ -974,6 +974,160 @@ async function uploadCase(page, origin, variant) {
         stable(cancelBefore, await geometry(page, '.bpb-summit-cancel'), 'summit neighboring Cancel');
     }
 }
+// The baseline replaces only the upload module with its committed predecessor,
+// without resetting the worktree. Its first assertion must detect exposed times.
+async function timestampCase(page, origin, variant) {
+    const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'))
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+    await page.route('**/climber/ascentedit.aspx**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.addInitScript(({ theme }) => {
+        document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
+        globalThis.__messages = [];
+        globalThis.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { theme, removeGpxTimestamps: true, enableReportEditor: false } }) },
+            onChanged: { addListener() {}, removeListener() {} } }, runtime: { getManifest: () => ({ version: '4.0.1' }),
+            onMessage: { addListener() {}, removeListener() {} }, sendMessage: async message => {
+                globalThis.__messages.push(message);
+                if (message.type === 'GPX_PROCESS_START') return new Promise(resolve => {
+                    globalThis.__finishTrack = () => resolve({ phase: 'error', pageSessionId: message.pageSessionId,
+                        selectionGeneration: message.selectionGeneration, selectionNonce: message.selectionNonce,
+                        error: { message: 'Summit lookup is unavailable. Attach this file or choose it again to retry.' } });
+                });
+                return { ok: true };
+            } } };
+    }, variant);
+    await page.goto(`${origin}/climber/ascentedit.aspx?pid=2296`);
+    await page.addStyleTag({ content: darkCss });
+    await page.addStyleTag({ content: (await asset('css/ascent-upload.css')).toString() });
+    await page.addScriptTag({ content: (await asset('vendor/marked.umd.js')).toString() });
+    let bundle = (await asset('content/ascent-editor.js')).toString();
+    if (process.env.BPB_TIMESTAMP_BASELINE) {
+        const { execFileSync } = await import('node:child_process');
+        const { build } = await import('esbuild');
+        assert.match(process.env.BPB_TIMESTAMP_BASELINE, /^[a-f0-9]{40}$/, 'Baseline must name a full commit SHA');
+        const original = execFileSync('git', ['show', `${process.env.BPB_TIMESTAMP_BASELINE}:src/ascent/ascent-upload.js`], { cwd: projectRoot, encoding: 'utf8' });
+        const built = await build({ stdin: { contents: original, resolveDir: path.join(projectRoot, 'src/ascent') },
+            bundle: true, write: false, format: 'iife', platform: 'browser' });
+        bundle = built.outputFiles[0].text;
+    }
+    await page.addScriptTag({ content: bundle });
+    const gpx = '<gpx xmlns="http://www.topografix.com/GPX/1/1"><metadata><time>2026-01-01T01:00:00Z</time></metadata><trk><trkseg><trkpt lat="46.8" lon="-121.7"><ele>100</ele><time>2026-01-01T01:00:00Z</time></trkpt><trkpt lat="46.801" lon="-121.7"><ele>200</ele><time>2026-01-01T02:00:00Z</time></trkpt></trkseg></trk></gpx>';
+    const file = path.join(fixtureDirectory, `private-times-${variant.name}.gpx`);
+    await writeFile(file, gpx);
+    await page.locator('#GPXUpload').setInputFiles(file);
+    await page.waitForFunction(() => document.querySelector('.bpb-process-button, .bpb-upload-status-error'));
+    assert.equal(await page.locator('.bpb-upload-status-error').count(), 0,
+        await page.locator('.bpb-upload-status-error').allTextContents().then(texts => texts.join(' ')));
+    await page.locator('.bpb-process-button').waitFor();
+    const readUpload = () => page.locator('#GPXUpload').evaluate(input => input.files[0].text());
+    assert.doesNotMatch(await readUpload(), /<time>/, 'native upload must omit timestamps before Attach or Save');
+    const choice = page.locator('#bpb-include-timestamps-once');
+    await page.locator('.bpb-timestamp-choice').scrollIntoViewIfNeeded();
+    const snapshot = () => page.evaluate(() => {
+        const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect();
+            return { x: r.x + globalThis.scrollX, y: r.y + globalThis.scrollY, width: r.width, height: r.height }; };
+        return { action: rect('.bpb-upload-actions'), heading: rect('h1'), following: rect('#JournalText'), scroll: globalThis.scrollY };
+    });
+    const assertStable = async (before, label) => {
+        const after = await snapshot();
+        for (const key of ['action', 'heading', 'following']) stable(before[key], after[key], `${label} ${key}`);
+        assert.ok(Math.abs(before.scroll - after.scroll) <= 1, `${label} moved the reading position`);
+    };
+    await choice.focus();
+    const before = await snapshot();
+    await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.getElementById('bpb-include-timestamps-once').getAttribute('aria-disabled') === 'false');
+    assert.match(await readUpload(), /<time>/);
+    assert.equal(await choice.evaluate(input => document.activeElement === input), true, 'keyboard focus survives file preparation');
+    await assertStable(before, 'exception enabled');
+    await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.getElementById('bpb-include-timestamps-once').getAttribute('aria-disabled') === 'false');
+    assert.doesNotMatch(await readUpload(), /<time>/);
+    await assertStable(before, 'exception cleared');
+    await capture(page, `${variant.name}-timestamp-upload`);
+    await page.locator('.bpb-process-button').click();
+    await page.waitForFunction(() => typeof globalThis.__finishTrack === 'function');
+    assert.equal(await choice.getAttribute('aria-disabled'), 'true');
+    await choice.click({ force: true });
+    await choice.focus();
+    await page.keyboard.press('Space');
+    assert.equal(await choice.isChecked(), false, 'busy choice blocks duplicate activation');
+    await assertStable(before, 'slow processing');
+    const analysis = await page.evaluate(() => globalThis.__messages.find(message => message.type === 'GPX_PROCESS_START'));
+    assert.ok(analysis.segments[0][0].time > 0, 'analysis still receives the original timestamps');
+    await page.evaluate(() => globalThis.__finishTrack());
+    await page.locator('.bpb-upload-status-error').waitFor();
+    assert.doesNotMatch(await readUpload(), /<time>/, 'failure fallback remains timeless');
+    await choice.check();
+    await page.waitForFunction(() => document.getElementById('bpb-include-timestamps-once').getAttribute('aria-disabled') === 'false');
+    assert.match(await readUpload(), /<time>/);
+    const nextFile = path.join(fixtureDirectory, `next-file-${variant.name}.gpx`);
+    await writeFile(nextFile, gpx);
+    await page.locator('#GPXUpload').setInputFiles(nextFile);
+    await page.locator('.bpb-process-button').waitFor();
+    assert.equal(await choice.isChecked(), false, 'new files reset the exception');
+    assert.doesNotMatch(await readUpload(), /<time>/);
+
+    // Use a fresh page for the capture popup so the ascent API stub stays local.
+    const popup = await page.context().newPage();
+    // A real action popup expands with zoom; keep its intrinsic 390px width.
+    await popup.setViewportSize({ width: Math.max(Math.floor(variant.width / variant.zoom), 390), height: Math.floor(900 / variant.zoom) });
+    popup.setDefaultTimeout(10000);
+    popup.on('pageerror', error => console.error(`timestamp popup: ${error.message}`));
+    try {
+        await popup.addInitScript(({ theme }) => {
+            const job = { phase: 'ready', provider: 'strava', activityId: '777', hasCachedGpx: true,
+                timestampChoiceAvailable: true, timestampsRemoved: true, selectedIds: [1],
+                trackSummary: { originalPointCount: 50, retainedPointCount: 50, maxDeviationM: 0 },
+                matches: [{ id: 1, name: 'North Summit', classification: 'strong', confidence: 98, evidence: { distanceM: 2 } }] };
+            globalThis.chrome = { tabs: { query: async () => [{ id: 9 }] },
+                storage: { sync: { get: async () => ({ bpbSettings: { theme } }) }, onChanged: { addListener() {}, removeListener() {} } },
+                runtime: { sendMessage: async message => {
+                    if (['CAPTURE_START', 'CAPTURE_STATUS'].includes(message.type)) return structuredClone(job);
+                    if (message.type === 'CAPTURE_OPEN_DRAFTS') return new Promise(resolve => {
+                        globalThis.__open = message;
+                        globalThis.__finishOpen = fail => resolve(fail ? { phase: 'error', error: { message: 'Could not open drafts. Try again.' } }
+                            : { job: { ...job, phase: 'opened', includeTimestampsOnce: message.includeTimestampsOnce, timestampsRemoved: !message.includeTimestampsOnce } });
+                    });
+                    return { ok: true };
+                } } };
+        }, variant);
+        await popup.goto(`${origin}/dist/popup/popup.html`);
+        await popup.waitForFunction(() => document.getElementById('open-drafts')?.textContent.includes('Open 1 draft'), null, { timeout: 10000 })
+            .catch(async error => { throw new Error(`${error.message}; popup state: ${await popup.locator('body').innerText()}`); });
+        const action = '#open-drafts', exception = popup.locator('#include-timestamps-once');
+        const initial = await geometry(popup, action);
+        await exception.check();
+        stable(initial, await geometry(popup, action), 'capture exception toggle');
+        await popup.locator(action).click();
+        await popup.waitForFunction(() => typeof globalThis.__finishOpen === 'function');
+        assert.equal(await exception.isDisabled(), true);
+        assert.equal(await popup.evaluate(() => globalThis.__open.includeTimestampsOnce), true);
+        stable(initial, await geometry(popup, action), 'capture pending');
+        await popup.evaluate(() => globalThis.__finishOpen(true));
+        await popup.waitForFunction(() => !document.getElementById('open-drafts').disabled);
+        assert.equal(await exception.isChecked(), true, 'retry keeps this capture choice');
+        stable(initial, await geometry(popup, action), 'capture error');
+        await popup.locator(action).click();
+        await popup.evaluate(() => globalThis.__finishOpen(false));
+        await popup.locator(action).filter({ hasText: 'Show opened drafts' }).waitFor();
+        assert.equal(await exception.isDisabled(), true);
+        stable(initial, await geometry(popup, action), 'capture completion');
+        await capture(popup, `${variant.name}-timestamp-capture`);
+    } finally { await popup.close(); }
+    const options = await page.context().newPage();
+    try {
+        const markup = (await asset('options/options.html')).toString().replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+        await options.route('**/dist/options/options.html', route => route.fulfill({ contentType: 'text/html', body: markup }));
+        await options.goto(`${origin}/dist/options/options.html`);
+        await options.evaluate(({ theme }) => {
+            document.documentElement.dataset.bpbTheme = theme;
+            document.getElementById('remove-gpx-timestamps').checked = true;
+        }, variant);
+        await options.locator('#remove-gpx-timestamps').scrollIntoViewIfNeeded();
+        await capture(options, `${variant.name}-timestamp-options`);
+    } finally { await options.close(); }
+}
+
 async function reportCase(page, origin, variant) {
     await page.addInitScript(() => {
         const area = { get: async () => ({ bpbSettings: {} }), set: async () => {} };
@@ -1043,7 +1197,7 @@ async function reportCase(page, origin, variant) {
 }
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
-    'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, reports: reportCase };
+    'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase };
 for (const argument of process.argv.slice(2)) {
     assert.ok(argument === '--chrome-only' || argument === '--firefox-only' || /^--surface=.+$/.test(argument), `Unknown layout argument: ${argument}`);
 }
@@ -1066,27 +1220,28 @@ try {
             ? { channel: 'chromium', args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] }
             : { firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } }) });
         try {
-            for (const theme of ['light', 'dark']) for (const width of [390, 1280]) {
-                for (const [surface, check] of Object.entries(cases)) {
-                    if (selected && selected !== surface) continue;
-                    const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width, height: 900 }, colorScheme: theme });
-                    try {
-                        await context.route(`${origin}/dist/**`, async route => {
-                            const file = new URL(route.request().url()).pathname.slice('/dist/'.length);
-                            if (file.includes('..')) return route.abort();
-                            try { await route.fulfill({ body: await asset(file), contentType: fixtureContentType(file) }); }
-                            catch { await route.fulfill({ status: 404, body: 'Missing shipped fixture asset' }); }
-                        });
-                        const page = await context.newPage();
-                        page.setDefaultTimeout(10000);
-                        page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
-                        const variant = { theme, width, name: `${name}-${theme}-${width}` };
-                        await check(page, origin, variant);
-                        console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
-                            surface, theme, viewport: `${width}x900`, result: 'passed' }));
-                    } finally { await context.close(); }
+            for (const theme of ['light', 'dark']) for (const width of [390, 1280])
+                for (const zoom of selected === 'timestamps' ? [1, 1.5] : [1]) {
+                    for (const [surface, check] of Object.entries(cases)) {
+                        if (selected && selected !== surface) continue;
+                        const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: Math.floor(width / zoom), height: Math.floor(900 / zoom) }, deviceScaleFactor: zoom, colorScheme: theme });
+                        try {
+                            await context.route(`${origin}/dist/**`, async route => {
+                                const file = new URL(route.request().url()).pathname.slice('/dist/'.length);
+                                if (file.includes('..')) return route.abort();
+                                try { await route.fulfill({ body: await asset(file), contentType: fixtureContentType(file) }); }
+                                catch { await route.fulfill({ status: 404, body: 'Missing shipped fixture asset' }); }
+                            });
+                            const page = await context.newPage();
+                            page.setDefaultTimeout(10000);
+                            page.on('pageerror', error => console.error(`${surface}: ${error.message}`));
+                            const variant = { theme, width, zoom, name: `${name}-${theme}-${width}${zoom === 1 ? '' : '-zoom150'}` };
+                            await check(page, origin, variant);
+                            console.log(JSON.stringify({ browser: name, version: browser.version(), hidden: true,
+                                surface, theme, viewport: `${Math.floor(width / zoom)}x${Math.floor(900 / zoom)}`, deviceScaleFactor: zoom, layoutZoom: zoom, result: 'passed' }));
+                        } finally { await context.close(); }
+                    }
                 }
-            }
         } finally { await browser.close(); }
     }
 } catch (error) { failure = error; }

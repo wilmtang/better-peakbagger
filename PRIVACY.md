@@ -118,6 +118,14 @@ The reduced GPX can contain:
 
 It excludes heart rate, cadence, power, temperature, device fields,
 descriptions, routes, waypoint elevation/time/symbols, and extension elements.
+The Options-only **Remove GPX timestamps** preference removes recorded times
+from GPX sent to Peakbagger. Capture results offer **Include timestamps for this
+capture** before opening drafts; the choice applies to all selected summits
+and locks when opening starts. The next capture uses the default again.
+Allowlisted timed and timeless reduced tracks remain in private session storage
+under the same 30-minute expiry so this exception needs no provider re-export.
+The preference syncs and transfers with settings; exceptions and GPX do not.
+
 Derived form values such as date, ascent times, distance, gain, per-day
 statistics, and nights out remain only in the prepared draft until it expires
 or is discarded.
@@ -130,9 +138,14 @@ coordinates, GPX, page text, response body, cookies, or headers.
 ## Processing a GPX file you upload
 
 **Attach GPX** uses Peakbagger's native Preview on the current ascent. It sends
-the original chosen file to Peakbagger without summit processing or the
-extension's privacy reduction. Existing-ascent edits offer this attachment
-path only. Review and Save remain manual.
+the chosen file to Peakbagger without summit processing or the extension's
+full capture privacy reduction. When **Remove GPX timestamps** is enabled,
+metadata, waypoint, route, and track `<time>` elements are removed on the page
+before the file can be attached or saved. **Include timestamps for this file**
+restores the original timestamps for that file only; selecting another file
+resets the choice. The original disk file is never modified. Other fields and
+extensions in an attached file remain included. Existing-ascent edits offer
+this attachment path only. Review and Save remain manual.
 
 The optional **Process** action beside Peakbagger's GPS Track field follows the
 same rules as activity capture:

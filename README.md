@@ -27,6 +27,12 @@ Visit Peakbagger to see the new tools. To capture a Garmin Connect or Strava
 activity you own, open it and click the Better Peakbagger icon. Find Settings
 in the extension's Details or Preferences page.
 
+To omit recorded times from uploads, enable **Remove GPX timestamps** in
+Settings → Capture & reports → GPX capture. Each capture or selected file can
+include timestamps as a one-time exception. Dates and calculated durations still
+fill normally. This preference is included in browser sync, settings exports,
+and GitHub settings backup/restore for sharing settings between Chrome and Firefox.
+
 ## Feature tour
 
 ### Free weather for the next summit—and the last one

@@ -749,3 +749,15 @@ test('priority reduction preserves midpoint ties and elevation extrema', async (
         assert.ok(result.maxDeviationM < 0.000001);
     }
 });
+
+test('upload serialization can omit timestamps without changing analysis or geometry', () => {
+    const segments = [[point(49, -123, 100, Date.UTC(2026, 0, 1)), point(49.001, -123, 200, Date.UTC(2026, 0, 1, 1))]];
+    const snapshot = structuredClone(segments);
+    const timed = Core.serializeUploadGpx(segments);
+    const timeless = Core.serializeUploadGpx(segments, [{ lat: 49, lon: -123, name: 'Camp' }], { includeTimestamps: false });
+    assert.match(timed, /<time>/);
+    assert.doesNotMatch(timeless, /<time>/);
+    assert.match(timeless, /<ele>100<\/ele>/);
+    assert.match(timeless, /<wpt lat="49" lon="-123"><name>Camp<\/name>/);
+    assert.deepEqual(segments, snapshot);
+});

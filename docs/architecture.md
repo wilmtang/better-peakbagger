@@ -453,11 +453,17 @@ allowlist and reduced to Peakbagger's budget. This separation is the privacy
 boundary: the code does not redact the provider document in place.
 
 Raw local-file GPX also remains on `ascentedit.aspx`. A real user file-selection
-event offers **Attach GPX** (the native Preview path with the original file)
+event offers **Attach GPX** (the native Preview path with the chosen file)
 and, on new-ascent forms, **Process**. Existing `aid` forms offer attachment
 only; the worker also refuses summit processing on edits. The draft filler's
 synthetic file change is ignored so it cannot recursively process its own
-cleaned upload. The original disk file is never changed.
+cleaned upload. The original disk file is never changed. The Options-only
+`removeGpxTimestamps` preference projects a local file through
+`src/gpx/gpx-timestamps.js` before any native upload, including direct Save.
+Preparation excludes the original input from form submission and blocks Preview
+and Save until replacement completes; invalid XML/read/replacement failures
+clear the native upload. A checkbox scoped to that file can restore timestamps.
+Processing retains the original page-owned file for date/time derivation.
 
 The page sends only an opaque page-session id, monotonically increasing
 selection generation, and random selection nonce before analysis starts. File
@@ -606,6 +612,14 @@ latitude/longitude/name. It excludes provider extensions, device and health
 fields, source descriptions, waypoint symbols/elevation/time, and arbitrary
 XML. `src/ascent/ascent-draft.js` validates this private GPX again before attaching it
 to Peakbagger's form.
+
+With timestamp removal enabled, the worker serializes both timed and timeless
+allowlisted tracks into the generation-owned session payload. Capture results
+choose the variant once, at the start of draft opening; local Process snapshots
+the per-file choice when analysis starts. Draft delivery and saved-GPX verification
+read the same frozen variant. The default is an ordinary validated boolean in
+`storage.sync`, manual settings exports, and GitHub settings backups. Per-operation
+exceptions stay in session state and never change the default.
 
 ### 7. Draft identity, ordering, and exactly-once Preview
 

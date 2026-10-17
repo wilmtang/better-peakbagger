@@ -858,7 +858,7 @@ const escapeXml = value => String(value)
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 
-const serializeUploadGpx = (segments, waypoints = []) => {
+const serializeUploadGpx = (segments, waypoints = [], { includeTimestamps = true } = {}) => {
     const waypointBody = waypoints.map(waypoint => {
         const name = waypoint.name ? `<name>${escapeXml(waypoint.name)}</name>` : '';
         return `<wpt lat="${waypoint.lat}" lon="${waypoint.lon}">${name}</wpt>`;
@@ -866,7 +866,7 @@ const serializeUploadGpx = (segments, waypoints = []) => {
     const body = segments.map(segment => {
         const points = segment.map(point => {
             const elevation = Metrics.isPlausibleElevationM(point.ele) ? `<ele>${point.ele}</ele>` : '';
-            const date = Number.isFinite(point.time) ? new Date(point.time) : null;
+            const date = includeTimestamps && Number.isFinite(point.time) ? new Date(point.time) : null;
             const isoTime = date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
             const time = isoTime
                 ? `<time>${isoTime.endsWith('.000Z') ? isoTime.slice(0, -5) + 'Z' : isoTime}</time>`

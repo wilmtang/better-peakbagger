@@ -765,20 +765,19 @@ test('local upload fails before reading the file when capture settings are unava
         },
         respond: message => message.type === 'DRAFT_READY' ? { action: 'ignore' } : null,
     });
-    const input = await chooseGpx(dom);
     let fileReads = 0;
-    input.files[0].text = async () => {
-        fileReads++;
-        return GPX;
-    };
-    processButton(dom).click();
+    const file = new dom.window.File([GPX], 'walk.gpx');
+    file.text = async () => { fileReads++; return GPX; };
+    const input = dom.window.document.getElementById('GPXUpload');
+    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
+    fireTrustedEvent(input, 'change', { bubbles: true });
     await waitFor(dom, () => uploadStatus(dom));
-
     assert.equal(uploadStatus(dom).textContent,
         'Capture settings could not be read. Reload and try again. Nothing was captured.');
     assert.equal(fileReads, 0, 'the GPX must remain unread while privacy choices are unknown');
+    assert.equal(processButton(dom), null);
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
-    assert.match(errors.flat().map(String).join('\n'), /SYNC_UPLOAD_SETTINGS_SENTINEL/);
+    assert.match(errors.flat().map(String).join(' '), /SYNC_UPLOAD_SETTINGS_SENTINEL/);
 });
 
 test('local upload rejects an oversized file before reading or messaging the worker', async () => {
@@ -1063,4 +1062,73 @@ test('the stylesheet keeps its reduced-motion and dark-theme guards', async () =
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-gpx-page-drop-overlay/);
     assert.match(css, /\.bpb-gpx-page-drop-overlay \{ transition: none; \}/);
     assert.match(css, /animation: none !important/);
+});
+
+test('native upload is timeless before Attach or Save; exception restores only this file and Process still analyzes original times', async () => {
+    const dom = await loadEditor({ settings: { removeGpxTimestamps: true }, prepare: installDropFileList,
+        respond: message => message.type === 'GPX_PROCESS_START' ? { phase: 'no-matches' } : { action: 'ignore' } });
+    const input = await chooseGpx(dom);
+    await waitFor(dom, () => processButton(dom));
+    assert.doesNotMatch(await input.files[0].text(), /<time>/);
+    const checkbox = dom.window.document.getElementById('bpb-include-timestamps-once');
+    assert.equal(checkbox.checked, false);
+    checkbox.checked = true; checkbox.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => checkbox.getAttribute('aria-disabled') === 'false');
+    assert.match(await input.files[0].text(), /<time>/);
+    checkbox.checked = false; checkbox.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => checkbox.getAttribute('aria-disabled') === 'false');
+    assert.doesNotMatch(await input.files[0].text(), /<time>/);
+    processButton(dom).click();
+    await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    assert.equal(start.includeTimestampsOnce, false);
+    assert.equal(start.segments[0][0].time, Date.parse('2026-07-01T15:00:00Z'));
+    await chooseGpx(dom, { name: 'other.gpx' });
+    await waitFor(dom, () => processButton(dom));
+    assert.equal(checkbox.checked, false);
+    assert.doesNotMatch(await input.files[0].text(), /<time>/);
+    dom.window.close();
+});
+
+test('malformed GPX cannot leave the original file attached when timestamp removal is enabled', async () => {
+    const dom = await loadEditor({ settings: { removeGpxTimestamps: true }, prepare: installDropFileList });
+    const input = await chooseGpx(dom, { content: '<gpx><time>private</time>' });
+    await waitFor(dom, () => uploadStatus(dom));
+    assert.match(uploadStatus(dom).textContent, /could not be prepared safely/);
+    assert.equal(input.value, '');
+    assert.equal(processButton(dom), null);
+    assert.equal(input.disabled, false);
+    dom.window.close();
+});
+
+test('stalled file preparation blocks native submission, times out safely, and ignores its late reply', async () => {
+    let expirePreparation;
+    let releasePreparation;
+    const dom = await loadEditor({ settings: { removeGpxTimestamps: true }, prepare: d => {
+        const setTimeout = d.window.setTimeout.bind(d.window);
+        const clearTimeout = d.window.clearTimeout.bind(d.window);
+        d.window.setTimeout = (callback, delay, ...args) => delay === 20_000
+            ? (expirePreparation = () => callback(...args), 20000) : setTimeout(callback, delay, ...args);
+        d.window.clearTimeout = id => { if (id !== 20000) clearTimeout(id); };
+        d.chrome.runtime.sendMessage = message => message.type === 'GPX_PROCESS_INVALIDATE'
+            ? new Promise(resolve => { releasePreparation = resolve; }) : Promise.resolve({ action: 'ignore' });
+    } });
+    const input = await chooseGpx(dom);
+    assert.equal(input.disabled, true, 'native postbacks cannot include the original file while preparing');
+    assert.equal(dom.window.document.getElementById('bpb-capture-provider-hint').textContent, 'Preparing GPX…');
+    const submit = new dom.window.Event('submit', { bubbles: true, cancelable: true });
+    input.form.dispatchEvent(submit);
+    assert.equal(submit.defaultPrevented, true);
+    const save = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+    dom.window.document.getElementById('SaveButton').dispatchEvent(save);
+    assert.equal(save.defaultPrevented, true);
+    expirePreparation();
+    await waitFor(dom, () => uploadStatus(dom));
+    assert.equal(input.disabled, false);
+    assert.equal(input.value, '');
+    assert.equal(processButton(dom), null);
+    releasePreparation({ ok: true });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.equal(processButton(dom), null);
+    dom.window.close();
 });
