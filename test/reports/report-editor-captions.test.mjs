@@ -59,7 +59,9 @@ test('every uncaptioned image offers a direct placeholder without changing saved
         ui.querySelector('.bpb-re-caption-placeholder').click();
         const editor = editors(dom).rich;
         assert.equal(editor.state.selection.$from.parent.type.name, 'reportCaption');
+        assert.equal(editor.state.doc.childCount, 1, 'caption entry must not append a blank paragraph below the photo');
         editor.commands.insertContent('North ridge');
+        assert.equal(editor.state.doc.childCount, 1, 'caption typing must not append a blank paragraph');
         assert.equal(saved(dom), figure);
     } finally { dom.window.close(); }
 });

@@ -606,6 +606,17 @@
     margin: 12px 0;
 }
 
+/* Caption entry replaces the image's paragraph with a figure. Match its
+ * margins and retain the resize-control row so neither the photo, caption
+ * caret nor following prose moves when the placeholder becomes editable. */
+.bpb-re-surface figure {
+    margin: 0 0 0.7em;
+}
+
+.bpb-re-surface figure:last-child {
+    margin-bottom: 0;
+}
+
 .bpb-re-surface figcaption,
 .bpb-re-preview figcaption {
     width: 0;
@@ -664,18 +675,6 @@
 #bpb-report-editor .bpb-re-surface .bpb-re-caption-placeholder:focus-visible {
     outline: 2px solid #3b76c4;
     outline-offset: 2px;
-}
-
-.bpb-re-surface figure .bpb-re-image-resize-frame {
-    padding-bottom: 0;
-}
-
-.bpb-re-surface figure .bpb-re-image-resize-frame:has(.bpb-re-local-photo-actions:not([hidden])) {
-    padding-bottom: 44px;
-}
-
-.bpb-re-surface figure .bpb-re-image-resize-frame:has(.bpb-re-local-photo-actions:not([hidden])) .bpb-re-image-resize-handle {
-    bottom: 44px;
 }
 
 .bpb-re-surface figure.ProseMirror-selectednode {

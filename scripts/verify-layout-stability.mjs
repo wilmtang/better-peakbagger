@@ -15,6 +15,7 @@ import { createResourceStack } from './resource-stack.mjs';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
 import { darkCss } from '../src/theme/site-dark-css.js';
 import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
+import { verifyReportCaptionStability } from './verify-report-caption-stability.mjs';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
 
 const selected = process.argv.find(value => value.startsWith('--surface='))?.split('=')[1];
@@ -1197,7 +1198,8 @@ async function reportCase(page, origin, variant) {
 }
 const cases = { popup: popupCase, access: accessCase, handoff: handoffCase, 'ascent-backup': ascentBackupCase, 'profile-backup': profileBackupCase, settings: settingsCase, photos: photoCase, weather: weatherCase,
     'weather-models': (page, origin, variant) => verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }),
-    'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase };
+    'gpx-source': gpxSourceCase, maps: mapCase, climbers: profileTransitionCase, upload: uploadCase, timestamps: timestampCase, reports: reportCase,
+    captions: (page, origin, variant) => verifyReportCaptionStability(page, origin, variant, { asset, capture }) };
 for (const argument of process.argv.slice(2)) {
     assert.ok(argument === '--chrome-only' || argument === '--firefox-only' || /^--surface=.+$/.test(argument), `Unknown layout argument: ${argument}`);
 }

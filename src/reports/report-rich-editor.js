@@ -875,6 +875,9 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
         extensions: [
             StarterKit.configure({
                 heading: { levels: [1, 2, 3, 4, 5, 6] },
+                // Caption entry must not grow the panel by appending prose.
+                // Figure Enter/arrow navigation creates that paragraph on demand.
+                trailingNode: { notAfter: ['reportFigure'] },
                 link: false
             }),
             ReportLink.configure({ openOnClick: false, autolink: true, defaultProtocol: 'https' }),
