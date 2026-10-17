@@ -1074,6 +1074,77 @@ test('personal ClimbListC pages retain the beta bar and persistent date toggle',
     assert.equal(url.searchParams.get('sort'), 'ascentdated');
 });
 
+test('personal ascent lists ignore remembered climber filters across visits and chip changes', async t => {
+    const storageKey = 'pbAscentBetaFilter.v1';
+    const open = async (fixture, options) => {
+        const dom = await loadPageWithBar(fixture, options);
+        t.after(() => dom.window.close());
+        return dom;
+    };
+    // Carry the actual saved state between same-origin pages, rather than
+    // resetting every page to an independent first visit.
+    const carryState = previous => page => page.window.localStorage.setItem(
+        storageKey, previous.window.localStorage.getItem(storageKey));
+    const saved = dom => JSON.parse(dom.window.localStorage.getItem(storageKey));
+    const peakOptions = {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore(customCids) },
+    };
+    const peak = await open(SMALL, peakOptions);
+    chip(peak, 'Fav climbers').click();
+    const favoriteRows = dataRows(peak).filter(row => customCids.includes(rowCid(row))).length;
+    assert.ok(favoriteRows > 0 && favoriteRows < dataRows(peak).length);
+    assert.equal(visibleRows(peak).length, favoriteRows);
+    assert.equal(saved(peak).fav, true);
+
+    const personalOptions = {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786&sort=ascentdated',
+    };
+    const personal = await open('climber-ascents.html', {
+        ...personalOptions, prepare: carryState(peak),
+    });
+    const total = dataRows(personal).length;
+    assert.ok(total > 0);
+    assert.equal(bar(personal).querySelector('[data-filter-key="fav"]'), null);
+    assert.ok([...bar(personal).querySelectorAll('.pbaf-chip')]
+        .every(control => control.getAttribute('aria-pressed') === 'false'));
+    assert.equal(visibleRows(personal).length, total,
+        'a climber filter with no control on My Ascents must not hide any rows');
+    assert.equal(status(personal), `${total} ascents`);
+    assert.equal(bar(personal).querySelector('.pbaf-reset').hidden, true);
+    assert.equal(saved(personal).fav, true, 'visiting My Ascents preserves the peak-list preference');
+
+    // This legacy personal-list fixture has no GPS column. An explicit GPS
+    // selection legitimately matches nothing; turning it off restores all rows.
+    chip(personal, 'GPS track').click();
+    assert.equal(visibleRows(personal).length, 0);
+    chip(personal, 'GPS track').click();
+    assert.equal(visibleRows(personal).length, total);
+
+    const reports = dataRows(personal).filter(rowHasTripReport).length;
+    assert.ok(reports > 0 && reports < total);
+    chip(personal, 'Trip report').click();
+    assert.equal(visibleRows(personal).length, reports);
+    assert.equal(status(personal), `Showing ${reports} of ${total} ascents`);
+
+    const reloaded = await open('climber-ascents.html', {
+        ...personalOptions, prepare: carryState(personal),
+    });
+    assert.equal(visibleRows(reloaded).length, reports, 'reload preserves the visible trip-report filter');
+    chip(reloaded, 'Trip report').click();
+    assert.equal(visibleRows(reloaded).length, total);
+    assert.equal(status(reloaded), `${total} ascents`);
+    assert.equal(bar(reloaded).querySelector('.pbaf-reset').hidden, true);
+    assert.equal(saved(reloaded).fav, true, 'personal chip changes preserve the peak-list preference');
+
+    const returned = await open(SMALL, { ...peakOptions, prepare: carryState(reloaded) });
+    assert.equal(chip(returned, 'Fav climbers').getAttribute('aria-pressed'), 'true');
+    assert.equal(visibleRows(returned).length, favoriteRows,
+        'returning to the peak list reapplies its remembered climber filter');
+});
+
 test('personal all-years date URLs toggle in place', async () => {
     const dom = await loadPage('climber-ascents.html', {
         fixtures: PAGE_FIXTURES,

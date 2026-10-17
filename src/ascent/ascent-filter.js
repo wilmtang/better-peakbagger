@@ -1401,10 +1401,14 @@ const init = async () => {
         wordsWrap.hidden = !state.tr;
 
         const minWords = Math.max(1, parseInt(state.minWords, 10) || 1);
+        // Both list types share saved toggles, but only peak lists expose and
+        // load the climber filter. Preserve its preference without applying it
+        // invisibly on a personal ascent list.
+        const favoritesActive = isPeakAscentsPage && state.fav;
         const ids = new Set(ignoredState.list?.entries.map(entry => entry.cid) || []);
         const ordinary = record => fullList || ((!state.beta || record.beta)
             && (!state.tr || record.words >= minWords) && (!state.gps || record.gps)
-            && (!state.link || record.link) && (!state.fav || record.fav));
+            && (!state.link || record.link) && (!favoritesActive || record.fav));
         const result = I.visibility(dataRows, isPeakAscentsPage ? ids : new Set(), ordinary, revealIgnored);
         const visibleRows = new Set(result.visible);
         const shown = result.visible.length;
@@ -1445,7 +1449,7 @@ const init = async () => {
         }
 
         const anyActive = state.beta || state.tr || state.gps || state.link
-                || state.fav || (isPeakAscentsPage && result.ignored.length > 0) || fullList;
+                || favoritesActive || (isPeakAscentsPage && result.ignored.length > 0) || fullList;
         statusEl.textContent = '';
         const strong = document.createElement('b');
         if (anyActive) {
@@ -1457,7 +1461,7 @@ const init = async () => {
             strong.textContent = String(total);
             statusEl.append(strong, ` ascent${total === 1 ? '' : 's'}`);
         }
-        resetButton.hidden = !(state.beta || state.tr || state.gps || state.link || state.fav || fullList);
+        resetButton.hidden = !(state.beta || state.tr || state.gps || state.link || favoritesActive || fullList);
         resultUtilities.hidden = auxiliaryControls.every(control => control.hidden || !control.textContent);
     };
 
