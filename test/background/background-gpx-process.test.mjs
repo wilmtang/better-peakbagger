@@ -87,6 +87,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
             onChanged: { addListener: () => {} }
         },
         runtime: {
+            id: 'test-extension',
             getURL: path => `chrome-extension://test-extension/${path}`,
             onMessage: { listeners: [], addListener(listener) { this.listeners.push(listener); } },
         },
@@ -242,7 +243,9 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     const listener = browser.runtime.onMessage.listeners[0];
     const rawSend = (message, sender = SENDER) => new Promise(resolve => {
         runtimeMessages.push(structuredClone(message));
-        assert.equal(listener(message, sender, resolve), true);
+        assert.equal(listener(message, { id: 'test-extension',
+            ...(sender.tab ? { frameId: 0, documentId: `gpx-document-${sender.tab.id}` } : {}),
+            ...sender }, resolve), true);
     });
     let selectionGeneration = 0;
     let currentSelection = null;
@@ -307,7 +310,9 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     assert.ok(Array.isArray(job.dayStats));
 
     // The popup's status view never surfaces a local-file job.
-    assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 5 }), null);
+    assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 5 }, {
+        url: 'chrome-extension://test-extension/popup/popup.html',
+    }), null);
 
     const applied = await harness.send({
         type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7], primaryId: 7
