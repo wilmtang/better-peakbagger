@@ -506,12 +506,13 @@ payload channel for URLs, account identity, coordinates, GPX, or response text.
 
 ## Dependency updates
 
-Dependabot checks for routine npm updates every other Monday at 09:00 UTC
+Dependabot checks for routine npm and GitHub Actions updates every other Monday
+at 09:00 UTC
 (`0 9 * * mon%2`, using the [Fugit modulo extension supported by Dependabot](https://github.com/dependabot/dependabot-core/issues/12246#issuecomment-2875021010)).
 The cadence continues across month and year boundaries. Grouped npm updates
 merge without a human once their checks pass, majors included; security updates
-still arrive immediately. GitHub Actions updates remain weekly and wait for
-review because they change CI and release machinery rather than extension code.
+still arrive immediately. GitHub Actions updates wait for review because they
+change CI and release machinery rather than extension code.
 Four pieces carry that:
 
 | Piece | Where |
