@@ -21,6 +21,7 @@ test('catalog validates identity, coordinates, elevation and fixed timezone with
     }
     assert.throws(() => validateSnotelStations([snotelStations()[0], snotelStations()[0]]), /invalid/);
     assert.throws(() => validateSnotelStations(Array(3001).fill(snotelStations()[0])), /invalid/);
+    assert.throws(() => validateSnotelStations([]), /invalid/, 'an empty global network cannot prove local coverage');
 });
 
 test('local proximity is bounded, crosses state/date-line boundaries and caps three candidates', () => {

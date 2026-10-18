@@ -10,7 +10,9 @@ const day = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val
     && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 export function validateSnotelStations(body) {
-    if (!Array.isArray(body) || body.length > 3000) invalid();
+    // This is the whole active network, not a proximity query. An empty global
+    // catalog is a service failure, never evidence of no stations near a peak.
+    if (!Array.isArray(body) || body.length < 1 || body.length > 3000) invalid();
     const seen = new Set();
     return body.map(station => {
         if (!station || !triplet(station.stationTriplet) || seen.has(station.stationTriplet)
