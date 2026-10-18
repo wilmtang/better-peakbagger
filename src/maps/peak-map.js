@@ -245,19 +245,13 @@ import { createPeakSnowMap } from './peak-snow-map.js';
         } catch (error) { return null; }
     };
 
-    const positionTerrainToggle = ({ state, navTop }) => {
-        let bottom = null;
-        if (state === 'active') {
-            const frame = document.getElementById('bpb-terrain-frame');
-            if (frame && navTop != null) {
-                bottom = Math.max(0, mount.getBoundingClientRect().bottom - frame.getBoundingClientRect().bottom)
-                    + navTop;
-            }
-        } else {
-            bottom = measureNative2dZoomTop();
-        }
+    const positionTerrainToggle = ({ state }) => {
+        // Keep one anchor through loading, 3D and return to 2D. The shared CSS
+        // reserves the terrain controls; unusually tall native attribution can
+        // raise that anchor in both modes, never only after a mode switch.
+        const bottom = measureNative2dZoomTop();
         terrainToggle.style.bottom = bottom != null && bottom > 0
-            ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px`
+            ? `max(var(--bpb-terrain-toggle-bottom), ${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px)`
             : '';
         terrainCompass.position();
         // On the shortest map, the right-aligned station control leaves no

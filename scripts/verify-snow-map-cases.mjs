@@ -19,12 +19,12 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     const geometry = () => evaluate(() => {
         const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
         const mount = document.querySelector('.bpb-terrain-mount-peak');
-        return { toggle: rect(document.getElementById('bpb-snow-map-toggle')), map: rect(mount),
+        return { toggle: rect(document.getElementById('bpb-snow-map-toggle')), mode: rect(document.getElementById('bpb-terrain-toggle')), map: rect(mount),
             heading: rect(document.querySelector('h1')), following: rect(mount.closest('td').querySelector('a[href*="BigMap"]')),
             scroll: { x: window.scrollX, y: window.scrollY }, focus: document.activeElement.id };
     });
     const stable = (before, after, label) => {
-        for (const part of ['toggle', 'map', 'heading', 'following', 'scroll']) for (const dim of Object.keys(before[part])) {
+        for (const part of ['toggle', 'mode', 'map', 'heading', 'following', 'scroll']) for (const dim of Object.keys(before[part])) {
             assert.ok(Math.abs(before[part][dim] - after[part][dim]) <= 1, `${label}: ${part}.${dim} moved; ${JSON.stringify({ before, after })}`);
         }
     };
@@ -149,6 +149,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
             if (event.data?.__bpbTerrain || event.data?.__bpbPeakMap) window.__snotelTerrainEvents.push(event.data);
         });
     });
+    const nativeControls = await geometry();
     await click('#bpb-terrain-toggle');
     await waitForCondition(() => evaluate(() => ({ pressed: document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed'),
         frame: !!document.getElementById('bpb-terrain-frame'), failure: document.querySelector('.bpb-terrain-failure')?.textContent,
@@ -157,6 +158,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     });
     const frameWait = (fn, description) => waitForCondition(() => evaluateTerrain(fn), { description, timeoutMs: 15_000 });
     await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 2, '3D snow markers');
+    stable(nativeControls, await geometry(), '2D to 3D controls');
     const renderer = await evaluateTerrain(() => {
         const canvas = document.querySelector('canvas.maplibregl-canvas'), gl = canvas?.getContext('webgl2');
         const info = gl?.getExtension('WEBGL_debug_renderer_info');
@@ -194,6 +196,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     await click('#bpb-snow-map-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 0, '3D layer off');
     await click('#bpb-snow-map-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 2, '3D layer on');
     await click('#bpb-terrain-toggle'); await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false', 'return to native map');
+    stable(nativeControls, await geometry(), '3D to 2D controls');
     await waitMarkers(2);
     await click('#bpb-terrain-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 2, 'parked 3D resume');
     await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: false });
@@ -209,9 +212,11 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
 
     await evaluate(() => window.localStorage.setItem('pbPeakMapViewport.v1', JSON.stringify({ width: 320, height: 240 })));
     await prepare(375, 'dark', 'long-station'); await click('#bpb-snow-map-toggle'); await ready(); await waitMarkers(2);
+    const minimumControls = await geometry();
     await click('#bpb-terrain-toggle');
     await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true', 'narrow 3D view');
     await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 2, 'narrow 3D snow markers');
+    stable(minimumControls, await geometry(), 'minimum-size mode switch');
     assert.equal(await evaluate(() => {
         const snow = document.getElementById('bpb-snow-map-toggle').getBoundingClientRect();
         return [...document.querySelectorAll('#bpb-terrain-toggle, .bpb-map-compass')].every(node => {
@@ -275,8 +280,15 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     const zoom = await geometry(); await click('#bpb-snow-map-toggle');
     await wait(() => document.getElementById('bpb-snow-map-toggle').getAttribute('aria-busy') === 'true', '200% pending');
     stable(zoom, await geometry(), '200% pending'); setMode('complete'); release(); await ready(); await waitMarkers(2);
-    stable(zoom, await geometry(), '200% ready'); await image('zoom-200'); await setZoom(1);
-    cases.push({ zoom: 2, states: ['pending', 'ready'] });
+    stable(zoom, await geometry(), '200% ready');
+    await click('#bpb-terrain-toggle');
+    await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true', '200% 3D view');
+    stable(zoom, await geometry(), '200% 2D to 3D');
+    await click('#bpb-terrain-toggle');
+    await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false', '200% return to 2D');
+    stable(zoom, await geometry(), '200% 3D to 2D');
+    await image('zoom-200'); await setZoom(1);
+    cases.push({ zoom: 2, states: ['pending', 'ready', '3D', '2D'] });
     await prepare(375, 'light', 'no-stations'); await click('#bpb-snow-map-toggle');
     await wait(() => document.querySelector('.bpb-snow-map-notice')?.textContent.includes('No SNOTEL stations'), 'no coverage');
     await image('no-stations'); await waitMarkers(0); cases.push({ states: ['no-stations'] });

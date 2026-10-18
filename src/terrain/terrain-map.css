@@ -16,25 +16,25 @@
     pointer-events: none;
 }
 
-/* Floating 2D/3D toggle, bottom-right of the map viewport, stacked just above
-   the zoom controls the way map apps like Gaia place it. The exact bottom is set
-   inline by JS to sit right above whichever zoom stack is showing — the 3D frame
-   reports its stack height (it is cross-origin) and the native 2D zoom is
-   measured directly. This value is only the fallback when neither measurement is
-   available. It stays above the terrain frame (z-index 2) and, living in the
-   host page document, is themed via a data-theme attribute rather than the
-   frame's. */
+/* One control slot in both renderers: attribution, zoom, then the mode toggle.
+   JS may raise it for taller native controls, using the same measurement in
+   every mode. The label and spinner share fixed dimensions so switching modes
+   keeps the pointer target anchored. */
 .bpb-map-3d-toggle {
+    /* Compact attribution, two zoom buttons and an 8px gap above them. */
+    --bpb-terrain-toggle-bottom: calc(122px + var(--bpb-map-resize-rail-height, 16px));
     position: absolute;
     right: 10px;
-    bottom: 112px;
+    bottom: var(--bpb-terrain-toggle-bottom);
     z-index: 3;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    min-width: 42px;
-    min-height: 30px;
+    width: 44px;
+    min-width: 44px;
+    height: 32px;
+    min-height: 32px;
     padding: 5px 11px;
     border: 1px solid rgb(53 58 49 / 20%);
     border-radius: 8px;
@@ -55,6 +55,7 @@
    when active, the frame take pointer events); the frame fills the viewport with
    no resize rail or rounded border. */
 .bpb-terrain-mount-fullscreen {
+    --bpb-map-resize-rail-height: 0px;
     position: fixed;
     inset: 0;
     z-index: 10000;
@@ -70,12 +71,6 @@
     height: 100%;
     border: 0;
     border-radius: 0;
-}
-
-/* Full Screen has no resize rail under the frame, so the zoom stack sits
-   lower — nudge the toggle down to keep it just above it. */
-.bpb-terrain-mount-fullscreen .bpb-map-3d-toggle {
-    bottom: 94px;
 }
 
 /* Peak and ascent maps share the resize rail. Both renderers stay above it,

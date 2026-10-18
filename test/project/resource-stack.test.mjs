@@ -43,7 +43,7 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
     for (const name of [
         'verify-extension', 'verify-capture-flow', 'verify-capture-readiness', 'verify-multi-summit',
         'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
-        'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase',
+        'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase', 'verify-map-controls',
     ]) {
         const source = await readFile(path.join(projectRoot, 'scripts', `${name}.mjs`), 'utf8');
         assert.match(source, /\.\.\.(?:fixture|certificate|cert)\.chromeTrustArgs/, name);

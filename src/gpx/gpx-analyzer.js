@@ -728,10 +728,8 @@ const run = async () => {
             }
         };
 
-        // Float the toggle just above the zoom stack in whichever map is showing:
-        // the 3D frame reports its stack height (it is cross-origin), while the
-        // native 2D zoom is same-origin and measured directly. A null result
-        // leaves the CSS fallback offset in place.
+        // Use one anchor in both renderers. The CSS reserves the terrain control
+        // column; native attribution can raise it without a mode-dependent jump.
         const TERRAIN_TOGGLE_GAP = 8;
         const measureNative2dZoomTop = () => {
             try {
@@ -748,18 +746,10 @@ const run = async () => {
                 return null;
             }
         };
-        const positionTerrainToggle = ({ state, navTop }) => {
-            let bottom = null;
-            if (state === 'active') {
-                const frame = document.getElementById('bpb-terrain-frame');
-                if (frame && mapViewport && navTop != null) {
-                    const inset = Math.max(0, mapViewport.getBoundingClientRect().bottom - frame.getBoundingClientRect().bottom);
-                    bottom = inset + navTop;
-                }
-            } else {
-                bottom = measureNative2dZoomTop();
-            }
-            terrainButton.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+        const positionTerrainToggle = () => {
+            const bottom = measureNative2dZoomTop();
+            terrainButton.style.bottom = bottom != null && bottom > 0
+                ? `max(var(--bpb-terrain-toggle-bottom), ${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px)` : '';
             if (terrainCompass) terrainCompass.position();
         };
 

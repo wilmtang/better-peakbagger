@@ -58,6 +58,9 @@
     };
     window.mapsPlaceholder = {
       _layers: { basemap },
+      eachLayer(callback) { Object.values(this._layers).forEach(callback); },
+      on() { return this; },
+      off() { return this; },
       hasLayer: layer => layer === basemap
     };
   </script>

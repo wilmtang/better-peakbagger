@@ -5,8 +5,8 @@
 //
 // A Google-Maps-style compass that floats just above the host page's floating
 // 2D/3D toggle (NOT inside the extension frame — the in-frame control stack is
-// deliberately compass-free so its height matches the 2D zoom stack, which the
-// toggle alignment depends on). Clicking it snaps the 3D view back to north-up,
+// deliberately compass-free, leaving the shared control slot for the mode
+// toggle in both renderers). Clicking it snaps the 3D view back to north-up,
 // looking straight down. The bearing/pitch it displays are streamed from the
 // frame through the bridge; the reset command travels back the same way.
 //
@@ -84,8 +84,8 @@ const create = ({ container, toggle, onReset }) => {
     };
 
     // Sit one gap above the toggle, sharing its right inset (from CSS). Reads the
-    // toggle's resolved bottom so it tracks both the measured-navTop position and
-    // the CSS fallback.
+    // toggle's resolved bottom so it tracks both native zoom clearance and the
+    // shared CSS anchor.
     const position = () => {
         if (!toggle) return;
         const toggleBottom = parseFloat(getComputedStyle(toggle).bottom) || 0;

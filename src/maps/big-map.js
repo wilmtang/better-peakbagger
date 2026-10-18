@@ -324,9 +324,8 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
     const TERRAIN_PREFETCH_THROTTLE_MS = 15 * 1000;
     let terrainPrefetchAt = 0;
 
-    // Float the toggle just above the zoom stack of whichever map is showing:
-    // the 3D frame reports its stack height (cross-origin), the native 2D zoom is
-    // measured directly. A null result leaves the CSS fallback offset in place.
+    // Reserve the same control column in both renderers. The native measurement
+    // only raises the shared CSS anchor for unusually tall native attribution.
     const measureNative2dZoomTop = () => {
         try {
             const doc = activeMapWin && activeMapWin.document;
@@ -343,21 +342,11 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
             return null;
         }
     };
-    const positionTerrainToggle = ({ state, navTop }) => {
+    const positionTerrainToggle = () => {
         if (!terrainToggle) return;
-        let bottom = null;
-        if (state === 'active') {
-            const frame = document.getElementById('bpb-terrain-frame');
-            if (frame && navTop != null) {
-                // The mount is a full-viewport fixed overlay, so the frame bottom
-                // is the viewport bottom and navTop is viewport-relative already.
-                const inset = Math.max(0, window.innerHeight - frame.getBoundingClientRect().bottom);
-                bottom = inset + navTop;
-            }
-        } else {
-            bottom = measureNative2dZoomTop();
-        }
-        terrainToggle.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+        const bottom = measureNative2dZoomTop();
+        terrainToggle.style.bottom = bottom != null && bottom > 0
+            ? `max(var(--bpb-terrain-toggle-bottom), ${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px)` : '';
         if (terrainCompass) terrainCompass.position();
         if (terrainFailureNotice) terrainFailureNotice.position();
     };
