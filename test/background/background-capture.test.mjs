@@ -4129,3 +4129,42 @@ test('draft document nonces recover reloads when the browser omits documentId', 
         pid: '7', cid: '77', applyLeaseToken: second.applyLeaseToken,
         documentToken: afterReload.documentToken }, sender)).ok, true);
 });
+
+test('payload reconciliation validates the delivery variant and removes failed legacy migrations', async () => {
+    const clock = Date.now();
+    const jobs = {};
+    const sessionValues = { bpbCaptureJobs: jobs,
+        'bpbCapturePayload:reconciliation-orphan': { jobId: 'reconciliation-orphan', gpx: '<gpx/>' } };
+    const add = (tabId, preferences, record, extra = {}) => {
+        const id = `variant-generation-${tabId}`;
+        jobs[tabId] = { id, sourceTabId: tabId, provider: 'strava', activityId: String(tabId),
+            phase: 'ready', matches: [], selectedIds: [], createdAt: clock, updatedAt: clock,
+            expiresAt: clock + 1800000, capturePreferences: preferences, ...extra };
+        if (record) {
+            jobs[tabId].payloadKey = `bpbCapturePayload:${id}`;
+            sessionValues[jobs[tabId].payloadKey] = { jobId: id, ...record };
+        }
+    };
+    add(1, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>' });
+    add(2, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>', gpxWithoutTimestamps: '' });
+    add(3, { removeGpxTimestamps: true }, null, { uploadGpx: '<gpx>legacy-with-time</gpx>' });
+    add(4, { removeGpxTimestamps: false }, { gpx: '<gpx>with-time</gpx>' });
+    add(5, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>' }, { includeTimestampsOnce: true });
+    add(6, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>', gpxWithoutTimestamps: '<gpx>without-time</gpx>' });
+    const h = createHarness({ sessionValues });
+    await waitForCondition(() => !h.values['bpbCapturePayload:reconciliation-orphan']);
+    for (const tabId of [1, 2, 3]) {
+        const job = h.values.bpbCaptureJobs[tabId];
+        assert.equal(job.phase, 'error', `job ${tabId} cannot deliver its required private GPX`);
+        assert.equal(job.error.code, 'capture-payload-missing');
+        assert.equal(job.payloadKey, undefined);
+        assert.equal(h.values[`bpbCapturePayload:${job.id}`], undefined, 'unusable GPX must not remain orphaned');
+        assert.equal((await h.send({ type: 'CAPTURE_STATUS', tabId })).hasCachedGpx, false);
+    }
+    for (const tabId of [4, 5, 6]) {
+        const job = h.values.bpbCaptureJobs[tabId];
+        assert.equal(job.phase, 'ready');
+        assert.equal((await h.send({ type: 'CAPTURE_STATUS', tabId })).hasCachedGpx, true);
+        assert.ok(h.values[job.payloadKey]);
+    }
+});

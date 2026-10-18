@@ -198,13 +198,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const expected = payloadKeyForJob(job?.id);
         return expected && job?.payloadKey === expected ? expected : null;
     };
-    const readCapturePayload = async job => {
-        const key = referencedPayloadKey(job);
-        if (!key) return null;
-        const record = (await storage().get(key))[key];
+    const capturePayloadValue = (job, record) => {
         const gpx = job.capturePreferences?.removeGpxTimestamps && job.includeTimestampsOnce !== true
             ? record?.gpxWithoutTimestamps : record?.gpx;
         return record?.jobId === job.id && typeof gpx === 'string' && gpx.length > 0 ? gpx : null;
+    };
+    const readCapturePayload = async job => {
+        const key = referencedPayloadKey(job);
+        if (!key) return null;
+        return capturePayloadValue(job, (await storage().get(key))[key]);
     };
     const removePayloadKeys = async keys => {
         const owned = [...new Set((Array.isArray(keys) ? keys : [keys])
@@ -305,7 +307,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     return;
                 }
                 const record = available[payloadKey];
-                if (record?.jobId === job.id && typeof record.gpx === 'string' && record.gpx.length > 0) {
+                if (capturePayloadValue(job, record)) {
                     referenced.add(payloadKey);
                     return;
                 }
@@ -322,7 +324,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             });
             if (jobsChanged) await storage().set({ [JOBS_KEY]: jobs });
 
-            const orphaned = Object.keys(snapshot || {})
+            const orphaned = Object.keys(available)
                 .filter(key => key.startsWith(PAYLOAD_KEY_PREFIX) && !referenced.has(key));
             await removePayloadKeys(orphaned);
         });
