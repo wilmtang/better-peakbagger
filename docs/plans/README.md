@@ -1,8 +1,5 @@
 # Active plans
 
-- [Capture trust and recovery audit](capture-trust-recovery-audit-2026-10-17.md)
-  — authorized remediation of sender checks, draft retry ownership, ordering,
-  payload recovery, and provider result filtering; verification in progress.
 
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
   — proposed; worldwide issuing-service links first, then opt-in regional
@@ -18,6 +15,12 @@ Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
+
+The [October 17 capture trust and recovery audit](../archive/capture-trust-recovery-audit-2026-10-17.md)
+closes the confirmed sender, draft-reload, ordering, payload-recovery and provider
+allowlist findings locally. Its ledger records 2,880 passing tests, hidden
+Chrome/Firefox and layout evidence, archive validation, the unchanged advisory
+deadline, and retained live/native proof limits.
 
 The [October 14 bug audit remediation](../archive/bug-audit-remediation-2026-10-14.md)
 closes three reproduced Buddy-cache, capture-save identity, and saved-favorites

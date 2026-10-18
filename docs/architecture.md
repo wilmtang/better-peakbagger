@@ -317,6 +317,13 @@ the persistence failure rather than presenting an optimistic control as saved.
 `SETTINGS_PATCH` and `FAVORITES_MUTATE` share one sender gate — extension pages
 and the Peakbagger content scripts — so the worker's two mutation routes fail
 closed instead of trusting whatever reaches runtime messaging.
+Packaged UI authorization uses `src/background/sender-policy.js`: the browser's
+extension identity and exact packaged path are checked, with top-frame identity
+required for senders associated with a tab.
+Web-accessible terrain and guide frames are not privileged UI. Capture controls
+belong to the packaged popup; GitHub actions declare their permitted Settings,
+climber-list or photo surfaces, and report-draft management belongs to its own
+manager page.
 
 Every value received through `window.postMessage` is untrusted and is cleaned
 again through the shared schema. Validation is intentionally idempotent: a
@@ -628,11 +635,15 @@ minutes. Bounded mutable job metadata holds only a generation-specific payload
 reference; the immutable reduced GPX lives under its own session key. Payload
 publication precedes the metadata pointer, failed publication rolls back, and
 startup/alarm reconciliation migrates legacy embedded payloads, rejects missing
-generations, and removes orphans. Cancellation, expiry, replacement, source
-closure without retained drafts, selection invalidation, and successful consumption remove
+generations or the GPX variant required for delivery, and removes orphans,
+including unusable records created by that migration. Cancellation, expiry,
+replacement, source closure without retained drafts, selection invalidation, and successful consumption remove
 the owned payload. Single-summit consumption ends at Preview; multi-summit
-consumption ends only after all manual saves are checked. Draft delivery requires a matching sender tab, job, peak,
-and climber. Every selected draft is registered before its tab navigates,
+consumption ends only after all manual saves are checked. Draft delivery and
+acknowledgments require the extension's top-frame content script on the actual
+Peakbagger ascent-edit URL, with matching sender tab, job, peak and climber.
+Payload-supplied IDs cannot substitute for the sender's URL. Every selected
+draft is registered before its tab navigates,
 closing the race between content-script startup and worker state.
 
 Selection, opening, Preview completion, replacement, and cleanup share one
@@ -673,10 +684,17 @@ handshake offers recovery instead of clicking Preview again. No extension path
 clicks either Save control; the user reviews all derived values and saves.
 
 Before the page mutates a field or attaches GPX, it claims a short-lived,
-one-use apply lease for the exact draft generation. The page snapshots every
+one-use apply lease for the exact draft generation and document. A new document
+can replace an abandoned lease immediately, while the old document cannot
+acknowledge the replacement. Browsers without `documentId` use a fresh
+content-script nonce. Same-document waits retry at the lease's expiry. The page
+snapshots every
 target, rechecks ownership through the transaction, and confirms only after the
 mutation completes. Rejection, expiry, source replacement, or clearing rolls
 back values still owned by that lease without overwriting a later user edit.
+After failed preparation, Save remains guarded and a persistent reload action
+replaces busy feedback. Reload does not bypass Preview; clearing the capture
+restores the ordinary native Save state.
 
 For local files, one detected summit fills immediately. Multiple summits open an
 on-page picker; siblings become ordinary prepared draft tabs. A bound page whose

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Recover draft preparation after a reload.** A reloaded ascent form can
+  prepare its draft immediately; failed preparation offers a clear reload
+  action while keeping Save protected until GPS Preview succeeds. Recovery
+  feedback remains readable in narrow, enlarged layouts.
+
+- **Keep capture and backup actions on their owning pages.** Validate the
+  originating extension surface and the draft page's actual summit/account
+  identity before returning private GPX or changing privileged state. Reject
+  incomplete cached GPX during recovery and preserve summit ordering when an
+  encounter distance is unavailable.
+
 ## 4.0.2 — 2026-10-18
 
 - **Verify the release before creating its tag.** Pin a candidate to successful
