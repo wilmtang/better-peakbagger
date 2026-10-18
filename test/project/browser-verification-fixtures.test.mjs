@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
 import {
+    activateToolbarTarget,
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
@@ -27,6 +28,27 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('toolbar capture selects its CDP target and waits for a visible loaded document', async () => {
+    const calls = [];
+    let reads = 0;
+    const cdp = { send: async (...args) => { calls.push(args); } };
+    const page = { evaluate: fn => executePageFunction(fn, { document: {
+        visibilityState: ++reads < 3 ? 'hidden' : 'visible',
+        readyState: reads < 4 ? 'loading' : 'complete',
+    } }) };
+    const result = await activateToolbarTarget(cdp, page, 'provider-tab', { intervalMs: 1 });
+    assert.deepEqual(calls, [['Target.activateTarget', { targetId: 'provider-tab' }]]);
+    assert.equal(result.visibility, 'visible');
+    assert.ok(reads >= 4, 'target discovery and command completion do not prove selection settled');
+    for (const state of [
+        { visibility: 'hidden', readyState: 'complete' },
+        { visibility: 'visible', readyState: 'loading' },
+    ]) {
+        await assert.rejects(activateToolbarTarget(cdp, { evaluate: async () => state }, 'provider-tab',
+            { timeoutMs: 0, intervalMs: 1 }), /loaded toolbar target selection/);
+    }
+});
 
 test('the working Buddy report finishes its own cache publication before an independent import begins', async () => {
     let reads = 0;

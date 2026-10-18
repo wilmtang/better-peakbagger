@@ -731,23 +731,35 @@ const showTerrainFailure = async (cdp, label, expectedTheme) => {
 
 // Plain scroll must zoom the 3D map directly — the same gesture the native 2D
 // map answers, with no ⌘/Ctrl modifier. The MapLibre scale control is the
-// observable: its displayed distance changes when the zoom actually changes.
+// observable: its distance or rendered width changes with zoom. The distance
+// label is quantized and can legitimately remain in the same 500 m bucket.
 const assertPlainScrollZooms = async (cdp, label) => {
-    const target = await evaluate(cdp, `(() => {
+    const target = await waitForPageState(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
-        const doc = frame && frame.contentDocument;
-        const scale = doc && doc.querySelector('.maplibregl-ctrl-scale');
-        if (!frame || !scale) return null;
-        if (doc.querySelector('.maplibregl-cooperative-gesture-screen')) return { cooperative: true };
+        const doc = frame?.contentDocument;
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        const scale = doc?.querySelector('.maplibregl-ctrl-scale');
+        const canvas = map?.getCanvas();
+        if (!frame || !scale || !canvas) return { ready: false };
         const rect = frame.getBoundingClientRect();
+        const cr = canvas.getBoundingClientRect();
+        const point = [[0.5, 0.5], [0.25, 0.5], [0.75, 0.5], [0.5, 0.7]]
+            .map(([x, y]) => ({ x: cr.left + cr.width * x, y: cr.top + cr.height * y }))
+            .find(({ x, y }) => doc.elementFromPoint(x, y) === canvas
+                && document.elementFromPoint(rect.left + x, rect.top + y) === frame);
         return {
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-            scale: scale.textContent
+            ready: Boolean(point) && map.loaded() && !map.isMoving(),
+            x: point && Math.round(rect.left + point.x),
+            y: point && Math.round(rect.top + point.y),
+            scale: scale.textContent, scaleWidth: scale.getBoundingClientRect().width,
+            zoom: map.getZoom(), loaded: map.loaded(), moving: map.isMoving(),
+            cooperative: Boolean(doc.querySelector('.maplibregl-cooperative-gesture-screen'))
         };
-    })()`);
-    if (!target) throw new Error(`${label}: terrain frame or scale control missing before the scroll-zoom check`);
+    })()`, 10000);
     if (target.cooperative) throw new Error(`${label}: cooperative-gesture overlay present — plain scroll would demand a modifier`);
+    // Move onto the current canvas after frame re-entry before the wheel
+    // sequence. A previous gesture may still target the parked surface.
+    await moveTo(cdp, target.x, target.y);
     for (let tick = 0; tick < 4; tick++) {
         await cdp.call('Input.dispatchMouseEvent', {
             type: 'mouseWheel', x: target.x, y: target.y, deltaX: 0, deltaY: -240
@@ -760,13 +772,16 @@ const assertPlainScrollZooms = async (cdp, label) => {
             && frame.contentDocument.querySelector('.maplibregl-ctrl-scale');
         const map = frame?.contentWindow?.__bpbTerrainTestMap;
         return {
-            ready: Boolean(scale) && scale.textContent !== ${JSON.stringify(target.scale)}
-                && map?.loaded() && !map.isMoving(),
-            scale: scale && scale.textContent,
-            moving: map?.isMoving()
+            ready: Boolean(scale) && map?.getZoom() > ${target.zoom} + 0.01
+                && (scale.textContent !== ${JSON.stringify(target.scale)}
+                    || Math.abs(scale.getBoundingClientRect().width - ${target.scaleWidth}) > 1)
+                && map.loaded() && !map.isMoving(),
+            scale: scale && scale.textContent, scaleWidth: scale?.getBoundingClientRect().width,
+            moving: map?.isMoving(), loaded: map?.loaded(), zoom: map?.getZoom(),
+            canvas: map?.getCanvas()?.getBoundingClientRect().toJSON()
         };
-    })()`, 8000).catch(() => {
-        throw new Error(`${label}: plain scroll did not zoom the 3D map (scale stuck at "${target.scale}")`);
+    })()`, 8000).catch(error => {
+        throw new Error(`${label}: plain scroll did not settle from zoom ${target.zoom}, scale "${target.scale}": ${error.message}`);
     });
 };
 
