@@ -56,6 +56,17 @@ failed two assertions and the toolbar-to-draft capture verifier:
   156.0.8078.36 on Apple M3 Pro ANGLE Metal with 798×448 and 448×448 canvases;
   light/dark screenshots were inspected.
 
+- [Final-head hosted package verification](https://github.com/wilmtang/better-peakbagger/actions/runs/39093299148)
+  then exposed a Firefox 158 macOS context-switch race: trusted Enter events
+  arrived with `document.hasFocus() === false`, so no native button click or
+  Settings navigation followed. The Firefox verifier now requests and awaits
+  visible document focus before its repeated Settings activation probes. The
+  native click, modifier, destination and tab-topology assertions remain. All
+  16 verifier infrastructure tests and scoped lint passed; the full unpacked
+  extension verifier passed in hidden Firefox 158 at 1000×760 with teardown.
+- The final integration tree before that Firefox-only verifier correction
+  passed all 2,851 Node tests and full lint locally.
+
 ## Intentionally not changed
 
 - Keep the four required checks, strict base freshness, signed single-commit
