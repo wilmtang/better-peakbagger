@@ -62,6 +62,12 @@ Expand any day for hourly detail in mountain-local time. On saved ascents,
 hover or select a timed GPX point to see the weather for that hour. Weather
 cards show model estimates; check local mountain forecasts before heading out.
 
+On western US and Alaska peaks, **Nearby snow** adds public NRCS SNOTEL snow
+depth and water-equivalent observations, station distance/elevation, and a
+seven-day trend. A compact **Snow** toggle adds distinct station markers and
+NRCS data links to the peak's 2D or 3D map. Nearby stations describe their own location; route and summit
+conditions can differ. [Nearby snow guide](docs/nearby-snow.md).
+
 Check sunrise, sunset, Moon phase, and Sun and Moon directions on a peak map
 or GPX route with the offline **Sun & Moon** calculator. Move the time slider
 to explore the light throughout the day. Times assume a level horizon and do
@@ -220,6 +226,17 @@ show less distant detail at steep angles to limit traffic. After you enable 3D,
 tile providers receive the area viewed and ordinary request data such as your
 IP address. You can disable 3D at any time; Peakbagger's 2D maps remain
 available.
+
+### Why does the weather differ from Windy.com or other forecasts?
+
+Even with the same model, location, and forecast hour, services can use different
+model runs, nearby forecast points, elevation adjustments, and weather icons.
+Better Peakbagger uses [Open-Meteo](https://open-meteo.com/), which adjusts
+temperatures to the summit elevation when available. That can make a summit
+forecast cooler than one for the model's lower terrain. “Overcast” can also mean
+high cloud above the mountain, without fog at the summit. Open **Source details**
+in the weather card to explore the model, forecast location, and elevation used.
+[More about summit weather](docs/peak-weather.md).
 
 ### Does Better Peakbagger place extra demand on Peakbagger or bypass its protections?
 

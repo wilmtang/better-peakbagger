@@ -7,6 +7,7 @@
 
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
+import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { terrainFailure } from './terrain-failure.js';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
@@ -377,6 +378,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         focus: data.focus,
         focusZoom: data.focusZoom,
         focusPeak: data.focusPeak,
+        snowStations: readSnotelMapStations(data.snowStations) || [],
         routeStyle: data.routeStyle,
         theme: data.theme,
         basemap: data.basemap,
@@ -485,6 +487,11 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable,
                     rateLimited: data.rateLimited === true,
                     retryAt: Number.isFinite(data.retryAt) && data.retryAt > Date.now() && data.retryAt <= Date.now() + 86400_000 ? data.retryAt : null });
+            } else if (data.type === 'snowStations') {
+                const snowStations = readSnotelMapStations(data.snowStations);
+                if (!snowStations) return;
+                if (pendingInit) pendingInit.snowStations = snowStations;
+                postToFrame('snowStations', { snowStations });
             } else if (data.type === 'update') {
                 if (pendingInit) {
                     pendingInit.routeStyle = data.routeStyle;
@@ -509,6 +516,10 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
         } else if (data.generation !== frameGeneration) {
             return;
         } else if (data.type === 'loaded') {
+            // An overlay can change after init was posted but before the
+            // frame's asynchronous authorization completed. Replay the latest
+            // snapshot once it can accept updates, including a toggle-off.
+            if (pendingInit) postToFrame('snowStations', { snowStations: pendingInit.snowStations });
             pendingInit = null;
             frameLoaded = true;
             frame.style.opacity = '1';

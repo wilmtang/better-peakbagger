@@ -13,6 +13,8 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { SENTINEL_NAME, SENTINEL_ATTRIBUTION, sentinelTileUrl, sentinelTarget } from '../maps/sentinel-core.js';
 import { createSentinelLayer } from '../maps/sentinel-layer.js';
 import { rateLimitMessage } from '../net/rate-limit.js';
+import { readSnotelMapStations } from '../snow/snotel-map-data.js';
+import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
@@ -36,6 +38,8 @@ const authorizeThroughWorker = async ({ token, action }) => {
 // consumes activation through the worker. Tests inject a narrow MapLibre stub
 // and an explicit authorization decision so jsdom never allocates WebGL.
 export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker } = {}) => {
+    const snowMarkers = createTerrainSnotelMarkers({ maplibre, document });
+    let snowStations = [];
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
     // The producer on the far side of the bridge samples routes down to these
@@ -353,6 +357,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const removeTerrain = () => {
+        snowMarkers.clear(); snowStations = [];
         removeLoadTimer();
         clearGestureHintDismissal();
         gestureHintElement = null;
@@ -455,6 +460,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // and DOM alive so a resume is instant. An idle MapLibre at opacity 0 renders
     // nothing.
     const suspendTerrain = () => {
+        snowMarkers.closePopup();
         sentinelLayer?.deactivate();
         if (peaksDebounceTimer !== null) {
             clearTimeout(peaksDebounceTimer);
@@ -1803,6 +1809,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
 
     const createTerrain = data => {
         if (map || mapElement) return;
+        snowStations = readSnotelMapStations(data.snowStations) || [];
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         const requestedCamera = terrainCamera.toMapLibre(data.camera);
@@ -2127,6 +2134,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     if (map === terrainMap) scheduleView();
                 });
                 loaded = true;
+                if (!snowMarkers.replace(terrainMap, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle Snow to try again.');
                 try {
                     if (pendingBasemapSelection !== null) {
                         if (swapBasemap(pendingBasemapSelection)) userPickedBasemap = true;
@@ -2181,6 +2189,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // the caller boots fresh via createTerrain.
     const resumeTerrain = data => {
         if (!map || !loaded) return false;
+        snowStations = readSnotelMapStations(data.snowStations) || [];
+        if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle Snow to try again.');
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         if (!route && !focus) {
@@ -2313,6 +2323,11 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (map && typeof map.easeTo === 'function') {
                 map.easeTo({ bearing: 0, pitch: 0, duration: prefersReducedMotion() ? 0 : 600 });
             }
+        } else if (data.type === 'snowStations') {
+            const stations = readSnotelMapStations(data.snowStations);
+            if (!stations) return;
+            snowStations = stations;
+            if (loaded && !snowMarkers.replace(map, stations)) showNotice('SNOTEL stations could not be drawn. Toggle Snow to try again.');
         } else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             setRoutePaint(data.routeStyle);
@@ -2329,6 +2344,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
         // Native pickers and editable controls own their Escape interaction.
         // Closing a layer list must not also leave the terrain view.
         if (event.target?.closest?.('select, input, textarea, [contenteditable]:not([contenteditable="false" i]), [role="combobox"], [role="slider"]')) return;
+        if (snowMarkers.closePopup()) { event.preventDefault(); return; }
         if (peakPopup || routePopup) {
             event.preventDefault();
             for (const popup of [peakPopup, routePopup]) {

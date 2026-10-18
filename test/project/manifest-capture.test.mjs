@@ -98,6 +98,17 @@ test('climber cards stay in the isolated top-level Peakbagger surface', () => {
         && output === 'css/climber-hover-card.css'));
 });
 
+test('nearby snow is an isolated peak-only bundle without new host permissions', () => {
+    const entry = contentEntry('content/peak-snow.js');
+    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, false);
+    assert.equal(entry.run_at, 'document_end'); assert.equal(entry.matches.length, 4);
+    assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
+    assert.deepEqual(entry.css, ['css/peak-snow.css']);
+    assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.js']);
+    assert.ok(COPY_FILES.some(([source, output]) => source === 'src/snow/peak-snow.css' && output === 'css/peak-snow.css'));
+    assert.ok(![...manifest.host_permissions, ...manifest.optional_host_permissions].some(pattern => /usda/.test(pattern)));
+});
+
 test('ImgBB upload access is optional and scoped to its API origin', () => {
     assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
     assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));

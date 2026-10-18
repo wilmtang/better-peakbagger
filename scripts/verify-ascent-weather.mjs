@@ -18,25 +18,43 @@ import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
 import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
 import { verifyWeatherModelRefresh, verifyAscentWeatherModelMemory } from './verify-weather-model-refresh.mjs';
+import { verifyPeakSnowCases } from './verify-peak-snow-cases.mjs';
+import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mjs';
+import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
+import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
-const peakMode = process.argv.includes('--peak');
-const cardId = peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
+const snowMapMode = process.argv.includes('--snow-map');
+const snowMode = process.argv.includes('--snow') || snowMapMode;
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map'].includes(arg));
+if (unknown.length || (snowMode && live)) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
+const peakMode = process.argv.includes('--peak') || snowMode;
+const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
 const resources = createResourceStack();
 let primaryError = null, summary;
 try {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-ascent-weather-verify-'));
     resources.defer('weather verification profile', () => rm(temporaryRoot, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot });
+    const fixture = await createBrowserFixtureServer({ temporaryRoot, ...(snowMapMode ? { peakMapDocument: await snowMapDocument() } : {}) });
     resources.defer('weather HTTPS fixtures', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
-    const evidence = [], metadataEvidence = [], networkErrors = [], held = [];
+    const evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readLocal, writeLocal, version;
+    let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, setZoom, readLocal, writeLocal, version;
+    const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
     const replyFor = url => {
         const requested = new URL(url);
+        if (requested.hostname === 'tiles.mapterhorn.com') return { status: 200, body: snowMapDem, contentType: 'image/webp', headers: {} };
+        if (requested.hostname === 'wcc.sc.egov.usda.gov') {
+            const body = !snowMode || mode === 'no-stations' ? snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })) : requested.pathname.endsWith('/stations')
+                ? snotelStations().map(station => mode === 'long-station' ? { ...station, name: `${station.name} · Experimental Mountain Snow Observation Station` } : station)
+                : snotelFixture(requested.searchParams.get('stationTriplets'), requested.searchParams.get('duration'));
+            if (mode === 'missing' && requested.pathname.endsWith('/data')) body[0].data[0].values.forEach(reading => { reading.value = null; });
+            return { status: mode === 'error' ? 429 : mode === 'service-error' ? 503 : 200,
+                headers: mode === 'error' ? { 'retry-after': '120' } : {}, body: JSON.stringify(body) };
+        }
         if (requested.pathname.startsWith('/data/')) return { status: 200, headers: {}, body: JSON.stringify({
             last_run_initialisation_time: Math.floor(Date.now() / 1000) - 3600,
             last_run_availability_time: Math.floor(Date.now() / 1000) - 600, update_interval_seconds: 21600,
@@ -68,11 +86,16 @@ try {
         if (mode === 'negative-precipitation') for (const [key, values] of Object.entries(replyBody.hourly)) {
             if (key === 'precipitation' || key === 'precipitation_meteofrance_arpege_world') values[45] = -0.1;
         }
-        return { status: mode === 'error' ? 429 : mode === 'service-error' ? 503 : 200, body: JSON.stringify(replyBody), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
+        return { status: !snowMapMode && mode === 'error' ? 429 : !snowMapMode && mode === 'service-error' ? 503 : 200,
+            body: JSON.stringify(replyBody), headers: !snowMapMode && mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');
         assert.ok(!/[?&](?:aid|cid|name|gpx)=/i.test(url));
+        if (new URL(url).hostname === 'wcc.sc.egov.usda.gov') {
+            assert.ok(!/[?&](?:latitude|longitude|pid)=/i.test(url));
+            snowEvidence.push({ path: new URL(url).pathname, query: new URL(url).search }); return;
+        }
         if (new URL(url).pathname.startsWith('/data/')) { metadataEvidence.push({ host: new URL(url).host, path: new URL(url).pathname, query: new URL(url).search }); return; }
         evidence.push({ host: new URL(url).host, model: new URL(url).searchParams.get('models'), origin: headers.find(header => header.name.toLowerCase() === 'origin')?.value });
     };
@@ -85,6 +108,10 @@ try {
         const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
         const options = new firefox.Options().addArguments('-headless').enableBidi().setProfile(profile)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com').setAcceptInsecureCerts(true);
+        if (snowMapMode) {
+            options.setPreference('webgl.sanitize-unmasked-renderer', false);
+            if (process.platform === 'darwin') options.setPreference('webgl.disable-angle', false);
+        }
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
         const service = new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${temporaryRoot}`);
         const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).setFirefoxService(service).build();
@@ -101,15 +128,15 @@ try {
             const listener = params => {
                 if (!params.isBlocked) return;
                 const url = params.request.url;
-                if (!/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(url)) return;
+                if (!providerPattern.test(url)) return;
                 void (async () => {
                     const headers = params.request.headers.map(header => ({ name: header.name, value: header.value.value }));
-                    checkRequest(url, headers);
-                    if (mode === 'loading') await new Promise(resolve => held.push(resolve));
+                    if (new URL(url).hostname !== 'tiles.mapterhorn.com') checkRequest(url, headers);
+                    if (mode === 'loading' && (!snowMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
                     const reply = replyFor(url);
                     await send({ method: 'network.provideResponse', params: { request: params.request.request, statusCode: reply.status,
-                        headers: [{ name: 'content-type', value: { type: 'string', value: 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
-                        body: { type: 'string', value: reply.body } } });
+                        headers: [{ name: 'content-type', value: { type: 'string', value: reply.contentType || 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
+                        body: Buffer.isBuffer(reply.body) ? { type: 'base64', value: reply.body.toString('base64') } : { type: 'string', value: reply.body } } });
                 })().catch(error => networkErrors.push(error.message));
             };
             bidi.on('network.beforeRequestSent', listener);
@@ -118,6 +145,8 @@ try {
                 { type: 'pattern', protocol: 'https', hostname: 'archive-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'historical-forecast-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'api.open-meteo.com' },
+                { type: 'pattern', protocol: 'https', hostname: 'wcc.sc.egov.usda.gov' },
+                ...(snowMapMode ? [{ type: 'pattern', protocol: 'https', hostname: 'tiles.mapterhorn.com' }] : []),
             ] } });
         } else {
             await bidi.subscribe('network.beforeRequestSent');
@@ -130,6 +159,11 @@ try {
             resources.defer('weather live BiDi listener', () => bidi.off('network.beforeRequestSent', listener));
         }
         evaluate = (fn, ...args) => driver.executeScript(webdriverScript(fn, ...args));
+        evaluateTerrain = async fn => {
+            await driver.switchTo().frame(await driver.findElement(By.id('bpb-terrain-frame')));
+            try { return await driver.executeScript(webdriverScript(fn)); }
+            finally { await driver.switchTo().defaultContent(); }
+        };
         navigate = url => driver.get(url);
         click = async selector => {
             const target = await driver.findElement(By.css(selector));
@@ -167,6 +201,17 @@ try {
                 await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
             } finally { await driver.switchTo().window(weatherWindow); }
         };
+        setZoom = async factor => {
+            await driver.switchTo().window(settingsWindow);
+            try {
+                const result = await driver.executeAsyncScript(`const done=arguments[arguments.length-1];
+                    chrome.tabs.query({url:'https://www.peakbagger.com/*'}).then(async tabs=>{
+                        if(tabs.length!==1) throw new Error('Snow zoom target is ambiguous');
+                        await chrome.tabs.setZoom(tabs[0].id,arguments[0]);return true;
+                    }).then(done,error=>done(String(error)));`, factor);
+                assert.equal(result, true);
+            } finally { await driver.switchTo().window(weatherWindow); }
+        };
         readLocal = async key => {
             // Reading the extension realm through BiDi avoids blurring the
             // weather tab and canceling an in-progress pointer gesture.
@@ -195,11 +240,13 @@ try {
         resources.defer('weather Chrome context', () => context.close());
         version = context.browser().version();
         const page = await context.newPage();
-        if (!live) await context.route(/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//, async route => {
-            checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
-            if (mode === 'loading') await new Promise(resolve => held.push(resolve));
+        const screenshotSession = await context.newCDPSession(page);
+        resources.defer('weather screenshot session', () => screenshotSession.detach());
+        if (!live) await context.route(providerPattern, async route => {
+            if (new URL(route.request().url()).hostname !== 'tiles.mapterhorn.com') checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
+            if (mode === 'loading' && (!snowMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
-            await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
+            await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': reply.contentType || 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
         else page.on('request', request => {
             if (/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(request.url()) && request.method() === 'GET') {
@@ -209,15 +256,34 @@ try {
         });
         page.on('pageerror', error => networkErrors.push(error.message));
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
-        evaluate = (fn, arg) => page.evaluate(fn, arg); navigate = url => page.goto(url, { waitUntil: 'load' });
+        evaluate = (fn, arg) => page.evaluate(fn, arg);
+        evaluateTerrain = fn => page.frames().find(frame => /\/terrain\/terrain.html/.test(frame.url())).evaluate(fn);
+        // Only the isolated headless context is affected. An install-time
+        // extension tab must not leave the fixture's compositor inactive.
+        navigate = async url => { await page.bringToFront(); return page.goto(url, { waitUntil: 'load' }); };
         click = selector => page.locator(selector).click(); resize = (width, height) => page.setViewportSize({ width, height });
         press = key => page.keyboard.press(key);
         movePointer = (x, y) => page.mouse.move(x, y); clickPoint = (x, y, button = 'left') => page.mouse.click(x, y, { button });
         pointerDown = async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); };
         pointerUp = () => page.mouse.up();
         screenshot = output => page.locator(`#${cardId}`).screenshot({ path: output });
-        screenshotPage = output => page.screenshot({ path: output });
+        // Capture the visible compositor surface. Playwright's document-space
+        // screenshot clipping can capture only the background after tab zoom.
+        screenshotPage = async output => {
+            const { data } = await screenshotSession.send('Page.captureScreenshot', {
+                format: 'png', fromSurface: true, captureBeyondViewport: false,
+            });
+            await writeFile(output, Buffer.from(data, 'base64'));
+        };
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
+        setZoom = async factor => {
+            await worker.evaluate(async value => {
+                const tabs = await chrome.tabs.query({ url: 'https://www.peakbagger.com/*' });
+                if (tabs.length !== 1) throw new Error('Snow zoom target is ambiguous');
+                await chrome.tabs.setZoom(tabs[0].id, value);
+            }, factor);
+            await page.bringToFront();
+        };
         readLocal = key => worker.evaluate(storageKey => chrome.storage.local.get(storageKey), key);
         writeLocal = values => worker.evaluate(values => chrome.storage.local.set(values), values);
     }
@@ -371,7 +437,15 @@ try {
         for (const key of ['dateWithHeading', 'inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
-    if (peakMode) {
+    if (snowMapMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifySnowMapCases({ origin, evaluate, evaluateTerrain, navigate, click, clickPoint, press, resize, screenshotPage, setSettings, setZoom, wait, writeLocal,
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
+    } else if (snowMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifyPeakSnowCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, setZoom, wait, writeLocal,
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
+    } else if (peakMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakWeatherCases({ origin, evaluate, navigate, click, press, clickPoint, resize, screenshot, screenshotPage, setSettings, wait,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), evidence, metadataEvidence, networkErrors, live, firefoxMode }) };

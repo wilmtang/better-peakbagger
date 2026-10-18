@@ -97,6 +97,7 @@ const bootTerrainFrame = (window, MapStub, {
 };
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
+    const snowStation = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
@@ -128,6 +129,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         focus: [48.83115, -121.60214],
         focusZoom: 13,
         focusPeak: { id: 2829, name: 'Mount Shuksan', lat: 48.83115, lon: -121.60214, state: 'unclimbed' },
+        snowStations: [{ ...snowStation, url: 'https://untrusted.example/', html: '<script>' }],
         routeStyle: { color: '#d9483b' },
         theme: 'light',
         cacheLimitMb: 512,
@@ -164,8 +166,15 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(init.theme, 'dark');
     assert.equal(init.cacheLimitMb, 512);
     assert.equal(init.basemap.name, 'Open Topo Map');
+    assert.deepEqual(JSON.parse(JSON.stringify(init.snowStations)), [snowStation], 'the frame receives only bounded public station fields');
     assert.match(init.activation, /^test-terrain-activation-/,
         'the private frame message carries the isolated-world capability');
+
+    const beforeInvalidSnow = frameMessages.length;
+    dispatchPage({ type: 'snowStations', snowStations: [{ ...snowStation, longitude: 181 }] });
+    assert.equal(frameMessages.length, beforeInvalidSnow, 'invalid map metadata cannot cross the isolated bridge');
+    dispatchPage({ type: 'snowStations', snowStations: [] });
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1).snowStations)), [], 'toggle-off reaches a loading frame');
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
@@ -180,6 +189,8 @@ test('3D terrain waits for the extension frame handshake before sending route co
     }));
     assert.equal(frame.style.opacity, '1');
     assert.equal(frame.style.pointerEvents, 'auto');
+    assert.equal(frameMessages.at(-1).type, 'snowStations');
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1).snowStations)), [], 'ready replays toggle-off even if authorization dropped its earlier update');
     assert.equal(pageMessages.at(-1).type, 'loaded');
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.73, -121.78], zoom: 13.25 });
 

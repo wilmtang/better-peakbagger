@@ -590,6 +590,7 @@ export async function createBrowserFixtureServer({
     analyzerGpxByCase = {},
     analyzerDelayMs = 0,
     inlineBuddies = false,
+    peakMapDocument = peakMasterMapHtml,
 } = {}) {
     const resources = createResourceStack();
     const certificate = await resources.guard(() =>
@@ -843,7 +844,7 @@ export async function createBrowserFixtureServer({
         }
         if (/mastermap\.aspx/i.test(url.pathname)) {
             return send('text/html; charset=utf-8',
-                (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMasterMapHtml : masterMapHtml);
+                (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMapDocument : masterMapHtml);
         }
         if (/track\.gpx/i.test(url.pathname)
             || (/^\/climber\/GPXFile\.aspx$/i.test(url.pathname) && url.searchParams.get('aid') === '7654321')) {

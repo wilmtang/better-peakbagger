@@ -15,6 +15,9 @@ Data leaves the browser only when a feature requires it:
 - **Open-Meteo** receives summit coordinates, elevation when available, and an
   ascent-day window or sixteen past days plus up to sixteen forecast days
   automatically when an enabled weather card approaches the viewport.
+- **USDA NRCS** receives public station IDs and relative date ranges when an
+  enabled nearby-snow card approaches the viewport. Station matching is local;
+  no summit coordinates or GPX are sent to NRCS.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
@@ -54,6 +57,8 @@ permission to read device location. It covers:
 - activity coordinates sent to Peakbagger for summit lookup and GPS Preview;
 - summit coordinates sent to Open-Meteo for historical weather and forecasts
   when an enabled weather card approaches the viewport;
+- nearby public SNOTEL station IDs sent to USDA NRCS when an enabled snow card
+  approaches the viewport, with summit proximity computed locally;
 - viewed-area tile coordinates sent to Mapterhorn, OpenFreeMap, or a selected
   compatible map provider when 3D is used;
 - a Peakbagger-stored GPS track written to the user's GitHub repository when
@@ -66,6 +71,7 @@ permission to read device location. It covers:
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, weather-card, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
 | `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, weather-model choices, ascent-weather column, summit-weather data-tab selection, and automatic-backup state | Device-local; never browser-synced. |
+| `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
 | `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
@@ -346,6 +352,28 @@ developer account.
 
 ## Summit weather
 
+### Nearby snow observations
+
+The weather preference also controls **Nearby snow** on recognized western-US
+and Alaska peak pages. When an enabled card approaches the viewport, the
+extension obtains the public NRCS station catalog and matches up to three
+stations locally within 50 km. Public catalog metadata is cached on this device
+and reused for seven days. NRCS receives no summit coordinates, peak identity,
+page URL, ascent/climber ID, report, GPX, or account information.
+
+The selected station's requests contain its public station triplet, snow-depth
+and snow-water-equivalent element codes, relative hourly/daily date ranges,
+period convention and quality-filter options. NRCS also receives ordinary
+request metadata, including the user's IP address. Requests omit credentials
+and referrers. Observations and station selections stay in page memory, with
+up to three station results cached for 30 minutes; they never enter sync,
+exports or backups. Refresh, station changes and returning to an expired visible
+card may request observations again. Disabling weather cancels pending snow
+work and prevents new requests. The source link navigates to the selected
+station's public NRCS report. See [Nearby snow](docs/nearby-snow.md).
+
+### Forecast and historical weather
+
 **Settings → General → Show weather cards** controls both historical ascent
 weather and peak-page forecasts. It is on by default, and the preference may
 sync through the browser account and travel with settings exports or optional
@@ -538,6 +566,7 @@ The user can export and import settings without GitHub:
 | --- | --- |
 | Peakbagger | Summit-corridor lookup and user-approved GPS Preview; normal operation of Peakbagger page features. |
 | Open-Meteo | Summit coordinates, elevation when available, weather fields and an ascent-day window or sixteen past days plus up to sixteen forecast days when an enabled card approaches the viewport; selecting a map location requests that point without summit elevation. Model selection, Retry, Refresh or an automatic expired-data refresh may request data again. No credentials or referrer. |
+| USDA NRCS | Public SNOTEL station catalog, then selected public station IDs, relative date ranges, snow fields, period convention and quality-filter options when the enabled snow card approaches the viewport, changes stations, refreshes or returns with expired data. Local proximity matching sends no summit coordinates; no credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |

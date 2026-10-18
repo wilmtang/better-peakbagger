@@ -19,6 +19,7 @@ import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 import { mapViewport as MapViewport } from '../gpx/map-viewport.js';
 import { createPeakWeatherMap } from './peak-weather-map.js';
+import { createPeakSnowMap } from './peak-snow-map.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
@@ -271,7 +272,8 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
             theme: effectiveTheme(),
             basemap,
             basemaps,
-            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb)
+            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb),
+            snowStations: snowMap.snapshot()
         };
     };
 
@@ -332,6 +334,7 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
         terrainEnabled = settings.enable3dMap;
         terrainThemePref = settings.theme;
         terrainCacheLimitMb = settings.terrainCacheLimitMb;
+        snowMap.setTheme(effectiveTheme());
         sunCalculator?.setTheme(effectiveTheme());
         if (sunCalculator) sunCalculator.element.hidden = !settings.showSunMoon;
         if (!terrainEnabled && !terrainCoordinator.isIdle()) terrainCoordinator.stop();
@@ -344,8 +347,10 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
     });
 
     const weatherMap = createPeakWeatherMap({ getFrame: () => iframe, getMap: () => resolveMapContext()?.map });
+    const snowMap = createPeakSnowMap({ mount, getContext: resolveMapContext, postTerrain });
     const handleIframeLoad = () => {
         weatherMap.attach();
+        snowMap.attach();
         peaksResponder.reset();
         viewport.scheduleInvalidate();
     };
@@ -356,6 +361,7 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
     PageLifecycle.create({
         onSuspend: () => {
             weatherMap.suspend();
+            snowMap.suspend();
             if (terrainCoordinator.isOpen() && !terrainCoordinator.isActive()) {
                 terrainCoordinator.reset();
             }
@@ -372,6 +378,7 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
                 iframe.addEventListener('load', handleIframeLoad);
             }
             handleIframeLoad();
+            snowMap.resume();
             renderSun(sunState.get());
             terrainCoordinator.update();
             terrainCoordinator.position();
@@ -379,6 +386,7 @@ import { createPeakWeatherMap } from './peak-weather-map.js';
         },
         onDispose: () => {
             weatherMap.suspend();
+            snowMap.dispose();
             if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
             iframe.removeEventListener('load', handleIframeLoad);
             viewport.dispose();

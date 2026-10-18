@@ -22,6 +22,8 @@ const targets = {
     'map-handoffs': [['verify-map-handoffs.mjs']],
     weather: [['verify-ascent-weather.mjs'], ['verify-ascent-weather.mjs', '--firefox']],
     'peak-weather': [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']],
+    snow: [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']],
+    'snow-map': [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']],
     packages: [['verify-packaged-extensions.mjs']],
 };
 const terrainTargets = {
