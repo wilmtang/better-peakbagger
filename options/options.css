@@ -553,19 +553,21 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 /* Feedback dock. .content is the scroll container and this is the last thing
  * in .wrap, so sticky bottom keeps the message on screen from any scroll
  * position — the settings the user is actually toggling are thousands of
- * pixels above the end of the page. It collapses to nothing when idle so it
- * never eats viewport height. */
+ * pixels above the end of the page. Its zero-height slot lets feedback extend
+ * upward without changing the scroll range when a message appears or fades. */
 .status-dock {
     position: sticky;
     bottom: 0;
     z-index: 5;
     display: flex;
+    align-items: flex-end;
     justify-content: flex-end;
+    height: 0;
     margin-top: 16px;
-    padding: 10px 2px;
+    padding: 0 2px;
     pointer-events: none;
 }
-.status-dock:not(:has(.show)) { padding: 0; }
+.status-dock > .status { margin-bottom: 10px; }
 
 .status {
     display: none;

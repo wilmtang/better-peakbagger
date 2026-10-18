@@ -5,6 +5,7 @@ import { photoToolPreferences as ToolPreferences } from '../src/photos/photo-too
 import { photoProject as Project } from '../src/photos/photo-project.js';
 import { photoRenderer as Renderer } from '../src/photos/photo-renderer.js';
 import { photoLibrary as Library } from '../src/photos/photo-library.js';
+import { createPhotoBackupStatus, formatPhotoBackupStatus } from '../src/photos/photo-backup-status.js';
 import { photoStore as Store } from '../src/photos/photo-store.js';
 import { photoArchive as Archive } from '../src/photos/photo-archive.js';
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
@@ -3280,10 +3281,7 @@ const resumeLibraryMaintenance = () => {
     if (store) scheduleLibraryMaintenance(0);
 };
 
-const formatBackupTime = value => {
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'unknown time';
-};
+const setPhotoBackupStatus = createPhotoBackupStatus(ui.backupStatus);
 
 const setPhotoBackupBusy = value => {
     photoBackupBusy = value;
@@ -3294,54 +3292,44 @@ const setPhotoBackupBusy = value => {
 const refreshPhotoBackupStatus = async () => {
     const response = await send({ type: 'GITHUB_PHOTOS_STATUS' });
     if (!response?.ok) {
-        ui.backupStatus.textContent = 'GitHub recovery is unavailable.';
+        setPhotoBackupStatus('GitHub recovery is unavailable.');
         ui.backupNow.disabled = true;
         return false;
     }
     ui.backupNow.disabled = !response.connected || photoBackupBusy;
     if (!response.connected) {
-        ui.backupStatus.textContent = 'Connect a GitHub backup repository in Settings to enable recovery.';
+        setPhotoBackupStatus('Connect a GitHub backup repository in Settings to enable recovery.');
         return false;
     }
     const repository = response.repo?.fullName
         || [response.repo?.owner, response.repo?.name].filter(Boolean).join('/');
-    const state = response.state;
-    if (state?.reconciliationPending) {
-        ui.backupStatus.textContent = response.auto
-            ? `Automatic backup on · changes pending for ${repository}.`
-            : `Backup reached ${repository} · local changes still need backup.`;
-    } else if (state?.syncedAt) {
-        ui.backupStatus.textContent = `${response.auto ? 'Automatic backup on · backed up to' : 'Backed up to'} ${repository} · ${formatBackupTime(state.syncedAt)}`;
-    } else if (state?.restoredAt) {
-        ui.backupStatus.textContent = `Restored from ${repository} · ${formatBackupTime(state.restoredAt)}`;
-    } else {
-        ui.backupStatus.textContent = response.auto
-            ? `Automatic backup on · ${repository}.`
-            : `Ready to back up metadata to ${repository}.`;
-    }
+    const context = {
+        state: response.state, auto: response.auto, repository,
+    };
+    setPhotoBackupStatus(formatPhotoBackupStatus(context), context);
     return true;
 };
 
 const backupPhotoLibrary = async () => {
     if (photoBackupBusy) return;
     setPhotoBackupBusy(true);
-    ui.backupStatus.textContent = 'Backing up photo metadata…';
+    setPhotoBackupStatus('Backing up photo metadata…');
     const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
     setPhotoBackupBusy(false);
     if (response?.ok) {
         const statusCurrent = await refreshPhotoBackupStatus();
         toast(statusCurrent
             ? response.reconciliationPending
-                ? response.warning?.message || 'The GitHub backup is safe, but local changes still need backup.'
+                ? response.warning?.message || 'The GitHub backup is safe, but local backup status is not yet confirmed.'
                 : 'Photo-library metadata backed up to GitHub.'
             : 'The backup finished, but its current GitHub status could not be refreshed.');
         void renderLibrary();
         return;
     }
-    ui.backupStatus.textContent = response?.error?.code === 'photo-backup-conflict'
+    setPhotoBackupStatus(response?.error?.code === 'photo-backup-conflict'
         ? `Backup conflict in ${response.error.conflictCount || 1} photo record(s). `
             + 'Restore from Settings and review before backing up again.'
-        : response?.error?.message || 'The photo-library backup failed. Try again.';
+        : response?.error?.message || 'The photo-library backup failed. Try again.');
 };
 
 const bindInspector = () => {

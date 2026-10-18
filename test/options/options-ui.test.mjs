@@ -123,6 +123,57 @@ test('theme bootstrap loads before the options stylesheet', async () => {
     assert.deepEqual(resources, ['options-head.js', '../css/panel.css', 'options.css']);
 });
 
+test('Settings photo backup copy distinguishes saved records, newer edits, and unconfirmed status', async () => {
+    const syncedAt = '2026-07-27T18:10:00.000Z';
+    const cases = [
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date in me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: { syncedAt, generation: 4, catalogGeneration: 5, confirmedGeneration: 4,
+            reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 3,
+            reconciliationPending: true },
+        text: 'Backed up to me/backup · local backup status needs updating.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4,
+            confirmedGeneration: 3, reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, reconciliationPending: true },
+            text: 'Latest photo-library backup is not yet confirmed for me/backup.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date · restored from me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: null, text: null },
+    ];
+    for (const auto of [false, true]) {
+        let state = cases[2].state;
+        const dom = await loadOptions({ autoPhotoLibraryBackup: auto }, {
+            prepareChrome: chrome => {
+                chrome.permissions = { contains: async () => true };
+                chrome.runtime.sendMessage = async message => {
+                    const repo = { owner: 'me', name: 'backup', fullName: 'me/backup' };
+                    if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo };
+                    if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true, state };
+                    return {};
+                };
+            },
+        });
+        try {
+            await waitFor(dom, () => el(dom, 'photos-github-status').textContent.includes('me/backup'));
+            assert.equal(el(dom, 'photos-github-status').textContent,
+                `${auto ? 'Automatic backup on · ' : ''}${cases[2].text}`);
+            for (const scenario of cases) {
+                state = scenario.state;
+                dom.window.dispatchEvent(new dom.window.Event('focus'));
+                const expected = scenario.state
+                    ? `${auto ? 'Automatic backup on · ' : ''}${scenario.text}`
+                    : auto ? 'Automatic backup on · No photo-library backup confirmed yet for me/backup.'
+                        : 'Ready to back up photo records to me/backup.';
+                await waitFor(dom, () => el(dom, 'photos-github-status').textContent === expected);
+                assert.equal(el(dom, 'photos-github-status').textContent, expected);
+            }
+        } finally { dom.window.close(); }
+    }
+});
+
 test('Settings distinguishes a confirmed photo backup from pending local reconciliation', async () => {
     let pending = false;
     const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
@@ -147,6 +198,7 @@ test('Settings distinguishes a confirmed photo backup from pending local reconci
                         repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
                         state: pending ? {
                             syncedAt: '2026-07-27T18:10:00.000Z',
+                            generation: 4, catalogGeneration: 4, confirmedGeneration: 3,
                             reconciliationPending: true,
                         } : null,
                     };
@@ -171,10 +223,11 @@ test('Settings distinguishes a confirmed photo backup from pending local reconci
         'Ready to back up photo records to me/backup.');
 
     el(dom, 'photos-backup').click();
-    await waitFor(dom, () => /Backup reached me\/backup/.test(
+    await waitFor(dom, () => /local backup status needs updating/.test(
         el(dom, 'photos-github-status').textContent));
 
-    assert.match(el(dom, 'photos-github-status').textContent, /local changes still need backup/);
+    assert.match(el(dom, 'photos-github-status').textContent, /Backed up to me\/backup/);
+    assert.doesNotMatch(el(dom, 'photos-github-status').textContent, /changes.*backup|pending/);
     assert.match(el(dom, 'status').textContent, /GitHub backup is safe/);
     assert.doesNotMatch(el(dom, 'status').textContent, /failed/i);
 });

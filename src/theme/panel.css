@@ -341,3 +341,9 @@ button.primary:focus-visible,
     font-weight: 650;
     line-height: 1.4;
 }
+
+/* Keep backup feedback readable without moving the surrounding controls. */
+.photo-backup-status { display: grid; }
+.photo-backup-status > span { grid-area: 1 / 1; min-width: 0; overflow-wrap: anywhere; }
+.photo-backup-status > [aria-hidden] { visibility: hidden; }
+.photo-backup-status > [aria-hidden]::after { content: attr(data-sizing-label); }

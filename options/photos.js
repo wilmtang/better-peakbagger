@@ -11,6 +11,7 @@
 
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
+import { createPhotoBackupStatus, formatPhotoBackupStatus } from '../src/photos/photo-backup-status.js';
 import { hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
@@ -43,6 +44,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     }
 
     const send = RuntimeMessage.bind(extensionApi);
+    const setStatus = createPhotoBackupStatus(statusEl);
     const photoBackupError = error => error?.code === 'photo-backup-too-large'
         && typeof error.message === 'string'
         ? error.message
@@ -56,12 +58,6 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
 
     const repoName = () => OptionsUtils.githubRepoName(githubStatus);
 
-    const backedUpAt = () => {
-        const stamp = backupState?.syncedAt || backupState?.restoredAt;
-        const time = stamp ? new Date(stamp) : null;
-        return Number.isFinite(time?.getTime()) ? time.toLocaleString() : null;
-    };
-
     const render = () => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
         actionsEl.hidden = !connected;
@@ -69,25 +65,21 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         restoreEl.disabled = busy;
         autoEl.disabled = busy;
         if (busy) {
-            statusEl.textContent = operation === 'backup'
+            setStatus(operation === 'backup'
                 ? 'Backing up photo records to GitHub…'
                 : operation === 'restore'
                     ? 'Restoring photo records…'
-                    : 'Reading photo-library.json…';
+                    : 'Reading photo-library.json…');
             return;
         }
         if (!connected) {
-            statusEl.textContent = 'Connect GitHub above to back up your photo library.';
+            setStatus('Connect GitHub above to back up your photo library.');
             return;
         }
-        const when = backedUpAt();
-        statusEl.textContent = backupState?.reconciliationPending
-            ? autoEl.checked ? `Automatic backup on · changes pending for ${repoName()}.`
-                : `Backup reached ${repoName()} · local changes still need backup.`
-            : when
-                ? `${backupState?.syncedAt ? 'Backed up to' : 'Restored from'} ${repoName()} · ${when}`
-                : autoEl.checked ? `Automatic backup on · ${repoName()}.`
-                    : `Ready to back up photo records to ${repoName()}.`;
+        const context = {
+            state: backupState, auto: autoEl.checked, repository: repoName(),
+        };
+        setStatus(formatPhotoBackupStatus(context), context);
     };
 
     const refresh = async () => {
@@ -128,7 +120,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         if (response?.ok) {
             await refresh();
             flash(response.reconciliationPending
-                ? response.warning?.message || 'The GitHub backup is safe, but local changes still need backup.'
+                ? response.warning?.message || 'The GitHub backup is safe, but local backup status is not yet confirmed.'
                 : `Photo records backed up to ${repoName()}`);
             return;
         }

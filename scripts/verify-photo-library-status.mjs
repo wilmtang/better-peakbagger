@@ -11,6 +11,9 @@ import { chromium } from 'playwright';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { photoLibrary as Library } from '../src/photos/photo-library.js';
 import { photoProject as Project } from '../src/photos/photo-project.js';
+import { verifyPhotoBackupStatus } from './verify-photo-backup-status.mjs';
+
+assert.equal(process.argv.length, 2, 'photo status verification accepts no arguments');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -168,6 +171,7 @@ try {
             }
         }
     }
+    const backupStatus = await verifyPhotoBackupStatus({ context, extensionId: id, screenshots });
     const renderer = await page.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl');
         const extension = gl.getExtension('WEBGL_debug_renderer_info');
@@ -176,7 +180,7 @@ try {
     assert.doesNotMatch(renderer, /swiftshader|llvmpipe|software/i);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ passed: true, browser: context.browser().version(), hidden: true, renderer,
-        widths, height: 1100, states: states.length, themes: ['light', 'dark'], profile }));
+        widths, height: 1100, states: states.length, themes: ['light', 'dark'], backupStatus, profile }));
 } finally {
     await context?.close();
     await rm(profile, { recursive: true, force: true });

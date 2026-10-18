@@ -242,6 +242,54 @@ const loadEditor = async ({
     };
 };
 
+test('the photo library distinguishes saved records, newer edits, and unconfirmed backup status', async () => {
+    const syncedAt = '2026-07-27T18:10:00.000Z';
+    const cases = [
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date in me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: { syncedAt, generation: 4, catalogGeneration: 5, confirmedGeneration: 4,
+            reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 3,
+            reconciliationPending: true },
+        text: 'Backed up to me/backup · local backup status needs updating.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4,
+            confirmedGeneration: 3, reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, reconciliationPending: true },
+            text: 'Latest photo-library backup is not yet confirmed for me/backup.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date · restored from me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: null, text: null },
+    ];
+    for (const auto of [false, true]) {
+        let state = cases[2].state;
+        const page = await loadEditor({ pickPhoto: false, runtimeHandler: async message => {
+            if (message.type === 'GITHUB_PHOTOS_STATUS') return {
+                ok: true, connected: true, auto,
+                repo: { owner: 'me', name: 'backup', fullName: 'me/backup' }, state,
+            };
+            return { ok: true };
+        } });
+        try {
+            await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent.includes('me/backup'));
+            assert.equal(page.doc.getElementById('photo-backup-status').textContent,
+                `${auto ? 'Automatic backup on · ' : ''}${cases[2].text}`);
+            for (const [index, scenario] of cases.entries()) {
+                state = scenario.state;
+                await page.win.chrome.storage.local.set({ bpbPhotoLibraryBackupState: { serial: index } });
+                const expected = scenario.state
+                    ? `${auto ? 'Automatic backup on · ' : ''}${scenario.text}`
+                    : auto ? 'Automatic backup on · No photo-library backup confirmed yet for me/backup.'
+                        : 'Ready to back up photo records to me/backup.';
+                await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent === expected);
+                assert.equal(page.doc.getElementById('photo-backup-status').textContent, expected);
+            }
+            assert.deepEqual(page.errors, []);
+        } finally { page.dom.window.close(); }
+    }
+});
+
 test('a confirmed backup with pending local reconciliation is never announced as failed', async () => {
     let pending = false;
     let releaseStatus;
@@ -257,6 +305,7 @@ test('a confirmed backup with pending local reconciliation is never announced as
                     repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
                     state: pending ? {
                         syncedAt: '2026-07-27T18:10:00.000Z',
+                        generation: 4, catalogGeneration: 5, confirmedGeneration: 4,
                         reconciliationPending: true,
                     } : null,
                 };
@@ -287,15 +336,13 @@ test('a confirmed backup with pending local reconciliation is never announced as
         /GitHub backup is safe|backed up/i);
 
     releaseStatus();
-    await waitFor(page.dom, () => /Backup reached me\/backup/.test(
+    await waitFor(page.dom, () => /Photo-library changes are not yet backed up/.test(
         page.doc.getElementById('photo-backup-status').textContent));
     await waitFor(page.dom, () => /GitHub backup is safe/.test(
         page.doc.getElementById('toast-message').textContent));
 
     assert.match(page.doc.getElementById('photo-backup-status').textContent,
-        /Backup reached me\/backup/);
-    assert.match(page.doc.getElementById('photo-backup-status').textContent,
-        /local changes still need backup/);
+        /Photo-library changes are not yet backed up to me\/backup/);
     assert.doesNotMatch(page.doc.getElementById('toast-message').textContent, /failed/i);
     assert.deepEqual(page.errors, []);
 });
