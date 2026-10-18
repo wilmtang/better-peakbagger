@@ -42,13 +42,23 @@ test('every unit override shares validation and invalid values inherit the defau
 });
 
 test('display preferences default on, retain explicit opt-outs and reject non-booleans', () => {
-    for (const key of ['showSunMoon', 'showWeather']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSnotel']) {
         assert.equal(Schema.DEFAULTS[key], true);
         assert.equal(Schema.clean({})[key], true);
         assert.equal(Schema.clean({ [key]: false })[key], false);
         assert.equal(Schema.clean(Schema.clean({ [key]: false }))[key], false);
         for (const value of [null, 0, 'false', [], {}]) assert.equal(Schema.clean({ [key]: value })[key], true);
     }
+});
+
+test('SNOTEL inherits legacy weather opt-outs until independently selected', () => {
+    assert.equal(Schema.clean({ showWeather: false }).showSnotel, false);
+    for (const showWeather of [true, false]) for (const showSnotel of [true, false]) {
+        const clean = Schema.clean({ showWeather, showSnotel });
+        assert.equal(clean.showWeather, showWeather); assert.equal(clean.showSnotel, showSnotel);
+        assert.deepEqual(Schema.clean(clean), clean);
+    }
+    assert.equal(Schema.clean({ showWeather: false, showSnotel: 'true' }).showSnotel, false);
 });
 
 test('clean() clamps oversized values but resets a sub-minimum viewport width to the default', () => {
@@ -238,7 +248,7 @@ test('known route, viewport, and theme defaults and bounds stay schema-owned', a
         { pattern: /casingWidth:\s*9\b/, what: 'the default casing width' },
         { pattern: /\b(?:1,\s*12|3,\s*20|240,\s*720)\b/, what: 'a route/viewport bound pair' },
         { pattern: /\blet\s+pref\s*=\s*['"]system['"]/, what: 'the default theme preference' },
-        { pattern: /\b(?:showSunMoon|showWeather)\s*:\s*(?:true|false)\b/, what: 'a section display default' },
+        { pattern: /\b(?:showSunMoon|showWeather|showSnotel)\s*:\s*(?:true|false)\b/, what: 'a section display default' },
     ];
 
     const leaks = [];

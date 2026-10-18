@@ -14,6 +14,15 @@ const makeArea = (initial = {}) => {
     };
 };
 
+test('migrated SNOTEL opt-outs persist independently through later weather changes', async () => {
+    const area = makeArea({ [STORAGE_KEY]: { showWeather: false } });
+    const store = createSettingsStore({ area, sendMessage: null });
+    assert.equal((await store.requireCurrent()).showSnotel, false);
+    assert.equal((await store.applyPatch({ showWeather: true })).showSnotel, false);
+    await store.applyPatch({ showSnotel: true });
+    assert.equal((await store.applyPatch({ showWeather: false })).showSnotel, true);
+});
+
 test('a settings mutation fails closed when the authoritative read fails', async () => {
     let writes = 0;
     const store = createSettingsStore({

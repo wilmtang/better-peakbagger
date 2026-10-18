@@ -22,6 +22,7 @@ import { verifyPeakSnowCases } from './verify-peak-snow-cases.mjs';
 import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mjs';
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
+import { verifySnotelOptions } from './verify-snotel-options.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -42,7 +43,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, setZoom, readLocal, writeLocal, version;
+    let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, setZoom, readLocal, writeLocal, version, withOptions;
     const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
     const replyFor = url => {
         const requested = new URL(url);
@@ -200,6 +201,23 @@ try {
         const settingsWindow = await driver.getWindowHandle();
         await driver.get(extensionUrl);
         await driver.switchTo().window(weatherWindow);
+        withOptions = async run => {
+            const previousRect = await driver.manage().window().getRect();
+            await driver.switchTo().window(settingsWindow);
+            try {
+                // BiDi refuses viewport emulation on privileged extension
+                // pages. Resize this isolated headless window instead.
+                const resizeOptions = async (width, height) => {
+                    const bounds = await driver.manage().window().getRect();
+                    const viewport = await evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+                    await driver.manage().window().setRect({ width: bounds.width + width - viewport.width, height: bounds.height + height - viewport.height });
+                };
+                return await run({ evaluate, click, resize: resizeOptions, screenshot: screenshotPage, reload: () => driver.navigate().refresh(), firefoxMode });
+            } finally {
+                await driver.manage().window().setRect(previousRect);
+                await driver.switchTo().window(weatherWindow);
+            }
+        };
         setSettings = async values => {
             await driver.switchTo().window(settingsWindow);
             try {
@@ -261,6 +279,16 @@ try {
         });
         page.on('pageerror', error => networkErrors.push(error.message));
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+        withOptions = async run => {
+            const options = await context.newPage();
+            try {
+                await options.goto(await worker.evaluate(() => chrome.runtime.getURL('options/options.html')));
+                await options.bringToFront();
+                return await run({ evaluate: (fn, arg) => options.evaluate(fn, arg), click: selector => options.locator(selector).click(),
+                    resize: (width, height) => options.setViewportSize({ width, height }), screenshot: output => options.screenshot({ path: output }),
+                    reload: () => options.reload(), firefoxMode });
+            } finally { await options.close(); await page.bringToFront(); }
+        };
         evaluate = (fn, arg) => page.evaluate(fn, arg);
         evaluateTerrain = fn => page.frames().find(frame => /\/terrain\/terrain.html/.test(frame.url())).evaluate(fn);
         // Only the isolated headless context is affected. An install-time
@@ -443,7 +471,9 @@ try {
         assert.equal(geometry.cardCount, 1);
     };
     if (snowMapMode) {
+        const optionsCases = await withOptions(verifySnotelOptions);
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            optionsCases,
             ...await verifySnowMapCases({ origin, evaluate, evaluateTerrain, navigate, click, clickPoint, press, resize, screenshotPage, setSettings, setZoom, wait, writeLocal,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
     } else if (snowMode) {

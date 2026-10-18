@@ -48,6 +48,36 @@ const mapMessage = (env, detail) => env.win.dispatchEvent(new env.win.MessageEve
     source: env.win, origin: env.win.location.origin, data: { __bpbPeakSnow: true, dir: 'toCS', ...detail },
 }));
 
+test('SNOTEL can be disabled without weather and enabled without weather; legacy opt-outs stay off', async () => {
+    for (const saved of [{ showWeather: true, showSnotel: false }, { showWeather: false }]) {
+        const env = setup({ saved });
+        try {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            assert.equal(env.doc.getElementById('bpb-peak-snow').hidden, true);
+            mapMessage(env, { type: 'get', requestId: 1 });
+            assert.equal(env.requests.length, 0);
+        } finally { env.close(); }
+    }
+    const enabled = setup({ saved: { showWeather: false, showSnotel: true } });
+    try { await settled(enabled); assert.equal(enabled.doc.getElementById('bpb-peak-snow').hidden, false); }
+    finally { enabled.close(); }
+});
+
+test('disabling SNOTEL aborts catalog work for both card and map and ignores late replies', async () => {
+    const held = [];
+    const env = setup({ fetchFn: (url, init) => new Promise(resolve => held.push({ url, init, resolve })) });
+    try {
+        await waitFor(() => held.length === 1);
+        mapMessage(env, { type: 'get', requestId: 1 }); await waitFor(() => held.length === 2);
+        env.settings({ showSnotel: false, showWeather: true });
+        assert.ok(held.every(request => request.init.signal.aborted));
+        held.forEach(request => request.resolve(reply(request.url)));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.equal(env.doc.getElementById('bpb-peak-snow').hidden, true);
+        assert.equal(env.requests.length, 2);
+    } finally { env.close(); }
+});
+
 test('map conditions can reveal the lazy card and select a station beyond the default nearest three', async () => {
     const catalog = [...snotelStations(),
         { ...snotelStations()[0], stationTriplet: '998:WA:SNTL', name: 'Near station', latitude: 46.80, longitude: -121.70 },
@@ -84,7 +114,7 @@ test('map conditions can reveal the lazy card and select a station beyond the de
         const requests = env.requests.length;
         mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
         assert.equal(select.value, '999:WA:SNTL'); assert.equal(env.requests.length, requests, 'map selection respects NRCS cooldown');
-        env.settings({ showWeather: false }); mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
+        env.settings({ showSnotel: false }); mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
         assert.equal(env.requests.length, requests);
     } finally { env.close(); }
 });
@@ -114,12 +144,12 @@ test('weather setting must resolve and card must approach viewport before any re
         await waitFor(() => env.observers.length === 1);
         assert.equal(env.requests.length, 0);
         env.observers[0].callback([{ isIntersecting: true }]); await settled(env);
-        env.settings({ showWeather: false }); assert.equal(env.doc.querySelector('#bpb-peak-snow-row').hidden, true);
-        env.settings({ showWeather: true }); await waitFor(() => env.observers.length === 2);
+        env.settings({ showSnotel: false }); assert.equal(env.doc.querySelector('#bpb-peak-snow-row').hidden, true);
+        env.settings({ showSnotel: true }); await waitFor(() => env.observers.length === 2);
         env.observers[1].callback([{ isIntersecting: true }]); await settled(env);
         assert.equal(env.requests.length, 3, 'reenabling reuses cached observations');
     } finally { env.close(); }
-    const disabled = setup({ saved: { showWeather: false } });
+    const disabled = setup({ saved: { showSnotel: false } });
     try { await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(disabled.requests.length, 0); assert.equal(disabled.doc.querySelector('#bpb-peak-snow').hidden, true); }
     finally { disabled.close(); }
     const unreadable = setup({ readSettings: async () => { throw new Error('unavailable'); } });
@@ -142,7 +172,7 @@ test('a queued visibility callback from a disabled generation cannot start work 
     const env = setup({ lazy: true });
     try {
         await waitFor(() => env.observers.length === 1);
-        env.settings({ showWeather: false }); env.settings({ showWeather: true });
+        env.settings({ showSnotel: false }); env.settings({ showSnotel: true });
         await waitFor(() => env.observers.length === 2);
         env.observers[0].callback([{ isIntersecting: true }]);
         await new Promise(resolve => setTimeout(resolve, 0)); assert.equal(env.requests.length, 0);
@@ -180,9 +210,9 @@ test('Refresh stays focused and cannot duplicate work while pending; failure ret
         hold = true; button.focus(); button.click(); button.click();
         await waitFor(() => held); assert.equal(env.requests.length, 4); assert.equal(env.doc.activeElement, button);
         assert.equal(button.disabled, false); assert.equal(button.getAttribute('aria-disabled'), 'true');
-        env.settings({ showWeather: false }); assert.equal(env.requests[3].init.signal.aborted, true);
+        env.settings({ showSnotel: false }); assert.equal(env.requests[3].init.signal.aborted, true);
         held.resolve(reply(held.url)); hold = false; fail = true;
-        env.settings({ showWeather: true }); await settled(env);
+        env.settings({ showSnotel: true }); await settled(env);
         button.click(); await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('Could not load'));
         assert.equal(env.doc.querySelector('.bpb-snow-metrics').textContent, before);
         assert.equal(env.doc.activeElement, button); assert.equal(button.getAttribute('aria-disabled'), 'false');

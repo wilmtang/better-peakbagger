@@ -3,9 +3,12 @@
 Peak pages in the western United States and Alaska show **Nearby snow** beneath
 Summit weather. It uses public [USDA NRCS SNOTEL observations](https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui.html),
 without an account, API key, subscription, or Better Peakbagger server.
-**Settings → General → Show weather forecast and archive** controls this card
-alongside the two weather cards. Turning it off cancels pending snow work and
+**Settings → General → SNOTEL snow observations → Show SNOTEL** controls the
+whole feature independently of weather. Turning it off hides the card and map
+control, clears station markers and popups, cancels pending snow work, and
 prevents new NRCS requests. Settings must load successfully before any request.
+For older settings without this preference, an existing weather opt-out also
+keeps SNOTEL off until the user explicitly enables it.
 
 The card finds the three closest active SNOTEL stations within 50 km of the
 summit, in straight-line distance. Selection is local and can cross state
@@ -129,7 +132,7 @@ rendering and the 3D frame. Selection returns only a station identifier, which
 the isolated source resolves against its own previously exposed nearby catalog;
 page-supplied coordinates, names, and time offsets cannot select a station.
 Fetching stays isolated, summit coordinates stay
-local, and disabling **Summit weather** clears both renderers' station layers.
+local, and disabling **Show SNOTEL** clears both renderers' station layers.
 Pending requests can be canceled with the same SNOTEL toggle; failures provide
 Retry, respecting the NRCS retry deadline. A completed empty local match is
 distinct from a catalog failure.
@@ -154,6 +157,12 @@ only enough to keep it below the top controls and clear of navigation; unusually
 long content can scroll inside the popup at the minimum size. The SNOTEL button
 shares the map controls' right inset; on the shortest map the compass sits beside
 the 2D button to preserve both targets.
+The same check exercises the real General setting through off/on, save and
+reload, and compares its control, row, heading, following content and scroll
+geometry. Options are inspected at 1000 pixels wide plus 375 in Chrome and
+500 in Firefox (its minimum headless window width for extension pages), in both
+themes. Fresh-page checks prove that disabled SNOTEL makes no NRCS requests
+while forecasts remain usable, and that SNOTEL can run with forecasts disabled.
 Set `BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` to retain screenshots.
 This fixture proof does not establish live Peakbagger compatibility or native
 browser menus, OS focus/placement, or screen-reader speech.

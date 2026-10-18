@@ -49,7 +49,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
             && state.marker.left >= 0 && state.marker.right <= state.viewport.width, `the popup's station stays visible: ${JSON.stringify(state)}`);
     };
     const prepare = async (width, theme, mode = 'loading') => {
-        await resize(width, 1100); await setSettings({ theme, units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true });
+        await resize(width, 1100); await setSettings({ theme, units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: true });
         await writeLocal({ bpbSnotelCatalogV1: null }); setMode(mode);
         await navigate(`${origin}/peak.aspx?pid=2296&week-weather=map-first`);
         await wait(() => document.getElementById('bpb-snow-map-toggle')?.hidden === false, 'available snow toggle');
@@ -196,10 +196,13 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     await click('#bpb-terrain-toggle'); await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false', 'return to native map');
     await waitMarkers(2);
     await click('#bpb-terrain-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 2, 'parked 3D resume');
-    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: false });
+    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: false });
     await wait(() => document.getElementById('bpb-snow-map-toggle').hidden, 'settings disable layer');
     await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 0, 'settings clear 3D layer');
-    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true });
+    assert.equal(await markerCount(), 0);
+    assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-row').hidden), true);
+    assert.equal(await evaluate(() => document.getElementById('bpb-peak-weather').hidden), false, 'SNOTEL opt-out preserves forecast');
+    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: true });
     await wait(() => !document.getElementById('bpb-snow-map-toggle').hidden, 'settings restore control');
     assert.equal(await evaluate(() => document.getElementById('bpb-snow-map-toggle').getAttribute('aria-pressed')), 'false');
     cases.push({ renderer, states: ['3D', 'popup', 'Escape', 'off', 'on', '2D', 'resume', 'settings'] });
@@ -256,9 +259,9 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('a') === link;
     }), true, 'source link remains visible and usable in the minimum-size popover');
     await image('375-dark-3d-long-name'); cases.push({ width: 375, theme: 'dark', states: ['3D', 'long-name-popup'] });
-    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: false });
-    await wait(() => document.getElementById('bpb-snow-map-toggle').hidden, 'minimum map weather disabled');
-    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true });
+    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: false });
+    await wait(() => document.getElementById('bpb-snow-map-toggle').hidden, 'minimum map SNOTEL disabled');
+    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: true });
     await wait(() => !document.getElementById('bpb-snow-map-toggle').hidden, 'minimum map SNOTEL restored');
     assert.equal(await evaluate(() => {
         const snow = document.getElementById('bpb-snow-map-toggle').getBoundingClientRect();
@@ -357,5 +360,22 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await image(`${width}-${theme}-3d-conditions-ready`);
         cases.push({ width, theme, states: ['2D-card-selection', 'pending', 'error', 'retry', 'fourth-nearest', '3D-card-selection'] });
     }
+    setMode('complete');
+    await setSettings({ theme: 'dark', units: 'imperial', showWeather: true, showSnotel: false });
+    await writeLocal({ bpbSnotelCatalogV1: null }); const beforeOptOut = snowEvidence.length;
+    await navigate(`${origin}/peak.aspx?pid=2296&snotel=disabled`);
+    await wait(() => document.getElementById('bpb-peak-snow-row')?.hidden === true
+        && document.getElementById('bpb-snow-map-toggle')?.hidden === true
+        && document.getElementById('bpb-peak-weather')?.hidden === false, 'SNOTEL disabled on a fresh peak page');
+    await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' }));
+    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'forecast remains usable without SNOTEL');
+    assert.equal(snowEvidence.length, beforeOptOut, 'disabled SNOTEL makes no catalog or observation requests');
+    await setSettings({ theme: 'dark', units: 'imperial', showWeather: false, showSnotel: true });
+    await wait(() => document.getElementById('bpb-peak-weather').hidden
+        && !document.getElementById('bpb-peak-snow-row').hidden, 'SNOTEL enabled independently of weather');
+    await evaluate(() => document.getElementById('bpb-peak-snow').scrollIntoView({ block: 'start' }));
+    await cardReady('679:WA:SNTL');
+    cases.push({ states: ['SNOTEL-off-forecast-on', 'no-NRCS-requests', 'SNOTEL-on-forecast-off'] });
     assert.deepEqual(networkErrors, []); assert.ok(cases.length > 0); return { renderer, cases, snowRequests: snowEvidence.length };
 }

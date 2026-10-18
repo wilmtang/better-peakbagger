@@ -192,15 +192,15 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     assert.ok(Math.abs(beforeCoverage.scroll.y - afterCoverage.scroll.y) <= 1, 'initial compact coverage result must not scroll');
     await image('375-no-stations'); cases.push('no-nearby-stations');
     const beforeDisabled = snowEvidence.length;
-    await setSettings({ showWeather: false });
+    await setSettings({ showWeather: true, showSnotel: false });
     await wait(() => document.getElementById('bpb-peak-snow-row')?.hidden, 'disabled snow card');
     assert.equal(snowEvidence.length, beforeDisabled);
-    cases.push('weather-preference');
+    cases.push('snotel-preference');
 
     // Assertion infrastructure must fail on a real layout shift, not a setup
     // failure. Remove the status reservation in this disposable page and prove
     // that a wrapped message moves following content and is rejected.
-    await setSettings({ showWeather: true });
+    await setSettings({ showWeather: true, showSnotel: true });
     await wait(() => !document.getElementById('bpb-peak-snow-row')?.hidden, 'restored snow card');
     await focusRefresh(); const reserved = await geometry();
     await evaluate(() => {

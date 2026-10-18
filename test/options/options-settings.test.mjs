@@ -13,7 +13,7 @@ registerCleanup();
 
 test('General display controls default on and save independent synced preferences', async () => {
     const dom = await loadOptions({});
-    for (const [id, key] of [['show-sun-moon', 'showSunMoon'], ['show-weather', 'showWeather']]) {
+    for (const [id, key] of [['show-sun-moon', 'showSunMoon'], ['show-weather', 'showWeather'], ['show-snotel', 'showSnotel']]) {
         const control = el(dom, id);
         assert.equal(control.closest('section').id, 'general');
         assert.equal(control.labels.length, 1, 'the checkbox has one concise accessible name');
@@ -24,10 +24,16 @@ test('General display controls default on and save independent synced preference
     const restored = await loadOptions({ showSunMoon: false, showWeather: false });
     assert.equal(el(restored, 'show-sun-moon').checked, false);
     assert.equal(el(restored, 'show-weather').checked, false);
+    assert.equal(el(restored, 'show-snotel').checked, false, 'legacy weather opt-out also keeps SNOTEL off');
     el(restored, 'show-weather').checked = true;
     el(restored, 'show-weather').dispatchEvent(new restored.window.Event('change'));
     await waitFor(restored, () => restored.chrome._store.bpbSettings.showWeather === true);
     assert.equal(restored.chrome._store.bpbSettings.showSunMoon, false);
+    assert.equal(restored.chrome._store.bpbSettings.showSnotel, false);
+    el(restored, 'show-snotel').checked = true;
+    el(restored, 'show-snotel').dispatchEvent(new restored.window.Event('change'));
+    await waitFor(restored, () => restored.chrome._store.bpbSettings.showSnotel === true);
+    assert.equal(restored.chrome._store.bpbSettings.showWeather, true);
 });
 
 test('settings GitHub controls back up, confirm restore, and persist automatic backup', async () => {

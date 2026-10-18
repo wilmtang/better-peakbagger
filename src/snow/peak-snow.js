@@ -107,7 +107,7 @@ export function mountPeakSnow() {
     let preference = settings.DEFAULTS, settingsReady = false, candidates = null, current = null, requested = null;
     let controller = null, generation = 0, pending = false, observer = null, notice = null, noStations = false;
     let lifecycle;
-    const enabled = () => settingsReady && preference.showWeather && lifecycle.state === 'active';
+    const enabled = () => settingsReady && preference.showSnotel && lifecycle.state === 'active';
     const system = measurement => units.resolveUnits(preference, () => 'imperial', measurement);
     const depthText = mm => mm === null ? '—' : system('precipitation') === 'metric' ? `${(mm / 10).toFixed(1)} cm` : `${(mm / 25.4).toFixed(1)} in`;
     const waterText = mm => units.formatWeather(mm, 'precipitation', system('precipitation'));
@@ -256,8 +256,8 @@ export function mountPeakSnow() {
     const applyPreference = next => {
         if (lifecycle.state === 'disposed') return;
         const wasEnabled = enabled(); preference = next; settingsReady = true;
-        mapSource.setEnabled(preference.showWeather);
-        card.hidden = row.hidden = !preference.showWeather;
+        mapSource.setEnabled(preference.showSnotel);
+        card.hidden = row.hidden = !preference.showSnotel;
         if (!enabled()) { cancel(); observer?.disconnect(); observer = null; cooldown.suspend(); }
         else { cooldown.resume(); render(pending && requested?.id !== current?.station.id ? null : current); if (!wasEnabled) beginVisible(); }
     };

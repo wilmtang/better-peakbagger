@@ -37,6 +37,7 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
         units: 'metric',
         mapRouteColor: '#123abc',
         enable3dMap: true,
+        showSnotel: false,
         theme: 'dark',
         retainWaypoints: false,
         removeGpxTimestamps: true,
@@ -50,6 +51,7 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
     assert.equal(stored.elevationUnits, 'metric');
     assert.equal(stored.mapRouteColor, '#123abc');
     assert.equal(stored.enable3dMap, false, 'page-world writes must not flip extension feature gates');
+    assert.equal(stored.showSnotel, true, 'page-world writes cannot change the SNOTEL gate');
     assert.equal(stored.theme, 'system', 'page-world writes must not change the theme');
     assert.equal(stored.removeGpxTimestamps, false, 'page-world writes cannot change timestamp privacy');
     assert.equal(stored.retainWaypoints, true, 'page-world writes must not change capture privacy options');

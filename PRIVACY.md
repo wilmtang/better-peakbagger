@@ -354,8 +354,10 @@ developer account.
 
 ### Nearby snow observations
 
-The weather preference also controls **Nearby snow** on recognized western-US
-and Alaska peak pages. When an enabled card approaches the viewport, the
+The independent **Settings → General → Show SNOTEL** preference controls the
+Nearby snow card and station map layer on recognized western-US and Alaska
+peak pages. Existing weather opt-outs are retained for older settings until
+SNOTEL is explicitly enabled. When an enabled card approaches the viewport, the
 extension obtains the public NRCS station catalog and matches up to three
 stations locally within 50 km. Public catalog metadata is cached on this device
 and reused for seven days. NRCS receives no summit coordinates, peak identity,
@@ -368,7 +370,7 @@ request metadata, including the user's IP address. Requests omit credentials
 and referrers. Observations and station selections stay in page memory, with
 up to three station results cached for 30 minutes; they never enter sync,
 exports or backups. Refresh, station changes and returning to an expired visible
-card may request observations again. Disabling weather cancels pending snow
+card may request observations again. Disabling SNOTEL cancels pending snow
 work and prevents new requests. The source link navigates to the selected
 station's public NRCS report. See [Nearby snow](docs/nearby-snow.md).
 

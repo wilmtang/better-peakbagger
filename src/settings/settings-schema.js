@@ -56,6 +56,7 @@ const DEFAULTS = {
     temperatureUnits: 'default', precipitationUnits: 'default', windUnits: 'default',
     showSunMoon: true,
     showWeather: true,
+    showSnotel: true,
     enable3dMap: false,
     retainWaypoints: true,
     removeGpxTimestamps: false,
@@ -226,9 +227,12 @@ const clean = raw => {
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-    for (const key of ['showSunMoon', 'showWeather', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
+    // SNOTEL previously shared the weather gate. Preserve legacy opt-outs
+    // until the user explicitly chooses the new independent preference.
+    if (typeof raw?.showSnotel !== 'boolean') s.showSnotel = s.showWeather;
     // One ascent-backup choice controls automatic saves. Keep the legacy field
     // consistent for older readers and imported settings.
     s.autoGithubBackup = s.enableGithubBackup;

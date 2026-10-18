@@ -18,6 +18,17 @@ test('display opt-outs survive settings files and affect backup signatures; olde
     assert.equal(legacy.showSunMoon, true); assert.equal(legacy.showWeather, true);
 });
 
+test('SNOTEL transfers independently and legacy backups retain weather opt-outs', () => {
+    const payload = Transfer.buildPayload({ showWeather: true, showSnotel: false });
+    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.showSnotel, false);
+    assert.notEqual(Transfer.signature({}), Transfer.signature({ showSnotel: false }));
+    delete payload.settings.showSnotel;
+    payload.settings.showWeather = false;
+    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.showSnotel, false);
+    payload.settings.showWeather = true;
+    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.showSnotel, true);
+});
+
 test('mixed unit preferences survive settings transfer and legacy files inherit their default', () => {
     const mixed = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', distanceUnits: 'metric', elevationUnits: 'imperial' };
     const payload = Transfer.buildPayload(mixed);
