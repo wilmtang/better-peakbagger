@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 4.0.2 — 2026-10-18
+
 - **Verify the release before creating its tag.** Pin a candidate to successful
   main CI, a fresh three-pass rehearsal, exact package hashes, and the required
   publication protections before tagging. Report-editor and capture checks
