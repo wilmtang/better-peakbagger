@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import test from 'node:test';
+import { build } from 'esbuild';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -176,6 +177,25 @@ test('the Buddy refresh helper confines first-party navigation to Peakbagger ori
     }
 });
 
+// Parse the module graph instead of depending on upstream minifier formatting.
+// MapLibre 6.12 imports a shared sibling; 6.13 bundles that code into each entry.
+const moduleImports = async source => {
+    const { metafile } = await build({
+        stdin: { contents: source, sourcefile: 'module.mjs' },
+        bundle: true, write: false, format: 'esm', external: ['*'],
+        metafile: true, logLevel: 'silent',
+    });
+    return metafile.inputs['module.mjs'].imports.map(entry => entry.path);
+};
+
+test('packaged module imports include inline imports, re-exports and literal dynamic imports', async () => {
+    assert.deepEqual(await moduleImports('const x = 1; import { y } from "./shared.mjs";'
+        + 'export { z } from "https://example.test/remote.mjs";'
+        + 'import(`./worker.mjs`); console.log(x, y);'),
+    ['./shared.mjs', 'https://example.test/remote.mjs', './worker.mjs']);
+    assert.deepEqual(await moduleImports('export const selfContained = true;'), []);
+});
+
 test('3D terrain is isolated from Peakbagger globals in an extension-owned frame', async () => {
     const analyzerEntry = contentEntry('content/gpx-analyzer.js');
     assert.ok(analyzerEntry);
@@ -228,14 +248,13 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
         fs.readFile(new URL('../../dist/vendor/maplibre-gl-worker.mjs', import.meta.url), 'utf8'),
         fs.access(new URL('../../dist/vendor/maplibre-gl-shared.mjs', import.meta.url)),
     ]);
-    const staticImports = source => [...source.matchAll(/^\s*import(?:[^"'`;]*from\s*)?["']([^"']+)["']/gm)]
-        .map(match => match[1]);
-    assert.deepEqual(staticImports(frameSource), ['../vendor/maplibre-gl.mjs'],
+    assert.deepEqual(await moduleImports(frameSource), ['../vendor/maplibre-gl.mjs'],
         'the terrain entry must resolve MapLibre only from its packaged ESM file');
-    assert.deepEqual(staticImports(rendererSource), ['./maplibre-gl-shared.mjs'],
-        'the copied renderer must resolve only its packaged shared sibling');
-    assert.deepEqual(staticImports(workerSource), ['./maplibre-gl-shared.mjs'],
-        'the module worker must resolve only its packaged shared sibling');
+    for (const [name, source] of [['renderer', rendererSource], ['worker', workerSource]]) {
+        const imports = await moduleImports(source);
+        assert.ok(imports.every(specifier => specifier === './maplibre-gl-shared.mjs'),
+            `the copied ${name} may import only its packaged shared sibling: ${JSON.stringify(imports)}`);
+    }
     assert.doesNotMatch(terrainFrame, /<script[^>]+src=["']https?:/i,
         'the terrain frame must load renderer code only from the extension origin');
     const terrainBundle = ENTRIES.find(entry => entry.out === 'terrain/terrain-frame.js');
