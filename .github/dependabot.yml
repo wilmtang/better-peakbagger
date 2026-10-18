@@ -100,8 +100,11 @@ updates:
   # is defense in depth rather than authorization to merge.
   - package-ecosystem: github-actions
     directory: /
+    # Match the npm update cadence above.
     schedule:
-      interval: weekly
+      interval: cron
+      cronjob: "0 9 * * mon%2"
+      timezone: Etc/UTC
     open-pull-requests-limit: 1
     cooldown:
       semver-patch-days: 7
