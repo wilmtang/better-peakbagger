@@ -909,7 +909,9 @@ test('generated notices cover the real editor and copied runtime graph', async (
     }));
 
     const driftedLock = structuredClone(packageLock);
-    driftedLock.packages['node_modules/marked'].version = '18.1.0';
+    // Derive a guaranteed different version as real releases catch up.
+    const driftedMarked = `${Number(packageLock.packages['node_modules/marked'].version.split('.')[0]) + 1}.0.0`;
+    driftedLock.packages['node_modules/marked'].version = driftedMarked;
     assert.throws(() => validateReviewedDependencyMetadata({
         packageLock: driftedLock,
         approvalNotes,
@@ -917,7 +919,7 @@ test('generated notices cover the real editor and copied runtime graph', async (
         reportEditorDocs,
         warningBaseline: WEB_EXT_WARNING_BASELINE,
         noticeInventory: notices,
-    }), /AMO approval notes must name only Marked 18\.1\.0/);
+    }), error => error.message.startsWith(`AMO approval notes must name only Marked ${driftedMarked};`));
 
     const hardcodedAcknowledgements = acknowledgements.replace(
         'locked, unmodified Marked',

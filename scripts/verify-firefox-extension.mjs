@@ -2501,6 +2501,12 @@ async function main() {
             await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('#github'), 5_000,
                 `Firefox Settings reset before ${description}`);
             await driver.switchTo().window(filterHandle);
+            // Switching WebDriver contexts can precede Firefox restoring the
+            // document focus needed for Enter's native button activation.
+            await driver.executeScript('window.focus();');
+            await waitForScript(driver,
+                'return document.hasFocus() && document.visibilityState === "visible";',
+                `Firefox Settings source focus before ${description}`, 5_000);
             await driver.executeScript(() => {
                 window.__bpbSettingsActivationEvents = [];
                 if (window.__bpbSettingsActivationListening) return;
@@ -2575,6 +2581,10 @@ async function main() {
             'Firefox Settings reset before Shift Enter');
         const beforeNewWindow = await readSettingsTopology();
         await driver.switchTo().window(filterHandle);
+        await driver.executeScript('window.focus();');
+        await waitForScript(driver,
+            'return document.hasFocus() && document.visibilityState === "visible";',
+            'Firefox Settings source focus before Shift Enter', 5_000);
         const shiftControl = await driver.findElement(By.css('.pbaf-settings-link'));
         await driver.executeScript(`
       window.__bpbSettingsShift = null;

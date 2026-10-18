@@ -9,7 +9,7 @@ import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
-import { createFixtureCertificate, waitForCondition as waitFor } from './browser-verification-fixtures.mjs';
+import { activateToolbarTarget, createFixtureCertificate, waitForCondition as waitFor } from './browser-verification-fixtures.mjs';
 import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
@@ -160,6 +160,7 @@ try {
     }, selector);
     const invoke = async page => {
         await closePopup();
+        await waitForCondition(async () => (await popupState()) === null, Boolean, { message: 'previous toolbar popup did not close' });
         // Reopening preserves the URL; each fixture document has a unique
         // title so the toolbar gesture targets the actual fresh tab.
         const title = await page.title();
@@ -167,8 +168,16 @@ try {
             const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: 'tab', exclude: false }] });
             return targetInfos.find(item => item.url === page.url() && item.title === title);
         }, Boolean, { message: 'provider tab target did not appear' });
+        await activateToolbarTarget(cdp, page, target.targetId);
         await cdp.send('Extensions.triggerAction', { id: extension.id, targetId: target.targetId });
-        await waitForCondition(popupState, Boolean, { timeoutMs: 5000, message: 'toolbar popup did not open' });
+        await waitForCondition(popupState, Boolean, { timeoutMs: 5000, message: 'toolbar popup did not open' }).catch(async error => {
+            console.error('Toolbar failure state:', {
+                expectedTarget: target,
+                tabs: await control.evaluate(() => chrome.tabs.query({})),
+                targets: (await cdp.send('Target.getTargets')).targetInfos,
+            });
+            throw error;
+        });
         return control.evaluate(async ({ url, title }) =>
             (await chrome.tabs.query({})).find(tab => tab.url === url && tab.title === title)?.id, { url: page.url(), title });
     };
@@ -179,6 +188,12 @@ try {
     const start = async (provider = 'garmin') => {
         const page = await context.newPage();
         await page.goto(provider === 'garmin' ? `https://connect.garmin.com/app/activity/${++activityId}` : `https://www.strava.com/activities/${++activityId}`);
+        // Exercise selection explicitly: the supplied CDP target must not
+        // silently run the toolbar action against a different selected tab.
+        if (activityId === 101) await control.evaluate(async () => {
+            const tab = await chrome.tabs.getCurrent();
+            await chrome.tabs.update(tab.id, { active: true });
+        });
         return { page, tabId: await invoke(page) };
     };
     const completed = [];
