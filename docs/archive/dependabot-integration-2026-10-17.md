@@ -87,3 +87,48 @@ failed two assertions and the toolbar-to-draft capture verifier:
 - Hidden protocol checks do not prove native focus/window placement, browser
   chrome or visible toolbar behavior. Provider/network responses are fixtures;
   no authenticated provider activity or Peakbagger Save was exercised.
+
+## Post-merge follow-up
+
+The original integration passed all protected checks in
+[run 39093906791](https://github.com/wilmtang/better-peakbagger/actions/runs/39093906791)
+and merged as `34e927fb`; bot PRs #50, #51 and #52 are confirmed merged with
+their original ancestry. Local main preserved its 16 unpublished commits and
+passed all 2,883 tests plus full lint after integration.
+
+The [post-merge main run](https://github.com/wilmtang/better-peakbagger/actions/runs/39094725986)
+then failed Chrome 128's Buddy fallback. The trace showed creation of an
+inactive `about:blank`, an immediate update to the extension redirect, and only
+loading events afterward. No helper report request or content-script read
+occurred before the eight-second product deadline. Later Favorites assertions
+were consequences of that failed import. Every other underlying job passed.
+
+### Fixed and verified
+
+- Start the inactive tab at the packaged Buddy redirect directly, eliminating
+  the competing provisional-blank update. Immediately read that exact helper
+  after create returns to reconcile early completion/cache notifications.
+- A focused regression models the stranded navigation and an early helper
+  response. It fails against the old bundle with the visible Buddy timeout,
+  then passes with the fix. All 43 Favorites tests and all 2,852 Node tests
+  passed; full lint retained the same six reviewed warnings.
+- Real-extension checks passed in hidden Chrome for Testing 128.0.6613.137 and
+  Firefox 158.0 at 1000×760, including bfcache and teardown assertions. The
+  390px recovered-state and 1000px challenged-state renders were inspected.
+  Existing pending/error action-geometry assertions passed.
+
+### Intentionally not changed
+
+- Preserve the eight-second recovery deadline, exact helper tab/URL, fresh
+  owner-validated cache, first-party host selection, and cleanup. Keep unrelated
+  cache updates and another report unable to satisfy recovery.
+- Keep required checks, strict branch freshness and the advisory expiry.
+
+### Changed but not fully proven
+
+- The original implementation passed the local Chrome 128 baseline run. The
+  scheduling failure is intermittent; the focused fixture reproduces its
+  observed stalled-navigation state, not the exact hosted browser scheduler.
+  Hosted CI remains required evidence for the follow-up.
+- Hidden checks do not prove native onscreen focus or window placement, and
+  fixture challenge pages do not prove live Cloudflare clearance behavior.

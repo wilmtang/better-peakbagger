@@ -182,11 +182,9 @@ export const siteTabChrome = ({ onNavigate } = {}) => chrome => {
         create: (details, callback) => {
             created.push(details);
             callback({ id: 77 });
+            onNavigate?.({ tabId: 77, details, chrome });
         },
-        update: (tabId, details, callback) => {
-            callback?.();
-            onNavigate?.({ tabId, details, chrome });
-        },
+
         remove: (tabId, callback) => { removed.push(tabId); callback?.(); },
         sendMessage: (tabId, message, callback) => callback({
             url: 'https://www.peakbagger.com/report/report.aspx?r=b',

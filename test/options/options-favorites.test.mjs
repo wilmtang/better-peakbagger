@@ -711,9 +711,6 @@ test('custom import opens a first-party helper when extension cookies look signe
                 create: (details, callback) => {
                     opened.push(structuredClone(details));
                     callback({ id: 77 });
-                },
-                update: (tabId, details, callback) => {
-                    updated.push({ tabId, details: structuredClone(details) });
                     setTimeout(() => { void chrome.storage.local.set({
                         [buddyCacheKey]: {
                             ownerCid: 900001,
@@ -724,8 +721,8 @@ test('custom import opens a first-party helper when extension cookies look signe
                             fetchedAt: Date.now(),
                         },
                     }); }, 0);
-                    callback({ id: tabId, ...details });
                 },
+                update: (tabId, details) => { updated.push({ tabId, details }); },
                 remove: (tabId, callback) => {
                     removed.push(tabId);
                     callback();
@@ -744,18 +741,45 @@ test('custom import opens a first-party helper when extension cookies look signe
     el(dom, 'favorites-merge-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 2);
     assert.deepEqual(opened, [{
-        url: 'about:blank',
+        url: 'chrome-extension://test-extension/options/buddy-refresh.html',
         active: false,
     }]);
-    assert.deepEqual(updated, [{
-        tabId: 77,
-        details: {
-            url: 'chrome-extension://test-extension/options/buddy-refresh.html',
-            active: false,
-        },
-    }]);
+    assert.deepEqual(updated, [], 'the helper must not race a second navigation');
     assert.deepEqual(removed, [77]);
     assert.match(el(dom, 'favorites-import-status').textContent, /Merge complete: 2 added, 0 removed/);
+});
+
+test('Buddy fallback starts the packaged helper without racing an initial blank navigation', async () => {
+    const created = [], removed = [];
+    let cache = null;
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
+        prepareWindow: window => { window.fetch = signedOutFetch(); },
+        prepareChrome: chrome => {
+            chrome.runtime.getURL = page => `chrome-extension://test-extension/${page}`;
+            chrome.tabs = {
+                create(details, callback) {
+                    created.push(structuredClone(details));
+                    // Model an early helper response before create's callback.
+                    // A second update while the original blank is provisional
+                    // is deliberately ineffective, matching the failed trace.
+                    if (details.url.endsWith('/options/buddy-refresh.html')) cache = buddyCacheFrom();
+                    callback({ id: 77, url: details.url });
+                },
+                update(_id, _details, callback) { callback?.({ id: 77, status: 'loading' }); },
+                sendMessage(_id, _message, callback) {
+                    callback({ url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache });
+                },
+                remove(id, callback) { removed.push(id); callback?.(); },
+            };
+        },
+    });
+    accelerateTimeout(dom, 8000);
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => !/Loading/.test(el(dom, 'favorites-import-status').textContent));
+    assert.match(el(dom, 'favorites-import-status').textContent, /Merge complete: 6 added, 0 removed/);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.length, 6);
+    assert.deepEqual(created, [{ url: 'chrome-extension://test-extension/options/buddy-refresh.html', active: false }]);
+    assert.deepEqual(removed, [77]);
 });
 
 test('custom import keeps a failed Buddy refresh visible beside the buttons', async () => {
@@ -781,10 +805,10 @@ test('a cookie-blocked Buddy read recovers through the first-party helper tab', 
 
     el(dom, 'favorites-refresh-buddies').click();
     await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
-    // Chrome leaves an inactive tab at about:blank when create() gets a URL
-    // whose load does not settle, so the blank-then-navigate order matters.
+    // The first navigation is a packaged document, with no provisional blank
+    // followed by a competing update.
     assert.equal(dom.chrome._siteTab.created.length, 1);
-    assert.equal(dom.chrome._siteTab.created[0].url, 'about:blank');
+    assert.equal(dom.chrome._siteTab.created[0].url, 'chrome-extension://test-extension/options/buddy-refresh.html');
     assert.equal(dom.chrome._siteTab.created[0].active, false);
     assert.deepEqual(dom.chrome._siteTab.removed, [77], 'the helper tab must never be left open');
 });
@@ -813,8 +837,11 @@ test('challenge recovery also supports the Firefox promise-based tab API', async
         prepareChrome: chrome => {
             chrome.tabs = {
                 query: async () => [],
-                create: async details => { assert.equal(details.active, false); return { id: 77 }; },
-                update: async () => { await chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() }); },
+                create: async details => {
+                    assert.equal(details.active, false);
+                    await chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+                    return { id: 77 };
+                },
                 sendMessage: async () => ({ url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache: buddyCacheFrom() }),
                 remove: async tabId => { removed.push(tabId); },
             };
