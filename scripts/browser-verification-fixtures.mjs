@@ -76,6 +76,20 @@ export async function waitForCondition(read, {
     throw new Error(`Timed out waiting for ${description} (${detail})`);
 }
 
+// Extensions.triggerAction selects an action in the target's window, then
+// executes it for that window's selected tab. Target discovery alone cannot
+// prove that a newly created tab has finished becoming the selected tab.
+export async function activateToolbarTarget(cdp, page, targetId, options = {}) {
+    // Provider URLs are intentionally unavailable to chrome.tabs until the
+    // toolbar grants activeTab. Select via CDP without widening permissions.
+    await cdp.send('Target.activateTarget', { targetId });
+    return waitForCondition(() => page.evaluate(() => ({
+        visibility: document.visibilityState,
+        readyState: document.readyState,
+    })), { description: 'loaded toolbar target selection', ...options,
+        isReady: state => state.visibility === 'visible' && state.readyState === 'complete' });
+}
+
 export async function waitForBuddyHelperCleanup(context, buddyUrl, workingPage, options = {}) {
     return waitForCondition(() => {
         const pages = context.pages();
