@@ -54,15 +54,15 @@ test('backup preview describes both sides, restore uses replacement counts and g
 });
 test('ignored GitHub routes accept only exact packaged settings and manager pages', async () => {
     const h = harness();
-    const routes = createGithubRoutes({ ext: { storage: { local: h.storage }, runtime: { getURL: path => `chrome-extension://own/${path}` } },
+    const routes = createGithubRoutes({ ext: { storage: { local: h.storage }, runtime: { id: 'own', getURL: path => `chrome-extension://own/${path}` } },
         ignoredStore: h.store, now: Date.now, resolveGithubAccess: h.engineOptions.getAccess });
     for (const url of ['https://www.peakbagger.com/climber/climber.aspx?cid=1', 'chrome-extension://other/options/options.html',
         'chrome-extension://own/options/options.html/extra', 'chrome-extension://own/photos/photos.html']) {
-        assert.equal((await routes.handlers.GITHUB_IGNORED_LIST({ action: 'backup' }, { url })).error.code, 'forbidden');
+        assert.equal((await routes.handlers.GITHUB_IGNORED_LIST({ action: 'backup' }, { id: 'own', url })).error.code, 'forbidden');
     }
     assert.equal(routes.isExtensionOnly('GITHUB_IGNORED_LIST'), true);
     for (const url of ['chrome-extension://own/options/options.html#favorites', 'chrome-extension://own/options/favorites.html#ignored']) {
-        assert.equal((await routes.handlers.GITHUB_IGNORED_LIST({ action: 'status' }, { url })).ok, true);
+        assert.equal((await routes.handlers.GITHUB_IGNORED_LIST({ action: 'status' }, { id: 'own', url })).ok, true);
     }
     assert.equal(h.writes, 0);
 });
