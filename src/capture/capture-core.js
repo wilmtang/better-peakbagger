@@ -1102,8 +1102,10 @@ const prepareDraftSelection = matches => {
     const selected = assignDraftSuffixes(matches);
     const trackOrdered = selected.map((match, index) => ({ match, index }))
         .sort((left, right) => {
-            const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
-            return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
+            const leftDistance = left.match.draftFields.upDistanceM;
+            const rightDistance = right.match.draftFields.upDistanceM;
+            return Number.isFinite(leftDistance) && Number.isFinite(rightDistance) && leftDistance !== rightDistance
+                ? leftDistance - rightDistance : left.index - right.index;
         })
         .map(({ match }) => match);
     return {

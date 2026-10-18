@@ -10,7 +10,7 @@ the legitimate findings. Existing photo-library work is outside this change.
 | --- | --- | --- | --- |
 | A1–A3 | Capture controls, draft delivery, and privileged UI routes need sender authorization. Restrict packaged surfaces and bind drafts to the actual top-frame Peakbagger URL. | Rejected foreign, embedded, wrong-page and wrong-identity senders; accepted intended callers; real extension startup in Chrome/Firefox. | Implemented; final integration pending |
 | A4 | A failed draft preparation leaves stale busy feedback and a lease that blocks reload recovery. Preserve Save blocking until Preview succeeds or the capture is discarded. | Rollback, failure/retry, document replacement, stale acknowledgments, exactly-once Preview and rendered recovery/geometry checks. | Fixed and verified locally |
-| A5 | Track-order comparison coerces unavailable distance to zero. | Mixed finite/null distance order agrees with suffix fallback. | Pending |
+| A5 | Track-order comparison coerces unavailable distance to zero. | Mixed finite/null distance order agrees with suffix fallback. | Fixed and verified |
 | A6 | Startup reconciliation accepts a payload missing the timestamp-free variant required for delivery. | Incomplete and legacy payloads fail closed; complete payloads and the explicit timestamp choice remain usable. | Pending |
 | A7 | The initial ownership failure bypasses the public result allowlist. Current failure paths expose only an extra internal flag. | Exact public failure shape and no export or account identifiers. | Pending |
 | A8 | The owner-reviewed development advisory exception expires October 24 at 00:00 Los Angeles time. | Preserve the exact expiry and fail-closed evaluator; no automatic renewal. | Intentionally unchanged |
@@ -42,6 +42,9 @@ ledger is archived.
   content, Save controls, scroll and the focused action remain stable through
   idle, slow preparation, repeated failure, reload and success. Worker replies
   and native Preview postbacks are stubbed. WebGL is unused.
+- A5: guard both distance operands before subtraction. The new dated/undated
+  regression fails on the old comparator and passes with the fix; measured zero
+  remains valid. All 40 capture-core tests, ESLint and diff whitespace checks pass.
 
 ## Intentionally not changed
 

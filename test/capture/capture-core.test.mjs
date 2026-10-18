@@ -761,3 +761,21 @@ test('upload serialization can omit timestamps without changing analysis or geom
     assert.match(timeless, /<wpt lat="49" lon="-123"><name>Camp<\/name>/);
     assert.deepEqual(segments, snapshot);
 });
+
+test('draft ordering never treats an unavailable encounter distance as zero', () => {
+    for (const date of ['', '2026-07-01']) {
+        const prepared = Core.prepareDraftSelection([
+            { id: 7, name: 'First', confidence: 80, draftFields: { date, upDistanceM: 500 } },
+            { id: 8, name: 'Unknown', confidence: 90, draftFields: { date, upDistanceM: null } },
+        ]);
+        assert.deepEqual(prepared.trackOrdered.map(match => match.id), [7, 8]);
+        assert.equal(prepared.sequenceById.get('7'), 1);
+        assert.equal(prepared.fallbackTripName, 'First / Unknown');
+        if (date) assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['a', 'b']);
+    }
+    const measured = Core.prepareDraftSelection([
+        { id: 7, name: 'Later', draftFields: { upDistanceM: 500 } },
+        { id: 8, name: 'Start', draftFields: { upDistanceM: 0 } },
+    ]);
+    assert.deepEqual(measured.trackOrdered.map(match => match.id), [8, 7], 'a measured zero remains valid');
+});
