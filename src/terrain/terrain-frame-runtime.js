@@ -2134,7 +2134,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
                     if (map === terrainMap) scheduleView();
                 });
                 loaded = true;
-                if (!snowMarkers.replace(terrainMap, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle Snow to try again.');
+                if (!snowMarkers.replace(terrainMap, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
                 try {
                     if (pendingBasemapSelection !== null) {
                         if (swapBasemap(pendingBasemapSelection)) userPickedBasemap = true;
@@ -2190,7 +2190,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const resumeTerrain = data => {
         if (!map || !loaded) return false;
         snowStations = readSnotelMapStations(data.snowStations) || [];
-        if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle Snow to try again.');
+        if (!snowMarkers.replace(map, snowStations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
         const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         if (!route && !focus) {
@@ -2327,7 +2327,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             const stations = readSnotelMapStations(data.snowStations);
             if (!stations) return;
             snowStations = stations;
-            if (loaded && !snowMarkers.replace(map, stations)) showNotice('SNOTEL stations could not be drawn. Toggle Snow to try again.');
+            if (loaded && !snowMarkers.replace(map, stations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
         } else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             setRoutePaint(data.routeStyle);

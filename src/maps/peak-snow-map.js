@@ -13,7 +13,7 @@ export function createPeakSnowMap({ mount, getContext, postTerrain }) {
     const button = doc.createElement('button'); button.id = 'bpb-snow-map-toggle'; button.type = 'button';
     button.className = 'bpb-snow-map-toggle'; button.hidden = true; button.setAttribute('aria-pressed', 'false');
     button.setAttribute('aria-label', 'SNOTEL stations within 50 km of this peak');
-    const symbol = snotelSymbol(doc), text = doc.createElement('span'); text.textContent = 'Snow'; button.append(symbol, text);
+    const symbol = snotelSymbol(doc), text = doc.createElement('span'); text.textContent = 'SNOTEL'; button.append(symbol, text);
     const notice = doc.createElement('div'); notice.className = 'bpb-snow-map-notice'; notice.hidden = true;
     const status = doc.createElement('span'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     const retry = doc.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry'; retry.hidden = true;

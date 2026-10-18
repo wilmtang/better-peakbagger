@@ -48,7 +48,8 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     };
     for (const width of selection === 'all' ? [1440, 375] : []) for (const theme of ['light', 'dark']) {
         await prepare(width, theme); const initial = await geometry();
-        assert.ok(initial.toggle.width <= 80 && initial.toggle.height <= 34, 'compact control');
+        assert.equal(await evaluate(() => document.getElementById('bpb-snow-map-toggle').textContent), 'SNOTEL');
+        assert.ok(initial.toggle.width <= 100 && initial.toggle.height <= 34, 'compact control');
         assert.ok(initial.toggle.x >= initial.map.x && initial.toggle.x + initial.toggle.width <= initial.map.x + initial.map.width, 'toggle inside map');
         await press(key('Enter'));
         await wait(() => document.getElementById('bpb-snow-map-toggle').getAttribute('aria-busy') === 'true', 'pending snow layer');
@@ -160,7 +161,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
             const r = node.getBoundingClientRect();
             return snow.right <= r.left || snow.left >= r.right || snow.bottom <= r.top || snow.top >= r.bottom;
         });
-    }), true, 'Snow never covers the 3D navigation controls at the minimum map height');
+    }), true, 'SNOTEL never covers the 3D navigation controls at the minimum map height');
     await evaluateTerrain(() => document.querySelector('.bpb-snotel-marker').focus()); await press(key('Space'));
     await frameWait(() => !!document.querySelector('.bpb-snotel-popup'), 'long-name 3D popup');
     assert.equal(await evaluateTerrain(() => getComputedStyle(document.querySelector('.bpb-snotel-popup a')).color),
@@ -180,7 +181,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         return { left: r.left - frame.left, right: r.right - frame.left, top: r.top - frame.top, bottom: r.bottom - frame.top };
     });
     assert.ok(popup.right <= control.left || popup.left >= control.right || popup.bottom <= control.top || popup.top >= control.bottom,
-        'station popup content stays clear of the Snow control at minimum size');
+        'station popup content stays clear of the SNOTEL control at minimum size');
     await frameWait(() => {
         const hint = document.querySelector('.bpb-terrain-hint');
         return !hint || getComputedStyle(hint).opacity === '0';

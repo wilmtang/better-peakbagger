@@ -53,6 +53,7 @@ test('snow toggle preserves native layers, camera and focus, and shares a saniti
     const env = setup();
     try {
         assert.equal(env.button.hidden, true); env.emit({ type: 'availability', enabled: true });
+        assert.equal(env.button.textContent, 'SNOTEL');
         assert.equal(env.button.hidden, false); assert.equal(env.button.getAttribute('aria-pressed'), 'false');
         env.button.focus(); env.button.click();
         const request = env.messages.at(-1); assert.equal(request.type, 'get');

@@ -102,7 +102,7 @@ Historical ascent observations are outside this version.
 
 ## Station map layer
 
-On supported peak pages with a Dynamic Map, the compact **Snow** button in the
+On supported peak pages with a Dynamic Map, the compact **SNOTEL** button in the
 upper-right corner, below the map layer picker, toggles an independent station
 overlay in both 2D and 3D.
 The layer starts off on each page load. Blue hexagonal snowflakes distinguish
@@ -122,7 +122,7 @@ Toggling cached stations does not request measurements. Only validated public
 station identifiers, names, coordinates, and elevations cross into page-world
 rendering and the 3D frame. Fetching stays isolated, summit coordinates stay
 local, and disabling **Summit weather** clears both renderers' station layers.
-Pending requests can be canceled with the same Snow toggle; failures provide
+Pending requests can be canceled with the same SNOTEL toggle; failures provide
 Retry, respecting the NRCS retry deadline. A completed empty local match is
 distinct from a catalog failure.
 
@@ -135,9 +135,9 @@ following native content and scroll geometry at 375 and 1440 pixels in light
 and dark, plus 200% browser zoom. Selected dark styling is challenged with the
 original generic button override; the dark 3D source-link assertion was also
 run against the unfixed, low-contrast blue link. The 3D check requires a hardware WebGL
-renderer. The 320 by 240 minimum map size also checks that Snow cannot cover
+renderer. The 320 by 240 minimum map size also checks that SNOTEL cannot cover
 the existing navigation controls and that a long station popup stays clear of
-Snow. Both assertions detected the original overlaps. In 3D, station details
+SNOTEL. Both assertions detected the original overlaps. In 3D, station details
 use a fixed popover below the controls, leaving the camera steady. Unusually
 long content can scroll inside the popover at the minimum size.
 Set `BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` to retain screenshots.
