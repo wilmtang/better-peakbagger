@@ -204,6 +204,13 @@ try {
         assert.equal(await pages[1].locator('#TripDD').inputValue(), '44');
         assert.equal(await pages[1].locator('#TripSeqText').inputValue(), '2');
         assert.equal(await pages[1].locator('#SuffixText').inputValue(), 'b');
+        await pages[0].goto(`https://www.peakbagger.com/climber/ascent.aspx?aid=${800 + before}`);
+        const reviewed = await control.evaluate(job => chrome.runtime.sendMessage({
+            type: 'CAPTURE_OPEN_DRAFTS', tabId: job.sourceTabId, selectedIds: job.selectedIds,
+        }), job);
+        assert.deepEqual(reviewed.tabIds, opened.tabIds.slice(1), 'Review drafts must not recreate a saved summit');
+        assert.equal(savePosts, before + 1);
+        assert.equal(previews, before + (provider === 'upload' ? 3 : 2), 'review must not restart GPS Preview');
         await pages[1].locator('#SaveButton').click();
         await pages[2].waitForFunction(() => document.getElementById('GPXStatusLabel')?.textContent.includes('successfully'));
         assert.equal(await pages[2].locator('#TripDD').inputValue(), '44');

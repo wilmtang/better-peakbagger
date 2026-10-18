@@ -678,7 +678,11 @@ reused by subsequent ascents; each next form is opened afresh so its native
 Trip dropdown and WebForms validation contain that trip. Queued or preparing
 forms disable both Save controls and block implicit Save submissions until
 GPS Preview is confirmed; disconnecting the capture restores native controls.
-Closing a previewed tab before confirmation stops the remaining queue rather than guessing whether
+Verified peak IDs remain with the capture job after their tabs close or navigate,
+so reviewing drafts cannot recreate saved ascents. A partial save keeps the
+original selection locked, preserving suffixes and trip sequences when unsaved
+drafts reopen. Closing a previewed tab, or reviewing drafts after it navigates
+away before confirmation, stops the remaining queue rather than guessing whether
 it was saved. No Save action is automated.
 
 `src/ascent/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated

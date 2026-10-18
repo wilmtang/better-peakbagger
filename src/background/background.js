@@ -2327,6 +2327,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return { trackTab, writeDraft, assertCurrent, prepareFinish, finalize, finish, rollback };
     };
 
+    const SAVE_RECOVERY_MESSAGE = 'A previous summit left its ascent form before its saved GPX and trip were checked. Review that ascent before starting a new capture.';
+    const draftNeedsSaveVerification = draft => draft.waitForSave && !draft.saved
+        && (draft.previewStarted || draft.complete);
+
     const draftTabMatches = (tab, draft) => {
         if (!tab || typeof tab.url !== 'string') return false;
         try {
@@ -2356,14 +2360,17 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 stale.push(draft);
             }
         }
-        if (stale.length) {
+        // Keep uncertain saves available for review; replacing their forms
+        // could duplicate an ascent and create another trip.
+        const saveRecoveryRequired = stale.some(draftNeedsSaveVerification);
+        if (stale.length && !saveRecoveryRequired) {
             await mutateMap(DRAFTS_KEY, current => {
                 stale.forEach(draft => {
                     if (sameDraftIdentity(current[draft.tabId], draft)) delete current[draft.tabId];
                 });
             });
         }
-        return { live, stale };
+        return { live, stale, saveRecoveryRequired };
     };
 
     const waitForDraftTabReady = async (tabId, transaction) => {
@@ -2470,6 +2477,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 'Capture results are no longer available. Capture the activity again.'
             );
         }
+        if (existingJob.saveRecoveryRequired) {
+            throw PublicErrors.exception('draft-save-unverified', SAVE_RECOVERY_MESSAGE);
+        }
         const epoch = lifecycleEpoch(tabId);
         const started = await beginDraftOpening(message, existingJob.id);
         if (!started) {
@@ -2486,6 +2496,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             epoch,
         });
         let payloadMissing = false;
+        let saveRecoveryRequired = false;
         try {
             if (!isFresh(job)) {
                 throw PublicErrors.exception(
@@ -2497,6 +2508,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             await transaction.assertCurrent();
             const inspected = await inspectRecordedDrafts(job.id, existingDrafts);
             await transaction.assertCurrent();
+            if (inspected.saveRecoveryRequired) {
+                saveRecoveryRequired = true;
+                throw PublicErrors.exception('draft-save-unverified', SAVE_RECOVERY_MESSAGE);
+            }
             const existingForJob = inspected.live
                 .sort((a, b) => b.confidence - a.confidence);
             if (existingForJob.length && !inspected.stale.length) {
@@ -2535,7 +2550,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
 
             const liveByPeak = new Map(existingForJob.map(draft => [String(draft.pid), draft]));
-            const missing = opening.confidenceOrdered.filter(match => !liveByPeak.has(String(match.id)));
+            const savedPeaks = new Set(job.savedPeakIds || []);
+            const missing = opening.confidenceOrdered.filter(match => !liveByPeak.has(String(match.id))
+                && !savedPeaks.has(match.id));
             const previewOrder = new Map(opening.confidenceOrdered
                 .map((match, index) => [String(match.id), index]));
             const { created, groupWarning } = await openNewDraftTabs({
@@ -2563,6 +2580,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             return { tabIds, groupWarning, reused: false, job: publicJob(opened) };
         } catch (cause) {
             await transaction.rollback(cause);
+            if (saveRecoveryRequired) {
+                await updateCaptureJob(tabId, existingJob.id, { saveRecoveryRequired: true });
+            }
             if (payloadMissing) {
                 await updateCaptureJobWithoutPayload(tabId, existingJob.id, {
                     phase: 'error',
@@ -3052,7 +3072,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const job = Object.values(jobs).find(candidate => candidate.id === draft.jobId);
         if (!job) return { action: 'error', message: 'The private draft data expired. Capture the activity again.' };
         if (job.saveRecoveryRequired) {
-            return { action: 'error', message: 'A previous summit tab closed before its saved GPX and trip were checked. Review that ascent before starting a new capture.' };
+            return { action: 'error', message: SAVE_RECOVERY_MESSAGE };
         }
         const match = job.matches.find(candidate => candidate.id === draft.pid)
             // An upload job's bound peak may have been drafted through the
@@ -3238,6 +3258,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 if (jobs[draft.sourceTabId]?.id !== job.id || !sameDraftIdentity(drafts[draft.tabId], draft)) return;
                 drafts[draft.tabId].saved = true;
                 drafts[draft.tabId].savedAid = String(message.aid);
+                // Completion belongs to the job, not to a tab that may close
+                // or navigate to the saved ascent before Review drafts.
+                jobs[draft.sourceTabId].savedPeakIds = [...new Set([
+                    ...(jobs[draft.sourceTabId].savedPeakIds || []), draft.pid,
+                ])];
                 if (draft.tripInfo) jobs[draft.sourceTabId].savedTripId = tripId;
             });
             const next = firstPendingDraft(await readMap(DRAFTS_KEY), job.id);
@@ -3772,15 +3797,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             }
             if (removedDraft) {
                 const sourceJob = Object.values(jobs).find(job => job.id === removedDraft.jobId);
-                if (sourceJob && removedDraft.waitForSave && !removedDraft.saved
-                    && (removedDraft.previewStarted || removedDraft.complete)) sourceJob.saveRecoveryRequired = true;
+                if (sourceJob && draftNeedsSaveVerification(removedDraft)) sourceJob.saveRecoveryRequired = true;
                 const hasSiblingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === removedDraft.jobId);
                 if (sourceJob && !hasSiblingDraft) {
                     if (sourceJob.sourceClosed) {
                         removedPayloadKeys.push(referencedPayloadKey(sourceJob));
                         delete jobs[sourceJob.sourceTabId];
                     } else if (referencedPayloadKey(sourceJob)) {
-                        sourceJob.phase = 'ready';
+                        sourceJob.phase = sourceJob.savedPeakIds?.length || sourceJob.saveRecoveryRequired ? 'opened' : 'ready';
                         sourceJob.openedDraftTabIds = [];
                         sourceJob.updatedAt = now();
                     }

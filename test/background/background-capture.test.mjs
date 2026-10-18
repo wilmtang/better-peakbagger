@@ -1359,6 +1359,94 @@ test('replacing a draft whose tab navigated away never closes the user-controlle
     assert.equal(harness.values.bpbDraftTabs['100'], undefined);
 });
 
+const prepareMultiSummitRecovery = async (previewComplete = true) => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const job = harness.values.bpbCaptureJobs['1'];
+    const base = job.matches[0];
+    job.matches = [7, 8].map((id, index) => ({
+        ...structuredClone(base), id, name: `Summit ${index + 1}`, confidence: 95 - index,
+        draftFields: { ...base.draftFields, upDistanceM: 100 + index * 100 },
+    }));
+    job.tripName = '2026-07-01';
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const sender = { tab: { id: 100 } };
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: 7, cid: 77 }, sender);
+    assert.equal((await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, sender)).ok, true);
+    if (previewComplete) {
+        assert.equal((await harness.send({
+            type: 'DRAFT_READY', pid: 7, cid: 77,
+            previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+        }, sender)).action, 'banner');
+    }
+    return { harness, apply, sender };
+};
+
+test('reviewing drafts after saved-ascent navigation never recreates the saved summit, including after worker restart', async () => {
+    const { harness, apply, sender } = await prepareMultiSummitRecovery();
+    assert.equal((await harness.send({
+        type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: apply.jobId,
+        pid: 7, cid: 77, tripId: '44', gpxVerified: true,
+    }, sender)).ok, true);
+    harness.tabs.get(100).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
+    const restarted = createHarness({ sessionValues: harness.values, browserTabs: harness.tabs });
+    const reviewed = await restarted.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    assert.deepEqual([...reviewed.tabIds], [101], 'a saved summit must not receive another new-ascent form');
+    assert.equal(restarted.tabs.size, 4, 'review must preserve the saved display page without creating tabs');
+    const next = await restarted.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: 101 } });
+    assert.equal(next.fields.suffix, 'b');
+    assert.equal(next.fields.tripInfo.sequence, 2);
+    assert.equal(next.fields.tripInfo.id, '44');
+});
+
+test('closing every draft after a partial save preserves selection, suffixes, and the shared trip on reopening', async () => {
+    const { harness, apply, sender } = await prepareMultiSummitRecovery();
+    assert.equal((await harness.send({
+        type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: apply.jobId,
+        pid: 7, cid: 77, tripId: '44', gpxVerified: true,
+    }, sender)).ok, true);
+    for (const id of [100, 101]) {
+        harness.tabs.delete(id);
+        harness.tabRemoved.listeners[0](id);
+        await waitForCondition(() => !harness.values.bpbDraftTabs[String(id)]);
+    }
+    await waitForCondition(() => !harness.values.bpbCaptureJobs['1'].openedDraftTabIds.length);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+    await harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [8] });
+    const reopened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [8] });
+    assert.equal(reopened.tabIds.length, 1, 'only the unsaved summit may reopen');
+    assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7, 8]);
+    const next = await harness.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: reopened.tabIds[0] } });
+    assert.equal(next.action, 'apply');
+    assert.equal(next.fields.suffix, 'b');
+    assert.equal(next.fields.tripInfo.sequence, 2);
+    assert.equal(next.fields.tripInfo.id, '44');
+});
+
+for (const complete of [false, true]) for (const departure of ['navigation', 'closure']) {
+    test(`review refuses to replay an unverified ${complete ? 'previewed' : 'previewing'} summit after ${departure}`, async () => {
+        const { harness } = await prepareMultiSummitRecovery(complete);
+        if (departure === 'navigation') {
+            harness.tabs.get(100).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
+        } else {
+            harness.tabs.delete(100);
+            harness.tabRemoved.listeners[0](100);
+            await waitForCondition(() => harness.values.bpbCaptureJobs['1'].saveRecoveryRequired);
+        }
+        const tabsBefore = [...harness.tabs.keys()];
+        const reviewed = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+        assert.equal(reviewed.error?.code, 'draft-save-unverified', 'an uncertain save must not create another ascent or trip');
+        assert.deepEqual([...harness.tabs.keys()], tabsBefore);
+        assert.equal(harness.values.bpbCaptureJobs['1'].saveRecoveryRequired, true);
+        const queued = await harness.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: 101 } });
+        assert.equal(queued.action, 'error');
+        assert.match(queued.message, /saved GPX and trip were checked/);
+    });
+}
+
 test('favorites mutations serialize in the worker and reject unrelated senders', async () => {
     const harness = createHarness();
     const mutation = cid => ({
