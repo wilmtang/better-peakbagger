@@ -11,6 +11,10 @@ import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.js';
 // Runs in the layout verifier's hidden browser, with real shipped assets and
 // held provider responses. No live account, map or weather requests are made.
 export async function verifyPeakWeatherRefresh(page, origin, variant, { asset, capture }) {
+    // Share a fixed clock with the response horizon. After UTC midnight, the
+    // live clock can still be yesterday at Rainier and add a sixteenth date.
+    const now = new Date('2026-10-10T12:00:00Z');
+    await page.clock.setFixedTime(now);
     const html = (await readFile(path.join(projectRoot, 'test/fixtures/pages/peak-rainier.html'), 'utf8'))
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
@@ -32,7 +36,7 @@ export async function verifyPeakWeatherRefresh(page, origin, variant, { asset, c
                 headers: { 'access-control-allow-origin': '*' },
                 body: mode === 'error' ? 'Unavailable' : JSON.stringify(weatherModelFixture(body, query.get('models').split(','),
                     Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
-                        Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])))) });
+                        Date.parse(now.toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])))) });
         }
         return route.abort();
     };
