@@ -72,10 +72,26 @@ export async function verifyReportCaptionStability(page, origin, variant, { asse
     await page.route(url => url.origin !== origin, route => route.abort());
     await page.addInitScript(({ theme }) => {
         const area = { get: async () => ({ bpbSettings: { theme } }), set: async () => {}, remove: async () => {} };
+        const local = {};
+        let writes = 0;
+        const localArea = {
+            get: async keys => structuredClone(Object.fromEntries(
+                (Array.isArray(keys) ? keys : typeof keys === 'string' ? [keys] : Object.keys(local))
+                    .map(key => [key, local[key]]))),
+            set: async values => Object.assign(local, structuredClone(values)),
+            remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete local[key]; },
+        };
         window.chrome = { runtime: { id: 'fixture', getManifest: () => ({ version: '4.0.0' }),
             getURL: file => `/dist/${file}`, onMessage: { addListener() {}, removeListener() {} },
-            sendMessage: async () => ({ ok: true }) },
-        storage: { sync: area, local: area, onChanged: { addListener() {}, removeListener() {} } } };
+            sendMessage: async message => {
+                if (message.type === 'REPORT_DRAFT_WRITE') {
+                    const record = { ...structuredClone(message.record), storageGeneration: `${Date.now()}:${++writes}:caption-fixture` };
+                    await localArea.set({ [message.draftKey]: record });
+                    return { ok: true, draftKey: message.draftKey, written: true, record };
+                }
+                return { ok: true };
+            } },
+        storage: { sync: area, local: localArea, onChanged: { addListener() {}, removeListener() {} } } };
         document.addEventListener('DOMContentLoaded', () => { document.documentElement.dataset.bpbTheme = theme; });
     }, variant);
 
@@ -108,6 +124,11 @@ export async function verifyReportCaptionStability(page, origin, variant, { asse
         await stableTransition(page, `${label} click`, () => placeholder.click(), editing);
         await stableTransition(page, `${label} typing`, () => page.keyboard.type('North ridge'),
             () => document.querySelector('figcaption')?.textContent === 'North ridge');
+        await stableTransition(page, `${label} autosave`, async () => {},
+            () => document.querySelector('.bpb-re-status')?.textContent.startsWith('Draft saved on this device')
+                || !document.querySelector('.bpb-re-save-recovery').hidden);
+        assert.match(await page.locator('.bpb-re-status').textContent(), /^Draft saved on this device/,
+            `${label}: the fixture must acknowledge the autosave`);
         await stableTransition(page, `${label} select photo`, () => page.locator('.bpb-re-image-resize img').click(),
             () => document.querySelector('figure')?.classList.contains('ProseMirror-selectednode'));
         for (let index = 0; index < 2; index++) {
