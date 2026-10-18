@@ -340,6 +340,96 @@ test('fills multi-peak Trip Info and accepts allowlisted waypoint names when cap
     dom.window.close();
 });
 
+for (const [name, transform, tripInfo = { sequence: 1, name: '2026-07-01', nightsOut: 0 }] of [
+    ['its trip selector', html => html.replace(/<select id="TripDD">.*?<\/select>/, '')],
+    ['the add-new option', html => html.replace('<option value="new">**Add New Trip</option>', '')],
+    ['an unambiguous add-new option', html => html.replace('</select>', '<option value="other">**Add New Trip</option></select>')],
+    ['a unique add-new option value', html => html.replace('value="new"', 'value="existing"')],
+    ['an enabled add-new option', html => html.replace('value="new"', 'value="new" disabled')],
+    ['an enabled trip selector', html => html.replace('id="TripDD"', 'id="TripDD" disabled')],
+    ['its sequence field', html => html.replace('<input id="TripSeqText">', '')],
+    ['its name field', html => html.replace('<input id="TripNameText">', '')],
+    ['its nights field', html => html.replace('<input id="TripNightsText">', '')],
+    ['an editable sequence field', html => html.replace('<input id="TripSeqText">', '<input id="TripSeqText" readonly>')],
+    ['an enabled name field', html => html.replace('<input id="TripNameText">', '<input id="TripNameText" disabled>')],
+    ['a text sequence field', html => html.replace('<input id="TripSeqText">', '<input id="TripSeqText" type="checkbox">')],
+    ['a sequence field on the ascent form', html => html.replace('<input id="TripSeqText">', '<input id="TripSeqText" form="other">')
+        .replace('</form>', '</form><form id="other"></form>')],
+    ['a sequence field on a shared trip', html => html.replace('value="existing"', 'value="44"')
+        .replace('<input id="TripSeqText">', ''), { id: '44', sequence: 2, name: '2026-07-01', nightsOut: 0 }],
+]) {
+    test(`fails closed when requested Trip Info lacks ${name}`, async () => {
+        const { dom, messages, errors } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+            action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+            fields: { date: '2026-07-01', suffix: 'a', fillAscentDetails: false, tripInfo },
+            gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="2" lon="3"/></trkseg></trk></gpx>',
+        } : { ok: true }, { html: transform(formHtml
+            .replace('<input id="DateText">', '<input id="DateText" value="2026-06-30">')
+            .replace('<input id="SuffixText">', '<input id="SuffixText" value="z">')) });
+        let previews = 0;
+        dom.window.document.getElementById('GPXPreview').addEventListener('click', () => previews++);
+        try {
+            await waitForCondition(() => previews > 0 || errors.length > 0);
+            const doc = dom.window.document;
+            assert.equal(previews, 0, 'an incomplete trip must never reach GPS Preview');
+            assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
+            assert.equal(doc.getElementById('GPXUpload').files.length, 0);
+            assert.equal(doc.getElementById('DateText').value, '2026-06-30', 'the failed draft leaves native fields intact');
+            assert.equal(doc.getElementById('SuffixText').value, 'z');
+            assert.equal(doc.getElementById('SaveButton').disabled, true);
+            assert.match(doc.getElementById('bpb-draft-banner').textContent, /Trip Info/);
+            assert.equal(doc.querySelector('.bpb-draft-banner-action')?.textContent, 'Reload ascent form');
+        } finally { dom.window.close(); }
+    });
+}
+
+test('a saved shared trip does not require the new-trip-only fields', async () => {
+    const html = formHtml.replace('value="existing"', 'value="44"')
+        .replace('<input id="TripNameText">', '').replace('<input id="TripNightsText">', '');
+    const { dom, errors, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+        fields: { fillAscentDetails: false, tripInfo: { id: '44', sequence: 2 } },
+        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="2" lon="3"/></trkseg></trk></gpx>',
+    } : { ok: true }, { html });
+    let previews = 0;
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => previews++);
+    try {
+        await waitForCondition(() => previews > 0 || errors.length > 0);
+        assert.equal(previews, 1);
+        assert.deepEqual(errors, []);
+        assert.equal(dom.window.document.getElementById('TripDD').value, '44');
+        assert.equal(dom.window.document.getElementById('TripSeqText').value, '2');
+        assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), true);
+    } finally { dom.window.close(); }
+});
+
+for (const [name, mutate] of [
+    ['removed sequence', doc => doc.getElementById('TripSeqText')?.remove()],
+    ['disabled sequence', doc => { doc.getElementById('TripSeqText').disabled = true; }],
+    ['reset trip selection', doc => { doc.getElementById('TripDD').value = 'existing'; }],
+]) test(`a native change handler with ${name} rolls back before Preview`, async () => {
+    const { dom, errors, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+        fields: { suffix: 'a', fillAscentDetails: false,
+            tripInfo: { sequence: 1, name: '2026-07-01', nightsOut: 0 } },
+        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="2" lon="3"/></trkseg></trk></gpx>',
+    } : { ok: true });
+    let previews = 0;
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => previews++);
+    dom.window.document.getElementById('TripDD').addEventListener('change', () => {
+        mutate(dom.window.document);
+    });
+    try {
+        await waitForCondition(() => previews > 0 || errors.length > 0);
+        assert.equal(previews, 0);
+        assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
+        assert.equal(dom.window.document.getElementById('SuffixText').value, '');
+        assert.equal(dom.window.document.getElementById('TripDD').value, 'existing');
+        assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+        assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Trip Info/);
+    } finally { dom.window.close(); }
+});
+
 test('fills single-ascent wilderness nights without firing Peakbagger’s AutoPostBack change', async () => {
     let previewClicks = 0;
     let nightsChanges = 0;
@@ -388,7 +478,7 @@ test('the ascent-details setting leaves optional route fields untouched while Pr
     dom.window.close();
 });
 
-test('missing optional Peakbagger forms do not block the core date and GPX Preview flow', async () => {
+test('missing optional Peakbagger fields do not block Preview when Trip Info is not requested', async () => {
     let previewClicks = 0;
     const minimalHtml = `<!doctype html><body><form>
       <input id="DateText"><input id="GPXUpload" type="file">
@@ -402,7 +492,7 @@ test('missing optional Peakbagger forms do not block the core date and GPX Previ
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
             downDuration: { days: 0, hours: 1, minutes: 55 },
-            tripInfo: { sequence: 1, name: 'Overnight trip', nightsOut: 1 },
+            tripInfo: null,
             wildernessNightsOut: 1
         },
         gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'

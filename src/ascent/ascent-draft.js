@@ -29,6 +29,7 @@ import { units as Units } from '../ui/units.js';
         'privacy-check': 'The prepared upload failed its privacy check.',
         'preview-conflict': 'Preview was already started or the draft identity changed.',
         'trip-unavailable': 'The shared trip is missing from this form. Reload this summit tab before continuing.',
+        'trip-form-unavailable': 'Peakbagger’s Trip Info did not load completely. Reload this ascent form before continuing.',
     });
     const draftError = code => Object.assign(new Error(DRAFT_FAILURES[code]), { code });
     let draftConnectionGeneration = 0;
@@ -299,8 +300,24 @@ import { units as Units } from '../ui/units.js';
     const selectNewTrip = transaction => {
         const element = document.getElementById('TripDD');
         if (!element || element.tagName !== 'SELECT') return false;
-        const option = [...element.options].find(candidate => /^\s*\*\*\s*Add New Trip\s*$/i.test(candidate.textContent || ''));
-        return option ? setSelectValue('TripDD', option.value, true, transaction) : false;
+        const options = [...element.options].filter(candidate => /^\s*\*\*\s*Add New Trip\s*$/i.test(candidate.textContent || ''));
+        const option = options.length === 1 ? options[0] : null;
+        return option && !option.disabled && !option.parentElement.disabled
+            && [...element.options].filter(candidate => candidate.value === option.value).length === 1
+            ? setSelectValue('TripDD', option.value, true, transaction)
+                && element.selectedOptions.length === 1 && element.selectedOptions[0] === option : false;
+    };
+
+    const requireTripForm = tripInfo => {
+        const trip = document.getElementById('TripDD');
+        const ids = tripInfo.id ? ['TripSeqText'] : ['TripSeqText', 'TripNameText', 'TripNightsText'];
+        if (trip?.tagName !== 'SELECT' || trip.multiple || trip.matches(':disabled')
+            || !trip.form || trip.form !== document.getElementById('DateText')?.form
+            || ids.some(id => {
+                const field = document.getElementById(id);
+                return field?.tagName !== 'INPUT' || field.type !== 'text'
+                    || field.readOnly || field.matches(':disabled') || field.form !== trip.form;
+            })) throw draftError('trip-form-unavailable');
     };
 
     const setDuration = async (prefix, duration, preserveExistingFields = false, transaction = null) => {
@@ -366,6 +383,8 @@ import { units as Units } from '../ui/units.js';
     const fillForm = async (fields, preserveExistingFields = false, transaction = null) => {
         if (!formIsReady()) throw draftError('form-unavailable');
         assertApplyActive(transaction);
+        const fillTripInfo = fields.tripInfo && (!preserveExistingFields || tripInfoIsEmpty());
+        if (fillTripInfo) requireTripForm(fields.tripInfo);
         // A timeless GPX derives no date; keep whatever the field already
         // holds (typically the fresh-form today autofill) instead of clearing.
         if (fields.date) {
@@ -420,21 +439,28 @@ import { units as Units } from '../ui/units.js';
             await fillDayStats(fields.dayStats, transaction);
         }
 
-        if (fields.tripInfo && (!preserveExistingFields || tripInfoIsEmpty())) {
+        if (fillTripInfo) {
             if (fields.tripInfo.id) {
                 const trip = document.getElementById('TripDD');
-                if (![...(trip?.options || [])].some(option => option.value === String(fields.tripInfo.id))) {
+                const options = [...trip.options].filter(option => option.value === String(fields.tripInfo.id));
+                if (options.length !== 1 || options[0].disabled || options[0].parentElement.disabled) {
                     throw draftError('trip-unavailable');
                 }
-                setSelectValue('TripDD', fields.tripInfo.id, false, transaction);
-            } else {
-                selectNewTrip(transaction);
+                if (!setSelectValue('TripDD', fields.tripInfo.id, false, transaction)
+                    || trip.value !== String(fields.tripInfo.id)) throw draftError('trip-unavailable');
+            } else if (!selectNewTrip(transaction)) {
+                throw draftError('trip-form-unavailable');
             }
-            setTextField('TripSeqText', String(fields.tripInfo.sequence), transaction);
+            if (!setTextField('TripSeqText', String(fields.tripInfo.sequence), transaction)) {
+                throw draftError('trip-form-unavailable');
+            }
             if (!fields.tripInfo.id) {
-                setTextField('TripNameText', fields.tripInfo.name, transaction);
-                setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut), transaction);
+                if (!setTextField('TripNameText', fields.tripInfo.name, transaction)
+                    || !setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut), transaction)) {
+                    throw draftError('trip-form-unavailable');
+                }
             }
+            requireTripForm(fields.tripInfo);
         }
 
         if (fields.wildernessNightsOut !== null && fields.wildernessNightsOut !== undefined) {
