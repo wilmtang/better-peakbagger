@@ -422,6 +422,9 @@ Captions are plain text, separate from the image's alt description.
 The placeholder disappears while its empty field has the caret. In Rich text
 and preview, captions use smaller, centered, italic secondary text so they stay
 visually distinct from the surrounding report prose.
+Entering or clearing a caption keeps the photo and surrounding report steady,
+including when the image is the report's last block. A following paragraph is
+created only when keyboard navigation or Enter needs it.
 Photo Topos also has an optional **Caption** field, which is inserted beneath
 the photo or updates the caption when you save the photo back to the report.
 The Rich editor's image-link panel uses the same optional **Caption** field;

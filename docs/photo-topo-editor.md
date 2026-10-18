@@ -22,6 +22,10 @@ the initial width is Auto so labels grow with their text. The project model
 validates the saved style; annotation text, pitch content, and coordinates are
 never stored as tool preferences.
 
+Anchor and Belay are circular, so their tool preferences and selected-mark
+inspectors omit **Rotation**. Directional markers retain that control; existing
+projects keep their stored geometry.
+
 Select (`V`) supports Cmd/Ctrl+C and Cmd/Ctrl+V for one selected annotation,
 including routes, freehand strokes, symbols, and text. Paste selects a new copy
 with a small position offset, preserves its style, and adds one Undo step. The

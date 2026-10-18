@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Verify the release before creating its tag.** Pin a candidate to successful
+  main CI, a fresh three-pass rehearsal, exact package hashes, and the required
+  publication protections before tagging. Report-editor and capture checks
+  wait for the state they actually exercise, and verification commands share
+  one maintained entry point.
+
+- **Choose whether uploaded GPX includes recorded times.** Enable **Remove GPX
+  timestamps** in Settings to leave times out of activity-capture drafts and
+  local GPX uploads. Keep calculated dates and durations, and include timestamps
+  for an individual capture or file when needed. Originals remain unchanged.
+
+- **Keep My Ascents visible.** Favorite and Buddy filters saved on a peak list
+  no longer hide personal ascent rows when those controls are unavailable.
+  Returning to a peak list retains the saved climber preference.
+
+- **Simplify circular photo markers.** Anchor and Belay omit the Rotation
+  control because rotating those symbols does not change their appearance.
+  Directional markers retain rotation.
+
+- **Enter photo captions without moving the report.** Adding, editing, or
+  clearing a Rich-text image caption keeps the photo and surrounding content
+  steady, including a final image and narrow layouts. Keyboard navigation still
+  creates a following paragraph when needed.
+
 ## 4.0.1 — 2026-10-15
 
 - **Read weather and satellite choices in local context.** Satellite captures
