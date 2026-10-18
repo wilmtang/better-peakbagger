@@ -12,7 +12,7 @@ the legitimate findings. Existing photo-library work is outside this change.
 | A4 | A failed draft preparation leaves stale busy feedback and a lease that blocks reload recovery. Preserve Save blocking until Preview succeeds or the capture is discarded. | Rollback, failure/retry, document replacement, stale acknowledgments, exactly-once Preview and rendered recovery/geometry checks. | Fixed and verified locally |
 | A5 | Track-order comparison coerces unavailable distance to zero. | Mixed finite/null distance order agrees with suffix fallback. | Fixed and verified |
 | A6 | Startup reconciliation accepts a payload missing the timestamp-free variant required for delivery. | Incomplete and legacy payloads fail closed; complete payloads and the explicit timestamp choice remain usable. | Fixed and verified |
-| A7 | The initial ownership failure bypasses the public result allowlist. Current failure paths expose only an extra internal flag. | Exact public failure shape and no export or account identifiers. | Pending |
+| A7 | The initial ownership failure bypasses the public result allowlist. Current failure paths expose only an extra internal flag. | Exact public failure shape and no export or account identifiers. | Fixed and verified |
 | A8 | The owner-reviewed development advisory exception expires October 24 at 00:00 Los Angeles time. | Preserve the exact expiry and fail-closed evaluator; no automatic renewal. | Intentionally unchanged |
 
 Each independent implementation unit is committed after focused checks. Final
@@ -50,6 +50,10 @@ ledger is archived.
   payloads are included in the same orphan sweep. The new six-case regression
   fails before the fix; all 206 worker tests, ESLint and diff whitespace checks
   pass. Ordinary complete payloads and the explicit timestamp choice still work.
+- A7: early failure now passes through `publicOwnership()` before diagnostic
+  wrapping. The exact-shape regression fails on the former extra `terminal`
+  field and passes with diagnostics both off and on; the provider suite passes.
+  This is contract hardening, not evidence of a previously leaked account ID.
 
 ## Intentionally not changed
 

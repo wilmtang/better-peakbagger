@@ -672,3 +672,19 @@ test('no provider profile identity crosses to the background worker', async () =
     assert.equal('viewerId' in captured, false);
     assert.equal('authorId' in captured, false);
 });
+
+test('early capture ownership failures expose only the public allowlist', async () => {
+    for (const diagnostic of [false, true]) {
+        const dom = load(stravaPage({ author: '99' }), 'https://www.strava.com/activities/123');
+        let fetches = 0;
+        dom.window.fetch = async () => { fetches++; throw new Error('ownership failure must not export'); };
+        try {
+            const reply = await dom.window.BPBProviderPage.capture({}, null, undefined, null, diagnostic);
+            assert.deepEqual(Object.keys(reply).sort(),
+                ['ok', 'code', 'provider', 'activityId', ...(diagnostic ? ['diagnostics'] : [])].sort());
+            assert.equal(reply.code, 'not-owner');
+            assert.equal(reply.ok, false);
+            assert.equal(fetches, 0);
+        } finally { dom.window.close(); }
+    }
+});

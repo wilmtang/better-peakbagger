@@ -328,7 +328,7 @@ const capture = async (
         diagnostics: { durationsMs: { ...durationsMs }, counts: { ...counts } },
     } : result;
     const ownership = inspectExpectedOwnership(expectedActivity);
-    if (!ownership.ok) return withDiagnostics(ownership);
+    if (!ownership.ok) return withDiagnostics(publicOwnership(ownership));
     const captureKey = typeof generation === 'string' && generation ? generation : Symbol('capture');
     const deadline = Deadline.createRequestDeadline(timeoutMs);
     activeCaptures.set(captureKey, deadline);
