@@ -132,3 +132,49 @@ were consequences of that failed import. Every other underlying job passed.
   Hosted CI remains required evidence for the follow-up.
 - Hidden checks do not prove native onscreen focus or window placement, and
   fixture challenge pages do not prove live Cloudflare clearance behavior.
+
+## Post-schedule CI follow-up
+
+The [post-merge run for PR #56](https://github.com/wilmtang/better-peakbagger/actions/runs/39102391138)
+failed the Chrome 156 Analyzer dark-focus assertion: the ring was focus-visible
+and 3px wide, but its color was the light palette's `rgb(23, 105, 170)` instead
+of the dark palette's `rgb(121, 184, 255)`. Every other underlying job passed.
+The schedule commit changed only Dependabot configuration and this repository's
+development guide; it did not change the theme or verifier implementation.
+
+### Fixed and verified
+
+- Route live theme changes in the Chrome verifier through `SETTINGS_PATCH`,
+  the same serialized worker queue as pending Analyzer map and units writes.
+  The old direct sync-storage read/replace bypassed that queue. A deterministic
+  concurrency regression holds a map write after its read, changes the theme,
+  then releases the old write: the old verifier restores light, while the
+  worker-routed verifier preserves both the dark theme and new map width.
+- Wait for the rendered dark focus ring, including the active canvas,
+  `:focus-visible`, solid 3px outline and the exact dark palette color. A
+  transient dark data attribute no longer substitutes for those postconditions.
+  Permanent wrong color, missing focus, wrong theme and missing outline still
+  fail with the last observed state in the timeout diagnostic.
+- All 14 fixture-helper tests and scoped ESLint passed. The concurrency test
+  failed against a disposable copy of the old raw-storage implementation on
+  the light-theme overwrite assertion, then passed with the worker queue.
+- The full minified-extension verifier passed in hidden Chrome for Testing
+  156.0.8078.4 at 1000×760, including BFCache and teardown. The dark Analyzer
+  render was inspected. Exact disposable-profile process inspection found no
+  remaining task-owned browser processes.
+
+### Intentionally not changed
+
+- Preserve both biweekly Dependabot schedules, npm-only auto-merge, manual
+  Actions review, cooldowns and every required CI check.
+- Preserve unrelated local main commits and current user-owned edits. The
+  repair is isolated on top of the GitHub default branch.
+
+### Changed but not fully proven
+
+- The unmodified Chrome verifier passed locally. The hosted failure retained
+  the wrong color but no page/theme history, so its exact write ordering cannot
+  be reconstructed. The deterministic test proves the concrete competing-write
+  defect; it does not prove that ordering caused the original hosted failure.
+- Hidden fixture checks do not prove native window focus or placement, or live
+  provider behavior. Remote PR and post-merge CI remain required evidence.
