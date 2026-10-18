@@ -44,6 +44,17 @@ failed two assertions and the toolbar-to-draft capture verifier:
   explicitly opted-in reviewed-development-advisory audit gate passed before
   the toolbar helper change. The helper change passed its focused checks.
   All 176 report/editor tests also passed with the CodeMirror update.
+- All 14 scale checks and the real unpacked-extension verifier passed. The
+  latter used hidden Chrome for Testing 156.0.8078.4 at 1000×760.
+- Additional hidden hardware-GPU verification reproduced a false scroll failure:
+  zoom increased from 13.38 to 14.25 while the quantized scale label stayed at
+  500 m. The assertion now requires increasing camera zoom plus a visible scale
+  text or width change. It also waits for a settled exposed canvas and retains
+  final camera diagnostics. The new assertion fails against the old verifier;
+  all 13 focused tests pass, including rejection of stationary cameras and
+  unchanged scale geometry. Full terrain verification passed in hidden Chrome
+  156.0.8078.36 on Apple M3 Pro ANGLE Metal with 798×448 and 448×448 canvases;
+  light/dark screenshots were inspected.
 
 ## Intentionally not changed
 
