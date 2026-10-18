@@ -49,8 +49,13 @@ try {
         if (requested.hostname === 'tiles.mapterhorn.com') return { status: 200, body: snowMapDem, contentType: 'image/webp', headers: {} };
         if (requested.hostname === 'wcc.sc.egov.usda.gov') {
             const body = !snowMode || mode === 'no-stations' ? snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })) : requested.pathname.endsWith('/stations')
-                ? snotelStations().map(station => mode === 'long-station' ? { ...station, name: `${station.name} · Experimental Mountain Snow Observation Station` } : station)
+                ? mode === 'map-selection' ? Array.from({ length: 4 }, (_, index) => ({ ...snotelStations()[0],
+                    stationTriplet: `${991 + index}:WA:SNTL`, name: `Station ${index + 1}`, latitude: 46.78 + index * .01 }))
+                    : snotelStations().map(station => mode === 'long-station' ? { ...station, name: `${station.name} · Experimental Mountain Snow Observation Station` } : station)
                 : snotelFixture(requested.searchParams.get('stationTriplets'), requested.searchParams.get('duration'));
+            if (mode === 'map-selection' && requested.pathname.endsWith('/data')) {
+                body[0].data[0].values.forEach(reading => { if (reading.value !== null) reading.value = requested.searchParams.get('stationTriplets') === '991:WA:SNTL' ? 41 : 21; });
+            }
             if (mode === 'missing' && requested.pathname.endsWith('/data')) body[0].data[0].values.forEach(reading => { reading.value = null; });
             return { status: mode === 'error' ? 429 : mode === 'service-error' ? 503 : 200,
                 headers: mode === 'error' ? { 'retry-after': '120' } : {}, body: JSON.stringify(body) };

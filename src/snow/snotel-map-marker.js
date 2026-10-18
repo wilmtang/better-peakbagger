@@ -20,7 +20,7 @@ export function snotelSymbol(doc) {
     svg.append(shape, snow); return svg;
 }
 
-export function snotelPopup(doc, station) {
+export function snotelPopup(doc, station, onSelect) {
     const content = doc.createElement('div'); content.className = 'bpb-snotel-popup';
     content.style.cssText = 'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:220px;overflow-wrap:anywhere';
     const title = doc.createElement('strong'); title.textContent = station.name;
@@ -28,10 +28,18 @@ export function snotelPopup(doc, station) {
     info.textContent = `SNOTEL · ${Math.round(station.elevation).toLocaleString()} m / ${Math.round(station.elevation * units.FEET_PER_METER).toLocaleString()} ft`;
     const link = doc.createElement('a'); link.textContent = 'View NRCS snow data'; link.href = snotelReportUrl(station);
     link.target = '_blank'; link.rel = 'noopener noreferrer';
-    content.append(title, info, link); return content;
+    content.append(title, info);
+    if (onSelect) {
+        const action = doc.createElement('button'); action.type = 'button'; action.className = 'bpb-snotel-show-conditions';
+        action.textContent = 'Show conditions'; action.setAttribute('aria-label', `Show conditions at ${station.name}`);
+        action.style.cssText = 'display:block;margin:6px 0;font:inherit;padding:4px 8px;cursor:pointer';
+        action.addEventListener('click', event => { event.stopPropagation(); onSelect(station.id); });
+        content.append(action);
+    }
+    content.append(link); return content;
 }
 
-export function createTerrainSnotelMarkers({ maplibre, document: doc }) {
+export function createTerrainSnotelMarkers({ maplibre, document: doc, onSelect }) {
     let markers = [], openPopup = null;
     const closePopup = () => { if (!openPopup) return false; openPopup.remove(); openPopup = null; return true; };
     const clear = () => { closePopup(); for (const marker of markers) marker.remove(); markers = []; };
@@ -48,7 +56,7 @@ export function createTerrainSnotelMarkers({ maplibre, document: doc }) {
                     button.title = `${station.name} · SNOTEL`; button.setAttribute('aria-label', button.title); button.append(snotelSymbol(doc));
                     const popup = new maplibre.Popup({ className: 'bpb-snotel-map-popup', focusAfterOpen: false,
                         anchor: 'bottom', offset: 16, maxWidth: 'min(260px, calc(100vw - var(--bpb-snotel-popup-margin, 80px)))' })
-                        .setDOMContent(snotelPopup(doc, station));
+                        .setDOMContent(snotelPopup(doc, station, onSelect));
                     popup.on('close', () => { if (openPopup === popup) openPopup = null; });
                     // Own activation as the summit buttons do. Native buttons
                     // provide one keyboard click; MapLibre's marker popup path

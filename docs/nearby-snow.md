@@ -107,20 +107,28 @@ upper-right corner, below the map layer picker, toggles an independent station
 overlay in both 2D and 3D.
 The layer starts off on each page load. Blue hexagonal snowflakes distinguish
 stations from Peakbagger's summit dots. Selecting a station opens its name,
-elevation, and an official NRCS data link; observations remain in the Nearby
-snow card and on NRCS's site.
+elevation, a **Show conditions** action, and an official NRCS data link.
+**Show conditions** brings the Nearby snow card into view, focuses its station
+picker and loads that station's readings. The map popup itself requests no
+observations until this action is used.
 
 The layer shows up to 50 active stations within 50 km of the peak, including
 across state borders. Its coverage stays centered on that peak when panning;
 it does not fetch stations for a changing map viewport. The card continues to
-offer the three closest stations. The toggle's accessible name and tooltip
+offer the three closest stations, plus a station explicitly chosen from the map
+when needed. A failed replacement preserves the previous readings and station
+identity, and map selections respect the same NRCS cooldown as the picker.
+The toggle's accessible name and tooltip
 state the coverage. Toggling preserves native map layers and the camera.
 Opening a station popup near an edge may pan enough to keep it readable.
 
 The layer shares the card's metadata client and public local catalog cache.
 Toggling cached stations does not request measurements. Only validated public
 station identifiers, names, coordinates, and elevations cross into page-world
-rendering and the 3D frame. Fetching stays isolated, summit coordinates stay
+rendering and the 3D frame. Selection returns only a station identifier, which
+the isolated source resolves against its own previously exposed nearby catalog;
+page-supplied coordinates, names, and time offsets cannot select a station.
+Fetching stays isolated, summit coordinates stay
 local, and disabling **Summit weather** clears both renderers' station layers.
 Pending requests can be canceled with the same SNOTEL toggle; failures provide
 Retry, respecting the NRCS retry deadline. A completed empty local match is
@@ -130,7 +138,10 @@ distinct from a catalog failure.
 and Firefox against the masked peak page, pinned Leaflet 1.9.4, deterministic
 NRCS JSON and non-flat synthetic DEM tiles. It checks loading, cancellation,
 retry, cached toggling, keyboard station popups, iframe reloads, settings,
-2D/3D switching and parked-frame reuse. It compares control, map, heading,
+2D/3D switching and parked-frame reuse. It exercises the conditions action in
+both renderers, including a fourth-nearest station, loading, failure, retry,
+distinct station readings, focus transfer and card geometry through recovery.
+It compares control, map, heading,
 following native content and scroll geometry at 375 and 1440 pixels in light
 and dark, plus 200% browser zoom. Selected dark styling is challenged with the
 original generic button override; the dark 3D source-link assertion was also

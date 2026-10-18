@@ -37,7 +37,8 @@ export function createPeakSnowMap({ mount, getContext, postTerrain }) {
                 const icon = L.divIcon({ html: snotelSymbol(owner), className: 'bpb-snotel-marker', iconSize: [24, 24], iconAnchor: [12, 12] });
                 L.marker([station.latitude, station.longitude], { icon, title: `${station.name} · SNOTEL`, keyboard: true,
                     // These station badges must stay distinct from summit dots.
-                    zIndexOffset: 200 }).bindPopup(snotelPopup(owner, station), { autoPanPadding: [12, 12], maxWidth: 260 }).addTo(next);
+                    zIndexOffset: 200 }).bindPopup(snotelPopup(owner, station, stationId => post({ type: 'select', stationId })),
+                    { autoPanPadding: [12, 12], maxWidth: 260 }).addTo(next);
             }
             next.addTo(map); group = next; boundMap = map;
         } catch { next.remove(); return false; }

@@ -243,6 +243,13 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         const hint = document.querySelector('.bpb-terrain-hint');
         return !hint || getComputedStyle(hint).opacity === '0';
     }, 'minimum-map gesture hint finishes hiding');
+    await evaluateTerrain(() => document.querySelector('.bpb-snotel-show-conditions').focus());
+    assert.equal(await evaluateTerrain(() => {
+        const action = document.querySelector('.bpb-snotel-show-conditions'), r = action.getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= window.innerHeight
+            && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === action;
+    }), true, 'conditions action stays visible and usable in the minimum-size popup');
+    await image('375-dark-3d-conditions-action');
     await evaluateTerrain(() => document.querySelector('.bpb-snotel-popup a').focus());
     assert.equal(await evaluateTerrain(() => {
         const link = document.querySelector('.bpb-snotel-popup a'), r = link.getBoundingClientRect();
@@ -280,5 +287,66 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     assert.equal(snowEvidence.length, requests, 'pointer and keyboard cannot bypass NRCS cooldown');
     stable(limited, await geometry(), 'rate-limit off/on and unavailable Retry'); await image('375-dark-rate-limit');
     cases.push({ width: 375, theme: 'dark', states: ['rate-limit', 'off', 'on', 'retry-blocked'] });
+
+    const cardGeometry = () => evaluate(() => {
+        const rect = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+        const card = document.getElementById('bpb-peak-snow');
+        return { card: rect(card), heading: rect(card.querySelector('h2')), action: rect(card.querySelector('.bpb-snow-refresh')),
+            picker: rect(card.querySelector('select')), context: rect(card.querySelector('.bpb-snow-context')),
+            metrics: rect(card.querySelector('.bpb-snow-metrics')),
+            scroll: { x: window.scrollX, y: window.scrollY } };
+    });
+    const stableCard = (before, after) => {
+        for (const part of Object.keys(before)) for (const dim of Object.keys(before[part])) {
+            assert.ok(Math.abs(before[part][dim] - after[part][dim]) <= 1, `station card ${part}.${dim} moved during load/recovery`);
+        }
+    };
+    const cardReady = stationId => waitForCondition(() => evaluate(() => ({
+        busy: document.getElementById('bpb-peak-snow').getAttribute('aria-busy'),
+        station: document.getElementById('bpb-peak-snow-station').value,
+        status: document.querySelector('.bpb-snow-status').textContent,
+        focus: document.activeElement.id,
+    })), { description: `card conditions at ${stationId}`, timeoutMs: 15_000,
+        isReady: state => state.busy === 'false' && state.station === stationId && state.status.includes('Hourly readings') });
+    for (const [width, theme] of [[1440, 'light'], [375, 'dark']]) {
+        await prepare(width, theme, 'map-selection'); await click('#bpb-snow-map-toggle'); await ready(); await waitMarkers(4);
+        await evaluate(() => document.getElementById('bpb-peak-snow').scrollIntoView({ block: 'start' }));
+        await cardReady('994:WA:SNTL');
+        assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-station').options.length), 3);
+        await evaluate(() => {
+            document.querySelector('.bpb-terrain-mount-peak').scrollIntoView({ block: 'center' });
+            document.getElementById('Gmap').contentDocument.querySelector('[title="Station 1 · SNOTEL"]').focus();
+        });
+        await press(key('Enter'));
+        await wait(() => !!document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-show-conditions'), 'native conditions action');
+        setMode('loading');
+        await evaluate(() => document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-show-conditions').focus());
+        await press(key('Enter'));
+        await wait(() => document.getElementById('bpb-peak-snow').getAttribute('aria-busy') === 'true'
+            && document.getElementById('bpb-peak-snow-station').value === '991:WA:SNTL', 'map-selected station pending in card');
+        assert.equal(await evaluate(() => document.activeElement.id), 'bpb-peak-snow-station');
+        assert.equal(await evaluate(() => document.querySelector('.bpb-snow-metric strong').textContent), '—');
+        const pendingCard = await cardGeometry(); await image(`${width}-${theme}-map-conditions-pending`);
+        setMode('service-error'); release();
+        await wait(() => document.querySelector('.bpb-snow-status').textContent.includes('Could not load'), 'map-selected station error');
+        assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-station').value), '994:WA:SNTL', 'failed replacement retains the previous station identity');
+        stableCard(pendingCard, await cardGeometry());
+        setMode('map-selection'); await click('.bpb-snow-refresh'); await cardReady('991:WA:SNTL');
+        stableCard(pendingCard, await cardGeometry());
+        assert.equal(await evaluate(() => document.querySelector('.bpb-snow-metric strong').textContent), '41.0 in');
+        assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-station').options.length), 4);
+        await image(`${width}-${theme}-map-conditions-ready`);
+
+        await evaluate(() => document.querySelector('.bpb-terrain-mount-peak').scrollIntoView({ block: 'center' }));
+        await click('#bpb-terrain-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 4, '3D stations with conditions actions');
+        await evaluateTerrain(() => document.querySelector('[title="Station 2 · SNOTEL"]').focus()); await press(key('Enter'));
+        await frameWait(() => !!document.querySelector('.bpb-snotel-show-conditions'), '3D conditions action');
+        await evaluateTerrain(() => document.querySelector('.bpb-snotel-show-conditions').focus()); await press(key('Enter'));
+        await cardReady('992:WA:SNTL');
+        assert.equal(await evaluate(() => document.activeElement.id), 'bpb-peak-snow-station');
+        assert.equal(await evaluate(() => document.querySelector('.bpb-snow-metric strong').textContent), '21.0 in');
+        await image(`${width}-${theme}-3d-conditions-ready`);
+        cases.push({ width, theme, states: ['2D-card-selection', 'pending', 'error', 'retry', 'fourth-nearest', '3D-card-selection'] });
+    }
     assert.deepEqual(networkErrors, []); assert.ok(cases.length > 0); return { renderer, cases, snowRequests: snowEvidence.length };
 }

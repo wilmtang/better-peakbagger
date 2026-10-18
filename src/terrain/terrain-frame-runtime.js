@@ -38,7 +38,8 @@ const authorizeThroughWorker = async ({ token, action }) => {
 // consumes activation through the worker. Tests inject a narrow MapLibre stub
 // and an explicit authorization decision so jsdom never allocates WebGL.
 export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker } = {}) => {
-    const snowMarkers = createTerrainSnotelMarkers({ maplibre, document });
+    const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
+        onSelect: stationId => post('snowSelect', { stationId }) });
     let snowStations = [];
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';

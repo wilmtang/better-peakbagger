@@ -62,6 +62,9 @@ test('snow toggle preserves native layers, camera and focus, and shares a saniti
         assert.equal(env.groups[0].markers.length, 2); assert.equal(env.native.layers.size, 4);
         assert.deepEqual(env.groups[0].markers[0].popupOptions.autoPanPadding, [12, 12]);
         assert.match(env.groups[0].markers[0].content.textContent, /Paradise.*SNOTEL.*View NRCS/);
+        const action = env.groups[0].markers[0].content.querySelector('.bpb-snotel-show-conditions');
+        assert.equal(action.type, 'button'); action.click();
+        assert.deepEqual(env.messages.at(-1), { __bpbPeakSnow: true, dir: 'toCS', type: 'select', stationId: stations[0].id });
         assert.equal(env.win.document.activeElement, env.button);
         assert.deepEqual(env.layer.snapshot(), stations); assert.deepEqual(env.terrain.at(-1).snowStations, stations);
         env.button.click(); assert.deepEqual([...env.native.layers], ['basemap', 'summit', 'route']);
@@ -131,6 +134,32 @@ test('a rate limit stays visible after off/on and blocks retry activation', () =
     } finally { env.close(); }
 });
 
+test('map selections resolve only exposed nearby catalog identities while active and enabled', async () => {
+    const env = new JSDOM('', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296' }), win = env.window, selected = [];
+    win.postMessage = () => {};
+    const source = createSnotelMapSource({ ownerWindow: win, subject: { latitude: 46.85, longitude: -121.76 },
+        client: { stations: async () => [...validateSnotelStations(snotelStations()), { ...stations[0], id: '999:CO:SNTL', latitude: 38 }] },
+        onSelect: (station, nearby) => selected.push({ station, nearby }) });
+    const emit = (data, origin = win.location.origin) => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win, origin, data: { __bpbPeakSnow: true, dir: 'toCS', ...data },
+    }));
+    try {
+        source.setEnabled(true);
+        emit({ type: 'select', stationId: stations[0].id }); assert.equal(selected.length, 0);
+        emit({ type: 'get', requestId: 1 }); await tick();
+        for (const stationId of ['999:CO:SNTL', 'https://evil.example/', {}, null]) emit({ type: 'select', stationId });
+        emit({ type: 'select', stationId: stations[0].id }, 'https://evil.example'); assert.equal(selected.length, 0);
+        emit({ type: 'select', stationId: stations[0].id, latitude: 0, offset: 14 });
+        assert.equal(selected.length, 1); assert.equal(selected[0].station.latitude, stations[0].latitude);
+        assert.equal(selected[0].station.offset, -8); assert.equal(selected[0].nearby.length, 2);
+        emit({ type: 'cancel' }); emit({ type: 'select', stationId: stations[1].id });
+        assert.equal(selected.length, 2, 'cached off/on does not discard catalog membership');
+        source.suspend(); emit({ type: 'select', stationId: stations[0].id }); assert.equal(selected.length, 2);
+        source.resume(); source.setEnabled(false); emit({ type: 'select', stationId: stations[0].id });
+        source.setEnabled(true); emit({ type: 'select', stationId: stations[0].id }); assert.equal(selected.length, 2);
+    } finally { source.dispose(); win.close(); }
+});
+
 test('terrain stations use keyboard buttons, local DOM text, one popup, and complete teardown', () => {
     const env = new JSDOM(''), doc = env.window.document, pins = [], popups = [];
     class Popup {
@@ -148,13 +177,15 @@ test('terrain stations use keyboard buttons, local DOM text, one popup, and comp
         addTo() { return this; }
         remove() { this.removed = true; }
     }
-    const renderer = createTerrainSnotelMarkers({ maplibre: { Marker, Popup }, document: doc });
+    const selected = [];
+    const renderer = createTerrainSnotelMarkers({ maplibre: { Marker, Popup }, document: doc, onSelect: id => selected.push(id) });
     try {
         assert.equal(renderer.replace({}, stations), true);
         assert.deepEqual(pins[0].point, [stations[0].longitude, stations[0].latitude]);
         assert.equal(pins[0].options.element.tagName, 'BUTTON'); assert.equal(pins[0].options.element.type, 'button');
         assert.match(pins[0].options.element.getAttribute('aria-label'), /Paradise.*SNOTEL/);
         pins[0].options.element.click(); pins[1].options.element.click(); assert.equal(popups[0].removed, true);
+        popups[1].node.querySelector('.bpb-snotel-show-conditions').click(); assert.deepEqual(selected, [stations[1].id]);
         assert.equal(renderer.closePopup(), true); assert.equal(renderer.closePopup(), false);
         renderer.clear(); assert.ok(pins.every(pin => pin.removed));
     } finally { env.window.close(); }

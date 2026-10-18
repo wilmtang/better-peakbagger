@@ -44,6 +44,50 @@ function setup({ source = html, url = 'https://www.peakbagger.com/peak.aspx?pid=
 const settled = env => waitFor(() => env.doc.querySelector('#bpb-peak-snow')?.getAttribute('aria-busy') === 'false'
     && env.doc.querySelector('.bpb-snow-status')?.textContent.includes('Hourly readings'));
 const choose = (env, id) => { const select = env.doc.querySelector('#bpb-peak-snow-station'); select.value = id; select.dispatchEvent(new env.win.Event('change')); };
+const mapMessage = (env, detail) => env.win.dispatchEvent(new env.win.MessageEvent('message', {
+    source: env.win, origin: env.win.location.origin, data: { __bpbPeakSnow: true, dir: 'toCS', ...detail },
+}));
+
+test('map conditions can reveal the lazy card and select a station beyond the default nearest three', async () => {
+    const catalog = [...snotelStations(),
+        { ...snotelStations()[0], stationTriplet: '998:WA:SNTL', name: 'Near station', latitude: 46.80, longitude: -121.70 },
+        { ...snotelStations()[0], stationTriplet: '999:WA:SNTL', name: 'Farther station', latitude: 46.85, longitude: -121.25 }];
+    let limited = false, failed = false;
+    const env = setup({ lazy: true, fetchFn: url => new URL(url).pathname.endsWith('/stations')
+        ? new Response(JSON.stringify(catalog)) : limited ? new Response('', { status: 429 }) : failed ? new Response('', { status: 503 }) : reply(url) });
+    try {
+        await waitFor(() => env.observers.length === 1);
+        const messages = []; env.win.postMessage = data => messages.push(data);
+        const card = env.doc.getElementById('bpb-peak-snow'), select = env.doc.getElementById('bpb-peak-snow-station');
+        let reveals = 0; card.scrollIntoView = () => reveals++;
+        mapMessage(env, { type: 'get', requestId: 1 });
+        await waitFor(() => messages.some(data => data.type === 'stations'));
+        assert.equal(env.requests.length, 1, 'map metadata does not load observations');
+        mapMessage(env, { type: 'select', stationId: '999:WA:SNTL', offset: 14, latitude: 0 });
+        await settled(env);
+        assert.equal(select.value, '999:WA:SNTL'); assert.equal(select.options.length, 4);
+        assert.match(select.selectedOptions[0].textContent, /Farther station/);
+        assert.equal(env.doc.activeElement, select); assert.equal(reveals, 1);
+        assert.match(env.doc.querySelector('#bpb-peak-snow footer a').href, /999%3AWA%3ASNTL/);
+        assert.ok([...env.doc.querySelectorAll('.bpb-snow-time')].every(node => node.textContent.includes('UTC−08')));
+        assert.equal(env.requests.length, 3);
+        // The old queued intersection callback cannot replace the map choice.
+        env.observers[0].callback([{ isIntersecting: true }]);
+        await new Promise(resolve => setTimeout(resolve, 0)); assert.equal(select.value, '999:WA:SNTL');
+        mapMessage(env, { type: 'select', stationId: '123:CO:SNTL' }); assert.equal(env.requests.length, 3);
+        failed = true; mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
+        await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('Could not load'));
+        assert.equal(select.value, '999:WA:SNTL', 'a retained fourth-nearest station must remain named after another selection fails');
+        failed = false; mapMessage(env, { type: 'select', stationId: '999:WA:SNTL' }); await settled(env);
+        limited = true; env.doc.querySelector('.bpb-snow-refresh').click();
+        await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('request limit'));
+        const requests = env.requests.length;
+        mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
+        assert.equal(select.value, '999:WA:SNTL'); assert.equal(env.requests.length, requests, 'map selection respects NRCS cooldown');
+        env.settings({ showWeather: false }); mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
+        assert.equal(env.requests.length, requests);
+    } finally { env.close(); }
+});
 
 test('peak card uses native summit metadata without GPX and mounts once after the weather/map row', async () => {
     const env = setup();

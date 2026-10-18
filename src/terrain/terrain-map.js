@@ -539,6 +539,9 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             postToPage('view', { bearing: data.bearing, pitch: data.pitch });
         } else if (data.type === 'peaksRequest') {
             postToPage('peaksRequest', { requestId: data.requestId, bounds: data.bounds });
+        } else if (data.type === 'snowSelect') {
+            if (suspended || !frameLoaded || typeof data.stationId !== 'string' || !/^\d{1,8}:[A-Z]{2}:SNTL$/.test(data.stationId)) return;
+            window.postMessage({ __bpbPeakSnow: true, dir: 'toCS', type: 'select', stationId: data.stationId }, location.origin);
         } else if (data.type === 'weatherContext' || data.type === 'weatherDismiss') {
             const card = document.getElementById('bpb-peak-weather');
             if (suspended || !frameLoaded || !card || card.hidden) return;

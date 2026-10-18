@@ -194,6 +194,18 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(pageMessages.at(-1).type, 'loaded');
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.73, -121.78], zoom: 13.25 });
 
+    const snowSelect = (stationId, generation = init.generation) => window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow, origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'snowSelect', generation, stationId },
+    }));
+    const beforeSnowSelect = pageMessages.length;
+    snowSelect('https://untrusted.example/'); snowSelect(snowStation.id, init.generation + 1);
+    assert.equal(pageMessages.length, beforeSnowSelect, 'invalid and stale station actions cannot reach the card');
+    snowSelect(snowStation.id);
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
+        __bpbPeakSnow: true, dir: 'toCS', type: 'select', stationId: snowStation.id,
+    });
+
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
         origin: 'chrome-extension://test-id',

@@ -90,7 +90,20 @@ export function mountPeakSnow() {
     else subject.table.tBodies[0].append(row);
 
     const client = createSnotelClient({ storage: chrome.storage.local });
-    const mapSource = createSnotelMapSource({ client, subject });
+    const mapSource = createSnotelMapSource({ client, subject, onSelect: (station, nearby) => {
+        if (!enabled()) return;
+        // This explicit map action reveals the card even before its lazy load.
+        // Keep the ordinary three choices plus the chosen nearby map station.
+        if (!cooldown.active()) {
+            observer?.disconnect(); observer = null;
+            noStations = false; observations.hidden = details.hidden = false;
+            candidates = nearby.slice(0, 3);
+            if (!candidates.some(candidate => candidate.id === station.id)) candidates.push(station);
+            if (!pending || requested?.id !== station.id) { requested = station; void load(station); }
+        }
+        card.scrollIntoView({ block: 'start' });
+        select.focus({ preventScroll: true });
+    } });
     let preference = settings.DEFAULTS, settingsReady = false, candidates = null, current = null, requested = null;
     let controller = null, generation = 0, pending = false, observer = null, notice = null, noStations = false;
     let lifecycle;
@@ -107,7 +120,11 @@ export function mountPeakSnow() {
     const fillStations = () => {
         if (!candidates?.length) return;
         const previous = current?.station.id || requested?.id || candidates[0].id;
-        select.replaceChildren(...candidates.map(station => element('option', { value: station.id,
+        // A failed map replacement must still name the station whose retained
+        // readings are shown, even when it is outside the default three.
+        const choices = current && !candidates.some(station => station.id === current.station.id)
+            ? [...candidates, current.station] : candidates;
+        select.replaceChildren(...choices.map(station => element('option', { value: station.id,
             text: `${station.name} · ${units.formatDistance(station.distance, system('distance'))} away · ${units.formatElevation(station.elevation, system('elevation'))}` })));
         select.value = previous; select.disabled = false;
     };
