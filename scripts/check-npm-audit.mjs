@@ -16,7 +16,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // explicitly opt into the same exception without changing its scope or expiry.
 export const DEVELOPMENT_ADVISORY = Object.freeze({
     url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
-    expiresAt: '2026-10-17T07:00:00Z',
+    expiresAt: '2026-10-24T07:00:00Z',
 });
 
 function acceptsDevelopmentAdvisory(audit, lockfile, now) {

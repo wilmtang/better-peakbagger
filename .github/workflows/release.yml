@@ -95,7 +95,7 @@ jobs:
       # evaluateAudit() against synthetic reports — it never calls npm audit. The
       # The default requires zero advisories. The owner accepts the exact
       # dev-only node-forge advisory for releases
-      # until October 17. The audit evaluator enforces its dependency graph
+      # through October 23. The audit evaluator enforces its dependency graph
       # and expiry; every other finding still fails.
       - name: Check dependency advisories
         run: npm run audit:ci -- --allow-reviewed-development-advisory

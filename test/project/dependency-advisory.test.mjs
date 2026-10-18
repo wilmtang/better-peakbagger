@@ -55,8 +55,14 @@ test('clean output remains clean with or without the review option', () => {
     assert.deepEqual(evaluateAudit(clean, options()), { status: 'clean' });
 });
 
-test('the exception expires exactly at midnight October 17 in Los Angeles', () => {
-    for (const now of [Date.parse('2026-10-17T07:00:00Z'), NaN, Infinity]) {
+test('the renewed exception accepts the same path through October 23 in Los Angeles', () => {
+    for (const now of [Date.parse('2026-10-17T07:00:00Z'), Date.parse('2026-10-24T06:59:59.999Z')]) {
+        assert.equal(evaluateAudit(baseline, { ...options(), now }).status, 'accepted-development-advisory');
+    }
+});
+
+test('the exception expires exactly at midnight October 24 in Los Angeles', () => {
+    for (const now of [Date.parse('2026-10-24T07:00:00Z'), NaN, Infinity]) {
         assert.throws(() => evaluateAudit(baseline, { ...options(), now }), /Unowned/);
     }
 });
