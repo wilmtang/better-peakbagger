@@ -35,6 +35,7 @@ const FAIL_SOFT = Object.freeze({
 const AUTHORITATIVE = Object.freeze({
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
     'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
+    'src/snow/peak-snow.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before public snow catalog and observation requests' }],
     'src/favorites/favorite-source.js': [{ count: 1, kind: 'preservation', reason: 'resolve the selected source without substituting defaults after a failed settings read' }],
     'src/favorites/climber-hover-card.js': [{ count: 1, kind: 'preservation', reason: 'enable favorite actions only after resolving the selected source authoritatively' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],

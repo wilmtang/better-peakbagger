@@ -62,6 +62,11 @@ Expand any day for hourly detail in mountain-local time. On saved ascents,
 hover or select a timed GPX point to see the weather for that hour. Weather
 cards show model estimates; check local mountain forecasts before heading out.
 
+On western US and Alaska peaks, **Nearby snow** adds public NRCS SNOTEL snow
+depth and water-equivalent observations, station distance/elevation, and a
+seven-day trend. Nearby stations describe their own location; route and summit
+conditions can differ. [Nearby snow guide](docs/nearby-snow.md).
+
 Check sunrise, sunset, Moon phase, and Sun and Moon directions on a peak map
 or GPX route with the offline **Sun & Moon** calculator. Move the time slider
 to explore the light throughout the day. Times assume a level horizon and do
