@@ -221,6 +221,17 @@ tile providers receive the area viewed and ordinary request data such as your
 IP address. You can disable 3D at any time; Peakbagger's 2D maps remain
 available.
 
+### Why does the weather differ from Windy.com or other forecasts?
+
+Even with the same model, location, and forecast hour, services can use different
+model runs, nearby forecast points, elevation adjustments, and weather icons.
+Better Peakbagger uses [Open-Meteo](https://open-meteo.com/), which adjusts
+temperatures to the summit elevation when available. That can make a summit
+forecast cooler than one for the model's lower terrain. “Overcast” can also mean
+high cloud above the mountain, without fog at the summit. Open **Source details**
+in the weather card to explore the model, forecast location, and elevation used.
+[More about summit weather](docs/peak-weather.md).
+
 ### Does Better Peakbagger place extra demand on Peakbagger or bypass its protections?
 
 Some features make additional requests, so zero impact would be misleading.
