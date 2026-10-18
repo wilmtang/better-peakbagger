@@ -951,6 +951,7 @@ test('draft apply leases are exclusive, persisted, expiring, and one-use', async
     assert.deepEqual(harness.values.bpbDraftTabs['100'].applyLease, {
         token: apply.applyLeaseToken,
         expiresAt: clock.now + 30_000,
+        documentKey: 'document:test-document-100',
     });
 
     const duplicateReady = await harness.send(
@@ -4086,4 +4087,45 @@ test('privileged extension routes reject web-accessible and wrong packaged surfa
     assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, {
         tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/options/drafts.html',
     })).ok, true);
+});
+
+test('a new draft document replaces an abandoned lease and rejects the old acknowledgment', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    await h.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const oldPage = { tab: { id: 100 }, documentId: 'old-document' };
+    const newPage = { ...oldPage, documentId: 'new-document' };
+    const ready = { type: 'DRAFT_READY', pid: '7', cid: '77' };
+    const oldApply = await h.send(ready, oldPage);
+    assert.equal(oldApply.action, 'apply');
+    assert.equal((await h.send(ready, oldPage)).action, 'wait');
+    h.tabUpdated.listeners.forEach(listener => listener(100, { status: 'loading' }));
+    const replacement = await h.send(ready, newPage);
+    assert.equal(replacement.action, 'apply', 'reload must not wait for the old document lease');
+    assert.notEqual(replacement.applyLeaseToken, oldApply.applyLeaseToken);
+    const ack = apply => ({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId,
+        pid: '7', cid: '77', applyLeaseToken: apply.applyLeaseToken });
+    assert.equal((await h.send(ack(oldApply), oldPage)).ok, false);
+    assert.equal((await h.send(ack(replacement), oldPage)).ok, false, 'a token cannot cross documents');
+    assert.equal((await h.send(ack(replacement), newPage)).ok, true);
+    assert.equal((await h.send(ack(replacement), newPage)).ok, false);
+});
+
+test('draft document nonces recover reloads when the browser omits documentId', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    await h.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const sender = { tab: { id: 100 }, documentId: undefined };
+    const ready = { type: 'DRAFT_READY', pid: '7', cid: '77', documentToken: 'document-nonce-before-reload' };
+    const first = await h.send(ready, sender);
+    const waiting = await h.send(ready, sender);
+    assert.equal(waiting.action, 'wait');
+    assert.equal(waiting.retryAt, first.applyLeaseExpiresAt);
+    const afterReload = { ...ready, documentToken: 'document-nonce-after-reload' };
+    const second = await h.send(afterReload, sender);
+    assert.equal(second.action, 'apply');
+    assert.notEqual(second.applyLeaseToken, first.applyLeaseToken);
+    assert.equal((await h.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId,
+        pid: '7', cid: '77', applyLeaseToken: second.applyLeaseToken,
+        documentToken: afterReload.documentToken }, sender)).ok, true);
 });

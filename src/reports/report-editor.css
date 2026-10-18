@@ -1061,13 +1061,15 @@
     all: initial;
     position: fixed;
     top: 12px;
+    left: 12px;
     right: 12px;
     z-index: 2147483647;
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    width: calc(100vw - 24px);
+    width: auto;
     max-width: 460px;
+    margin-left: auto;
     box-sizing: border-box;
     padding: 11px 12px 11px 14px;
     color: var(--bpb-draft-color);
@@ -1092,7 +1094,14 @@
 .bpb-draft-banner-off { --bpb-draft-color: #475467; --bpb-draft-bg: #f2f4f7; --bpb-draft-border: #d0d5dd; }
 .bpb-draft-banner-waiting { --bpb-draft-color: #175cd3; --bpb-draft-bg: #eff8ff; --bpb-draft-border: #b2ddff; }
 .bpb-draft-banner-error { --bpb-draft-color: #b42318; --bpb-draft-bg: #fef3f2; --bpb-draft-border: #fecdca; }
-.bpb-draft-banner-text { all: initial; flex: 1; color: inherit; font: inherit; }
+.bpb-draft-banner-text { all: initial; flex: 1; min-width: 0; overflow-wrap: anywhere; color: inherit; font: inherit; }
+.bpb-draft-banner:has(.bpb-draft-banner-action) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    row-gap: 8px;
+}
+.bpb-draft-banner:has(.bpb-draft-banner-action) .bpb-draft-banner-text { grid-column: 1 / -1; grid-row: 2; }
+.bpb-draft-banner:has(.bpb-draft-banner-action) .bpb-draft-banner-dismiss { grid-column: 2; grid-row: 1; }
 .bpb-draft-banner-dismiss,
 .bpb-draft-banner-action {
     all: initial;
@@ -1104,7 +1113,7 @@
     outline-offset: 1px;
 }
 .bpb-draft-banner-dismiss { width: 24px; height: 24px; border-radius: 6px; font: 700 20px/22px system-ui, sans-serif; text-align: center; }
-.bpb-draft-banner-action { padding: 4px 8px; background: #fff; border: 1px solid var(--bpb-draft-border); border-radius: 6px; font: 600 12px/1.4 system-ui, sans-serif; white-space: nowrap; }
+.bpb-draft-banner-action { grid-column: 1; grid-row: 1; justify-self: start; max-width: 100%; box-sizing: border-box; padding: 4px 8px; background: #fff; border: 1px solid var(--bpb-draft-border); border-radius: 6px; font: 600 12px/1.4 system-ui, sans-serif; white-space: normal; }
 .bpb-draft-banner-dismiss:focus-visible,
 .bpb-draft-banner-action:focus-visible { outline-color: currentColor; }
 .bpb-draft-banner-action:disabled { cursor: default; opacity: .6; }

@@ -20,6 +20,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['layout-stability', '--firefox-only', '--surface=maps'],
             [['verify-layout-stability.mjs', '--firefox-only', '--surface=maps']]],
         [['multi-summit'], [['verify-multi-summit.mjs']]],
+        [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mjs']]],
         [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
@@ -87,5 +88,13 @@ test('CLI help lists the targets and invalid selections exit unsuccessfully', ()
         const result = spawnSync(process.execPath, [script('verify.mjs'), ...args], { encoding: 'utf8', timeout: 5_000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Unknown .*target/);
+    }
+});
+
+test('draft recovery rejects missing, unknown and extra selections before opening a browser', () => {
+    for (const args of [[], ['chromee'], ['chrome', '--unknown']]) {
+        const result = spawnSync(process.execPath, [script('verify-draft-recovery.mjs'), ...args], { encoding: 'utf8' });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /Usage: node scripts\/verify-draft-recovery/);
     }
 });

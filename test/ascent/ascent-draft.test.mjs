@@ -774,3 +774,37 @@ test('empty GPX cannot reach Preview even if it passes the element allowlist', a
     assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
     dom.window.close();
 });
+
+test('preparation rollback replaces stale busy feedback with explicit reload recovery', async () => {
+    const { dom, errors } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+        fields: { date: '2026-07-01', suffix: 'b', fillAscentDetails: false },
+        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"><extensions/></trkpt></trkseg></trk></gpx>',
+    } : { ok: true });
+    try {
+        await waitForCondition(() => errors.length > 0);
+        const doc = dom.window.document;
+        assert.equal(doc.getElementById('SuffixText').value, '');
+        assert.equal(doc.getElementById('GPXUpload').files.length, 0);
+        assert.equal(doc.getElementById('SaveButton').disabled, true);
+        assert.match(doc.getElementById('SaveButton').title, /Reload this ascent form/);
+        assert.equal(doc.querySelector('.bpb-draft-banner-action')?.textContent, 'Reload ascent form');
+        assert.match(doc.getElementById('bpb-draft-banner').textContent, /privacy check/);
+    } finally { dom.window.close(); }
+});
+
+test('a lease wait retries at its expiry and keeps Save blocked until the final banner', async () => {
+    let readyCalls = 0;
+    const { dom } = loadDraft(message => {
+        if (message.type !== 'DRAFT_READY') return { ok: true };
+        readyCalls++;
+        return readyCalls === 1
+            ? { action: 'wait', message: 'This draft is already being prepared.', retryAt: Date.now() + 10 }
+            : { action: 'banner', classification: 'strong', confidence: 90 };
+    });
+    try {
+        await waitForCondition(() => readyCalls === 2);
+        assert.equal(readyCalls, 2);
+        assert.equal(dom.window.document.getElementById('SaveButton').disabled, false);
+    } finally { dom.window.close(); }
+});

@@ -3024,6 +3024,15 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         return { state, message };
     };
 
+    const draftDocumentKey = (message, sender) => {
+        if (typeof sender.documentId === 'string' && sender.documentId) return `document:${sender.documentId}`;
+        // Firefox versions/contexts without documentId still get a fresh
+        // content-script nonce on navigation. Page/frame authorization remains
+        // mandatory; this nonce owns a lease, never access to the draft.
+        return typeof message.documentToken === 'string' && /^[a-z0-9-]{8,100}$/i.test(message.documentToken)
+            ? `nonce:${message.documentToken}` : null;
+    };
+
     const draftReadyTransaction = async (message, sender) => {
         const tabId = sender.tab?.id;
         if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
@@ -3135,17 +3144,23 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }
         const applyLeaseToken = makeId();
         const applyLeaseExpiresAt = now() + DRAFT_APPLY_LEASE_MS;
-        const claimed = await mutateMap(DRAFTS_KEY, map => {
+        const documentKey = draftDocumentKey(message, sender);
+        if (!documentKey) return { action: 'error', message: 'Reload this ascent form to prepare its draft.' };
+        const claim = await mutateMap(DRAFTS_KEY, map => {
             const current = map[tabId];
             const first = current ? firstPendingDraft(map, current.jobId) : null;
             if (!sameDraftIdentity(current, draft) || !isFresh(current)
                 || first?.tabId !== tabId || current.previewStarted || current.complete
-                || (current.applyLease && current.applyLease.expiresAt > now())) return false;
-            current.applyLease = { token: applyLeaseToken, expiresAt: applyLeaseExpiresAt };
-            return true;
+                || (current.applyLease?.documentKey === documentKey
+                    && current.applyLease.expiresAt > now())) {
+                return { ok: false, retryAt: current?.applyLease?.expiresAt };
+            }
+            current.applyLease = { token: applyLeaseToken, expiresAt: applyLeaseExpiresAt, documentKey };
+            return { ok: true };
         });
-        if (!claimed) {
-            return { action: 'wait', peakName, message: 'This draft is already being prepared.' };
+        if (!claim.ok) {
+            return { action: 'wait', peakName, message: 'This draft is already being prepared.',
+                retryAt: claim.retryAt };
         }
         return {
             action: 'apply',
@@ -3252,6 +3267,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 || !validateDraftPage(draft, page) || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete
                 || typeof message.applyLeaseToken !== 'string'
                 || draft.applyLease?.token !== message.applyLeaseToken
+                || draft.applyLease.documentKey !== draftDocumentKey(message, sender)
                 || draft.applyLease.expiresAt <= now()) {
                 if (draft?.applyLease?.expiresAt <= now()) draft.applyLease = null;
                 return { ok: false };

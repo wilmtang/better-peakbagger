@@ -144,6 +144,7 @@ test('BigMap showcase contains only synthetic multi-route interaction data', () 
 // disabled: verify -- terrain and verify -- terrain firefox time out, and
 // showcase:render writes that refusal into the store listing screenshots.
 const FIXTURE_SERVERS = [
+    'scripts/verify-draft-recovery.mjs',
     'scripts/verify-terrain-visual.mjs',
     'scripts/verify-terrain-lod.mjs',
     'scripts/verify-firefox-terrain.mjs',

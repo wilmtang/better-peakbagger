@@ -17,6 +17,12 @@ import { units as Units } from '../ui/units.js';
     const { FEET_PER_METER, METERS_PER_MILE } = Units;
     const BANNER_ID = 'bpb-draft-banner';
     const BANNER_DISMISS_MS = 4000;
+    const documentToken = crypto.randomUUID();
+    let leaseRetryTimer = null;
+    const clearLeaseRetry = () => {
+        if (leaseRetryTimer !== null) clearTimeout(leaseRetryTimer);
+        leaseRetryTimer = null;
+    };
     const SAVE_BUTTON_IDS = new Set(['SaveButton', 'SaveButton2']);
     const DRAFT_FAILURES = Object.freeze({
         'form-unavailable': 'Peakbagger’s ascent form has changed or did not load completely.',
@@ -180,6 +186,13 @@ import { units as Units } from '../ui/units.js';
     const showBanner = (kind, message, options = {}) => {
         const { actionLabel = '', onAction = null, persistent = false } = options;
         const existing = document.getElementById(BANNER_ID);
+        if (kind === 'error' && actionLabel && existing?.classList.contains('bpb-draft-banner-error')
+            && existing.querySelector('.bpb-draft-banner-action')?.textContent === actionLabel) {
+            // Repeated failure notifications must not replace a focused
+            // recovery action. Error banners persist and have no dismiss timer.
+            existing.querySelector('.bpb-draft-banner-text').textContent = message;
+            return;
+        }
         if (existing) existing.remove();
         const banner = document.createElement('div');
         banner.id = BANNER_ID;
@@ -520,6 +533,7 @@ import { units as Units } from '../ui/units.js';
                 pid: payload.pid,
                 cid: payload.cid,
                 applyLeaseToken: transaction.token,
+                documentToken,
             });
             assertApplyActive(transaction);
             if (!acknowledgment?.ok) throw draftError('preview-conflict');
@@ -536,6 +550,7 @@ import { units as Units } from '../ui/units.js';
     };
 
     const runInitialize = async () => {
+        clearLeaseRetry();
         const ids = pageIds();
         if (!ids.pid || !ids.cid) return;
         const connectionGeneration = draftConnectionGeneration;
@@ -543,6 +558,7 @@ import { units as Units } from '../ui/units.js';
             const response = await ext.runtime.sendMessage({
                 type: 'DRAFT_READY',
                 ...ids,
+                documentToken,
                 previewResult: readPreviewResult()
             });
             if (connectionGeneration !== draftConnectionGeneration) return;
@@ -580,6 +596,12 @@ import { units as Units } from '../ui/units.js';
                 showBanner('waiting', response.message || 'Waiting for the previous GPS Preview to finish.', {
                     persistent: true
                 });
+                if (Number.isFinite(response.retryAt)) {
+                    leaseRetryTimer = setTimeout(() => {
+                        leaseRetryTimer = null;
+                        if (connectionGeneration === draftConnectionGeneration) void initialize();
+                    }, Math.max(0, response.retryAt - Date.now()));
+                }
                 return;
             }
             if (response.action === 'preview-error') {
@@ -595,9 +617,15 @@ import { units as Units } from '../ui/units.js';
                 await applyAndPreview(response);
             }
         } catch (error) {
+            if (connectionGeneration !== draftConnectionGeneration) return;
             console.error('Better Peakbagger: draft preparation failed', error);
+            setSaveBlocked('GPS Preview could not be prepared. Reload this ascent form before saving.');
             showBanner('error', DRAFT_FAILURES[error?.code]
-                || 'Draft preparation stopped unexpectedly. Reload the ascent form and try again.');
+                || 'Draft preparation stopped unexpectedly. Reload the ascent form and try again.', {
+                persistent: true,
+                actionLabel: 'Reload ascent form',
+                onAction: () => location.reload(),
+            });
         }
     };
 
@@ -610,6 +638,7 @@ import { units as Units } from '../ui/units.js';
     ext.runtime.onMessage?.addListener(message => {
         if (message?.type === 'DRAFT_PROCEED') void initialize();
         if (message?.type === 'DRAFT_CLEARED') {
+            clearLeaseRetry();
             setSaveBlocked('');
             draftConnectionGeneration++;
             if (activeApply) {
@@ -619,6 +648,8 @@ import { units as Units } from '../ui/units.js';
             showBanner('error', 'The cached capture was discarded. This draft is no longer connected; return to the activity to capture again.');
         }
     });
+
+    window.addEventListener('pagehide', clearLeaseRetry);
 
     void initialize();
 })();

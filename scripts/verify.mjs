@@ -13,6 +13,7 @@ const targets = {
     'capture-popup': [['verify-capture-popup.mjs']],
     'layout-stability': [['verify-layout-stability.mjs']],
     'multi-summit': [['verify-multi-summit.mjs']],
+    'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],
     'inline-buddies': [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']],
     'capture-flow': [['verify-capture-flow.mjs']],
     'capture-readiness': [['verify-capture-readiness.mjs']],
