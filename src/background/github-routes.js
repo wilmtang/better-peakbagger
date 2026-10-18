@@ -16,6 +16,7 @@ import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-que
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
+import { createPackagedPageMatcher } from './sender-policy.js';
 
 const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
 const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
@@ -57,7 +58,6 @@ export const createGithubRouteTable = definitions => {
     };
 };
 
-const extensionPage = handler => ({ handler, extensionOnly: true });
 const peakbaggerPage = handler => ({ handler, extensionOnly: false });
 
 export function createGithubRoutes({
@@ -77,6 +77,17 @@ export function createGithubRoutes({
     photoBackupSettings = Settings,
     trustedActions = null,
 }) {
+    const optionsPages = ['options/options.html'];
+    const climberPages = [...optionsPages, 'options/favorites.html'];
+    const photoPages = [...optionsPages, 'photos/photos.html'];
+    const extensionPage = (handler, pages = optionsPages) => {
+        const accepts = createPackagedPageMatcher(ext, pages);
+        return {
+            extensionOnly: true,
+            handler: (message, sender) => accepts(sender)
+                ? handler(message, sender) : { ok: false, error: { code: 'forbidden' } },
+        };
+    };
     // ---- GitHub ascent and TR backup: auth + repository setup --------------
     //
     // These GitHub routes keep the token in the worker and never return it in a
@@ -1875,7 +1886,7 @@ export function createGithubRoutes({
 
     const routeTable = createGithubRouteTable({
         PEAKBAGGER_MY_ASCENTS: extensionPage(() => peakbaggerMyAscents()),
-        GITHUB_AUTH_STATUS: extensionPage(() => githubStatus()),
+        GITHUB_AUTH_STATUS: extensionPage(() => githubStatus(), [...climberPages, 'photos/photos.html']),
         GITHUB_AUTH_BEGIN: extensionPage(() => githubBeginAuth()),
         GITHUB_AUTH_STATE: extensionPage(() => githubPollAuth()),
         GITHUB_AUTH_DISCOVER: extensionPage(() => githubDiscoverRepos()),
@@ -1892,16 +1903,16 @@ export function createGithubRoutes({
         GITHUB_ASCENT_BACKUP_SUMMARY: extensionPage(() => githubAscentBackupSummary()),
         GITHUB_BACKUP_PROFILE_STATUS: peakbaggerPage((_message, sender) => githubProfileBackupStatus(sender)),
         GITHUB_BACKUP_PROFILE_BATCH: peakbaggerPage((message, sender) => backupProfileBatch(message, sender)),
-        GITHUB_IGNORED_LIST: extensionPage(ignoredListAction),
-        GITHUB_FAVORITES_BACKUP: extensionPage(() => backupFavorites()),
-        GITHUB_FAVORITES_RESTORE: extensionPage(() => restoreFavorites()),
+        GITHUB_IGNORED_LIST: extensionPage(ignoredListAction, climberPages),
+        GITHUB_FAVORITES_BACKUP: extensionPage(() => backupFavorites(), climberPages),
+        GITHUB_FAVORITES_RESTORE: extensionPage(() => restoreFavorites(), climberPages),
         GITHUB_SETTINGS_BACKUP: extensionPage(() => backupSettings()),
         GITHUB_SETTINGS_RESTORE: extensionPage(() => restoreSettings()),
-        GITHUB_PHOTOS_STATUS: extensionPage((message, sender) => photoBackupStatus(message, sender)),
-        GITHUB_PHOTOS_BACKUP: extensionPage((_message, sender) => backupPhotoLibrary({ sender })),
-        GITHUB_PHOTOS_RESTORE_PREVIEW: extensionPage((message, sender) => previewPhotoLibraryRestore(message, sender)),
-        GITHUB_PHOTOS_RESTORE: extensionPage((message, sender) => restorePhotoLibrary(message, sender)),
-        GITHUB_PHOTOS_CHANGED: extensionPage((message, sender) => photoLibraryChanged(message, sender)),
+        GITHUB_PHOTOS_STATUS: extensionPage((message, sender) => photoBackupStatus(message, sender), photoPages),
+        GITHUB_PHOTOS_BACKUP: extensionPage((_message, sender) => backupPhotoLibrary({ sender }), photoPages),
+        GITHUB_PHOTOS_RESTORE_PREVIEW: extensionPage((message, sender) => previewPhotoLibraryRestore(message, sender), photoPages),
+        GITHUB_PHOTOS_RESTORE: extensionPage((message, sender) => restorePhotoLibrary(message, sender), photoPages),
+        GITHUB_PHOTOS_CHANGED: extensionPage((message, sender) => photoLibraryChanged(message, sender), ['photos/photos.html']),
     });
     const { handlers } = routeTable;
 

@@ -33,6 +33,7 @@ import { createPhotoRoutes } from './photo-routes.js';
 import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
 import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
+import { createPackagedPageMatcher } from './sender-policy.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
@@ -2592,16 +2593,22 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // tab serves as its own draft tab after the same identity checks.
 
     const uploadPageIdentity = sender => {
-        if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) return null;
+        if (sender?.id !== ext.runtime.id || sender?.frameId !== 0
+            || !isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) return null;
         let url;
         try {
             url = new URL(sender.url);
         } catch {
             return null;
         }
-        if (!/\/climber\/ascentedit\.aspx$/i.test(url.pathname)) return null;
-        const pid = Number.parseInt(url.searchParams.get('pid'), 10);
+        if (!/^\/climber\/ascentedit\.aspx$/i.test(url.pathname)
+            || ['pid', 'cid'].some(key => url.searchParams.getAll(key).length > 1)) return null;
+        const pidText = url.searchParams.get('pid');
         const cid = url.searchParams.get('cid');
+        if ((pidText !== null && !/^-?\d+$/.test(pidText))
+            || (cid !== null && !/^[1-9]\d*$/.test(cid))) return null;
+        const pid = pidText === null ? null : Number(pidText);
+        if (pid !== null && !Number.isSafeInteger(pid)) return null;
         return {
             tabId: sender.tab.id,
             windowId: sender.tab.windowId,
@@ -3023,7 +3030,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const drafts = await readMap(DRAFTS_KEY);
         const draft = drafts[tabId];
         if (!isFresh(draft)) return { action: 'ignore' };
-        if (!validateDraftPage(draft, message)) {
+        const page = uploadPageIdentity(sender);
+        if (!page || !validateDraftPage(draft, page) || !validateDraftPage(draft, message)) {
             return { action: 'error', message: 'This Peakbagger page does not match its prepared ascent draft.' };
         }
         const jobs = await readMap(JOBS_KEY);
@@ -3235,11 +3243,13 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const previewStartedTransaction = async (message, sender) => {
         const tabId = sender.tab?.id;
+        const page = uploadPageIdentity(sender);
+        if (!page) return { ok: false };
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
             const currentDraft = draft ? firstPendingDraft(drafts, draft.jobId) : null;
             if (!isFresh(draft) || currentDraft?.tabId !== tabId || draft.jobId !== message.jobId
-                || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete
+                || !validateDraftPage(draft, page) || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete
                 || typeof message.applyLeaseToken !== 'string'
                 || draft.applyLease?.token !== message.applyLeaseToken
                 || draft.applyLease.expiresAt <= now()) {
@@ -3261,10 +3271,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const dayStatsAppliedTransaction = async (message, sender) => {
         const tabId = sender.tab?.id;
+        const page = uploadPageIdentity(sender);
+        if (!page) return { ok: false };
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
             if (!isFresh(draft) || !draft.complete || !draft.dayStatsPending || draft.jobId !== message.jobId
-                || !validateDraftPage(draft, message)) return { ok: false };
+                || !validateDraftPage(draft, page) || !validateDraftPage(draft, message)) return { ok: false };
             draft.dayStatsPending = false;
             draft.expiresAt = now() + JOB_TTL_MS;
             return { ok: true };
@@ -3342,13 +3354,18 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     // Only extension-owned pages may call account setup and navigation routes.
-    const isExtensionPage = sender => {
-        try { return !!(sender?.url && sender.url.startsWith(ext.runtime.getURL(''))); }
-        catch { return false; }
-    };
+    const isExtensionPage = createPackagedPageMatcher(ext, [
+        'popup/popup.html', 'options/options.html', 'options/favorites.html',
+        'options/drafts.html', 'photos/photos.html',
+    ]);
+    const isPopupPage = createPackagedPageMatcher(ext, ['popup/popup.html']);
+    const captureControlTypes = new Set([
+        'CAPTURE_START', 'CAPTURE_STATUS', 'CAPTURE_CANCEL', 'CAPTURE_CLEAR',
+        'CAPTURE_SELECTION', 'CAPTURE_OPEN_DRAFTS', 'CAPTURE_FOCUS_RECOVERY',
+    ]);
 
     const focusCaptureRecoveryTab = async (message, sender) => {
-        if (!isExtensionPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isPopupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const sourceTabId = Number(message?.tabId);
         if (!Number.isInteger(sourceTabId)) return { ok: false, error: { code: 'invalid-tab' } };
         const job = (await readMap(JOBS_KEY))[sourceTabId];
@@ -3439,7 +3456,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         ext,
         now,
         isPeakbaggerSender,
-        isExtensionPage,
+        isExtensionPage: createPackagedPageMatcher(ext, ['options/drafts.html']),
         mutateMap,
     });
     const settingsFileRoutes = createSettingsFileRoutes({
@@ -3601,6 +3618,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
+            if (captureControlTypes.has(type) && !isPopupPage(sender)) {
+                return { ok: false, error: { code: 'forbidden' } };
+            }
             // Account setup and navigation helpers are extension-page only;
             // neither the GitHub token nor the signed-in climber identity
             // crosses to a content script.

@@ -166,6 +166,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             onChanged: event()
         },
         runtime: {
+            id: 'test-extension',
             onMessage: runtimeMessage,
             getURL: path => `chrome-extension://test-extension/${path}`
         },
@@ -470,8 +471,19 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
     const listener = runtimeMessage.listeners[0];
-    const send = (message, sender = {}) => new Promise(resolve => {
-        assert.equal(listener(message, sender, resolve), true);
+    const send = (message, sender = { url: 'chrome-extension://test-extension/popup/popup.html' }) => new Promise(resolve => {
+        // Supply browser-owned sender metadata for terse existing fixtures.
+        // Explicit undefined values remain available to test missing identity.
+        const actual = {
+            id: 'test-extension',
+            ...(sender.tab ? {
+                frameId: 0,
+                documentId: `test-document-${sender.tab.id}`,
+                url: tabs.get(sender.tab.id)?.url,
+            } : {}),
+            ...sender,
+        };
+        assert.equal(listener(message, actual, resolve), true);
     });
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
@@ -3983,4 +3995,95 @@ test('capture timestamp exceptions freeze at opening and reset for a fresh captu
         assert.equal(fresh.includeTimestampsOnce, undefined);
         assert.equal(harness.syncValues.bpbSettings.removeGpxTimestamps, true);
     }
+});
+
+
+test('capture controls reject foreign pages and embedded extension frames', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    const before = structuredClone(h.values.bpbCaptureJobs);
+    for (const sender of [
+        { tab: { id: 5 }, url: 'https://www.peakbagger.com/peak.aspx?pid=7' },
+        { tab: { id: 5 }, frameId: 8, url: 'chrome-extension://test-extension/terrain/terrain.html' },
+        { tab: { id: 5 }, frameId: 8, url: 'chrome-extension://test-extension/popup/popup.html' },
+        { url: 'chrome-extension://test-extension/photos/guide.html' },
+        { url: 'chrome-extension://test-extension/options/options.html' },
+        { url: 'chrome-extension://other-extension/popup/popup.html' },
+        { id: undefined, url: 'chrome-extension://test-extension/popup/popup.html' },
+        { tab: { id: 5 }, frameId: undefined, url: 'chrome-extension://test-extension/popup/popup.html' },
+    ]) {
+        for (const type of ['CAPTURE_START', 'CAPTURE_STATUS', 'CAPTURE_CANCEL', 'CAPTURE_CLEAR',
+            'CAPTURE_SELECTION', 'CAPTURE_OPEN_DRAFTS', 'CAPTURE_FOCUS_RECOVERY']) {
+            const reply = await h.send({ type, tabId: 1, selectedIds: [7] }, sender);
+            assert.equal(reply?.error?.code, 'forbidden', `${type}: ${JSON.stringify(sender)}`);
+        }
+    }
+    assert.deepEqual(h.values.bpbCaptureJobs, before);
+    assert.equal(h.values.bpbDraftTabs && Object.keys(h.values.bpbDraftTabs).length || 0, 0);
+    assert.equal((await h.send({ type: 'CAPTURE_STATUS', tabId: 1 }, {
+        tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/popup/popup.html',
+    })).phase, 'ready', 'a top-level packaged popup also works as a diagnostic tab');
+});
+
+test('draft handshakes reject forged page and frame identity before payload or state changes', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    await h.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const message = { type: 'DRAFT_READY', pid: '7', cid: '77' };
+    const base = { tab: { id: 100 }, frameId: 0,
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77' };
+    const untrusted = [
+        { ...base, frameId: 7 },
+        { ...base, frameId: undefined },
+        { ...base, id: undefined },
+        { ...base, url: undefined },
+        { ...base, url: 'chrome-extension://test-extension/terrain/terrain.html', frameId: 7 },
+        { ...base, url: 'https://evil.example/climber/ascentedit.aspx?pid=7&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/peak.aspx?pid=7&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=88' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7junk&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&pid=8&cid=77' },
+    ];
+    for (const sender of untrusted) {
+        const reply = await h.send(message, sender);
+        assert.notEqual(reply.action, 'apply', JSON.stringify(sender));
+        assert.equal(reply.gpx, undefined);
+        assert.equal(h.values.bpbDraftTabs[100].applyLease, null);
+    }
+    const apply = await h.send(message, base);
+    assert.equal(apply.action, 'apply');
+    for (const sender of untrusted) {
+        const reply = await h.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId,
+            pid: '7', cid: '77', applyLeaseToken: apply.applyLeaseToken }, sender);
+        assert.equal(reply.ok, false);
+        assert.equal(h.values.bpbDraftTabs[100].previewStarted, false);
+    }
+    Object.assign(h.values.bpbDraftTabs[100], { complete: true, dayStatsPending: true });
+    for (const sender of untrusted) {
+        assert.equal((await h.send({ type: 'DRAFT_DAY_STATS_APPLIED', jobId: apply.jobId,
+            pid: '7', cid: '77' }, sender)).ok, false);
+        assert.equal(h.values.bpbDraftTabs[100].dayStatsPending, true);
+    }
+});
+
+test('privileged extension routes reject web-accessible and wrong packaged surfaces', async () => {
+    const h = createHarness();
+    const types = ['GITHUB_AUTH_STATUS', 'GITHUB_AUTH_DISCONNECT', 'GITHUB_SETTINGS_BACKUP',
+        'GITHUB_SETTINGS_RESTORE', 'GITHUB_FAVORITES_BACKUP', 'GITHUB_FAVORITES_RESTORE'];
+    for (const sender of [
+        { tab: { id: 5 }, frameId: 9, url: 'chrome-extension://test-extension/terrain/terrain.html' },
+        { url: 'chrome-extension://test-extension/photos/guide.html' },
+        { tab: { id: 5 }, frameId: 9, url: 'chrome-extension://test-extension/options/options.html' },
+    ]) {
+        for (const type of types) assert.equal((await h.send({ type }, sender)).error, 'forbidden', type);
+        assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, sender)).ok, false);
+    }
+    const photo = { tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/photos/photos.html' };
+    assert.equal((await h.send({ type: 'GITHUB_AUTH_STATUS' }, photo)).hasToken, false);
+    assert.equal((await h.send({ type: 'GITHUB_AUTH_DISCONNECT' }, photo)).error.code, 'forbidden');
+    assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, photo)).ok, false);
+    assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, {
+        tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/options/drafts.html',
+    })).ok, true);
 });

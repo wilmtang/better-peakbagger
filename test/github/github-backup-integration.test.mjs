@@ -159,7 +159,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
     const listener = runtimeMessage.listeners[0];
-    const rawSend = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
+    const rawSend = (message, sender = {}) => new Promise(resolve => { listener(message, { id: 'test', ...(sender.tab ? { frameId: 0 } : {}), ...sender }, resolve); });
     let trustedActionSequence = 0;
     const send = async (message, sender = {}) => {
         const action = message?.type === 'GITHUB_BACKUP_ASCENT' && !message.auto

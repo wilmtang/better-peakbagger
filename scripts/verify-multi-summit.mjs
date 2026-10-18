@@ -99,7 +99,7 @@ try {
     await first.locator('#bpb-report-editor').waitFor();
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     const control = await context.newPage();
-    await control.goto(`chrome-extension://${new URL(worker.url()).host}/options/options.html`);
+    await control.goto(`chrome-extension://${new URL(worker.url()).host}/popup/popup.html`);
     await control.evaluate(() => {
         globalThis.draftTabEvents = [];
         const record = (event, tab) => {

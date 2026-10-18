@@ -6547,7 +6547,7 @@ try {
         const sourceUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=handoff-source`;
         await sourcePage.goto(sourceUrl, { waitUntil: 'load' });
         const controlPage = await context.newPage();
-        await controlPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        await controlPage.goto(`chrome-extension://${extensionId}/popup/popup.html`);
         const seeded = await controlPage.evaluate(async ({ sourceUrl }) => {
             const [sourceTab] = (await chrome.tabs.query({})).filter(tab => tab.url === sourceUrl);
             if (!sourceTab) return { error: 'source tab not found' };

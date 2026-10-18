@@ -8,7 +8,7 @@ the legitimate findings. Existing photo-library work is outside this change.
 
 | ID | Finding and scope | Required evidence | State |
 | --- | --- | --- | --- |
-| A1–A3 | Capture controls, draft delivery, and privileged UI routes need sender authorization. Restrict packaged surfaces and bind drafts to the actual top-frame Peakbagger URL. | Rejected foreign, embedded, wrong-page and wrong-identity senders; accepted intended callers; real extension startup in Chrome/Firefox. | Pending |
+| A1–A3 | Capture controls, draft delivery, and privileged UI routes need sender authorization. Restrict packaged surfaces and bind drafts to the actual top-frame Peakbagger URL. | Rejected foreign, embedded, wrong-page and wrong-identity senders; accepted intended callers; real extension startup in Chrome/Firefox. | Implemented; final integration pending |
 | A4 | A failed draft preparation leaves stale busy feedback and a lease that blocks reload recovery. Preserve Save blocking until Preview succeeds or the capture is discarded. | Rollback, failure/retry, document replacement, stale acknowledgments, exactly-once Preview and rendered recovery/geometry checks. | Pending |
 | A5 | Track-order comparison coerces unavailable distance to zero. | Mixed finite/null distance order agrees with suffix fallback. | Pending |
 | A6 | Startup reconciliation accepts a payload missing the timestamp-free variant required for delivery. | Incomplete and legacy payloads fail closed; complete payloads and the explicit timestamp choice remain usable. | Pending |
@@ -21,7 +21,12 @@ ledger is archived.
 
 ## Fixed and verified
 
-None yet.
+- A1–A3: three new authorization regressions failed against the original worker
+  and passed after the fix. The focused capture/photo-worker run passes 221
+  tests; GitHub integration, route-policy, report-draft and manifest tests also
+  passed in the initial focused run. ESLint and diff whitespace checks pass.
+  Hidden Chrome 153.0.8010.12 loads the real extension at 1000 by 760; final
+  browser results are recorded at closure.
 
 ## Intentionally not changed
 

@@ -14,10 +14,12 @@ const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';
 const HASH = 'a'.repeat(64);
 const photoSender = {
+    id: 'test-extension', frameId: 0,
     url: 'chrome-extension://test-extension/photos/photos.html?mode=library',
     tab: { id: 91 },
 };
 const optionsSender = {
+    id: 'test-extension', frameId: 0,
     url: 'chrome-extension://test-extension/options/options.html#github-photos-backup',
     tab: { id: 92 },
 };
@@ -164,6 +166,7 @@ const harness = async ({
     const alarms = new Map();
     const ext = {
         runtime: {
+            id: 'test-extension',
             getURL: path => `chrome-extension://test-extension/${path}`,
             getManifest: () => ({ version: '3.2.0' }),
         },
