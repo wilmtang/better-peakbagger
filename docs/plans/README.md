@@ -1,5 +1,8 @@
 # Active plans
 
+- [Capture trust and recovery audit](capture-trust-recovery-audit-2026-10-17.md)
+  — authorized remediation of sender checks, draft retry ownership, ordering,
+  payload recovery, and provider result filtering; verification in progress.
 
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
   — proposed; worldwide issuing-service links first, then opt-in regional
