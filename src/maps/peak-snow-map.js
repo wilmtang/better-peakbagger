@@ -8,7 +8,7 @@ import { createRetryCooldown } from '../ui/retry-cooldown.js';
 // MAIN world owns only rendering. The independent overlay never changes
 // Peakbagger's basemap, native markers, or layer picker. Toggling preserves
 // the camera; opening an edge popup may pan just enough to keep it readable.
-export function createPeakSnowMap({ mount, getContext, postTerrain }) {
+export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChange = () => {} }) {
     const doc = mount.ownerDocument, win = doc.defaultView;
     const button = doc.createElement('button'); button.id = 'bpb-snow-map-toggle'; button.type = 'button';
     button.className = 'bpb-snow-map-toggle'; button.hidden = true; button.setAttribute('aria-pressed', 'false');
@@ -58,6 +58,7 @@ export function createPeakSnowMap({ mount, getContext, postTerrain }) {
         button.title = selected ? `Hide SNOTEL stations within 50 km of this peak${stations ? ` (${stations.length})` : ''}`
             : 'Show SNOTEL stations within 50 km of this peak';
         button.classList.toggle('bpb-snow-map-loading', pending);
+        onLayoutChange();
     };
     const sendTerrain = () => postTerrain('snowStations', { snowStations: available && selected ? stations || [] : [] });
     const load = () => {

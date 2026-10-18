@@ -256,6 +256,15 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('a') === link;
     }), true, 'source link remains visible and usable in the minimum-size popover');
     await image('375-dark-3d-long-name'); cases.push({ width: 375, theme: 'dark', states: ['3D', 'long-name-popup'] });
+    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: false });
+    await wait(() => document.getElementById('bpb-snow-map-toggle').hidden, 'minimum map weather disabled');
+    await setSettings({ theme: 'dark', units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true });
+    await wait(() => !document.getElementById('bpb-snow-map-toggle').hidden, 'minimum map SNOTEL restored');
+    assert.equal(await evaluate(() => {
+        const snow = document.getElementById('bpb-snow-map-toggle').getBoundingClientRect();
+        const compass = document.getElementById('bpb-terrain-compass').getBoundingClientRect();
+        return snow.right <= compass.left || snow.left >= compass.right || snow.bottom <= compass.top || snow.top >= compass.bottom;
+    }), true, 'restoring SNOTEL on the minimum map keeps the compass clear');
     await evaluate(() => window.localStorage.removeItem('pbPeakMapViewport.v1'));
 
     await prepare(1440, 'dark'); await setZoom(2);
