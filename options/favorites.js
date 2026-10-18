@@ -441,7 +441,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         const tabs = extensionApi.tabs;
         const changes = extensionApi.storage.onChanged;
         let helperUrl = extensionApi.runtime.getURL?.('options/buddy-refresh.html');
-        if (!helperUrl || !tabs?.create || !tabs?.update || !tabs?.remove
+        if (!helperUrl || !tabs?.create || !tabs?.remove
             || !tabs?.sendMessage
             || !changes?.addListener || !changes?.removeListener) return UNAVAILABLE;
 
@@ -488,15 +488,6 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             }
             tabs.remove(tabId, () => { void extensionApi.runtime.lastError; });
         };
-        const navigateTab = (tabId, url) => {
-            if (promiseTabs) {
-                void tabs.update(tabId, { url, active: false }).catch(() => {});
-                return;
-            }
-            tabs.update(tabId, { url, active: false }, () => {
-                void extensionApi.runtime.lastError;
-            });
-        };
 
         const startedAt = Date.now();
         let listener = null;
@@ -506,6 +497,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         let finished = false;
         let reading = false;
         let readAgain = false;
+        let readHelper;
         const cachePromise = new Promise(resolve => {
             const finish = value => {
                 if (finished) return;
@@ -516,7 +508,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
                 timer = null;
                 resolve(value);
             };
-            const readHelper = async () => {
+            readHelper = async () => {
                 if (finished || !Number.isInteger(tab?.id)) return;
                 if (reading) { readAgain = true; return; }
                 reading = true;
@@ -552,13 +544,14 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         });
 
         try {
-            // Chrome can leave an inactive tab at about:blank when create()
-            // receives a URL whose load does not settle. Create a literal
-            // blank tab first, then start the extension-helper navigation
-            // without making its callback part of the import lifecycle.
-            tab = await createTab({ url: 'about:blank', active: false });
+            // Start at the packaged helper itself. A provisional about:blank
+            // followed by an immediate update can strand Chrome 128 at loading.
+            // The helper is local; its own redirect reaches the first-party site.
+            tab = await createTab({ url: helperUrl, active: false });
             if (!Number.isInteger(tab?.id)) return UNAVAILABLE;
-            navigateTab(tab.id, helperUrl);
+            // Completion/cache events may precede create's callback. Reconcile
+            // this exact helper immediately as well as on later notifications.
+            void readHelper();
             const cache = await cachePromise;
             return { cache, timedOut: cache == null };
         } catch {
