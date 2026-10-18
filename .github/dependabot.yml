@@ -26,8 +26,12 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    # Every other Monday at 09:00 UTC. Dependabot uses Fugit's modulo
+    # extension; a day-of-month step would reset at each month boundary.
     schedule:
-      interval: weekly
+      interval: cron
+      cronjob: "0 9 * * mon%2"
+      timezone: Etc/UTC
     # Raise every matching manifest minimum, even when its current caret range
     # already admits the new release. This is load-bearing for lockstep families
     # such as TipTap: grouping alone does not make an already-satisfied sibling
