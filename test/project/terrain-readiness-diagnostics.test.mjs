@@ -101,3 +101,55 @@ test('timeout evidence distinguishes loaded layers from pending tiles and lost G
     assert.deepEqual(result.map.layers, ['bpb-route']);
     assert.equal(result.map.loaded, false);
 });
+
+// Exercise the actual driver probe with a frame whose hit-test surface becomes
+// ready after its initial DOM appears. A wheel sent to the old surface is lost.
+test('scroll verification targets a settled canvas and accepts a quantized label when the scale width changes', async () => {
+    const source = await readFile(new URL('../../scripts/verify-terrain-visual.mjs', import.meta.url), 'utf8');
+    const start = source.indexOf('const assertPlainScrollZooms =');
+    const end = source.indexOf('\nconst navigate =', start);
+    assert.ok(start >= 0 && end > start);
+    const state = { loaded: false, pointerReady: false, zoom: 14, scale: '500 m', scaleWidth: 60 };
+    const inputs = [];
+    let gesture = { zoom: true, scale: true };
+    const rect = { left: 0, top: 0, width: 1000, height: 760, toJSON: () => ({ width: 1000, height: 760 }) };
+    const canvas = { getBoundingClientRect: () => rect };
+    const scale = { get textContent() { return state.scale; },
+        getBoundingClientRect: () => ({ width: state.scaleWidth }) };
+    const map = { loaded: () => state.loaded, isMoving: () => false,
+        getZoom: () => state.zoom, getCanvas: () => canvas };
+    const frame = { getBoundingClientRect: () => rect, contentWindow: { __bpbTerrainTestMap: map },
+        contentDocument: { querySelector: selector => selector === '.maplibregl-ctrl-scale' ? scale : null,
+            elementFromPoint: () => state.loaded ? canvas : null } };
+    const context = vm.createContext({
+        document: { getElementById: () => frame, elementFromPoint: () => state.loaded ? frame : null },
+        cdp: { call: async method => {
+            assert.equal(method, 'Input.dispatchMouseEvent');
+            inputs.push('wheel');
+            if (state.loaded && state.pointerReady) {
+                if (gesture.zoom) state.zoom++;
+                if (gesture.scale) state.scaleWidth = 95;
+            }
+        } },
+        moveTo: async () => { assert.equal(state.loaded, true); inputs.push('move'); state.pointerReady = true; },
+        delay: async () => {},
+    });
+    context.evaluate = async (_cdp, expression) => vm.runInContext(expression, context);
+    context.waitForPageState = async (_cdp, expression) => {
+        for (let attempt = 0; attempt < 4; attempt++) {
+            state.loaded = attempt > 0;
+            const result = vm.runInContext(expression, context);
+            if (result.ready) return result;
+        }
+        throw new Error('wheel did not zoom the current canvas');
+    };
+    await vm.runInContext(`(async () => { ${source.slice(start, end)} await assertPlainScrollZooms(cdp, 'test map'); })()`, context);
+    assert.deepEqual(inputs, ['move', 'wheel', 'wheel', 'wheel', 'wheel']);
+    assert.equal(state.scale, '500 m', 'the human-readable distance remains in the same quantized bucket');
+    assert.equal(state.scaleWidth, 95);
+    for (gesture of [{ zoom: false, scale: false }, { zoom: true, scale: false }, { zoom: false, scale: true }]) {
+        Object.assign(state, { loaded: false, pointerReady: false, zoom: 14, scaleWidth: 60 });
+        await assert.rejects(vm.runInContext(`(async () => { ${source.slice(start, end)} await assertPlainScrollZooms(cdp, 'test map'); })()`, context),
+            /plain scroll did not settle/);
+    }
+});
