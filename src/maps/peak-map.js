@@ -260,6 +260,18 @@ import { createPeakSnowMap } from './peak-snow-map.js';
             ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px`
             : '';
         terrainCompass.position();
+        // On the shortest map, the right-aligned station control leaves no
+        // room above 2D for the compass. Keep it beside 2D in that case.
+        const compass = terrainCompass.element;
+        compass.style.right = '';
+        const snowToggle = mount.querySelector('.bpb-snow-map-toggle');
+        if (state === 'active' && snowToggle && !snowToggle.hidden) {
+            const snowRect = snowToggle.getBoundingClientRect(), compassRect = compass.getBoundingClientRect();
+            if (compassRect.top < snowRect.bottom + 8) {
+                compass.style.bottom = getComputedStyle(terrainToggle).bottom;
+                compass.style.right = `${Math.round(mount.getBoundingClientRect().right - terrainToggle.getBoundingClientRect().left + 8)}px`;
+            }
+        }
         terrainFailureNotice.position();
     };
 

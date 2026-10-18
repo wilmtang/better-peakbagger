@@ -92,7 +92,7 @@
 /* A compact independent overlay control; feedback floats inside the map and
    never resizes it or moves the native content below it. */
 .bpb-snow-map-toggle {
-    position: absolute; top: 50px; right: 58px; z-index: 3;
+    position: absolute; top: 50px; right: 10px; z-index: 3;
     display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     box-sizing: border-box; width: 94px; height: 32px; padding: 4px 7px;
     border: 1px solid #aeb7bd; border-radius: 6px; background: #fff; color: #28333b;
@@ -106,8 +106,8 @@
 .bpb-snow-map-toggle:hover { filter: brightness(1.08); }
 .bpb-snow-map-toggle:focus-visible, .bpb-snow-map-notice button:focus-visible { outline: 2px solid #348bd0; outline-offset: 2px; }
 .bpb-snow-map-notice {
-    position: absolute; top: 88px; right: 58px; z-index: 3;
-    box-sizing: border-box; max-width: calc(100% - 68px); padding: 7px 10px;
+    position: absolute; top: 88px; right: 10px; z-index: 3;
+    box-sizing: border-box; max-width: calc(100% - 20px); padding: 7px 10px;
     border: 1px solid #aeb7bd; border-radius: 6px; background: #fff; color: #28333b;
     font: 12px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     box-shadow: 0 1px 4px #0003; text-align: left;
@@ -713,23 +713,15 @@ html:has(.bpb-terrain-frame-body),
     box-shadow: 0 1px 6px rgb(0 0 0 / 24%);
 }
 
-#bpb-terrain-map {
-    --bpb-snow-popup-top: 92px;
-    --bpb-snow-popup-right: 58px;
-}
-/* A fixed station popover avoids obscuring its own controls or moving the
-   camera to make room on short, pitched terrain views. Other popups retain
-   their native geographic anchors. */
 #bpb-terrain-map .bpb-snotel-map-popup {
-    left: 12px;
-    top: var(--bpb-snow-popup-top);
-    transform: none !important;
     z-index: 4;
 }
-#bpb-terrain-map .bpb-snotel-map-popup .maplibregl-popup-tip { display: none; }
 #bpb-terrain-map .bpb-snotel-popup {
-    max-height: calc(100vh - var(--bpb-snow-popup-top) - 56px);
+    max-height: max(60px, calc(100vh - 156px));
     overflow: auto;
+}
+@media (max-height: 300px) {
+    #bpb-terrain-map { --bpb-snotel-popup-margin: 128px; }
 }
 
 #bpb-terrain-map[data-theme="dark"] .maplibregl-popup-content {

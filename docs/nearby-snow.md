@@ -138,8 +138,11 @@ run against the unfixed, low-contrast blue link. The 3D check requires a hardwar
 renderer. The 320 by 240 minimum map size also checks that SNOTEL cannot cover
 the existing navigation controls and that a long station popup stays clear of
 SNOTEL. Both assertions detected the original overlaps. In 3D, station details
-use a fixed popover below the controls, leaving the camera steady. Unusually
-long content can scroll inside the popover at the minimum size.
+stay anchored to their marker with a visible arrow. Opening an edge popup pans
+only enough to keep it below the top controls and clear of navigation; unusually
+long content can scroll inside the popup at the minimum size. The SNOTEL button
+shares the map controls' right inset; on the shortest map the compass sits beside
+the 2D button to preserve both targets.
 Set `BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` to retain screenshots.
 This fixture proof does not establish live Peakbagger compatibility or native
 browser menus, OS focus/placement, or screen-reader speech.

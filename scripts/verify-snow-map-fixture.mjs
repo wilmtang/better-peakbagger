@@ -17,7 +17,7 @@ export async function snowMapDocument() {
     }));
     return `<!doctype html><html><head><style>${css}
         html,body,#map{height:100%;margin:0} #map{background:#dce6d7}
-        #selmap{position:absolute;top:10px;left:10px;z-index:1000}
+        #selmap{position:absolute;top:10px;right:10px;z-index:1000}
         </style></head><body><div id="map"></div>
         <select id="selmap"><option value="L_FIX">Fixture topographic map</option></select>
         <script>${js.replace(/<\/script/gi, '<\\/script')}</script><script>

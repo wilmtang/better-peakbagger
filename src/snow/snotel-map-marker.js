@@ -47,7 +47,7 @@ export function createTerrainSnotelMarkers({ maplibre, document: doc }) {
                     button.style.cssText = 'padding:0;border:0;background:transparent;width:24px;height:24px;cursor:pointer';
                     button.title = `${station.name} · SNOTEL`; button.setAttribute('aria-label', button.title); button.append(snotelSymbol(doc));
                     const popup = new maplibre.Popup({ className: 'bpb-snotel-map-popup', focusAfterOpen: false,
-                        maxWidth: 'min(260px, calc(100vw - var(--bpb-snow-popup-right) - 24px))' })
+                        anchor: 'bottom', offset: 16, maxWidth: 'min(260px, calc(100vw - var(--bpb-snotel-popup-margin, 80px)))' })
                         .setDOMContent(snotelPopup(doc, station));
                     popup.on('close', () => { if (openPopup === popup) openPopup = null; });
                     // Own activation as the summit buttons do. Native buttons
@@ -58,6 +58,22 @@ export function createTerrainSnotelMarkers({ maplibre, document: doc }) {
                         if (openPopup === popup) { closePopup(); return; }
                         closePopup(); openPopup = popup;
                         popup.setLngLat([station.longitude, station.latitude]).addTo(map);
+                        // Preserve the geographic arrow. Pan only enough to
+                        // expose an edge popup below the top controls and to
+                        // the left of the navigation stack.
+                        const element = popup.getElement?.(), container = map.getContainer?.();
+                        if (element && container && typeof map.panTo === 'function') {
+                            const r = element.getBoundingClientRect(), bounds = container.getBoundingClientRect();
+                            const rightInset = bounds.height < 300 ? 106 : 58;
+                            const dx = Math.min(0, r.left - bounds.left - 12) || Math.max(0, r.right - bounds.right + rightInset);
+                            const dy = Math.min(0, r.top - bounds.top - 88) || Math.max(0, r.bottom - bounds.bottom + 32);
+                            if (dx || dy) {
+                                const pin = button.getBoundingClientRect();
+                                map.panTo([station.longitude, station.latitude], { duration: 0,
+                                    offset: [pin.left + pin.width / 2 - bounds.left - bounds.width / 2 - dx,
+                                        pin.top + pin.height / 2 - bounds.top - bounds.height / 2 - dy] });
+                            }
+                        }
                     });
                     const marker = new maplibre.Marker({ element: button, anchor: 'center', opacityWhenCovered: 1 })
                         .setLngLat([station.longitude, station.latitude]).addTo(map);

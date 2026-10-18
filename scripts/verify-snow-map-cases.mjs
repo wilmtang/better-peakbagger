@@ -32,6 +32,22 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     const waitMarkers = count => waitForCondition(markerCount, { description: `${count} native snow markers`, timeoutMs: 10_000, isReady: value => value === count });
     const ready = () => wait(() => document.getElementById('bpb-snow-map-toggle')?.getAttribute('aria-busy') === 'false'
         && document.querySelector('.bpb-snow-map-notice')?.hidden === true, 'settled snow layer');
+    const aligned = state => assert.ok(Math.abs(state.map.x + state.map.width - state.toggle.x - state.toggle.width - 10) <= 1,
+        'SNOTEL shares the right inset of the map controls');
+    const popupAnchor = () => evaluateTerrain(() => {
+        const marker = [...document.querySelectorAll('.bpb-snotel-marker')].find(node => node.title.startsWith('Paradise'));
+        const popup = document.querySelector('.bpb-snotel-map-popup'), tip = popup.querySelector('.maplibregl-popup-tip');
+        const r = marker.getBoundingClientRect(), t = tip.getBoundingClientRect();
+        return { tipVisible: getComputedStyle(tip).display !== 'none',
+            dx: Math.abs(t.x + t.width / 2 - r.x - r.width / 2), dy: Math.abs(t.bottom - r.y - r.height / 2),
+            marker: { top: r.top, bottom: r.bottom, left: r.left, right: r.right }, viewport: { width: window.innerWidth, height: window.innerHeight } };
+    });
+    const anchored = state => {
+        assert.equal(state.tipVisible, true, 'the popup has a visible geographic arrow');
+        assert.ok(state.dx <= 2 && state.dy <= 20, `popup arrow stays beside its station: ${JSON.stringify(state)}`);
+        assert.ok(state.marker.top >= 0 && state.marker.bottom <= state.viewport.height
+            && state.marker.left >= 0 && state.marker.right <= state.viewport.width, `the popup's station stays visible: ${JSON.stringify(state)}`);
+    };
     const prepare = async (width, theme, mode = 'loading') => {
         await resize(width, 1100); await setSettings({ theme, units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true });
         await writeLocal({ bpbSnotelCatalogV1: null }); setMode(mode);
@@ -40,6 +56,17 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await evaluate(() => document.getElementById('bpb-peak-weather').scrollIntoView({ block: 'start' }));
         await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
             && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'settled neighboring forecast');
+        // Weather and terrain have independent settings readers. Wait for the
+        // terrain coordinator's actual input before its trusted activation.
+        await evaluate(() => {
+            window.__snotelTerrainEnabled = false;
+            window.addEventListener('message', event => {
+                if (event.source === window && event.origin === window.location.origin && event.data?.__bpbPeakMap === true
+                    && event.data.dir === 'toPage') window.__snotelTerrainEnabled = event.data.enable3dMap === true;
+            });
+            window.postMessage({ __bpbPeakMap: true, dir: 'toCS', type: 'get' }, window.location.origin);
+        });
+        await wait(() => window.__snotelTerrainEnabled === true, 'terrain settings available to the coordinator');
         await evaluate(() => {
             document.querySelector('.bpb-terrain-mount-peak').scrollIntoView({ block: 'center' });
             document.getElementById('bpb-snow-map-toggle').focus({ preventScroll: true });
@@ -50,6 +77,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await prepare(width, theme); const initial = await geometry();
         assert.equal(await evaluate(() => document.getElementById('bpb-snow-map-toggle').textContent), 'SNOTEL');
         assert.ok(initial.toggle.width <= 100 && initial.toggle.height <= 34, 'compact control');
+        aligned(initial);
         assert.ok(initial.toggle.x >= initial.map.x && initial.toggle.x + initial.toggle.width <= initial.map.x + initial.map.width, 'toggle inside map');
         await press(key('Enter'));
         await wait(() => document.getElementById('bpb-snow-map-toggle').getAttribute('aria-busy') === 'true', 'pending snow layer');
@@ -112,9 +140,19 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     cases.push({ states: ['error', 'retry', 'success'] });
 
     // The same outer toggle controls the real authorized extension renderer.
+    await evaluate(() => {
+        window.__snotelTerrainEvents = [];
+        window.addEventListener('click', event => {
+            if (event.target.closest?.('#bpb-terrain-toggle')) window.__snotelTerrainEvents.push({ click: event.isTrusted });
+        }, true);
+        window.addEventListener('message', event => {
+            if (event.data?.__bpbTerrain || event.data?.__bpbPeakMap) window.__snotelTerrainEvents.push(event.data);
+        });
+    });
     await click('#bpb-terrain-toggle');
     await waitForCondition(() => evaluate(() => ({ pressed: document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed'),
-        frame: !!document.getElementById('bpb-terrain-frame'), failure: document.querySelector('.bpb-terrain-failure')?.textContent })), {
+        frame: !!document.getElementById('bpb-terrain-frame'), failure: document.querySelector('.bpb-terrain-failure')?.textContent,
+        events: window.__snotelTerrainEvents?.slice(-8) })), {
         description: 'real 3D extension renderer', timeoutMs: 40_000, isReady: value => value.pressed === 'true' && value.frame,
     });
     const frameWait = (fn, description) => waitForCondition(() => evaluateTerrain(fn), { description, timeoutMs: 15_000 });
@@ -135,6 +173,22 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         const hint = document.querySelector('.bpb-terrain-hint');
         return !hint || getComputedStyle(hint).opacity === '0';
     }, 'gesture hint finishes hiding for station details'); await image('3d-popup');
+    anchored(await popupAnchor());
+    // Challenge the assertions with the previous, detached corner popover
+    // and inset control in disposable fixture DOM, without changing sources.
+    await evaluateTerrain(() => {
+        const style = document.createElement('style'); style.id = 'snotel-anchor-regression';
+        style.textContent = '.bpb-snotel-map-popup{left:12px!important;top:92px!important;transform:none!important}.bpb-snotel-map-popup .maplibregl-popup-tip{display:none!important}';
+        document.head.append(style);
+    });
+    const detached = await popupAnchor(); assert.throws(() => anchored(detached));
+    await evaluateTerrain(() => document.getElementById('snotel-anchor-regression').remove());
+    anchored(await popupAnchor());
+    const controlBefore = await geometry(); aligned(controlBefore);
+    await evaluate(() => document.getElementById('bpb-snow-map-toggle').style.right = '58px');
+    const inset = await geometry(); assert.throws(() => aligned(inset));
+    await evaluate(() => document.getElementById('bpb-snow-map-toggle').style.removeProperty('right'));
+    aligned(await geometry());
     await press(key('Escape')); await frameWait(() => !document.querySelector('.bpb-snotel-popup'), 'Escape closes station popup');
     assert.equal(await evaluate(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed')), 'true', 'popup Escape keeps 3D open');
     await click('#bpb-snow-map-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 0, '3D layer off');
@@ -164,6 +218,7 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     }), true, 'SNOTEL never covers the 3D navigation controls at the minimum map height');
     await evaluateTerrain(() => document.querySelector('.bpb-snotel-marker').focus()); await press(key('Space'));
     await frameWait(() => !!document.querySelector('.bpb-snotel-popup'), 'long-name 3D popup');
+    anchored(await popupAnchor()); aligned(await geometry());
     assert.equal(await evaluateTerrain(() => getComputedStyle(document.querySelector('.bpb-snotel-popup a')).color),
         'rgb(170, 208, 255)', 'NRCS link uses the readable dark popup palette');
     assert.equal(await evaluateTerrain(() => {
@@ -175,13 +230,15 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
     });
     assert.ok(popup.right - popup.left > 100 && popup.bottom - popup.top > 40, 'station details have a painted content area');
-    const control = await evaluate(() => {
+    const controls = await evaluate(() => {
         const frame = document.getElementById('bpb-terrain-frame').getBoundingClientRect();
-        const r = document.getElementById('bpb-snow-map-toggle').getBoundingClientRect();
-        return { left: r.left - frame.left, right: r.right - frame.left, top: r.top - frame.top, bottom: r.bottom - frame.top };
+        return ['bpb-snow-map-toggle', 'bpb-terrain-toggle', 'bpb-terrain-compass'].map(id => {
+            const r = document.getElementById(id).getBoundingClientRect();
+            return { id, left: r.left - frame.left, right: r.right - frame.left, top: r.top - frame.top, bottom: r.bottom - frame.top };
+        });
     });
-    assert.ok(popup.right <= control.left || popup.left >= control.right || popup.bottom <= control.top || popup.top >= control.bottom,
-        'station popup content stays clear of the SNOTEL control at minimum size');
+    for (const control of controls) assert.ok(popup.right <= control.left || popup.left >= control.right || popup.bottom <= control.top || popup.top >= control.bottom,
+        `station popup stays clear of ${control.id} at minimum size`);
     await frameWait(() => {
         const hint = document.querySelector('.bpb-terrain-hint');
         return !hint || getComputedStyle(hint).opacity === '0';
