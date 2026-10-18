@@ -16,6 +16,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [Trip Info audit remediation](../archive/trip-info-audit-remediation-2026-10-17.md)
+fixes incomplete-form handling before GPS Preview and corrects the Settings
+description. Its ledger records regression and hidden Chrome/Firefox evidence,
+with live Peakbagger persistence and native accessibility proof still open.
+
 The [October 17 capture trust and recovery audit](../archive/capture-trust-recovery-audit-2026-10-17.md)
 closes the confirmed sender, draft-reload, ordering, payload-recovery and provider
 allowlist findings locally. Its ledger records 2,880 passing tests, hidden
