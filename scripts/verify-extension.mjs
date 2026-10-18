@@ -36,6 +36,8 @@ import {
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
+    patchVerificationSettings,
+    waitForAnalyzerDarkFocus,
     readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
@@ -1136,10 +1138,7 @@ try {
 
         // Every other extension panel honors the Light/Dark setting; this page
         // shipped following only the OS color scheme.
-        const setVerificationTheme = theme => photoPage.evaluate(async value => {
-            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: value } });
-        }, theme);
+        const setVerificationTheme = theme => patchVerificationSettings(photoPage, { theme });
         await setVerificationTheme('dark');
         await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html`);
         const photoThemeState = await photoPage.waitForFunction(() => {
@@ -1664,11 +1663,8 @@ try {
         }
         if (process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT) {
             // The theme control lives on Settings; on this page set it through
-            // storage, which the shared panel-theme bootstrap reflects.
-            const setTheme = theme => optionsPage.evaluate(async value => {
-                const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
-            }, theme);
+            // the worker, which the shared panel-theme bootstrap reflects.
+            const setTheme = theme => patchVerificationSettings(optionsPage, { theme });
             await setTheme('dark');
             await optionsPage.waitForFunction(() => document.documentElement.getAttribute('data-bpb-theme') === 'dark');
             await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT });
@@ -2572,20 +2568,14 @@ try {
                 if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
                     const themePage = await context.newPage();
                     await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
-                    await themePage.evaluate(async () => {
-                        const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                        await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
-                    });
+                    await patchVerificationSettings(themePage, { theme: 'dark' });
                     await page.waitForFunction(() =>
                         document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
                     null, { timeout: 5000 });
                     await page.locator('#bpb-gpx-analysis').screenshot({
                         path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
                     });
-                    await themePage.evaluate(async () => {
-                        const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                        await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
-                    });
+                    await patchVerificationSettings(themePage, { theme: 'system' });
                     await themePage.close();
                 }
             }
@@ -2903,10 +2893,7 @@ try {
         (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.theme || 'system');
     try {
         for (const theme of ['light', 'dark']) {
-            await segmentSettings.evaluate(async value => {
-                const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
-            }, theme);
+            await patchVerificationSettings(segmentSettings, { theme });
             await verifyGpxSegments({
                 navigate: () => segmentPage.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-suspect`),
                 evaluate: fn => segmentPage.evaluate(fn),
@@ -2920,10 +2907,7 @@ try {
             });
         }
     } finally {
-        await segmentSettings.evaluate(async theme => {
-            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
-            await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme } });
-        }, savedSegmentTheme);
+        await patchVerificationSettings(segmentSettings, { theme: savedSegmentTheme });
         await segmentSettings.close();
         await segmentPage.close();
     }
@@ -3789,27 +3773,16 @@ try {
     if (extensionId) {
         const analyzerThemePage = await context.newPage();
         await analyzerThemePage.goto(`chrome-extension://${extensionId}/options/options.html`);
-        await analyzerThemePage.evaluate(async () => {
-            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
-        });
+        await patchVerificationSettings(analyzerThemePage, { theme: 'dark' });
         await offPage.waitForFunction(() =>
             document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
         null, { timeout: 5000 });
         await coordinateCanvas.focus();
         await coordinateCanvas.press('ArrowRight');
-        const darkCoordinateFocus = await coordinateCanvas.evaluate(canvas => {
-            const focus = getComputedStyle(canvas);
-            return {
-                focusVisible: canvas.matches(':focus-visible'),
-                outlineColor: focus.outlineColor,
-                outlineWidth: focus.outlineWidth
-            };
-        });
-        check(darkCoordinateFocus.focusVisible
-            && darkCoordinateFocus.outlineWidth === '3px'
-            && darkCoordinateFocus.outlineColor === 'rgb(121, 184, 255)',
-        `the analyzer dark-theme focus ring was not visible: ${JSON.stringify(darkCoordinateFocus)}`);
+        // The bridge attribute alone is not the rendered focus postcondition.
+        // Keep the exact keyboard, width and palette requirements while waiting
+        // for the current style, and report the final observed state on timeout.
+        await waitForAnalyzerDarkFocus(coordinateCanvas, { timeoutMs: 5000 });
         if (process.env.BPB_VERIFY_ROUTE_EXPLORER_DARK_SCREENSHOT) {
             await offPage.locator('#bpb-map-resize-handle').focus();
             await offPage.locator('#bpb-route-explorer').screenshot({
@@ -3824,10 +3797,7 @@ try {
                 path: process.env.BPB_VERIFY_ANALYZER_DARK_SCREENSHOT
             });
         }
-        await analyzerThemePage.evaluate(async () => {
-            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
-        });
+        await patchVerificationSettings(analyzerThemePage, { theme: 'system' });
         await analyzerThemePage.close();
     }
     check(off.visible === true,

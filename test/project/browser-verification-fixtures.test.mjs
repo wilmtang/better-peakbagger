@@ -6,12 +6,15 @@ import vm from 'node:vm';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
+import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.js';
 
 import {
     activateToolbarTarget,
     installAnalyzerBfcacheProbe,
     readAnalyzerBfcacheState,
     readAnalyzerChartState,
+    patchVerificationSettings,
+    waitForAnalyzerDarkFocus,
     readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
@@ -28,6 +31,79 @@ const executePageFunction = (pageFunction, context, ...args) => vm.runInNewConte
     context,
 );
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test('verifier theme changes preserve a pending page settings patch', async () => {
+    let stored = { theme: 'light', mapViewportWidth: 450 };
+    let signalRead;
+    let releaseRead;
+    const readStarted = new Promise(resolve => { signalRead = resolve; });
+    const readGate = new Promise(resolve => { releaseRead = resolve; });
+    let reads = 0;
+    const area = {
+        get: async () => {
+            const snapshot = { [STORAGE_KEY]: { ...stored } };
+            if (++reads === 1) {
+                signalRead();
+                await readGate;
+            }
+            return snapshot;
+        },
+        set: async values => { stored = values[STORAGE_KEY]; },
+    };
+    const worker = createSettingsStore({ area, sendMessage: null });
+    const page = { evaluate: (fn, patch) => executePageFunction(fn, { chrome: {
+        storage: { sync: area },
+        runtime: { sendMessage: async message => {
+            assert.equal(message.type, 'SETTINGS_PATCH');
+            return { ok: true, settings: await worker.applyPatch(message.patch) };
+        } },
+    } }, patch) };
+    const pendingMapWrite = worker.applyPatch({ mapViewportWidth: 520 });
+    await readStarted;
+    const themeWrite = patchVerificationSettings(page, { theme: 'dark' });
+    // Drain a raw read/replace if the verifier bypasses the pending worker.
+    // Then the delayed worker write would restore its stale light snapshot.
+    await new Promise(resolve => setImmediate(resolve));
+    releaseRead();
+    await Promise.all([pendingMapWrite, themeWrite]);
+    assert.equal(stored.theme, 'dark', 'a pending map patch must not restore the old light theme');
+    assert.equal(stored.mapViewportWidth, 520, 'the theme patch must preserve the page mutation');
+});
+
+test('verifier settings patches fail closed when the worker refuses the write', async () => {
+    for (const response of [null, { ok: false, error: { message: 'storage failed' } }, { ok: true }]) {
+        const page = { evaluate: (fn, patch) => executePageFunction(fn, { chrome: {
+            runtime: { sendMessage: async () => response },
+        } }, patch) };
+        await assert.rejects(patchVerificationSettings(page, { theme: 'dark' }),
+            /storage failed|Verification settings patch failed/);
+    }
+});
+
+test('dark analyzer focus waits for the rendered palette and diagnoses persistent failures', async () => {
+    const ready = { theme: 'dark', focused: true, focusVisible: true,
+        outlineStyle: 'solid', outlineWidth: '3px', outlineColor: 'rgb(121, 184, 255)' };
+    // Use the same object identity as the real activeElement inside the realm.
+    const canvas = states => ({ evaluate: fn => {
+        const state = states();
+        return vm.runInNewContext(`(${fn.toString()})(element)`, (() => {
+            const element = { closest: () => ({ dataset: { theme: state.theme } }),
+                matches: () => state.focusVisible };
+            return { element, document: { activeElement: state.focused ? element : null },
+                getComputedStyle: () => state };
+        })());
+    } });
+    let reads = 0;
+    const result = await waitForAnalyzerDarkFocus(canvas(() => ++reads < 3
+        ? { ...ready, outlineColor: 'rgb(23, 105, 170)' } : ready), { intervalMs: 1 });
+    assert.equal(reads, 3, 'the dark data attribute alone cannot prove the rendered palette');
+    assert.equal(result.outlineColor, ready.outlineColor);
+    for (const invalid of [{ theme: 'light' }, { focused: false }, { focusVisible: false },
+        { outlineStyle: 'none' }, { outlineWidth: '0px' }, { outlineColor: 'rgb(23, 105, 170)' }]) {
+        await assert.rejects(waitForAnalyzerDarkFocus(canvas(() => ({ ...ready, ...invalid })),
+            { timeoutMs: 0, intervalMs: 1 }), /dark-theme focus ring.*last value:/s);
+    }
+});
 
 test('toolbar capture selects its CDP target and waits for a visible loaded document', async () => {
     const calls = [];

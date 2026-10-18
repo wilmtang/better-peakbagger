@@ -51,6 +51,40 @@ export function createFailureCollector() {
     };
 }
 
+// Live verifier changes share the worker queue with page-owned writes. A raw
+// sync read/replace can restore an old theme after a pending map/units patch.
+export async function patchVerificationSettings(page, patch) {
+    return page.evaluate(async update => {
+        const response = await globalThis.chrome.runtime.sendMessage({
+            type: 'SETTINGS_PATCH', patch: update,
+        });
+        if (response?.ok !== true || !response.settings) {
+            throw new Error(response?.error?.message || 'Verification settings patch failed.');
+        }
+        return response.settings;
+    }, patch);
+}
+
+export async function waitForAnalyzerDarkFocus(canvas, options = {}) {
+    return waitForCondition(() => canvas.evaluate(element => {
+        const style = globalThis.getComputedStyle(element);
+        return {
+            theme: element.closest('#bpb-gpx-analysis')?.dataset.theme,
+            focused: document.activeElement === element,
+            focusVisible: element.matches(':focus-visible'),
+            outlineStyle: style.outlineStyle,
+            outlineWidth: style.outlineWidth,
+            outlineColor: style.outlineColor,
+        };
+    }), {
+        ...options,
+        description: 'the rendered analyzer dark-theme focus ring',
+        isReady: state => state.theme === 'dark' && state.focused && state.focusVisible
+            && state.outlineStyle === 'solid' && state.outlineWidth === '3px'
+            && state.outlineColor === 'rgb(121, 184, 255)',
+    });
+}
+
 export async function waitForCondition(read, {
     description = 'condition',
     intervalMs = 100,
