@@ -20,12 +20,15 @@ import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
 import { verifyWeatherModelRefresh, verifyAscentWeatherModelMemory } from './verify-weather-model-refresh.mjs';
 import { verifyPeakSnowCases } from './verify-peak-snow-cases.mjs';
 import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mjs';
+import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
+import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
-const snowMode = process.argv.includes('--snow');
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow'].includes(arg));
+const snowMapMode = process.argv.includes('--snow-map');
+const snowMode = process.argv.includes('--snow') || snowMapMode;
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map'].includes(arg));
 if (unknown.length || (snowMode && live)) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
 const peakMode = process.argv.includes('--peak') || snowMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
@@ -34,14 +37,16 @@ let primaryError = null, summary;
 try {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-ascent-weather-verify-'));
     resources.defer('weather verification profile', () => rm(temporaryRoot, { recursive: true, force: true }));
-    const fixture = await createBrowserFixtureServer({ temporaryRoot });
+    const fixture = await createBrowserFixtureServer({ temporaryRoot, ...(snowMapMode ? { peakMapDocument: await snowMapDocument() } : {}) });
     resources.defer('weather HTTPS fixtures', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, setZoom, readLocal, writeLocal, version;
+    let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, setZoom, readLocal, writeLocal, version;
+    const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
     const replyFor = url => {
         const requested = new URL(url);
+        if (requested.hostname === 'tiles.mapterhorn.com') return { status: 200, body: snowMapDem, contentType: 'image/webp', headers: {} };
         if (requested.hostname === 'wcc.sc.egov.usda.gov') {
             const body = !snowMode || mode === 'no-stations' ? snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })) : requested.pathname.endsWith('/stations')
                 ? snotelStations().map(station => mode === 'long-station' ? { ...station, name: `${station.name} · Experimental Mountain Snow Observation Station` } : station)
@@ -81,7 +86,8 @@ try {
         if (mode === 'negative-precipitation') for (const [key, values] of Object.entries(replyBody.hourly)) {
             if (key === 'precipitation' || key === 'precipitation_meteofrance_arpege_world') values[45] = -0.1;
         }
-        return { status: mode === 'error' ? 429 : mode === 'service-error' ? 503 : 200, body: JSON.stringify(replyBody), headers: mode === 'error' ? { 'retry-after': '120' } : {} };
+        return { status: !snowMapMode && mode === 'error' ? 429 : !snowMapMode && mode === 'service-error' ? 503 : 200,
+            body: JSON.stringify(replyBody), headers: !snowMapMode && mode === 'error' ? { 'retry-after': '120' } : {} };
     };
     const checkRequest = (url, headers) => {
         assert.ok(!headers.some(header => ['cookie', 'referer', 'authorization'].includes(header.name.toLowerCase())), 'weather request leaked credentials/referrer');
@@ -102,6 +108,10 @@ try {
         const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
         const options = new firefox.Options().addArguments('-headless').enableBidi().setProfile(profile)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com').setAcceptInsecureCerts(true);
+        if (snowMapMode) {
+            options.setPreference('webgl.sanitize-unmasked-renderer', false);
+            if (process.platform === 'darwin') options.setPreference('webgl.disable-angle', false);
+        }
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
         const service = new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${temporaryRoot}`);
         const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).setFirefoxService(service).build();
@@ -118,15 +128,15 @@ try {
             const listener = params => {
                 if (!params.isBlocked) return;
                 const url = params.request.url;
-                if (!/^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov)\//.test(url)) return;
+                if (!providerPattern.test(url)) return;
                 void (async () => {
                     const headers = params.request.headers.map(header => ({ name: header.name, value: header.value.value }));
-                    checkRequest(url, headers);
+                    if (new URL(url).hostname !== 'tiles.mapterhorn.com') checkRequest(url, headers);
                     if (mode === 'loading' && (!snowMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
                     const reply = replyFor(url);
                     await send({ method: 'network.provideResponse', params: { request: params.request.request, statusCode: reply.status,
-                        headers: [{ name: 'content-type', value: { type: 'string', value: 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
-                        body: { type: 'string', value: reply.body } } });
+                        headers: [{ name: 'content-type', value: { type: 'string', value: reply.contentType || 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
+                        body: Buffer.isBuffer(reply.body) ? { type: 'base64', value: reply.body.toString('base64') } : { type: 'string', value: reply.body } } });
                 })().catch(error => networkErrors.push(error.message));
             };
             bidi.on('network.beforeRequestSent', listener);
@@ -136,6 +146,7 @@ try {
                 { type: 'pattern', protocol: 'https', hostname: 'historical-forecast-api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'api.open-meteo.com' },
                 { type: 'pattern', protocol: 'https', hostname: 'wcc.sc.egov.usda.gov' },
+                ...(snowMapMode ? [{ type: 'pattern', protocol: 'https', hostname: 'tiles.mapterhorn.com' }] : []),
             ] } });
         } else {
             await bidi.subscribe('network.beforeRequestSent');
@@ -148,6 +159,11 @@ try {
             resources.defer('weather live BiDi listener', () => bidi.off('network.beforeRequestSent', listener));
         }
         evaluate = (fn, ...args) => driver.executeScript(webdriverScript(fn, ...args));
+        evaluateTerrain = async fn => {
+            await driver.switchTo().frame(await driver.findElement(By.id('bpb-terrain-frame')));
+            try { return await driver.executeScript(webdriverScript(fn)); }
+            finally { await driver.switchTo().defaultContent(); }
+        };
         navigate = url => driver.get(url);
         click = async selector => {
             const target = await driver.findElement(By.css(selector));
@@ -226,11 +242,11 @@ try {
         const page = await context.newPage();
         const screenshotSession = await context.newCDPSession(page);
         resources.defer('weather screenshot session', () => screenshotSession.detach());
-        if (!live) await context.route(/^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov)\//, async route => {
-            checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
+        if (!live) await context.route(providerPattern, async route => {
+            if (new URL(route.request().url()).hostname !== 'tiles.mapterhorn.com') checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
             if (mode === 'loading' && (!snowMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
-            await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
+            await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': reply.contentType || 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
         else page.on('request', request => {
             if (/^https:\/\/(api|archive-api|historical-forecast-api)\.open-meteo\.com\//.test(request.url()) && request.method() === 'GET') {
@@ -241,6 +257,7 @@ try {
         page.on('pageerror', error => networkErrors.push(error.message));
         const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
         evaluate = (fn, arg) => page.evaluate(fn, arg);
+        evaluateTerrain = fn => page.frames().find(frame => /\/terrain\/terrain.html/.test(frame.url())).evaluate(fn);
         // Only the isolated headless context is affected. An install-time
         // extension tab must not leave the fixture's compositor inactive.
         navigate = async url => { await page.bringToFront(); return page.goto(url, { waitUntil: 'load' }); };
@@ -420,7 +437,11 @@ try {
         for (const key of ['dateWithHeading', 'inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
-    if (snowMode) {
+    if (snowMapMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifySnowMapCases({ origin, evaluate, evaluateTerrain, navigate, click, clickPoint, press, resize, screenshotPage, setSettings, setZoom, wait, writeLocal,
+                setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };
+    } else if (snowMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakSnowCases({ origin, evaluate, navigate, click, press, resize, screenshot, screenshotPage, setSettings, setZoom, wait, writeLocal,
                 setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), snowEvidence, networkErrors, firefoxMode }) };

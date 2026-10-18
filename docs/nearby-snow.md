@@ -98,4 +98,48 @@ JSON is intercepted in this repeatable matrix. It proves the real manifest,
 isolated-world CORS handling, DOM interaction, and rendered layout; it does not
 prove live NRCS availability, native browser chrome or OS focus/placement,
 screen-reader speech, or the representativeness of any station for a route.
-Historical ascent observations and snow map overlays are outside this version.
+Historical ascent observations are outside this version.
+
+## Station map layer
+
+On supported peak pages with a Dynamic Map, the compact **Snow** button in the
+upper-right corner, below the map layer picker, toggles an independent station
+overlay in both 2D and 3D.
+The layer starts off on each page load. Blue hexagonal snowflakes distinguish
+stations from Peakbagger's summit dots. Selecting a station opens its name,
+elevation, and an official NRCS data link; observations remain in the Nearby
+snow card and on NRCS's site.
+
+The layer shows up to 50 active stations within 50 km of the peak, including
+across state borders. Its coverage stays centered on that peak when panning;
+it does not fetch stations for a changing map viewport. The card continues to
+offer the three closest stations. The toggle's accessible name and tooltip
+state the coverage. Toggling preserves native map layers and the camera.
+Opening a station popup near an edge may pan enough to keep it readable.
+
+The layer shares the card's metadata client and public local catalog cache.
+Toggling cached stations does not request measurements. Only validated public
+station identifiers, names, coordinates, and elevations cross into page-world
+rendering and the 3D frame. Fetching stays isolated, summit coordinates stay
+local, and disabling **Summit weather** clears both renderers' station layers.
+Pending requests can be canceled with the same Snow toggle; failures provide
+Retry, respecting the NRCS retry deadline. A completed empty local match is
+distinct from a catalog failure.
+
+`npm run verify -- snow-map` loads the real unpacked extension in hidden Chrome
+and Firefox against the masked peak page, pinned Leaflet 1.9.4, deterministic
+NRCS JSON and non-flat synthetic DEM tiles. It checks loading, cancellation,
+retry, cached toggling, keyboard station popups, iframe reloads, settings,
+2D/3D switching and parked-frame reuse. It compares control, map, heading,
+following native content and scroll geometry at 375 and 1440 pixels in light
+and dark, plus 200% browser zoom. Selected dark styling is challenged with the
+original generic button override; the dark 3D source-link assertion was also
+run against the unfixed, low-contrast blue link. The 3D check requires a hardware WebGL
+renderer. The 320 by 240 minimum map size also checks that Snow cannot cover
+the existing navigation controls and that a long station popup stays clear of
+Snow. Both assertions detected the original overlaps. In 3D, station details
+use a fixed popover below the controls, leaving the camera steady. Unusually
+long content can scroll inside the popover at the minimum size.
+Set `BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` to retain screenshots.
+This fixture proof does not establish live Peakbagger compatibility or native
+browser menus, OS focus/placement, or screen-reader speech.

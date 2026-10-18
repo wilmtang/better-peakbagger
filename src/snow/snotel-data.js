@@ -27,7 +27,8 @@ export function validateSnotelStations(body) {
     });
 }
 
-export function nearbySnotelStations(stations, subject) {
+export function nearbySnotelStations(stations, subject, limit = 3) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('Invalid snow station limit.');
     if (!Number.isFinite(subject?.latitude) || Math.abs(subject.latitude) > 90
         || !Number.isFinite(subject?.longitude) || Math.abs(subject.longitude) > 180) throw new Error('Invalid snow location.');
     const rad = value => value * Math.PI / 180;
@@ -36,7 +37,7 @@ export function nearbySnotelStations(stations, subject) {
             + Math.cos(rad(subject.latitude)) * Math.cos(rad(station.latitude)) * Math.sin(rad(station.longitude - subject.longitude) / 2) ** 2;
         return { ...station, distance: 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, a))) };
     }).filter(station => station.distance <= SNOTEL_RADIUS_METERS)
-        .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id)).slice(0, 3);
+        .sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id)).slice(0, limit);
 }
 
 // AWDB timestamps have no zone suffix. Use the station's fixed data offset,

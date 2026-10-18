@@ -10,6 +10,7 @@ import { settings } from '../settings/settings.js';
 import { readPeakWeatherSubject } from '../weather/peak-weather-subject.js';
 import { readPeakNations } from '../avalanche/avalanche-location.js';
 import { createSnotelClient } from './snotel-client.js';
+import { createSnotelMapSource } from './snotel-map-source.js';
 import { nearbySnotelStations, latestSnotelReading, snotelReportUrl, SNOTEL_RADIUS_METERS } from './snotel-data.js';
 
 const ID = 'bpb-peak-snow', element = dom.element;
@@ -89,6 +90,7 @@ export function mountPeakSnow() {
     else subject.table.tBodies[0].append(row);
 
     const client = createSnotelClient({ storage: chrome.storage.local });
+    const mapSource = createSnotelMapSource({ client, subject });
     let preference = settings.DEFAULTS, settingsReady = false, candidates = null, current = null, requested = null;
     let controller = null, generation = 0, pending = false, observer = null, notice = null, noStations = false;
     let lifecycle;
@@ -229,14 +231,15 @@ export function mountPeakSnow() {
     const visibility = () => {
         if (enabled() && document.visibilityState === 'visible' && !pending && !notice && current && Date.now() - current.data.loadedAt >= 30 * 60_000) beginVisible();
     };
-    const stop = () => { cancel(); observer?.disconnect(); observer = null; cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
+    const stop = () => { cancel(); mapSource.suspend(); observer?.disconnect(); observer = null; cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
-        onResume: () => { document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); beginVisible(); } },
-        onDispose: () => { stop(); cooldown.dispose(); unsubscribe(); client.clear(); },
+        onResume: () => { mapSource.resume(); document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); beginVisible(); } },
+        onDispose: () => { stop(); mapSource.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); },
     });
     const applyPreference = next => {
         if (lifecycle.state === 'disposed') return;
         const wasEnabled = enabled(); preference = next; settingsReady = true;
+        mapSource.setEnabled(preference.showWeather);
         card.hidden = row.hidden = !preference.showWeather;
         if (!enabled()) { cancel(); observer?.disconnect(); observer = null; cooldown.suspend(); }
         else { cooldown.resume(); render(pending && requested?.id !== current?.station.id ? null : current); if (!wasEnabled) beginVisible(); }

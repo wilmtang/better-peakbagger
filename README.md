@@ -64,7 +64,8 @@ cards show model estimates; check local mountain forecasts before heading out.
 
 On western US and Alaska peaks, **Nearby snow** adds public NRCS SNOTEL snow
 depth and water-equivalent observations, station distance/elevation, and a
-seven-day trend. Nearby stations describe their own location; route and summit
+seven-day trend. A compact **Snow** toggle adds distinct station markers and
+NRCS data links to the peak's 2D or 3D map. Nearby stations describe their own location; route and summit
 conditions can differ. [Nearby snow guide](docs/nearby-snow.md).
 
 Check sunrise, sunset, Moon phase, and Sun and Moon directions on a peak map
