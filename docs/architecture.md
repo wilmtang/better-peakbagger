@@ -675,9 +675,10 @@ requested origin, resource path, and one matching ascent ID; matching coordinate
 from another ascent cannot confirm a save. A missing/empty/different GPX or ambiguous trip keeps the queue
 pending with an explicit repair and recheck action. The first saved trip ID is
 reused by subsequent ascents; each next form is opened afresh so its native
-Trip dropdown and WebForms validation contain that trip. Queued or preparing
-forms disable both Save controls and block implicit Save submissions until
+Trip dropdown and WebForms validation contain that trip. Queued, preparing, or
+blocked draft forms disable both Save controls and block implicit Save submissions until
 GPS Preview is confirmed; disconnecting the capture restores native controls.
+Worker recovery errors and missing replies retain that guard on a fresh form.
 Verified peak IDs remain with the capture job after their tabs close or navigate,
 so reviewing drafts cannot recreate saved ascents. A partial save keeps the
 original selection locked, preserving suffixes and trip sequences when unsaved

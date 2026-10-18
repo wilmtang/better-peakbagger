@@ -593,6 +593,7 @@ import { units as Units } from '../ui/units.js';
                 return;
             }
             if (!response || response.action === 'error') {
+                setSaveBlocked(response?.message || 'This captured ascent could not be prepared. Reload this ascent form before saving.');
                 showBanner('error', response?.message || 'This ascent draft could not be prepared.');
                 return;
             }

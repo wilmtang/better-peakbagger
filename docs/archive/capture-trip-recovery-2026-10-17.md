@@ -23,6 +23,30 @@ recovery could replay a saved summit or expose Save on an unprepared form.
 - Focused ESLint, the three documentation checks, and diff whitespace checks
   pass. The real unpacked-extension verifier passes in hidden Chrome
   156.0.8078.4 at 1000 by 760, with teardown confirmed by the verifier.
+- F2: worker recovery errors and missing replies now block both native Save
+  controls and pointer/implicit submissions on fresh forms. Repeated errors
+  keep the guard; explicit capture discard restores the original native state.
+  The two new page regressions failed against the original build because Save
+  was enabled. All 447 focused capture, upload, draft, save-verification, manifest,
+  and verification-tool tests pass. All 75 tests in the final draft/tool
+  follow-up also pass.
+- The extended browser assertion failed on the original build because Save was
+  enabled after a worker error. The fixed shipped bundle passes all eight
+  combinations per browser in hidden Chrome 156.0.8078.4 and Firefox 157.0:
+  widths 1000/390, height 760, light/dark feedback, and CSS zoom 100%/200%.
+  Both the existing apply-failure/reload cycle and fresh-form worker errors are
+  exercised, including repeated updates, keyboard activation, guarded native
+  submissions, and explicit discard. Save controls, heading, following content,
+  scroll, and active-field focus stay stable within 0.75 pixels. Desktop and
+  narrow enlarged screenshots were inspected. Rendering is static DOM with no
+  WebGL; worker replies and native Preview postbacks are stubbed.
+- The initial extended rendering run counted submission events before the
+  extension's capture guard could stop them. The final fixture observes only
+  events that pass the guard; that fixture error is not a product failure.
+- The final build, focused ESLint, documentation links, and diff checks pass.
+  The real-extension Chrome verifier and both three-summit fixture paths also
+  pass with the final build. Process command lines and disposable paths were
+  checked after teardown; temporary screenshots and test logs were removed.
 
 ## Intentionally not changed
 
@@ -36,13 +60,11 @@ recovery could replay a saved summit or expose Save on an unprepared form.
 ## Changed but not fully proven
 
 - Live Garmin/Strava exports and live Peakbagger persistence remain unverified;
-  browser saves use local fixtures. Multi-summit recovery has been exercised in
-  Chrome; cross-browser recovery verification remains pending.
+  browser saves use local fixtures. The real-extension three-summit save and
+  navigation path has been exercised in Chrome; Firefox rendering covers the
+  shipped page bundle with worker replies stubbed.
 - Hidden checks do not establish native window placement, OS focus, browser
   chrome, permission prompts, or screen-reader speech.
 
-## Remaining work
-
-- F2: a fresh form receiving a draft recovery error must keep both native Save
-  controls and implicit submission blocked. Add regressions for recovery,
-  repeated errors, and restoring ordinary Save after explicit discard.
+Both reported findings are fixed locally. The external verification limits above
+remain open and are not replaced by passing fixture checks.

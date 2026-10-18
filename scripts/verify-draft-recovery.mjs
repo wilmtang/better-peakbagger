@@ -59,11 +59,18 @@ try {
                 const listeners = [];
                 const good = '<gpx><trk><trkseg><trkpt lat="47" lon="-121"/><trkpt lat="47.1" lon="-121.1"/></trkseg></trk></gpx>';
                 const state = window.recoveryProbe = { ready: 0, acknowledgments: 0, pending: false, start: null,
-                    release: null, notify: () => listeners.forEach(listener => listener({ type: 'DRAFT_PROCEED' })) };
+                    release: null, saveSubmissions: 0,
+                    notify: () => listeners.forEach(listener => listener({ type: 'DRAFT_PROCEED' })),
+                    clear: () => listeners.forEach(listener => listener({ type: 'DRAFT_CLEARED' })) };
                 window.chrome = { runtime: { onMessage: { addListener: listener => listeners.push(listener) },
                     sendMessage: async message => {
                         if (message.type === 'DRAFT_READY') {
                             state.ready++;
+                            if (sessionStorage.getItem('workerError') === 'true') {
+                                const error = { action: 'error', message: 'A previous summit left its ascent form before its saved GPX and trip were checked. Review that ascent before starting a new capture.' };
+                                return state.ready === 1
+                                    ? new Promise(resolve => { state.fail = () => resolve(error); }) : error;
+                            }
                             const reply = sessionStorage.getItem('previewed') === 'true'
                                 ? { action: 'banner', classification: 'strong', confidence: 95 }
                                 : { action: 'apply', jobId: 'fixture-job', pid: '2829', cid: '900001',
@@ -95,8 +102,9 @@ try {
                 }, true);
                 document.addEventListener('submit', event => {
                     event.preventDefault();
+                    state.saveSubmissions++;
                     throw new Error('The extension must never submit Save');
-                }, true);
+                });
             }, { zoom });
             const page = await context.newPage();
             const url = `https://www.peakbagger.com:${server.address().port}/climber/ascentedit.aspx?pid=2829&cid=900001`;
@@ -169,12 +177,54 @@ try {
             assert.equal(await page.locator('#SuffixText').inputValue(), 'b');
             assert.equal(await page.evaluate(() => sessionStorage.getItem('previews')), '1');
             await stable(idle);
+
+            // A fresh queued form must remain guarded when the worker cannot
+            // safely resume a departed summit's unverified save.
+            await page.evaluate(() => { sessionStorage.setItem('workerError', 'true'); });
+            await page.goto(url);
+            await page.waitForFunction(() => window.recoveryProbe.fail);
+            await page.locator('#DateText').focus();
+            const errorIdle = await geometry();
+            await page.evaluate(() => window.recoveryProbe.fail());
+            await page.locator('.bpb-draft-banner-error').waitFor();
+            for (const id of ['SaveButton', 'SaveButton2']) {
+                assert.equal(await page.locator(`#${id}`).isDisabled(), true, 'worker errors must block both Save controls');
+            }
+            assert.equal(await page.locator('#SuffixText').inputValue(), '');
+            assert.equal(await page.locator('#TripSeqText').inputValue(), '');
+            assert.equal(await page.locator('#TripDD').inputValue(), '0');
+            await stable(errorIdle);
+            await page.locator('#DateText').press('Enter');
+            await page.evaluate(() => {
+                for (const id of ['SaveButton', 'SaveButton2']) {
+                    const control = document.getElementById(id);
+                    control.click();
+                    control.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+                    document.getElementById('Form1').requestSubmit(control);
+                }
+            });
+            for (let repeat = 0; repeat < 2; repeat++) {
+                const before = await page.evaluate(() => window.recoveryProbe.ready);
+                await page.evaluate(() => window.recoveryProbe.notify());
+                await page.waitForFunction(before => window.recoveryProbe.ready > before
+                    && document.querySelector('.bpb-draft-banner-error'), before);
+                await stable(errorIdle);
+                assert.equal(await page.locator('#DateText').evaluate(element => element === document.activeElement), true,
+                    'repeated worker errors must preserve the active field');
+            }
+            assert.equal(await page.evaluate(() => window.recoveryProbe.saveSubmissions), 0);
+            assert.equal(await page.evaluate(() => window.recoveryProbe.acknowledgments), 0);
+            if (artifacts) await page.screenshot({ path: path.join(artifacts, `${browserName}-${width}-${theme}-${zoom}-worker-error.png`) });
+            await page.evaluate(() => window.recoveryProbe.clear());
+            for (const id of ['SaveButton', 'SaveButton2']) assert.equal(await page.locator(`#${id}`).isDisabled(), false);
+            await stable(errorIdle);
             cases++;
         } finally { await context.close(); }
     }
     assert.equal(cases, 8, 'all recovery variants must execute');
     console.log(JSON.stringify({ verification: 'draft-recovery', browser: browserName, version: browser.version(),
         hidden: true, cases, viewports: [1000, 390], height: 760, themes: ['light', 'dark'], cssZoom: [1, 2],
-        rendering: 'static DOM; WebGL unused', stubs: ['worker replies', 'native Preview postback'] }));
+        rendering: 'static DOM; WebGL unused', stubs: ['worker replies', 'native Preview postback'],
+        scenarios: ['apply rollback and reload recovery', 'fresh-form worker error, repeated feedback and explicit discard'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);

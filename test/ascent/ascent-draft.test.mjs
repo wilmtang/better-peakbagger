@@ -720,6 +720,46 @@ test('ordinary Peakbagger editor tabs get only the fresh-form date autofill', as
     dom.window.close();
 });
 
+for (const response of [null, { action: 'error', message: 'The previous summit’s saved GPX and trip have not been checked.' }]) {
+    test(`a fresh form blocks Save after ${response ? 'a worker recovery error' : 'a missing worker response'} until explicit discard`, async () => {
+        const html = formHtml.replace('<button id="SaveButton" type="button">Save</button>',
+            '<button id="SaveButton" type="submit">Save</button><button id="SaveButton2" type="submit">Save</button>');
+        const { dom, messages, dispatchRuntimeMessage } = loadDraft(() => response, { html });
+        try {
+            const doc = dom.window.document;
+            let saves = 0;
+            doc.querySelector('form').addEventListener('submit', event => { saves++; event.preventDefault(); });
+            await waitForCondition(() => doc.querySelector('.bpb-draft-banner-error'));
+            for (let repeat = 0; repeat < 2; repeat++) {
+                for (const id of ['SaveButton', 'SaveButton2']) {
+                    assert.equal(doc.getElementById(id).disabled, true, 'an unprepared captured ascent cannot be saved');
+                    doc.getElementById(id).click();
+                    assert.equal(doc.getElementById(id).dispatchEvent(new dom.window.MouseEvent('click',
+                        { bubbles: true, cancelable: true })), false);
+                    const submit = new dom.window.SubmitEvent('submit',
+                        { bubbles: true, cancelable: true, submitter: doc.getElementById(id) });
+                    assert.equal(doc.querySelector('form').dispatchEvent(submit), false);
+                }
+                assert.equal(doc.querySelector('form').dispatchEvent(new dom.window.SubmitEvent('submit',
+                    { bubbles: true, cancelable: true })), false, 'implicit Enter submission stays blocked');
+                dispatchRuntimeMessage({ type: 'DRAFT_PROCEED' });
+                await waitForCondition(() => messages.filter(message => message.type === 'DRAFT_READY').length >= repeat + 2);
+                assert.equal(messages.filter(message => message.type === 'DRAFT_READY').length, repeat + 2);
+            }
+            assert.equal(saves, 0);
+            assert.equal(doc.getElementById('SuffixText').value, '');
+            assert.equal(doc.getElementById('TripSeqText').value, '');
+            assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
+            dispatchRuntimeMessage({ type: 'DRAFT_CLEARED' });
+            for (const id of ['SaveButton', 'SaveButton2']) {
+                assert.equal(doc.getElementById(id).disabled, false, 'explicit discard restores the native form');
+                doc.getElementById(id).click();
+            }
+            assert.equal(saves, 2);
+        } finally { dom.window.close(); }
+    });
+}
+
 test('queued summits cannot save until their suffix, shared trip, and GPS Preview are ready', async () => {
     let readyCalls = 0;
     let previews = 0;
