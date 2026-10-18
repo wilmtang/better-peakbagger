@@ -1,38 +1,46 @@
-Upgrade your Peakbagger.com experience.
+Plan the climb. Log the summit. Share the story.
 
-Better Peakbagger turns Garmin and Strava activities—or a GPX file you already have—into review-ready ascent drafts. It also adds 3D terrain, GPX analysis, saved-track handoff to mapping apps, offline Sun and Moon planning, ascent beta filters, trip-report and photo-topo editors, optional GitHub backup, and a dark theme.
+Bring your climbs to life on Peakbagger.com with free 3D maps, summit weather, and interactive route charts. Turn Garmin and Strava activities—or a GPX file you already have—into ascent drafts, find useful beta, and create trip reports worth sharing. Better Peakbagger is free and open source, with no Better Peakbagger account required.
 
 FEATURES
 
-• Create ascent drafts from Garmin and Strava — Turn an activity you own into prefilled ascent drafts with explained summit matches.
+• Explore free 3D terrain — Follow routes through interactive terrain, compare tracks on full-screen maps, and discover nearby peaks. Switch between synced 2D and 3D views with compatible basemaps, a compass, and resizable maps. 3D is optional and off by default.
 
-• Process a GPX on Peakbagger — Analyze a GPX for route stats, nearby summits, and coordinated multi-peak drafts.
+• See recent satellite imagery — Try the experimental Sentinel-2 layer in 2D or 3D. Choose a capture from the last 30 days and check its date, estimated coverage, and cloud cover. Clouds and gaps may still obscure the view.
 
-• Explore free 3D terrain — Explore routes and maps in opt-in interactive 3D with compatible layers, synced views, and a compass.
+• Plan with summit weather — Browse up to 16 forecast days and the past 16 completed days, compare available models, and expand days for hourly temperature, rain, snow, and wind in mountain-local time. Request weather for a nearby point from the map. These are model estimates; check local mountain forecasts before heading out.
 
-• Understand GPX tracks — See interactive charts, local times, route metrics, source point counts, and map tracking with customizable route styling. Review and reverse the interpretation of narrowly identified suspect segments without changing the saved GPX.
+• Relive ascent-day weather — Explore historical weather on saved ascents, even without GPX, with coverage back to 1940 where available. Hover or select a timed GPX point to follow that hour in the weather charts.
 
-• Review ascent-day weather — See summit weather estimates for the saved ascent date, even without GPX, with a recommended historical model, other available models, and hourly local-time detail. Open-Meteo automatically receives summit coordinates, elevation and a narrow date window when the card approaches the viewport; no GPX, account credentials or ascent identity is sent.
+• Create ascent drafts from Garmin and Strava — Turn an activity you own into drafts with route statistics, a privacy-reduced GPX, and the activity link. Explained Strong and Probable summit matches help you choose which peaks to log. Review every draft and press Save yourself.
 
-• Send saved tracks to mapping apps — Open a saved ascent GPX in Gaia GPS, onX Backcountry, AllTrails, or CalTopo for review and confirmation there.
+• Process a GPX on Peakbagger — Choose a file on Add Ascent to calculate route details, find summits, and prepare coordinated multi-peak drafts. Fit large tracks to Peakbagger's point limit and choose whether to keep waypoint names and coordinates. An optional setting removes GPX timestamps from captures and file uploads while preserving calculated dates and durations. Originals stay unchanged.
 
-• Plan with the Sun and Moon — Check their directions, astronomical sunrise and sunset, Moon phase, and illumination on peak maps and saved ascent tracks, calculated offline in mountain-local time.
+• Understand GPX tracks — Move through interactive elevation and route charts while the map follows your position. Explore distance, gain, grades, and multi-day timing, copy a selected point's coordinates, and customize route colors and outlines. Missing data stays visible as gaps; review flagged segments and return to the original view without changing the saved GPX.
 
-• Find useful ascent beta — Filter and sort ascent lists without reloading, using Buddy List or custom favorites.
+• Send saved tracks to mapping apps — Open a saved ascent GPX in Gaia GPS, onX Backcountry, AllTrails, or CalTopo for review and confirmation there. The destination's membership and file limits apply.
 
-• Write better trip reports — Draft rich-text or GitHub-flavored Markdown reports with media, previews, and device-local recovery.
+• Plan with the Sun and Moon — Check directions, sunrise, sunset, Moon phase, and illumination on peak maps and saved routes, calculated offline in mountain-local time. Explore the day with a time slider. Times assume a level horizon and do not account for terrain shadows.
 
-• Create photo topos — Draw routes, curves, freehand strokes, climbing symbols, pitch labels, and wrapping text over your photos. Zoom, pan, and edit route points in a resizable view. Reuse editable projects locally and upload finished images to ImgBB with your own API key.
+• Find useful ascent beta — Combine report, GPS, link, and favorite-climber filters and sort ascent lists without reloading. Use your Buddy List or custom favorites, manage Favorite, Ignore, and Buddy actions beside climber names, and temporarily reveal ignored reports when you choose.
 
-• Back up to GitHub — Keep copies of ascents and trip reports in a repository you control, with separate options for settings, favorite climbers, and photo-topo recovery data.
+• Write better trip reports — Use rich text or GitHub-flavored Markdown with photos, captions, tables, video, and previews. Local autosave and a draft manager help you resume your work. Paste photos into Rich text with your own ImgBB key; they stay local until you save the report, then upload with visible progress.
 
-• Plan with better links — Open weather, live satellite imagery, snow-depth, and fire or smoke information for supported summits.
+• Create photo topos — Draw routes, curves, freehand lines, climbing symbols, pitch labels, and wrapping text over photos. Zoom, pan, and edit route points in a resizable view. Keep editable projects in a searchable local library, export project bundles, and download finished images or upload them to ImgBB with your own API key.
 
-• Use Peakbagger your way — Set your theme and preferences for units, maps, GPX charts, activity capture, reports, photo topos, backups, and beta filters. Reorder map providers and filters and include those preferences in Settings backup.
+• Back up to GitHub — Keep one ascent or your full history, Markdown reports, and saved GPX files in a repository you control. Enable automatic ascent backup after saves, and separately back up settings, climber lists, and photo-library recovery data. Photo recovery includes annotations and links; keep project downloads for original images.
+
+• Keep planning tools close — Open weather, snow-depth, fire and smoke information, regional avalanche bulletins, and mapping links for supported summits. Arrange planning links in your preferred order.
+
+• Make Peakbagger feel like yours — Choose dark, light, or system appearance, mix units by measurement, reorder filters and map providers, and hide cards you don't use. Resize maps and report columns, move ascent weather between columns, and export your preferences for another browser.
 
 PRIVACY BY DESIGN
 
 No analytics, telemetry, ads, or developer data server.
+
+Raw Garmin and Strava GPX is processed on the activity page. Weather cards are on by default: Open-Meteo automatically receives location coordinates, elevation when available, and the requested date window as an enabled card approaches the viewport. No GPX, account credentials, or ascent identity is sent to the weather service. Turn weather off in Settings to stop those requests.
+
+Map and satellite providers receive requests for the area you view. Backups, photo uploads, and track transfers go to the services you choose when you use or enable those features.
 
 Read the complete privacy policy:
 https://github.com/wilmtang/better-peakbagger/blob/main/PRIVACY.md
