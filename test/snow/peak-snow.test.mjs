@@ -138,6 +138,21 @@ test('peak card uses native summit metadata without GPX and mounts once after th
     } finally { env.close(); }
 });
 
+test('snow title has a decorative SNOTEL icon and Refresh belongs beside the station selector', async () => {
+    const env = setup();
+    try {
+        await settled(env);
+        const card = env.doc.getElementById('bpb-peak-snow'), select = card.querySelector('select');
+        const refresh = card.querySelector('.bpb-snow-refresh');
+        assert.equal(select.parentElement.contains(refresh), true, 'the selector and Refresh form one compact control row');
+        assert.equal(card.querySelector('header').contains(refresh), false, 'the disclosure header has no nested Refresh action');
+        const icon = card.querySelector('h2 svg');
+        assert.equal(icon.getAttribute('aria-hidden'), 'true'); assert.equal(icon.getAttribute('focusable'), 'false');
+        assert.equal(card.querySelector('h2').textContent, 'Nearby snow');
+        assert.equal(select.form, null, 'the inline control retains its independent native form behavior');
+    } finally { env.close(); }
+});
+
 test('snow-depth trend labels observation dates and each plotted reading', async () => {
     const env = setup();
     try {
@@ -275,18 +290,27 @@ test('missing sensors and null readings remain unavailable, while zero remains v
 });
 
 test('no nearby station and service errors remain distinct; rate-limit cooldown blocks all duplicate activation', async () => {
-    const empty = setup({ fetchFn: async () => new Response(JSON.stringify(snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })))) });
+    let completeCatalog;
+    const empty = setup({ fetchFn: () => new Promise(resolve => {
+        completeCatalog = () => resolve(new Response(JSON.stringify(snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })))));
+    }) });
     try {
+        await waitFor(() => completeCatalog && !empty.doc.getElementById('bpb-peak-snow').hidden);
+        const refresh = empty.doc.querySelector('.bpb-snow-refresh'); refresh.focus();
+        assert.equal(empty.doc.activeElement, refresh); completeCatalog();
         await waitFor(() => empty.doc.querySelector('.bpb-snow-status').textContent.includes('No SNOTEL'));
         assert.equal(empty.requests.length, 1); assert.equal(empty.doc.querySelector('.bpb-snow-refresh').getAttribute('aria-disabled'), 'true');
         assert.equal(empty.doc.querySelector('.bpb-snow-observations').hidden, true);
         assert.equal(empty.doc.querySelector('.bpb-snow-details').hidden, true);
+        assert.equal(refresh.closest('[hidden]'), null, 'empty coverage keeps the focused control visible');
+        assert.equal(empty.doc.activeElement, refresh);
     } finally { empty.close(); }
     const unavailable = setup({ fetchFn: async () => new Response('[]') });
     try {
         await waitFor(() => unavailable.requests.length > 0 && unavailable.doc.querySelector('#bpb-peak-snow').getAttribute('aria-busy') === 'false');
         assert.match(unavailable.doc.querySelector('.bpb-snow-status').textContent, /Could not load/);
         assert.doesNotMatch(unavailable.doc.querySelector('.bpb-snow-status').textContent, /No SNOTEL/);
+        assert.equal(unavailable.doc.querySelector('.bpb-snow-refresh').closest('[hidden]'), null, 'catalog failures keep retry available');
     } finally { unavailable.close(); }
     const failed = setup({ fetchFn: async () => new Response('', { status: 429, headers: { 'retry-after': '120' } }) });
     try {

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export async function verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings,
-    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, networkErrors, firefoxMode }) {
+    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, writeLocal, networkErrors, firefoxMode }) {
     const output = process.env.BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR, cases = [];
     if (output) await mkdir(output, { recursive: true });
     const browser = firefoxMode ? 'firefox' : 'chrome';
@@ -53,6 +53,26 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         return button.getAttribute('aria-expanded');
     }, id), { description: `${id} disclosure ${expected}`, isReady: value => value === String(expected) });
     const preferences = { sun: 'peakSunCollapsed', weather: 'peakWeatherCollapsed', snow: 'peakSnowCollapsed' };
+    const compactSnow = async label => {
+        const layout = await evaluate(() => {
+            const card = document.querySelector('#bpb-peak-snow');
+            const refresh = card.querySelector('.bpb-snow-refresh').getBoundingClientRect();
+            const station = card.querySelector('select').getBoundingClientRect();
+            const header = card.querySelector('header').getBoundingClientRect();
+            const icon = card.querySelector('h2 .bpb-snow-icon');
+            return { refresh: { top: refresh.top, height: refresh.height, left: refresh.left },
+                station: { top: station.top, height: station.height, right: station.right }, headerBottom: header.bottom,
+                icon: icon ? { hidden: icon.getAttribute('aria-hidden'), focusable: icon.getAttribute('focusable'),
+                    width: icon.getBoundingClientRect().width, height: icon.getBoundingClientRect().height } : null };
+        });
+        assert.ok(Math.abs(layout.refresh.top - layout.station.top) <= 1, `${label}: Refresh shares the station selector row: ${JSON.stringify(layout)}`);
+        assert.ok(Math.abs(layout.refresh.height - layout.station.height) <= 1, `${label}: station actions have matching heights`);
+        assert.ok(layout.refresh.left - layout.station.right >= 6 && layout.refresh.left - layout.station.right <= 12, `${label}: station actions keep a compact gap`);
+        assert.ok(layout.station.top - layout.headerBottom <= 30, `${label}: no standalone Refresh row above the selector`);
+        assert.ok(layout.icon?.width > 20 && layout.icon.width < 24 && Math.abs(layout.icon.height - layout.icon.width) <= .1,
+            `${label}: a snow icon matches the other title icons: ${JSON.stringify(layout.icon)}`);
+        assert.equal(layout.icon.hidden, 'true'); assert.equal(layout.icon.focusable, 'false');
+    };
     const headerTargets = id => evaluate(id => {
         const card = document.querySelector(`[data-bpb-peak-card="${id}"]`);
         const header = card.querySelector('header, .bpb-peak-card-sun-header');
@@ -85,6 +105,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
+        await compactSnow(`${width}/${theme}/ready`);
         assert.deepEqual(await order(), ['sun', 'weather', 'snow']);
         for (const id of ['weather', 'snow', 'sun']) {
             const toggle = id === 'sun' ? '.bpb-sun-calculator__toggle' : '.bpb-peak-card-toggle';
@@ -197,18 +218,28 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await wait(() => document.querySelector('#bpb-peak-snow').getAttribute('aria-busy') === 'true', 'refresh pending');
         await waitForCondition(heldCount, { description: 'snow response held by fixture', isReady: count => count > 0 });
         stable(requestsBefore, await geometry(), 'expanded pending state after reordering');
+        await compactSnow(`${width}/${theme}/pending`);
+        assert.equal(await evaluate(() => document.activeElement === document.querySelector('.bpb-snow-refresh')), true,
+            'the inline Refresh action keeps keyboard focus while unavailable');
         await focus('snow', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('snow', false); await saved('peakSnowCollapsed', true);
         const closedPending = await geometry(); setMode('service-error'); release();
         await wait(() => document.querySelector('.bpb-snow-status').textContent.includes('Could not load'), 'hidden refresh error');
         stable(closedPending, await geometry(), 'background error cannot expand a collapsed card');
         await press(key('Enter')); await expanded('snow', true); await saved('peakSnowCollapsed', false);
+        await compactSnow(`${width}/${theme}/error`);
         setMode('complete'); await click('.bpb-snow-refresh'); await ready();
+        await compactSnow(`${width}/${theme}/retry`);
         await focus('snow', '.bpb-peak-card-toggle'); await image(`${width}-${theme}-expanded`);
         const current = await readSettings(); await setSettings({ ...current, showSnotel: false });
         await wait(() => document.querySelector('#bpb-peak-snow-row').hidden, 'SNOTEL feature off');
         await setSettings({ ...current, showSnotel: true }); await ready(); assert.deepEqual(await order(), ['snow', 'weather', 'sun']);
         cases.push({ width, theme, states: ['header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'weather-refresh-error-retry', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
     }
+    setMode('long-station'); await writeLocal({ bpbSnotelCatalogV1: null }); await open();
+    await focus('snow', '.bpb-peak-card-toggle'); await compactSnow('375/dark/long-station');
+    assert.equal(await evaluate(() => document.querySelector('#bpb-peak-snow-station').selectedOptions[0].textContent.includes('Experimental Mountain')), true,
+        'the compact control exercises a long station name from the provider fixture');
+    await image('375-dark-long-station'); cases.push({ width: 375, theme: 'dark', states: ['long-station'] });
     await resize(1440, 1100); await focus('snow', '.bpb-peak-card-grip');
     const edgeDrag = await evaluate(() => {
         const r = document.activeElement.getBoundingClientRect();
@@ -225,6 +256,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         visible: document.activeElement.matches(':focus-visible'), outline: getComputedStyle(document.activeElement).outlineStyle }));
     assert.equal(keyboardFocus.outline, 'solid', `keyboard focus outlines the full header: ${JSON.stringify(keyboardFocus)}`);
     await image('200-percent');
+    await compactSnow('200-percent');
     assert.equal((await headerTargets('snow')).covered, true, 'the full header remains clickable at 200% zoom');
     assert.equal(await evaluate(() => {
         const card = document.querySelector('#bpb-peak-snow'), bounds = card.getBoundingClientRect();

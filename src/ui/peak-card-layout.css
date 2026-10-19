@@ -25,7 +25,6 @@ html[data-bpb-theme="dark"] [data-bpb-peak-card] { --peak-card-accent: #83bbff; 
 [aria-expanded="false"] .bpb-peak-card-chevron { transform: none; }
 .bpb-peak-card-body { padding: 0 20px; }
 .bpb-peak-card-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; }
-.bpb-peak-card-toolbar > .bpb-snow-refresh { margin-left: auto; }
 #bpb-peak-weather[data-bpb-peak-card] .bpb-week-actions { flex-wrap: wrap; justify-content: end; }
 :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip {
     position: absolute; right: 12px; top: 8px; display: inline-flex; align-items: center; justify-content: center;

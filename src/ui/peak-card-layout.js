@@ -184,7 +184,8 @@ export function createPeakCardLayout({ document: doc, settings }) {
             // Keep the first row solely a disclosure, like Sun & Moon. Move
             // existing nodes so their owners retain listeners and live text.
             const toolbar = make('div', 'bpb-peak-card-toolbar');
-            heading.remove(); toolbar.append(...header.children); body.append(toolbar);
+            heading.remove(); toolbar.append(...header.children);
+            if (toolbar.childElementCount) body.append(toolbar);
             header.append(heading, handle);
             for (const child of [...card.children]) if (child !== header) body.append(child);
             card.append(body);

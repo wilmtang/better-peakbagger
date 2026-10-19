@@ -11,6 +11,7 @@ import { readPeakWeatherSubject } from '../weather/peak-weather-subject.js';
 import { readPeakNations } from '../avalanche/avalanche-location.js';
 import { createSnotelClient } from './snotel-client.js';
 import { createSnotelMapSource } from './snotel-map-source.js';
+import { snotelSymbol } from './snotel-map-marker.js';
 import { nearbySnotelStations, latestSnotelReading, snotelReportUrl, SNOTEL_RADIUS_METERS } from './snotel-data.js';
 
 const ID = 'bpb-peak-snow', element = dom.element;
@@ -38,9 +39,16 @@ export function mountPeakSnow() {
         || (subject.longitude > -100 && subject.longitude < 170)) return;
 
     const refresh = element('button', { type: 'button', class: 'bpb-snow-refresh', text: 'Refresh', 'aria-label': 'Refresh snow observations', 'aria-disabled': 'false' });
+    const snowIcon = snotelSymbol(document); snowIcon.classList.add('bpb-snow-icon');
     // An explicit empty form owner keeps native selection/Enter behavior while
     // preventing implicit submission of Peakbagger's surrounding ASP.NET form.
     const select = element('select', { id: `${ID}-station`, form: '', 'aria-label': 'SNOTEL station', 'aria-describedby': `${ID}-status`, disabled: '' }, [element('option', { text: 'Loading stations…', value: '' })]);
+    // Keep controls outside the readings region so catalog errors can still
+    // be retried and an empty coverage result never hides the focused action.
+    const stationControls = element('div', { class: 'bpb-snow-station-controls' }, [
+        element('label', { for: select.id, class: 'bpb-snow-label', text: 'SNOTEL station' }),
+        element('div', { class: 'bpb-snow-station-row' }, [select, refresh]),
+    ]);
     const note = element('p', { class: 'bpb-snow-context', text: 'Nearby station observations, not summit measurements.' });
     const status = element('p', { id: `${ID}-status`, class: 'bpb-snow-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
     const stableStatus = createStableText(status);
@@ -76,12 +84,12 @@ export function mountPeakSnow() {
     ]);
     const source = element('a', { href: 'https://nwcc-apps.sc.egov.usda.gov/imap/', target: '_blank', rel: 'noopener noreferrer', text: 'NRCS · SNOTEL' });
     const observations = element('div', { class: 'bpb-snow-observations' }, [
-        element('label', { for: select.id, class: 'bpb-snow-label', text: 'SNOTEL station' }), select, note,
+        note,
         element('div', { class: 'bpb-snow-metrics' }, metrics.map(metric => metric.node)), range, graphFrame, graphDates,
     ]);
     const card = element('section', { id: ID, 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false', hidden: '' }, [
-        element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Nearby snow' }), refresh]),
-        observations, status, details,
+        element('header', {}, [element('h2', { id: `${ID}-heading` }, [snowIcon, document.createTextNode('Nearby snow')])]),
+        stationControls, observations, status, details,
         element('footer', {}, [element('span', { text: 'Observations within 50 km' }), source]),
     ]);
     const row = element('tr', { id: `${ID}-row`, hidden: '' }, [element('td', { colspan: '2', class: 'bpb-snow-cell' }, [card])]);

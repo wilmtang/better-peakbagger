@@ -12,7 +12,7 @@ function setup({ saved = {}, read, fail = false, snow = true, lateSunListener = 
     const dom = new JSDOM(`<form><table><tbody><tr id="map"><td colspan="2"><iframe id="Gmap"></iframe><a id="legend">Native legend</a>
         <section class="bpb-sun-calculator--peak"><button type="button" class="bpb-sun-calculator__toggle" aria-expanded="true">Sun & Moon</button><div class="bpb-sun-calculator__panel"><input></div></section></td></tr>
         <tr id="bpb-peak-weather-row"><td colspan="2"><section id="bpb-peak-weather"><header><div class="bpb-week-heading"><h2>Summit weather</h2><span class="bpb-week-location-name">At the summit</span><span class="bpb-week-map-hint">Right-click the map for weather at any point.</span></div><div class="bpb-week-actions"><button type="button">Refresh</button></div></header><p>Forecast</p></section></td></tr>
-        ${snow ? '<tr id="bpb-peak-snow-row"><td colspan="2"><section id="bpb-peak-snow"><header><h2>Nearby snow</h2><button type="button">Refresh</button></header><p>Snow readings</p></section></td></tr>' : ''}
+        ${snow ? '<tr id="bpb-peak-snow-row"><td colspan="2"><section id="bpb-peak-snow"><header><h2>Nearby snow</h2></header><div class="bpb-snow-station-controls"><label for="station">SNOTEL station</label><div class="bpb-snow-station-row"><select id="station"><option>Paradise</option></select><button type="button">Refresh</button></div></div><p>Snow readings</p></section></td></tr>' : ''}
         <tr id="native"><td>Native details</td></tr></tbody></table></form>`, { pretendToBeVisual: true });
     const win = dom.window, doc = win.document, listeners = new Set(), writes = [], commits = [];
     let state = schema.clean(saved), failing = fail;
@@ -91,6 +91,7 @@ test('weather and snow use a dedicated disclosure row and keep actions inside th
         const context = env.card('weather').querySelector('.bpb-peak-card-body .bpb-week-heading');
         assert.equal(context.querySelector('.bpb-week-location-name').textContent, 'At the summit');
         assert.match(context.querySelector('.bpb-week-map-hint').textContent, /Right-click/);
+        assert.equal(env.card('snow').querySelector('.bpb-peak-card-toolbar'), null, 'snow has no empty toolbar reserving another row');
     } finally { env.close(); }
 });
 
