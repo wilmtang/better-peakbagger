@@ -140,7 +140,7 @@ try {
                 void (async () => {
                     const headers = params.request.headers.map(header => ({ name: header.name, value: header.value.value }));
                     if (new URL(url).hostname !== 'tiles.mapterhorn.com') checkRequest(url, headers);
-                    if (mode === 'loading' && (!snowMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
+                    if (mode === 'loading' && (!snowMode || cardsMode || new URL(url).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
                     const reply = replyFor(url);
                     await send({ method: 'network.provideResponse', params: { request: params.request.request, statusCode: reply.status,
                         headers: [{ name: 'content-type', value: { type: 'string', value: reply.contentType || 'application/json' } }, { name: 'access-control-allow-origin', value: { type: 'string', value: '*' } }, { name: 'access-control-expose-headers', value: { type: 'string', value: 'retry-after' } }, ...Object.entries(reply.headers).map(([name, value]) => ({ name, value: { type: 'string', value } }))],
@@ -274,7 +274,7 @@ try {
         resources.defer('weather screenshot session', () => screenshotSession.detach());
         if (!live) await context.route(providerPattern, async route => {
             if (new URL(route.request().url()).hostname !== 'tiles.mapterhorn.com') checkRequest(route.request().url(), Object.entries(await route.request().allHeaders()).map(([name, value]) => ({ name, value })));
-            if (mode === 'loading' && (!snowMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
+            if (mode === 'loading' && (!snowMode || cardsMode || new URL(route.request().url()).hostname === 'wcc.sc.egov.usda.gov')) await new Promise(resolve => held.push(resolve));
             const reply = replyFor(route.request().url());
             await route.fulfill({ status: reply.status, body: reply.body, headers: { 'content-type': reply.contentType || 'application/json', 'access-control-allow-origin': '*', 'access-control-expose-headers': 'retry-after', ...reply.headers } });
         });
@@ -481,7 +481,8 @@ try {
     if (cardsMode) {
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,
-                movePointer, pointerDown, pointerUp, setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), networkErrors, firefoxMode }) };
+                movePointer, pointerDown, pointerUp, setMode: next => { mode = next; }, heldCount: () => held.length,
+                release: () => held.splice(0).forEach(resolve => resolve()), networkErrors, firefoxMode }) };
     } else if (snowMapMode) {
         const optionsCases = await withOptions(verifySnotelOptions);
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,

@@ -173,13 +173,23 @@ export function createPeakCardLayout({ document: doc, settings }) {
             header = card.querySelector('header');
             const heading = header.querySelector('h2');
             toggle = make('button', 'bpb-peak-card-toggle'); toggle.type = 'button';
-            const chevron = make('span', 'bpb-peak-card-chevron', '⌄'); chevron.setAttribute('aria-hidden', 'true');
-            toggle.append(...heading.childNodes, chevron); heading.append(toggle); header.append(handle);
+            const title = make('span', 'bpb-peak-card-title'); title.append(...heading.childNodes);
+            const chevron = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            chevron.classList.add('bpb-peak-card-chevron'); chevron.setAttribute('viewBox', '0 0 16 16'); chevron.setAttribute('aria-hidden', 'true');
+            const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            line.setAttribute('points', '3 6 8 11 13 6'); chevron.append(line);
+            toggle.append(title, chevron); heading.append(toggle);
             body = make('div', 'bpb-peak-card-body'); body.id = `bpb-peak-${key}-body`;
             toggle.setAttribute('aria-controls', body.id);
+            // Keep the first row solely a disclosure, like Sun & Moon. Move
+            // existing nodes so their owners retain listeners and live text.
+            const toolbar = make('div', 'bpb-peak-card-toolbar');
+            heading.remove(); toolbar.append(...header.children); body.append(toolbar);
+            header.append(heading, handle);
             for (const child of [...card.children]) if (child !== header) body.append(child);
             card.append(body);
         }
+        header.classList.add('bpb-peak-card-header');
         const item = { key, card, row, header, handle, toggle, body, definition, restoring: false, pendingToggle: false, toggleTimer: null };
         cards.set(key, item); card.setAttribute('data-bpb-peak-card', key);
         const collapse = () => {

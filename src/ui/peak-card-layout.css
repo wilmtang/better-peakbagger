@@ -4,30 +4,28 @@
 [data-bpb-peak-card] { --peak-card-accent: #1769aa; --peak-card-text: #1d232a; }
 html[data-bpb-theme="dark"] [data-bpb-peak-card] { --peak-card-accent: #83bbff; --peak-card-text: #f1eee7; }
 .bpb-sun-calculator[data-bpb-peak-card] { width: 100%; max-inline-size: 100%; margin: 16px 0 0; }
-/* Stretch the existing disclosure's hit area across its header. Keep the
-   action buttons above it so refresh, reset and dragging remain independent. */
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(header, .bpb-peak-card-sun-header) { position: relative; isolation: isolate; }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):not(:disabled)::after {
-    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: 8px; cursor: pointer;
-}
-:is(#bpb-peak-weather, #bpb-peak-snow) .bpb-peak-card-toggle:not(:disabled)::after { inset: -16px -20px 0; }
-:is(#bpb-peak-weather, #bpb-peak-snow)[data-bpb-card-collapsed="true"] .bpb-peak-card-toggle:not(:disabled)::after { bottom: -16px; }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-week-actions button, .bpb-snow-refresh, .bpb-peak-card-grip) { position: relative; z-index: 1; }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible { outline: none; }
-:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible::after { outline: 2px solid var(--peak-card-accent); outline-offset: -3px; }
+:is(#bpb-peak-weather, #bpb-peak-snow)[data-bpb-peak-card] { padding: 0; }
+:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-header { position: relative; display: block; margin: 0; padding: 0; }
+:is(#bpb-peak-weather, #bpb-peak-snow) .bpb-peak-card-header > h2 { display: block; margin: 0; min-width: 0; font: 720 15px/1.35 system-ui, sans-serif; }
 #bpb-peak-weather .bpb-peak-card-toggle, #bpb-peak-snow .bpb-peak-card-toggle {
-    display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0;
-    background: transparent !important; color: inherit !important; border: 0 !important; border-radius: 4px;
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 3rem; padding: .5rem 3.75rem .5rem .75rem;
+    background: transparent !important; color: inherit !important; border: 0 !important; border-radius: 8px;
     font: inherit; text-align: left; cursor: pointer;
 }
-#bpb-peak-snow header h2 { flex: 1; min-width: 0; }
-#bpb-peak-weather[data-bpb-peak-card] header { flex-wrap: nowrap; }
-#bpb-peak-weather[data-bpb-peak-card] .bpb-week-heading { flex: 1 1 auto; }
-#bpb-peak-weather[data-bpb-peak-card] .bpb-week-actions { flex-wrap: wrap; justify-content: end; }
-.bpb-peak-card-chevron { display: inline-block; flex: none; font-size: 16px; transform: rotate(180deg); }
+.bpb-peak-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#bpb-peak-weather .bpb-peak-card-title .bpb-weather-symbol { width: 1.35rem; height: 1.35rem; }
+.bpb-peak-card-chevron {
+    flex: none; margin-left: auto; width: 1rem; height: 1rem; color: var(--week-sub, var(--snow-sub));
+    fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    transform: rotate(180deg); transform-box: fill-box; transform-origin: center;
+}
 [aria-expanded="false"] .bpb-peak-card-chevron { transform: none; }
+.bpb-peak-card-body { padding: 0 20px; }
+.bpb-peak-card-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 12px; }
+.bpb-peak-card-toolbar > .bpb-snow-refresh { margin-left: auto; }
+#bpb-peak-weather[data-bpb-peak-card] .bpb-week-actions { flex-wrap: wrap; justify-content: end; }
 :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip {
-    display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px;
+    position: absolute; right: 12px; top: 8px; display: inline-flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; min-height: 32px; padding: 0;
     border: 0 !important; border-radius: 6px; background: transparent !important; color: var(--peak-card-accent) !important;
     cursor: grab; touch-action: none;
@@ -35,18 +33,11 @@ html[data-bpb-theme="dark"] [data-bpb-peak-card] { --peak-card-accent: #83bbff; 
 :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) .bpb-peak-card-grip:hover { background: #1769aa12 !important; }
 html [data-bpb-peak-card] .bpb-peak-card-grip[hidden], .bpb-peak-card-body[hidden] { display: none !important; }
 .bpb-peak-card-dots { display: block; width: 12px; height: 18px; background: radial-gradient(circle, currentColor 1.2px, transparent 1.6px) 0 0 / 6px 6px; }
-html [data-bpb-peak-card] :is(.bpb-peak-card-grip, .bpb-peak-card-toggle):focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: 3px; }
-#bpb-peak-snow[data-bpb-card-collapsed="true"], #bpb-peak-weather[data-bpb-card-collapsed="true"] { padding-bottom: 16px; }
-#bpb-peak-snow[data-bpb-card-collapsed="true"] header { margin-bottom: 0; }
-#bpb-peak-weather[data-bpb-card-collapsed="true"] :is(.bpb-week-location-name, .bpb-week-map-hint, .bpb-week-actions),
-#bpb-peak-snow[data-bpb-card-collapsed="true"] .bpb-snow-refresh { display: none !important; }
-.bpb-peak-card-sun-header { display: flex; align-items: center; padding-right: 12px; gap: 4px; }
-#bpb-peak-sun .bpb-sun-calculator__toggle { flex: 1; min-width: 0; width: auto; background: transparent !important; border: 0 !important; color: inherit !important; }
-@container bpb-week (max-width: 440px) {
-    #bpb-peak-weather[data-bpb-peak-card] header { display: grid; grid-template-columns: minmax(0, 1fr) 32px; }
-    #bpb-peak-weather[data-bpb-peak-card] .bpb-week-heading { grid-area: 1 / 1; }
-    #bpb-peak-weather[data-bpb-peak-card] .bpb-peak-card-grip { grid-area: 1 / 2; align-self: start; }
-    #bpb-peak-weather[data-bpb-peak-card] .bpb-week-actions { grid-area: 2 / 1 / 3 / 3; justify-self: end; }
+html :is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: -3px; }
+html [data-bpb-peak-card] .bpb-peak-card-grip:focus-visible { outline: 2px solid var(--peak-card-accent); outline-offset: 3px; }
+#bpb-peak-sun .bpb-sun-calculator__toggle { padding-right: 3.75rem; background: transparent !important; border: 0 !important; color: inherit !important; }
+@container bpb-sun-peak (max-width: 440px) {
+    #bpb-peak-sun .bpb-peak-card-grip { top: calc(.5rem + .675rem - 16px); }
 }
 .bpb-peak-card-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .bpb-peak-card-status:not(.bpb-peak-card-sr) { position: fixed; bottom: 12px; left: 12px; z-index: 10001; display: flex; gap: 8px; max-width: min(360px, calc(100vw - 24px)); padding: 10px 14px; border-radius: 8px; background: #24272b; color: #f1eee7; font: 13px/1.45 system-ui, sans-serif; }

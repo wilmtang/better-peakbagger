@@ -7,7 +7,7 @@ import path from 'node:path';
 import { waitForCondition } from './browser-verification-fixtures.mjs';
 
 export async function verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings,
-    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, release, networkErrors, firefoxMode }) {
+    setZoom, wait, movePointer, pointerDown, pointerUp, setMode, heldCount, release, networkErrors, firefoxMode }) {
     const output = process.env.BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR, cases = [];
     if (output) await mkdir(output, { recursive: true });
     const browser = firefoxMode ? 'firefox' : 'chrome';
@@ -62,8 +62,6 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             .flatMap(x => [h.top + 8, h.top + h.height / 2].map(y => ({ x, y })));
         const grip = header.querySelector('.bpb-peak-card-grip').getBoundingClientRect();
         points.push({ x: grip.left - 2, y: h.top + h.height / 2 });
-        if (id !== 'sun') points.push({ x: h.left + h.width / 2, y: h.top - 8 });
-        if (id !== 'sun' && card.dataset.bpbCardCollapsed === 'true') points.push({ x: h.left + h.width / 2, y: c.bottom - 6 });
         const samples = points.filter(({ x, y }) => {
             // The native page can extend past the viewport; sample only page
             // pixels that a pointer can actually reach at this scroll.
@@ -71,11 +69,11 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             const hit = document.elementFromPoint(x, y), control = hit?.closest('button, a, input, select');
             return !control || control === toggle;
         });
-        const blank = samples.find(({ x, y }) => x < t.left || x > t.right || y < t.top || y > t.bottom);
+        const title = toggle.querySelector('.bpb-peak-card-title, .bpb-sun-calculator__title');
+        const blank = samples.find(({ x, y }) => !title.contains(document.elementFromPoint(x, y)));
         return { blank, covered: samples.every(({ x, y }) => document.elementFromPoint(x, y)?.closest('button') === toggle),
             bounds: { card: { left: c.left, right: c.right }, header: { left: h.left, right: h.right }, toggle: { left: t.left, right: t.right },
-                client: document.documentElement.clientWidth, inner: window.innerWidth, visual: window.visualViewport?.width,
-                pseudo: { width: getComputedStyle(toggle, '::after').width, left: getComputedStyle(toggle, '::after').left, right: getComputedStyle(toggle, '::after').right } },
+                client: document.documentElement.clientWidth, inner: window.innerWidth, visual: window.visualViewport?.width },
             missed: samples.filter(({ x, y }) => document.elementFromPoint(x, y)?.closest('button') !== toggle).map(({ x, y }) => ({ x, y,
                 hit: document.elementFromPoint(x, y)?.outerHTML.slice(0, 160) })),
             controlsIndependent: [...header.querySelectorAll('button')].filter(button => button !== toggle
@@ -88,7 +86,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
         assert.deepEqual(await order(), ['sun', 'weather', 'snow']);
-        for (const id of ['sun', 'weather', 'snow']) {
+        for (const id of ['weather', 'snow', 'sun']) {
             const toggle = id === 'sun' ? '.bpb-sun-calculator__toggle' : '.bpb-peak-card-toggle';
             await focus(id, toggle);
             // The native page has a minimum width. Pan its right edge clear
@@ -97,11 +95,24 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
                 const r = document.querySelector(`[data-bpb-peak-card="${id}"]`).getBoundingClientRect();
                 if (r.right > window.innerWidth - 20) window.scrollBy(r.right - window.innerWidth + 20, 0);
             }, id);
+            const row = await evaluate(id => {
+                const card = document.querySelector(`[data-bpb-peak-card="${id}"]`);
+                const header = card.querySelector('header, .bpb-peak-card-sun-header');
+                const toggle = header.querySelector('.bpb-peak-card-toggle, .bpb-sun-calculator__toggle');
+                const caret = toggle.querySelector('.bpb-peak-card-chevron, .bpb-sun-calculator__chevron');
+                const t = toggle.getBoundingClientRect(), c = card.getBoundingClientRect(), r = caret.getBoundingClientRect();
+                return { left: t.left - c.left, right: c.right - t.right, caretInset: c.right - r.right,
+                    headerButtons: header.querySelectorAll('button').length };
+            }, id);
+            assert.ok(Math.abs(row.caretInset - 61) <= 1, `${width}/${theme}/${id}: the caret aligns at the right before the drag handle: ${JSON.stringify(row)}`);
+            assert.ok(row.left <= 1 && row.right <= 1, `${width}/${theme}/${id}: the disclosure button fills the first row: ${JSON.stringify(row)}`);
+            assert.equal(row.headerButtons, 2, 'the first row contains only the disclosure and its separate drag handle');
             const targets = await headerTargets(id);
             if (!targets.covered) await image(`${width}-${theme}-${id}-header-hit-failure`);
             assert.equal(targets.covered, true, `${width}/${theme}/${id}: the full header activates its native disclosure: ${JSON.stringify(targets)}`);
-            assert.ok(targets.blank, 'the row includes a clickable point beyond the title button');
+            assert.ok(targets.blank, 'the row includes a clickable point beyond its title text');
             assert.equal(targets.controlsIndependent, true, 'Refresh and drag handles retain their own hit targets');
+            if (id === 'weather') await image(`${width}-${theme}-weather-header`);
             const before = await evaluate(() => {
                 const r = document.activeElement.getBoundingClientRect();
                 return { x: r.x, y: r.y, width: r.width, height: r.height, scroll: window.scrollY };
@@ -122,6 +133,29 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
             assert.equal(await evaluate(() => !!document.activeElement.closest('.bpb-peak-card-body, .bpb-sun-calculator__panel')), false,
                 'collapsed contents leave keyboard navigation');
         }
+        await focus('weather', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('weather', true);
+        await focus('weather', '.bpb-week-refresh');
+        const weatherBefore = await geometry(); setMode('loading'); await press(key('Enter'));
+        await wait(() => document.querySelector('#bpb-peak-weather').getAttribute('aria-busy') === 'true', 'weather refresh pending');
+        await waitForCondition(heldCount, { description: 'weather response held by fixture', isReady: count => count > 0 });
+        stable(weatherBefore, await geometry(), 'weather refresh keeps its header, panel and surrounding content anchored');
+        const weatherAction = await evaluate(() => {
+            const r = document.querySelector('.bpb-week-refresh').getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+        });
+        setMode('service-error'); release();
+        await waitForCondition(() => evaluate(() => ({ busy: document.querySelector('#bpb-peak-weather').getAttribute('aria-busy'),
+            feedback: document.querySelector('.bpb-week-status').textContent })), { description: 'weather refresh error retains the forecast',
+            isReady: state => state.busy === 'false' && state.feedback.includes('weather service is unavailable') });
+        const weatherErrorAction = await evaluate(() => {
+            const r = document.querySelector('.bpb-week-refresh').getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+        });
+        stable(weatherAction, weatherErrorAction, 'weather error keeps Refresh anchored');
+        await image(`${width}-${theme}-weather-error`);
+        setMode('complete'); await click('.bpb-week-refresh'); await ready();
+        stable(weatherBefore, await geometry(), 'weather retry restores the settled layout');
+        await focus('weather', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('weather', false);
         await focus('weather', '.bpb-peak-card-grip'); await press(key('ArrowUp'));
         await saved('peakCardOrder', ['weather', 'sun', 'snow']); assert.deepEqual(await order(), ['weather', 'sun', 'snow']);
         assert.equal(await evaluate(() => document.activeElement.getAttribute('aria-label')), 'Reorder Summit weather');
@@ -148,6 +182,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await focus('snow', '.bpb-peak-card-toggle'); await press(key('Space')); await expanded('snow', true); await saved('peakSnowCollapsed', false);
         const requestsBefore = await geometry(); setMode('loading'); await click('.bpb-snow-refresh');
         await wait(() => document.querySelector('#bpb-peak-snow').getAttribute('aria-busy') === 'true', 'refresh pending');
+        await waitForCondition(heldCount, { description: 'snow response held by fixture', isReady: count => count > 0 });
         stable(requestsBefore, await geometry(), 'expanded pending state after reordering');
         await focus('snow', '.bpb-peak-card-toggle'); await press(key('Enter')); await expanded('snow', false); await saved('peakSnowCollapsed', true);
         const closedPending = await geometry(); setMode('service-error'); release();
@@ -159,7 +194,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         const current = await readSettings(); await setSettings({ ...current, showSnotel: false });
         await wait(() => document.querySelector('#bpb-peak-snow-row').hidden, 'SNOTEL feature off');
         await setSettings({ ...current, showSnotel: true }); await ready(); assert.deepEqual(await order(), ['snow', 'weather', 'sun']);
-        cases.push({ width, theme, states: ['header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
+        cases.push({ width, theme, states: ['header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'weather-refresh-error-retry', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
     }
     await resize(1440, 1100); await focus('snow', '.bpb-peak-card-grip');
     const edgeDrag = await evaluate(() => {
@@ -174,7 +209,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     await setZoom(2);
     await press(key('Tab')); await focus('snow', '.bpb-peak-card-toggle');
     const keyboardFocus = await evaluate(() => ({ control: document.activeElement.className,
-        visible: document.activeElement.matches(':focus-visible'), outline: getComputedStyle(document.activeElement, '::after').outlineStyle }));
+        visible: document.activeElement.matches(':focus-visible'), outline: getComputedStyle(document.activeElement).outlineStyle }));
     assert.equal(keyboardFocus.outline, 'solid', `keyboard focus outlines the full header: ${JSON.stringify(keyboardFocus)}`);
     await image('200-percent');
     assert.equal((await headerTargets('snow')).covered, true, 'the full header remains clickable at 200% zoom');
