@@ -138,6 +138,20 @@ test('peak card uses native summit metadata without GPX and mounts once after th
     } finally { env.close(); }
 });
 
+test('snow-depth trend labels observation dates and each plotted reading', async () => {
+    const env = setup();
+    try {
+        await settled(env);
+        const dates = [...env.doc.querySelectorAll('.bpb-snow-details tbody th')].map(node => node.textContent);
+        assert.deepEqual([...env.doc.querySelectorAll('.bpb-snow-dates span')].map(node => node.textContent),
+            [dates[0], dates[4], dates[7]], 'the horizontal axis shows daily observation dates');
+        const dot = env.doc.querySelector('.bpb-snow-graph circle');
+        assert.match(dot.querySelector('title').textContent, new RegExp(`${dates[0]}.*in`));
+        env.settings({ units: 'metric' });
+        assert.match(env.doc.querySelector('.bpb-snow-graph circle title').textContent, /cm/);
+    } finally { env.close(); }
+});
+
 test('SWE is explicitly named and keeps its own measurement, timestamp and daily history', async () => {
     const env = setup();
     try {

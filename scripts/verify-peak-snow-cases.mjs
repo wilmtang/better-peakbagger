@@ -91,6 +91,19 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         assert.equal(swe.label, 'Water equivalent (SWE)', `${name}: SWE must be recognizable beside snow depth`);
         assert.equal(swe.heading, 'SWE', `${name}: daily readings must identify SWE`);
         assert.equal(swe.value, theme === 'dark' ? '312.4 mm' : '12.30 in', `${name}: SWE uses its own measurement and units`);
+        const axis = await evaluate(() => {
+            const dates = [...document.querySelectorAll('.bpb-snow-details tbody th')].map(node => node.textContent);
+            const ticks = [...document.querySelectorAll('.bpb-snow-dates span')];
+            const plot = document.querySelector('.bpb-snow-graph').getBoundingClientRect();
+            return { dates: [dates[0], dates[4], dates[7]], labels: ticks.map(node => node.textContent),
+                readable: ticks.every((node, index) => {
+                    const r = node.getBoundingClientRect(), previous = ticks[index - 1]?.getBoundingClientRect();
+                    return r.width > 0 && r.left >= plot.left - 1 && r.right <= plot.right + 1 && (!previous || r.left >= previous.right + 4);
+                }), title: document.querySelector('.bpb-snow-graph circle title')?.textContent };
+        });
+        assert.deepEqual(axis.labels, axis.dates, `${name}: horizontal axis identifies observation dates`);
+        assert.equal(axis.readable, true, `${name}: date ticks fit without overlap`);
+        assert.match(axis.title, new RegExp(`${axis.dates[0]}.*${theme === 'dark' ? 'cm' : 'in'}`));
         assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-row').previousElementSibling.id), 'bpb-peak-weather-row');
         await image(`${name}-ready`);
         await click('#bpb-peak-snow summary'); await focusRefresh();

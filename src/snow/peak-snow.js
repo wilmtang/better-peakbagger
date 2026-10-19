@@ -62,6 +62,8 @@ export function mountPeakSnow() {
     const graphMax = element('span', { class: 'bpb-snow-graph-max', 'aria-hidden': 'true', hidden: '' });
     const graphZero = element('span', { class: 'bpb-snow-graph-zero', 'aria-hidden': 'true', text: '0', hidden: '' });
     const graphFrame = element('div', { class: 'bpb-snow-graph' }, [graph, emptyGraph, graphMax, graphZero]);
+    const dateTicks = [0, 4, 7].map(index => element('span', { 'data-day': String(index) }));
+    const graphDates = element('div', { class: 'bpb-snow-dates', 'aria-label': 'Daily observation dates' }, dateTicks);
     const range = element('p', { class: 'bpb-snow-range', text: 'Past 7 days · Snow depth' });
     const stableRange = createStableText(range);
     stableRange.reserve(['Sep 30 – Sep 30 · Snow depth', 'Past 7 days · Snow depth']);
@@ -75,7 +77,7 @@ export function mountPeakSnow() {
     const source = element('a', { href: 'https://nwcc-apps.sc.egov.usda.gov/imap/', target: '_blank', rel: 'noopener noreferrer', text: 'NRCS · SNOTEL' });
     const observations = element('div', { class: 'bpb-snow-observations' }, [
         element('label', { for: select.id, class: 'bpb-snow-label', text: 'SNOTEL station' }), select, note,
-        element('div', { class: 'bpb-snow-metrics' }, metrics.map(metric => metric.node)), range, graphFrame,
+        element('div', { class: 'bpb-snow-metrics' }, metrics.map(metric => metric.node)), range, graphFrame, graphDates,
     ]);
     const card = element('section', { id: ID, 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false', hidden: '' }, [
         element('header', {}, [element('h2', { id: `${ID}-heading`, text: 'Nearby snow' }), refresh]),
@@ -175,8 +177,11 @@ export function mountPeakSnow() {
         values.forEach((value, index) => {
             if (value === null) return;
             const dot = document.createElementNS(graph.namespaceURI, 'circle');
-            dot.setAttribute('cx', String(8 + index * 304 / 7)); dot.setAttribute('cy', String(68 - value / max * 44)); dot.setAttribute('r', '2'); graph.append(dot);
+            dot.setAttribute('cx', String(8 + index * 304 / 7)); dot.setAttribute('cy', String(68 - value / max * 44)); dot.setAttribute('r', '2');
+            const title = document.createElementNS(graph.namespaceURI, 'title');
+            title.textContent = `${dateLabel(dates[index])} · ${depthText(value)}`; dot.append(title); graph.append(dot);
         });
+        dateTicks.forEach(tick => { tick.textContent = view ? dateLabel(dates[Number(tick.dataset.day)]) : ''; });
         emptyGraph.hidden = values.some(value => value !== null);
         graphMax.hidden = graphZero.hidden = !emptyGraph.hidden;
         graphMax.textContent = depthText(Math.max(0, ...values.filter(value => value !== null)));

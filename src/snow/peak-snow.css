@@ -37,6 +37,11 @@ html[data-bpb-theme="dark"] #bpb-peak-snow {
 #bpb-peak-snow .bpb-snow-graph-max { top: 0; right: 0; }
 #bpb-peak-snow .bpb-snow-graph-zero { bottom: 0; left: 0; }
 #bpb-peak-snow .bpb-snow-graph p { align-self: center; text-align: center; color: var(--snow-sub); font-size: 12px; }
+#bpb-peak-snow .bpb-snow-dates { position: relative; height: 1.45em; margin: 0 0 8px; color: var(--snow-sub); font-size: 10px; font-variant-numeric: tabular-nums; }
+#bpb-peak-snow .bpb-snow-dates span { position: absolute; white-space: nowrap; }
+#bpb-peak-snow .bpb-snow-dates [data-day="0"] { left: 0; }
+#bpb-peak-snow .bpb-snow-dates [data-day="4"] { left: 56.786%; transform: translateX(-50%); }
+#bpb-peak-snow .bpb-snow-dates [data-day="7"] { right: 0; }
 #bpb-peak-snow .bpb-snow-details { font-size: 12px; color: var(--snow-sub); margin: 8px 0 12px; overflow-wrap: anywhere; }
 #bpb-peak-snow summary { cursor: pointer; color: var(--snow-accent); }
 #bpb-peak-snow .bpb-snow-table-wrap { margin-top: 12px; max-width: 100%; overflow-x: auto; }
