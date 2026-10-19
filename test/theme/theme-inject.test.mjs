@@ -76,6 +76,50 @@ test('theme=dark sets the attribute AND injects the dark stylesheet', async () =
         'the broad fallback must leave after the complete theme is ready');
 });
 
+test('native map popups inherit the theme across changes, reloads and frame replacement', async () => {
+    const dom = await loadTheme({ theme: 'dark' });
+    try {
+        const mount = frame => {
+            const doc = frame.contentDocument;
+            doc.open(); doc.write('<!doctype html><html><head><style>body{background:#dce6d7}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:white;color:#333}</style></head><body><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper">Station</div><div class="leaflet-popup-tip"></div></div></body></html>'); doc.close();
+            frame.dispatchEvent(new dom.window.Event('load'));
+            return doc;
+        };
+        const frame = dom.window.document.createElement('iframe'); frame.src = '/map/MasterMap.aspx';
+        dom.window.document.body.append(frame); let doc = mount(frame);
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        const background = () => doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-popup-content-wrapper')).backgroundColor;
+        assert.equal(background(), 'rgb(39, 44, 41)', 'dark mode must reach the native popup inside the iframe');
+        assert.equal(doc.defaultView.getComputedStyle(doc.body).backgroundColor, 'rgb(220, 230, 215)', 'the map canvas keeps its native colors');
+        await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'light' } });
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        assert.equal(background(), 'rgb(255, 255, 255)');
+        await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } });
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        doc = mount(frame);
+        assert.equal(background(), 'rgb(39, 44, 41)', 'reload restores the scoped popup sheet');
+        const replacement = dom.window.document.createElement('iframe'); replacement.src = '/map/mastermap.aspx';
+        frame.replaceWith(replacement); doc = mount(replacement);
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        assert.equal(background(), 'rgb(39, 44, 41)', 'a replacement frame receives the current theme');
+        replacement.dispatchEvent(new dom.window.Event('load'));
+        assert.equal(doc.querySelectorAll('#bpb-native-map-popup-theme').length, 1);
+    } finally { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); }
+});
+
+test('top-level Leaflet popups use the same palette without repainting their map', async () => {
+    const dom = await loadTheme({ theme: 'dark' });
+    try {
+        const map = dom.window.document.createElement('div');
+        map.style.backgroundColor = '#dce6d7';
+        map.innerHTML = '<div class="leaflet-popup"><div class="leaflet-popup-content-wrapper"><a href="/peak.aspx?pid=2296">Summit</a></div><div class="leaflet-popup-tip"></div></div>';
+        dom.window.document.body.append(map);
+        assert.equal(dom.window.getComputedStyle(map.querySelector('.leaflet-popup-content-wrapper')).backgroundColor, 'rgb(39, 44, 41)');
+        assert.equal(dom.window.getComputedStyle(map.querySelector('a')).color, 'rgb(170, 208, 255)');
+        assert.equal(dom.window.getComputedStyle(map).backgroundColor, 'rgb(220, 230, 215)');
+    } finally { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); }
+});
+
 test('the sheet self-heals: a later apply() re-injects it if it went missing', async () => {
     const dom = await loadTheme({ theme: 'dark' });
     assert.ok(sheet(dom));

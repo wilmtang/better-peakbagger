@@ -12,7 +12,9 @@
 // toggles from the extension settings, so the injected sheet is inert until
 // that attribute is "dark". Peakbagger's native palette (pb.css): white/wallpaper
 // body, navy links, purple visited, maroon h1, navy h2, light-gray table.gray
-// borders, Tahoma. Images and the map iframe are left untouched.
+// borders, Tahoma. Images and map tiles are left untouched.
+
+import { nativeMapDarkCss } from './native-map-theme.js';
 
 export const darkCss = `
 html[data-bpb-theme="dark"] {
@@ -132,4 +134,5 @@ html[data-bpb-theme="dark"] [data-bpb-dark-inline-bg] {
    values and their dark counterparts — is owned entirely by the STYLE block in
    src/ascent/ascent-filter.js, so a new control cannot ship with a light value
    and no dark one. Do not reintroduce .pbaf-* rules in this file. */
+${nativeMapDarkCss}
 `;

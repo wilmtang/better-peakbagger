@@ -25,6 +25,7 @@
 import { settings as S } from '../settings/settings.js';
 import { createDynamicInlineColorApplier } from './dynamic-inline-colors.js';
 import { darkCss } from './site-dark-css.js';
+import { createNativeMapTheme } from './native-map-theme.js';
 import {
     EARLY_THEME_STYLE_ID,
     THEME_CACHE_KEY,
@@ -53,10 +54,12 @@ const ensureSheet = () => {
 ensureSheet();
 
 const inlineColors = createDynamicInlineColorApplier({ document });
+const nativeMapTheme = createNativeMapTheme({ document });
 const finishTheme = theme => {
     ensureSheet();
     root.setAttribute('data-bpb-theme', theme);
     inlineColors.setTheme(theme);
+    nativeMapTheme.setTheme(theme);
     // The complete sheet and watcher now own the page. Remove the broad
     // bootstrap only after both are ready so no light frame can land
     // between the early and full stages.
@@ -86,7 +89,10 @@ const reconcile = () => {
 };
 reconcile();
 S.subscribe(s => { settingsGeneration++; pref = s.theme; apply(); });
-window.addEventListener('pagehide', () => { settingsGeneration++; });
+window.addEventListener('pagehide', event => {
+    settingsGeneration++;
+    if (!event.persisted) nativeMapTheme.dispose();
+});
 window.addEventListener('pageshow', event => { if (event.persisted) reconcile(); });
 
 if (window.matchMedia) {

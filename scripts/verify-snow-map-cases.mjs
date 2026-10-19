@@ -32,6 +32,53 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     const waitMarkers = count => waitForCondition(markerCount, { description: `${count} native snow markers`, timeoutMs: 10_000, isReady: value => value === count });
     const ready = () => wait(() => document.getElementById('bpb-snow-map-toggle')?.getAttribute('aria-busy') === 'false'
         && document.querySelector('.bpb-snow-map-notice')?.hidden === true, 'settled snow layer');
+    const popupPalette = () => evaluate(() => {
+        const win = document.getElementById('Gmap').contentWindow, popup = win.document.querySelector('.leaflet-popup');
+        const style = selector => win.getComputedStyle(popup.querySelector(selector));
+        return { background: style('.leaflet-popup-content-wrapper').backgroundColor, tip: style('.leaflet-popup-tip').backgroundColor,
+            text: style('.leaflet-popup-content-wrapper').color, link: style('.leaflet-popup-content a').color,
+            close: style('.leaflet-popup-close-button').color,
+            button: popup.querySelector('button') ? style('button').backgroundColor : null };
+    });
+    const themedPopup = (palette, theme) => {
+        assert.equal(palette.background, theme === 'dark' ? 'rgb(39, 44, 41)' : 'rgb(255, 255, 255)', `${theme}: native popup surface follows the site theme`);
+        assert.equal(palette.tip, palette.background, 'the geographic arrow matches its popup');
+        if (theme === 'dark') {
+            assert.equal(palette.text, 'rgb(226, 222, 213)');
+            assert.equal(palette.link, 'rgb(170, 208, 255)');
+            assert.equal(palette.close, palette.text);
+            if (palette.button) assert.equal(palette.button, 'rgb(52, 59, 55)');
+        }
+    };
+    const popupSettled = () => wait(() => {
+        const win = document.getElementById('Gmap').contentWindow, popup = win.document.querySelector('.leaflet-popup');
+        return popup && win.getComputedStyle(popup).opacity === '1' && !win.mapsPlaceholder._panAnim?._inProgress;
+    }, 'fully painted native popup and settled pan');
+    const popupGeometry = () => evaluate(() => {
+        const win = document.getElementById('Gmap').contentWindow, doc = win.document;
+        const rect = selector => {
+            const r = doc.querySelector(selector).getBoundingClientRect();
+            return { x: r.x, y: r.y, width: r.width, height: r.height };
+        };
+        return { surface: rect('.leaflet-popup'), close: rect('.leaflet-popup-close-button'), action: rect('.bpb-snotel-show-conditions'),
+            link: rect('.bpb-snotel-popup a'), canvas: win.getComputedStyle(doc.getElementById('map')).backgroundColor,
+            focus: doc.activeElement.className, scroll: [win.scrollX, win.scrollY] };
+    });
+    const nativeHeaderThemeShift = () => evaluate(() => {
+        // Measure the existing page-wide theme layout without the new popup
+        // rules. Narrow native header controls can wrap differently between
+        // themes; the popup change must add no movement to that baseline.
+        const root = document.documentElement, sheet = document.getElementById('bpb-site-dark');
+        const css = sheet.textContent, theme = root.getAttribute('data-bpb-theme');
+        const start = css.indexOf('html[data-bpb-theme="dark"] .leaflet-popup');
+        if (start < 0) throw new Error('Native popup CSS is missing from the site sheet');
+        try {
+            sheet.textContent = css.slice(0, start);
+            const before = document.querySelector('h1').getBoundingClientRect().y;
+            root.setAttribute('data-bpb-theme', theme === 'dark' ? 'light' : 'dark');
+            return document.querySelector('h1').getBoundingClientRect().y - before;
+        } finally { root.setAttribute('data-bpb-theme', theme); sheet.textContent = css; }
+    });
     const aligned = state => assert.ok(Math.abs(state.map.x + state.map.width - state.toggle.x - state.toggle.width - 10) <= 1,
         'SNOTEL shares the right inset of the map controls');
     const popupAnchor = () => evaluateTerrain(() => {
@@ -127,25 +174,44 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await evaluate(() => document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-marker').focus());
         await press(key('Enter'));
         await wait(() => !!document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-popup'), 'keyboard native station popup');
-        await wait(() => {
-            const win = document.getElementById('Gmap').contentWindow, popup = win.document.querySelector('.leaflet-popup');
-            return popup && win.getComputedStyle(popup).opacity === '1';
-        }, 'fully painted native station popup');
+        await popupSettled();
         assert.match(await evaluate(() => document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-popup').textContent), /Paradise.*SNOTEL.*View NRCS snow data/);
+        themedPopup(await popupPalette(), theme);
         assert.equal(await evaluate(() => {
             const win = document.getElementById('Gmap').contentWindow, bounds = win.document.querySelector('.leaflet-popup').getBoundingClientRect();
             return bounds.left >= 0 && bounds.right <= win.innerWidth && bounds.top >= 0 && bounds.bottom <= win.innerHeight;
         }), true, 'native station popup fits the map');
         await image(`${width}-${theme}-popup`);
+        await evaluate(() => document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-show-conditions').focus({ preventScroll: true }));
+        const popupBefore = await popupGeometry(), pageBefore = await geometry(), headerShift = await nativeHeaderThemeShift();
+        for (const next of [theme === 'dark' ? 'light' : 'dark', theme]) {
+            await setSettings({ theme: next, units: 'imperial', enable3dMap: true, showSunMoon: false, showWeather: true, showSnotel: true });
+            await waitForCondition(popupPalette, { description: `native popup changes to ${next}`, timeoutMs: 5000,
+                isReady: palette => palette.background === (next === 'dark' ? 'rgb(39, 44, 41)' : 'rgb(255, 255, 255)') });
+            themedPopup(await popupPalette(), next);
+            assert.deepEqual(await popupGeometry(), popupBefore, 'live theme changes preserve popup geometry, map paint, scroll and keyboard focus');
+            const after = await geometry();
+            if (next !== theme) for (const part of ['toggle', 'mode', 'map', 'heading', 'following']) after[part].y -= headerShift;
+            stable(pageBefore, after, 'live popup theme adds no shift beyond the native header baseline');
+        }
+        await image(`${width}-${theme}-popup-focus`);
         await click('#bpb-snow-map-toggle'); await waitMarkers(0);
         const requests = snowEvidence.length; await click('#bpb-snow-map-toggle'); await ready(); await waitMarkers(2);
         assert.equal(snowEvidence.length, requests, 'toggling cached metadata does not fetch observations');
         stable(initial, await geometry(), 'cached toggle');
         // A native iframe reload must restore the overlay without touching the
         // parent toggle, camera, or surrounding document.
-        await evaluate(() => { const frame = document.getElementById('Gmap'); frame.src = frame.src; });
+        await evaluate(() => {
+            const frame = document.getElementById('Gmap'); window.__snowOldMapDocument = frame.contentDocument; frame.src = frame.src;
+        });
+        await wait(() => document.getElementById('Gmap').contentDocument !== window.__snowOldMapDocument,
+            'native iframe navigation installs a new document');
         await waitMarkers(2); stable(initial, await geometry(), 'frame reload');
-        cases.push({ width, theme, states: ['off', 'pending', 'cancel', 'ready', 'popup', 'cached', 'frame-reload'] });
+        await evaluate(() => { document.getElementById('Gmap').contentWindow.nativePeak.openPopup(); });
+        await popupSettled(); themedPopup(await popupPalette(), theme);
+        await image(`${width}-${theme}-summit-popup`);
+        cases.push({ width, theme, nativeHeaderThemeShift: headerShift,
+            states: ['off', 'pending', 'cancel', 'ready', 'popup', 'live-theme', 'cached', 'frame-reload', 'summit-popup'] });
         console.log(`${browser} ${width}/${theme}: stable snow layer and keyboard popup`);
     }
     await prepare(1440, 'light', 'service-error'); await click('#bpb-snow-map-toggle');
@@ -305,6 +371,8 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     await click('#bpb-terrain-toggle');
     await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false', '200% return to 2D');
     stable(zoom, await geometry(), '200% 3D to 2D');
+    await evaluate(() => document.getElementById('Gmap').contentDocument.querySelector('.bpb-snotel-marker').focus());
+    await press(key('Enter')); await popupSettled(); themedPopup(await popupPalette(), 'dark');
     await image('zoom-200'); await setZoom(1);
     cases.push({ zoom: 2, states: ['pending', 'ready', '3D', '2D'] });
     await prepare(375, 'light', 'no-stations'); await click('#bpb-snow-map-toggle');

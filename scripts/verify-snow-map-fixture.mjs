@@ -23,7 +23,8 @@ export async function snowMapDocument() {
         <script>${js.replace(/<\/script/gi, '<\\/script')}</script><script>
         window.mapsPlaceholder=L.map('map',{zoomControl:false}).setView([46.851731,-121.760395],10);
         L.control.zoom({position:'bottomright'}).addTo(mapsPlaceholder);
-        L.circleMarker([46.851731,-121.760395],{radius:6,color:'#be2649',fillOpacity:1}).addTo(mapsPlaceholder);
+        window.nativePeak=L.circleMarker([46.851731,-121.760395],{radius:6,color:'#be2649',fillOpacity:1})
+            .bindPopup('<a href="/peak.aspx?pid=2296">Mount Rainier</a>').addTo(mapsPlaceholder);
         L.polyline([[46.83,-121.77],[46.85,-121.76]],{color:'#be2649'}).addTo(mapsPlaceholder);
         window.nativeLayers=[];mapsPlaceholder.eachLayer(layer=>nativeLayers.push(layer));
         </script></body></html>`;
