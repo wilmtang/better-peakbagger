@@ -95,6 +95,19 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
                 const r = document.querySelector(`[data-bpb-peak-card="${id}"]`).getBoundingClientRect();
                 if (r.right > window.innerWidth - 20) window.scrollBy(r.right - window.innerWidth + 20, 0);
             }, id);
+            const appearance = await evaluate(id => {
+                const read = card => {
+                    const header = card.querySelector('.bpb-peak-card-header');
+                    const button = header.querySelector('.bpb-peak-card-toggle, .bpb-sun-calculator__toggle');
+                    const title = button.querySelector('.bpb-peak-card-title, .bpb-sun-calculator__title');
+                    const c = getComputedStyle(card), h = getComputedStyle(header), b = getComputedStyle(button), t = getComputedStyle(title);
+                    return { cardRadius: c.borderRadius, headerBackground: h.backgroundColor === 'rgba(0, 0, 0, 0)' ? c.backgroundColor : h.backgroundColor, buttonRadius: b.borderRadius,
+                        fontFamily: t.fontFamily, fontSize: t.fontSize, fontWeight: t.fontWeight, lineHeight: t.lineHeight,
+                        padding: b.padding };
+                };
+                return { actual: read(document.querySelector(`[data-bpb-peak-card="${id}"]`)), expected: read(document.querySelector('[data-bpb-peak-card="sun"]')) };
+            }, id);
+            assert.deepEqual(appearance.actual, appearance.expected, `${width}/${theme}/${id}: all headers share Sun & Moon's appearance`);
             const row = await evaluate(id => {
                 const card = document.querySelector(`[data-bpb-peak-card="${id}"]`);
                 const header = card.querySelector('header, .bpb-peak-card-sun-header');
