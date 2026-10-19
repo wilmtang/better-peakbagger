@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, requestAnimationFrame */
+/* global document, window, requestAnimationFrame, getComputedStyle */
 
 import assert from 'node:assert/strict';
 import { createServer } from 'node:https';
@@ -129,7 +129,9 @@ try {
         ['ascent', '/climber/ascent.aspx?aid=1&mode=terrain&map=wide'],
         ['big-map', '/map/BigMap.aspx?t=G&mode3d=1'],
         ['big-peak', '/map/BigMap.aspx?t=P&d=2829&cy=48.83115&cx=-121.60214&z=14&mode3d=1'],
-    ]) for (const [width, theme] of [[1280, 'light'], [375, 'dark']]) {
+    ]) for (const [width, theme] of surface === 'peak'
+        ? [[1280, 'light'], [1280, 'dark'], [375, 'light'], [375, 'dark']]
+        : [[1280, 'light'], [375, 'dark']]) {
         const label = `${surface}/${width}/${theme}`;
         console.log(`Checking ${label}`);
         let stage = 'native fixture';
@@ -179,6 +181,45 @@ try {
             if (process.platform === 'darwin') assert.match(renderer, /ANGLE Metal Renderer/, 'macOS verification requires Metal');
             console.log(`${label}: ${renderer}`);
             stable(before, await read(), `${label}/active`);
+            if (surface === 'peak') {
+                stage = 'layer picker focus';
+                const picker = frame.locator('.bpb-terrain-picker');
+                const pickerState = () => picker.evaluate(element => {
+                    const style = getComputedStyle(element), r = element.getBoundingClientRect();
+                    // Firefox retains the frame's last activeElement when
+                    // Tab leaves its document; that element no longer has focus.
+                    return { focused: document.activeElement === element && document.hasFocus(), visible: element.matches(':focus-visible'),
+                        scheme: style.colorScheme, outline: style.outlineStyle, width: style.outlineWidth,
+                        offset: style.outlineOffset, color: style.outlineColor,
+                        rect: { x: r.x, y: r.y, width: r.width, height: r.height } };
+                });
+                for (const scale of [1, 2]) {
+                    // Enlarged text also exercises the picker's constrained
+                    // width without changing the renderer's camera or canvas.
+                    await frame.locator('#bpb-terrain-map').evaluate((map, scale) => { map.style.fontSize = `${12 * scale}px`; }, scale);
+                    const idle = await pickerState();
+                    await page.keyboard.press('Tab');
+                    await picker.focus();
+                    const focused = await pickerState();
+                    await screenshot(`${surface}-${width}-${theme}-picker-focus-${scale}x`);
+                    assert.equal(focused.focused && focused.visible, true, `${label}: keyboard focus is visible`);
+                    assert.equal(focused.outline, 'solid', `${label}: native focus halo must be replaced`);
+                    assert.equal(focused.scheme, theme, `${label}: native menu must follow the map theme`);
+                    assert.equal(focused.width, '2px', `${label}: use the compact map-control focus ring`);
+                    assert.equal(focused.offset, '-2px', `${label}: focus must stay inside the scrolling control stack`);
+                    assert.equal(focused.color, theme === 'dark' ? 'rgb(121, 184, 255)' : 'rgb(47, 111, 208)');
+                    assert.deepEqual(focused.rect, idle.rect, `${label}: focus moved or resized the layer picker`);
+                    await picker.press('Escape');
+                    assert.equal((await pickerState()).focused, true, `${label}: Escape keeps focus in the picker`);
+                    assert.equal(await frame.locator('#bpb-terrain-map').count(), 1, `${label}: picker Escape must not exit 3D`);
+                    await picker.press('Tab');
+                    await waitForCondition(pickerState, { description: `${label}: keyboard can leave the picker`,
+                        isReady: state => !state.focused });
+                    assert.deepEqual((await pickerState()).rect, idle.rect, `${label}: blur moved or resized the layer picker`);
+                    stable(before, await read(), `${label}/picker-${scale}x`);
+                }
+                await frame.locator('#bpb-terrain-map').evaluate(map => { map.style.fontSize = ''; });
+            }
             const group = await frame.locator('.maplibregl-ctrl-group').boundingBox();
             const button = (await read()).button;
             assert.ok(group.y - button.y - button.height >= 7, `${label}: toggle overlaps zoom: ${JSON.stringify({ group, button })}`);
