@@ -82,6 +82,15 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         await focusRefresh(); await pending(); const initial = await geometry();
         assert.deepEqual(initial.overflow, []);
         setMode('complete'); release(); await ready(); stable(initial, await geometry(), `${name}: initial load`);
+        const swe = await evaluate(() => {
+            const metric = document.querySelectorAll('.bpb-snow-metric')[1];
+            return { label: metric.querySelector('.bpb-snow-label').textContent,
+                value: metric.querySelector('strong').textContent,
+                heading: document.querySelector('#bpb-peak-snow thead th:last-child').textContent };
+        });
+        assert.equal(swe.label, 'Water equivalent (SWE)', `${name}: SWE must be recognizable beside snow depth`);
+        assert.equal(swe.heading, 'SWE', `${name}: daily readings must identify SWE`);
+        assert.equal(swe.value, theme === 'dark' ? '312.4 mm' : '12.30 in', `${name}: SWE uses its own measurement and units`);
         assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-row').previousElementSibling.id), 'bpb-peak-weather-row');
         await image(`${name}-ready`);
         await click('#bpb-peak-snow summary'); await focusRefresh();

@@ -138,6 +138,27 @@ test('peak card uses native summit metadata without GPX and mounts once after th
     } finally { env.close(); }
 });
 
+test('SWE is explicitly named and keeps its own measurement, timestamp and daily history', async () => {
+    const env = setup();
+    try {
+        await settled(env);
+        const metrics = env.doc.querySelectorAll('.bpb-snow-metric');
+        assert.equal(metrics[1].querySelector('.bpb-snow-label').textContent, 'Water equivalent (SWE)');
+        assert.equal(metrics[1].querySelector('strong').textContent, '12.30 in');
+        assert.notEqual(metrics[1].querySelector('.bpb-snow-time').textContent, metrics[0].querySelector('.bpb-snow-time').textContent);
+        const table = env.doc.querySelector('.bpb-snow-details table');
+        const dailySwe = () => Array.from(table.tBodies[0].rows).at(-1).cells[2].querySelector('span').textContent;
+        assert.equal(table.querySelector('thead th:last-child').textContent, 'SWE');
+        assert.equal(dailySwe(), '12.70 in');
+        assert.match(env.doc.querySelector('.bpb-snow-details').textContent, /Snow water equivalent \(SWE\) is the water held in the snowpack/);
+        const requests = env.requests.length;
+        env.settings({ units: 'metric' });
+        assert.equal(metrics[1].querySelector('strong').textContent, '312.4 mm');
+        assert.equal(dailySwe(), '322.6 mm');
+        assert.equal(env.requests.length, requests, 'SWE unit changes use the original observation');
+    } finally { env.close(); }
+});
+
 test('weather setting must resolve and card must approach viewport before any request', async () => {
     const env = setup({ lazy: true });
     try {

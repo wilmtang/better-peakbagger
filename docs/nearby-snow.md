@@ -22,8 +22,9 @@ unavailable readings and chart. This single initial coverage result deliberately
 compacts the card while keeping its header action in place; loaded-station
 refreshes and errors preserve the full layout and reading position.
 
-**Snow depth** shows the latest available hourly depth; **Water equivalent**
-shows the water held in the snowpack. Each reading keeps its own observation
+**Snow depth** shows the latest available hourly depth; **Water equivalent (SWE)**
+shows the snow water equivalent: the water held in the snowpack. The daily table
+labels this measurement **SWE**. Each reading keeps its own observation
 time, including when the two sensors report at different times. The card looks
 back 48 hours and labels readings older than six hours. Missing data stays
 unavailable and zero stays zero. Metric depth uses centimeters, imperial depth

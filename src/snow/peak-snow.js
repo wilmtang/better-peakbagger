@@ -47,7 +47,7 @@ export function mountPeakSnow() {
     stableStatus.reserve([...Object.values(labels), 'No SNOTEL station within 50 km of this peak.',
         'No SNOTEL station within 31.1 mi of this peak.', 'NRCS request limit reached. Try again after Sep 30, 12:59 PM.']);
     stableStatus.set(labels.idle);
-    const metrics = ['Snow depth', 'Water equivalent'].map(label => {
+    const metrics = ['Snow depth', 'Water equivalent (SWE)'].map(label => {
         const value = element('strong', { text: '—' }), time = element('span', { class: 'bpb-snow-time', text: 'No reading in past 48 hours' });
         const stableValue = createStableText(value), stableTime = createStableText(time);
         stableValue.reserve(['3810.0 cm', '1500.0 in', '12700.0 mm', '500.00 in', '—']);
@@ -68,8 +68,8 @@ export function mountPeakSnow() {
     const tbody = element('tbody');
     const details = element('details', { class: 'bpb-snow-details' }, [element('summary', { text: 'Daily readings and source details' }),
         element('div', { class: 'bpb-snow-table-wrap' }, [element('table', {}, [element('caption', { text: 'Daily observations · NRCS end-of-day dates' }),
-            element('thead', {}, [element('tr', {}, ['Date', 'Snow depth', 'Water equivalent'].map(text => element('th', { scope: 'col', text })))]), tbody])]),
-        element('p', { text: 'Water equivalent is the water held in the snowpack. Depth changes include settling and melting; they are not fresh snowfall. Gaps remain unavailable.' }),
+            element('thead', {}, [element('tr', {}, ['Date', 'Snow depth', 'SWE'].map(text => element('th', { scope: 'col', text })))]), tbody])]),
+        element('p', { text: 'Snow water equivalent (SWE) is the water held in the snowpack. Depth changes include settling and melting; they are not fresh snowfall. Gaps remain unavailable.' }),
         element('p', { text: 'Nearby stations may be much lower or across a ridge. Hourly readings are provisional; the daily series receives more review. Source quality flags appear with each daily value.' }),
     ]);
     const source = element('a', { href: 'https://nwcc-apps.sc.egov.usda.gov/imap/', target: '_blank', rel: 'noopener noreferrer', text: 'NRCS · SNOTEL' });
