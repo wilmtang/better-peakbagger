@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window */
+/* global document, window, getComputedStyle */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -53,6 +53,37 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         return button.getAttribute('aria-expanded');
     }, id), { description: `${id} disclosure ${expected}`, isReady: value => value === String(expected) });
     const preferences = { sun: 'peakSunCollapsed', weather: 'peakWeatherCollapsed', snow: 'peakSnowCollapsed' };
+    const headerTargets = id => evaluate(id => {
+        const card = document.querySelector(`[data-bpb-peak-card="${id}"]`);
+        const header = card.querySelector('header, .bpb-peak-card-sun-header');
+        const toggle = header.querySelector('.bpb-peak-card-toggle, .bpb-sun-calculator__toggle');
+        const h = header.getBoundingClientRect(), c = card.getBoundingClientRect(), t = toggle.getBoundingClientRect();
+        const points = [c.left + 6, h.left + h.width / 3, h.left + h.width * 2 / 3, c.right - 6]
+            .flatMap(x => [h.top + 8, h.top + h.height / 2].map(y => ({ x, y })));
+        const grip = header.querySelector('.bpb-peak-card-grip').getBoundingClientRect();
+        points.push({ x: grip.left - 2, y: h.top + h.height / 2 });
+        if (id !== 'sun') points.push({ x: h.left + h.width / 2, y: h.top - 8 });
+        if (id !== 'sun' && card.dataset.bpbCardCollapsed === 'true') points.push({ x: h.left + h.width / 2, y: c.bottom - 6 });
+        const samples = points.filter(({ x, y }) => {
+            // The native page can extend past the viewport; sample only page
+            // pixels that a pointer can actually reach at this scroll.
+            if (x < 0 || x >= document.documentElement.clientWidth || y < 0 || y >= window.innerHeight) return false;
+            const hit = document.elementFromPoint(x, y), control = hit?.closest('button, a, input, select');
+            return !control || control === toggle;
+        });
+        const blank = samples.find(({ x, y }) => x < t.left || x > t.right || y < t.top || y > t.bottom);
+        return { blank, covered: samples.every(({ x, y }) => document.elementFromPoint(x, y)?.closest('button') === toggle),
+            bounds: { card: { left: c.left, right: c.right }, header: { left: h.left, right: h.right }, toggle: { left: t.left, right: t.right },
+                client: document.documentElement.clientWidth, inner: window.innerWidth, visual: window.visualViewport?.width,
+                pseudo: { width: getComputedStyle(toggle, '::after').width, left: getComputedStyle(toggle, '::after').left, right: getComputedStyle(toggle, '::after').right } },
+            missed: samples.filter(({ x, y }) => document.elementFromPoint(x, y)?.closest('button') !== toggle).map(({ x, y }) => ({ x, y,
+                hit: document.elementFromPoint(x, y)?.outerHTML.slice(0, 160) })),
+            controlsIndependent: [...header.querySelectorAll('button')].filter(button => button !== toggle
+                && getComputedStyle(button).visibility !== 'hidden' && button.getClientRects().length).every(button => {
+                const r = button.getBoundingClientRect();
+                return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('button') === button;
+            }) };
+    }, id);
     for (const width of [1440, 375]) for (const theme of ['light', 'dark']) {
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
@@ -60,16 +91,33 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         for (const id of ['sun', 'weather', 'snow']) {
             const toggle = id === 'sun' ? '.bpb-sun-calculator__toggle' : '.bpb-peak-card-toggle';
             await focus(id, toggle);
+            // The native page has a minimum width. Pan its right edge clear
+            // of browser chrome before testing padding near the viewport edge.
+            await evaluate(id => {
+                const r = document.querySelector(`[data-bpb-peak-card="${id}"]`).getBoundingClientRect();
+                if (r.right > window.innerWidth - 20) window.scrollBy(r.right - window.innerWidth + 20, 0);
+            }, id);
+            const targets = await headerTargets(id);
+            if (!targets.covered) await image(`${width}-${theme}-${id}-header-hit-failure`);
+            assert.equal(targets.covered, true, `${width}/${theme}/${id}: the full header activates its native disclosure: ${JSON.stringify(targets)}`);
+            assert.ok(targets.blank, 'the row includes a clickable point beyond the title button');
+            assert.equal(targets.controlsIndependent, true, 'Refresh and drag handles retain their own hit targets');
             const before = await evaluate(() => {
                 const r = document.activeElement.getBoundingClientRect();
                 return { x: r.x, y: r.y, width: r.width, height: r.height, scroll: window.scrollY };
             });
-            await press(key('Enter')); await expanded(id, false); await saved(preferences[id], true);
+            await pointerDown(targets.blank.x, targets.blank.y); await pointerUp();
+            await expanded(id, false); await saved(preferences[id], true);
             const after = await evaluate(() => {
                 const r = document.activeElement.getBoundingClientRect();
                 return { x: r.x, y: r.y, width: r.width, height: r.height, scroll: window.scrollY };
             });
             stable(before, after, `${width}/${theme}/${id}: disclosure trigger and reading position stay anchored`);
+            const closedTargets = await headerTargets(id);
+            assert.equal(closedTargets.covered, true, 'the collapsed header remains clickable across its row');
+            await pointerDown(closedTargets.blank.x, closedTargets.blank.y); await pointerUp();
+            await expanded(id, true); await saved(preferences[id], false);
+            await press(key('Enter')); await expanded(id, false); await saved(preferences[id], true);
             await press(key('Tab'));
             assert.equal(await evaluate(() => !!document.activeElement.closest('.bpb-peak-card-body, .bpb-sun-calculator__panel')), false,
                 'collapsed contents leave keyboard navigation');
@@ -111,7 +159,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         const current = await readSettings(); await setSettings({ ...current, showSnotel: false });
         await wait(() => document.querySelector('#bpb-peak-snow-row').hidden, 'SNOTEL feature off');
         await setSettings({ ...current, showSnotel: true }); await ready(); assert.deepEqual(await order(), ['snow', 'weather', 'sun']);
-        cases.push({ width, theme, states: ['collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
+        cases.push({ width, theme, states: ['header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
     }
     await resize(1440, 1100); await focus('snow', '.bpb-peak-card-grip');
     const edgeDrag = await evaluate(() => {
@@ -124,7 +172,12 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
     await pointerUp(); await saved('peakCardOrder', ['weather', 'sun', 'snow']);
     cases.push({ states: ['expanded-card-drag', 'edge-autoscroll'] });
     await setZoom(2);
-    await focus('snow', '.bpb-peak-card-toggle'); await image('200-percent');
+    await press(key('Tab')); await focus('snow', '.bpb-peak-card-toggle');
+    const keyboardFocus = await evaluate(() => ({ control: document.activeElement.className,
+        visible: document.activeElement.matches(':focus-visible'), outline: getComputedStyle(document.activeElement, '::after').outlineStyle }));
+    assert.equal(keyboardFocus.outline, 'solid', `keyboard focus outlines the full header: ${JSON.stringify(keyboardFocus)}`);
+    await image('200-percent');
+    assert.equal((await headerTargets('snow')).covered, true, 'the full header remains clickable at 200% zoom');
     assert.equal(await evaluate(() => {
         const card = document.querySelector('#bpb-peak-snow'), bounds = card.getBoundingClientRect();
         return [...card.querySelectorAll('.bpb-peak-card-toggle, .bpb-peak-card-grip, .bpb-snow-dates span')].every(node => {

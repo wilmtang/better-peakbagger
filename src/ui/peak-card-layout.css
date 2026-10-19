@@ -4,6 +4,17 @@
 [data-bpb-peak-card] { --peak-card-accent: #1769aa; --peak-card-text: #1d232a; }
 html[data-bpb-theme="dark"] [data-bpb-peak-card] { --peak-card-accent: #83bbff; --peak-card-text: #f1eee7; }
 .bpb-sun-calculator[data-bpb-peak-card] { width: 100%; max-inline-size: 100%; margin: 16px 0 0; }
+/* Stretch the existing disclosure's hit area across its header. Keep the
+   action buttons above it so refresh, reset and dragging remain independent. */
+:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(header, .bpb-peak-card-sun-header) { position: relative; isolation: isolate; }
+:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):not(:disabled)::after {
+    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: 8px; cursor: pointer;
+}
+:is(#bpb-peak-weather, #bpb-peak-snow) .bpb-peak-card-toggle:not(:disabled)::after { inset: -16px -20px 0; }
+:is(#bpb-peak-weather, #bpb-peak-snow)[data-bpb-card-collapsed="true"] .bpb-peak-card-toggle:not(:disabled)::after { bottom: -16px; }
+:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-week-actions button, .bpb-snow-refresh, .bpb-peak-card-grip) { position: relative; z-index: 1; }
+:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible { outline: none; }
+:is(#bpb-peak-weather, #bpb-peak-snow, #bpb-peak-sun) :is(.bpb-peak-card-toggle, .bpb-sun-calculator__toggle):focus-visible::after { outline: 2px solid var(--peak-card-accent); outline-offset: -3px; }
 #bpb-peak-weather .bpb-peak-card-toggle, #bpb-peak-snow .bpb-peak-card-toggle {
     display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0;
     background: transparent !important; color: inherit !important; border: 0 !important; border-radius: 4px;
