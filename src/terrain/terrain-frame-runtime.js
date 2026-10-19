@@ -15,6 +15,7 @@ import { createSentinelLayer } from '../maps/sentinel-layer.js';
 import { rateLimitMessage } from '../net/rate-limit.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
+import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
@@ -41,6 +42,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
         onSelect: stationId => post('snowSelect', { stationId }) });
     let snowStations = [];
+    const snowReveal = createSnotelMapReveal({ window, terrain: true, getMap: () => map });
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
     // The producer on the far side of the bridge samples routes down to these
@@ -358,6 +360,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     };
 
     const removeTerrain = () => {
+        snowReveal.cancel();
         snowMarkers.clear(); snowStations = [];
         removeLoadTimer();
         clearGestureHintDismissal();
@@ -461,6 +464,7 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
     // and DOM alive so a resume is instant. An idle MapLibre at opacity 0 renders
     // nothing.
     const suspendTerrain = () => {
+        snowReveal.cancel();
         snowMarkers.closePopup();
         sentinelLayer?.deactivate();
         if (peaksDebounceTimer !== null) {
@@ -2329,6 +2333,8 @@ export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker
             if (!stations) return;
             snowStations = stations;
             if (loaded && !snowMarkers.replace(map, stations)) showNotice('SNOTEL stations could not be drawn. Toggle SNOTEL to try again.');
+            if (!stations.length) snowReveal.cancel();
+            else if (loaded && data.reveal === true) snowReveal.show(stations);
         } else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             setRoutePaint(data.routeStyle);

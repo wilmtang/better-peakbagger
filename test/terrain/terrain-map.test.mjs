@@ -173,6 +173,8 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const beforeInvalidSnow = frameMessages.length;
     dispatchPage({ type: 'snowStations', snowStations: [{ ...snowStation, longitude: 181 }] });
     assert.equal(frameMessages.length, beforeInvalidSnow, 'invalid map metadata cannot cross the isolated bridge');
+    dispatchPage({ type: 'snowStations', snowStations: [snowStation], reveal: true });
+    assert.equal(frameMessages.at(-1).reveal, true, 'explicit reveal reaches a loading frame');
     dispatchPage({ type: 'snowStations', snowStations: [] });
     assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1).snowStations)), [], 'toggle-off reaches a loading frame');
 
@@ -191,6 +193,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(frame.style.pointerEvents, 'auto');
     assert.equal(frameMessages.at(-1).type, 'snowStations');
     assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1).snowStations)), [], 'ready replays toggle-off even if authorization dropped its earlier update');
+    assert.equal(frameMessages.at(-1).reveal, false, 'toggle-off clears a queued reveal before the renderer is ready');
     assert.equal(pageMessages.at(-1).type, 'loaded');
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.73, -121.78], zoom: 13.25 });
 
@@ -357,6 +360,24 @@ const bootLoadedFrame = async (initOverrides = {}) => {
 
     return { dom, window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages, timers, realSetTimeout };
 };
+
+test('a parked terrain frame cannot reveal stations and resume does not replay that request', async () => {
+    const harness = await bootLoadedFrame();
+    const { window, dispatchPage, dispatchFrame, frameMessages, initData } = harness;
+    try {
+        const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
+        dispatchPage({ type: 'snowStations', snowStations: [station], reveal: true });
+        assert.equal(frameMessages.at(-1).reveal, true);
+        dispatchPage({ type: 'destroy' });
+        dispatchPage({ type: 'snowStations', snowStations: [station], reveal: true });
+        assert.equal(frameMessages.at(-1).reveal, false, 'hidden terrain must not animate');
+        armTerrain(window); dispatchPage({ ...initData, snowStations: [station] });
+        await new Promise(resolve => harness.realSetTimeout(resolve, 0));
+        dispatchFrame({ type: 'loaded', navTop: 96 });
+        assert.equal(frameMessages.at(-1).type, 'snowStations');
+        assert.equal(frameMessages.at(-1).reveal, false, 'an ordinary handoff only restores the layer');
+    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+});
 
 test('3D weather points require the active frame generation, valid coordinates and a visible card', async () => {
     const harness = await bootLoadedFrame();

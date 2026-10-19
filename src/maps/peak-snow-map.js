@@ -4,11 +4,13 @@
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { snotelSymbol, snotelPopup } from '../snow/snotel-map-marker.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
+import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 
 // MAIN world owns only rendering. The independent overlay never changes
 // Peakbagger's basemap, native markers, or layer picker. Toggling preserves
-// the camera; opening an edge popup may pan just enough to keep it readable.
-export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChange = () => {} }) {
+// the camera when a station is already visible; otherwise activation reveals
+// nearby stations once. An edge popup may pan enough to keep it readable.
+export function createPeakSnowMap({ mount, getContext, postTerrain, isTerrainOpen = () => false, onLayoutChange = () => {} }) {
     const doc = mount.ownerDocument, win = doc.defaultView;
     const button = doc.createElement('button'); button.id = 'bpb-snow-map-toggle'; button.type = 'button';
     button.className = 'bpb-snow-map-toggle'; button.hidden = true; button.setAttribute('aria-pressed', 'false');
@@ -20,10 +22,12 @@ export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChan
     retry.setAttribute('aria-label', 'Retry SNOTEL stations'); notice.append(status, retry); mount.append(button, notice);
     let available = false, selected = false, active = true, pending = false, stations = null, requestId = 0;
     let group = null, boundMap = null, polling = null;
+    let revealPending = false;
+    const reveal = createSnotelMapReveal({ window: win, getMap: () => getContext()?.map });
     const post = detail => win.postMessage({ __bpbPeakSnow: true, dir: 'toCS', ...detail }, win.location.origin);
     const cooldown = createRetryCooldown(() => retry.setAttribute('aria-disabled', String(cooldown.active())));
     const stopPolling = () => { if (polling !== null) win.clearInterval(polling); polling = null; };
-    const clearNative = () => { stopPolling(); if (group) group.remove(); group = null; boundMap = null; };
+    const clearNative = () => { stopPolling(); reveal.cancel(); if (group) group.remove(); group = null; boundMap = null; };
     const attach = () => {
         if (!active || !selected || !stations?.length) { clearNative(); return true; }
         const context = getContext(), L = context?.win?.L, map = context?.map;
@@ -41,6 +45,7 @@ export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChan
                     { autoPanPadding: [12, 12], maxWidth: 260 }).addTo(next);
             }
             next.addTo(map); group = next; boundMap = map;
+            if (revealPending && !isTerrainOpen()) { revealPending = false; reveal.show(stations); }
         } catch { next.remove(); return false; }
         return true;
     };
@@ -60,7 +65,11 @@ export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChan
         button.classList.toggle('bpb-snow-map-loading', pending);
         onLayoutChange();
     };
-    const sendTerrain = () => postTerrain('snowStations', { snowStations: available && selected ? stations || [] : [] });
+    const sendTerrain = () => {
+        const shouldReveal = revealPending && isTerrainOpen() && !!stations?.length;
+        postTerrain('snowStations', { snowStations: available && selected ? stations || [] : [], reveal: shouldReveal });
+        if (shouldReveal) revealPending = false;
+    };
     const load = () => {
         if (!available || !active || pending) return;
         if (cooldown.active()) {
@@ -75,7 +84,7 @@ export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChan
         if (event.source !== win || event.origin !== win.location.origin || !data || data.__bpbPeakSnow !== true || data.dir !== 'toPage') return;
         if (data.type === 'availability') {
             available = data.enabled === true;
-            if (!available) { selected = false; pending = false; requestId++; stations = null; notice.hidden = true; clearNative(); sendTerrain(); }
+            if (!available) { selected = false; pending = false; revealPending = false; requestId++; stations = null; notice.hidden = true; clearNative(); sendTerrain(); }
             render(); return;
         }
         if (!active || !available || !selected || !pending || data.type !== 'stations' || data.requestId !== requestId) return;
@@ -90,11 +99,13 @@ export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChan
             stations = next; retry.hidden = true;
             status.textContent = 'No SNOTEL stations within 50 km of this peak.'; notice.hidden = next.length > 0;
             reattach(); sendTerrain();
+            if (!next.length) revealPending = false;
         }
         render();
     };
     button.addEventListener('click', () => {
         selected = !selected;
+        revealPending = selected;
         if (!selected) { pending = false; requestId++; post({ type: 'cancel' }); notice.hidden = true; clearNative(); sendTerrain(); }
         else if (stations) { notice.hidden = stations.length > 0; reattach(); sendTerrain(); }
         else load();
@@ -107,7 +118,7 @@ export function createPeakSnowMap({ mount, getContext, postTerrain, onLayoutChan
         attach: reattach,
         setTheme(theme) { button.dataset.theme = notice.dataset.theme = theme; },
         snapshot: () => available && selected ? stations || [] : [],
-        suspend() { active = false; pending = false; requestId++; post({ type: 'cancel' }); clearNative(); cooldown.suspend(); },
+        suspend() { active = false; pending = false; revealPending = false; requestId++; post({ type: 'cancel' }); clearNative(); cooldown.suspend(); },
         resume() { active = true; cooldown.resume(); reattach(); if (selected && !stations) load(); post({ type: 'availability' }); },
         dispose() { clearNative(); cooldown.dispose(); win.removeEventListener('message', handle); button.remove(); notice.remove(); },
     };

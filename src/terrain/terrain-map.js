@@ -490,8 +490,9 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             } else if (data.type === 'snowStations') {
                 const snowStations = readSnotelMapStations(data.snowStations);
                 if (!snowStations) return;
-                if (pendingInit) pendingInit.snowStations = snowStations;
-                postToFrame('snowStations', { snowStations });
+                const reveal = data.reveal === true && !suspended;
+                if (pendingInit) { pendingInit.snowStations = snowStations; pendingInit.revealSnowStations = reveal; }
+                postToFrame('snowStations', { snowStations, reveal });
             } else if (data.type === 'update') {
                 if (pendingInit) {
                     pendingInit.routeStyle = data.routeStyle;
@@ -519,7 +520,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             // An overlay can change after init was posted but before the
             // frame's asynchronous authorization completed. Replay the latest
             // snapshot once it can accept updates, including a toggle-off.
-            if (pendingInit) postToFrame('snowStations', { snowStations: pendingInit.snowStations });
+            if (pendingInit) postToFrame('snowStations', { snowStations: pendingInit.snowStations, reveal: pendingInit.revealSnowStations === true });
             pendingInit = null;
             frameLoaded = true;
             frame.style.opacity = '1';

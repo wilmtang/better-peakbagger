@@ -123,8 +123,13 @@ offer the three closest stations, plus a station explicitly chosen from the map
 when needed. A failed replacement preserves the previous readings and station
 identity, and map selections respect the same NRCS cooldown as the picker.
 The toggle's accessible name and tooltip
-state the coverage. Toggling preserves native map layers and the camera.
-Opening a station popup near an edge may pan enough to keep it readable.
+state the coverage. Native map layers stay intact. When enabled with no station
+visible, the active 2D or 3D map briefly zooms out to frame up to three nearby
+stations together with the current map center. An already visible station keeps
+the camera unchanged. The reveal lasts about 450 ms, respects reduced motion,
+and does not repeat on iframe reload or mode handoff. Turning the layer off
+cancels its reveal. Opening a station popup near an edge may pan enough to keep
+it readable.
 
 The layer shares the card's metadata client and public local catalog cache.
 Toggling cached stations does not request measurements. Only validated public
@@ -142,7 +147,11 @@ distinct from a catalog failure.
 and Firefox against the masked peak page, pinned Leaflet 1.9.4, deterministic
 NRCS JSON and non-flat synthetic DEM tiles. It checks loading, cancellation,
 retry, cached toggling, keyboard station popups, iframe reloads, settings,
-2D/3D switching and parked-frame reuse. It exercises the conditions action in
+2D/3D switching and parked-frame reuse. Close-zoom cases verify that enabling
+the layer reveals offscreen stations, paints intermediate animation frames,
+keeps the hidden native camera still in 3D, and preserves controls and document
+scroll. They also check reduced motion and no recentering for visible stations.
+It exercises the conditions action in
 both renderers, including a fourth-nearest station, loading, failure, retry,
 distinct station readings, focus transfer and card geometry through recovery.
 It compares control, map, heading,

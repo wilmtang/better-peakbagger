@@ -13,9 +13,16 @@ import { snotelStations } from '../helpers/snotel-fixture.mjs';
 
 const stations = readSnotelMapStations(validateSnotelStations(snotelStations()));
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-function setup() {
+function setup({ visible = true, terrainOpen = false } = {}) {
     const env = new JSDOM('<!doctype html><div id="mount"></div>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296' });
     const win = env.window, messages = [], terrain = [], native = { layers: new Set(['basemap', 'summit', 'route']) }, groups = [];
+    const flights = [], events = new Map();
+    Object.assign(native, {
+        getSize: () => ({ x: 760, y: 425 }), getCenter: () => ({ lat: 46.85, lng: -121.76 }), getZoom: () => 14,
+        latLngToContainerPoint: () => visible ? { x: 100, y: 100 } : { x: -1000, y: -1000 },
+        flyToBounds: (bounds, options) => flights.push({ bounds, options }), stop() {},
+        on: (name, callback) => events.set(name, callback), off: name => events.delete(name),
+    });
     win.postMessage = message => messages.push(message);
     const emit = (data, origin = win.location.origin) => win.dispatchEvent(new win.MessageEvent('message', {
         source: win, origin, data: { __bpbPeakSnow: true, dir: 'toPage', ...data },
@@ -29,9 +36,10 @@ function setup() {
         marker(point, options) { return { point, options, bindPopup(content, popupOptions) { this.content = content; this.popupOptions = popupOptions; return this; }, addTo(group) { group.markers.push(this); return this; } }; },
     };
     let context = { win: { L, document: win.document }, map: native };
-    const layer = createPeakSnowMap({ mount: win.document.querySelector('#mount'), getContext: () => context, postTerrain: (type, data) => terrain.push({ type, ...data }) });
+    const layer = createPeakSnowMap({ mount: win.document.querySelector('#mount'), getContext: () => context,
+        isTerrainOpen: () => terrainOpen, postTerrain: (type, data) => terrain.push({ type, ...data }) });
     const button = win.document.querySelector('#bpb-snow-map-toggle');
-    return { win, messages, terrain, native, groups, layer, button, emit, setContext: value => { context = value; },
+    return { win, messages, terrain, native, groups, flights, layer, button, emit, setContext: value => { context = value; },
         close: () => { layer.dispose(); win.close(); } };
 }
 
@@ -47,6 +55,22 @@ test('map metadata is bounded, rebuilt and rejects identity, HTML URL and coordi
     assert.equal(nearbySnotelStations(many, stations[0]).length, 3);
     assert.equal(nearbySnotelStations(many, stations[0], 50).length, 8);
     assert.throws(() => nearbySnotelStations(many, stations[0], 51));
+});
+
+test('an explicit SNOTEL activation reveals offscreen stations only in the active map', () => {
+    for (const terrainOpen of [false, true]) {
+        const env = setup({ visible: false, terrainOpen });
+        try {
+            env.emit({ type: 'availability', enabled: true }); env.button.click();
+            env.emit({ type: 'stations', requestId: env.messages.at(-1).requestId, stations });
+            assert.equal(env.flights.length, terrainOpen ? 0 : 1);
+            assert.equal(env.terrain.at(-1).reveal, terrainOpen);
+            env.layer.attach(); env.layer.suspend(); env.layer.resume();
+            assert.equal(env.flights.length, terrainOpen ? 0 : 1, 'reattaching or resuming does not repeat the reveal');
+            env.button.click(); env.button.click();
+            assert.equal(env.flights.length, terrainOpen ? 0 : 2, 'a new explicit activation may reveal again');
+        } finally { env.close(); }
+    }
 });
 
 test('snow toggle preserves native layers, camera and focus, and shares a sanitized 3D snapshot', () => {

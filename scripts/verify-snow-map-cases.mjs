@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document, window, getComputedStyle */
+/* global document, window, getComputedStyle, requestAnimationFrame */
 
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
@@ -79,12 +79,30 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         assert.ok(initial.toggle.width <= 100 && initial.toggle.height <= 34, 'compact control');
         aligned(initial);
         assert.ok(initial.toggle.x >= initial.map.x && initial.toggle.x + initial.toggle.width <= initial.map.x + initial.map.width, 'toggle inside map');
+        if (width === 1440 && theme === 'light') await evaluate(() => {
+            const win = document.getElementById('Gmap').contentWindow, map = win.mapsPlaceholder;
+            map.setView([46.851731, -121.760395], 14, { animate: false });
+            win.__snowRevealZooms = []; win.__snowRevealEnds = 0;
+            map.on('move', () => win.__snowRevealZooms.push(map.getZoom()));
+            map.on('moveend', () => win.__snowRevealEnds++);
+        });
         await press(key('Enter'));
         await wait(() => document.getElementById('bpb-snow-map-toggle').getAttribute('aria-busy') === 'true', 'pending snow layer');
         stable(initial, await geometry(), 'pending layer'); await image(`${width}-${theme}-pending`);
         await press(key('Space')); await waitMarkers(0);
         assert.equal(await evaluate(() => document.getElementById('bpb-snow-map-toggle').getAttribute('aria-pressed')), 'false');
         await press(key('Enter')); setMode('complete'); release(); await ready(); await waitMarkers(2);
+        if (width === 1440 && theme === 'light') await waitForCondition(() => evaluate(() => {
+            const win = document.getElementById('Gmap').contentWindow;
+            return { zoom: win.mapsPlaceholder.getZoom(), ended: win.__snowRevealEnds > 0, visible: [...win.document.querySelectorAll('.bpb-snotel-marker')].slice(0, 3).every(pin => {
+                const r = pin.getBoundingClientRect();
+                return r.left >= 0 && r.right <= win.innerWidth && r.top >= 0 && r.bottom <= win.innerHeight;
+            }) };
+        }), { description: 'enabling SNOTEL reveals an offscreen station', timeoutMs: 5000,
+            isReady: state => state.zoom < 14 && state.visible && state.ended });
+        if (width === 1440 && theme === 'light') assert.ok(await evaluate(() =>
+            new Set(document.getElementById('Gmap').contentWindow.__snowRevealZooms.map(zoom => zoom.toFixed(2))).size > 2),
+        '2D reveal paints intermediate zoom levels');
         stable(initial, await geometry(), 'ready layer'); assert.equal((await geometry()).focus, 'bpb-snow-map-toggle');
         if (theme === 'dark') {
             const activeColor = () => evaluate(() => getComputedStyle(document.getElementById('bpb-snow-map-toggle')).backgroundColor);
@@ -389,5 +407,75 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
     await evaluate(() => document.getElementById('bpb-peak-snow').scrollIntoView({ block: 'start' }));
     await cardReady('679:WA:SNTL');
     cases.push({ states: ['SNOTEL-off-forecast-on', 'no-NRCS-requests', 'SNOTEL-on-forecast-off'] });
+
+    for (const [width, theme, reduced] of [[1440, 'light', false], [375, 'dark', false], [375, 'dark', true]]) {
+        await prepare(width, theme, 'complete');
+        await evaluate(() => {
+            document.getElementById('Gmap').contentWindow.mapsPlaceholder
+                .setView([46.851731, -121.760395], 14, { animate: false });
+        });
+        await click('#bpb-terrain-toggle');
+        await wait(() => document.getElementById('bpb-terrain-frame')?.style.opacity === '1'
+            && document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true', 'close 3D view ready');
+        await evaluate(() => {
+            window.__snowRevealCameras = [];
+            window.addEventListener('message', event => {
+                if (event.source === window && event.data?.__bpbTerrain === true && event.data.dir === 'toPage'
+                    && event.data.type === 'camera') window.__snowRevealCameras.push(event.data.camera);
+            });
+        });
+        await evaluateTerrain(() => {
+            window.__snowRevealFrames = []; window.__snowRevealSampling = true;
+            const sample = () => {
+                const pin = document.querySelector('.bpb-snotel-marker');
+                if (pin) {
+                    const r = pin.getBoundingClientRect();
+                    window.__snowRevealFrames.push({ x: r.x, y: r.y, width: r.width });
+                }
+                if (window.__snowRevealSampling) requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+        });
+        if (reduced) await evaluateTerrain(() => {
+            const original = window.matchMedia.bind(window);
+            window.matchMedia = query => query === '(prefers-reduced-motion: reduce)' ? { matches: true } : original(query);
+        });
+        const before = await geometry();
+        const nativeCamera = await evaluate(() => {
+            const map = document.getElementById('Gmap').contentWindow.mapsPlaceholder;
+            const center = map.getCenter(); return { lat: center.lat, lon: center.lng, zoom: map.getZoom() };
+        });
+        await click('#bpb-snow-map-toggle'); await ready();
+        await waitForCondition(() => evaluate(() => window.__snowRevealCameras), {
+            description: `${width}/${theme}: 3D SNOTEL reveal finishes`, timeoutMs: 20_000,
+            isReady: cameras => cameras.some(camera => camera.zoom < 13),
+        });
+        await frameWait(() => {
+            const pins = [...document.querySelectorAll('.bpb-snotel-marker')];
+            return pins.length > 0 && pins.slice(0, 3).every(pin => {
+                const r = pin.getBoundingClientRect();
+                return r.width > 0 && r.left >= 12 && r.right <= window.innerWidth - 12 && r.top >= 12 && r.bottom <= window.innerHeight - 12;
+            });
+        }, '3D reveal fully exposes the framed stations inside the viewport');
+        const samples = await evaluateTerrain(() => { window.__snowRevealSampling = false; return window.__snowRevealFrames; });
+        if (!reduced) assert.ok(new Set(samples.filter(frame => frame.width > 0).map(frame => `${Math.round(frame.x)},${Math.round(frame.y)}`)).size > 2,
+            `3D reveal paints intermediate camera positions: ${JSON.stringify(samples)}`);
+        stable(before, await geometry(), '3D reveal keeps controls and reading position anchored');
+        assert.equal((await geometry()).focus, 'bpb-snow-map-toggle');
+        const afterNative = await evaluate(() => {
+            const map = document.getElementById('Gmap').contentWindow.mapsPlaceholder;
+            const center = map.getCenter(); return { lat: center.lat, lon: center.lng, zoom: map.getZoom() };
+        });
+        // The renderer owns its reveal. The hidden 2D camera changes only on
+        // the ordinary mode handoff, never as a side effect of adding markers.
+        assert.deepEqual(afterNative, nativeCamera, 'revealing 3D stations does not animate the hidden native map');
+        await image(`${width}-${theme}-3d-reveal${reduced ? '-reduced-motion' : ''}`);
+        await click('#bpb-snow-map-toggle'); await frameWait(() => !document.querySelector('.bpb-snotel-marker'), 'revealed layer off');
+        const cameraCount = await evaluate(() => window.__snowRevealCameras.length);
+        await click('#bpb-snow-map-toggle'); await frameWait(() => document.querySelectorAll('.bpb-snotel-marker').length === 2, 'visible stations restored');
+        await evaluateTerrain(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await evaluate(() => window.__snowRevealCameras.length), cameraCount, 'an already visible station does not recenter');
+        cases.push({ width, theme, reducedMotion: reduced, states: ['3D-offscreen', 'reveal', 'visible-no-recenter', 'stable-controls'] });
+    }
     assert.deepEqual(networkErrors, []); assert.ok(cases.length > 0); return { renderer, cases, snowRequests: snowEvidence.length };
 }

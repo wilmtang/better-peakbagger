@@ -354,6 +354,7 @@ import { createPeakSnowMap } from './peak-snow-map.js';
 
     const weatherMap = createPeakWeatherMap({ getFrame: () => iframe, getMap: () => resolveMapContext()?.map });
     const snowMap = createPeakSnowMap({ mount, getContext: resolveMapContext, postTerrain,
+        isTerrainOpen: () => terrainCoordinator.isOpen(),
         onLayoutChange: () => terrainCoordinator.position() });
     const handleIframeLoad = () => {
         weatherMap.attach();
