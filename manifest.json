@@ -275,7 +275,7 @@
         "https://peakbagger.com/Peak.aspx*",
         "https://peakbagger.com/peak.aspx*"
       ],
-      "css": ["css/peak-weather.css", "css/weather-hourly-table.css"],
+      "css": ["css/peak-card-layout.css", "css/peak-weather.css", "css/weather-hourly-table.css"],
       "js": ["content/peak-weather.js"],
       "run_at": "document_end",
       "all_frames": false
@@ -288,7 +288,7 @@
         "https://peakbagger.com/peak.aspx*"
       ],
       "css": ["css/peak-snow.css"],
-      "js": ["content/peak-snow.js"],
+      "js": ["content/peak-snow.js", "content/peak-cards.js"],
       "run_at": "document_end",
       "all_frames": false
     },

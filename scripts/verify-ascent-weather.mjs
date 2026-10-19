@@ -23,13 +23,15 @@ import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mj
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 import { verifySnotelOptions } from './verify-snotel-options.mjs';
+import { verifyPeakCards } from './verify-peak-cards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
 const live = process.argv.includes('--live'); // one optional public-coordinate CORS proof
 const snowMapMode = process.argv.includes('--snow-map');
-const snowMode = process.argv.includes('--snow') || snowMapMode;
-const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map'].includes(arg));
+const cardsMode = process.argv.includes('--cards');
+const snowMode = process.argv.includes('--snow') || snowMapMode || cardsMode;
+const unknown = process.argv.slice(2).filter(arg => !['--firefox', '--live', '--peak', '--snow', '--snow-map', '--cards'].includes(arg));
 if (unknown.length || (snowMode && live)) throw new Error(`Unsupported weather verification arguments: ${process.argv.slice(2).join(' ')}`);
 const peakMode = process.argv.includes('--peak') || snowMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
@@ -43,7 +45,7 @@ try {
     const origin = `https://www.peakbagger.com:${fixture.port}`;
     const evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
-    let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, setZoom, readLocal, writeLocal, version, withOptions;
+    let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readSettings, setZoom, readLocal, writeLocal, version, withOptions;
     const providerPattern = /^https:\/\/(?:(?:api|archive-api|historical-forecast-api)\.open-meteo\.com|wcc\.sc\.egov\.usda\.gov|tiles\.mapterhorn\.com)\//;
     const replyFor = url => {
         const requested = new URL(url);
@@ -224,6 +226,11 @@ try {
                 await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.set({bpbSettings:arguments[0]}).then(()=>done(true),error=>done(String(error)));', values);
             } finally { await driver.switchTo().window(weatherWindow); }
         };
+        readSettings = async () => {
+            await driver.switchTo().window(settingsWindow);
+            try { return await driver.executeAsyncScript('const done=arguments[arguments.length-1]; chrome.storage.sync.get("bpbSettings").then(value=>done(value.bpbSettings));'); }
+            finally { await driver.switchTo().window(weatherWindow); }
+        };
         setZoom = async factor => {
             await driver.switchTo().window(settingsWindow);
             try {
@@ -309,6 +316,7 @@ try {
             await writeFile(output, Buffer.from(data, 'base64'));
         };
         setSettings = values => worker.evaluate(values => chrome.storage.sync.set({ bpbSettings: values }), values);
+        readSettings = () => worker.evaluate(async () => (await chrome.storage.sync.get('bpbSettings')).bpbSettings);
         setZoom = async factor => {
             await worker.evaluate(async value => {
                 const tabs = await chrome.tabs.query({ url: 'https://www.peakbagger.com/*' });
@@ -470,7 +478,11 @@ try {
         for (const key of ['dateWithHeading', 'inSummaryColumn', 'belowSummary', 'gpsBeforeWeather', 'withinColumn', 'besideReport']) assert.equal(geometry[key], true, JSON.stringify(geometry));
         assert.equal(geometry.cardCount, 1);
     };
-    if (snowMapMode) {
+    if (cardsMode) {
+        summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
+            ...await verifyPeakCards({ origin, evaluate, navigate, click, press, resize, screenshotPage, setSettings, readSettings, setZoom, wait,
+                movePointer, pointerDown, pointerUp, setMode: next => { mode = next; }, release: () => held.splice(0).forEach(resolve => resolve()), networkErrors, firefoxMode }) };
+    } else if (snowMapMode) {
         const optionsCases = await withOptions(verifySnotelOptions);
         summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, profile: temporaryRoot,
             optionsCases,

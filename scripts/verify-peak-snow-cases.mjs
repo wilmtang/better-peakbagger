@@ -31,7 +31,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
             if (!node.getClientRects().length || node.closest('[hidden]')) return false;
             const r = node.getBoundingClientRect(); return r.left < bounds.left - 1 || r.right > bounds.right + 1;
         }).map(node => node.className || node.tagName);
-        return { button: rect(card.querySelector('button')), heading: rect(card.querySelector('h2')), card: rect(card),
+        return { button: rect(card.querySelector('.bpb-snow-refresh')), heading: rect(card.querySelector('h2')), card: rect(card),
             column: rect(table), following: following ? rect(following) : null,
             scroll: { x: window.scrollX, y: window.scrollY, height: document.documentElement.scrollHeight },
             overflow, focus: document.activeElement?.className, busy: card.getAttribute('aria-busy'),
@@ -49,7 +49,7 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         await wait(() => document.getElementById('bpb-peak-snow')?.hidden === false, 'visible snow card');
         return evaluate(() => {
             const card = document.getElementById('bpb-peak-snow');
-            card.scrollIntoView({ block: 'start' }); card.querySelector('button').focus({ preventScroll: true });
+            card.scrollIntoView({ block: 'start' }); card.querySelector('.bpb-snow-refresh').focus({ preventScroll: true });
         });
     };
     const pending = () => waitForCondition(() => evaluate(() => ({

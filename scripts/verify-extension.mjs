@@ -4126,7 +4126,7 @@ try {
             const mount = document.getElementById('bpb-map-viewport');
             const iframe = document.getElementById('Gmap');
             const sun = document.querySelector('.bpb-sun-calculator');
-            if (!button || !mount || !iframe || !sun) return false;
+            if (!button || !mount || !iframe || !sun?.matches('[data-bpb-peak-card="sun"]')) return false;
             const rect = button.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0 && !button.disabled ? {
                 text: button.textContent,
@@ -4135,8 +4135,12 @@ try {
                 nativeMapHeight: iframe.getBoundingClientRect().height,
                 resizeHandle: Boolean(mount.querySelector('#bpb-map-resize-handle')),
                 iframePreserved: iframe.parentElement === mount,
-                sunAfterLegend: iframe.closest('td')?.lastElementChild === sun
-                    && sun.previousElementSibling?.textContent.includes('Full Screen Map'),
+                // The independent card now owns a reorderable row, while the
+                // native map, legend and full-screen link stay in their cell.
+                sunAfterLegend: sun.closest('tr')?.id === 'bpb-peak-sun-row'
+                    && sun.closest('table') === iframe.closest('table')
+                    && sun.closest('tr').rowIndex > iframe.closest('tr').rowIndex
+                    && Boolean(iframe.closest('td').querySelector('a[href*="BigMap"]')),
                 sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
                 sunExpanded: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === false,
                 sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',

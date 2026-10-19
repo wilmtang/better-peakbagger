@@ -94,6 +94,7 @@ export function mountPeakSnow() {
     const client = createSnotelClient({ storage: chrome.storage.local });
     const mapSource = createSnotelMapSource({ client, subject, onSelect: (station, nearby) => {
         if (!enabled()) return;
+        card.dispatchEvent(new Event('bpb:reveal-card'));
         // This explicit map action reveals the card even before its lazy load.
         // Keep the ordinary three choices plus the chosen nearby map station.
         if (!cooldown.active()) {

@@ -20,6 +20,7 @@ const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
 const MAP_PROVIDERS = Object.freeze(['gaia', 'onx', 'alltrails', 'caltopo']);
 const PEAK_FILTER_ORDER = Object.freeze(['fav', 'gps', 'tr', 'link', 'beta']);
 const PERSONAL_FILTER_ORDER = Object.freeze(['gps', 'tr', 'link', 'beta']);
+const PEAK_CARD_ORDER = Object.freeze(['sun', 'weather', 'snow']);
 // The first forecast slot follows the user's preference across countries.
 // Border peaks can have up to eight distinct sources (one per Nation entry).
 const PEAK_LINK_ORDER = Object.freeze(['windy', 'copernicus', 'airnow', 'avalanche',
@@ -57,6 +58,10 @@ const DEFAULTS = {
     showSunMoon: true,
     showWeather: true,
     showSnotel: true,
+    peakCardOrder: PEAK_CARD_ORDER,
+    peakSunCollapsed: false,
+    peakWeatherCollapsed: false,
+    peakSnowCollapsed: false,
     enable3dMap: false,
     retainWaypoints: true,
     removeGpxTimestamps: false,
@@ -227,7 +232,7 @@ const clean = raw => {
     if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
     for (const key of Object.values(UNIT_KEYS)) s[key] = unitOverride(s[key]);
     if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+    for (const key of ['showSunMoon', 'showWeather', 'showSnotel', 'peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed', 'enable3dMap', 'retainWaypoints', 'removeGpxTimestamps', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'autoPhotoLibraryBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
         if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
     }
     // SNOTEL previously shared the weather gate. Preserve legacy opt-outs
@@ -241,6 +246,7 @@ const clean = raw => {
     }
     s.mapProviderOrder = orderedIds(s.mapProviderOrder, MAP_PROVIDERS);
     s.peakLinkOrder = orderedIds(s.peakLinkOrder, PEAK_LINK_ORDER);
+    s.peakCardOrder = orderedIds(s.peakCardOrder, PEAK_CARD_ORDER);
     s.mapProvidersEnabled = Array.isArray(s.mapProvidersEnabled)
         ? [...new Set(s.mapProvidersEnabled.filter(id => MAP_PROVIDERS.includes(id)))] : [...MAP_PROVIDERS];
     s.betaPeakFilterOrder = s.betaPeakFilterOrder == null ? null : orderedIds(s.betaPeakFilterOrder, PEAK_FILTER_ORDER);
@@ -274,6 +280,7 @@ const API = {
     PEAK_FILTER_ORDER,
     PERSONAL_FILTER_ORDER,
     PEAK_LINK_ORDER,
+    PEAK_CARD_ORDER,
     REPORT_EDITOR_MODES,
     ROUTE_STYLE,
     VIEWPORT,

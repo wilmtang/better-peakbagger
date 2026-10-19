@@ -109,6 +109,15 @@ test('nearby snow is an isolated peak-only bundle without new host permissions',
     assert.ok(![...manifest.host_permissions, ...manifest.optional_host_permissions].some(pattern => /usda/.test(pattern)));
 });
 
+test('peak-card layout stays isolated and shares the peak display schema', () => {
+    const entry = contentEntry('content/peak-cards.js');
+    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, false);
+    assert.equal(entry.run_at, 'document_end');
+    assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
+    assert.deepEqual(bundleSources('content/peak-cards.js'), ['maps/peak-cards.js']);
+    assert.ok(COPY_FILES.some(([source, output]) => source === 'src/ui/peak-card-layout.css' && output === 'css/peak-card-layout.css'));
+});
+
 test('ImgBB upload access is optional and scoped to its API origin', () => {
     assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
     assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));
@@ -514,7 +523,7 @@ test('peak weather ships only on peak pages in the isolated world with its scope
     assert.equal(weather.run_at, 'document_end');
     assert.equal(weather.all_frames, false);
     assert.deepEqual(weather.js, ['content/peak-weather.js']);
-    assert.deepEqual(weather.css, ['css/peak-weather.css', 'css/weather-hourly-table.css']);
+    assert.deepEqual(weather.css, ['css/peak-card-layout.css', 'css/peak-weather.css', 'css/weather-hourly-table.css']);
     assert.ok(weather.matches.every(match => /\/peak\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/peak-weather.js'), ['weather/peak-weather.js']);
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));

@@ -423,6 +423,8 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await evaluate(() => document.getElementById('bpb-peak-snow').scrollIntoView({ block: 'start' }));
         await cardReady('994:WA:SNTL');
         assert.equal(await evaluate(() => document.getElementById('bpb-peak-snow-station').options.length), 3);
+        await click('#bpb-peak-snow .bpb-peak-card-toggle');
+        await wait(() => document.querySelector('#bpb-peak-snow .bpb-peak-card-body').hidden, 'collapsed snow card before map selection');
         await evaluate(() => {
             document.querySelector('.bpb-terrain-mount-peak').scrollIntoView({ block: 'center' });
             document.getElementById('Gmap').contentDocument.querySelector('[title="Station 1 · SNOTEL"]').focus();
@@ -435,6 +437,8 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await wait(() => document.getElementById('bpb-peak-snow').getAttribute('aria-busy') === 'true'
             && document.getElementById('bpb-peak-snow-station').value === '991:WA:SNTL', 'map-selected station pending in card');
         assert.equal(await evaluate(() => document.activeElement.id), 'bpb-peak-snow-station');
+        assert.equal(await evaluate(() => document.querySelector('#bpb-peak-snow .bpb-peak-card-body').hidden), false,
+            'Show conditions reveals the collapsed card before focusing the station');
         assert.equal(await evaluate(() => document.querySelector('.bpb-snow-metric strong').textContent), '—');
         const pendingCard = await cardGeometry(); await image(`${width}-${theme}-map-conditions-pending`);
         setMode('service-error'); release();

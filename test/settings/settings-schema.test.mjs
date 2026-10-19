@@ -61,6 +61,21 @@ test('SNOTEL inherits legacy weather opt-outs until independently selected', () 
     assert.equal(Schema.clean({ showWeather: false, showSnotel: 'true' }).showSnotel, false);
 });
 
+test('peak-card layout uses bounded identities and independent boolean disclosures', async () => {
+    const clean = Schema.clean({ peakCardOrder: ['snow', 'unknown', 'snow', 'weather'], peakSunCollapsed: true, peakSnowCollapsed: 'true' });
+    assert.deepEqual(clean.peakCardOrder, ['snow', 'weather', 'sun']);
+    assert.equal(clean.peakSunCollapsed, true); assert.equal(clean.peakSnowCollapsed, false);
+    assert.deepEqual(Schema.clean(clean), clean);
+    assert.notEqual(Schema.clean({}).peakCardOrder, Schema.DEFAULTS.peakCardOrder);
+    for (const key of ['peakSunCollapsed', 'peakWeatherCollapsed', 'peakSnowCollapsed']) {
+        assert.equal(Schema.clean({ [key]: true })[key], true);
+        for (const value of [null, 0, 'false', [], {}]) assert.equal(Schema.clean({ [key]: value })[key], Schema.DEFAULTS[key]);
+    }
+    const consumer = await readFile(path.join(root, 'src/ui/peak-card-layout.js'), 'utf8');
+    assert.match(consumer, /settings\.DEFAULTS\.peakCardOrder/);
+    assert.doesNotMatch(consumer, /\[['"]sun['"],\s*['"]weather['"],\s*['"]snow['"]\]/, 'layout defaults belong only to the schema');
+});
+
 test('clean() clamps oversized values but resets a sub-minimum viewport width to the default', () => {
     // Width is asymmetric on purpose: values under the pixel minimum also cover
     // the short-lived pre-release percentage schema, so "100" must not be read

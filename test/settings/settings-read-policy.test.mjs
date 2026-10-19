@@ -55,6 +55,7 @@ const AUTHORITATIVE = Object.freeze({
     'src/terrain/terrain-frame.js': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
     'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
     'src/theme/panel-theme.js': [{ count: 1, kind: 'preservation', reason: 'preserve the panel mirror on failed reconciliation' }],
+    'src/ui/peak-card-layout.js': [{ count: 1, kind: 'preservation', reason: 'restore the saved card layout without treating a failed read as a new preference' }],
 });
 
 const sourceFiles = async directory => {

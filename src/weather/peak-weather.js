@@ -368,6 +368,7 @@ export function mountPeakWeather() {
     });
     const chooseLocation = next => {
         if (!enabled() || lifecycle.state !== 'active' || (next !== summit && cooldown.active())) return;
+        card.dispatchEvent(new Event('bpb:reveal-card'));
         const sameLocation = (left, right) => left.latitude === right.latitude && left.longitude === right.longitude && left.elevation === right.elevation;
         if (sameLocation(next, requestedSubject) && (pending || (current && sameLocation(next, subject) && !notice?.kind))) return;
         if (next !== summit && requestedSubject === summit) summitChoices = { ...choices };

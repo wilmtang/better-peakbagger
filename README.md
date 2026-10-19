@@ -62,6 +62,11 @@ Expand any day for hourly detail in mountain-local time. On saved ascents,
 hover or select a timed GPX point to see the weather for that hour. Weather
 cards show model estimates; check local mountain forecasts before heading out.
 
+The **Sun & Moon**, **Summit weather**, and **Nearby snow** cards can be collapsed
+by clicking their headings and reordered with their drag handles. Up/Down arrow
+keys also move a focused handle. Order and collapse choices are remembered
+across peak pages.
+
 On western US and Alaska peaks, **Nearby snow** adds public NRCS SNOTEL snow
 depth and water-equivalent observations, station distance/elevation, and a
 seven-day trend. A compact **SNOTEL** toggle adds distinct station markers and
