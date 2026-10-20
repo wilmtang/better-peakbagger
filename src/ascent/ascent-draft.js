@@ -590,6 +590,7 @@ import { units as Units } from '../ui/units.js';
             if (connectionGeneration !== draftConnectionGeneration) return;
             if (response?.action === 'ignore') {
                 setSaveBlocked('');
+                document.getElementById(BANNER_ID)?.remove();
                 return;
             }
             if (!response || response.action === 'error') {
@@ -642,7 +643,9 @@ import { units as Units } from '../ui/units.js';
             if (response.action === 'apply') {
                 setSaveBlocked('Preparing GPS Preview. Review the result before saving.');
                 await applyAndPreview(response);
+                return;
             }
+            throw new Error('Unrecognized draft readiness response');
         } catch (error) {
             if (connectionGeneration !== draftConnectionGeneration) return;
             console.error('Better Peakbagger: draft preparation failed', error);
@@ -658,6 +661,11 @@ import { units as Units } from '../ui/units.js';
 
     let initializationQueue = Promise.resolve();
     const initialize = () => {
+        // Queueing the worker lookup must not leave native Save available,
+        // even before the first promise callback runs. Only an explicit
+        // ordinary-form or Preview-ready reply can release this gate.
+        const ids = pageIds();
+        if (ids.pid && ids.cid) setSaveBlocked(blockedSaveMessage || 'Checking this ascent draft before saving.');
         initializationQueue = initializationQueue.then(runInitialize, runInitialize);
         return initializationQueue;
     };

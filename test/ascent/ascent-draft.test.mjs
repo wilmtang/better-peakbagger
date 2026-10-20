@@ -720,6 +720,36 @@ test('ordinary Peakbagger editor tabs get only the fresh-form date autofill', as
     dom.window.close();
 });
 
+for (const action of ['ignore', 'wait', 'error', 'banner', 'unknown', null]) {
+    test(`the initial handshake blocks native Save until its ${action} response settles`, async () => {
+        let release;
+        const html = formHtml.replace('<button id="SaveButton" type="button">Save</button>',
+            '<button id="SaveButton" type="submit" title="Native title">Save</button><button id="SaveButton2" type="submit" disabled>Save</button>');
+        const { dom } = loadDraft(() => new Promise(resolve => { release = resolve; }), { html });
+        try {
+            const doc = dom.window.document;
+            let saves = 0;
+            doc.querySelector('form').addEventListener('submit', event => { saves++; event.preventDefault(); });
+            doc.getElementById('SaveButton').click();
+            doc.querySelector('form').dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
+            assert.equal(saves, 0, 'an unresolved handshake must never reach the native submit handler');
+            assert.equal(doc.getElementById('SaveButton').disabled, true);
+            await waitForCondition(() => release);
+            release(action ? { action, classification: 'strong', confidence: 90 } : null);
+            if (action === 'ignore' || action === 'banner') {
+                await waitForCondition(() => !doc.getElementById('SaveButton').disabled);
+                assert.equal(doc.getElementById('SaveButton').disabled, false);
+                assert.equal(doc.getElementById('SaveButton').title, 'Native title');
+                assert.equal(doc.getElementById('SaveButton2').disabled, true, 'native disabled state is preserved');
+                if (action === 'ignore') assert.equal(doc.getElementById('bpb-draft-banner'), null);
+            } else {
+                await waitForCondition(() => doc.getElementById('bpb-draft-banner'));
+                assert.equal(doc.getElementById('SaveButton').disabled, true);
+            }
+        } finally { dom.window.close(); }
+    });
+}
+
 for (const response of [null, { action: 'error', message: 'The previous summit’s saved GPX and trip have not been checked.' }]) {
     test(`a fresh form blocks Save after ${response ? 'a worker recovery error' : 'a missing worker response'} until explicit discard`, async () => {
         const html = formHtml.replace('<button id="SaveButton" type="button">Save</button>',

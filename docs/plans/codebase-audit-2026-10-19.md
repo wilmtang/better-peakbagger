@@ -1,9 +1,9 @@
 # Repository bugs, engineering, and UX audit — 2026-10-19
 
 Baseline: clean `main` at `5187c0f6a78fb359f61e71a13f5ac3ff4aaab014`, version
-4.0.2. This is a documentation-only audit. Runtime, tests, dependencies and
-workflows have not been changed. Findings were reported before writing this
-plan; implementation is a separate step.
+4.0.2. Findings and baseline evidence below describe that audited tree.
+Remediation was subsequently authorized; the closure ledger records completed
+changes and their verification without rewriting the original reproductions.
 
 ## Findings
 
@@ -352,12 +352,23 @@ the disposition and remaining proof for every accepted item.
 
 ### Fixed and verified
 
-- None. This audit changes documentation only. Passing baseline checks are
-  evidence about the audited tree, not remediation of the findings above.
+- **F1:** Gate Save synchronously before queuing the initial or renewed draft
+  handshake. Explicit ignore restores native disabled/title state and removes
+  stale pending feedback; unknown replies stay fail closed. Six new unit cases
+  failed against the audited bundle with two native submissions each; the
+  browser assertion failed with seven submissions. After the fix, all 53 draft
+  tests and focused ESLint pass. Hidden Chrome 156.0.8078.4 and Playwright
+  Firefox 157.0 recovery matrices cover 8 variants each at 1000/390 × 760,
+  light/dark feedback and 100/200% CSS zoom, including initial pending,
+  rollback/error/retry/reload/discard, native submission attempts, focus,
+  control/heading/following-content geometry and scroll (0.75 CSS-pixel rounding
+  tolerance). Keyboard focus is established before the geometry baseline so
+  intentional focus scrolling is not mislabeled as reflow. Narrow screenshots
+  are inspected separately; live native postbacks remain a proof gap below.
 
 ### Intentionally not changed
 
-- F1–F7 remain open for implementation; O1/O2 are optional improvements.
+- F2–F7 remain open for implementation; O1/O2 are optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary
@@ -375,7 +386,8 @@ the disposition and remaining proof for every accepted item.
 
 ### Changed but not fully proven
 
-- Documentation/index only; no product fix is claimed.
+- Combined full-suite, actual-manifest browser and package checks will follow
+  the independent fixes; baseline failures above remain historical evidence.
 - F1's native submissions were intercepted. Live Peakbagger acceptance,
   saved-trip persistence, live Garmin/Strava/NRCS compatibility and throttling,
   provider import previews and hosted CI/store publication remain unverified.

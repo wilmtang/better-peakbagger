@@ -1,7 +1,7 @@
 # Active plans
 
 - [Repository bugs, engineering, and UX audit — October 19](codebase-audit-2026-10-19.md)
-  — findings only; capture Save/readiness and BFCache gaps, automatic units,
+  — remediation in progress; capture Save/readiness and BFCache gaps, automatic units,
   two failing verification contracts, stream cleanup and terrain planning
   bounds, with optional catalog/CI improvements and explicit proof limits.
 

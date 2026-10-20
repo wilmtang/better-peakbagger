@@ -110,6 +110,7 @@ try {
             const url = `https://www.peakbagger.com:${server.address().port}/climber/ascentedit.aspx?pid=2829&cid=900001`;
             await page.goto(url);
             await page.waitForFunction(() => window.recoveryProbe.start);
+            await page.locator('#DateText').focus();
             const geometry = () => page.evaluate(() => {
                 const rect = selector => {
                     const { x, y, width, height } = document.querySelector(selector).getBoundingClientRect();
@@ -119,6 +120,24 @@ try {
                     following: rect('#verifier-following'), scroll: window.scrollY };
             });
             const idle = await geometry();
+            const attemptSave = async () => {
+                await page.locator('#DateText').focus();
+                await page.locator('#DateText').press('Enter');
+                await page.evaluate(() => {
+                    for (const id of ['SaveButton', 'SaveButton2']) {
+                        const control = document.getElementById(id);
+                        control.click();
+                        control.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+                        document.getElementById('Form1').requestSubmit(control);
+                    }
+                });
+                assert.equal(await page.evaluate(() => window.recoveryProbe.saveSubmissions), 0,
+                    'an unresolved handshake must never reach the native submit handler');
+                for (const id of ['SaveButton', 'SaveButton2']) assert.equal(await page.locator(`#${id}`).isDisabled(), true);
+                assert.equal(await page.locator('#DateText').evaluate(element => element === document.activeElement), true);
+            };
+            await attemptSave();
+            if (artifacts) await page.screenshot({ path: path.join(artifacts, `${browserName}-${width}-${theme}-${zoom}-initial-pending.png`) });
             await page.evaluate(() => window.recoveryProbe.start());
             await page.waitForFunction(() => window.recoveryProbe.pending);
             const pending = await geometry();
@@ -143,10 +162,11 @@ try {
                 for (const key of ['save', 'save2', 'heading', 'following']) {
                     for (const dimension of ['x', 'y', 'width', 'height']) {
                         assert.ok(Math.abs(current[key][dimension] - baseline[key][dimension]) <= 0.75,
-                            `${browserName}/${width}/${theme}/${zoom}: ${key}.${dimension} shifted`);
+                            `${browserName}/${width}/${theme}/${zoom}: ${key}.${dimension} shifted: ${JSON.stringify({ baseline, current })}`);
                     }
                 }
-                assert.equal(current.scroll, baseline.scroll);
+                assert.ok(Math.abs(current.scroll - baseline.scroll) <= 0.75,
+                    `document scroll shifted: ${JSON.stringify({ baseline: baseline.scroll, current: current.scroll })}`);
             };
             await stable(pending);
             await stable(idle);
@@ -185,6 +205,7 @@ try {
             await page.waitForFunction(() => window.recoveryProbe.fail);
             await page.locator('#DateText').focus();
             const errorIdle = await geometry();
+            await attemptSave();
             await page.evaluate(() => window.recoveryProbe.fail());
             await page.locator('.bpb-draft-banner-error').waitFor();
             for (const id of ['SaveButton', 'SaveButton2']) {
@@ -225,6 +246,6 @@ try {
     console.log(JSON.stringify({ verification: 'draft-recovery', browser: browserName, version: browser.version(),
         hidden: true, cases, viewports: [1000, 390], height: 760, themes: ['light', 'dark'], cssZoom: [1, 2],
         rendering: 'static DOM; WebGL unused', stubs: ['worker replies', 'native Preview postback'],
-        scenarios: ['apply rollback and reload recovery', 'fresh-form worker error, repeated feedback and explicit discard'] }));
+        scenarios: ['initial handshake blocks native Save', 'apply rollback and reload recovery', 'fresh-form worker error, repeated feedback and explicit discard'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);
