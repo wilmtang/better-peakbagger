@@ -996,7 +996,7 @@ test('chart times use the mountain’s IANA timezone, not the viewer’s', async
     assert.match(analysisText(), /Summit time: Day 2/,
         'the summit after mountain-local midnight must be labelled Day 2');
     assert.match(analysisText(), /Possible Camping: Day 1/);
-    assert.ok(analysisText().includes('Times in the mountain’s local time (PDT)'),
+    assert.ok(analysisText().includes('Mountain time (PDT)'),
         'the stats bar must name the timezone resolved from the track start');
 
     dom.window.close();
@@ -1007,7 +1007,7 @@ test('when the resolved timezone is unavailable, times fall back to a labelled l
 
     assert.match(analysisText(), /Summit time: Day 2/);
     assert.match(analysisText(), /Possible Camping: Day 1/);
-    assert.ok(analysisText().includes('Times in the mountain’s local time (UTC−8, estimated from longitude)'),
+    assert.ok(analysisText().includes('Mountain time (UTC−8, estimated from longitude)'),
         'the stats bar must disclose the estimated mountain timezone');
 
     dom.window.close();
@@ -1384,7 +1384,7 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
     assert.match(dom.window.document.querySelector('.bpb-gpx-stats').textContent, / · 3 points$/);
     assert.match(analysisText(), /Time: 2h 0m/);
     assert.match(analysisText(), /Possible Camping: Day 1 \(47\.00000, -121\.00000\)/);
-    assert.match(analysisText(), /Times in the mountain’s local time/);
+    assert.match(analysisText(), /Mountain time/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
     assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
@@ -1544,7 +1544,7 @@ test('GPX analyzer omits time UI when every point has the same timestamp', async
     ]);
     assert.equal(chartConfig().options.scales.xTime, undefined);
     assert.doesNotMatch(analysisText(), /Time: 0m/);
-    assert.doesNotMatch(analysisText(), /Times in the mountain/);
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-timing'), null);
 
     dom.window.close();
 });
@@ -1599,7 +1599,7 @@ test('GPX analyzer safely sequences reversed multi-day segments without reorderi
         'time analysis must span the segments chronologically');
     assert.equal(chartConfig().options.scales.xTime.min, Date.parse('2026-07-10T16:00:00Z'));
     assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
-    assert.match(analysisText(), /Times in the mountain’s local time \(PDT\)/,
+    assert.match(analysisText(), /Mountain time \(PDT\)/,
         'mountain time must come from the earliest route point, not the first appended segment');
     assert.doesNotMatch(analysisText(), /Possible Camping/,
         'disconnected recordings do not establish a campsite between them');
@@ -1763,7 +1763,9 @@ test('GPX analyzer shows partial time runs without drawing through an invalid ti
             assert.match(analysisText(), /Known time span: 0h 1m/);
             assert.match(analysisText(), /Time: 2 of 3 route points \(67%\)/);
             assert.match(analysisText(), /Gaps mark unavailable timestamps\./);
-            assert.doesNotMatch(analysisText(), /Time to summit:|Time back:/);
+            const timing = dom.window.document.querySelector('.bpb-gpx-timing');
+            assert.match(timing.textContent, /First known time:.*Last known time:/);
+            assert.doesNotMatch(timing.textContent, /Summit time:|\([^)]* (up|back)\)/);
             assert.match(analysisText(), /Interactive Stats:/);
 
             dom.window.close();
@@ -1787,7 +1789,7 @@ test('GPX analyzer keeps mountain time owned by an untimed trailhead across a ti
             const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
 
             await waitFor(dom, () => chartConfig() !== null);
-            assert.match(analysisText(), /Times in the mountain’s local time \(GMT\+5:45\)/,
+            assert.match(analysisText(), /Mountain time \(GMT\+5:45\)/,
                 'the untimed Nepal-side trailhead, not the first timed China-side point, owns civil time');
             assert.doesNotMatch(analysisText(), /GMT\+8/);
 
@@ -2356,6 +2358,20 @@ test('healthy GPX includes the source point count on the existing metrics note',
     assert.equal(note.querySelector('br'), null);
     assert.equal(note.querySelector('.bpb-gpx-metric-note-text').title,
         note.querySelector('.bpb-gpx-metric-note-text').textContent);
+    dom.window.close();
+});
+
+test('compact timing keeps clocks, leg durations and mountain timezone together', async () => {
+    const { dom, chartConfig } = await loadElevationAnalyzer(gpx);
+    await waitFor(dom, () => chartConfig() !== null);
+    const timing = dom.window.document.querySelector('.bpb-gpx-timing');
+    assert.deepEqual(Array.from(timing.children, item => item.textContent), [
+        'Start time: 05:00 AM',
+        'Summit time: 06:00 AM (1h 0m up)',
+        'Back to car: 06:30 AM (0h 30m back)',
+        'Mountain time (PDT)',
+    ]);
+    assert.equal(timing.querySelector('.bpb-gpx-timezone').title, 'Times in the mountain’s local time');
     dom.window.close();
 });
 

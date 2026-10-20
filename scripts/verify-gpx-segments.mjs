@@ -4,12 +4,15 @@
 /* global document, innerWidth */
 
 import assert from 'node:assert/strict';
+import { verifyGpxHeader } from './verify-gpx-header.mjs';
 
 // Same observable contract for real Chrome and Firefox; caller owns a hidden
 // test profile, HTTPS fixture transport, settings, and reliable teardown.
 export async function verifyGpxSegments({ navigate, evaluate, resize, click, press, wait, screenshot }) {
     await navigate();
     await wait(() => document.querySelector('.bpb-gpx-segment-disclosure'));
+    await verifyGpxHeader({ evaluate, resize, click, press, wait,
+        screenshot: screenshot ? name => screenshot(`header-${name}`) : null });
     assert.match(await evaluate(() => document.querySelector('.bpb-gpx-stats').textContent), /Time: 12h 32m/);
     for (const width of [1000, 430, 1600]) {
         await resize(width, 760);

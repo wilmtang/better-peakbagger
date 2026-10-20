@@ -17,6 +17,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['firefox'], [['verify-firefox-extension.mjs']]],
         [['browsers'], [['verify-extension.mjs'], ['verify-firefox-extension.mjs']]],
         [['capture-popup'], [['verify-capture-popup.mjs']]],
+        [['gpx-header'], [['verify-gpx-header.mjs']]],
         [['layout-stability', '--firefox-only', '--surface=maps'],
             [['verify-layout-stability.mjs', '--firefox-only', '--surface=maps']]],
         [['multi-summit'], [['verify-multi-summit.mjs']]],

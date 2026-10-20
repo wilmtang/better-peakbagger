@@ -159,13 +159,9 @@ const run = async () => {
 
         const headerBox = document.createElement('div');
         headerBox.className = 'bpb-gpx-header';
-        Object.assign(headerBox.style, {
-            display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', alignItems: 'start',
-            flexWrap: 'wrap', gap: '10px', marginBottom: '10px'
-        });
 
         const statsContainer = document.createElement('div');
-        Object.assign(statsContainer.style, { minWidth: '0', maxWidth: '100%' });
+        statsContainer.className = 'bpb-gpx-summary';
         const stats = document.createElement('div');
         stats.className = 'bpb-gpx-stats';
         stats.setAttribute('role', 'status');
@@ -176,7 +172,6 @@ const run = async () => {
 
         const subStats = document.createElement('div');
         subStats.className = 'bpb-gpx-substats';
-        Object.assign(subStats.style, { fontFamily: 'sans-serif', fontSize: '0.9em', marginTop: '4px', fontStyle: 'italic' });
 
         const retryButton = document.createElement('button');
         retryButton.className = 'bpb-gpx-retry';
@@ -184,7 +179,7 @@ const run = async () => {
         retryButton.textContent = 'Try loading again';
         retryButton.hidden = true;
 
-        statsContainer.append(retryButton, stats, subStats);
+        statsContainer.append(retryButton, stats);
 
         const segmentDetailsButton = document.createElement('button');
         segmentDetailsButton.type = 'button';
@@ -304,7 +299,9 @@ const run = async () => {
 
         coordinateControls.append(copyCoordinatesButton, hintText, coordinateFallback);
         controlsContainer.append(unitSelect, routeStyleControls);
-        headerBox.append(controlsContainer, segmentDetails, statsContainer);
+        // Keep the source-view action above metrics that can wrap differently
+        // when switching between source and interpreted tracks.
+        headerBox.append(segmentDetails, statsContainer, controlsContainer, subStats);
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
         terrainMessage.setAttribute('role', 'status');
@@ -1278,7 +1275,7 @@ const run = async () => {
             const sourcePointCount = segmentDiagnostics?.sourcePointCount ?? metrics.coordinateQuality.totalPoints;
             const pointCountText = `${sourcePointCount.toLocaleString()} ${sourcePointCount === 1 ? 'point' : 'points'}`;
             if (metricNote) {
-                const line = subLine('', { color: TONE.muted, fontSize: '0.95em', marginBottom: '2px' });
+                const line = subLine('', { color: TONE.muted, fontSize: '0.95em' });
                 line.className = 'bpb-gpx-metric-note';
                 const note = document.createElement('span');
                 note.className = 'bpb-gpx-metric-note-text';
@@ -1303,31 +1300,35 @@ const run = async () => {
             if (hasTime) {
                 const completeTime = metrics.timeQuality.status === 'complete';
                 txt += ` | ${completeTime ? 'Time' : 'Known time span'}: ${fmtTime(totalMs)}`;
+                const timing = document.createElement('div');
+                timing.className = 'bpb-gpx-timing';
+                const addTime = (text, className = '') => {
+                    const item = document.createElement('span');
+                    item.className = className;
+                    item.textContent = text;
+                    timing.append(item, ' ');
+                    return item;
+                };
                 if (completeTime && summitMs > startMs) {
                     const timeToSummit = summitMs - startMs;
                     const timeBack = endMs - summitMs;
-                    subLines.push(subLine(
-                        `Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
-                        { color: TONE.sub, marginBottom: '2px' }));
-                    subLines.push(subLine(
-                        `Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}`,
-                        { color: TONE.faint, fontSize: '0.95em' }));
+                    addTime(`Start time: ${formatTimeStr(startMs, startMs, isMultiDay)}`);
+                    addTime(`Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} (${fmtTime(timeToSummit)} up)`);
+                    addTime(`Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)} (${fmtTime(timeBack)} back)`);
                 } else if (completeTime) {
-                    subLines.push(subLine(
-                        `Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
-                        { color: TONE.sub, marginBottom: '2px' }));
+                    addTime(`Start time: ${formatTimeStr(startMs, startMs, isMultiDay)}`);
+                    addTime(`Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`);
                 } else {
-                    subLines.push(subLine(
-                        `First known time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Last known time: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
-                        { color: TONE.sub, marginBottom: '2px' }));
+                    addTime(`First known time: ${formatTimeStr(startMs, startMs, isMultiDay)}`);
+                    addTime(`Last known time: ${formatTimeStr(endMs, startMs, isMultiDay)}`);
                 }
+                const zone = addTime(`Mountain time (${mountainZoneLabel(startMs)})`, 'bpb-gpx-timezone');
+                zone.title = 'Times in the mountain’s local time';
+                subLines.push(timing);
                 if (campingSpots.length > 0) {
                     const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
                     subLines.push(subLine(`Possible Camping: ${spotStrs}`, { color: TONE.faint, fontSize: '0.95em', marginTop: '2px' }));
                 }
-                subLines.push(subLine(
-                    `Times in the mountain’s local time (${mountainZoneLabel(startMs)})`,
-                    { color: TONE.faint, fontSize: '0.95em', marginTop: '2px' }));
             }
             qualityLines.forEach(text => {
                 subLines.push(subLine(text, {

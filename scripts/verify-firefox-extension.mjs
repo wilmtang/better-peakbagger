@@ -1425,7 +1425,7 @@ async function main() {
             await verifyGpxSegments({
                 navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-suspect`),
                 evaluate: fn => driver.executeScript(webdriverScript(fn)),
-                resize: (width, height) => driver.manage().window().setRect({ width, height }),
+                resize: (width, height) => setContentViewport(driver, { width, height }),
                 click: selector => driver.findElement(By.css(selector)).click(),
                 press: async (selector, key) => {
                     const element = await driver.findElement(By.css(selector));

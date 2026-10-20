@@ -3511,14 +3511,21 @@ try {
     }, { timeout: 5000 });
     const previousExplorerViewport = offPage.viewportSize();
     await offPage.setViewportSize({ width: 900, height: 760 });
-    await coordinateCanvas.scrollIntoViewIfNeeded();
+    // The compact header can make the chart shorter than the map column.
+    // Bringing only the canvas into view no longer frames both surfaces.
+    await offPage.locator('#bpb-route-explorer').evaluate(explorer => explorer.scrollIntoView({ block: 'start' }));
     await offPage.waitForFunction(() => {
         const explorer = document.getElementById('bpb-route-explorer');
         const explorerRect = explorer?.getBoundingClientRect();
+        const mapRect = document.getElementById('bpb-map-viewport')?.getBoundingClientRect();
+        const chartRect = explorer?.querySelector('canvas')?.getBoundingClientRect();
         const viewportWidth = document.documentElement.clientWidth;
+        const viewportHeight = document.documentElement.clientHeight;
         return Boolean(explorerRect)
             && explorerRect.left >= -1
-            && explorerRect.right <= viewportWidth + 1;
+            && explorerRect.right <= viewportWidth + 1
+            && mapRect?.top >= -1 && mapRect.bottom <= viewportHeight + 1
+            && chartRect?.top >= -1 && chartRect.bottom <= viewportHeight + 1;
     }, null, { timeout: 5000 }).catch(() => null);
     const routeExplorerLayout = await offPage.evaluate(() => {
         const explorer = document.getElementById('bpb-route-explorer');
@@ -3599,6 +3606,7 @@ try {
                 && analysisRect.right <= document.documentElement.clientWidth + 1,
             explorerOverflow: Boolean(explorer) && explorer.scrollWidth > explorer.clientWidth,
             mapVisible: Boolean(mapRect) && mapRect.top >= -1 && mapRect.bottom <= viewportHeight + 1,
+            mapBounds: mapRect ? { top: mapRect.top, bottom: mapRect.bottom } : null,
             mapResizeTarget: resizeHandleRect && mapFrameRect ? {
                 width: resizeHandleRect.width,
                 height: resizeHandleRect.height,

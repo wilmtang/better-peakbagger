@@ -12,6 +12,7 @@ const targets = {
     browsers: [['verify-extension.mjs'], ['verify-firefox-extension.mjs']],
     'capture-popup': [['verify-capture-popup.mjs']],
     'layout-stability': [['verify-layout-stability.mjs']],
+    'gpx-header': [['verify-gpx-header.mjs']],
     'multi-summit': [['verify-multi-summit.mjs']],
     'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],
     'inline-buddies': [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']],
