@@ -28,6 +28,7 @@ import {
     readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
+    readPeakSunPlacement,
     storeUrls,
     surfaceSelectors,
     verificationViewport,
@@ -2211,6 +2212,8 @@ async function main() {
         await driver.get(`https://${fixtureHost}:${fixture.port}/Peak.aspx?pid=2829`);
         await driver.wait(until.elementLocated(By.id('bpb-peak-links')), 10_000);
         await driver.wait(until.elementLocated(By.css(surfaceSelectors.terrainToggle)), 10_000);
+        const peakSunPlacement = await waitForScript(driver, webdriverScript(readPeakSunPlacement),
+            'the independent Peak Sun card row with its native map link', 10_000);
         const peakState = await waitForScript(driver, `
       const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
       const mount = document.getElementById("bpb-map-viewport");
@@ -2220,8 +2223,6 @@ async function main() {
           link => link.textContent.trim()),
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         framePreserved: document.getElementById("Gmap")?.parentElement === mount,
-        sunAfterLegend: document.getElementById("Gmap")?.closest("td")?.lastElementChild === sun
-          && sun.previousElementSibling?.textContent.includes("Full Screen Map"),
         sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
         sunExpanded: sun.querySelector(".bpb-sun-calculator__panel")?.hidden === false,
         sunSummary: sun.querySelector(".bpb-sun-calculator__summary")?.textContent || "",
@@ -2244,7 +2245,7 @@ async function main() {
         && peakState.links[2] === 'AirNow fire & smoke'
         && peakState.links[3] === 'Avalanche forecasts — Avalanche.org'
         && peakState.theme !== null && peakState.framePreserved
-        && peakState.sunAfterLegend && peakState.sunDateInput && peakState.sunExpanded
+        && peakSunPlacement && peakState.sunDateInput && peakState.sunExpanded
         && /°/.test(peakState.sunSummary)
         && /Moon phase/i.test(peakState.moon)
         && /\d+°\s+[NSEW]{1,3}/.test(peakState.moon)

@@ -371,10 +371,19 @@ the disposition and remaining proof for every accepted item.
   pass with the enhanced editor disabled. The focused file passes 16/16, the
   rebuilt full suite passes 2,968/2,968, and focused ESLint passes. No production
   Save guard or backup behavior was weakened.
+- **F4:** Chrome and Firefox now serialize the same independent-row placement
+  probe. It retains the native map table, row order and full-screen link checks;
+  solar/lunar assertions remain intact. A focused contract test rejects the
+  old map-cell placement, wrong row order and a missing native link, and pins
+  both protocols to the shared probe. All 16 shared-fixture/placement tests and
+  focused ESLint pass. `npm run verify -- browsers` reaches terminal success
+  with the real unpacked extension in hidden Chrome 156.0.8078.4 and Firefox
+  158.0 at 1000 × 760 plus built-in responsive cases; both report teardown
+  passed. Chrome actually restores BFCache; Firefox cleanly remounts instead.
 
 ### Intentionally not changed
 
-- F2, F4–F6 remain open for implementation; O1/O2 are optional improvements.
+- F2, F5–F6 remain open for implementation; O1/O2 are optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary

@@ -37,6 +37,18 @@ export const storeUrls = Object.freeze({
     firefox: 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/',
 });
 
+// Self-contained for serialization into either browser protocol. Both broad
+// verifiers must enforce the independent card row and native-map ownership.
+export function readPeakSunPlacement() {
+    const iframe = document.getElementById('Gmap');
+    const sun = document.querySelector('.bpb-sun-calculator[data-bpb-peak-card="sun"]');
+    const row = sun?.closest('tr');
+    return Boolean(iframe && row?.id === 'bpb-peak-sun-row'
+        && row.closest('table') === iframe.closest('table')
+        && row.rowIndex > iframe.closest('tr')?.rowIndex
+        && iframe.closest('td')?.querySelector('a[href*="BigMap"]'));
+}
+
 export function createFailureCollector() {
     const failures = [];
     return {

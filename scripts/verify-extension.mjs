@@ -41,6 +41,7 @@ import {
     readDraftsManagerReadiness,
     readScaleChartState,
     readSunCalculatorGeometry,
+    readPeakSunPlacement,
     storeUrls,
     surfaceSelectors,
     verificationViewport,
@@ -4121,6 +4122,7 @@ try {
         const peakErrors = [];
         peakPage.on('pageerror', error => peakErrors.push(String(error)));
         await peakPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
+        const peakSunPlacement = await peakPage.waitForFunction(readPeakSunPlacement).then(handle => handle.jsonValue());
         const peakState = await peakPage.waitForFunction(() => {
             const button = document.getElementById('bpb-terrain-toggle');
             const mount = document.getElementById('bpb-map-viewport');
@@ -4135,12 +4137,6 @@ try {
                 nativeMapHeight: iframe.getBoundingClientRect().height,
                 resizeHandle: Boolean(mount.querySelector('#bpb-map-resize-handle')),
                 iframePreserved: iframe.parentElement === mount,
-                // The independent card now owns a reorderable row, while the
-                // native map, legend and full-screen link stay in their cell.
-                sunAfterLegend: sun.closest('tr')?.id === 'bpb-peak-sun-row'
-                    && sun.closest('table') === iframe.closest('table')
-                    && sun.closest('tr').rowIndex > iframe.closest('tr').rowIndex
-                    && Boolean(iframe.closest('td').querySelector('a[href*="BigMap"]')),
                 sunDateInput: Boolean(sun.querySelector('input[type="date"]')),
                 sunExpanded: sun.querySelector('.bpb-sun-calculator__panel')?.hidden === false,
                 sunSummary: sun.querySelector('.bpb-sun-calculator__summary')?.textContent || '',
@@ -4182,7 +4178,7 @@ try {
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
         check(peakState?.nativeMapHeight === 425 && peakState?.mountHeight === 441 && peakState?.resizeHandle,
             `the Peak map must preserve 425px of native content and add its resize rail (state=${JSON.stringify(peakState)})`);
-        check(peakState?.sunAfterLegend && peakState?.sunDateInput && peakState?.sunExpanded
+        check(peakSunPlacement && peakState?.sunDateInput && peakState?.sunExpanded
             && /°/.test(peakState?.sunSummary || '') && peakState?.sunBorderStyle === 'solid'
             && peakState?.sunMockHierarchy,
         `the packaged Peak Sun calculator is missing, misplaced, unstyled, or lacks its date input (state=${JSON.stringify(peakState)})`);
