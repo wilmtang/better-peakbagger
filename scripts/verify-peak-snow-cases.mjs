@@ -177,6 +177,38 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     assert.equal(await evaluate(() => document.activeElement.id), 'bpb-peak-snow-station');
     cases.push('station-keyboard-switch');
 
+    // Begin with a cold page-memory cache so the alternate station cannot
+    // bypass the held/error transport through an earlier successful selection.
+    setMode('complete'); await navigate(`${origin}/peak.aspx?pid=2296&snow=recovery`);
+    await focusRefresh(); await ready();
+    await wait(() => document.querySelectorAll('.bpb-week-day').length === 16
+        && document.getElementById('bpb-peak-weather').getAttribute('aria-busy') === 'false', 'settled forecast before failed station switch');
+    await focusRefresh();
+    // A failed replacement restores Paradise. Refresh must keep that visible
+    // station, rather than silently retrying the failed Bumping Ridge choice.
+    const selected = await geometry(); setMode('loading');
+    await evaluate(() => {
+        const select = document.getElementById('bpb-peak-snow-station');
+        select.value = '375:WA:SNTL'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await pending(); stable(selected, await geometry(), 'pending replacement');
+    setMode('service-error'); release();
+    await wait(() => document.querySelector('.bpb-snow-status').textContent.includes('Could not load'), 'failed station replacement');
+    assert.equal((await geometry()).selection, '679:WA:SNTL');
+    stable(selected, await geometry(), 'restored station');
+    await focusRefresh(); const restored = await geometry(), restoredCount = snowEvidence.length;
+    setMode('loading'); await press(key('Enter')); await pending();
+    assert.equal((await geometry()).selection, '679:WA:SNTL', 'Refresh must keep the station shown before activation');
+    assert.equal(new URLSearchParams(snowEvidence[restoredCount].query).get('stationTriplets'), '679:WA:SNTL');
+    stable(restored, await geometry(), 'refresh of restored station');
+    setMode('complete'); release(); await ready(); stable(restored, await geometry(), 'refreshed restored station');
+    cases.push('restored-station-refresh');
+    await evaluate(() => {
+        const select = document.getElementById('bpb-peak-snow-station');
+        select.value = '375:WA:SNTL'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await ready();
+
     setMode('missing'); await click('.bpb-snow-refresh'); await ready();
     assert.equal(await evaluate(() => document.querySelector('.bpb-snow-metric strong').textContent), '—');
     assert.equal(await evaluate(() => document.querySelector('.bpb-snow-graph p').hidden), false);
@@ -218,6 +250,17 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
     setMode('service-error'); release();
     await wait(() => document.querySelector('.bpb-snow-status')?.textContent.includes('Could not load'), '200% zoom error');
     stable(enlarged, await geometry(), '200% zoom error');
+    setMode('loading'); await press(key('Enter')); await pending();
+    stable(enlarged, await geometry(), '200% zoom pending timeout');
+    await wait(() => document.getElementById('bpb-peak-snow').getAttribute('aria-busy') === 'false'
+        && document.querySelector('.bpb-snow-status').textContent.includes('request timed out'), '200% zoom timeout');
+    stable(enlarged, await geometry(), '200% zoom timeout');
+    assert.equal(await evaluate(() => getComputedStyle(document.querySelector('.bpb-snow-refresh')).opacity), '1');
+    assert.equal(await evaluate(() => document.activeElement.className), 'bpb-snow-refresh');
+    if (output) await screenshotPage(path.join(output, `${browser}-1440-200-percent-timeout.png`));
+    setMode('complete'); release(); await press(key('Enter')); await ready();
+    stable(enlarged, await geometry(), '200% zoom timeout recovery');
+    cases.push('200-percent-timeout-retry');
     await setZoom(1);
     await waitForCondition(() => evaluate(() => window.devicePixelRatio), { description: 'restored browser zoom',
         isReady: ratio => ratio <= originalRatio * 1.1 });

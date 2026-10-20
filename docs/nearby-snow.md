@@ -47,7 +47,10 @@ converted to another unit. See [NRCS's station and data guidance](https://www.nr
 Refresh preserves the displayed station and readings until a complete replacement
 arrives. Station selection shows placeholders while loading, so old readings
 cannot be attributed to the new station. A failed replacement restores the
-previous result. Refresh retries the requested station, including a failed selection.
+previous result and restores that station as the request target. Refresh reloads
+the station shown in the picker; choosing the failed station again retries it.
+Every offered station remains selectable, including a restored map station
+outside the three nearest choices.
 New selections cancel older work, and late responses cannot overwrite a newer
 selection. Refresh remains focused while busy; pointer and keyboard activation
 cannot start duplicate work. NRCS rate limits pause new requests, using
@@ -107,7 +110,9 @@ the host layout. The assertion is
 also challenged with a deliberately shifted disposable page.
 The timeout cases hold actual network responses past the production deadline,
 check full-opacity, focused Refresh and retained measurements, then immediately
-retry in desktop and narrow layouts in both themes.
+retry in desktop and narrow layouts in both themes, and at 200% browser zoom.
+After a failed station switch, the browser check also verifies that Refresh
+loads the station shown in the restored picker without moving the card.
 
 Set `BPB_VERIFY_SNOW_SCREENSHOT_DIR` to retain card/page screenshots. Provider
 JSON is intercepted in this repeatable matrix. It proves the real manifest,

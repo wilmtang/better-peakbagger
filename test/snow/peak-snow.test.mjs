@@ -269,6 +269,58 @@ test('station switching uses truthful placeholders, preserves native selection a
     } finally { env.close(); }
 });
 
+for (const failure of ['service', 'timeout']) {
+    test(`Refresh targets the displayed station after a ${failure} failure switching stations`, async () => {
+        let fail = false;
+        const env = setup({ fetchFn: url => {
+            if (fail && new URL(url).searchParams.get('stationTriplets') === '375:WA:SNTL') {
+                if (failure === 'timeout') throw Object.assign(new Error('Timed out'), { name: 'TimeoutError' });
+                return new Response('', { status: 503 });
+            }
+            return reply(url);
+        } });
+        try {
+            await settled(env); fail = true; choose(env, '375:WA:SNTL');
+            await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('Previous readings shown')
+                && env.doc.querySelector('#bpb-peak-snow').getAttribute('aria-busy') === 'false');
+            const select = env.doc.querySelector('#bpb-peak-snow-station');
+            assert.equal(select.value, '679:WA:SNTL');
+            const before = env.requests.length, displayed = select.value;
+            env.doc.querySelector('.bpb-snow-refresh').click();
+            assert.equal(new URL(env.requests[before].url).searchParams.get('stationTriplets'), displayed,
+                'Refresh must reload the station shown in the picker, not a hidden failed intent');
+            await settled(env);
+        } finally { env.close(); }
+    });
+}
+
+test('a restored map station outside the nearest three remains selectable and refreshable', async () => {
+    const catalog = [...snotelStations(),
+        { ...snotelStations()[0], stationTriplet: '998:WA:SNTL', name: 'Near station', latitude: 46.80, longitude: -121.70 },
+        { ...snotelStations()[0], stationTriplet: '999:WA:SNTL', name: 'Farther station', latitude: 46.85, longitude: -121.25 }];
+    let failed = false;
+    const env = setup({ fetchFn: url => new URL(url).pathname.endsWith('/stations')
+        ? new Response(JSON.stringify(catalog)) : failed ? new Response('', { status: 503 }) : reply(url) });
+    try {
+        await settled(env); const messages = []; env.win.postMessage = data => messages.push(data);
+        env.doc.getElementById('bpb-peak-snow').scrollIntoView = () => {};
+        mapMessage(env, { type: 'get', requestId: 1 });
+        await waitFor(() => messages.some(data => data.type === 'stations'));
+        mapMessage(env, { type: 'select', stationId: '999:WA:SNTL' }); await settled(env);
+        failed = true; mapMessage(env, { type: 'select', stationId: '679:WA:SNTL' });
+        await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('Could not load'));
+        const select = env.doc.querySelector('#bpb-peak-snow-station');
+        assert.equal(select.value, '999:WA:SNTL');
+        failed = false; choose(env, '999:WA:SNTL');
+        assert.match(env.doc.querySelector('.bpb-snow-status').textContent, /Refreshing/,
+            'every offered option must have a working selection handler');
+        await settled(env);
+        const before = env.requests.length; env.doc.querySelector('.bpb-snow-refresh').click();
+        assert.equal(new URL(env.requests[before].url).searchParams.get('stationTriplets'), '999:WA:SNTL');
+        await settled(env); assert.equal(select.value, '999:WA:SNTL');
+    } finally { env.close(); }
+});
+
 test('Refresh stays focused and cannot duplicate work while pending; failure retains measurements', async () => {
     let hold = false, held, fail = false;
     const env = setup({ fetchFn: url => fail ? new Response('', { status: 503 }) : hold ? new Promise(resolve => { held = { url, resolve }; }) : reply(url) });

@@ -5,6 +5,8 @@
 - **Make snow-request timeouts clear.** Nearby snow names a timed-out request
   and leaves Refresh available immediately. Retained readings, keyboard focus,
   controls and surrounding content stay in place through timeout and retry.
+  After a failed station switch, Refresh reloads the station actually shown;
+  restored stations outside the nearest three remain selectable.
 
 - **Keep captured ascents protected while preparing.** Save stays blocked from
   the first readiness check. Returning to a cached waiting form rechecks its

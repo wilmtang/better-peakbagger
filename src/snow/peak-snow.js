@@ -132,14 +132,14 @@ export function mountPeakSnow() {
     };
     const cooldown = createRetryCooldown(availability);
     const setStatus = text => { stableStatus.set(text); };
+    const stationChoices = () => current && !candidates?.some(station => station.id === current.station.id)
+        ? [...(candidates || []), current.station] : candidates || [];
     const fillStations = () => {
         if (!candidates?.length) return;
         const previous = current?.station.id || requested?.id || candidates[0].id;
         // A failed map replacement must still name the station whose retained
         // readings are shown, even when it is outside the default three.
-        const choices = current && !candidates.some(station => station.id === current.station.id)
-            ? [...candidates, current.station] : candidates;
-        select.replaceChildren(...choices.map(station => element('option', { value: station.id,
+        select.replaceChildren(...stationChoices().map(station => element('option', { value: station.id,
             text: `${station.name} · ${units.formatDistance(station.distance, system('distance'))} away · ${units.formatElevation(station.elevation, system('elevation'))}` })));
         select.value = previous; select.disabled = false;
     };
@@ -225,7 +225,7 @@ export function mountPeakSnow() {
                 setStatus(`No SNOTEL station within ${units.formatDistance(SNOTEL_RADIUS_METERS, system('distance'))} of this peak.`);
                 return;
             }
-            requested = candidates.find(station => station.id === target?.id) || candidates[0];
+            requested = stationChoices().find(station => station.id === target?.id) || candidates[0];
             render(current?.station.id === requested.id ? current : null);
             const data = await client.observations(requested, { signal, refresh: force });
             if (owner !== generation || !enabled()) return;
@@ -234,7 +234,7 @@ export function mountPeakSnow() {
             if (owner !== generation || !enabled() || error.name === 'AbortError') return;
             notice = error;
             if (!candidates) select.options[0].textContent = 'Stations unavailable';
-            if (current) render(current);
+            if (current) { requested = current.station; render(current); }
             const failure = requestDeadline.isTimeout(error)
                 ? current ? labels.timeoutRetained : labels.timeout
                 : current ? labels.retained : labels.error;
@@ -246,7 +246,7 @@ export function mountPeakSnow() {
     };
     select.addEventListener('change', () => {
         if (cooldown.active()) { select.value = current?.station.id || requested?.id || ''; return; }
-        const target = candidates?.find(station => station.id === select.value);
+        const target = stationChoices().find(station => station.id === select.value);
         if (pending && target?.id === requested?.id) return;
         if (target) { requested = target; void load(target); }
     });

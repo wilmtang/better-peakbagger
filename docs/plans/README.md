@@ -23,7 +23,8 @@ truth for shipped code.
 The [SNOTEL timeout and recovery UX audit](../archive/snotel-timeout-ux-audit-2026-10-20.md)
 adds explicit timeout feedback and verifies stable, immediately available Refresh
 in hidden Chrome, Firefox and Brave. Its ledger preserves the documented failed
-station retry behavior and existing-profile/live-provider proof gaps.
+station retry history and records the follow-up aligning Refresh with the
+restored station, plus existing-profile/live-provider proof gaps.
 
 The [Trip Info audit remediation](../archive/trip-info-audit-remediation-2026-10-17.md)
 fixes incomplete-form handling before GPS Preview and corrects the Settings
