@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { snotelStations, snotelFixture } from '../helpers/snotel-fixture.mjs';
+import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
 
 const [html, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
@@ -137,6 +138,23 @@ test('peak card uses native summit metadata without GPX and mounts once after th
         env.win.eval(bundle); assert.equal(env.doc.querySelectorAll('#bpb-peak-snow').length, 1);
     } finally { env.close(); }
 });
+
+for (const [heading, system] of peakUnitHeadings) {
+    test(`automatic snow units follow the primary native elevation: ${heading}`, async () => {
+        const env = setup({ source: withPeakElevation(html, heading), saved: { units: 'auto' } });
+        try {
+            await settled(env);
+            const station = () => env.doc.querySelector('#bpb-peak-snow-station').selectedOptions[0].textContent;
+            const depth = () => env.doc.querySelector('.bpb-snow-metric strong').textContent;
+            assert.match(station(), system === 'metric' ? /km away.*1570 m/ : /mi away.*5150 ft/);
+            assert.match(depth(), system === 'metric' ? /91\.4 cm/ : /36\.0 in/);
+            const count = env.requests.length;
+            env.settings({ units: 'auto', precipitationUnits: 'imperial', elevationUnits: 'metric' });
+            assert.match(station(), /1570 m/); assert.match(depth(), /36\.0 in/);
+            assert.equal(env.requests.length, count, 'unit changes reuse canonical data');
+        } finally { env.close(); }
+    });
+}
 
 test('snow title has a decorative SNOTEL icon and Refresh belongs beside the station selector', async () => {
     const env = setup();

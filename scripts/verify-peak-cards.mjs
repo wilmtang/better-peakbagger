@@ -106,6 +106,30 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         await resize(width, 1100); setMode('complete');
         await setSettings({ theme, units: 'metric', showWeather: true, showSnotel: true, showSunMoon: true }); await open();
         await compactSnow(`${width}/${theme}/ready`);
+        const nativeHeading = await evaluate(() => {
+            const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));
+            const previous = heading.textContent;
+            heading.textContent = 'Elevation: 4391.0 meters, 14,406.2 feet';
+            return previous;
+        });
+        const nativeUnits = { ...await readSettings(), elevationUnits: 'default', distanceUnits: 'default',
+            temperatureUnits: 'default', precipitationUnits: 'default', windUnits: 'default' };
+        await setSettings({ ...nativeUnits, units: 'imperial' });
+        await wait(() => document.querySelector('.bpb-week-temp')?.textContent.includes('°F')
+            && document.querySelector('.bpb-snow-metric strong')?.textContent.includes('in'), 'explicit imperial before automatic units');
+        await setSettings({ ...nativeUnits, units: 'auto' });
+        await wait(() => document.querySelector('.bpb-week-temp')?.textContent.includes('°C')
+            && document.querySelector('.bpb-snow-metric strong')?.textContent.includes('cm'), 'automatic metric weather and snow');
+        const automatic = await evaluate(() => ({ weather: document.querySelector('.bpb-week-sub').textContent,
+            station: document.querySelector('#bpb-peak-snow-station').selectedOptions[0].textContent }));
+        assert.match(automatic.weather, /4391 m/); assert.match(automatic.station, /km away.*1570 m/);
+        assert.equal(await evaluate(() => document.documentElement.getAttribute('data-bpb-theme')), theme);
+        await compactSnow(`${width}/${theme}/automatic-units`);
+        await focus('snow', '.bpb-peak-card-toggle'); await image(`${width}-${theme}-automatic-units`);
+        await evaluate(previous => {
+            [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim())).textContent = previous;
+        }, nativeHeading);
+        await setSettings({ ...await readSettings(), units: 'metric' });
         assert.deepEqual(await order(), ['sun', 'weather', 'snow']);
         for (const id of ['weather', 'snow', 'sun']) {
             const toggle = id === 'sun' ? '.bpb-sun-calculator__toggle' : '.bpb-peak-card-toggle';
@@ -233,7 +257,7 @@ export async function verifyPeakCards({ origin, evaluate, navigate, click, press
         const current = await readSettings(); await setSettings({ ...current, showSnotel: false });
         await wait(() => document.querySelector('#bpb-peak-snow-row').hidden, 'SNOTEL feature off');
         await setSettings({ ...current, showSnotel: true }); await ready(); assert.deepEqual(await order(), ['snow', 'weather', 'sun']);
-        cases.push({ width, theme, states: ['header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'weather-refresh-error-retry', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
+        cases.push({ width, theme, states: ['automatic-units', 'header-hit-area', 'collapse', 'keyboard', 'pointer', 'cancel', 'reload', 'weather-refresh-error-retry', 'pending', 'closed-error', 'retry', 'feature-off-on'] });
     }
     setMode('long-station'); await writeLocal({ bpbSnotelCatalogV1: null }); await open();
     await focus('snow', '.bpb-peak-card-toggle'); await compactSnow('375/dark/long-station');

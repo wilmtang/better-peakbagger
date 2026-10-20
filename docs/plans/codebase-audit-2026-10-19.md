@@ -380,10 +380,22 @@ the disposition and remaining proof for every accepted item.
   with the real unpacked extension in hidden Chrome 156.0.8078.4 and Firefox
   158.0 at 1000 × 760 plus built-in responsive cases; both report teardown
   passed. Chrome actually restores BFCache; Firefox cleanly remounts instead.
+- **F2:** Weather and snow share the native peak-heading unit probe. It accepts
+  full/abbreviated first-unit spellings, signed values and comma/decimal numbers;
+  missing, ambiguous or unrelated metadata remains inconclusive. Explicit
+  global and measurement overrides still use the shared resolver. Three shipped
+  bundle integration cases fail before the fix; all 96 focused unit/probe/card
+  tests now pass, including eight native-heading cases and no-refetch checks.
+  Focused ESLint and the real-extension card matrices pass in hidden Chrome
+  156.0.8078.4 and Firefox 158.0 at 1440/375 × 1100, both asserted themes, and
+  the existing 200% zoom/interaction cases. The new browser case explicitly
+  transitions imperial → automatic metric before checking both cards. Narrow
+  automatic-unit screenshots were inspected in both browsers; selectors and
+  feedback fit without overlap. Provider responses remain fixtures.
 
 ### Intentionally not changed
 
-- F2, F5–F6 remain open for implementation; O1/O2 are optional improvements.
+- F5–F6 remain open for implementation; O1/O2 are optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary

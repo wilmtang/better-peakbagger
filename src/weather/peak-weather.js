@@ -4,6 +4,7 @@
 import { dom } from '../ui/dom.js';
 import { createStableText } from '../ui/stable-text.js';
 import { units } from '../ui/units.js';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
@@ -155,10 +156,7 @@ export function mountPeakWeather() {
         }));
         select.value = choices[period];
     };
-    const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => {
-        const heading = [...document.querySelectorAll('h2')].find(node => /^Elevation:/i.test(node.textContent.trim()));
-        return /Elevation:\s*[\d,.]+\s*m\b/i.test(heading?.textContent || '') ? 'metric' : 'imperial';
-    }, measurement);
+    const unitSystem = (measurement = 'elevation') => units.resolveUnits(preference, () => readPeakUnitSystem(document), measurement);
     const format = (value, kind) => units.formatWeather(value, kind, unitSystem(kind));
     const unitSignature = () => ['elevation', 'temperature', 'precipitation', 'wind'].map(unitSystem).join('/');
     const renderLabels = week => {

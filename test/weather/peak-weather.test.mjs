@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
+import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
 
 const [peak, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
@@ -463,6 +464,23 @@ test('a negative historical ARPEGE sample becomes zero without marking the day p
         assert.equal(env.requests.length, 1, 'both periods and the hourly graph reuse the combined response');
     } finally { env.close(); }
 });
+
+for (const [heading, system] of peakUnitHeadings) {
+    test(`automatic weather units follow the primary native elevation: ${heading}`, async () => {
+        const env = setup({ html: withPeakElevation(peak, heading), storedSettings: { units: 'auto' } });
+        try {
+            await settled(env, { past: false });
+            assert.match(env.doc.querySelector('.bpb-week-temp').textContent, system === 'metric' ? /°C/ : /°F/);
+            assert.match(env.doc.querySelector('.bpb-week-metrics').textContent, system === 'metric' ? /mm.*km\/h/ : /in.*mph/);
+            assert.match(env.doc.querySelector('.bpb-week-sub').textContent, system === 'metric' ? /4391 m/ : /14406 ft/);
+            const count = env.requests.length;
+            env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'auto', temperatureUnits: 'imperial', elevationUnits: 'metric' } } }, 'sync'));
+            assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°F/);
+            assert.match(env.doc.querySelector('.bpb-week-sub').textContent, /4391 m/);
+            assert.equal(env.requests.length, count, 'unit changes reuse canonical data');
+        } finally { env.close(); }
+    });
+}
 
 test('mixed weather units update live without changing the default or refetching canonical data', async () => {
     const storedSettings = { units: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', elevationUnits: 'metric' };

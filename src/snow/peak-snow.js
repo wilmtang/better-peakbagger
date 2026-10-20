@@ -3,6 +3,7 @@
 
 import { dom } from '../ui/dom.js';
 import { units } from '../ui/units.js';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { createStableText } from '../ui/stable-text.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
@@ -119,7 +120,7 @@ export function mountPeakSnow() {
     let controller = null, generation = 0, pending = false, observer = null, notice = null, noStations = false;
     let lifecycle;
     const enabled = () => settingsReady && preference.showSnotel && lifecycle.state === 'active';
-    const system = measurement => units.resolveUnits(preference, () => 'imperial', measurement);
+    const system = measurement => units.resolveUnits(preference, () => readPeakUnitSystem(document), measurement);
     const depthText = mm => mm === null ? '—' : system('precipitation') === 'metric' ? `${(mm / 10).toFixed(1)} cm` : `${(mm / 25.4).toFixed(1)} in`;
     const waterText = mm => units.formatWeather(mm, 'precipitation', system('precipitation'));
     const availability = () => {
