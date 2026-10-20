@@ -354,7 +354,7 @@ Combined local checkpoint after all seven findings and both improvements:
 
 | Check | Result |
 | --- | --- |
-| Rebuilt full unit suite | 2,996/2,996 passed. |
+| Rebuilt full unit suite | 2,998/2,998 passed, including the later LOD-fixture regressions. |
 | Scale tests | 14/14 passed. |
 | `npm run lint` | Passed with the six existing owned web-ext warnings. |
 | Reviewed dependency gate | Passed with the unchanged exact node-forge exception, expiring 2026-10-24 07:00 UTC; raw audit still has three high development findings. |
@@ -364,6 +364,24 @@ Combined local checkpoint after all seven findings and both improvements:
 
 These results do not override the more specific native/cache/terrain limits
 below. The original verification table above remains the audit baseline.
+
+| Finding | Independent implementation commit |
+| --- | --- |
+| F1 | `7d540a87` |
+| F2 | `4dfd96d7` |
+| F3 | `3a7aa6a5` |
+| F4 | `88093278` |
+| F5 | `7b34b81e` |
+| F6 | `578a9dab` |
+| F7 | `1da12f8c` |
+| O1 | `b7f69e9a` |
+| O2 | `c1040ee7` |
+
+Post-check process inspection found no owned browser/verifier processes.
+Recorded profile paths and the package/LOD temporary roots were removed by
+their resource owners. Disposable screenshots, archives, probes and logs were
+removed after their evidence was recorded in this ledger; user browsers were
+not closed.
 
 ### Fixed and verified
 
@@ -469,7 +487,7 @@ below. The original verification table above remains the audit baseline.
   and materializes only the bounded final set. Duplicate expanded rungs retain
   their nested-union counts and established output order; invalid budgets,
   source zoom limits and nonfinite dimensions fail closed. The allocation-budget
-  and malformed-option regressions fail before the fix. All 103 terrain tests
+  and malformed-option regressions fail before the fix. All 105 terrain tests
   pass; 200 deterministic finite-view comparisons match the historical output
   exactly, including both cap policies and duplicate offsets. Build and focused
   ESLint pass. The audited stress input returns 32 tiles in about 0.03 ms in a
@@ -477,11 +495,19 @@ below. The original verification table above remains the audit baseline.
   Hardware validation was attempted, not passed: hidden installed Chrome
   156.0.8078.36 reports ANGLE/Metal on Apple M3 Pro. The broad visual suite stops
   at its 2D-control gap assertion (41 px versus a 40 px limit), at 1000 × 900.
-  The LOD suite's 1240 × 1020 host never retains its intended 1100 × 700 3D frame;
-  live diagnostics show activation occurred, then the existing “3D elevation
-  data could not be loaded” fallback. Neither run reaches the required warming
-  or camera criteria. Their assertions were not weakened; native/live terrain
-  performance remains unproven and these verifier failures need separate work.
+  Initially, the LOD suite fell back after elevation loading: its generated PNG
+  response violated the production cache's strict WebP MIME/byte contract.
+  That verifier prerequisite is now repaired with lossless WebP from the already
+  locked Playwright toolchain; no dependency or production cache rule changed.
+  A regression executes the actual LOD response handler through the production
+  cache and fails with the original PNG header. A second test verifies every
+  decoded Terrarium byte round-trips unchanged. The repaired run reaches a
+  1098 × 698 terrain frame on Apple M3 Pro Metal in its 1240 × 1020 host, but
+  then stops because MapLibre 6.13 no longer exposes `painter.maybeDrawCoords`.
+  Its private framebuffer provenance probe needs redesign before the per-pixel
+  warming/LOD criteria can run; tile-count evidence was not substituted.
+  The broader 2D-gap assertion and this measurement gap remain open. Native/live
+  terrain performance is not claimed from the passing allocation or 3D smoke tests.
 - **F7:** The shared page lifecycle now invalidates queued/in-flight draft
   ownership on suspension/disposal, cancels the parked timer, rolls back owned
   incomplete writes and starts a fresh guarded handshake on persisted resume.

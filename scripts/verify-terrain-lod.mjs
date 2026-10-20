@@ -23,7 +23,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import zlib from 'node:zlib';
+import { DEM_FIXTURE_CONTENT_TYPE, syntheticDemWebp } from './terrain-dem-fixture.mjs';
 
 import {
     createFixtureCertificate,
@@ -75,7 +75,6 @@ const DRAPE_LABEL = DRAPE_SPECS[DRAPE_CODE].label;
 const FRAME_WIDTH = 1100;
 const FRAME_HEIGHT = 700;
 const TILE_DELAY_MS = 140;
-const DEM_TILE_PIXELS = 512;
 // The camera the sweep runs from. Zoom is set explicitly rather than inherited
 // from the fixture route's fitBounds, so the measured levels do not move when
 // the showcase track or the frame size changes; zoom 14 puts the near ground at
@@ -118,73 +117,9 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // test latitude, plus a slower swell so the coarse levels carry real structure
 // rather than an alias of the ridges. Generating rather than downloading keeps
 // this check offline, repeatable, and free of live Mapterhorn traffic.
-const RIDGE_MERCATOR = 5.7e-5;  // ~1.5 km at 48.7 degrees north
-const elevationAt = (mercatorX, mercatorY) => {
-    const fine = Math.sin(2 * Math.PI * mercatorX / RIDGE_MERCATOR)
-        * Math.cos(2 * Math.PI * mercatorY / RIDGE_MERCATOR);
-    const coarse = Math.sin(2 * Math.PI * mercatorX / (8 * RIDGE_MERCATOR))
-        * Math.cos(2 * Math.PI * mercatorY / (8 * RIDGE_MERCATOR));
-    return 300 + 1300 * (1 + 0.75 * fine + 0.25 * coarse);
-};
-
-const crcTable = (() => {
-    const table = new Int32Array(256);
-    for (let n = 0; n < 256; n++) {
-        let c = n;
-        for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-        table[n] = c;
-    }
-    return table;
-})();
-
-const crc32 = buffer => {
-    let c = 0xffffffff;
-    for (let i = 0; i < buffer.length; i++) c = crcTable[(c ^ buffer[i]) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-};
-
-const pngChunk = (type, data) => {
-    const head = Buffer.alloc(8);
-    head.writeUInt32BE(data.length, 0);
-    head.write(type, 4, 'ascii');
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])), 0);
-    return Buffer.concat([head, data, crc]);
-};
-
-// Terrarium encoding: elevation = (R * 256 + G + B / 256) - 32768. MapLibre
-// decodes whatever image format the browser can read, so PNG stands in for
-// Mapterhorn's WebP — the encoding has no bearing on which tile level MapLibre
-// picks, which is what this check measures.
-const demTilePng = (z, x, y) => {
-    const size = DEM_TILE_PIXELS;
-    const dimension = 2 ** z;
-    const stride = size * 3 + 1;
-    const raw = Buffer.alloc(stride * size);
-    for (let row = 0; row < size; row++) {
-        const mercatorY = (y + (row + 0.5) / size) / dimension;
-        let offset = row * stride + 1;
-        for (let column = 0; column < size; column++) {
-            const mercatorX = (x + (column + 0.5) / size) / dimension;
-            const value = elevationAt(mercatorX, mercatorY) + 32768;
-            const whole = Math.floor(value);
-            raw[offset++] = (whole >> 8) & 0xff;
-            raw[offset++] = whole & 0xff;
-            raw[offset++] = Math.min(255, Math.floor((value - whole) * 256));
-        }
-    }
-    const header = Buffer.alloc(13);
-    header.writeUInt32BE(size, 0);
-    header.writeUInt32BE(size, 4);
-    header[8] = 8;   // bit depth
-    header[9] = 2;   // colour type: truecolour
-    return Buffer.concat([
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        pngChunk('IHDR', header),
-        pngChunk('IDAT', zlib.deflateSync(raw, { level: 6 })),
-        pngChunk('IEND', Buffer.alloc(0))
-    ]);
-};
+// The production cache requires WebP bytes and MIME. Lossless encoding keeps
+// every Terrarium height channel intact; the locked Playwright toolchain owns
+// the fixture encoder, with no added runtime or build dependency.
 
 // The showcase's own topographic tile, reused for the swapped drape host.
 const drapeTilePng = (await readFile(path.join(root, 'scripts/showcase/terrain-basemap-tile.png'))).toString('base64');
@@ -192,7 +127,7 @@ const drapeTilePng = (await readFile(path.join(root, 'scripts/showcase/terrain-b
 const demTileCache = new Map();
 const demTile = (z, x, y) => {
     const key = `${z}/${x}/${y}`;
-    if (!demTileCache.has(key)) demTileCache.set(key, demTilePng(z, x, y));
+    if (!demTileCache.has(key)) demTileCache.set(key, syntheticDemWebp(z, x, y));
     return demTileCache.get(key);
 };
 
@@ -641,7 +576,7 @@ try {
                 responseHeaders: [
                     { name: 'Access-Control-Allow-Origin', value: '*' },
                     { name: 'Cache-Control', value: 'no-store' },
-                    { name: 'Content-Type', value: 'image/png' },
+                    { name: 'Content-Type', value: DEM_FIXTURE_CONTENT_TYPE },
                     { name: 'Cross-Origin-Resource-Policy', value: 'cross-origin' }
                 ],
                 body: body.toString('base64')

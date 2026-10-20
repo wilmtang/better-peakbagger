@@ -777,10 +777,18 @@ add it to the merge-step condition, for example
   service.
 - `npm run verify -- terrain lod` measures which elevation level each visible pixel is
   actually drawn from, on the same real GPU frame, so the tilt detail behaviour is
-  a number rather than an impression. It generates its own continuous DEM tiles
-  and serves them at a fixed 140 ms delay, so it says nothing about live
-  Mapterhorn latency or tile sizes — a decode-bound residual it reports may be
-  smaller against Mapterhorn's WebP than against the fixture's PNG.
+  a number rather than an impression. It generates continuous 512-pixel DEM
+  tiles as lossless WebP through the locked Playwright toolchain, preserving
+  every Terrarium elevation channel and satisfying the production cache's MIME
+  and byte validation. It adds a 140 ms delivery delay after fixture generation;
+  encoding cost, tile sizes and provider latency do not model live Mapterhorn.
+- The current `terrain lod` per-pixel probe depends on MapLibre's private
+  coordinate framebuffer, which the locked 6.13.0 build no longer exposes
+  (`painter.maybeDrawCoords` is absent). It fails after the terrain frame boots;
+  the lossless DEM fixture is independently validated, but the provenance probe
+  needs adaptation. Passing terrain/snow-map smoke does not prove those LOD
+  criteria. The [October 19 ledger](plans/codebase-audit-2026-10-19.md) records
+  the exact local evidence and remaining measurement gap.
 - `BPB_LOD_DRAPE` picks which of the two shipped drape LOD settings that run
   exercises: `L_OS` (the default, full `(4, 3)`) or `L_OT` (thrifty `(6, 1.5)`,
   what OpenTopoMap and every live Leaflet layer get). Run both when touching
