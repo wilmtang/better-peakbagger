@@ -113,6 +113,7 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                             right: node.getBoundingClientRect().right, height: node.getBoundingClientRect().height,
                             scroll: node.scrollWidth, client: node.clientWidth }));
                     return { width: innerWidth, topLayer: card.matches(':popover-open'),
+                        selfWrapped: document.getElementById('hover-self').closest('.bpb-climber-link') != null,
                         card: { left: rect.left, right: rect.right, bottom: rect.bottom }, controls,
                         horizontalOverflow: card.scrollWidth > card.clientWidth + 1,
                         secondaryActions: ['bpb-climber-card-favorite', 'bpb-climber-card-ignore'].map(id => {
@@ -128,6 +129,7 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
                 });
                 assert.equal(geometry.topLayer, true, 'card is not in the browser top layer');
                 assert.equal(geometry.width, width, 'browser did not apply the requested content viewport');
+                assert.equal(geometry.selfWrapped, false, 'own profile links must never get climber actions');
                 assert.equal(geometry.horizontalOverflow, false, JSON.stringify(geometry));
                 assert.deepEqual(geometry.secondaryActions[1], geometry.secondaryActions[0],
                     `Ignore must match the favorite button: ${JSON.stringify(geometry)}`);
@@ -191,10 +193,8 @@ export async function verifyClimberHoverCard({ evaluate, wait, click, hover, key
     await capture('long-name');
     await key('#bpb-climber-card-ignore', 'Escape');
     await wait(() => document.getElementById('bpb-climber-card').hidden);
-    await click('#hover-self + .bpb-climber-actions-trigger');
-    await wait(() => document.getElementById('bpb-climber-card-name')?.textContent === 'Alex Doe');
-    assert.equal(await evaluate(() => document.getElementById('bpb-climber-card-favorite').hidden), true);
-    await click('.bpb-climber-card-close');
+    assert.equal(await evaluate(() => document.getElementById('hover-self').closest('.bpb-climber-link') == null), true,
+        'the signed-in climber must keep a plain profile link without an actions trigger');
     const focusCases = [
         { expected: 'focus-first-trigger', alter: () => {
             const link = document.getElementById('focus-first');

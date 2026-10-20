@@ -108,6 +108,42 @@ test('large climber lists measure visibility before inserting any action wrapper
     assert.equal(dom.window.document.querySelectorAll('a[data-batch] + .bpb-climber-actions-trigger').length, 100);
 });
 
+test('own profile links stay undecorated in headings, lists, report rows, and late content', async t => {
+    const dom = await load({ prepare: dom => {
+        dom.window.document.querySelector('main').insertAdjacentHTML('beforeend',
+            '<h3>List Created by <a data-self href="/climber/climber.aspx?cid=900001">Alex Doe</a>.</h3>'
+            + '<h2>Showing <a data-self href="/climber/Climber.aspx?cid=900001">Alex Doe</a>\'s most recent ascent dates</h2>'
+            + '<table><tr><td><a data-self href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">Alex Doe</a></td></tr></table>'
+            + '<p><a id="same-name" href="/climber/climber.aspx?cid=900004">Alex Doe</a></p>');
+        accelerateTimeout(dom, 1000); accelerateTimeout(dom, 350);
+    } });
+    t.after(() => dom.window.close());
+    const doc = dom.window.document, card = doc.getElementById('bpb-climber-card');
+    const assertBare = link => {
+        assert.equal(link.closest('.bpb-climber-link'), null, `own link was wrapped: ${link.outerHTML}`);
+        assert.equal(link.nextElementSibling?.matches('.bpb-climber-actions-trigger') || false, false);
+        assert.equal(link.tabIndex, 0);
+    };
+    for (const link of [doc.getElementById('owner'), ...doc.querySelectorAll('[data-self]')]) assertBare(link);
+    assert.equal(doc.getElementById('same-name').nextElementSibling.matches('.bpb-climber-actions-trigger'), true,
+        'identity comes from the climber ID, not the displayed name');
+    doc.querySelector('main').insertAdjacentHTML('beforeend',
+        '<p id="late-person"><a href="/climber/climber.aspx?cid=900001">Alex Doe</a></p>');
+    await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+    const late = doc.querySelector('#late-person a');
+    assertBare(late);
+    pointer(dom, late, 'pointerover'); late.focus();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(card.hidden, true, 'hover and keyboard focus must not open a self card');
+    const changed = doc.getElementById('casey');
+    await open(dom);
+    changed.href = '/climber/climber.aspx?cid=900001';
+    await waitFor(dom, () => card.hidden && !changed.closest('.bpb-climber-link'));
+    assertBare(changed);
+    changed.href = '/climber/climber.aspx?cid=900002';
+    await waitFor(dom, () => changed.nextElementSibling?.matches('.bpb-climber-actions-trigger'));
+});
+
 test('card keeps name links intact and exposes only eligible, visible people', async t => {
     const dom = await load({ prepare: dom => {
         dom.window.document.querySelector('main').insertAdjacentHTML('beforeend',
@@ -117,7 +153,7 @@ test('card keeps name links intact and exposes only eligible, visible people', a
     } }); t.after(() => dom.window.close());
     const link = dom.window.document.getElementById('casey');
     assert.equal(link.getAttribute('href'), '/climber/climber.aspx?cid=900002');
-    for (const id of ['ambiguous', 'hidden-person', 'navigation']) {
+    for (const id of ['ambiguous', 'hidden-person', 'navigation', 'owner']) {
         assert.equal(dom.window.document.getElementById(id).nextElementSibling?.classList.contains('bpb-climber-actions-trigger') || false, false);
     }
     const activation = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true });
@@ -127,9 +163,17 @@ test('card keeps name links intact and exposes only eligible, visible people', a
     dom.window.document.addEventListener('click', event => { preventedByCard = event.defaultPrevented; }, { capture: true, once: true });
     link.dispatchEvent(activation);
     assert.equal(preventedByCard, false);
+});
+
+test('without a signed-in identity, profile links still offer climber actions', async t => {
+    const dom = await load({ prepare: dom => {
+        [...dom.window.document.querySelectorAll('a')].find(link => link.textContent === 'My Home Page').remove();
+    } });
+    t.after(() => dom.window.close());
+    assert.equal(dom.window.document.getElementById('owner').nextElementSibling.matches('.bpb-climber-actions-trigger'), true);
     const card = await open(dom, 'owner');
-    assert.equal(card.querySelector('#bpb-climber-card-favorite').hidden, true);
-    assert.equal(card.querySelector('.bpb-climber-card-ignore-section').hidden, true);
+    assert.equal(card.querySelector('.bpb-climber-card-buddy').hidden, true);
+    assert.equal(card.querySelector('a.bpb-climber-card-buddy').hidden, false);
 });
 
 test('one-second hover dwell cancels on departure; Escape suppresses the same session and explicit opening focuses actions', async t => {
@@ -334,6 +378,8 @@ test('disappearing card focus skips hidden rows, follows replacements, and uses 
     for (const action of ['hide-two', 'replace', 'remove', 'last', 'all-hidden', 'external', 'trigger']) {
         const dom = await load({ prepare: dom => {
             const doc = dom.window.document, list = doc.getElementById('names');
+            // The last focus target must be another climber with an actions menu.
+            doc.getElementById('owner').href = '/climber/climber.aspx?cid=900004';
             for (const id of ['casey', 'morgan', 'owner']) {
                 const row = doc.createElement('article'); row.id = `${id}-row`;
                 row.append(doc.getElementById(id)); list.append(row);

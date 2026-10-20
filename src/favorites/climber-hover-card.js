@@ -84,8 +84,11 @@ const mount = () => {
 
     const isVisible = node => node?.isConnected && !node.closest('[hidden], [inert], [aria-hidden="true"]')
         && node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
-    const targetFor = anchor => anchor?.matches?.('a[href]') && !anchor.closest(EXCLUDED)
-        ? climberCardTarget(anchor.getAttribute('href'), anchor.textContent, document.baseURI) : null;
+    const targetFor = (anchor, ownerCid = ownerClimberId(document)) => {
+        const target = anchor?.matches?.('a[href]') && !anchor.closest(EXCLUDED)
+            ? climberCardTarget(anchor.getAttribute('href'), anchor.textContent, document.baseURI) : null;
+        return target?.cid === ownerCid ? null : target;
+    };
     const pageBuddy = cid => {
         const target = climberCardTarget(location.href, 'Viewed climber', document.baseURI);
         if (target?.cid !== cid) return { nativeBuddy: false, buddyPending: false };
@@ -313,14 +316,14 @@ const mount = () => {
         if (focusedRecord === record) focusedRecord = null;
         fallback?.focus({ preventScroll: true });
     };
-    const decorate = root => {
+    const decorate = (root, ownerCid = ownerClimberId(document)) => {
         const anchors = root.matches?.('a[href]') ? [root] : [];
         anchors.push(...(root.querySelectorAll?.('a[href]') || []));
         // Reading geometry between wrapper insertions repeatedly lays out an
         // entire ascent table. Measure the batch before changing its DOM.
-        const visible = anchors.filter(anchor => !records.has(anchor) && targetFor(anchor) && isVisible(anchor));
+        const visible = anchors.filter(anchor => !records.has(anchor) && targetFor(anchor, ownerCid) && isVisible(anchor));
         for (const anchor of visible) {
-            const target = targetFor(anchor);
+            const target = targetFor(anchor, ownerCid);
             const trigger = button('⋯', { class: 'bpb-climber-actions-trigger',
                 'aria-label': `Climber actions for ${target.name}`, 'aria-haspopup': 'dialog',
                 'aria-expanded': 'false', 'aria-controls': card.id, 'data-bpb-climber-ui': '' });
@@ -506,21 +509,23 @@ const mount = () => {
         if (!active) return;
         const relevant = changes.filter(change => !change.target.closest?.('[data-bpb-climber-ui]'));
         if (!relevant.length) return;
+        const ownerCid = ownerClimberId(document);
         for (const change of relevant) {
-            if (change.type === 'attributes') decorate(change.target);
+            if (change.type === 'attributes') decorate(change.target, ownerCid);
             for (const node of change.addedNodes) {
-                if (node.nodeType === 1 && !node.closest?.('[data-bpb-climber-ui]')) decorate(node);
+                if (node.nodeType === 1 && !node.closest?.('[data-bpb-climber-ui]')) decorate(node, ownerCid);
             }
         }
         if (mutationFrame == null) mutationFrame = requestAnimationFrame(() => {
             mutationFrame = null;
+            const currentOwnerCid = ownerClimberId(document);
             for (const record of records.values()) {
-                if (!record.anchor.isConnected || !record.host.contains(record.anchor) || !targetFor(record.anchor)) {
+                if (!record.anchor.isConnected || !record.host.contains(record.anchor) || !targetFor(record.anchor, currentOwnerCid)) {
                     removeRecord(record);
-                    if (record.anchor.isConnected) decorate(record.anchor);
+                    if (record.anchor.isConnected) decorate(record.anchor, currentOwnerCid);
                 }
                 else {
-                    const target = targetFor(record.anchor);
+                    const target = targetFor(record.anchor, currentOwnerCid);
                     if (target.cid !== record.target.cid && current === record) close({ restore: true, suppress: true });
                     record.target = target;
                     record.trigger.setAttribute('aria-label', `Climber actions for ${target.name}`);
