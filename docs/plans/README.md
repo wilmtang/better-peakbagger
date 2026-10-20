@@ -1,9 +1,9 @@
 # Active plans
 
 - [Repository bugs, engineering, and UX audit — October 19](codebase-audit-2026-10-19.md)
-  — remediation in progress; capture Save/readiness and BFCache gaps, automatic units,
-  two failing verification contracts, stream cleanup and terrain planning
-  bounds, with optional catalog/CI improvements and explicit proof limits.
+  — all seven fixes and both engineering improvements implemented; local
+  verification and independent commits recorded, with terrain warming,
+  native Firefox BFCache and hosted CI proof gaps retained.
 
 - [Avalanche forecast links and regional layer](avalanche-forecast-links-and-layer.md)
   — proposed; worldwide issuing-service links first, then opt-in regional

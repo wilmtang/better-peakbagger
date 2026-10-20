@@ -350,6 +350,21 @@ the disposition and remaining proof for every accepted item.
 
 ## Closure ledger
 
+Combined local checkpoint after all seven findings and both improvements:
+
+| Check | Result |
+| --- | --- |
+| Rebuilt full unit suite | 2,996/2,996 passed. |
+| Scale tests | 14/14 passed. |
+| `npm run lint` | Passed with the six existing owned web-ext warnings. |
+| Reviewed dependency gate | Passed with the unchanged exact node-forge exception, expiring 2026-10-24 07:00 UTC; raw audit still has three high development findings. |
+| Local minified archives | Chrome/Firefox archive validation passed, 103 entries each. |
+| Exact-package browser gates | One full repetition passed in hidden Chrome 156.0.8078.4 and Firefox 158.0, with exact version contracts, base 1000 × 760 plus responsive cases, and teardown passed. No signing/publication or hosted CI run occurred. |
+| Documentation and immutable changelog | Three documentation checks and 20 immutable history sections passed. |
+
+These results do not override the more specific native/cache/terrain limits
+below. The original verification table above remains the audit baseline.
+
 ### Fixed and verified
 
 - **F1:** Gate Save synchronously before queuing the initial or renewed draft
@@ -483,8 +498,8 @@ the disposition and remaining proof for every accepted item.
   instead of restoring. Actual Firefox native-cache delivery, including real
   extension messages, remains unproven. [Playwright documents the cache
   limitation](https://playwright.dev/docs/next/navigations).
-- Combined full-suite, actual-manifest browser and package checks will follow
-  the independent fixes; baseline failures above remain historical evidence.
+- The combined unit/lint/scale and actual-package browser checks above pass;
+  the original audit's failing unit/Firefox results remain historical evidence.
 - F1's native submissions were intercepted. Live Peakbagger acceptance,
   saved-trip persistence, live Garmin/Strava/NRCS compatibility and throttling,
   provider import previews and hosted CI/store publication remain unverified.

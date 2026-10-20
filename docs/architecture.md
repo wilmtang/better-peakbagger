@@ -342,6 +342,9 @@ under General → Units. Display resolution and weather conversions share
 `src/ui/units.js`; weather requests, caches, calculations, and native draft form
 values keep their canonical/source units. Settings files include the overrides;
 older settings and files inherit their existing default without a migration write.
+Peak weather and snow share `src/peakbagger/peak-units.js` to resolve automatic
+units from the first unit in the native elevation heading. Missing or ambiguous
+headings leave the shared resolver's imperial fallback intact.
 
 The ascent-page `src/settings/bridge.js` exchanges settings with the MAIN-world analyzer
 and pushes live storage changes back to it. Page-world writes are restricted to
@@ -679,7 +682,9 @@ reused by subsequent ascents; each next form is opened afresh so its native
 Trip dropdown and WebForms validation contain that trip. Queued, preparing, or
 blocked draft forms disable both Save controls and block implicit Save submissions until
 GPS Preview is confirmed; disconnecting the capture restores native controls.
-Worker recovery errors and missing replies retain that guard on a fresh form.
+The gate is established before queuing the first readiness lookup, including
+implicit submissions. Explicit ordinary-form replies restore original native
+control state; worker errors, missing replies and unknown actions stay blocked.
 Verified peak IDs remain with the capture job after their tabs close or navigate,
 so reviewing drafts cannot recreate saved ascents. A partial save keeps the
 original selection locked, preserving suffixes and trip sequences when unsaved
@@ -695,8 +700,11 @@ Before the page mutates a field or attaches GPX, it claims a short-lived,
 one-use apply lease for the exact draft generation and document. A new document
 can replace an abandoned lease immediately, while the old document cannot
 acknowledge the replacement. Browsers without `documentId` use a fresh
-content-script nonce. Same-document waits retry at the lease's expiry. The page
-snapshots every
+content-script nonce. Same-document waits retry at the lease's expiry. The shared
+page lifecycle cancels that timer and invalidates incomplete work on suspension;
+persisted restoration starts a fresh guarded lookup without waiting for an old
+runtime promise. Late replies/acknowledgments cannot authorize Save or replay
+Preview. The page snapshots every
 target, rechecks ownership through the transaction, and confirms only after the
 mutation completes. Rejection, expiry, source replacement, or clearing rolls
 back values still owned by that lease without overwriting a later user edit.
@@ -1753,6 +1761,11 @@ No single green command proves the extension works:
   image decode, IndexedDB autosave, and layout boundaries.
 - `npm run verify -- packages CHROME.zip FIREFOX.zip` runs those gates against
   the exact minified store archives.
+- Ordinary Test CI runs the snow and independent peak-card matrices per browser
+  alongside generic layout checks. Its separate hardware snow-map matrix is
+  also required by the aggregate. Surface checks compare actual browser versions
+  with setup's exact contracts and retain bounded fixture failure evidence before
+  teardown; their provider responses remain intercepted.
 - `npm run verify -- terrain` and `npm run verify -- terrain firefox` render packaged
   MapLibre on a reported hardware GPU with synthetic route, peak, basemap, and
   DEM fixtures. They use stubbed extension storage APIs through the production settings

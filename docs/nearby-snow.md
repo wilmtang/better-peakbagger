@@ -67,6 +67,9 @@ catalog metadata is cached under `bpbSnotelCatalogV1` in extension-local storage
 and refreshed after seven days when next used. Expired metadata may remain on
 disk until replaced or extension data is cleared. It contains no peak identity,
 location query, selected station preference, or observations.
+Concurrent card and map readers share one catalog flight. Each can cancel its
+own subscription; only the last departure cancels the shared source. Clearing
+the client abandons the flight, and a late response cannot replace newer data.
 
 The selected station's hourly and daily requests use only its public triplet,
 the two element codes, relative date ranges, end-of-period timestamps, quality

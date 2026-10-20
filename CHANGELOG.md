@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Keep captured ascents protected while preparing.** Save stays blocked from
+  the first readiness check. Returning to a cached waiting form rechecks its
+  draft without replaying Preview or overwriting later manual edits.
+
+- **Follow peak units consistently.** Summit weather and Nearby snow share
+  Peakbagger’s primary elevation unit, including full and abbreviated names.
+  Explicit measurement choices still take precedence.
+
+- **Bound background preparation.** Concurrent snow catalog readers share one
+  request with independent cancellation. Terrain planning applies its tile
+  budget before allocating tiles, and rejected text downloads release their
+  unfinished readers.
+
 - **Recover draft preparation after a reload.** A reloaded ascent form can
   prepare its draft immediately; failed preparation offers a clear reload
   action while keeping Save protected until GPS Preview succeeds. Recovery
