@@ -350,10 +350,16 @@ test('Add and Edit saves capture the identities used by the backup handoff even 
                     doc.getElementById('PeakListBox').append(option);
                     doc.getElementById('PeakListBox').value = String(peakId);
                 }
-                d.chrome.runtime.sendMessage = async message => { messages.push(message); };
+                d.chrome.runtime.sendMessage = async message => {
+                    messages.push(message);
+                    if (message.type === 'DRAFT_READY') return { action: 'ignore' };
+                };
             },
         });
-        await new Promise(resolve => dom.window.setTimeout(resolve, 10));
+        // The disabled editor has no mounted UI readiness signal. Publish the
+        // configured preferences to its subscribers before exercising Save.
+        await dom.chrome.storage.sync.set({ bpbSettings: dom.chrome._store.bpbSettings });
+        await waitFor(dom, () => !dom.window.document.getElementById(saveId).disabled);
         assert.equal(dom.window.document.getElementById('bpb-report-editor'), null,
             'snapshot capture must not depend on the enhanced editor UI');
         dom.window.document.getElementById(saveId).click();

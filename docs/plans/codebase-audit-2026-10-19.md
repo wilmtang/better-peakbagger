@@ -365,10 +365,16 @@ the disposition and remaining proof for every accepted item.
   tolerance). Keyboard focus is established before the geometry baseline so
   intentional focus scrolling is not mislabeled as reflow. Narrow screenshots
   are inspected separately; live native postbacks remain a proof gap below.
+- **F3:** The Add/Edit backup fixture returns explicit ordinary-form readiness,
+  publishes its configured settings after subscribers mount, and waits for
+  native Save availability instead of sleeping 10 ms. Both identity paths now
+  pass with the enhanced editor disabled. The focused file passes 16/16, the
+  rebuilt full suite passes 2,968/2,968, and focused ESLint passes. No production
+  Save guard or backup behavior was weakened.
 
 ### Intentionally not changed
 
-- F2–F6 remain open for implementation; O1/O2 are optional improvements.
+- F2, F4–F6 remain open for implementation; O1/O2 are optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary
