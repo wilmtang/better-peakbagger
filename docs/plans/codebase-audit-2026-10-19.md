@@ -368,7 +368,7 @@ the disposition and remaining proof for every accepted item.
 
 ### Intentionally not changed
 
-- F2–F7 remain open for implementation; O1/O2 are optional improvements.
+- F2–F6 remain open for implementation; O1/O2 are optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary
@@ -386,6 +386,22 @@ the disposition and remaining proof for every accepted item.
 
 ### Changed but not fully proven
 
+- **F7:** The shared page lifecycle now invalidates queued/in-flight draft
+  ownership on suspension/disposal, cancels the parked timer, rolls back owned
+  incomplete writes and starts a fresh guarded handshake on persisted resume.
+  An unresolved old runtime promise cannot hold up that new lookup; late replies
+  and Preview acknowledgments cannot authorize Save or replay Preview. Optional
+  day-stat writes use the same ownership checks. All 60 draft/lifecycle tests,
+  32 verification-runner/documentation checks and focused ESLint pass. Five
+  lifecycle tests failed before the fix; the historical F1-only bundle also
+  fails the fresh-handshake assertion after actual Chrome BFCache restoration.
+  Hidden Chrome 156.0.8078.4 verifies two actual cached restores with lease expiry
+  while away, preserved manual edits and zero Preview submissions. Playwright
+  Firefox 157.0 verifies two explicitly simulated persisted transitions plus
+  the eight existing recovery variants; its controlled navigation reloaded
+  instead of restoring. Actual Firefox native-cache delivery, including real
+  extension messages, remains unproven. [Playwright documents the cache
+  limitation](https://playwright.dev/docs/next/navigations).
 - Combined full-suite, actual-manifest browser and package checks will follow
   the independent fixes; baseline failures above remain historical evidence.
 - F1's native submissions were intercepted. Live Peakbagger acceptance,

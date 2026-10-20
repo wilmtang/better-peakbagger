@@ -36,6 +36,7 @@ try {
         ['/report-editor.css', ['text/css', await readFile(process.env.BPB_DRAFT_RECOVERY_CSS || 'dist/css/report-editor.css')]],
         ['/draft.js', ['text/javascript', await readFile(process.env.BPB_DRAFT_RECOVERY_BUNDLE || 'dist/content/ascent-editor.js')]],
         ['/climber/ascentedit.aspx', ['text/html', base]],
+        ['/away', ['text/html', '<!doctype html><title>Away</title><p>Reviewing another page</p>']],
     ]);
     const server = createServer(certificate, (request, response) => {
         const asset = assets.get(new URL(request.url, 'https://www.peakbagger.com').pathname);
@@ -46,7 +47,7 @@ try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     if (browserName === 'chrome') assertChromeLaunchAllowed();
     const browser = browserName === 'chrome'
-        ? await chromium.launch({ channel: 'chromium', headless: true,
+        ? await chromium.launch({ channel: 'chromium', headless: true, ignoreDefaultArgs: ['--disable-back-forward-cache'],
             args: [...certificate.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] })
         : await firefox.launch({ headless: true, firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' } });
     resources.defer('draft recovery browser', () => browser.close());
@@ -243,9 +244,57 @@ try {
         } finally { await context.close(); }
     }
     assert.equal(cases, 8, 'all recovery variants must execute');
+    const historyContext = await browser.newContext({ viewport: { width: 1000, height: 760 }, ignoreHTTPSErrors: true });
+    try {
+        await historyContext.addInitScript(() => {
+            const state = window.historyProbe = { ready: 0, previews: 0, persisted: false };
+            window.addEventListener('pageshow', event => { state.persisted = event.persisted; });
+            document.addEventListener('click', event => {
+                if (event.target.id === 'GPXPreview') { event.preventDefault(); state.previews++; }
+            }, true);
+            window.chrome = { runtime: { onMessage: { addListener() {} }, sendMessage: async message => {
+                if (message.type !== 'DRAFT_READY') return { ok: true };
+                if (++state.ready > 1) return { action: 'ignore' }; // capture expires while away
+                const retryAt = Date.now() + 3000;
+                sessionStorage.setItem('leaseDeadline', String(retryAt));
+                return { action: 'wait', message: 'Waiting for the lease.', retryAt };
+            } } };
+        });
+        const page = await historyContext.newPage();
+        const origin = `https://www.peakbagger.com:${server.address().port}`;
+        await page.goto(`${origin}/climber/ascentedit.aspx?pid=2829&cid=900001`);
+        await page.getByText('Waiting for the lease.', { exact: true }).waitFor();
+        await page.locator('#SuffixText').fill('manual');
+        // Playwright's Firefox transport disables native BFCache. Exercise
+        // its persisted-event behavior explicitly, and report that limit;
+        // Chrome must actually preserve this document through navigation.
+        const traverseAway = async () => browserName === 'chrome'
+            ? page.goto(`${origin}/away`)
+            : page.evaluate(() => window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true })));
+        const traverseBack = async () => browserName === 'chrome'
+            ? page.goBack({ waitUntil: 'commit' })
+            : page.evaluate(() => window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true })));
+        await traverseAway();
+        await page.waitForFunction(() => Date.now() > Number(sessionStorage.getItem('leaseDeadline')));
+        await traverseBack();
+        await page.waitForFunction(() => window.historyProbe?.persisted === true);
+        await waitForCondition(() => page.evaluate(() => ({ ready: window.historyProbe.ready,
+            persisted: window.historyProbe.persisted, saveDisabled: document.getElementById('SaveButton').disabled })),
+        { description: 'a fresh handshake after persisted restoration', isReady: state => state.ready === 2 });
+        await page.waitForFunction(() => document.getElementById('SaveButton')?.disabled === false);
+        assert.equal(await page.locator('#SuffixText').inputValue(), 'manual');
+        assert.equal(await page.evaluate(() => window.historyProbe.previews), 0, 'restoration never replays Preview');
+        if (browserName === 'chrome') await page.goForward({ waitUntil: 'commit' });
+        else await traverseAway();
+        await traverseBack();
+        await page.waitForFunction(() => window.historyProbe?.persisted && window.historyProbe.ready === 3);
+        assert.equal(await page.evaluate(() => window.historyProbe.previews), 0);
+    } finally { await historyContext.close(); }
     console.log(JSON.stringify({ verification: 'draft-recovery', browser: browserName, version: browser.version(),
         hidden: true, cases, viewports: [1000, 390], height: 760, themes: ['light', 'dark'], cssZoom: [1, 2],
         rendering: 'static DOM; WebGL unused', stubs: ['worker replies', 'native Preview postback'],
-        scenarios: ['initial handshake blocks native Save', 'apply rollback and reload recovery', 'fresh-form worker error, repeated feedback and explicit discard'] }));
+        actualBfcacheRestores: browserName === 'chrome' ? 2 : 0,
+        simulatedPersistedRestores: browserName === 'firefox' ? 2 : 0,
+        scenarios: ['initial handshake blocks native Save', 'apply rollback and reload recovery', 'fresh-form worker error, repeated feedback and explicit discard', 'lease expiry while cached and repeated Back/Forward'] }));
 } catch (error) { failure = error; }
 await resources.dispose(failure);

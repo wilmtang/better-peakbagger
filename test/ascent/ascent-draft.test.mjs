@@ -968,3 +968,88 @@ test('a lease wait retries at its expiry and keeps Save blocked until the final 
         assert.equal(dom.window.document.getElementById('SaveButton').disabled, false);
     } finally { dom.window.close(); }
 });
+
+for (const action of ['banner', 'error', 'ignore']) {
+    test(`a parked lease revalidates on persisted restoration before accepting ${action}`, async () => {
+        let readyCalls = 0;
+        let deadline;
+        const { dom } = loadDraft(message => {
+            if (message.type !== 'DRAFT_READY') return { ok: true };
+            if (++readyCalls === 1) {
+                deadline = Date.now() + 60_000;
+                return { action: 'wait', message: 'Waiting for the lease.', retryAt: deadline };
+            }
+            return { action, classification: 'strong', confidence: 90 };
+        });
+        try {
+            const transition = (type, persisted) => dom.window.dispatchEvent(new dom.window.PageTransitionEvent(type, { persisted }));
+            const doc = dom.window.document;
+            await waitForCondition(() => /Waiting for the lease/.test(doc.getElementById('bpb-draft-banner')?.textContent));
+            transition('pagehide', true);
+            dom.window.Date.now = () => deadline + 1;
+            assert.equal(readyCalls, 1, 'parked timers must not run');
+            transition('pageshow', true);
+            assert.equal(doc.getElementById('SaveButton').disabled, true, 'restoring never authorizes Save itself');
+            transition('pageshow', true);
+            await waitForCondition(() => readyCalls === 2);
+            assert.equal(readyCalls, 2, 'a persisted restore requests exactly one fresh handshake');
+            await waitForCondition(() => doc.getElementById('SaveButton').disabled === (action === 'error'));
+            assert.equal(doc.getElementById('SaveButton').disabled, action === 'error');
+            transition('pagehide', true);
+            transition('pageshow', true);
+            await waitForCondition(() => readyCalls === 3);
+            assert.equal(readyCalls, 3, 'later traversals revalidate independently');
+        } finally { dom.window.close(); }
+    });
+}
+
+test('persisted restoration bypasses an unresolved old handshake and ignores its later reply', async () => {
+    let release;
+    let readyCalls = 0;
+    const { dom } = loadDraft(message => {
+        if (message.type !== 'DRAFT_READY') return { ok: true };
+        return ++readyCalls === 1 ? new Promise(resolve => { release = resolve; }) : { action: 'wait' };
+    });
+    try {
+        await waitForCondition(() => release);
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitForCondition(() => readyCalls === 2);
+        assert.equal(readyCalls, 2, 'the abandoned runtime promise must not hold the new queue');
+        release({ action: 'ignore' });
+        await waitForAsync();
+        assert.equal(dom.window.document.getElementById('SaveButton').disabled, true, 'the old reply cannot authorize Save');
+    } finally { dom.window.close(); }
+});
+
+test('suspending an in-flight Preview acknowledgment rolls back owned fields without replaying it', async () => {
+    let release;
+    let readyCalls = 0;
+    let previews = 0;
+    const { dom, messages } = loadDraft(message => {
+        if (message.type === 'DRAFT_PREVIEW_STARTED') return new Promise(resolve => { release = resolve; });
+        if (message.type !== 'DRAFT_READY') return { ok: true };
+        return ++readyCalls === 1 ? {
+            action: 'apply', jobId: 'job', pid: '12', cid: '34',
+            fields: { date: '2026-07-01', suffix: 'b', fillAscentDetails: false },
+            gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"/></trkseg></trk></gpx>',
+        } : { action: 'preview-error' };
+    });
+    try {
+        dom.window.document.getElementById('GPXPreview').addEventListener('click', () => previews++);
+        await waitForCondition(() => release);
+        dom.window.document.getElementById('DateText').value = 'user correction';
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+        await waitForCondition(() => readyCalls === 2);
+        assert.equal(readyCalls, 2);
+        release({ ok: true });
+        await waitForAsync();
+        assert.equal(previews, 0);
+        assert.equal(dom.window.document.getElementById('DateText').value, 'user correction');
+        assert.equal(dom.window.document.getElementById('SuffixText').value, '');
+        assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+        assert.equal(dom.window.document.getElementById('SaveButton').disabled, true);
+        assert.equal(messages.filter(message => message.type === 'DRAFT_PREVIEW_STARTED').length, 1);
+    } finally { dom.window.close(); }
+});

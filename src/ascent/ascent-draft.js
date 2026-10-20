@@ -7,6 +7,7 @@
 import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from '../capture/upload-limits.js';
 import { units as Units } from '../ui/units.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.js';
 
 (() => {
     'use strict';
@@ -575,11 +576,10 @@ import { units as Units } from '../ui/units.js';
         }
     };
 
-    const runInitialize = async () => {
+    const runInitialize = async connectionGeneration => {
         clearLeaseRetry();
         const ids = pageIds();
         if (!ids.pid || !ids.cid) return;
-        const connectionGeneration = draftConnectionGeneration;
         try {
             const response = await ext.runtime.sendMessage({
                 type: 'DRAFT_READY',
@@ -601,7 +601,15 @@ import { units as Units } from '../ui/units.js';
             if (response.action === 'banner') {
                 rememberPeakName(response, ids);
                 if (response.dayStatsPending) {
-                    await fillDayStats(response.dayStats);
+                    const transaction = beginApply(response);
+                    try {
+                        await fillDayStats(response.dayStats, transaction);
+                        assertApplyActive(transaction);
+                        activeApply = null;
+                    } catch (error) {
+                        rollbackApply(transaction);
+                        throw error;
+                    }
                     try {
                         await ext.runtime.sendMessage({
                             type: 'DRAFT_DAY_STATS_APPLIED',
@@ -614,6 +622,7 @@ import { units as Units } from '../ui/units.js';
                         // retry while the short-lived draft is still present.
                     }
                 }
+                if (connectionGeneration !== draftConnectionGeneration) return;
                 setSaveBlocked('');
                 showBanner(matchTone(response.classification),
                     `${matchLabel(response.classification)} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
@@ -661,30 +670,44 @@ import { units as Units } from '../ui/units.js';
 
     let initializationQueue = Promise.resolve();
     const initialize = () => {
+        if (lifecycle.state !== 'active') return Promise.resolve();
         // Queueing the worker lookup must not leave native Save available,
         // even before the first promise callback runs. Only an explicit
         // ordinary-form or Preview-ready reply can release this gate.
         const ids = pageIds();
         if (ids.pid && ids.cid) setSaveBlocked(blockedSaveMessage || 'Checking this ascent draft before saving.');
-        initializationQueue = initializationQueue.then(runInitialize, runInitialize);
+        const connectionGeneration = draftConnectionGeneration;
+        const run = () => connectionGeneration === draftConnectionGeneration && lifecycle.state === 'active'
+            ? runInitialize(connectionGeneration) : undefined;
+        initializationQueue = initializationQueue.then(run, run);
         return initializationQueue;
     };
+
+    const invalidateDraftWork = () => {
+        clearLeaseRetry();
+        draftConnectionGeneration++;
+        // An extension reply can be lost while this document is frozen. A
+        // resumed lookup must not wait behind that abandoned promise.
+        initializationQueue = Promise.resolve();
+        if (activeApply) {
+            activeApply.cancelled = true;
+            rollbackApply(activeApply);
+        }
+    };
+    const lifecycle = PageLifecycle.create({
+        onSuspend: invalidateDraftWork,
+        onResume: () => { void initialize(); },
+        onDispose: invalidateDraftWork,
+    });
 
     ext.runtime.onMessage?.addListener(message => {
         if (message?.type === 'DRAFT_PROCEED') void initialize();
         if (message?.type === 'DRAFT_CLEARED') {
-            clearLeaseRetry();
+            invalidateDraftWork();
             setSaveBlocked('');
-            draftConnectionGeneration++;
-            if (activeApply) {
-                activeApply.cancelled = true;
-                rollbackApply(activeApply);
-            }
             showBanner('error', 'The cached capture was discarded. This draft is no longer connected; return to the activity to capture again.');
         }
     });
-
-    window.addEventListener('pagehide', clearLeaseRetry);
 
     void initialize();
 })();
