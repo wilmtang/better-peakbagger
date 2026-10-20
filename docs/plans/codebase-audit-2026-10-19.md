@@ -404,7 +404,8 @@ the disposition and remaining proof for every accepted item.
 
 ### Intentionally not changed
 
-- F6 remains open for implementation; O1/O2 are optional improvements.
+- No required finding awaits implementation; F6/F7 retain the verification gaps
+  below. O1/O2 remain optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary
@@ -422,6 +423,23 @@ the disposition and remaining proof for every accepted item.
 
 ### Changed but not fully proven
 
+- **F6:** Tile planning counts clamped grid ranges before shedding/coarsening
+  and materializes only the bounded final set. Duplicate expanded rungs retain
+  their nested-union counts and established output order; invalid budgets,
+  source zoom limits and nonfinite dimensions fail closed. The allocation-budget
+  and malformed-option regressions fail before the fix. All 103 terrain tests
+  pass; 200 deterministic finite-view comparisons match the historical output
+  exactly, including both cap policies and duplicate offsets. Build and focused
+  ESLint pass. The audited stress input returns 32 tiles in about 0.03 ms in a
+  single warmed Node probe; this is not a browser benchmark or live-camera proof.
+  Hardware validation was attempted, not passed: hidden installed Chrome
+  156.0.8078.36 reports ANGLE/Metal on Apple M3 Pro. The broad visual suite stops
+  at its 2D-control gap assertion (41 px versus a 40 px limit), at 1000 × 900.
+  The LOD suite's 1240 × 1020 host never retains its intended 1100 × 700 3D frame;
+  live diagnostics show activation occurred, then the existing “3D elevation
+  data could not be loaded” fallback. Neither run reaches the required warming
+  or camera criteria. Their assertions were not weakened; native/live terrain
+  performance remains unproven and these verifier failures need separate work.
 - **F7:** The shared page lifecycle now invalidates queued/in-flight draft
   ownership on suspension/disposal, cancels the parked timer, rolls back owned
   incomplete writes and starts a fresh guarded handshake on persisted resume.

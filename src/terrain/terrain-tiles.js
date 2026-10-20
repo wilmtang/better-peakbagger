@@ -98,7 +98,10 @@ const tilesForView = ({
     cap = DEFAULT_CAP, padding = DEFAULT_PADDING, maxZoom = DEFAULT_MAX_ZOOM,
     levelOffsets = DEFAULT_LEVEL_OFFSETS, expand = 1, expandStep = 1, capPolicy = COARSEN
 } = {}) => {
-    if (!viewport || !(viewport.width > 0) || !(viewport.height > 0)) return [];
+    if (!viewport || ![viewport.width, viewport.height].every(value => Number.isFinite(value) && value > 0)) return [];
+    if (!Number.isSafeInteger(cap) || cap < 1) return [];
+    if (!Number.isFinite(padding) || padding < 0) return [];
+    if (!Number.isFinite(maxZoom) || maxZoom < 1 || maxZoom > MAX_TILE_ZOOM) return [];
     if (!Array.isArray(levelOffsets) || !levelOffsets.length
         || !levelOffsets.every(Number.isInteger)) return [];
     if (!Number.isFinite(expand) || expand < 1) return [];
@@ -144,72 +147,83 @@ const tilesForView = ({
     } else {
         return [];
     }
-    if (!Number.isFinite(fitZoomValue)) return [];
+    if (!Number.isFinite(fitZoomValue) || !Object.values(rect).every(Number.isFinite)) return [];
 
     const baseRect = rect;
-    // north/south stay in mercator order (north is the smaller y); tilesAt takes
+    // north/south stay in mercator order (north is the smaller y); rangeAt takes
     // min/max, so the growth is orientation-independent either way.
     const grown = factor => {
         if (!(factor > 1)) return baseRect;
         const midX = (baseRect.west + baseRect.east) / 2;
         const midY = (baseRect.north + baseRect.south) / 2;
-        const halfX = Math.abs(baseRect.east - baseRect.west) / 2 * factor;
-        const halfY = Math.abs(baseRect.south - baseRect.north) / 2 * factor;
-        return { west: midX - halfX, east: midX + halfX, north: midY - halfY, south: midY + halfY };
+        // Huge finite steps may overflow to infinity. Saturation at the world
+        // grid is fine, but a zero-span axis must not become 0 * Infinity/NaN.
+        const halfX = Math.abs(baseRect.east - baseRect.west) / 2;
+        const halfY = Math.abs(baseRect.south - baseRect.north) / 2;
+        const grownX = halfX === 0 ? 0 : halfX * factor;
+        const grownY = halfY === 0 ? 0 : halfY * factor;
+        return { west: midX - grownX, east: midX + grownX, north: midY - grownY, south: midY + grownY };
     };
 
-    const tilesAt = (z, area) => {
-        const out = [];
-        if (z < 0) return out;
+    const rangeAt = (z, area) => {
         const minX = tileFromMercator(Math.min(area.west, area.east), z);
         const maxX = tileFromMercator(Math.max(area.west, area.east), z);
         const minY = tileFromMercator(Math.min(area.north, area.south), z);
         const maxY = tileFromMercator(Math.max(area.north, area.south), z);
-        for (let x = minX; x <= maxX; x++) {
-            for (let y = minY; y <= maxY; y++) out.push({ z, x, y });
-        }
-        return out;
+        return { z, minX, maxX, minY, maxY, count: (maxX - minX + 1) * (maxY - minY + 1) };
     };
 
     // Every requested level, deduplicated: clamping keeps distinct offsets from
     // resolving to the same level silently. Each coarser rung takes a rectangle
     // `expandStep` times larger than the rung above it.
-    const tilesForLevels = (target, offsets) => {
-        const seen = new Set();
-        const out = [];
-        offsets.forEach((offset, rung) => {
+    const planForLevels = (target, offsets) => {
+        const counts = new Map(), ranges = [];
+        let count = 0;
+        for (const [rung, offset] of offsets.entries()) {
             const level = target + offset;
-            if (level < 0 || level > MAX_TILE_ZOOM) return;
-            for (const tile of tilesAt(level, grown(expand * expandStep ** rung))) {
-                const key = `${tile.z}/${tile.x}/${tile.y}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
-                out.push(tile);
-            }
-        });
-        return out;
+            if (level < 0 || level > MAX_TILE_ZOOM) continue;
+            const range = rangeAt(level, grown(expand * expandStep ** rung));
+            // Duplicate offsets revisit nested rectangles about the same
+            // center, so the largest range is their union. Preserve the
+            // original rung order for final enumeration and prefix selection.
+            count += range.count - (counts.get(level) || 0);
+            counts.set(level, range.count);
+            ranges.push(range);
+            if (count > cap) break; // later ranges can only add tiles
+        }
+        return { count, ranges };
     };
 
     // The target stays ≥ 1 so the default parent level (target - 1) is never
     // negative. Offsets run finest first, which is the order SHED_FINEST drops.
     let targetZoom = Math.max(1, Math.floor(Math.min(fitZoomValue, maxZoom)));
     let offsets = [...levelOffsets].sort((a, b) => b - a);
-    let tiles = tilesForLevels(targetZoom, offsets);
+    let plan = planForLevels(targetZoom, offsets);
     if (capPolicy === SHED_FINEST) {
-        while (tiles.length > cap && offsets.length > 1) {
+        while (plan.count > cap && offsets.length > 1) {
             offsets = offsets.slice(1);
-            tiles = tilesForLevels(targetZoom, offsets);
+            plan = planForLevels(targetZoom, offsets);
         }
     } else {
-        while (tiles.length > cap && targetZoom > 1) {
+        while (plan.count > cap && targetZoom > 1) {
             targetZoom--;
-            tiles = tilesForLevels(targetZoom, offsets);
+            plan = planForLevels(targetZoom, offsets);
         }
     }
     // A single level over a large rectangle can still exceed the cap once there
     // is nothing left to shed or coarsen. The cap is a traffic guarantee, so it
     // holds here too rather than being best-effort.
-    return tiles.length > cap ? tiles.slice(0, cap) : tiles;
+    const tiles = [], seen = new Set();
+    for (const { z, minX, maxX, minY, maxY } of plan.ranges) {
+        for (let x = minX; x <= maxX; x++) for (let y = minY; y <= maxY; y++) {
+            const key = `${z}/${x}/${y}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            tiles.push({ z, x, y });
+            if (tiles.length === cap) return tiles;
+        }
+    }
+    return tiles;
 };
 
 export const terrainTiles = {

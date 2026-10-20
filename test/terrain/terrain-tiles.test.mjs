@@ -3,10 +3,58 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
 
 import { terrainTiles } from '../../src/terrain/terrain-tiles.js';
 
 const { lonToTileX, latToTileY, fitZoom, tilesForView, CAP_POLICY } = terrainTiles;
+
+test('large finite views never materialize more tile entries than the requested cap', async () => {
+    const source = (await readFile(new URL('../../src/terrain/terrain-tiles.js', import.meta.url), 'utf8'))
+        .replace('export const terrainTiles', 'const terrainTiles');
+    for (const capPolicy of Object.values(CAP_POLICY)) for (const cap of [1, 32]) {
+        const context = vm.createContext({ materialized: 0, budget: cap });
+        vm.runInContext(`
+            const push = Array.prototype.push;
+            Array.prototype.push = function (...values) {
+                for (const value of values) if (value && typeof value === 'object' && 'z' in value && 'x' in value && 'y' in value) {
+                    if (++materialized > budget) throw new Error('Tile materialization exceeded its budget');
+                }
+                return push.apply(this, values);
+            };
+            ${source}
+        `, context);
+        const view = { bounds: { minLat: 43, maxLat: 44, minLon: -122, maxLon: -32 },
+            zoom: 17, viewport: { width: 1100, height: 700 }, maxZoom: 18,
+            levelOffsets: [-3, -4, -5, -6, -7, -8], expand: 2, expandStep: 2, capPolicy, cap };
+        const result = vm.runInContext(`terrainTiles.tilesForView(${JSON.stringify(view)})`, context);
+        assert.ok(result.length > 0 && result.length <= cap);
+        assert.ok(result.every(inRange));
+        assert.equal(context.materialized, result.length, `${capPolicy}/${cap}: no discarded tile arrays`);
+    }
+});
+
+test('invalid planning budgets and dimensions fail closed', () => {
+    const view = { center: [47, -121], zoom: 13, viewport: { width: 800, height: 600 } };
+    for (const cap of [0, -1, NaN, Infinity, 1.5, '32']) assert.deepEqual(tilesForView({ ...view, cap }), []);
+    for (const maxZoom of [NaN, Infinity, 0, -1]) assert.deepEqual(tilesForView({ ...view, maxZoom }), []);
+    for (const padding of [NaN, Infinity, -1]) assert.deepEqual(tilesForView({ ...view, padding }), []);
+    assert.deepEqual(tilesForView({ ...view, viewport: { width: Infinity, height: 600 } }), []);
+});
+
+test('duplicate expanded rungs preserve the established deterministic tile order', () => {
+    const view = { center: [43.5, -118.5], zoom: 12, viewport: { width: 1100, height: 700 },
+        levelOffsets: [0, 0, -1], expand: 1, expandStep: 2, cap: 12 };
+    const keys = capPolicy => tilesForView({ ...view, capPolicy }).map(({ z, x, y }) => `${z}/${x}/${y}`);
+    assert.deepEqual(keys(CAP_POLICY.COARSEN), ['10/174/374', '10/175/374', '10/174/373', '10/175/373',
+        '9/86/186', '9/86/187', '9/87/186', '9/87/187', '9/88/186', '9/88/187']);
+    assert.deepEqual(keys(CAP_POLICY.SHED_FINEST), ['11/349/748', '11/350/748']);
+    const extreme = tilesForView({ bounds: { minLat: 43, maxLat: 43, minLon: -122, maxLon: -32 },
+        zoom: 17, viewport: view.viewport, maxZoom: 18, expandStep: Number.MAX_VALUE,
+        levelOffsets: [-3, -4, -5], capPolicy: CAP_POLICY.SHED_FINEST });
+    assert.ok(extreme.length > 0 && extreme.length <= 32 && extreme.every(inRange));
+});
 
 // An independent reference for the slippy math: Math.asinh(tan) instead of the
 // module's log(tan + sec). The two are equal for lat in (-90, 90), so agreement
