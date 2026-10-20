@@ -29,6 +29,23 @@ const streamResponse = (bytes, headers = {}) => ({
     text: async () => new TextDecoder().decode(bytes),
 });
 
+test('invalid raw GitHub UTF-8 terminates an unfinished body before clearing its deadline', async () => {
+    let cancelled = 0, requests = 0;
+    const body = new ReadableStream({
+        start(controller) { controller.enqueue(new Uint8Array([0xff])); },
+        cancel() { cancelled++; },
+    });
+    const api = GithubApi.createGithubApi({ token: 't', fetch: async () => {
+        requests++;
+        return { ok: true, status: 200, headers: new Headers(), body, text: async () => assert.fail('stream bypass') };
+    } });
+    await assert.rejects(api.request('GET', '/repos/me/backup/git/blobs/abc', {
+        responseType: 'text', maxBytes: 100,
+    }), error => error.code === ERROR_CODES.INVALID && /UTF-8/.test(error.message));
+    assert.equal(requests, 1, 'invalid backup data must not be retried');
+    assert.equal(cancelled, 1); assert.equal(body.locked, false);
+});
+
 test('the shared transport owns authenticated GitHub REST request construction', async () => {
     const calls = [];
     const api = GithubApi.createGithubApi({

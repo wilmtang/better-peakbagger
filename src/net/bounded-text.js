@@ -34,17 +34,20 @@ const readStream = async (stream, {
     const decoder = new TextDecoder('utf-8', { fatal: fatalUtf8 });
     let bytes = 0;
     let text = '';
-    const cancel = () => { void reader.cancel().catch(() => {}); };
-    if (signal?.aborted) {
-        cancel();
-        throw abortError();
-    }
-    signal?.addEventListener('abort', cancel, { once: true });
+    let ended = false, cancelled = false;
+    const cancel = () => {
+        if (cancelled) return;
+        cancelled = true;
+        // Cleanup must not mask the read error or wait on a stalled source.
+        try { void Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* best effort */ }
+    };
     try {
+        if (signal?.aborted) throw abortError();
+        signal?.addEventListener('abort', cancel, { once: true });
         while (true) {
             const { done, value } = await reader.read();
             if (signal?.aborted) throw abortError();
-            if (done) break;
+            if (done) { ended = true; break; }
             const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
             bytes += chunk.byteLength;
             if (bytes > maxBytes) throw limitError(label, maxBytes);
@@ -56,8 +59,8 @@ const readStream = async (stream, {
         return text;
     } finally {
         signal?.removeEventListener('abort', cancel);
-        if (bytes > maxBytes || text.length > maxChars || signal?.aborted) cancel();
-        else reader.releaseLock();
+        if (!ended) cancel();
+        reader.releaseLock();
     }
 };
 

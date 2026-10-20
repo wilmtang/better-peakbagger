@@ -392,10 +392,19 @@ the disposition and remaining proof for every accepted item.
   transitions imperial → automatic metric before checking both cards. Narrow
   automatic-unit screenshots were inspected in both browsers; selectors and
   feedback fit without overlap. Provider responses remain fixtures.
+- **F5:** The bounded reader records end-of-stream, cancels every unfinished
+  read on exit and always releases its lock. Cancellation is idempotent and
+  best effort, so a rejected or stalled cancel cannot mask/delay the original
+  decoder/read error. Already-aborted reads now use the same cleanup path.
+  Six new cleanup assertions fail before the fix; all 40 bounded-reader,
+  GitHub API and SNOTEL-client tests now pass, including valid completion,
+  truncated UTF-8, invalid open tails, read errors, size limits, cancellation
+  and deadlines. Build, focused ESLint and patch checks pass. Real socket
+  lifetime/garbage collection remains outside this deterministic proof.
 
 ### Intentionally not changed
 
-- F5–F6 remain open for implementation; O1/O2 are optional improvements.
+- F6 remains open for implementation; O1/O2 are optional improvements.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary
