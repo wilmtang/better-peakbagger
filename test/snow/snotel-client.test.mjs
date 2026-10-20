@@ -212,3 +212,27 @@ test('oversized and failed responses cannot become an empty snow report or a par
     await assert.rejects(failed.observations(station), /unavailable/);
     await assert.rejects(failed.observations(station), /unavailable/); assert.equal(calls, 4);
 });
+
+for (const stage of ['hourly headers', 'daily headers', 'daily body']) {
+    test(`${stage} deadline aborts transport, reports timeout and allows immediate retry`, async () => {
+        let stall = true, transportSignal, cancelledBody = false, calls = 0;
+        const client = createSnotelClient({ now: () => NOW, timeoutMs: 20, fetchFn: (url, init) => {
+            calls++;
+            const target = new URL(url).searchParams.get('duration') === (stage.startsWith('daily') ? 'DAILY' : 'HOURLY');
+            if (!stall || !target) return fetchFixture(url);
+            transportSignal = init.signal;
+            if (stage.endsWith('body')) return new Response(new ReadableStream({ cancel: () => { cancelledBody = true; } }));
+            return new Promise((_, reject) => init.signal.addEventListener('abort', () => {
+                reject(Object.assign(new Error('Transport aborted'), { name: 'AbortError' }));
+            }, { once: true }));
+        } });
+        await assert.rejects(client.observations(station), { name: 'TimeoutError' });
+        assert.equal(transportSignal.aborted, true);
+        if (stage.endsWith('body')) assert.equal(cancelledBody, true);
+        const before = calls; stall = false;
+        const result = await client.observations(station);
+        assert.equal(result.daily.SNWD.length, 8);
+        assert.equal(calls, before + 2, 'a partial timed-out observation was not cached');
+        await client.observations(station); assert.equal(calls, before + 2);
+    });
+}

@@ -52,6 +52,12 @@ New selections cancel older work, and late responses cannot overwrite a newer
 selection. Refresh remains focused while busy; pointer and keyboard activation
 cannot start duplicate work. NRCS rate limits pause new requests, using
 Retry-After when it is browser-readable and five minutes otherwise.
+Requests that exceed their 15-second deadline show an explicit timeout message.
+Refresh becomes available immediately at full opacity after a timeout, keeping
+keyboard focus and the previous readings when available. Status messages share
+reserved space so pending, timeout and retry do not move the controls, card,
+following native content or reading position. A timeout has no retry cooldown;
+an explicit NRCS rate limit still does.
 
 ## Requests and storage
 
@@ -99,6 +105,9 @@ states at 200% browser zoom in the desktop viewport. The native fixture keeps
 its existing minimum page width; the card must fit its column without widening
 the host layout. The assertion is
 also challenged with a deliberately shifted disposable page.
+The timeout cases hold actual network responses past the production deadline,
+check full-opacity, focused Refresh and retained measurements, then immediately
+retry in desktop and narrow layouts in both themes.
 
 Set `BPB_VERIFY_SNOW_SCREENSHOT_DIR` to retain card/page screenshots. Provider
 JSON is intercepted in this repeatable matrix. It proves the real manifest,

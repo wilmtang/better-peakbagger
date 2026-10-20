@@ -123,6 +123,37 @@ export async function verifyPeakSnowCases({ origin, evaluate, navigate, click, p
         setMode('complete'); await press(key('Enter')); await ready();
         stable(expanded, await geometry(), `${name}: successful keyboard retry`);
         assert.equal((await geometry()).focus, 'bpb-snow-refresh');
+        if (width !== 681) {
+            // Hold a real transport past its production deadline. A synthetic
+            // HTTP error cannot prove timeout classification or retry recovery.
+            setMode('loading'); await press(key('Enter')); await pending();
+            stable(expanded, await geometry(), `${name}: pending timed request`);
+            await waitForCondition(() => evaluate(() => ({
+                busy: document.getElementById('bpb-peak-snow').getAttribute('aria-busy'),
+                status: document.querySelector('.bpb-snow-status').textContent,
+                disabled: document.querySelector('.bpb-snow-refresh').getAttribute('aria-disabled'),
+                opacity: getComputedStyle(document.querySelector('.bpb-snow-refresh')).opacity,
+            })), { description: `${name}: explicit timeout with usable Refresh`, timeoutMs: 25_000,
+                isReady: state => state.busy === 'false' });
+            const timeout = await evaluate(() => ({
+                status: document.querySelector('.bpb-snow-status').textContent,
+                disabled: document.querySelector('.bpb-snow-refresh').getAttribute('aria-disabled'),
+                opacity: getComputedStyle(document.querySelector('.bpb-snow-refresh')).opacity,
+                depth: document.querySelector('.bpb-snow-metric strong').textContent,
+            }));
+            assert.match(timeout.status, /request timed out/i);
+            assert.match(timeout.status, /Previous readings shown/);
+            assert.equal(timeout.disabled, 'false'); assert.equal(timeout.opacity, '1');
+            assert.equal(timeout.depth, theme === 'dark' ? '91.4 cm' : '36.0 in');
+            stable(expanded, await geometry(), `${name}: timeout`);
+            assert.equal((await geometry()).focus, 'bpb-snow-refresh');
+            await image(`${name}-timeout`);
+            // Release the abandoned response and retry without waiting for a
+            // cooldown. Busy Enter/Space must still avoid duplicate requests.
+            setMode('complete'); release(); await press(key('Enter')); await ready();
+            stable(expanded, await geometry(), `${name}: recovered timeout`);
+            cases.push(`${name}-timeout-retry`);
+        }
         cases.push(name);
     }
 

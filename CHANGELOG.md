@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Make snow-request timeouts clear.** Nearby snow names a timed-out request
+  and leaves Refresh available immediately. Retained readings, keyboard focus,
+  controls and surrounding content stay in place through timeout and retry.
+
 - **Keep captured ascents protected while preparing.** Save stays blocked from
   the first readiness check. Returning to a cached waiting form rechecks its
   draft without replaying Preview or overwriting later manual edits.

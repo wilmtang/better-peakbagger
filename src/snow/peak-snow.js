@@ -7,6 +7,7 @@ import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
 import { createStableText } from '../ui/stable-text.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
+import { requestDeadline } from '../net/request-deadline.js';
 import { settings } from '../settings/settings.js';
 import { readPeakWeatherSubject } from '../weather/peak-weather-subject.js';
 import { readPeakNations } from '../avalanche/avalanche-location.js';
@@ -24,6 +25,8 @@ const labels = {
     ready: 'Hourly readings are provisional. Route conditions may differ.',
     error: 'Could not load NRCS observations. Use Refresh to try again.',
     retained: 'Could not load NRCS observations. Previous readings shown.',
+    timeout: 'NRCS request timed out. Use Refresh to try again.',
+    timeoutRetained: 'NRCS request timed out. Previous readings shown. Try Refresh.',
     limited: 'NRCS request limit reached. Wait a few minutes, then refresh.',
 };
 const dateLabel = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -232,7 +235,10 @@ export function mountPeakSnow() {
             notice = error;
             if (!candidates) select.options[0].textContent = 'Stations unavailable';
             if (current) render(current);
-            setStatus(error.code === 'rate-limit' ? error.message : current ? labels.retained : labels.error);
+            const failure = requestDeadline.isTimeout(error)
+                ? current ? labels.timeoutRetained : labels.timeout
+                : current ? labels.retained : labels.error;
+            setStatus(error.code === 'rate-limit' ? error.message : failure);
             if (error.code === 'rate-limit') cooldown.set(error.retryAt);
         } finally {
             if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); availability(); }

@@ -20,6 +20,11 @@ update the maintained architecture or focused design note with the resulting
 runtime behavior. Plans are decision and execution records, never the source of
 truth for shipped code.
 
+The [SNOTEL timeout and recovery UX audit](../archive/snotel-timeout-ux-audit-2026-10-20.md)
+adds explicit timeout feedback and verifies stable, immediately available Refresh
+in hidden Chrome, Firefox and Brave. Its ledger preserves the documented failed
+station retry behavior and existing-profile/live-provider proof gaps.
+
 The [Trip Info audit remediation](../archive/trip-info-audit-remediation-2026-10-17.md)
 fixes incomplete-form handling before GPS Preview and corrects the Settings
 description. Its ledger records regression and hidden Chrome/Firefox evidence,

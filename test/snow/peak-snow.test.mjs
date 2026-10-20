@@ -287,6 +287,35 @@ test('Refresh stays focused and cannot duplicate work while pending; failure ret
     } finally { env.close(); }
 });
 
+for (const stage of ['catalog', 'hourly', 'daily', 'refresh']) {
+    test(`${stage} timeout is explicit and leaves Refresh available for an immediate retry`, async () => {
+        let timedOut = stage !== 'refresh';
+        const env = setup({ fetchFn: url => {
+            const request = new URL(url);
+            const target = stage === 'catalog' ? request.pathname.endsWith('/stations')
+                : request.searchParams.get('duration') === (stage === 'daily' ? 'DAILY' : 'HOURLY');
+            if (timedOut && target) throw Object.assign(new Error('Request exceeded its deadline.'), { name: 'TimeoutError' });
+            return reply(url);
+        } });
+        try {
+            const button = env.doc.querySelector('.bpb-snow-refresh');
+            if (stage === 'refresh') { await settled(env); timedOut = true; button.focus(); button.click(); }
+            await waitFor(() => env.requests.length > 0 && env.doc.querySelector('#bpb-peak-snow').getAttribute('aria-busy') === 'false');
+            const status = env.doc.querySelector('.bpb-snow-status').textContent;
+            assert.match(status, /request timed out/i);
+            assert.match(status, /Refresh/);
+            if (stage === 'refresh') {
+                assert.match(status, /Previous readings shown/);
+                assert.equal(env.doc.querySelector('.bpb-snow-metric strong').textContent, '36.0 in');
+                assert.equal(env.doc.activeElement, button);
+            }
+            assert.equal(button.disabled, false);
+            assert.equal(button.getAttribute('aria-disabled'), 'false');
+            timedOut = false; button.click(); await settled(env);
+        } finally { env.close(); }
+    });
+}
+
 test('missing sensors and null readings remain unavailable, while zero remains visible', async () => {
     const env = setup({ fetchFn: url => {
         if (new URL(url).pathname.endsWith('/stations')) return reply(url);
