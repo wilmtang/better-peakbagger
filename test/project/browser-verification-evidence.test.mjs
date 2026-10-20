@@ -113,8 +113,8 @@ test('Firefox evidence retains structural state without screenshotting form valu
 test('CI preserves pipeline failures and uploads bounded browser evidence only on failure', async () => {
     const workflow = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
     assert.match(workflow, /defaults:\s+run:\s+shell: bash/);
-    assert.equal(workflow.match(/name: Retain browser failure evidence\s+if: failure\(\)/g)?.length, 5);
-    assert.equal(workflow.match(/BPB_VERIFY_ARTIFACTS: browser-evidence/g)?.length, 5);
+    assert.equal(workflow.match(/name: Retain browser failure evidence\s+if: failure\(\)/g)?.length, 6);
+    assert.equal(workflow.match(/BPB_VERIFY_ARTIFACTS: browser-evidence/g)?.length, 7);
     assert.match(workflow, /npm run verify -- terrain chrome browser-evidence\/terrain 2>&1 \| tee/);
     assert.doesNotMatch(workflow, /continue-on-error: true/);
 });

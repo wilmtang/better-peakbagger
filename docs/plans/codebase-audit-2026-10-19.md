@@ -414,8 +414,8 @@ the disposition and remaining proof for every accepted item.
 
 ### Intentionally not changed
 
-- No required finding awaits implementation; F6/F7 retain the verification gaps
-  below. O2 remains an optional improvement.
+- F1–F7 and O1/O2 have implementation changes. F6/F7 and hosted CI retain the
+  verification gaps below; no implementation item is silently left open.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary
@@ -433,6 +433,23 @@ the disposition and remaining proof for every accepted item.
 
 ### Changed but not fully proven
 
+- **O2:** The always-run per-browser layout job now runs snow and peak-card
+  matrices against its completed build; a separate always-run macOS GPU matrix
+  runs snow-map on Chrome/Firefox. The existing required aggregate waits for both
+  paths and rejects failed/skipped results. Surface verifiers check the launched
+  browser version and retain bounded fixture-only failure evidence before
+  teardown. The missing-wiring assertion fails before the change; 26 focused
+  workflow/evidence/browser-identity/documentation tests pass, including actual
+  Bash execution proving engine selection, unknown-engine rejection and failure
+  propagation through either `tee` pipeline. All 46 release-contract tests also
+  pass with the additional shared browser setup. Both local hardware snow-map runs
+  pass: hidden Chrome 156.0.8078.4 and Firefox 158.0, ANGLE/Metal on Apple M3 Pro,
+  16 map cases each at 1440/375 × 1100, light/dark and 200% zoom, plus Settings
+  checks. Fixture NRCS/DEM data replace live providers; teardown reports passed.
+  This also proves the changed terrain bundle can render and switch modes in
+  both real extensions, but does not establish F6's full warming/LOD criteria.
+  The workflow has not been pushed or run on hosted runners; CI success is not
+  claimed.
 - **F6:** Tile planning counts clamped grid ranges before shedding/coarsening
   and materializes only the bounded final set. Duplicate expanded rungs retain
   their nested-union counts and established output order; invalid budgets,

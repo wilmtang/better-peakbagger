@@ -24,6 +24,8 @@ import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
 import { verifySnotelOptions } from './verify-snotel-options.mjs';
 import { verifyPeakCards } from './verify-peak-cards.mjs';
+import { assertVerificationBrowser } from './verification-browser-identity.mjs';
+import { retainBrowserFailure } from './browser-verification-evidence.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const firefoxMode = process.argv.includes('--firefox');
@@ -37,12 +39,14 @@ const peakMode = process.argv.includes('--peak') || snowMode;
 const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
 const resources = createResourceStack();
 let primaryError = null, summary;
+const failureEvidence = {};
 try {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-ascent-weather-verify-'));
     resources.defer('weather verification profile', () => rm(temporaryRoot, { recursive: true, force: true }));
     const fixture = await createBrowserFixtureServer({ temporaryRoot, ...(snowMapMode ? { peakMapDocument: await snowMapDocument() } : {}) });
     resources.defer('weather HTTPS fixtures', () => fixture.close());
     const origin = `https://www.peakbagger.com:${fixture.port}`;
+    failureEvidence.fixtureOrigin = origin;
     const evidence = [], snowEvidence = [], metadataEvidence = [], networkErrors = [], held = [];
     resources.defer('weather held responses', () => held.splice(0).forEach(resolve => resolve()));
     let mode = 'complete', evaluate, evaluateTerrain, navigate, click, press, movePointer, pointerDown, pointerUp, clickPoint, screenshot, screenshotPage, resize, setSettings, readSettings, setZoom, readLocal, writeLocal, version, withOptions;
@@ -124,6 +128,7 @@ try {
         const service = new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${temporaryRoot}`);
         const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options).setFirefoxService(service).build();
         resources.defer('weather Firefox driver', () => quitFirefoxDriver(driver, temporaryRoot));
+        failureEvidence.driver = driver;
         version = (await driver.getCapabilities()).getBrowserVersion();
         const addon = await driver.installAddon(prepared.sourceDir, true);
         await driver.setContext(firefox.Context.CHROME);
@@ -268,6 +273,7 @@ try {
             ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], viewport: { width: 1440, height: 1100 },
             args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${dist}`, `--load-extension=${dist}`, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'] });
         resources.defer('weather Chrome context', () => context.close());
+        failureEvidence.context = context;
         version = context.browser().version();
         const page = await context.newPage();
         const screenshotSession = await context.newCDPSession(page);
@@ -328,6 +334,9 @@ try {
         readLocal = key => worker.evaluate(storageKey => chrome.storage.local.get(storageKey), key);
         writeLocal = values => worker.evaluate(values => chrome.storage.local.set(values), values);
     }
+    const browserName = firefoxMode ? 'firefox' : 'chromium';
+    console.log(`Verification browser: ${assertVerificationBrowser({ name: browserName, version, expectedName: browserName,
+        expectedVersion: process.env[firefoxMode ? 'BPB_EXPECT_FIREFOX_VERSION' : 'BPB_EXPECT_CHROME_VERSION'] })}`);
     const navigatePage = navigate;
     navigate = async (url, { preserveModel = false } = {}) => {
         // Independent archive fixtures begin from an explicit default. The
@@ -789,6 +798,9 @@ try {
             summary = { browser: firefoxMode ? 'firefox' : 'chromium', version, hidden: true, viewports: [375, 681, 768, 1440], themes: ['light', 'dark'], fixtures: ['local-model-memory', 'model-refresh-layout', 'negative-temperature', 'archive-day-navigation', 'gpx-container-reflow', 'hourly-conditions', 'conditions-without-model-field', 'gpx-hover-selection-cursor', 'no-gpx', 'no-map', 'long-report', 'divider-resize', 'loading', 'long-model', 'partial', 'rate-limit', 'invalid', 'challenge-navigation'], requests: evidence, profile: temporaryRoot };
         }
     }
-} catch (error) { primaryError = error; }
+} catch (error) {
+    primaryError = error;
+    await retainBrowserFailure(failureEvidence);
+}
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));
