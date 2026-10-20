@@ -69,13 +69,13 @@ test('disabling SNOTEL aborts catalog work for both card and map and ignores lat
     const env = setup({ fetchFn: (url, init) => new Promise(resolve => held.push({ url, init, resolve })) });
     try {
         await waitFor(() => held.length === 1);
-        mapMessage(env, { type: 'get', requestId: 1 }); await waitFor(() => held.length === 2);
+        mapMessage(env, { type: 'get', requestId: 1 });
         env.settings({ showSnotel: false, showWeather: true });
         assert.ok(held.every(request => request.init.signal.aborted));
         held.forEach(request => request.resolve(reply(request.url)));
         await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.doc.getElementById('bpb-peak-snow').hidden, true);
-        assert.equal(env.requests.length, 2);
+        assert.equal(env.requests.length, 1, 'card and map share the cancelled catalog request');
     } finally { env.close(); }
 });
 

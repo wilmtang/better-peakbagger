@@ -12,7 +12,7 @@ const CATALOG_TTL = 7 * 86400_000, DATA_TTL = 30 * 60_000;
 const aborted = () => Object.assign(new Error('Cancelled.'), { name: 'AbortError' });
 
 export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now, timeoutMs = 15000, storage } = {}) {
-    let catalog = null, limited = null;
+    let catalog = null, limited = null, catalogFlight = null;
     const cache = new Map();
     const request = async (path, params, signal, maxBytes) => {
         if (signal?.aborted) throw aborted();
@@ -41,7 +41,7 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
             signal?.removeEventListener('abort', cancel); deadline.clear();
         }
     };
-    const stations = async ({ signal } = {}) => {
+    const loadStations = async ({ signal } = {}) => {
         if (signal?.aborted) throw aborted();
         if (catalog && catalog.expires > now()) return catalog.stations;
         // Persist public station metadata only. No peak, route, query or observation
@@ -68,6 +68,40 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
         try { void Promise.resolve(storage?.set({ [SNOTEL_CATALOG_KEY]: { version: 1, fetchedAt: now(), stations: body } })).catch(() => {}); } catch { /* Page-memory cache still works. */ }
         return validated;
     };
+    const stations = async ({ signal } = {}) => {
+        if (signal?.aborted) throw aborted();
+        if (catalog && catalog.expires > now()) return catalog.stations;
+        let flight = catalogFlight;
+        if (!flight || flight.controller.signal.aborted) {
+            flight = { controller: new AbortController(), readers: 0, settled: false, promise: null };
+            catalogFlight = flight;
+            flight.promise = Promise.resolve().then(() => loadStations({ signal: flight.controller.signal })).finally(() => {
+                flight.settled = true;
+                if (catalogFlight === flight) catalogFlight = null;
+            });
+        }
+        // Card and map own independent subscriptions. Only the last departure
+        // cancels the shared disk/network flight, and abandoned flights can
+        // never detach a newer one or populate its cache after cancellation.
+        return new Promise((resolve, reject) => {
+            let active = true;
+            const finish = (settle, value) => {
+                if (!active) return;
+                active = false;
+                signal?.removeEventListener('abort', cancel);
+                if (--flight.readers === 0 && !flight.settled) {
+                    if (catalogFlight === flight) catalogFlight = null;
+                    flight.controller.abort();
+                }
+                settle(value);
+            };
+            const cancel = () => finish(reject, aborted());
+            flight.readers++;
+            signal?.addEventListener('abort', cancel, { once: true });
+            flight.promise.then(value => finish(resolve, value), error => finish(reject, error));
+            if (signal?.aborted) cancel();
+        });
+    };
     const observations = async (station, { signal, refresh = false } = {}) => {
         if (signal?.aborted) throw aborted();
         const saved = cache.get(station.id);
@@ -87,5 +121,9 @@ export function createSnotelClient({ fetchFn = globalThis.fetch, now = Date.now,
         while (cache.size > 3) cache.delete(cache.keys().next().value);
         return result;
     };
-    return { stations, observations, clear: () => { catalog = null; cache.clear(); } };
+    return { stations, observations, clear: () => {
+        const flight = catalogFlight; catalogFlight = null;
+        flight?.controller.abort();
+        catalog = null; cache.clear();
+    } };
 }

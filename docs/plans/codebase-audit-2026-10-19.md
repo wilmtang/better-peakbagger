@@ -401,11 +401,21 @@ the disposition and remaining proof for every accepted item.
   truncated UTF-8, invalid open tails, read errors, size limits, cancellation
   and deadlines. Build, focused ESLint and patch checks pass. Real socket
   lifetime/garbage collection remains outside this deterministic proof.
+- **O1:** Card/map catalog readers now share one disk/network flight with
+  independent cancellation. A remaining reader keeps the transport alive;
+  the last cancellation or explicit clear aborts it immediately, and stale
+  completions cannot detach or populate a replacement flight/cache. Only public
+  catalog metadata persists. The concurrent-read regression fails before the
+  change; all 49 snow tests now pass, including partial/final cancellation,
+  clear, late replies, retry and existing privacy/expiry checks. Build, focused
+  ESLint and hidden real-extension snow matrices pass in Chrome 156.0.8078.4
+  and Firefox 158.0: 14 cases each at 375/681/1440 pixels, both themes and 200%
+  browser zoom; each reports teardown passed. Provider replies remain fixtures.
 
 ### Intentionally not changed
 
 - No required finding awaits implementation; F6/F7 retain the verification gaps
-  below. O1/O2 remain optional improvements.
+  below. O2 remains an optional improvement.
 - Preserve raw-provider-GPX privacy, source/sender identity, waypoint budgets,
   exactly-once Preview, current settings validation and manual Save boundaries.
 - Missing/error draft replies remain fail closed. F3 must repair its ordinary

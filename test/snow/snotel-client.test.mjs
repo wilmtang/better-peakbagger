@@ -86,6 +86,78 @@ test('public catalog alone persists; measurement requests omit coordinates, cred
     assert.deepEqual(await cachedClient.stations(), stations);
 });
 
+test('concurrent catalog readers share one validated cache/network flight', async () => {
+    let reads = 0, requests = 0;
+    const client = createSnotelClient({ now: () => NOW,
+        storage: { get: async () => { reads++; return {}; } },
+        fetchFn: url => { requests++; return fetchFixture(url); } });
+    const [card, map] = await Promise.all([client.stations(), client.stations()]);
+    assert.deepEqual(card, map);
+    assert.equal(reads, 1, 'the public disk catalog is read once');
+    assert.equal(requests, 1, 'the full network catalog is fetched once');
+});
+
+test('one catalog consumer can cancel without aborting the remaining reader', async () => {
+    let release, transportSignal, started;
+    const pending = new Promise(resolve => { started = resolve; });
+    const client = createSnotelClient({ now: () => NOW, fetchFn: (_url, init) => {
+        transportSignal = init.signal; started(); return new Promise(resolve => { release = resolve; });
+    } });
+    const first = new AbortController(), second = new AbortController();
+    const card = client.stations({ signal: first.signal }), map = client.stations({ signal: second.signal });
+    await pending;
+    const cancelled = assert.rejects(card, { name: 'AbortError' }); first.abort(); await cancelled;
+    assert.equal(transportSignal.aborted, false, 'a remaining consumer still owns the transport');
+    release(response(snotelStations()));
+    assert.equal((await map).length, 2);
+});
+
+test('the final cancelled catalog reader aborts the transport and a later reader starts fresh', { timeout: 5000 }, async () => {
+    const held = [], writes = [];
+    let started, restarted;
+    const pending = new Promise(resolve => { started = resolve; });
+    const next = new Promise(resolve => { restarted = resolve; });
+    const client = createSnotelClient({ now: () => NOW, storage: { set: async value => writes.push(value) },
+        fetchFn: (_url, init) => new Promise(resolve => {
+            held.push({ init, resolve }); started(); if (held.length === 2) restarted();
+        }) });
+    const first = new AbortController(), second = new AbortController();
+    const card = client.stations({ signal: first.signal }), map = client.stations({ signal: second.signal });
+    await pending;
+    const cancellations = Promise.all([assert.rejects(card, { name: 'AbortError' }), assert.rejects(map, { name: 'AbortError' })]);
+    first.abort(); assert.equal(held[0].init.signal.aborted, false);
+    second.abort(); assert.equal(held[0].init.signal.aborted, true, 'the last cancellation releases the source immediately');
+    await cancellations;
+    const replacement = client.stations();
+    // The first flight may finish after the new one. It cannot clear or fill
+    // the newer flight/cache, even when fetch ignores its aborted signal.
+    held[0].resolve(response(snotelStations().map(value => ({ ...value, name: 'Stale' }))));
+    await next;
+    held[1].resolve(response(snotelStations()));
+    assert.equal((await replacement)[0].name, station.name);
+    assert.equal((await client.stations())[0].name, station.name);
+    assert.equal(held.length, 2); assert.equal(writes.length, 1);
+});
+
+test('clearing a catalog abandons its flight and rejected flights can be retried', async () => {
+    let release, started, calls = 0;
+    const pending = new Promise(resolve => { started = resolve; });
+    const client = createSnotelClient({ now: () => NOW, fetchFn: url => {
+        if (++calls > 1) return fetchFixture(url);
+        started(); return new Promise(resolve => { release = resolve; });
+    } });
+    const reading = client.stations(); await pending;
+    const cancelled = assert.rejects(reading, { name: 'AbortError' }); client.clear(); await cancelled;
+    const fresh = await client.stations();
+    release(response(snotelStations().map(value => ({ ...value, name: 'Stale' }))));
+    assert.deepEqual(await client.stations(), fresh); assert.equal(calls, 2);
+    let fail = true;
+    const retry = createSnotelClient({ now: () => NOW, fetchFn: url => fail ? new Response('', { status: 503 }) : fetchFixture(url) });
+    await Promise.all([assert.rejects(retry.stations(), /unavailable/), assert.rejects(retry.stations(), /unavailable/)]);
+    fail = false;
+    assert.equal((await retry.stations()).length, 2);
+});
+
 test('expired, future or malformed catalog cache is replaced, and data cache expires', async () => {
     let clock = NOW, calls = 0;
     const client = createSnotelClient({ now: () => clock, fetchFn: url => { calls++; return fetchFixture(url); } });
