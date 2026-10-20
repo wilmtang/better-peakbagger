@@ -139,7 +139,7 @@ const nativeReady = () => {
     return !!control && !control.disabled && control.dataset.bpbBuddyPending !== 'true' && control.getAttribute('aria-disabled') !== 'true';
 };
 async function capture(page, variant, state) {
-    if (process.env.BPB_JITTER_ARTIFACTS && variant.textScale !== 2 && variant.width !== 768) {
+    if (process.env.BPB_JITTER_ARTIFACTS && variant.width !== 768) {
         await page.screenshot({ path: path.join(process.env.BPB_JITTER_ARTIFACTS, `${variant.name}-${state}.png`) });
     }
 }
@@ -248,6 +248,15 @@ export async function verifyBuddyPresentation(page, origin, variant) {
 export async function verifyProfileFeedback(page, origin, variant) {
     await boot(page, origin, variant);
     const before = await frame(page);
+    await capture(page, variant, 'idle');
+    if (variant.width === 1280 && variant.textScale === 1) {
+        // Allow the status row and native table spacing, without reintroducing
+        // the heading's default margins or an oversized empty status area.
+        const contentHeight = Math.max(...['#TitleLabel h1', '#bpb-climber-favorite', '#bpb-climber-ignore']
+            .map(selector => before.boxes[selector].height));
+        assert.ok(before.boxes['#transition-title'].height <= contentHeight + 48,
+            `profile header leaves excessive empty vertical space: ${before.boxes['#transition-title'].height - contentHeight}px beyond its title and controls`);
+    }
     for (const key of ['favorite', 'ignore']) {
         const selector = `#bpb-climber-${key}`;
         for (const success of [false, true, true]) {
@@ -256,6 +265,7 @@ export async function verifyProfileFeedback(page, origin, variant) {
             await page.waitForFunction(key => globalThis.__climber.pending.has(key), key);
             assert.equal(await page.evaluate(() => document.activeElement.id), `bpb-climber-${key}`, 'pending profile action retains focus');
             await sample(page, before, `${key} pending`);
+            await capture(page, variant, `${key}-pending`);
             await page.evaluate(({ key, success }) => globalThis.__climber.release(key, success), { key, success });
             await page.waitForFunction(selector => document.querySelector(selector).getAttribute('aria-busy') === 'false', selector);
             await sample(page, before, `${key} ${success ? 'success' : 'error'}`);

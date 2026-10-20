@@ -1,11 +1,12 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// One feedback owner outside the centered title/action row. Normal feedback has
-// two short lines of room; full failures expand only by explicit disclosure.
+// One feedback owner outside the centered title/action row. Reserve a compact
+// status row (two lines on narrow screens); full failures expand on disclosure.
 const surfaces = new WeakMap();
 export const climberProfileFeedback = (doc = document) => {
     if (surfaces.has(doc)) return surfaces.get(doc);
     const host = doc.getElementById('TitleLabel');
+    host.classList.add('bpb-climber-profile-host');
     const region = doc.createElement('div'); region.id = 'bpb-climber-profile-feedback';
     const note = doc.createElement('span'); note.id = 'bpb-climber-membership-note';
     note.hidden = true;
@@ -21,9 +22,12 @@ export const climberProfileFeedback = (doc = document) => {
     actions.append(note, retry, details); region.append(actions, announcement); host.after(region);
     const style = doc.createElement('style');
     style.textContent = `
-#bpb-climber-profile-feedback { box-sizing:border-box; width:min(100%,calc(100vw - 32px)); margin:4px auto 8px; color:#424b44; font:13px/1.4 Arial,sans-serif; text-align:center; }
+#TitleLabel.bpb-climber-profile-host { padding-block:2px; }
+#TitleLabel.bpb-climber-profile-host > h1 { margin:0; }
+#bpb-climber-profile-feedback { box-sizing:border-box; width:min(100%,calc(100vw - 32px)); margin:0 auto 4px; color:#424b44; font:13px/1.4 Arial,sans-serif; text-align:center; }
 #bpb-climber-membership-note { min-width:0; overflow-wrap:anywhere; }
-.bpb-profile-feedback-actions { display:flex; align-items:flex-start; justify-content:center; gap:12px; min-height:2.8em; }
+.bpb-profile-feedback-actions { display:flex; align-items:flex-start; justify-content:center; gap:12px; min-height:2em; }
+@media(max-width:600px) { .bpb-profile-feedback-actions { min-height:2.8em; } }
 #bpb-climber-profile-feedback button, #bpb-climber-profile-feedback summary { box-sizing:border-box; min-height:2em; border:0; background:none; color:#23593e; margin:0; padding:0; font:inherit; cursor:pointer; }
 #bpb-climber-profile-feedback button:is(:disabled,[aria-disabled="true"]) { opacity:.5; cursor:not-allowed; }
 #bpb-climber-profile-feedback button[aria-busy="true"] { cursor:wait; }
