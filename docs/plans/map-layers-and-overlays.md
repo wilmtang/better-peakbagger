@@ -8,6 +8,9 @@ Requested outcome: one Layers menu on ascent maps, peak maps and BigMap, in
 2D and supported 3D contexts. Move Sentinel-2 and SNOTEL into it, alongside
 the proposed slope-angle and public-land overlays. Keep the selected basemap
 underneath, with independent opacity for raster overlays.
+The owner's follow-up requires the whole menu to be collapsible and as compact
+as practical. The compact contract below supersedes the earlier always-visible
+slider layout and the larger two-row conversation preview.
 
 ## Findings that determine the implementation
 
@@ -32,7 +35,9 @@ discovery changes a product contract and must update its tests and privacy text.
 Use a compact **Layers** button at the map's upper-left, positioned clear of
 the native basemap selector, navigation, compass, SNOTEL popups and attribution.
 The button lives in the outer map-control mount so switching the renderer
-does not hide, recreate or move it.
+does not hide, recreate or move it. Start with the entire menu collapsed; only
+this button occupies map space until the user opens it. Closing the menu hides
+its controls without disabling enabled map layers.
 
 | Menu entry | Controls and initial values | Scope |
 | --- | --- | --- |
@@ -41,11 +46,38 @@ does not hide, recreate or move it.
 | Public lands | Toggle; opacity 25%; ownership legend and source/version | U.S. PAD-US fee holdings; gaps remain unknown |
 | SNOTEL stations | Toggle, station count and local status; no opacity slider | Valid active NRCS stations within the visible area |
 
-Raster sliders remain visible, disabled when their layer is off, with their
-last values retained. Sentinel capture details can use an explicit disclosure
-to keep the menu compact; opening it is one intentional layout transition.
-An asynchronous response must never open/close that disclosure or move its
-picker, slider or retry target. SNOTEL markers remain legible and fully opaque.
+Opening the menu shows four compact single-line rows: a checkbox and layer
+name, followed by a fixed-width opacity summary/disclosure for raster layers,
+or a station-count/status disclosure for SNOTEL. Retain the experimental
+designation in Sentinel's accessible label and compact visible treatment.
+Do not show a second menu title, explanatory paragraphs, permanent legends,
+sliders or capture controls in this collapsed-row overview.
+
+At most one layer's settings can be expanded. Its explicit disclosure opens
+one shared detail area **below all four rows**, keeping every row and its
+toggle/disclosure in the same place when the selected layer changes. This
+area contains that layer's opacity slider and concise legend, Sentinel capture
+picker/metadata, or SNOTEL status/recovery as applicable. Repeating the active
+disclosure collapses the detail area. Checkboxes toggle layers without
+automatically opening settings. Raster values remain retained, with sliders
+disabled when the layer is off. SNOTEL markers remain fully opaque and have
+no opacity control.
+
+The detail area's expansion/collapse is user-requested. Async pending, success,
+empty, error and retry updates must not open it, change the selected detail,
+expand another row or move its active controls. Show compact status indicators
+in the overview; put full bounded feedback and Retry in the chosen detail area.
+Preserve relevant status in accessible row/button names and settled live
+announcements even when detailed feedback is collapsed. No automatic pop-open
+or separate floating error panel.
+
+Compactness targets for fine pointers: a roughly 80-by-32 CSS-pixel Layers
+button, an overview around 232 pixels wide and 150–180 pixels high with all
+four rows present, and content-sized details only when requested. These are
+rendered design targets, not rigid heights or a reason to clip text. Keep
+coarse-pointer hit targets around 44 pixels, ordinary readable typography and
+200% zoom support. Increase height for accessibility, rather than shrinking
+controls or stretching the menu across the map.
 
 Keep existing native and 3D basemap selectors, removing only their
 extension-owned Sentinel entries. Remove the separate SNOTEL map button and
@@ -98,18 +130,29 @@ layers can be on together without automatic opacity changes or hidden priority.
 - Anchor the trigger independently of panel content. Render an opaque popover
   in the outer document, with viewport collision handling; it may extend past
   a short embedded map without resizing that map or the native content below.
-- At short browser heights, keep the header/close action reachable and allow
-  the menu body to scroll. At 320 CSS pixels, keep all controls inside the
-  available width. Do not clip errors, long capture labels or attribution.
-- Reserve feedback space per row for the bounded product status messages.
-  Pending, success, empty, partial-coverage, error, timeout and 429 states must
-  not repeatedly expand/collapse the menu. Never render raw provider errors.
+- The same Layers button opens and collapses the entire popover using
+  `aria-expanded`/`aria-controls`; outside dismissal and Escape collapse it too.
+  Reopening starts at the compact row overview. Hidden panel/detail controls
+  must be unpainted, unfocusable and absent from the accessibility tree; keep
+  active overlay state independent of this presentation state.
+- At short browser heights, keep the Layers trigger reachable and constrain
+  the detail area's scrollable content to the available viewport. Choose the
+  popover placement on opening; do not repeatedly flip/re-anchor the four rows
+  as async content changes. At 320 CSS pixels, fit within the available width
+  without becoming a full-width drawer. Do not clip errors, long capture labels
+  or attribution; allow the whole menu body to scroll only when necessary.
+- Reserve appropriate feedback space inside the one expanded detail area,
+  rather than four permanent empty status rows. Pending, success, empty,
+  partial-coverage, error, timeout and 429 states must not repeatedly
+  expand/collapse the menu. Never render raw provider errors.
 - Native checkboxes, range inputs and selects have visible labels, numeric
   opacity values and keyboard support. Loading does not remove focused controls
   or close the panel. Announce settled status, not each animation frame.
 - Escape closes the Layers panel before closing a station popup or leaving 3D.
   Coordinate the existing outer-document and terrain-frame Escape handlers.
-  Outside dismissal must leave map pan/zoom gestures usable.
+  Return keyboard focus to the Layers trigger on explicit collapse; outside
+  dismissal must leave map pan/zoom gestures usable. Collapsed status can use
+  one fixed-size active/pending/error indicator without changing button width.
 - Do not add future/coming-soon rows before their adapter is implemented.
 
 ## Ownership and data contracts
@@ -287,7 +330,7 @@ the old usable control before the replacement adapter and handoff work.
 
 | Unit | Proposed commit subject | Acceptance before commit |
 | --- | --- | --- |
-| L1 | `feat: add shared map layer state and controls` | Complete pure schema/state, reusable accessible UI, one-owner bootstrap and narrow bridge contracts. Component tests cover malformed messages, opacity, stale status, persistence failure, collision handling and teardown. Do not expose an empty menu before a provider is registered. |
+| L1 | `feat: add shared map layer state and controls` | Complete pure schema/state, compact default-collapsed UI with four summary rows and at most one bottom detail area, one-owner bootstrap and narrow bridge contracts. Component tests cover whole-menu/detail collapse, hidden-control focus, independent enablement, malformed messages, opacity, stale status, persistence failure, collision handling and teardown. Do not expose an empty menu before a provider is registered. |
 | L2 | `feat: move sentinel imagery into map layers` | Independent Sentinel over every underlying basemap in all three surfaces and supported 3D; one capture UI; correct mosaic alpha; pinned/latest handoff; retained tiles on unchanged/failed refresh; packaged composition transport works in Chrome and Firefox. Remove duplicate Sentinel controls/options only with this passing replacement. |
 | L3 | `feat: share snotel map stations across map surfaces` | Viewport catalog owner and shared-menu row work in all three surfaces, including maps without GPX/card DOM; 50-record overflow is explicit; settings opt-out, cancellation and card-action membership hold. Remove the old map button/reveal behavior; preserve all observation-card regressions. |
 | L4 | `feat: add slope angle map overlay` | Fixed USGS adapter, verified rendering/legend contract, independent opacity, explicit coverage/no-data/error states and no coupling to terrain exaggeration. Provider-contract and browser checks establish meaningful colors before enabling the row. |
@@ -312,6 +355,10 @@ ordering, the single background bundle and existing host permission boundaries.
 - Add pure/state/provider tests for all invalid alpha values, unknown IDs,
   wrong frame/origin, old revisions, wrapped bounds, pinned missing passes,
   the 51-station overflow boundary and preference/handoff failure.
+- Verify that default/reopened menus have no expanded detail, selecting another
+  detail replaces the previous one, and checkboxes do not open settings. Whole
+  menu/detail collapse must hide controls from keyboard and accessibility
+  navigation while leaving enabled overlays and their opacity unchanged.
 - Test same-pass overlapping scenes at 0%, 50% and 100%, including transparent
   no-data and missing scenes. The naive per-scene alpha negative control must
   fail on actual pixels, not a missing node or a setup timeout.
@@ -341,9 +388,9 @@ down owned servers, contexts, processes, profiles and disposable certificates.
 | --- | --- |
 | Surface | Ascent before/after GPX readiness; peak with/without a snow card; BigMap A/G/P plus a native context outside the terrain allowlist; standalone/embedded MasterMap without duplicate controls |
 | Renderer | Native Leaflet, supported 3D, loading switch, parked/resumed frame, renderer failure restoring 2D |
-| Layout | 320, 375, normal embedded width, full screen; minimum 240-pixel map height; short browser viewport; light/dark; 200% zoom/enlarged text |
-| Interaction | Pointer and keyboard checkbox/range/select, drag without map pan, outside dismissal, Escape precedence, focus through pending/disabled/error/retry and capture disclosure |
-| Stability | Trigger, active control and menu header geometry; map bounds; following native heading/content and document scroll, before/during/after transitions, within one CSS pixel except documented user disclosure/resize |
+| Layout | Default button only; compact four-row overview; each single expanded detail; 320, 375, normal embedded width, full screen; minimum 240-pixel map height; short browser viewport; light/dark; 200% zoom/enlarged text; measure overview dimensions against the compactness targets |
+| Interaction | Whole-menu collapse/reopen; each detail collapse/switch; checkbox without auto-expansion; pointer and keyboard checkbox/range/select, drag without map pan, outside dismissal, Escape precedence, focus through pending/disabled/error/retry; no focusable hidden controls |
+| Stability | Trigger and all four row/disclosure positions, active detail controls, map bounds, following native heading/content and document scroll; before/during/after transitions within one CSS pixel except documented detail expansion/resize; async updates cannot reopen or enlarge the overview |
 | Data | Slow/failed/429 responses, zero/partial coverage, long labels, missing pinned pass, dateline, 51 stations, same-scene refresh, basemap swaps with all raster overlays enabled |
 
 Run focused checks per unit. After manifest, build entries, worlds or startup
@@ -374,8 +421,10 @@ science, timeout/Refresh and nearby membership contracts; paid private parcels,
 worldwide ownership and regional avalanche overlays.
 
 **Changed but not fully proven:** no runtime code changed. Every L1–L6 unit is
-unimplemented. The earlier two-row control preview and HTTP provider samples
-do not prove the proposed four-layer menu, real extension messaging, uniform
+unimplemented. The earlier larger two-row preview is superseded by the owner's
+compact/collapsible requirement, and is not rendered proof of the revised UI.
+That preview and the HTTP provider samples do not prove the four-layer menu,
+real extension messaging, uniform
 Sentinel mosaic opacity, viewport SNOTEL, degree calibration or 3D behavior.
 Keep these proof gaps open until their acceptance cases actually pass.
 
