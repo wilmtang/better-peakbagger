@@ -37,7 +37,7 @@ try {
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
-            onCapture:value=>{statuses.sentinel.capture=value;paint()},
+            onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
             onRetry:id=>{statuses[id]={message:'Loaded'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
