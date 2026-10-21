@@ -9,7 +9,7 @@ const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longi
 const bounds = [-121.77, 46.84, -121.75, 46.86];
 function setup(terrain = false) {
     const dom = new JSDOM('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
-    const win = dom.window, messages = [], moves = [], removed = [], events = new Map(); let currentBounds = bounds;
+    const win = dom.window, messages = [], moves = [], removed = [], popups = [], events = new Map(); let currentBounds = bounds;
     const container = win.document.getElementById('map');
     container.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
     const map = { getBounds: () => ({ getWest: () => currentBounds[0], getSouth: () => currentBounds[1], getEast: () => currentBounds[2], getNorth: () => currentBounds[3] }),
@@ -19,7 +19,7 @@ function setup(terrain = false) {
         on(name, handler) { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(handler); },
         off(name, handler) { events.get(name)?.delete(handler); }, flyToBounds: (...args) => moves.push(args), stop() {} };
     win.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
-    win.L = { GridLayer: {}, marker: () => ({ bindPopup() { return this; }, addTo() { return this; } }),
+    win.L = { GridLayer: {}, marker: () => ({ bindPopup(content) { popups.push(content); return this; }, addTo() { return this; } }),
         divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) };
     win.postMessage = message => messages.push(message);
     const owner = installMapLayers(win);
@@ -30,10 +30,33 @@ function setup(terrain = false) {
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
-    return { win, messages, moves, removed, send, toggle, request, pan,
+    return { win, messages, moves, removed, popups, send, toggle, request, pan,
         view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} delayed snow-card availability updates existing station actions without a pan`, () => {
+    const env = setup(terrain);
+    const card = detail => env.send(detail, '__bpbPeakSnow');
+    const gets = () => env.messages.filter(message => message.__bpbPeakSnow && message.type === 'get');
+    const hasConditions = () => terrain
+        ? env.messages.filter(message => message.type === 'snowStations').at(-1)?.conditions.includes(station.id)
+        : Boolean(env.popups.at(-1)?.querySelector('.bpb-snotel-show-conditions'));
+    try {
+        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [station], nearby: true });
+        assert.equal(hasConditions(), false);
+        card({ type: 'availability', enabled: true });
+        assert.equal(gets().length, 1, 'card readiness loads authorized membership immediately');
+        card({ type: 'availability', enabled: true }); assert.equal(gets().length, 1, 'pending membership is not duplicated');
+        const requestId = gets()[0].requestId;
+        card({ type: 'stations', requestId, stations: [station] });
+        assert.equal(hasConditions(), true, 'already rendered popups gain Show conditions');
+        card({ type: 'availability', enabled: false });
+        assert.equal(hasConditions(), false, 'card unavailability removes stale popup actions immediately');
+        card({ type: 'stations', requestId, stations: [station] }); assert.equal(hasConditions(), false, 'late membership cannot restore an unavailable action');
+        card({ type: 'availability', enabled: true }); assert.equal(gets().length, 2);
+    } finally { env.close(); }
+});
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL activation reveals once and ignores passive updates`, () => {
     const env = setup(terrain);

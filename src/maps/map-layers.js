@@ -75,12 +75,16 @@ export function installMapLayers(win = window) {
             if (reveal && shown.length) nativeReveal.show(shown);
         }
     };
+    const loadNearby = () => {
+        if (!active || !state.snotel.enabled || !snotelAllowed || !cardAvailable || nearbyPending || nearbyReady) return;
+        nearbyPending = true; snowCard({ type: 'get', requestId: ++nearbyRequest });
+    };
     const loadStations = () => {
         clearTimeout(stationTimer); stationTimer = null;
         const bounds = stationView();
         if (!active || !state.snotel.enabled || !snotelAllowed || !bounds || booting || statuses.snotel.retryAt > Date.now()) return;
         requestId++; post({ type: 'cancel' });
-        if (cardAvailable && !nearbyPending && !nearbyReady) { nearbyPending = true; snowCard({ type: 'get', requestId: ++nearbyRequest }); }
+        loadNearby();
         statuses.snotel = { ...statuses.snotel, pending: true, error: false, retry: statuses.snotel.retry === true, message: 'Loading stations…' }; paint();
         post({ type: 'stations', requestId, bounds, reveal: revealPending });
     };
@@ -204,11 +208,16 @@ export function installMapLayers(win = window) {
         const data = event.data;
         if (event.source !== win || event.origin !== win.location.origin || !data || !active) return;
         if (data.__bpbPeakSnow === true && data.dir === 'toPage') {
-            if (data.type === 'availability') { cardAvailable = data.enabled === true; if (!cardAvailable) { selectable.clear(); nearbyReady = false; } }
-            if (data.type === 'stations' && data.requestId === nearbyRequest) {
+            if (data.type === 'availability') {
+                cardAvailable = data.enabled === true;
+                if (!cardAvailable) { selectable.clear(); nearbyReady = nearbyPending = false; nearbyRequest++; sendStations(); }
+                else loadNearby();
+            }
+            if (data.type === 'stations' && data.requestId === nearbyRequest && cardAvailable && state.snotel.enabled && snotelAllowed) {
                 nearbyPending = false; selectable.clear();
-                nearbyReady = data.error !== true;
-                for (const station of readSnotelMapStations(data.stations) || []) selectable.add(station.id);
+                const nearby = data.error === true ? null : readSnotelMapStations(data.stations);
+                nearbyReady = nearby !== null;
+                for (const station of nearby || []) selectable.add(station.id);
                 sendStations();
             }
         }
