@@ -1,0 +1,136 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Account Management - Peakbagger.com</title>
+<!-- Masked reconstruction of the supplied account page. No credentials, account data,
+     view state, or saved extension-generated markup is retained. Native pb.css follows. -->
+<style type="text/css">
+/* pb.css inlined from https://web.archive.org/web/20260709051120id_/https://peakbagger.com/pb.css */
+body
+{
+background-image:url("image/mewallp.gif");
+font-size:small;
+font-family: Tahoma, Geneva, sans-serif;
+margin-left: 0px;
+margin-top: 0px;
+padding: 0;
+}
+
+h1 {font-family: Arial, Helvetica, sans-serif; font-size: 20pt; color: maroon; text-align: center}
+
+h2 {font-family: Arial, Helvetica, sans-serif; font-size:medium; color: navy; text-align: center}
+h3 {font-family: Arial, Helvetica, sans-serif; font-size:medium; color: navy; text-align: left}
+
+h4 {font-family: Arial, Helvetica, sans-serif; font-size:small; color: maroon; text-align: center; font-weight: bold}
+h5 {font-family: Arial, Helvetica, sans-serif; font-size:small; color: maroon; text-align: left;   font-weight: bold}
+
+h6 {font-size:small;color: navy; text-align: center; font-weight: bold}
+
+hr {color:navy}
+p {font-size:small}
+td.courier {font-family: Courier}
+td.gray {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+th.gray {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+td.std {border-style:none}
+td.mainbanner {font-size:24px; font-weight:bolder}
+td.mainmenu {font-size:16px; font-weight:bolder}
+td.maroon {font-size:small; color: maroon; text-align: center; font-weight: bold}
+a:link     {color:navy}
+a:visited  {color:purple}
+a.override {color:Black; font-style:normal}
+a.white {color:White}
+
+table.gray {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+table.gray td {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+table.gray th {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+
+table.ae {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:1px}
+table.ae td {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:1px; border-left-style:none; border-right-style:none}
+
+table.std {border-style:none}
+table.std td {border-style:none}
+
+table.screencont {width:100%; border:0; margin:0; padding:0;  }
+
+.gridlines td, .gridlines td  {border:2px solid #000000;}
+
+.nobr {white-space: nowrap;}
+
+/**********************************SHADOW STUFF***********************************/
+.shadow {
+	text-shadow: #FFFFFF 5px 5px 5px;
+}
+
+.shadow {
+	height: 1.2em;
+	filter: Shadow(Color=#FFFFFF,
+			Direction=135,
+			Strength=10);
+}
+
+
+/*********************** AutoComplete Stuff *****************************/
+.AutoCompleteExtender_CompletionList
+{
+background-color : window;
+color : windowtext;
+padding : 1px;
+font-size: small;
+background-color:Gray;
+/*creates border with
+autocomplete_completionListElement
+background-color*/
+ }
+
+/*AutoComplete flyout */
+.AutoCompleteExtender_CompletionListItem
+{
+text-align : left;
+background-color:White;
+ }
+
+/* AutoComplete highlighted item */
+.AutoCompleteExtender_HighlightedItem
+ {
+background-color: Silver;
+color: windowtext;
+font-weight:bold;
+font-size: small;
+ }
+</style>
+</head><body>
+<form name="Form1" method="post" action="climberedit.aspx?cid=900001" id="Form1">
+<table cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td>
+<table cellpadding="10" width="99%"><tr><td>
+<h1>Account Management</h1>
+<table style="width:95%;margin-left:auto;margin-right:auto" class="gray">
+<tr><td colspan="6"><h2>Enter or update your account information below</h2>
+<p style="text-align:center"><input type="submit" name="CreateUpdateAccount" value="Create/Save Account" id="CreateUpdateAccount"></p></td></tr>
+<tr><td style="width:34%" colspan="2" align="center"><b>Required Data</b></td>
+<td style="width:33%" colspan="2" align="center"><b>Location</b></td>
+<td style="width:33%" colspan="2" align="center"><b>Optional Data</b></td></tr>
+<tr><td style="width:10%"><label for="NewEmail">Email</label></td>
+<td style="width:24%"><input name="NewEmail" type="text" id="NewEmail" tabindex="1" style="width:200px" value="fixture@example.invalid"></td>
+<td style="width:10%"><label for="NationDD">Country</label></td><td><select name="NationDD" id="NationDD" tabindex="6" style="width:200px"><option value="1">United States</option></select></td>
+<td style="width:10%"><label for="DOBText">Birth date</label></td><td><input name="DOBText" id="DOBText" tabindex="12" style="width:90px"></td></tr>
+<tr><td><label for="NewPassword">Password</label></td><td><input name="NewPassword" type="password" id="NewPassword" tabindex="2" style="width:150px"></td>
+<td><label for="StateDD">State</label></td><td><select name="StateDD" id="StateDD" tabindex="7"><option value="1">Washington</option></select></td>
+<td><label for="POBText">Birthplace</label></td><td><input name="POBText" id="POBText" tabindex="13" style="width:200px"></td></tr>
+<tr><td><label for="NewPassword2">Repeat password</label></td><td><input name="NewPassword2" type="password" id="NewPassword2" tabindex="3" style="width:150px"></td>
+<td><label for="CityTB">City</label></td><td><input name="CityTB" id="CityTB" tabindex="9"></td>
+<td><label for="HomeText">Home town</label></td><td><input name="HomeText" id="HomeText" tabindex="14" style="width:200px"></td></tr>
+<tr><td><label for="NewFirstName">First name</label></td><td><input name="NewFirstName" id="NewFirstName" tabindex="4" style="width:150px" value="Fixture"></td>
+<td><label for="LatTB">Latitude</label></td><td><input name="LatTB" id="LatTB" tabindex="10" style="width:70px"></td>
+<td colspan="2"><label><input id="ShowCheckBox" name="ShowCheckBox" type="checkbox" tabindex="17">Show location</label></td></tr>
+<tr><td><label for="NewLastName">Last name</label></td><td><input name="NewLastName" id="NewLastName" tabindex="5" style="width:150px" value="Climber"></td>
+<td><label for="LonTB">Longitude</label></td><td><input name="LonTB" id="LonTB" tabindex="11" style="width:70px"></td>
+<td colspan="2"><select name="DefaultMapDD" id="DefaultMapDD" tabindex="19"><option>Default map</option></select></td></tr>
+<tr><td colspan="6">
+<h2 id="biography-heading">Optional Climber Biography / Comments</h2>
+<p>Every climber with an account has a "home page" on this site, and in the box below you can enter any text you want to appear on your page: a biography of yourself, comments, your favorite climbs, etc.</p>
+<p style="text-align:center"><textarea name="ClimberText" rows="2" cols="20" id="ClimberText" tabindex="21" style="height:120px;width:85%;">I enjoy [b]mountains[/b].</textarea></p>
+<p id="native-hints" style="text-align:left;color:navy;font-size:x-small">Hints: To enter HTML tags, use the square brackets [ ] instead of &lt; &gt;. For example, [b]Bolded Text[/b]. Also, to make a new paragraph, hit Enter twice. For best results, do not use the [p] or [br] tags.</p>
+</td></tr>
+<tr id="following-native"><td colspan="4"><b>Prominence Threshold for Peaks on Maps:</b> <input name="hjtext" type="number" id="hjtext" min="0" max="2000" value="300"></td>
+<td colspan="2"><label><input id="RecentAscentCheckbox" name="RecentAscentCheckbox" type="checkbox" checked tabindex="22">Show recent ascents</label></td></tr>
+<tr><td colspan="6"><label><input id="CookieYN" name="CookieYN" type="checkbox" checked tabindex="22">Remember me</label></td></tr>
+</table></td></tr></table></td></tr></table>
+</form></body></html>

@@ -570,3 +570,19 @@ test('the bundled service worker boots and registers its listener', async () => 
     assert.ok(registeredListener,
         'the worker never registered its message listener, so capture is dead');
 });
+
+test('profile biography loads the shared editor and Markdown vendor without ascent entrypoints', () => {
+    const entry = contentEntry('content/profile-editor.js');
+    assert.deepEqual(entry.js, ['vendor/marked.umd.js', 'content/profile-editor.js']);
+    assert.deepEqual(entry.css, ['css/report-editor.css']);
+    assert.equal(entry.run_at, 'document_end');
+    assert.equal(entry.all_frames, false);
+    assert.equal(entry.world || 'ISOLATED', 'ISOLATED');
+    assert.deepEqual(new Set(entry.matches), new Set([
+        'https://www.peakbagger.com/climber/climberedit.aspx*',
+        'https://www.peakbagger.com/climber/ClimberEdit.aspx*',
+        'https://peakbagger.com/climber/climberedit.aspx*',
+        'https://peakbagger.com/climber/ClimberEdit.aspx*',
+    ]));
+    assert.deepEqual(bundleSources('content/profile-editor.js'), ['reports/report-editor.js']);
+});

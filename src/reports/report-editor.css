@@ -28,6 +28,37 @@
     display: none !important;
 }
 
+/* The biography textarea lives in a centered native paragraph. Keep its
+ * familiar width while preventing that alignment from reaching editor prose. */
+.bpb-re-profile {
+    width: 85%;
+    margin-inline: auto;
+    text-align: left;
+}
+
+.bpb-re-profile + textarea {
+    display: block;
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px);
+    margin-inline: auto;
+}
+
+.bpb-re-profile .bpb-re-modes {
+    max-width: 100%;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+    .bpb-re-profile {
+        width: 99%;
+    }
+
+    .bpb-re-profile,
+    .bpb-re-profile + textarea {
+        margin-inline: 0;
+    }
+}
+
 /* --- toolbar ------------------------------------------------------------- */
 
 .bpb-re-bar {

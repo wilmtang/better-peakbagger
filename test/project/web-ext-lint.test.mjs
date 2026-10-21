@@ -33,8 +33,8 @@ const reportFor = warnings => ({
 
 test('the web-ext lint gate accepts warnings within the reviewed per-file limits', async () => {
     const accepted = evaluateWebExtLint(reportFor(occurrences()));
-    assert.equal(accepted.length, 4);
-    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 7);
+    assert.equal(accepted.length, 5);
+    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 9);
     assert.ok(accepted.every(warning => warning.owner && warning.reason));
 
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
@@ -71,7 +71,7 @@ test('the web-ext lint gate ignores generated line and column drift', () => {
         line: warning.line + 4173,
         column: warning.column + 91
     }));
-    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 4);
+    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 5);
 });
 
 test('the web-ext lint gate rejects new, extra, error, and notice output', () => {
@@ -99,17 +99,17 @@ test('the web-ext lint gate rejects new, extra, error, and notice output', () =>
     assert.throws(() => evaluateWebExtLint({
         ...reportFor(occurrences()),
         summary: { errors: 0, notices: 0, warnings: 5 }
-    }), /warning count mismatch: summary 5, reported 7/);
+    }), /warning count mismatch: summary 5, reported 9/);
 });
 
 test('the web-ext lint gate accepts removed warnings and reports actual counts', () => {
     const partial = reportFor(occurrences().filter((_warning, index) => index !== 3));
     const accepted = evaluateWebExtLint(partial);
-    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 6);
+    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 8);
     const maplibre = accepted.find(warning => warning.file === 'vendor/maplibre-gl.mjs');
     assert.equal(maplibre.count, 1);
     assert.equal(maplibre.maxCount, 2);
-    assert.equal(evaluateWebExtLint(reportFor(occurrences().slice(1))).length, 3);
+    assert.equal(evaluateWebExtLint(reportFor(occurrences().slice(1))).length, 4);
     assert.deepEqual(evaluateWebExtLint(reportFor([])), []);
     // Unused allowance in a different file cannot excuse a new warning.
     assert.throws(() => evaluateWebExtLint(reportFor([

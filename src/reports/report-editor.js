@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — trip-report editor for the ascent add/edit form.
+// Better Peakbagger — bracket-markup editor for ascent reports and profiles.
 //
-// Replaces the bare JournalText textarea with a rich-text surface (TipTap,
+// Replaces the bare JournalText (ascent) or ClimberText (profile) textarea with a rich-text surface (TipTap,
 // schema-locked in src/reports/report-rich-editor.js) or a Markdown source pane
 // (CodeMirror, src/reports/report-md-editor.js) beside a live preview, converting
 // everything through src/reports/report-markup.js into Peakbagger's square-bracket
@@ -15,7 +15,7 @@
 // markup can be edited verbatim. Peakbagger-returned break tags are the one
 // narrow normalization: they become equivalent newlines for readable source.
 //
-// Drafts autosave to extension-local storage keyed by climber/ascent identity.
+// Ascent drafts autosave to extension-local storage keyed by climber/ascent identity.
 // They never leave the device, expire after two weeks, and are offered back —
 // never silently applied — when they differ from what the server rendered.
 // Save marks the draft pending but retains it until the worker confirms the
@@ -45,9 +45,12 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const ext = globalThis.browser || globalThis.chrome;
     if (!ext || !ext.storage) return;
 
-    const textarea = document.getElementById('JournalText');
+    const isProfile = /\/climber\/climberedit\.aspx$/i.test(location.pathname);
+    const textarea = document.getElementById(isProfile ? 'ClimberText' : 'JournalText');
     const form = textarea && textarea.form;
     if (!textarea || !form) return;
+    const editorLabel = isProfile ? 'Climber biography' : 'Trip report';
+    if (isProfile) textarea.setAttribute('aria-label', editorLabel);
 
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
@@ -94,7 +97,9 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const params = new URLSearchParams(location.search);
-    const draftKey = ReportDrafts.keyFor({
+    // Profile text must never share the climber's new-ascent recovery key.
+    // Drafts, backup snapshots, and local-photo transactions remain ascent-only.
+    const draftKey = isProfile ? null : ReportDrafts.keyFor({
         cid: params.get('cid'),
         aid: params.get('aid'),
         pid: params.get('pid')
@@ -104,7 +109,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // shown again in Plain mode where it applies verbatim.
     const cell = textarea.closest('td');
     const nativeHints = cell
-        ? [...cell.querySelectorAll('span')].find(span => /Hints:/.test(span.textContent || ''))
+        ? [...cell.querySelectorAll(isProfile ? 'p' : 'span')].find(node =>
+            !node.contains(textarea) && /Hints:/.test(node.textContent || ''))
         : null;
     const nativeBreak = textarea.nextElementSibling && textarea.nextElementSibling.tagName === 'BR'
         ? textarea.nextElementSibling
@@ -147,6 +153,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const ui = el('div', 'bpb-re');
     ui.id = 'bpb-report-editor';
+    if (isProfile) ui.classList.add('bpb-re-profile');
 
     const draftBar = el('div', 'bpb-re-draft');
     draftBar.setAttribute('role', 'status');
@@ -162,7 +169,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const bar = el('div', 'bpb-re-bar');
     bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', 'Trip report formatting');
+    bar.setAttribute('aria-label', `${editorLabel} formatting`);
 
     const tools = el('div', 'bpb-re-tools');
     const blockFormat = el('select', 'bpb-re-format');
@@ -414,11 +421,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         externalLink('Imgur', 'https://imgur.com/upload'),
         ', and ImgBB work. To resize, select the image and drag its lower-right handle.'
     );
+    if (!isProfile) imageBox.append(imageActions, imageEditHint, imageLaunchStatus, imageDivider);
     imageBox.append(
-        imageActions,
-        imageEditHint,
-        imageLaunchStatus,
-        imageDivider,
         imageSrcInput,
         imageCaptionInput,
         imageApply,
@@ -478,7 +482,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const mdSplit = el('div', 'bpb-re-mdsplit');
     const mdPane = el('div', 'bpb-re-mdpane');
     const preview = el('div', 'bpb-re-preview');
-    preview.setAttribute('aria-label', 'Live preview of the saved trip report');
+    preview.setAttribute('aria-label', `Live preview of the saved ${isProfile ? 'climber biography' : 'trip report'}`);
     mdSplit.append(mdPane, preview);
 
     const foot = el('div', 'bpb-re-foot');
@@ -557,7 +561,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
     const manageDrafts = button('bpb-re-manage', 'Manage TR drafts');
     manageDrafts.addEventListener('click', openDraftsManager);
-    foot.append(status, manageDrafts);
+    foot.append(status);
+    if (!isProfile) foot.append(manageDrafts);
 
     // Contextual controls sit above the entire toolbar region, including a
     // visible draft-recovery bar. They must not become normal-flow rows or
@@ -700,7 +705,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         }
         conversionBar.hidden = diagnostics.length === 0;
         if (diagnostics.length) {
-            conversionText.textContent = 'This report uses markup Rich text and Markdown can’t preserve: '
+            conversionText.textContent = `This ${isProfile ? 'biography' : 'report'} uses markup Rich text and Markdown can’t preserve: `
                 + `${summarizeDiagnostics(diagnostics)}. Continue in Plain, or convert anyway.`;
         }
         return diagnostics.length > 0;
@@ -812,6 +817,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const saveDraftNow = () => {
+        if (!draftKey) return;
         if (state.autosaveTimer !== null) {
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
@@ -875,6 +881,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const scheduleAutosave = () => {
+        if (!draftKey) return;
         if (state.terminalSubmission) return;
         draftEditRevision++;
         setDraftPersistenceStatus('Unsaved changes');
@@ -883,6 +890,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const clearDraft = (stored = null) => {
+        if (!draftKey) return;
         if (state.autosaveTimer !== null) {
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
@@ -940,7 +948,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
             : Markup.bracketToMarkdown(textarea.value);
 
     const captureBackupSnapshot = () => {
-        if (!backupEnabled) return;
+        if (isProfile || !backupEnabled) return;
         try {
             const version = ext.runtime.getManifest ? ext.runtime.getManifest().version : '';
             const { key, identity, snapshot } = AscentSnapshot.build({
@@ -955,6 +963,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const beginPendingSave = () => {
+        if (!draftKey) return;
         if (state.terminalSubmission) return;
         if (state.saveIntentScheduled) return;
         state.saveIntentScheduled = true;
@@ -1049,6 +1058,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     const normalized = value => String(value).replace(/\r\n?/g, '\n').trim();
 
     const checkDraft = async () => {
+        if (!draftKey) return;
         let stored;
         try {
             const values = await localStore.get([draftKey, ReportDrafts.DELETION_EPOCH_KEY]);
@@ -1098,6 +1108,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     // Expired or excess drafts (other ascents included) are pruned here so the
     // store cannot grow without bound.
     const pruneDrafts = async () => {
+        if (!draftKey) return;
         try {
             await RuntimeMessage.send(ext, { type: 'REPORT_DRAFT_PRUNE', keepKey: draftKey });
         } catch (error) { /* best effort */ }
@@ -1195,12 +1206,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         imageCaptionInput.value = '';
         imageLaunchStatus.textContent = '';
         imageBox.hidden = false;
-        imageEdit.focus();
+        (isProfile ? imageSrcInput : imageEdit).focus();
     };
 
     let photoLaunchBusy = false;
     const imageEditTargets = new Map();
     const launchPhotoEditor = async (event, localPhotoId = null, target = null) => {
+        if (isProfile) return;
         if (photoLaunchBusy) return;
         photoLaunchBusy = true;
         const generation = nextTrustedActionGeneration('photos');
@@ -1370,13 +1382,13 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
         if (richEditor) richEditor.destroy();
         richEditor = createRichEditor({
             element: richWrap,
-            placeholder: 'Write your trip report…',
-            ariaLabel: 'Trip report',
+            placeholder: isProfile ? 'Write your biography…' : 'Write your trip report…',
+            ariaLabel: editorLabel,
             onUpdate: () => { state.richDirty = true; state.creditScaffold = false; scheduleSync(); },
             onStateChange: () => refreshToolbar(),
             shortcuts: { 'Mod-k': openLinkBox },
-            resolveLocalImage: src => localPhotos.resolvePreview(src),
-            editLocalImage: (event, src, getPos) => {
+            resolveLocalImage: src => localPhotos ? localPhotos.resolvePreview(src) : Promise.resolve(src),
+            editLocalImage: isProfile ? undefined : (event, src, getPos) => {
                 if (localPhotos.busy()) return;
                 const pos = getPos();
                 if (!Number.isInteger(pos)) return;
@@ -1556,6 +1568,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
     };
 
     const handlePhotoInsertion = (message, sender, sendResponse) => {
+        if (isProfile) return undefined;
         if (message?.type === 'PHOTO_LOCAL_RESULT') {
             if (!samePhotoReturnContext(message) || sender?.id !== ext.runtime.id) {
                 sendResponse?.({ ok: false });
@@ -1614,7 +1627,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     // ---- Boot ----------------------------------------------------------------------
 
-    localPhotos = installReportLocalPhotos({
+    if (!isProfile) localPhotos = installReportLocalPhotos({
         ext, form, textarea, ui, getEditor: () => richEditor,
         flush: flushSync, saveDraft: saveDraftNow, launchEditor: launchPhotoEditor,
         replaceText: replacements => {
@@ -1642,7 +1655,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
     const initialize = async () => {
         const settings = await Settings.get();
-        if (settings.addReportCredit && !textarea.value.trim()) {
+        if (!isProfile && settings.addReportCredit && !textarea.value.trim()) {
             textarea.value = REPORT_CREDIT;
             state.creditScaffold = true;
         }
@@ -1656,8 +1669,8 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
 
         mdEditor = createMarkdownEditor({
             parent: mdPane,
-            placeholder: 'Write your trip report in Markdown…',
-            ariaLabel: 'Trip report in Markdown',
+            placeholder: isProfile ? 'Write your biography in Markdown…' : 'Write your trip report in Markdown…',
+            ariaLabel: `${editorLabel} in Markdown`,
             onDocChanged: () => { state.mdDirty = true; state.creditScaffold = false; scheduleSync(); }
         });
         mdEditor.view.scrollDOM.addEventListener('scroll', syncPreviewScroll);
@@ -1696,7 +1709,7 @@ import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
                 state.creditScaffold = false;
                 state.nativeHandoff = true;
                 showNative(true);
-                localPhotos.handoffToNative();
+                localPhotos?.handoffToNative();
                 if (richEditor) richEditor.destroy();
                 mdEditor.destroy();
                 ext.runtime.onMessage.removeListener(handlePhotoInsertion);

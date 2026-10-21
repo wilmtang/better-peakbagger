@@ -109,6 +109,23 @@
     },
     {
       "matches": [
+        "https://www.peakbagger.com/climber/climberedit.aspx*",
+        "https://www.peakbagger.com/climber/ClimberEdit.aspx*",
+        "https://peakbagger.com/climber/climberedit.aspx*",
+        "https://peakbagger.com/climber/ClimberEdit.aspx*"
+      ],
+      "css": [
+        "css/report-editor.css"
+      ],
+      "js": [
+        "vendor/marked.umd.js",
+        "content/profile-editor.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
         "https://www.peakbagger.com/climber/ascentedit.aspx*",
         "https://www.peakbagger.com/climber/AscentEdit.aspx*",
         "https://peakbagger.com/climber/ascentedit.aspx*",

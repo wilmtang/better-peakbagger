@@ -22,6 +22,7 @@ test('verification targets preserve the existing checks and browser order with o
             [['verify-layout-stability.mjs', '--firefox-only', '--surface=maps']]],
         [['multi-summit'], [['verify-multi-summit.mjs']]],
         [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
+        [['profile-editor'], [['verify-profile-editor.mjs', 'chrome'], ['verify-profile-editor.mjs', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mjs']]],
         [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
@@ -100,5 +101,13 @@ test('draft recovery rejects missing, unknown and extra selections before openin
         const result = spawnSync(process.execPath, [script('verify-draft-recovery.mjs'), ...args], { encoding: 'utf8' });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: node scripts\/verify-draft-recovery/);
+    }
+});
+
+test('profile editor rejects missing, unknown and extra selections before opening a browser', () => {
+    for (const args of [[], ['chromee'], ['chrome', '--unknown']]) {
+        const result = spawnSync(process.execPath, [script('verify-profile-editor.mjs'), ...args], { encoding: 'utf8' });
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /Usage: node scripts\/verify-profile-editor/);
     }
 });

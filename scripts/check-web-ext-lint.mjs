@@ -53,6 +53,22 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         owner: 'TipTap core',
         packageName: '@tiptap/core',
         reason: 'dependency writes its generated stylesheet into a style element'
+    },
+    {
+        code: 'UNSAFE_VAR_ASSIGNMENT',
+        file: 'content/profile-editor.js',
+        count: 1,
+        owner: 'ProseMirror view',
+        packageName: 'prosemirror-view',
+        reason: 'same shared editor dependency clipboard parser uses a detached document'
+    },
+    {
+        code: 'UNSAFE_VAR_ASSIGNMENT',
+        file: 'content/profile-editor.js',
+        count: 1,
+        owner: 'TipTap core',
+        packageName: '@tiptap/core',
+        reason: 'same shared editor dependency writes its generated stylesheet into a style element'
     }
 ]);
 

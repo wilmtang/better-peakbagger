@@ -1,4 +1,31 @@
-# Trip-report editor: markup, Markdown, and safety
+# Trip-report and profile editor: markup, Markdown, and safety
+
+## Profile biographies
+
+The account editor (`/climber/climberedit.aspx`) uses the same Rich text,
+Markdown with live preview, and Plain modes for its `ClimberText` biography.
+The original textarea remains in the account form and is flushed synchronously
+before native Save and other postbacks. Account fields and Save behavior stay
+with Peakbagger. The existing editor enable/disable and preferred-mode settings
+apply to both surfaces.
+
+Profile markup receives the same conversion guard as reports. Unsupported tags
+or attributes, including hidden biography sections, open in Plain mode and
+remain unchanged until the user explicitly accepts conversion.
+
+Ascent draft recovery, the TR drafts manager, automatic report credit, GitHub
+ascent snapshots, and local-photo upload/Photo Topos return transactions remain
+ascent-only. Biographies support images through hosted image URLs; the profile
+editor does not store biography drafts locally or read other account fields.
+
+`npm run verify -- profile-editor` checks desktop/narrow layouts, both themes,
+200% zoom reflow, mode changes, image validation/retry, native Save flushing,
+and layout stability in hidden browsers. Chrome loads the real unpacked
+extension; Firefox renders the shipped profile bundle with settings APIs
+stubbed. Native account submissions are intercepted in a masked fixture; this
+does not prove live server acceptance or native browser focus behavior.
+
+## Ascent reports
 
 Peakbagger's ascent form does not accept ordinary HTML source. It accepts an
 HTML-like dialect written with square brackets, such as `[b]bold[/b]`, then
