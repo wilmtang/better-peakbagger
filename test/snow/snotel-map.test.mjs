@@ -214,3 +214,32 @@ test('terrain stations use keyboard buttons, local DOM text, one popup, and comp
         renderer.clear(); assert.ok(pins.every(pin => pin.removed));
     } finally { env.window.close(); }
 });
+
+test('terrain membership updates keep an existing station popup and its focused link', () => {
+    const env = new JSDOM('<body></body>'), doc = env.window.document, pins = [], popups = [];
+    let allowed = false;
+    class Popup {
+        constructor() { this.events = {}; popups.push(this); }
+        setDOMContent(node) { this.node = node; return this; }
+        setLngLat() { return this; }
+        addTo() { doc.body.append(this.node); return this; }
+        on(type, handler) { this.events[type] = handler; return this; }
+        remove() { this.node.remove(); this.events.close?.(); this.removed = true; }
+    }
+    class Marker {
+        constructor(options) { this.options = options; pins.push(this); }
+        setLngLat() { return this; }
+        addTo() { return this; }
+        remove() { this.removed = true; }
+    }
+    const renderer = createTerrainSnotelMarkers({ maplibre: { Marker, Popup }, document: doc, canSelect: () => allowed, onSelect() {} });
+    try {
+        renderer.replace({}, stations); pins[0].options.element.click();
+        const link = popups[0].node.querySelector('a'); link.focus();
+        allowed = true; renderer.replace({}, stations);
+        assert.equal(pins.length, stations.length, 'membership changes reuse existing markers');
+        assert.notEqual(popups[0].removed, true, 'the open popup survives'); assert.equal(doc.activeElement, link);
+        popups[0].node.querySelector('button').focus(); allowed = false; renderer.replace({}, stations);
+        assert.equal(popups[0].node.querySelector('button'), null); assert.equal(doc.activeElement, link);
+    } finally { renderer.clear(); env.window.close(); }
+});

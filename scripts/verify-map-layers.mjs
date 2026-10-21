@@ -107,7 +107,10 @@ try {
                 headers: cors, body: JSON.stringify({ features: catalog }) });
         } else {
             tileRequests++;
-            const url = route.request().url(); if (imageryMode === 'partial') missingImageryUrl ??= url;
+            const url = route.request().url();
+            // Failure belongs to the selected older pass. An outgoing Latest
+            // request can still reach the interceptor after the picker changes.
+            if (imageryMode === 'partial' && url.includes('item=scene_old')) missingImageryUrl ??= url;
             if (imageryMode === 'hold' && url === missingImageryUrl) await new Promise(resolve => heldImagery.push(resolve));
             await route.fulfill({ status: imageryMode === 'partial' && url === missingImageryUrl ? 404 : 200, contentType: 'image/png', headers: cors,
                 body: tile(url.includes('scene_old') ? '#315bb0' : '#347d61') });
@@ -269,12 +272,36 @@ try {
             mapsPlaceholder.setView([46.851731, -121.760395], 17, { animate: false });
             window.__snotelRevealMoves = 0; mapsPlaceholder.on('moveend', () => window.__snotelRevealMoves++);
         });
+        if (cases.length === 0) await page.evaluate(() => {
+            window.addEventListener('message', event => {
+                const data = event.data;
+                if (event.source !== window || event.origin !== window.location.origin) return;
+                if (data?.__bpbMapLayers && data.dir === 'toPage' && data.type === 'stations' && !data.error) window.__membershipStations = data.stations;
+                if (data?.__bpbPeakSnow && data.dir === 'toCS' && data.type === 'get') window.__membershipRequest = data.requestId;
+            });
+        });
         await page.getByRole('checkbox', { name: 'SNOTEL stations', exact: true }).check();
         await waitForCondition(() => native.evaluate(() => window.__snotelRevealMoves > 0 && mapsPlaceholder.getZoom() < 17
             && mapsPlaceholder.getBounds().contains([46.78266, -121.74767])), { description: `SNOTEL activation auto-zoom on ${pathname}` });
         assert.equal(await page.locator('[data-layer="snotel"]').getAttribute('data-selected'), 'true', 'SNOTEL activation selects its own details');
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: /stations? in view/ }).waitFor();
         assert.ok(await native.locator('.bpb-snotel-marker').count() > 0, 'viewport stations rendered');
+        if (cases.length === 0) {
+            await native.locator('.bpb-snotel-marker').first().click();
+            const link = native.getByRole('link', { name: 'View NRCS snow data', exact: true }); await link.focus();
+            await link.evaluate(element => { window.__membershipLink = element; });
+            await page.evaluate(() => window.postMessage({ __bpbPeakSnow: true, dir: 'toPage', type: 'availability', enabled: true }, window.location.origin));
+            await page.waitForFunction(() => Number.isInteger(window.__membershipRequest));
+            await page.evaluate(() => window.postMessage({ __bpbPeakSnow: true, dir: 'toPage', type: 'stations', requestId: window.__membershipRequest, stations: window.__membershipStations }, window.location.origin));
+            await native.getByRole('button', { name: /^Show conditions at/ }).waitFor();
+            assert.equal(await link.evaluate(element => element === window.__membershipLink && document.activeElement === element), true, 'late membership keeps the real Leaflet popup and focused link');
+            if (output) await page.screenshot({ path: path.join(output, 'native-popup-membership.png') });
+            await native.getByRole('button', { name: /^Show conditions at/ }).focus();
+            await page.evaluate(() => window.postMessage({ __bpbPeakSnow: true, dir: 'toPage', type: 'availability', enabled: false }, window.location.origin));
+            await native.getByRole('button', { name: /^Show conditions at/ }).waitFor({ state: 'detached' });
+            assert.equal(await link.evaluate(element => document.activeElement === element), true, 'revoked action returns focus to its NRCS link');
+            await native.locator('.leaflet-popup-close-button').click();
+        }
         assert.equal(snotelCatalogAttempts, 2, 'station metadata recovered once, then reused the device-local catalog');
         assert.equal(await native.evaluate(() => mapsPlaceholder.hasLayer(nativeTiles) && mapsPlaceholder.hasLayer(nativeRoute)), true, 'native layers preserved');
         const before = searches;
@@ -351,8 +378,10 @@ try {
     await verifyCaptureMetadata();
     const nativePicker = page.getByRole('combobox', { name: 'Sentinel-2 capture' });
     const nativePinned = await nativePicker.locator('option').nth(1).getAttribute('value');
+    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-value')?.hidden === false, 'Latest imagery settles before the user selects a different capture');
     imageryMode = 'partial'; missingImageryUrl = null; await nativePicker.selectOption(nativePinned);
-    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-row-status')?.textContent === 'Partly loaded', 'native imagery explains partial coverage');
+    await waitForCondition(() => page.locator('[data-layer="sentinel"] .bpb-layers-row-status').textContent(),
+        { description: 'native imagery explains partial coverage', isReady: value => value === 'Partly loaded' });
     const searchesBeforeRecovery = searches, imageryRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ });
     imageryMode = 'hold'; await imageryRetry.click();
     await waitForCondition(() => heldImagery.length, { description: 'native imagery retries its missing tile', isReady: count => count === 1 });

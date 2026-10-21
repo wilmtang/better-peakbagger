@@ -34,6 +34,7 @@ try {
         import {createMapLayerControl} from './src/maps/map-layer-control.js';
         import {settingsSchema as schema} from './src/settings/settings-schema.js';
         import {publicLandInfo} from './src/maps/map-overlay-providers.js';
+        import {snotelPopup,updateSnotelPopupAction} from './src/snow/snotel-map-marker.js';
         const state=schema.mapOverlayState({slope:{enabled:true,opacity:60}});
         const statuses={sentinel:{capture:'latest',message:'Coverage 100% · Clouds 3%',captures:[
             {id:'latest',label:'Latest · 10-07 18:27 · ☁ 3%',title:'Latest · 2026-10-07 18:27 PDT · Clouds 3%'},
@@ -47,7 +48,12 @@ try {
             onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:id==='snotel'?'Loading stations':'Loading map tiles'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
-        window.fixture={control,state,statuses,paint,landInfo:publicLandInfo};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
+        window.fixture={control,state,statuses,paint,landInfo:publicLandInfo,showPopup:scale=>{
+            control.dispose();
+            const station={id:'679:WA:SNTL',name:'Paradise SNOTEL station',latitude:46.78,longitude:-121.74,elevation:1570};
+            const popup=snotelPopup(document,station);popup.id='station-popup';popup.style.fontSize=13*scale+'px';document.body.append(popup);
+            window.fixture.membership=allowed=>updateSnotelPopupAction(popup,station,allowed?()=>{window.fixture.selections=(window.fixture.selections||0)+1}:undefined);
+        }};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -239,7 +245,18 @@ try {
         await page.locator('[data-layer="snotel"] input').focus();
         await page.evaluate(() => { window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, count: 0, overflow: true, message: 'More than 50 stations. Zoom in.' }; window.fixture.paint(); }); await stable();
         assert.equal(await page.locator('[data-layer="snotel"] .bpb-layers-row-status').textContent(), 'Zoom in');
-        cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
+        await page.evaluate(scale => window.fixture.showPopup(scale), scale);
+        const official = page.getByRole('link', { name: 'View NRCS snow data', exact: true }); await official.focus();
+        await page.evaluate(() => window.fixture.membership(true));
+        const conditions = page.getByRole('button', { name: 'Show conditions at Paradise SNOTEL station', exact: true });
+        assert.equal(await conditions.isVisible(), true);
+        assert.equal(await official.evaluate(element => document.activeElement === element), true, 'new membership keeps the official link focused');
+        await conditions.focus(); await conditions.press('Enter');
+        assert.equal(await page.evaluate(() => window.fixture.selections), 1);
+        await page.evaluate(() => window.fixture.membership(false));
+        assert.equal(await conditions.count(), 0, 'an unavailable condition action is removed');
+        assert.equal(await official.evaluate(element => document.activeElement === element), true, 'revocation returns focus to the same official link');
+        cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true, popupFocus: true });
     }
     const setupAssets = new Set(['bc-land/access.html', 'bc-land/access-head.js', 'bc-land/access.js', 'css/panel.css', 'css/gaia-access.css', 'css/bc-land-access.css', 'icons/icon-48.png']);
     await page.route(`https://www.peakbagger.com:${fixture.port}/dist/**`, async route => {

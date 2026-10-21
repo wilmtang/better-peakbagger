@@ -5,14 +5,14 @@ import { createOverlayTiles } from './map-overlay-tiles.js';
 import { createPageBCTileFetch } from './bc-land-client.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
-import { snotelSymbol, snotelPopup } from '../snow/snotel-map-marker.js';
+import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.js';
 
 export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win }) {
     const L = win.L, layers = new Map(), controllers = new Map(), records = new Map();
     const fetchBCTile = createPageBCTileFetch(bridgeWindow);
     const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError, onActivity });
     const z = { sentinel: 250, land: 260, slope: 270 };
-    let stations = null, stationKey = '', hasScenes = false;
+    let stations = null, stationPopups = [], stationKey = '', hasScenes = false;
     const draw = record => {
         const { id, coordinates, canvas, done } = record, controller = new AbortController();
         controllers.set(canvas, controller); record.failed = false;
@@ -70,15 +70,22 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
             for (const record of failed.length ? failed : visible) draw(record);
         },
         stations(next, { selectable = new Set(), onSelect } = {}) {
-            const key = JSON.stringify([next, [...selectable].sort()]); if (key === stationKey) return; stationKey = key;
+            const key = JSON.stringify(next);
+            if (key === stationKey) {
+                for (const { station, content } of stationPopups) updateSnotelPopupAction(content, station, selectable.has(station.id) ? onSelect : undefined);
+                return;
+            }
+            stationKey = key; stationPopups = [];
             if (stations) { map.removeLayer(stations); stations = null; }
             if (!next.length) return;
             stations = L.layerGroup();
             for (const station of next) {
                 const content = win.document.createElement('div'); content.append(snotelSymbol(win.document));
                 const icon = L.divIcon({ className: 'bpb-snotel-marker', html: content, iconSize: [24, 24], iconAnchor: [12, 12] });
+                const popup = snotelPopup(win.document, station, selectable.has(station.id) ? onSelect : undefined);
+                stationPopups.push({ station, content: popup });
                 L.marker([station.latitude, station.longitude], { icon, title: `${station.name} · SNOTEL`, keyboard: true, bpbOverlay: true })
-                    .bindPopup(snotelPopup(win.document, station, selectable.has(station.id) ? onSelect : undefined), { maxWidth: 240 }).addTo(stations);
+                    .bindPopup(popup, { maxWidth: 240 }).addTo(stations);
             }
             stations.addTo(map);
         },
