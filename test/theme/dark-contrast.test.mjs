@@ -223,6 +223,13 @@ test('every focus indicator meets WCAG 2.1 non-text contrast', () => {
     }
 });
 
+test('the native basemap picker keeps readable text and keyboard focus in dark mode', () => {
+    assert.ok(contrast(fg('#selmap'), bg('#selmap')) >= NORMAL);
+    assert.ok(contrast(fg('#selmap option'), bg('#selmap option')) >= NORMAL);
+    const ring = RULES.get(`${P} #selmap:focus-visible`).outline.split(/\s+/).pop();
+    assert.ok(contrast(ring, bg('#selmap')) >= NON_TEXT);
+});
+
 test('the GPX analyzer panel has one theming system, not two', async () => {
     const { gpxPanelCss } = await import('../../src/gpx/gpx-panel-css.js');
     const panelRules = parseRules(gpxPanelCss.replace(/\/\*[\s\S]*?\*\//g, ''));

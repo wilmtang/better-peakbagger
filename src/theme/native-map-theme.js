@@ -3,9 +3,24 @@
 
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 
-// Shared by top-level Leaflet maps and the native MasterMap iframe. Only
-// repaint popup surfaces; the full site theme would repaint the map itself.
+// Shared by top-level Leaflet maps and the native MasterMap iframe. Repaint
+// controls and popups only; the full site theme would repaint the map itself.
 export const nativeMapDarkCss = `
+html[data-bpb-theme="dark"] #selboxdiv,
+html[data-bpb-theme="dark"] #selmap,
+html[data-bpb-theme="dark"] #selmap option {
+    color-scheme: dark;
+    background: #242c26 !important;
+    color: #eef3ee !important;
+}
+html[data-bpb-theme="dark"] #selboxdiv,
+html[data-bpb-theme="dark"] #selmap {
+    border-color: #637165 !important;
+}
+html[data-bpb-theme="dark"] #selmap:focus-visible {
+    outline: 2px solid #79b8ff;
+    outline-offset: -2px;
+}
 html[data-bpb-theme="dark"] .leaflet-popup { color-scheme: dark; }
 html[data-bpb-theme="dark"] .leaflet-popup-content-wrapper,
 html[data-bpb-theme="dark"] .leaflet-popup-tip {

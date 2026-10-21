@@ -8,6 +8,7 @@
   available conditions actions without closing an unchanged station's popup.
   Overlays outside regional coverage are disabled and stop their work; returning
   to coverage makes them available without switching them back on.
+  The native basemap dropdown and its surround now follow dark mode too.
 
 - **Make snow-request timeouts clear.** Nearby snow names a timed-out request
   and leaves Refresh available immediately. Retained readings, keyboard focus,

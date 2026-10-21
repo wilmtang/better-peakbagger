@@ -18,6 +18,7 @@ is maintained in [Map overlays](../map-layers.md).
 | O4 | P2 | Raster sources stop producing tiles below their zoom limit, while the menu could keep showing stale provider errors or loading and offer ineffective Retry. | `cc27db1f`: share `OVERLAY_MIN_ZOOM` between renderers/control and use equivalent active-renderer tile zoom. Show Zoom in with actionable detail; hide inappropriate Retry without losing provider state. The pre-fix control assertion failed on Loading versus Zoom in. |
 | O5 | P2 | Native and terrain station identity keys included selectable membership. A conditions-action update rebuilt every marker and closed the popup containing the focused NRCS link. | `47de8745`: when the station list is unchanged, update only its optional action. Keep popup/marker/link identity and focus. Removing a focused action returns focus to the same official link. Both marker regressions failed before the fix. |
 | O6 | P2 | Sentinel's existing minimum catalog zoom was reported as Search failed even though validation prevented a search. | `9f4160aa`: share the existing catalog minimum with the control. Below it show Zoom in and hide ineffective Retry; actual catalog failures remain visible at supported zooms. The new assertion failed on the prior Search failed label. |
+| O7 | Follow-up | The upper-right native basemap dropdown and its inline white surround stayed light because the scoped MasterMap theme covered only popups. | Extend the native map sheet to theme the select, options and surround with the Overlays palette and an inset keyboard focus ring. Both bundled and hidden Chrome assertions failed before the fix for the picker remaining light. |
 
 The audit found no additional confirmed defect in the inspected provider
 composition, bounded requests, narrow BC worker relay, one-use handoff or
@@ -28,6 +29,18 @@ that no other defect exists.
 
 ### Fixed and verified
 
+- O7 follow-up: `npm test` passed 3,126 tests; scoped ESLint and `git diff
+  --check` passed. The bundled theme checks light/dark updates, frame reload and
+  replacement, top-level selector specificity and text/focus contrast. Hidden
+  Chrome 156.0.8078.4 and Firefox 157.0 each passed three native selector cases
+  at 1280/375 × 800 and desktop 200% CSS zoom, plus the existing eight control
+  cases. Theme updates preserve keyboard focus, picker/surround/map/heading
+  geometry and document scroll. Dark narrow and enlarged light/dark renders
+  were inspected. The native inline border color is checked in real browsers;
+  jsdom does not correctly resolve that inline shorthand against the sheet's
+  important border-color. The real unpacked Chrome startup/BFCache check also
+  passed hidden at 1000 × 760. This follow-up does not rerun the hardware 3D
+  integration described below because it changes only the native 2D stylesheet.
 - O1–O6 are implemented in the six commits above. Regression assertions ran
   against the unfixed code for O2–O6 and failed for the intended defects.
 - A fresh build followed by the full Node test suite: 3,120 passed, zero failures.
@@ -63,6 +76,8 @@ that no other defect exists.
 
 ### Intentionally not changed
 
+- O7 preserves native basemap behavior, light styling, control dimensions,
+  border widths and map colors. It adds no theme setting or map-wide filter.
 - Only the Overlays button collapses the menu. Existing persistent-menu behavior,
   separate basemap controls, overlay defaults, opacity storage, capture selection,
   provider limits, cooldowns and explicit consent remain intact.
@@ -77,6 +92,11 @@ that no other defect exists.
 
 ### Changed but not fully proven
 
+- O7's browser cases use the shipped theme bundle and faithful native selector
+  markup with stubbed settings. They establish rendered control styling and DOM
+  keyboard focus; native OS dropdown-popup appearance and browser/OS focus
+  behavior remain unproven. Tab navigation may deliberately scroll a later
+  native link into view; stability assertions cover theme updates while focused.
 - Provider responses and permission decisions are synthetic in browser fixtures;
   live Peakbagger/provider DOM, current service availability/completeness and the
   browser's native optional-permission prompt were not exercised.

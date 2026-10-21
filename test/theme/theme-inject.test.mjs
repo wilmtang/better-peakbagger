@@ -76,12 +76,12 @@ test('theme=dark sets the attribute AND injects the dark stylesheet', async () =
         'the broad fallback must leave after the complete theme is ready');
 });
 
-test('native map popups inherit the theme across changes, reloads and frame replacement', async () => {
+test('native map popups and basemap picker inherit the theme across changes, reloads and frame replacement', async () => {
     const dom = await loadTheme({ theme: 'dark' });
     try {
         const mount = frame => {
             const doc = frame.contentDocument;
-            doc.open(); doc.write('<!doctype html><html><head><style>body{background:#dce6d7}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:white;color:#333}</style></head><body><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper">Station</div><div class="leaflet-popup-tip"></div></div></body></html>'); doc.close();
+            doc.open(); doc.write('<!doctype html><html><head><style>body{background:#dce6d7}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:white;color:#333}</style></head><body><div id="selboxdiv" style="background-color:white;border:2px solid black"><select id="selmap"><option>Open Topo Map</option></select></div><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper">Station</div><div class="leaflet-popup-tip"></div></div></body></html>'); doc.close();
             frame.dispatchEvent(new dom.window.Event('load'));
             return doc;
         };
@@ -89,33 +89,45 @@ test('native map popups inherit the theme across changes, reloads and frame repl
         dom.window.document.body.append(frame); let doc = mount(frame);
         await new Promise(resolve => dom.window.setTimeout(resolve, 0));
         const background = () => doc.defaultView.getComputedStyle(doc.querySelector('.leaflet-popup-content-wrapper')).backgroundColor;
+        const picker = () => doc.defaultView.getComputedStyle(doc.getElementById('selmap'));
+        const container = () => doc.defaultView.getComputedStyle(doc.getElementById('selboxdiv'));
         assert.equal(background(), 'rgb(39, 44, 41)', 'dark mode must reach the native popup inside the iframe');
+        assert.equal(picker().backgroundColor, 'rgb(36, 44, 38)', 'the native basemap picker matches the dark overlay control');
+        assert.equal(picker().color, 'rgb(238, 243, 238)');
+        assert.equal(picker().colorScheme, 'dark');
+        assert.equal(container().backgroundColor, 'rgb(36, 44, 38)', 'the inline white surround must also turn dark');
+        assert.equal(container().borderTopWidth, '2px', 'the native border geometry is preserved');
         assert.equal(doc.defaultView.getComputedStyle(doc.body).backgroundColor, 'rgb(220, 230, 215)', 'the map canvas keeps its native colors');
         await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'light' } });
         await new Promise(resolve => dom.window.setTimeout(resolve, 0));
         assert.equal(background(), 'rgb(255, 255, 255)');
+        assert.equal(container().backgroundColor, 'rgb(255, 255, 255)');
+        assert.equal(container().borderTopColor, 'rgb(0, 0, 0)');
         await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } });
         await new Promise(resolve => dom.window.setTimeout(resolve, 0));
         doc = mount(frame);
         assert.equal(background(), 'rgb(39, 44, 41)', 'reload restores the scoped popup sheet');
+        assert.equal(picker().colorScheme, 'dark', 'reload restores the picker theme');
         const replacement = dom.window.document.createElement('iframe'); replacement.src = '/map/mastermap.aspx';
         frame.replaceWith(replacement); doc = mount(replacement);
         await new Promise(resolve => dom.window.setTimeout(resolve, 0));
         assert.equal(background(), 'rgb(39, 44, 41)', 'a replacement frame receives the current theme');
+        assert.equal(container().backgroundColor, 'rgb(36, 44, 38)', 'a replacement picker receives the current theme');
         replacement.dispatchEvent(new dom.window.Event('load'));
         assert.equal(doc.querySelectorAll('#bpb-native-map-popup-theme').length, 1);
     } finally { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); }
 });
 
-test('top-level Leaflet popups use the same palette without repainting their map', async () => {
+test('top-level Leaflet popups and basemap picker use their own palette without repainting their map', async () => {
     const dom = await loadTheme({ theme: 'dark' });
     try {
         const map = dom.window.document.createElement('div');
         map.style.backgroundColor = '#dce6d7';
-        map.innerHTML = '<div class="leaflet-popup"><div class="leaflet-popup-content-wrapper"><a href="/peak.aspx?pid=2296">Summit</a></div><div class="leaflet-popup-tip"></div></div>';
+        map.innerHTML = '<div id="selboxdiv"><select id="selmap"><option>Open Topo Map</option></select></div><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper"><a href="/peak.aspx?pid=2296">Summit</a></div><div class="leaflet-popup-tip"></div></div>';
         dom.window.document.body.append(map);
         assert.equal(dom.window.getComputedStyle(map.querySelector('.leaflet-popup-content-wrapper')).backgroundColor, 'rgb(39, 44, 41)');
         assert.equal(dom.window.getComputedStyle(map.querySelector('a')).color, 'rgb(170, 208, 255)');
+        assert.equal(dom.window.getComputedStyle(map.querySelector('#selmap')).backgroundColor, 'rgb(36, 44, 38)', 'the general form theme must not override the map picker');
         assert.equal(dom.window.getComputedStyle(map).backgroundColor, 'rgb(220, 230, 215)');
     } finally { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); }
 });

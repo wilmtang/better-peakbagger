@@ -57,6 +57,74 @@ try {
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    const origin = `https://www.peakbagger.com:${fixture.port}`;
+    // Match the live native selector's white, black-bordered surround. The
+    // full site sheet belongs only to the parent; its scoped map sheet must
+    // reach this iframe without recoloring the map underneath the control.
+    await page.route(`${origin}/map/MasterMap.aspx?themeFixture=1`, route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+        <style>html,body{height:100%;margin:0}#map{position:absolute;inset:0;background:#dce6d7}</style><div id="map"></div>
+        <div id="selboxdiv" style="font-size:11px;font-family:Tahoma,Verdana,Arial Narrow;padding:5px;top:10px;right:10px;width:170px;position:absolute;z-index:99;background-color:white;border:2px solid black">
+        <select id="selmap" aria-label="Base map"><option value="L_OT">Open Topo Map</option><option value="L_MT">MyTopo USA/Canada</option><option value="L_AG">ArcGIS - World Topo</option></select></div>` }));
+    await page.route(`${origin}/native-map-theme.aspx`, route => route.fulfill({ contentType: 'text/html', body: `<!doctype html>
+        <style>body{margin:16px;font:14px Arial}iframe{width:100%;height:300px;border:0}</style>
+        <h1>Dynamic Map</h1><a id="before-map" href="#">Before map</a><iframe src="/map/MasterMap.aspx?themeFixture=1"></iframe><a id="after-map" href="#">Full screen map</a><h2>Following native content</h2>
+        <script>let settings={theme:'light'};const listeners=[];
+        window.chrome={storage:{sync:{get:async()=>({bpbSettings:settings})},onChanged:{addListener:listener=>listeners.push(listener),removeListener:()=>{}}}};
+        window.setFixtureTheme=theme=>{settings={theme};listeners.forEach(listener=>listener({bpbSettings:{newValue:settings}},'sync'))};</script>` }));
+    const themeBundle = await readFile(path.join(root, 'dist/content/theme.js'), 'utf8');
+    let nativeThemeCases = 0;
+    for (const [width, scale] of [[1280, 1], [375, 1], [1280, 2]]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(`${origin}/native-map-theme.aspx`);
+        await page.addScriptTag({ content: themeBundle });
+        await page.waitForFunction(() => document.documentElement.dataset.bpbTheme === 'light');
+        await page.locator('body').evaluate((body, scale) => { body.style.zoom = scale; }, scale);
+        const native = page.frameLocator('iframe'), picker = native.locator('#selmap');
+        await picker.waitFor();
+        await page.locator('#before-map').focus();
+        for (let step = 0; step < 3; step++) {
+            await page.keyboard.press('Tab');
+            if (await picker.evaluate(element => document.activeElement === element && document.hasFocus())) break;
+        }
+        assert.equal(await picker.evaluate(element => document.activeElement === element && document.hasFocus() && element.matches(':focus-visible')), true,
+            'Tab reaches the native basemap picker with visible keyboard focus');
+        const geometry = () => page.evaluate(() => {
+            const frame = document.querySelector('iframe'), doc = frame.contentDocument;
+            const rect = element => { const r = element.getBoundingClientRect(); return [r.x,r.y,r.width,r.height]; };
+            return { page: [...document.querySelectorAll('h1,iframe,h2')].map(rect),
+                map: ['#map','#selboxdiv','#selmap'].map(selector => rect(doc.querySelector(selector))),
+                scroll: [window.scrollX,window.scrollY,doc.defaultView.scrollX,doc.defaultView.scrollY] };
+        });
+        const before = await geometry();
+        for (const theme of ['dark', 'light', 'dark']) {
+            await page.evaluate(theme => window.setFixtureTheme(theme), theme);
+            await native.locator(`html[data-bpb-theme="${theme}"]`).waitFor({ state: 'attached' });
+            assert.equal(await native.locator('html').getAttribute('data-bpb-theme'), theme);
+            const appearance = await picker.evaluate(element => {
+                const style = getComputedStyle(element), surround = getComputedStyle(element.parentElement);
+                return { background: style.backgroundColor, color: style.color, scheme: style.colorScheme,
+                    surround: surround.backgroundColor, border: surround.borderTopWidth, borderColor: surround.borderTopColor,
+                    focused: document.activeElement === element && document.hasFocus(), focusVisible: element.matches(':focus-visible'),
+                    outline: style.outlineStyle, outlineWidth: style.outlineWidth,
+                    option: getComputedStyle(element.options[0]).backgroundColor,
+                    map: getComputedStyle(document.getElementById('map')).backgroundColor };
+            });
+            if (theme === 'dark') {
+                assert.equal(appearance.background, 'rgb(36, 44, 38)', 'native picker must turn dark');
+                assert.equal(appearance.surround, appearance.background, 'the white surround must turn dark too');
+                assert.equal(appearance.option, appearance.background, 'the option list has a dark fallback');
+                assert.equal(appearance.borderColor, 'rgb(99, 113, 101)', 'the inline black border follows the dark control palette');
+                assert.equal(appearance.color, 'rgb(238, 243, 238)'); assert.equal(appearance.scheme, 'dark');
+                assert.equal(appearance.outline, 'solid'); assert.equal(appearance.outlineWidth, '2px');
+            } else assert.equal(appearance.surround, 'rgb(255, 255, 255)', 'light mode restores native styling');
+            assert.equal(appearance.focused && appearance.focusVisible, true, 'keyboard focus survives theme updates');
+            assert.equal(appearance.border, '2px'); assert.equal(appearance.map, 'rgb(220, 230, 215)');
+            assert.deepEqual(await geometry(), before, 'theme changes keep the picker, map, headings and scroll anchored');
+            if (screenshots) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: path.join(screenshots, `native-${width}-${theme}-${scale}x.png`) }); }
+        }
+        nativeThemeCases++;
+    }
+    assert.equal(nativeThemeCases, 3, 'all native map theme selections executed');
     await page.route('**/layer-control.aspx', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>body{margin:16px;font:14px system-ui}#map{height:240px;margin-top:36px;background:#c4cdc3}</style><div id="map"></div><h2>Following native content</h2>' }));
     const cases = [];
     for (const width of [736, 320]) for (const theme of ['light', 'dark']) for (const scale of [1, 2]) {
@@ -324,7 +392,7 @@ try {
     }
     assert.equal(errors.length, 0, errors.join('\n'));
     assert.equal(cases.length, 8, 'all component selections executed');
-    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser().version(), hidden: true, cases };
+    summary = { check: 'map layer control', browser: firefoxMode ? 'firefox' : 'chromium', version: context.browser().version(), hidden: true, nativeThemeCases, cases };
 } catch (error) { primaryError = error; }
 await resources.dispose(primaryError);
 console.log(JSON.stringify({ ...summary, teardown: 'passed' }));
