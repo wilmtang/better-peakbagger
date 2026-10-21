@@ -121,14 +121,25 @@ async function frame(page, selectors = regions) {
         }
         const card = document.getElementById('bpb-climber-card'), main = document.querySelector('.bpb-climber-card-main');
         return { boxes, scroll: globalThis.scrollY, cardScroll: card?.scrollTop, mainScroll: main?.scrollTop,
+            cardFeedbackHeight: document.querySelector('.bpb-climber-card-feedback')?.getBoundingClientRect().height,
             mainClient: main?.clientHeight, mainHeight: main?.scrollHeight, focus: document.activeElement.id };
     }, selectors);
 }
 function stable(before, after, label) {
     assert.equal(after.scroll, before.scroll, `${label}: document scroll moved`);
+    if (before.boxes['#bpb-climber-card']) {
+        assert.ok(Math.abs(after.mainClient - before.mainClient) <= 1, `${label}: the action viewport resized`);
+        assert.ok(Math.abs(after.mainScroll - before.mainScroll) <= 1, `${label}: the action reading position moved`);
+    }
     for (const selector of Object.keys(before.boxes)) for (const key of ['x', 'y', 'width', 'height']) {
         const delta = after.boxes[selector][key] - before.boxes[selector][key];
-        assert.ok(Math.abs(delta) <= 1, `${label}: ${selector} ${key} shifted ${delta}px; ${JSON.stringify({ before, after })}`);
+        // Feedback may deliberately extend the card downward. Its top, width,
+        // actions, heading and surrounding page must remain anchored; no other
+        // size change is allowed, including shrinkage of the action scroller.
+        const footerGrowth = selector === '#bpb-climber-card' && key === 'height'
+            ? after.cardFeedbackHeight - before.cardFeedbackHeight : 0;
+        assert.ok(Math.abs(delta - footerGrowth) <= 1,
+            `${label}: ${selector} ${key} shifted ${delta}px (footer growth ${footerGrowth}px); ${JSON.stringify({ before, after })}`);
     }
 }
 async function sample(page, before, label, selectors) {
@@ -491,7 +502,8 @@ export async function verifyCardFeedback(page, origin, variant, retryOnly = fals
         await page.waitForFunction(() => document.getElementById('bpb-climber-card-ignore').textContent === 'Unignore climber');
         const scroll = await page.evaluate(() => globalThis.scrollY);
         await page.keyboard.press('Escape');
-        await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
+        await page.locator('#transition-person + .bpb-climber-actions-trigger').focus();
+        await page.keyboard.press('Enter');
         assert.equal(await page.evaluate(() => document.activeElement.id), 'bpb-climber-card-ignore');
         assert.equal(await page.evaluate(() => globalThis.scrollY), scroll, 'explicit focus reveals only the local body');
         assert.equal(await page.locator('#bpb-climber-card-ignore').evaluate(element => {
@@ -528,10 +540,16 @@ export async function verifyCompactCard(page, origin, variant) {
     await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
     await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite')?.disabled === false
         && document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
-    const emptyTail = await page.evaluate(() => document.getElementById('bpb-climber-card').getBoundingClientRect().bottom
-        - document.getElementById('bpb-climber-card-ignore').getBoundingClientRect().bottom);
-    if (variant.textScale === 1) assert.ok(emptyTail <= 84,
-        `idle card leaves ${emptyTail}px below Ignore; compact help and recovery must share space`);
+    const tail = await page.evaluate(() => {
+        const card = document.getElementById('bpb-climber-card'), help = document.getElementById('bpb-climber-card-ignore-detail');
+        const range = document.createRange(); range.selectNodeContents(help.firstElementChild || help);
+        const style = getComputedStyle(card), text = getComputedStyle(help);
+        return { gap: card.getBoundingClientRect().bottom - range.getBoundingClientRect().bottom,
+            limit: parseFloat(style.paddingBottom) + parseFloat(style.borderBottomWidth)
+                + parseFloat(text.lineHeight) - parseFloat(text.fontSize) + 1 };
+    });
+    assert.ok(tail.gap <= tail.limit,
+        `idle card leaves ${tail.gap}px below visible help; normal bottom padding allows ${tail.limit}px`);
     const links = page.locator('.bpb-climber-card-links a');
     assert.equal(await links.count(), 4);
     assert.equal(await links.nth(2).textContent(), 'Buddy list ↗');

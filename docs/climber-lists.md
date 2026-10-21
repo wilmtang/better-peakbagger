@@ -31,8 +31,9 @@ the failed local save. Profile messages appear in a dismissible panel at the
 bottom of the viewport, leaving no empty status row below the climber's name.
 Progress and recovery keep the actions and reading position anchored; opening
 Details is a deliberate disclosure. Dismissing a message does not cancel a save.
-The card shares its compact footer between Ignore help and status messages,
-with space for recovery controls beside them.
+The card ends after its visible Ignore help or status message, with no reserved
+empty recovery row. Recovery controls appear only when needed, extending the
+footer downward while the actions and their scroll position stay anchored.
 
 **Add climbing buddy** and **Remove climbing buddy** save directly from the card.
 An explicit action fetches a fresh authenticated profile, submits only the chosen

@@ -62,8 +62,8 @@ const mount = () => {
     for (const text of [buddyText, favoriteText, ignoreText]) text.reserve(actionLabels);
     createStableText(favoriteSizing).reserve(actionLabels);
     const detail = D.element('div', { id: 'bpb-climber-card-ignore-detail', class: 'bpb-climber-card-detail' });
-    const detailText = createStableText(detail);
-    detailText.reserve(['Show their reports again', 'Remove from both lists to ignore', 'Remove from favorites to ignore',
+    const contextSizing = D.element('div', { class: 'bpb-climber-card-detail' });
+    createStableText(contextSizing).reserve(['Show their reports again', 'Remove from both lists to ignore', 'Remove from favorites to ignore',
         'Remove from your Buddy List to ignore', 'Refresh your Buddy List before ignoring', 'Ignored climbers can hold up to 1,500 entries.', 'Hide their reports',
         'Checking lists…', 'Check buddy status.', "Couldn't finish.", 'Settings unavailable.', 'Lists unavailable.', 'Loading lists…',
         'Buddy change in progress.', 'Check original account.', 'Unignore to add to lists.', 'Finish list sync first.',
@@ -75,11 +75,17 @@ const mount = () => {
     const failureDetails = D.element('details', { class: 'bpb-climber-card-feedback-details', hidden: '' }, [
         D.element('summary', { text: 'Details' }), failureText,
     ]);
+    const recovery = D.element('div', { class: 'bpb-climber-card-recovery', hidden: '' }, [retry, failureDetails]);
     const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [
-        D.element('div', { class: 'bpb-climber-card-context' }, [detail, summaryText]),
+        D.element('div', { class: 'bpb-climber-card-context' }, [detail, summaryText]), recovery,
+    ]);
+    // Measure the largest footer outside layout. Placement leaves room for
+    // recovery below the actions, without painting an empty footer at idle.
+    const feedbackSizing = D.element('div', { class: 'bpb-climber-card-feedback-sizing', 'aria-hidden': 'true' }, [
+        contextSizing,
         D.element('div', { class: 'bpb-climber-card-recovery' }, [
             D.element('span', { class: 'bpb-climber-card-sizing', 'aria-hidden': 'true', text: 'Check status' }),
-            D.element('span', { class: 'bpb-climber-card-sizing', 'aria-hidden': 'true', text: 'Details' }), retry, failureDetails,
+            D.element('span', { class: 'bpb-climber-card-sizing', 'aria-hidden': 'true', text: 'Details' }),
         ]),
     ]);
     const heading = D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, links]), closeButton]);
@@ -88,7 +94,7 @@ const mount = () => {
     ]);
     const card = D.element('div', { id: 'bpb-climber-card', role: 'dialog', popover: 'manual', hidden: '',
         'data-bpb-climber-ui': '', 'aria-labelledby': title.id }, [
-        heading, main, feedback,
+        heading, main, feedback, feedbackSizing,
     ]);
     const announcement = D.element('div', { id: 'bpb-climber-card-announcement', role: 'status',
         'aria-live': 'polite', 'data-bpb-climber-ui': '' });
@@ -153,7 +159,7 @@ const mount = () => {
         unavailable(ignore, view.ignoreDisabled, operation?.kind === 'ignore');
         ignore.setAttribute('aria-pressed', String(view.ignored));
         ignore.setAttribute('aria-busy', String(operation?.kind === 'ignore'));
-        detailText.set(view.ignoreDetail);
+        detail.textContent = view.ignoreDetail;
         const failure = error || settingsError || membership?.error || (noticeNeedsCheck ? notice : '');
         if (failure && announcement.textContent !== failure) announcement.textContent = failure;
         summaryText.textContent = operation?.kind === 'check' ? 'Checking lists…'
@@ -164,13 +170,14 @@ const mount = () => {
                             : view.ignored ? 'Unignore to add to lists.' : view.pending ? 'Finish list sync first.'
                                 : view.favoriteLimit ? 'Favorites are full.' : noticeNeedsCheck ? 'Saved; check lists.' : notice ? 'Saved.' : '';
         summaryText.hidden = !summaryText.textContent;
-        detail.style.visibility = summaryText.hidden ? '' : 'hidden';
-        detail.setAttribute('aria-hidden', String(!summaryText.hidden));
+        detail.hidden = !summaryText.hidden;
         if (failure) { fullFailure = failure; failureText.textContent = failure; }
         else if (failureDetails.open && fullFailure) failureText.textContent = notice || `Previous message: ${fullFailure}`;
         failureDetails.hidden = !failure && !failureDetails.open;
         feedback.hidden = view.self;
+        feedbackSizing.hidden = view.self;
         retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed' || (operation && !retry.hidden));
+        recovery.hidden = retry.hidden && failureDetails.hidden;
         unavailable(retry, !!operation || !!view.buddyIntent && (view.buddyInFlight || view.buddyCheckBlocked),
             operation?.kind === 'check' || operation?.recovery);
         retry.setAttribute('aria-busy', String(operation?.kind === 'check' || !!operation?.recovery));
@@ -254,7 +261,7 @@ const mount = () => {
             + parseFloat(styles.borderTopWidth) + parseFloat(styles.borderBottomWidth);
         const block = node => node.hidden ? 0 : node.getBoundingClientRect().height
             + parseFloat(getComputedStyle(node).marginTop) + parseFloat(getComputedStyle(node).marginBottom);
-        const fixedHeight = spacing + block(heading) + block(feedback);
+        const fixedHeight = spacing + block(heading) + block(feedbackSizing);
         const naturalHeight = fixedHeight + (main.hidden ? 0 : main.scrollHeight);
         const below = Math.max(0, topEdge + height - rect.bottom - 18);
         const above = Math.max(0, rect.top - topEdge - 18);
@@ -270,10 +277,11 @@ const mount = () => {
         card.style.left = `${Math.max(leftEdge + 12, Math.min(rect.left, leftEdge + width - size.width - 12))}px`;
         card.style.top = `${Math.max(topEdge + 12, top)}px`;
         card.style.setProperty('--bpb-card-detail-space', `${Math.max(0, available - fixedHeight - 8)}px`);
-        card.style.setProperty('--bpb-card-footer-height', `${feedback.getBoundingClientRect().height}px`);
         // The footer never scrolls away with the action body. Limited viewports
-        // scroll the body/details independently, not the whole card or page.
+        // scroll the body/details independently. Cap the body up front so the
+        // footer can grow downward without shrinking or moving the actions.
         card.style.maxHeight = `${available}px`;
+        main.style.maxHeight = `${Math.max(0, available - fixedHeight)}px`;
     };
     function schedulePosition() {
         if (positionFrame == null) positionFrame = requestAnimationFrame(position);
