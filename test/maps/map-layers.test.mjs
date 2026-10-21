@@ -9,18 +9,22 @@ const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longi
 const bounds = [-121.77, 46.84, -121.75, 46.86];
 function setup(terrain = false) {
     const dom = new JSDOM('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
-    const win = dom.window, messages = [], moves = [], removed = [], popups = [], events = new Map(); let currentBounds = bounds;
+    const win = dom.window, messages = [], moves = [], removed = [], popups = [], rasterPaints = [], events = new Map(); let currentBounds = bounds;
     const container = win.document.getElementById('map');
     container.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
     const map = { getBounds: () => ({ getWest: () => currentBounds[0], getSouth: () => currentBounds[1], getEast: () => currentBounds[2], getNorth: () => currentBounds[3] }),
         getCenter: () => ({ lat: 46.85, lng: -121.76 }), getZoom: () => 17, getSize: () => ({ x: 800, y: 400 }),
-        getContainer: () => container, eachLayer() {}, removeLayer: layer => removed.push(layer),
+        getContainer: () => container, eachLayer() {}, removeLayer: layer => removed.push(layer), getPane: () => ({}),
         latLngToContainerPoint: ([lat, lon]) => ({ x: lon >= currentBounds[0] && lon <= currentBounds[2] && lat >= currentBounds[1] && lat <= currentBounds[3] ? 400 : -1000, y: 200 }),
         on(name, handler) { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(handler); },
         off(name, handler) { events.get(name)?.delete(handler); }, flyToBounds: (...args) => moves.push(args), stop() {} };
     win.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
-    win.L = { GridLayer: {}, marker: () => ({ bindPopup(content) { popups.push(content); return this; }, addTo() { return this; } }),
-        divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) };
+    win.L = { GridLayer: { extend: () => class {
+        constructor(options) { this.id = options.pane.replace('bpb-overlay-', ''); }
+        on() { return this; } addTo() { return this; }
+        setOpacity(opacity) { rasterPaints.push([this.id, opacity]); return this; }
+    } }, marker: () => ({ bindPopup(content) { popups.push(content); return this; }, addTo() { return this; } }),
+    divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) };
     win.postMessage = message => messages.push(message);
     const owner = installMapLayers(win);
     const send = (detail, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
@@ -30,10 +34,29 @@ function setup(terrain = false) {
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input').click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const pan = () => { for (const handler of events.get('moveend') || []) handler({ target: map }); };
-    return { win, messages, moves, removed, popups, send, toggle, request, pan,
+    return { win, messages, moves, removed, popups, rasterPaints, send, toggle, request, pan,
         view(value) { currentBounds = value; if (terrain) send({ type: 'layerView', bounds: value, zoom: 16 }, '__bpbTerrain'); else pan(); },
         close() { owner.dispose(); win.close(); } };
 }
+
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} opacity dragging updates only the edited overlay`, () => {
+    const env = setup(terrain), doc = env.win.document;
+    try {
+        for (const id of ['slope', 'land']) doc.querySelector(`[data-layer="${id}"] input`).click();
+        env.toggle(); env.send({ type: 'stations', requestId: env.request().requestId, stations: [station] });
+        doc.querySelector('.bpb-layers-trigger').click(); doc.querySelector('[data-layer="slope"] button').click();
+        env.rasterPaints.length = 0; env.messages.length = 0;
+        const slider = doc.querySelector('[aria-label="Slope angle opacity"]'); slider.focus();
+        for (const opacity of [30, 40, 50]) { slider.value = String(opacity); slider.dispatchEvent(new env.win.Event('input')); }
+        assert.equal(doc.activeElement, slider);
+        assert.equal(doc.querySelector('[data-layer="slope"] .bpb-layers-value-number').textContent, '50%', 'feedback updates in the input event');
+        if (terrain) assert.equal(env.messages.filter(message => message.type === 'snowStations').length, 0, 'opacity does not resend station markers');
+        else assert.deepEqual(env.rasterPaints, [['slope', .3], ['slope', .4], ['slope', .5]], 'opacity does not repaint unrelated raster layers');
+        assert.equal(env.messages.filter(message => message.type === 'stations').length, 0);
+        const state = env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.state;
+        assert.equal(state.land.enabled, true); assert.equal(state.snotel.enabled, true); assert.equal(state.slope.opacity, 50);
+    } finally { env.close(); }
+});
 
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} delayed snow-card availability updates existing station actions without a pan`, () => {
     const env = setup(terrain);

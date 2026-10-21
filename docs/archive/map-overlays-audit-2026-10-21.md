@@ -19,6 +19,7 @@ is maintained in [Map overlays](../map-layers.md).
 | O5 | P2 | Native and terrain station identity keys included selectable membership. A conditions-action update rebuilt every marker and closed the popup containing the focused NRCS link. | `47de8745`: when the station list is unchanged, update only its optional action. Keep popup/marker/link identity and focus. Removing a focused action returns focus to the same official link. Both marker regressions failed before the fix. |
 | O6 | P2 | Sentinel's existing minimum catalog zoom was reported as Search failed even though validation prevented a search. | `9f4160aa`: share the existing catalog minimum with the control. Below it show Zoom in and hide ineffective Retry; actual catalog failures remain visible at supported zooms. The new assertion failed on the prior Search failed label. |
 | O7 | Follow-up | The upper-right native basemap dropdown and its inline white surround stayed light because the scoped MasterMap theme covered only popups. | Extend the native map sheet to theme the select, options and surround with the Overlays palette and an inset keyboard focus ring. Both bundled and hidden Chrome assertions failed before the fix for the picker remaining light. |
+| O8 | Follow-up | Each opacity input reapplied unrelated native rasters and station popups, resent terrain station data, repeated regional polygon work and replaced every legend. | Scope opacity application to the edited raster, cache public-land metadata by viewport, and preserve unchanged legend nodes. Three new assertions failed before the fix for unrelated raster updates, repeated terrain marker messages and replaced swatches. |
 
 The audit found no additional confirmed defect in the inspected provider
 composition, bounded requests, narrow BC worker relay, one-use handoff or
@@ -29,6 +30,14 @@ that no other defect exists.
 
 ### Fixed and verified
 
+- O8: 44 focused map/control/session tests and scoped ESLint passed. Hidden
+  Chrome 156.0.8078.4 passed immediate slider feedback, legend reuse, focus and
+  stable row/map/following-content checks across all eight component cases.
+  Real unpacked Chrome integration passed at 1000 × 700 using Leaflet 1.9.4
+  and ANGLE/Metal on Apple M3 Pro, including native/3D alpha, recovery, regional
+  cancellation, capture selection and Full Screen handoff. The change removes
+  demonstrated redundant work; it does not establish a physical input-latency
+  number or accelerate the upstream services.
 - O7 follow-up: `npm test` passed 3,126 tests; scoped ESLint and `git diff
   --check` passed. The bundled theme checks light/dark updates, frame reload and
   replacement, top-level selector specificity and text/focus contrast. Hidden
@@ -76,6 +85,9 @@ that no other defect exists.
 
 ### Intentionally not changed
 
+- O8 keeps opacity feedback synchronous, existing provider debounce/retry/rate
+  limits, zero-opacity cancellation, validated terrain revisions and Full Screen
+  state updates. Actual viewport changes still recompute coverage.
 - O7 preserves native basemap behavior, light styling, control dimensions,
   border widths and map colors. It adds no theme setting or map-wide filter.
 - Only the Overlays button collapses the menu. Existing persistent-menu behavior,

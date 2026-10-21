@@ -80,6 +80,28 @@ test('opacity summaries name the property and sliders explain their direction', 
     control.dispose(); dom.window.close();
 });
 
+test('opacity and provider updates preserve unchanged legend content', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
+    const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
+    const state = Schema.mapOverlayState({ slope: { enabled: true } });
+    const statuses = { slope: { legend: 'Ground slope', legendEntries: [{ label: '30–35°', color: '#f09730' }] } };
+    try {
+        control.render({ state, statuses }); control.trigger.click(); doc.querySelector('[data-layer="slope"] button').click();
+        const legend = doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-legend');
+        const swatch = legend.firstElementChild, caption = legend.lastElementChild;
+        const observer = new dom.window.MutationObserver(() => {}); observer.observe(legend, { childList: true });
+        for (let opacity = 30; opacity <= 60; opacity++) {
+            state.slope.opacity = opacity; control.render({ state, statuses: { slope: { ...statuses.slope, pending: opacity < 60 } } });
+        }
+        assert.equal(legend.firstElementChild, swatch, 'dragging opacity must not rebuild swatches');
+        assert.equal(legend.lastElementChild, caption);
+        assert.equal(observer.takeRecords().length, 0, 'unrelated status changes do not replace legend nodes');
+        control.render({ state, statuses: { slope: { legend: 'Updated coverage', legendEntries: [] } } });
+        assert.equal(legend.textContent, 'Updated coverage', 'actual legend changes still render');
+        observer.disconnect();
+    } finally { control.dispose(); dom.window.close(); }
+});
+
 test('layer rows explain loading, failure and access without hiding controls or stale off-state warnings', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
     const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);

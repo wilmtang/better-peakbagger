@@ -27,6 +27,7 @@ export function installMapLayers(win = window) {
     let stationTimer = null, relayFrame = null;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
     let revealPending = false;
+    let landViewKey = '', landInfo = null;
     const nativeReveal = createSnotelMapReveal({ window: win, getMap: () => binding?.map });
     const cancelReveal = () => { revealPending = false; nativeReveal.cancel(); };
     const selectable = new Set();
@@ -45,7 +46,9 @@ export function installMapLayers(win = window) {
     const paint = () => {
         const bounds = stationView();
         if (bounds) {
-            const info = publicLandInfo(bounds);
+            const key = JSON.stringify(bounds);
+            if (key !== landViewKey) { landViewKey = key; landInfo = publicLandInfo(bounds); }
+            const info = landInfo;
             if (statuses.land.permission && !info.guidanceKeys.includes('bc')) statuses.land = { ...statuses.land, permission: false, pending: false, error: false, retry: false, message: '' };
             statuses.land = { ...statuses.land, ...info };
         }
@@ -107,19 +110,24 @@ export function installMapLayers(win = window) {
         if (!frameMode && !booting) binding?.sentinel.refresh();
         clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
     };
-    const apply = () => {
-        reconcileCoverage();
+    const apply = (opacityId = null) => {
+        // An opacity input does not change the viewport or station membership.
+        // Keep it synchronous without revisiting unrelated providers/popups.
+        if (!opacityId) reconcileCoverage();
         relay();
         if (!frameMode && !booting && active && binding) {
-            for (const id of ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
-            binding.sentinel.cooldown(statuses.sentinel.retryAt);
-            if (state.sentinel.enabled && state.sentinel.opacity > 0) binding.sentinel.activate(capture);
-            else binding.sentinel.deactivate();
+            for (const id of opacityId ? [opacityId] : ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
+            if (!opacityId || opacityId === 'sentinel') {
+                binding.sentinel.cooldown(statuses.sentinel.retryAt);
+                if (state.sentinel.enabled && state.sentinel.opacity > 0) binding.sentinel.activate(capture);
+                else binding.sentinel.deactivate();
+            }
         }
-        sendStations(); paint();
+        if (!opacityId) sendStations();
+        paint();
         post({ type: 'handoffState', snapshot: snapshot() });
     };
-    const changed = () => { touched = true; revision++; apply(); };
+    const changed = opacityId => { touched = true; revision++; apply(opacityId); };
     const control = createMapLayerControl({ document: doc,
         onToggle(id, enabled) {
             if (coverage?.[id] === false) { paint(); return; }
@@ -132,7 +140,7 @@ export function installMapLayers(win = window) {
             }
             changed(); if (id === 'snotel' && enabled) loadStations();
         },
-        onOpacity(id, opacity) { state[id].opacity = opacity; changed(); }, onCommit: save,
+        onOpacity(id, opacity) { state[id].opacity = opacity; changed(id); }, onCommit: save,
         onCapture(value) {
             if (coverage?.sentinel === false) return;
             if (frameMode) terrain('layerAction', { action: 'capture', id: 'sentinel', capture: value });

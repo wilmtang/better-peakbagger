@@ -195,6 +195,21 @@ try {
                 await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
             }
         }
+        const opacitySlider = page.getByRole('slider', { name: 'Slope angle opacity' });
+        await opacitySlider.focus();
+        const dragGeometry = await geometry();
+        const drag = await opacitySlider.evaluate(element => {
+            const legends = [...document.querySelectorAll('.bpb-layers-legend')];
+            const originals = legends.map(legend => [...legend.childNodes]);
+            for (const opacity of [0, 25, 50, 75, 100, 60]) {
+                element.value = String(opacity); element.dispatchEvent(new window.Event('input', { bubbles: true }));
+                if (document.querySelector('[data-layer="slope"] .bpb-layers-value-number').textContent !== `${opacity}%`) return { immediate: false };
+            }
+            return { immediate: true, focused: document.activeElement === element,
+                reused: legends.every((legend, i) => [...legend.childNodes].every((node, j) => node === originals[i][j])) };
+        });
+        assert.deepEqual(drag, { immediate: true, focused: true, reused: true }, 'opacity stays immediate and reuses unchanged legends');
+        assert.deepEqual(await geometry(), dragGeometry, 'opacity dragging preserves rows, map and following content');
         await page.evaluate(() => { window.fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; window.fixture.paint(); });
         const recovery = page.getByRole('button', { name: /^(Retry|Reload)$/ });
         await recovery.scrollIntoViewIfNeeded(); await recovery.focus();

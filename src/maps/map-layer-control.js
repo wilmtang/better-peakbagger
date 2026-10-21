@@ -106,7 +106,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             paint();
         });
         rows.set(key, { row, checkbox, disclosure, value, amount, spinner, rowStatus });
-        details.set(key, { detail, slider, output, capture, legend, guidance, feedback, status, retry, captureKey: '', guidanceKey: '' });
+        details.set(key, { detail, slider, output, capture, legend, guidance, feedback, status, retry, captureKey: '', guidanceKey: '', legendKey: '' });
     }
     panel.append(well); element.append(trigger, panel, live);
     const position = () => {
@@ -165,11 +165,15 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.slider.value = String(current.opacity); detail.slider.disabled = unavailable || !current.enabled;
                 detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output.value = `${current.opacity}%`;
             }
-            detail.legend.replaceChildren(...(status.legendEntries || []).map(entry => {
-                const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
-                swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
-                item.append(swatch, doc.createTextNode(entry.label)); return item;
-            }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
+            const legendKey = JSON.stringify([status.legendEntries || [], status.legend || '']);
+            if (legendKey !== detail.legendKey) {
+                detail.legendKey = legendKey;
+                detail.legend.replaceChildren(...(status.legendEntries || []).map(entry => {
+                    const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
+                    swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
+                    item.append(swatch, doc.createTextNode(entry.label)); return item;
+                }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
+            }
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
                 : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in to show ${key === 'sentinel' ? 'Sentinel-2 imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
