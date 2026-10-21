@@ -2,7 +2,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SLOPE_BANDS, SLOPE_RULE, LAND_CLASSES, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations } from '../../src/maps/map-overlay-providers.js';
+import { SLOPE_BANDS, SLOPE_RULE, LAND_CLASSES, LAND_RENDERER, overlayTileUrl, tileBounds, overlayBounds, viewportStations, mapOverlayCoverage } from '../../src/maps/map-overlay-providers.js';
+
+test('offline overlay availability distinguishes provider regions without treating unknown bounds as absence', () => {
+    const places = [
+        ['Rainier', -121.76, 46.85, [true, true, true, true]],
+        ['Denali', -151.01, 63.07, [true, true, true, true]],
+        ['Hawaii', -155.58, 19.82, [true, true, true, false]],
+        ['New Hampshire', -71.3, 44.27, [true, true, true, false]],
+        ['BC interior', -124, 54, [true, true, true, false]],
+        ['Banff', -115.57, 51.18, [true, true, true, false]],
+        ['Jasper', -118.08, 52.87, [true, true, false, false]],
+        ['NE Alberta', -112, 55, [true, true, false, false]],
+        ['Ontario', -81.24, 42.99, [true, true, false, false]],
+        ['Mexico', -99.13, 19.43, [true, true, false, false]],
+        ['Alps', 7.65, 45.98, [true, false, false, false]],
+        ['New Zealand', 170.14, -43.6, [true, false, false, false]],
+        ['Antarctica', -86, -78, [false, false, false, false]],
+        ['South Dakota', -103.98, 44.11, [true, true, true, true]],
+        ['Puerto Rico', -66.6, 18.2, [true, true, true, false]],
+    ];
+    for (const [place, lon, lat, expected] of places) {
+        const bounds = [lon - .01, lat - .01, lon + .01, lat + .01];
+        assert.deepEqual(Object.values(mapOverlayCoverage(bounds)), expected, place);
+        assert.deepEqual(mapOverlayCoverage(bounds.map((value, index) => index % 2 ? value : value + 360)), mapOverlayCoverage(bounds), `${place} world copy`);
+    }
+    assert.equal(mapOverlayCoverage(null), null);
+    assert.equal(mapOverlayCoverage([NaN, 0, 1, 2]), null);
+    assert.equal(mapOverlayCoverage([-122.1, 49.09, -122, 49.11]).snotel, true, 'nearby US stations remain discoverable across the Canadian border');
+});
 
 test('slope classification uses the service degree template with exact inclusive lower boundaries', () => {
     const remap = SLOPE_RULE.rasterFunctionArguments.Raster.rasterFunctionArguments;

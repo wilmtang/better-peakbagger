@@ -52,6 +52,8 @@
 .bpb-layers-disclosure { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-width: 0; min-height: 28px; padding: 2px 0; border: 0; background: transparent; cursor: pointer; flex: 1; text-align: left; }
 .bpb-layers-row-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .bpb-layers-row-name { line-height: 1.1; overflow-wrap: anywhere; }
+.bpb-layers-row[data-unavailable='true'] .bpb-layers-row-name { color: var(--bpb-layer-muted); }
+.bpb-layers-choice:has(input:disabled) { cursor: default; }
 .bpb-layers-summary { display: flex; align-items: center; gap: 4px; min-height: 1.1em; color: var(--bpb-layer-muted); font-size: max(10px, .75em); line-height: 1.1; }
 .bpb-layers-value, .bpb-layers-opacity output { font-variant-numeric: tabular-nums; }
 .bpb-layers-value { display: flex; align-items: center; gap: 4px; }

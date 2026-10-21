@@ -331,6 +331,26 @@ try {
     }
     await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
     await page.getByRole('button', { name: /^Overlays/ }).click();
+    const regionalMap = page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
+    for (const label of ['Slope angle', 'Public lands', 'SNOTEL stations']) await page.getByRole('checkbox', { name: label, exact: true }).check();
+    await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: /stations? in view/ }).waitFor();
+    const regionGeometry = () => page.evaluate(() => ['h1', 'iframe#if', 'h2', '.bpb-layers-trigger', ...['sentinel','slope','land','snotel'].map(id => `[data-layer="${id}"]`)]
+        .map(selector => { const rect = document.querySelector(selector).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
+    const regionalBefore = await regionGeometry();
+    await regionalMap.evaluate(() => mapsPlaceholder.setView([45.98, 7.65], 13, { animate: false }));
+    await wait(() => ['slope','land','snotel'].every(id => {
+        const checkbox = document.querySelector(`[data-layer="${id}"] input`); return checkbox?.disabled && !checkbox.checked;
+    }), 'unsupported native overlays turn off and become unavailable');
+    assert.deepEqual(await regionGeometry(), regionalBefore, 'regional availability keeps native headings, map, following content and overview anchored');
+    assert.equal(await regionalMap.evaluate(() => Object.values(mapsPlaceholder._layers).some(layer => layer.options?.bpbOverlay)), false, 'unsupported native overlays and stations are removed');
+    assert.equal(await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).isEnabled(), true, 'global imagery remains offered');
+    if (output) await page.screenshot({ path: path.join(output, 'regional-alps-native.png') });
+    await regionalMap.evaluate(() => mapsPlaceholder.setView([46.78, -121.74], 13, { animate: false }));
+    await wait(() => ['slope','land','snotel'].every(id => !document.querySelector(`[data-layer="${id}"] input`)?.disabled), 'returning to coverage restores available controls');
+    for (const id of ['slope','land','snotel']) assert.equal(await page.locator(`[data-layer="${id}"] input`).isChecked(), false, 'returning never silently re-enables overlays');
+    cases.push('native regional availability cancels overlays and preserves layout without auto-reactivation');
+    await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
+    await page.getByRole('button', { name: /^Overlays/ }).click();
     const slopeMap = page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
     slopeMode = 'recover'; slopeRequests.clear();
     await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
@@ -461,8 +481,11 @@ try {
         }))), true, 'Alberta polygon holes and private parcels remain clear');
         if (output) await page.screenshot({ path: path.join(output, `canada-ab-${index}.png`) });
         await native.evaluate(() => { mapsPlaceholder.setView([55,-112],13,{animate:false}); });
-        await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay).some(layer => Object.values(layer._tiles || {}).some(({el}) => el.getContext('2d').getImageData(128,128,1,1).data[3] === 0))), { description: 'unsupported Alberta area stays clear' });
-        await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
+        await wait(() => {
+            const input = document.querySelector('[data-layer="land"] input'); return input?.disabled && !input.checked;
+        }, 'unsupported Alberta area disables public lands');
+        assert.equal(await native.evaluate(() => Object.values(mapsPlaceholder._layers).some(layer => layer.options?.pane === 'bpb-overlay-land')), false,
+            'unsupported Alberta removes the overlay instead of keeping empty tile resources');
     }
     const boundaryMap = page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
     await worker.evaluate(() => { globalThis.__bpbBCPermission.allowed = false; globalThis.__bpbBCPermission.setup = false; delete globalThis.__bpbBCPermission.finish; });
@@ -624,6 +647,15 @@ try {
     await wait(() => ['slope', 'land'].every(id => document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`)?.textContent === 'Zoom in'), 'zoomed-out hardware rasters request a closer view');
     if (output) await page.screenshot({ path: path.join(output, 'terrain-zoom.png') });
     cases.push('native and hardware 3D zoom limits show Zoom in instead of stale loading');
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+    await canadianNative.evaluate(() => mapsPlaceholder.setView([45.98, 7.65], 13, { animate: false }));
+    await wait(() => ['slope','land','snotel'].every(id => document.querySelector(`[data-layer="${id}"] input`)?.disabled), 'unsupported-region state before terrain handoff');
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true');
+    await wait(() => ['slope','land','snotel'].every(id => {
+        const input = document.querySelector(`[data-layer="${id}"] input`); return input?.disabled && !input.checked;
+    }), 'hardware terrain preserves regional availability');
+    if (output) await page.screenshot({ path: path.join(output, 'regional-alps-terrain.png') });
+    cases.push('unsupported regional state survives native-to-hardware-terrain handoff');
     cases.push('BC Allow pending/denial/retry without layout shift (native prompt stubbed)', 'BC/Alberta native ownership and opacity on all four surfaces', 'Alberta holes/private/unsupported coverage stay clear', 'BC embedded worker sender and Alberta polygons in hardware 3D');
     cases.push('0/50/100 percent mosaic and BLM/USFS pixels with negative control','one-use Full Screen state and pinned pass','3D capture choices, independent base, suspend/resume','off while parked prevents catalog replay', 'BLM/USFS legend, guidance and native/terrain alpha');
     assert.deepEqual(errors, []);

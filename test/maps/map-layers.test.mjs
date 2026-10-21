@@ -69,6 +69,25 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL a
     } finally { env.close(); }
 });
 
+for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} leaving SNOTEL coverage turns it off, rejects late stations and requires explicit re-enablement`, () => {
+    const env = setup(terrain);
+    try {
+        env.toggle(); const request = env.request();
+        const cancellations = env.messages.filter(message => message.type === 'cancel').length;
+        env.view([7.6, 45.9, 7.7, 46]);
+        const checkbox = env.win.document.querySelector('[data-layer="snotel"] input');
+        assert.equal(checkbox.disabled, true); assert.equal(checkbox.checked, false);
+        for (const id of ['slope', 'land']) assert.equal(env.win.document.querySelector(`[data-layer="${id}"] input`).disabled, true);
+        assert.ok(env.messages.filter(message => message.type === 'cancel').length > cancellations);
+        env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
+        assert.equal(env.moves.length, 0);
+        assert.equal(env.messages.filter(message => message.type === 'handoffState').at(-1).snapshot.state.snotel.enabled, false,
+            'the parked renderer and Full Screen receive the disabled state');
+        env.view(bounds); assert.equal(checkbox.disabled, false); assert.equal(checkbox.checked, false);
+        env.toggle(); assert.ok(env.request().requestId > request.requestId);
+    } finally { env.close(); }
+});
+
 for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL refresh failures keep loaded markers without claiming an empty view or repeating auto-zoom`, t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const env = setup(terrain), visibleStation = { ...station, latitude: 46.85, longitude: -121.76 };
@@ -121,12 +140,13 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} user mov
     const env = setup(terrain);
     try {
         env.toggle(); const request = env.request();
+        const cancellations = env.messages.filter(message => message.type === 'cancel').length;
         if (terrain) env.send({ type: 'layerView', bounds: [-121.78, 46.84, -121.76, 46.86], zoom: 16 }, '__bpbTerrain');
         else env.pan();
         env.send({ type: 'stations', requestId: request.requestId, stations: [station], nearby: true });
         assert.equal(env.moves.length, 0);
         assert.equal(env.messages.some(message => message.type === 'snowStations' && message.reveal === true), false);
-        assert.equal(env.messages.at(-1).type, 'cancel');
+        assert.ok(env.messages.filter(message => message.type === 'cancel').length > cancellations, 'the pan cancels the pending reveal request');
     } finally { env.close(); }
 });
 

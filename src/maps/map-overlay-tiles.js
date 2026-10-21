@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { sentinelTileUrl } from './sentinel-core.js';
-import { overlayTileUrl, tileBounds, publicLandTileSources } from './map-overlay-providers.js';
+import { overlayTileUrl, tileBounds, publicLandTileSources, mapOverlayCoverage } from './map-overlay-providers.js';
 import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
@@ -129,7 +129,8 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                 // Scenes are opaque source images with transparent no-data. Draw
                 // all of them at full alpha, then let the engine fade this ONE
                 // mosaic. Two overlapping scenes at 50% still mean 50%.
-                const sources = id === 'land' ? publicLandTileSources(coordinates)
+                const supported = mapOverlayCoverage([west, south, east, north])?.[id] !== false;
+                const sources = !supported ? [] : id === 'land' ? publicLandTileSources(coordinates)
                     : (id === 'sentinel' ? intersecting.map(scene => sentinelTileUrl(scene.id)
                         .replace('{z}', coordinates.z).replace('{x}', coordinates.x).replace('{y}', coordinates.y)) : [overlayTileUrl(id, coordinates)])
                         .map(url => ({ url }));

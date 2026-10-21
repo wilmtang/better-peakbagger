@@ -11,6 +11,18 @@ const mockBitmap = t => {
     t.after(() => { if (previous === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = previous; });
 };
 
+test('buffered tiles outside overlay coverage stay clear without contacting a provider', async () => {
+    let requests = 0;
+    const tiles = createOverlayTiles({ document, fetchImpl: async () => { requests++; throw new Error('Out-of-region request'); } });
+    tiles.setScenes([{ id: 'polar_scene', bounds: [-180, -90, 180, 90] }]);
+    const tile = (lon, lat) => ({ z: 12, x: Math.floor((lon + 180) / 360 * 4096), y: Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * 4096) });
+    try {
+        for (const id of ['slope', 'land']) await tiles.draw(id, tile(7.65, 45.98), tiles.canvas());
+        await tiles.draw('sentinel', tile(-86, -78), tiles.canvas());
+        assert.equal(requests, 0);
+    } finally { tiles.dispose(); }
+});
+
 test('tile ownership bounds concurrency to four and off aborts queued and active work', async () => {
     const held = [], failures = [];
     const tiles = createOverlayTiles({ document, fetchImpl: (url, options) => new Promise(resolve => held.push({ url, options, resolve })), onError: (...args) => failures.push(args) });

@@ -1,8 +1,29 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, ALBERTA_PARCEL_EXTENT, intersectsLandBounds } from './canadian-land.js';
+import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_TERRITORY_BOUNDS } from './canadian-land.js';
+import { SENTINEL_LATITUDES } from './sentinel-core.js';
 
 export const OVERLAY_MIN_ZOOM = 8;
+const SNOW_REGIONS = ['ak', 'az', 'ca', 'co', 'id', 'mt', 'nm', 'nv', 'or', 'sd', 'ut', 'wa', 'wy'].map(state => `us_${state}`);
+// 3DEP includes lower-resolution Canada/Mexico/Central America/Caribbean data.
+// These are conservative service envelopes, not a promise of data per pixel.
+const SLOPE_BOUNDS = [[-180, 5, -50, 84], [172, 50, 180, 55], [-161, 18, -154, 23], ...US_TERRITORY_BOUNDS];
+const intersectsWrapped = (bounds, extents) => {
+    const shift = Math.floor(((bounds[0] + bounds[2]) / 2 + 180) / 360) * 360;
+    return [-360, 0, 360].some(offset => extents.some(extent => intersectsLandBounds(
+        [bounds[0] - shift + offset, bounds[1], bounds[2] - shift + offset, bounds[3]], extent)));
+};
+export function mapOverlayCoverage(value) {
+    const bounds = overlayBounds(value); if (!bounds) return null; // Unknown is not evidence of no coverage.
+    const longitudePadding = 0.55 / Math.max(0.08, Math.cos(Math.max(Math.abs(bounds[1]), Math.abs(bounds[3])) * Math.PI / 180));
+    return {
+        sentinel: bounds[3] >= SENTINEL_LATITUDES[0] && bounds[1] <= SENTINEL_LATITUDES[1],
+        slope: intersectsWrapped(bounds, SLOPE_BOUNDS),
+        land: landCoverage(bounds).length > 0,
+        // Preserve nearby discovery across state/country borders within 50 km.
+        snotel: regionCoverage(bounds, SNOW_REGIONS, 0.55, longitudePadding),
+    };
+}
 
 // One color contract drives both the service request and the visible legend.
 export const SLOPE_BANDS = Object.freeze([
@@ -88,7 +109,7 @@ export function publicLandTileSources(coordinates) {
     const bbox = tileBounds(coordinates), longitude = value => value / 20037508.342789244 * 180;
     const latitude = value => Math.atan(Math.sinh(value / 6378137)) * 180 / Math.PI;
     const geographic = [longitude(bbox[0]), latitude(bbox[1]), longitude(bbox[2]), latitude(bbox[3])];
-    const coverage = landCoverage(geographic).filter(provider => provider !== 'ab' || intersectsLandBounds(geographic, ALBERTA_PARCEL_EXTENT));
+    const coverage = landCoverage(geographic);
     return coverage.map(provider => ({ provider, bbox, kind: provider === 'ab' ? 'parcels' : 'raster',
         url: provider === 'us' ? overlayTileUrl('land', coordinates) : provider === 'bc' ? bcLandTileUrl(bbox) : albertaLandTileUrl(bbox) }));
 }

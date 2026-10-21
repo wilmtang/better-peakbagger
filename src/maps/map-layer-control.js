@@ -89,13 +89,14 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const retry = node('button', 'bpb-layers-retry', 'Retry'); retry.type = 'button'; retry.hidden = true;
         retry.addEventListener('click', () => {
             const current = model.statuses?.[key];
-            if (current?.pending || current?.retryAt > Date.now() || current?.permission) return;
+            if (model.coverage?.[key] === false || current?.pending || current?.retryAt > Date.now() || current?.permission) return;
             const recovery = details.get(key); recovery.recovering = true; recovery.reloading = retry.textContent === 'Reload';
             onRetry(key);
         });
         retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; paint(); });
         action.append(retry); feedback.append(status, action); detail.append(feedback); well.append(detail);
         checkbox.addEventListener('change', () => {
+            if (model.coverage?.[key] === false) { paint(); return; }
             expanded = key;
             onToggle(key, checkbox.checked);
             paint();
@@ -132,15 +133,16 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const state = Schema.mapOverlayState(model.state);
         const needsZoom = key => Number.isFinite(model.zoom) && (key === 'sentinel' ? model.zoom < SENTINEL_MIN_ZOOM
             : (key === 'slope' || key === 'land') && Math.round(model.zoom) < OVERLAY_MIN_ZOOM);
-        const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled);
+        const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled && model.coverage?.[key] !== false);
         const failed = active.some(key => !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
         trigger.setAttribute('aria-label', `Overlays${active.length ? `, ${active.length} active` : ''}${failed ? ', overlay unavailable' : ''}`);
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
-            const shown = current.enabled && (key === 'snotel' || current.opacity > 0);
+            const unavailable = model.coverage?.[key] === false;
+            const shown = !unavailable && current.enabled && (key === 'snotel' || current.opacity > 0);
             const zoomedOut = shown && needsZoom(key);
-            const kind = !shown ? '' : zoomedOut ? 'zoom' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
+            const kind = unavailable ? 'coverage' : !shown ? '' : zoomedOut ? 'zoom' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
             const cooldown = status.retryAt > Date.now();
             const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
                 : kind === 'saved' ? 'Refresh failed' : kind === 'zoom' ? 'Zoom in' : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
@@ -148,7 +150,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             const heldRecovery = shown && !zoomedOut && detail.recovering && doc.activeElement === detail.retry && !status.permission;
             const recovered = heldRecovery && !status.pending && !status.error;
             row.row.hidden = model.available && !model.available.includes(key);
-            row.checkbox.checked = current.enabled; row.checkbox.disabled = status.unavailable === true;
+            row.row.dataset.unavailable = String(unavailable);
+            if (unavailable && [row.checkbox, detail.slider, detail.capture].includes(doc.activeElement)) row.disclosure.focus({ preventScroll: true });
+            row.checkbox.checked = !unavailable && current.enabled; row.checkbox.disabled = unavailable || status.unavailable === true;
             row.disclosure.setAttribute('aria-expanded', String(open && expanded === key));
             row.row.dataset.selected = String(open && expanded === key);
             row.disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}${key === 'snotel' ? '' : ` opacity, ${current.opacity} percent`}${summary ? `: ${summary}` : ''}`);
@@ -158,7 +162,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             row.spinner.hidden = kind !== 'loading'; row.row.dataset.status = kind;
             detail.detail.hidden = !open || expanded !== key || row.row.hidden;
             if (detail.slider) {
-                detail.slider.value = String(current.opacity); detail.slider.disabled = !current.enabled;
+                detail.slider.value = String(current.opacity); detail.slider.disabled = unavailable || !current.enabled;
                 detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent opacity`); detail.output.value = `${current.opacity}%`;
             }
             detail.legend.replaceChildren(...(status.legendEntries || []).map(entry => {
@@ -167,7 +171,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 item.append(swatch, doc.createTextNode(entry.label)); return item;
             }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
-            detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
+            detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
                 : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in to show ${key === 'sentinel' ? 'Sentinel-2 imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
                     : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
@@ -188,7 +192,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                     detail.captureKey = signature;
                     detail.capture.replaceChildren(...captures.map(choice => { const option = node('option', '', choice.label); option.value = choice.id; option.title = choice.title || choice.label; option.setAttribute('aria-label', option.title); return option; }));
                 }
-                detail.capture.value = status.capture || 'latest'; detail.capture.disabled = !current.enabled || (status.capturePending ?? status.pending) === true;
+                detail.capture.value = status.capture || 'latest'; detail.capture.disabled = unavailable || !current.enabled || (status.capturePending ?? status.pending) === true;
                 detail.capture.title = detail.capture.selectedOptions[0]?.title || '';
             }
             const showRetry = shown && !zoomedOut && (status.retry === true || heldRecovery);

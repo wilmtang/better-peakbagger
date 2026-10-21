@@ -1,4 +1,4 @@
-Natural Earth BC and Alberta province outlines
+Natural Earth US states, BC and Alberta coverage outlines
 Authors: Tom Patterson, Nathaniel Vaughn Kelso, and contributors
 Source revision: ca96624a56bd078437bca8184e78163e5039ad19
 Source: https://raw.githubusercontent.com/nvkelso/natural-earth-vector/ca96624a56bd078437bca8184e78163e5039ad19/geojson/ne_50m_admin_1_states_provinces.geojson
@@ -7,6 +7,6 @@ Terms: https://www.naturalearthdata.com/about/terms-of-use/
 Natural Earth publishes this map data in the public domain and permits its
 use, modification and distribution without requesting permission.
 
-Better Peakbagger includes only the BC and Alberta outer rings, rounded to five
+Better Peakbagger includes the US state/DC and BC/Alberta outer rings, rounded to five
 decimal places. They select map services locally, with conservative padding.
 They do not establish land ownership, access or camping permission.

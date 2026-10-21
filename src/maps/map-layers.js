@@ -6,7 +6,7 @@ import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations } from './map-overlay-providers.js';
+import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -23,7 +23,7 @@ export function installMapLayers(win = window) {
     const state = Schema.mapOverlayState();
     let touched = false, revision = 1, capture = null;
     let binding = null, polling = null, frameMode = false, booting = false, active = true, disposed = false;
-    let terrainView = null, snotelAllowed = false, requestId = 0, stations = [];
+    let terrainView = null, snotelAllowed = false, requestId = 0, stations = [], coverage = null;
     let stationTimer = null, relayFrame = null;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
     let revealPending = false;
@@ -49,7 +49,7 @@ export function installMapLayers(win = window) {
             if (statuses.land.permission && !info.guidanceKeys.includes('bc')) statuses.land = { ...statuses.land, permission: false, pending: false, error: false, retry: false, message: '' };
             statuses.land = { ...statuses.land, ...info };
         }
-        control.render({ state, statuses, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
+        control.render({ state, statuses, coverage, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
         position();
     };
     const snapshot = () => ({ revision, state, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,
@@ -65,6 +65,19 @@ export function installMapLayers(win = window) {
         if (frameMode) return terrainView?.bounds;
         const bounds = binding?.map.getBounds();
         return bounds ? overlayBounds([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]) : null;
+    };
+    const reconcileCoverage = () => {
+        coverage = mapOverlayCoverage(stationView());
+        let changed = false;
+        for (const id of Schema.MAP_OVERLAY_IDS) if (coverage?.[id] === false && state[id].enabled) {
+            state[id].enabled = false; changed = true;
+            if (id === 'snotel') {
+                cancelReveal(); requestId++; post({ type: 'cancel' }); stations = [];
+                nearbyPending = false; nearbyRequest++; snowCard({ type: 'cancel' });
+                statuses.snotel = { ...statuses.snotel, pending: false, saved: false, overflow: false, count: 0 };
+            }
+        }
+        if (changed) revision++;
     };
     const sendStations = (reveal = false) => {
         const shown = state.snotel.enabled && active ? stations : [];
@@ -90,11 +103,12 @@ export function installMapLayers(win = window) {
     };
     const refresh = event => {
         if (event && revealPending) { cancelReveal(); requestId++; post({ type: 'cancel' }); }
-        paint();
+        apply();
         if (!frameMode && !booting) binding?.sentinel.refresh();
         clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
     };
     const apply = () => {
+        reconcileCoverage();
         relay();
         if (!frameMode && !booting && active && binding) {
             for (const id of ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
@@ -108,6 +122,7 @@ export function installMapLayers(win = window) {
     const changed = () => { touched = true; revision++; apply(); };
     const control = createMapLayerControl({ document: doc,
         onToggle(id, enabled) {
+            if (coverage?.[id] === false) { paint(); return; }
             state[id].enabled = enabled;
             if (id === 'snotel') {
                 cancelReveal(); revealPending = enabled;
@@ -119,10 +134,12 @@ export function installMapLayers(win = window) {
         },
         onOpacity(id, opacity) { state[id].opacity = opacity; changed(); }, onCommit: save,
         onCapture(value) {
+            if (coverage?.sentinel === false) return;
             if (frameMode) terrain('layerAction', { action: 'capture', id: 'sentinel', capture: value });
             else binding?.sentinel.select(value);
         },
         onRetry(id) {
+            if (coverage?.[id] === false || !state[id].enabled) return;
             if (id === 'snotel') loadStations();
             else if (frameMode) {
                 statuses[id] = { ...statuses[id], pending: true, error: false, retry: true,
@@ -297,7 +314,7 @@ export function installMapLayers(win = window) {
                 if (revealPending && terrainView && bounds.some((value, i) => Math.abs(value - terrainView.bounds[i]) > 1e-7)) {
                     cancelReveal(); requestId++; post({ type: 'cancel' });
                 }
-                terrainView = { bounds, zoom: data.zoom }; paint(); clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
+                terrainView = { bounds, zoom: data.zoom }; apply(); clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
             }
         }
     };

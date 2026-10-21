@@ -195,7 +195,7 @@ export const GENERATED_FILES = [
 export const NON_PACKAGE_NOTICES = [
     {
         key: 'natural-earth-canadian-land-routing',
-        name: 'Natural Earth BC and Alberta routing outlines',
+        name: 'Natural Earth overlay coverage outlines',
         version: 'ca96624a56bd078437bca8184e78163e5039ad19',
         license: 'LicenseRef-Natural-Earth-Public-Domain',
         noticeFile: 'third_party/natural-earth-NOTICE.txt',

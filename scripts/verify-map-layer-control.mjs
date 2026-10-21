@@ -47,7 +47,7 @@ try {
             onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
             onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:id==='snotel'?'Loading stations':'Loading map tiles'};paint()}});
         document.body.append(control.element);
-        function paint(){control.render({state,statuses,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
+        function paint(){control.render({state,statuses,coverage:window.fixture?.coverage,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
         window.fixture={control,state,statuses,paint,landInfo:publicLandInfo,showPopup:scale=>{
             control.dispose();
             const station={id:'679:WA:SNTL',name:'Paradise SNOTEL station',latitude:46.78,longitude:-121.74,elevation:1570};
@@ -246,6 +246,30 @@ try {
         await page.locator('[data-layer="snotel"] input').focus();
         await page.evaluate(() => { window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, count: 0, overflow: true, message: 'More than 50 stations. Zoom in.' }; window.fixture.paint(); }); await stable();
         assert.equal(await page.locator('[data-layer="snotel"] .bpb-layers-row-status').textContent(), 'Zoom in');
+        await page.evaluate(() => {
+            window.fixture.statuses.snotel = { ...window.fixture.statuses.snotel, overflow: false, message: 'No coverage here.' };
+            window.fixture.paint();
+        });
+        const stationToggle = page.getByRole('checkbox', { name: 'SNOTEL stations', exact: true }); await stationToggle.focus();
+        const regionGeometry = await geometry(), regionPanel = await page.locator('.bpb-layers-panel').boundingBox();
+        const regionScroll = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
+        for (const supported of [false, true, false, true]) {
+            await page.evaluate(supported => {
+                const fixture = window.fixture; fixture.coverage = { sentinel: true, slope: supported, land: supported, snotel: supported };
+                for (const id of ['slope', 'land', 'snotel']) fixture.state[id].enabled = false;
+                fixture.paint();
+            }, supported);
+            for (const id of ['slope', 'land', 'snotel']) {
+                assert.equal(await page.locator(`[data-layer="${id}"] input`).isDisabled(), !supported);
+                assert.equal(await page.locator(`[data-layer="${id}"] input`).isChecked(), false, 'returning to coverage never auto-enables an overlay');
+                if (!supported) assert.equal(await page.locator(`[data-layer="${id}"] .bpb-layers-row-status`).textContent(), 'No coverage');
+            }
+            assert.deepEqual(await geometry(), regionGeometry, 'coverage changes preserve rows, map and following content');
+            assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), regionPanel, 'coverage feedback preserves the panel dimensions');
+            assert.equal(await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop), regionScroll);
+            assert.equal(await page.locator('[data-layer="snotel"] button').evaluate(element => document.activeElement === element), true, 'disabling the focused toggle preserves focus on its row disclosure');
+            if (!supported && screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-regional.png`) });
+        }
         await page.evaluate(scale => window.fixture.showPopup(scale), scale);
         const official = page.getByRole('link', { name: 'View NRCS snow data', exact: true }); await official.focus();
         await page.evaluate(() => window.fixture.membership(true));
@@ -257,7 +281,7 @@ try {
         await page.evaluate(() => window.fixture.membership(false));
         assert.equal(await conditions.count(), 0, 'an unavailable condition action is removed');
         assert.equal(await official.evaluate(element => document.activeElement === element), true, 'revocation returns focus to the same official link');
-        cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true, popupFocus: true });
+        cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true, regionalCoverage: true, popupFocus: true });
     }
     const setupAssets = new Set(['bc-land/access.html', 'bc-land/access-head.js', 'bc-land/access.js', 'css/panel.css', 'css/gaia-access.css', 'css/bc-land-access.css', 'icons/icon-48.png']);
     await page.route(`https://www.peakbagger.com:${fixture.port}/dist/**`, async route => {

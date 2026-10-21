@@ -35,7 +35,8 @@ test('BC paints explicit ownership only, never untitled, mixed, private or uncla
     assert.deepEqual(JSON.parse(url.searchParams.get('dynamicLayers'))[0].drawingInfo.renderer, BC_LAND_RENDERER);
     assert.match(publicLandInfo([-125, 53, -124, 54]).legend, /partial/);
     assert.deepEqual(publicLandInfo([-125, 53, -124, 54]).guidanceKeys, ['bc']);
-    assert.deepEqual(publicLandInfo([-112, 54, -111, 55]).legendEntries.map(item => item.label), ['Crown land', 'Municipal']);
+    assert.deepEqual(publicLandInfo([-112, 54, -111, 55]).legendEntries, [], 'the legend follows the actual regional Alberta service extent');
+    assert.equal(publicLandInfo([-112, 54, -111, 55]).uncovered, true);
 });
 test('Alberta queries contain only local tile bounds and ownership classes', () => {
     const url = new URL(albertaLandTileUrl([0, 0, 256, 256], 500));

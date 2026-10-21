@@ -243,6 +243,28 @@ test('Sentinel uses its catalog zoom limit instead of reporting an unattempted s
     control.dispose(); dom.window.close();
 });
 
+test('unavailable regional overlays stay explained, unfocusable as toggles and immune to recovery clicks', () => {
+    const dom = new JSDOM('<body></body>'), document = dom.window.document, changes = [], retries = [];
+    const control = createMapLayerControl({ document, onToggle: (...args) => changes.push(args), onRetry: id => retries.push(id) });
+    document.body.append(control.element); control.trigger.click();
+    const state = Schema.mapOverlayState({ land: { enabled: true } }), statuses = { land: { error: true, retry: true } };
+    const checkbox = document.querySelector('[data-layer="land"] input'), disclosure = document.querySelector('[data-layer="land"] button');
+    control.render({ state, statuses }); checkbox.focus();
+    control.render({ state, statuses, coverage: { land: false } });
+    assert.equal(checkbox.disabled, true); assert.equal(checkbox.checked, false);
+    assert.equal(document.activeElement, disclosure, 'focus stays on the same row when its toggle becomes unavailable');
+    assert.equal(document.querySelector('[data-layer="land"] .bpb-layers-row-status').textContent, 'No coverage');
+    disclosure.click();
+    const detail = document.querySelector('.bpb-layers-detail:not([hidden])');
+    assert.match(detail.textContent, /No coverage here/);
+    assert.equal(detail.querySelector('input[type="range"]').disabled, true);
+    assert.equal(detail.querySelector('button').hidden, true);
+    checkbox.click(); detail.querySelector('button').click(); assert.deepEqual(changes, []); assert.deepEqual(retries, []);
+    control.render({ state: Schema.mapOverlayState(), coverage: { land: true } });
+    assert.equal(checkbox.disabled, false); assert.equal(checkbox.checked, false);
+    control.dispose(); dom.window.close();
+});
+
 test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
     const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);

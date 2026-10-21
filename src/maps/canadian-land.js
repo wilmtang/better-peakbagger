@@ -25,10 +25,12 @@ export const BC_LAND_RENDERER = { type: 'uniqueValue', field1: 'OWNER_TYPE',
         outline: { type: 'esriSLS', style: 'esriSLSSolid', color: [...color(category), 255], width: 0.6 },
     } })) };
 
-export const LAND_COVERAGE = Object.freeze({
-    bc: [-139.2, 48.2, -114, 60.1], ab: [-120, 49, -110, 60.1],
-    us: [[-125, 17, -65, 49.5], [-180, 51, -129, 72], [172, 51, 180, 54], [-161, 18, -154, 23]],
-});
+// US territories are not included in Natural Earth's US state/DC outlines.
+export const US_TERRITORY_BOUNDS = [
+    [-68, 17.5, -64.4, 18.7], // Puerto Rico and US Virgin Islands.
+    [144.5, 13.1, 146.2, 20.7], // Guam and Northern Mariana Islands.
+    [-171.2, -14.6, -168, -10.8], // American Samoa, including Swains Island.
+];
 // Published query extent of Alberta's regional ownership layer (WGS84).
 export const ALBERTA_PARCEL_EXTENT = [-117.84844, 49.13891, -113.58162, 53.64552];
 export const intersectsLandBounds = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
@@ -43,10 +45,10 @@ const inRing = (x, y, ring) => {
     }
     return inside;
 };
-const provinceIntersects = (bounds, province) => {
+const provinceIntersects = (bounds, province, padding, longitudePadding) => {
     // Conservative 0.05-degree padding avoids gaps at the coarse outline.
     // This selects services only; ownership always comes from parcel records.
-    const b = [bounds[0] - 0.05, bounds[1] - 0.05, bounds[2] + 0.05, bounds[3] + 0.05];
+    const b = [bounds[0] - longitudePadding, bounds[1] - padding, bounds[2] + longitudePadding, bounds[3] + padding];
     return provinceRings[province].some(({ ring, bbox }) => {
         if (!intersectsLandBounds(b, bbox)) return false;
         if ([[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].some(([x, y]) => inRing(x, y, ring))) return true;
@@ -56,13 +58,23 @@ const provinceIntersects = (bounds, province) => {
         });
     });
 };
+export const US_REGIONS = Object.keys(provinceRings).filter(key => key.startsWith('us_'));
+export function regionCoverage(bounds, regions, padding = 0.05, longitudePadding = padding) {
+    const center = (bounds[0] + bounds[2]) / 2, shift = Math.floor((center + 180) / 360) * 360;
+    return [-360, 0, 360].some(offset => {
+        const candidate = [bounds[0] - shift + offset, bounds[1], bounds[2] - shift + offset, bounds[3]];
+        return regions.some(region => provinceIntersects(candidate, region, padding, longitudePadding));
+    });
+}
 export function landCoverage(bounds) {
     if (!bounds) return ['us'];
     const center = (bounds[0] + bounds[2]) / 2, shift = Math.floor((center + 180) / 360) * 360;
     const wrapped = [bounds[0] - shift, bounds[1], bounds[2] - shift, bounds[3]];
     return ['us', 'bc', 'ab'].filter(id => [-360, 0, 360].some(offset => {
         const candidate = [wrapped[0] + offset, wrapped[1], wrapped[2] + offset, wrapped[3]];
-        return id === 'us' ? LAND_COVERAGE.us.some(extent => intersectsLandBounds(candidate, extent)) : provinceIntersects(candidate, id);
+        return id === 'us' ? US_REGIONS.some(region => provinceIntersects(candidate, region, 0.05, 0.05)) || US_TERRITORY_BOUNDS.some(extent => intersectsLandBounds(candidate, extent))
+            // The regional Alberta service is not province-wide coverage.
+            : (id !== 'ab' || intersectsLandBounds(candidate, ALBERTA_PARCEL_EXTENT)) && provinceIntersects(candidate, id, 0.05, 0.05);
     }));
 }
 export function bcLandTileUrl(bbox) {
