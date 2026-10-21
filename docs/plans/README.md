@@ -1,5 +1,10 @@
 # Active plans
 
+- [Owned activity export from Garmin and Strava feeds](activity-feed-export.md)
+  — proposed; optional per-service access, owner-only activity buttons, an
+  anchored review panel, and leased extraction tabs with explicit privacy,
+  lifecycle, layout-stability, and live-provider verification gates.
+
 - [Shared map Layers menu and overlays](map-layers-and-overlays.md) — proposed;
   one compact, collapsible ascent/peak/BigMap control for independent Sentinel-2
   imagery, viewport SNOTEL stations, slope angle and public lands, with raster
