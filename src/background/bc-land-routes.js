@@ -5,6 +5,7 @@ import { tileBounds } from '../maps/map-overlay-providers.js';
 import { readBCTileCoordinates } from '../maps/bc-land-client.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
+import { temporaryHttpStatus } from '../net/retry-transient.js';
 
 export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = () => false, fetchImpl = globalThis.fetch }) {
     const jobs = new Map();
@@ -28,6 +29,7 @@ export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = 
             if (deadline.signal.aborted) return { ok: false };
             const response = await deadline.run(fetchImpl(bcLandTileUrl(bbox), { signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error' }));
             if (response.status === 429) { retryAt = rateLimitError('BC maps', response).retryAt; return { ok: false, code: 'rate-limit', retryAt }; }
+            if (temporaryHttpStatus(response.status)) return { ok: false, code: 'temporary' };
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/png') || Number(response.headers.get('content-length')) > 1048576) return { ok: false };
             reader = response.body.getReader(); let length = 0; const chunks = [];
             while (true) {
@@ -40,7 +42,7 @@ export function createBCLandRoutes({ ext, isPeakbaggerSender, isTerrainSender = 
                 || new DataView(bytes.buffer).getUint32(16) !== 256 || new DataView(bytes.buffer).getUint32(20) !== 256 || deadline.signal.aborted) return { ok: false };
             let encoded = ''; for (let i = 0; i < length; i += 8192) encoded += String.fromCharCode(...bytes.subarray(i, i + 8192));
             return { ok: true, image: btoa(encoded) };
-        } catch { return { ok: false }; }
+        } catch (error) { return { ok: false, ...(error.name === 'TimeoutError' || error instanceof TypeError ? { code: 'temporary' } : {}) }; }
         finally { if (reader) void reader.cancel().catch(() => {}); deadline.clear(); jobs.delete(id); }
     };
     const cancel = (message, sender) => {

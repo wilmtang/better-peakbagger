@@ -198,6 +198,15 @@ test('partly loaded slope shading is described separately from an unavailable la
     assert.match(document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Available shading is still shown/);
     control.dispose(); dom.window.close();
 });
+test('a failed tile does not hide progress while neighboring tiles are still recovering', () => {
+    const dom = new JSDOM('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    control.render({ state: Schema.mapOverlayState({ land: { enabled: true } }), statuses: { land: { pending: true, error: true, partial: true, retry: true } } });
+    control.trigger.click(); document.querySelector('[data-layer="land"] button').click();
+    assert.equal(document.querySelector('[data-layer="land"] .bpb-layers-row-status').textContent, 'Loading');
+    assert.equal(document.querySelector('[data-layer="land"] button').getAttribute('aria-busy'), 'true');
+    control.dispose(); dom.window.close();
+});
 
 test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];

@@ -17,6 +17,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         const { id, coordinates, canvas, done } = record, controller = new AbortController();
         controllers.set(canvas, controller); record.failed = false;
         tiles.draw(id, coordinates, canvas, controller.signal).then(() => {
+            record.failed = tiles.failed(id, coordinates);
             if (records.get(canvas) === record && controllers.get(canvas) === controller) done(null, canvas);
         }, error => {
             if (records.get(canvas) !== record || controllers.get(canvas) !== controller) return;
@@ -52,8 +53,9 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
     return {
         set(id, state) {
             if (id === 'snotel') return;
+            if (id === 'land') tiles.landCooldowns(state.providerCooldowns);
             if (!state.enabled || state.opacity === 0) { remove(id); return; }
-            if (state.retryAt > Date.now() && !layers.has(id)) return;
+            if (state.retryAt > Date.now() && !layers.has(id) && !(id === 'land' && Object.keys(state.providerCooldowns || {}).length)) return;
             if (id === 'sentinel' && !hasScenes) return; // Wait for a validated capture.
             (layers.get(id) || add(id)).setOpacity(state.opacity / 100);
         },
@@ -61,7 +63,6 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         clearSentinel() { remove('sentinel'); hasScenes = false; tiles.setScenes([]); },
         retry(id) {
             if (!tiles.retry(id)) return;
-            if (id !== 'slope') { layers.get(id)?.redraw(); return; }
             const visible = [...records.values()].filter(record => record.id === id);
             const failed = visible.filter(record => record.failed);
             // Retry only holes. An explicit Reload refreshes in place, leaving

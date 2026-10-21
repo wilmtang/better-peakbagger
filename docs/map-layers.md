@@ -18,14 +18,19 @@ Each row has a short secondary line: opacity or station count when ready,
 stay in that layer's settings. Turning a layer off hides stale loading/errors.
 Spinner motion stops when reduced motion is requested.
 
-Slope tiles get one automatic retry for a temporary network failure, timeout or
+Raster tiles get one automatic retry for a temporary network failure, timeout or
 HTTP 408/500/502/503/504. Other errors and provider rate limits need explicit
-recovery; rate-limit deadlines still apply. A partial slope failure says
-**Partly loaded** and keeps available shading visible. Native Retry requests
-only missing tiles; 3D refreshes its existing source while retaining painted
-tiles. Leaving a failed tile behind removes its warning when the native tile
+recovery; rate-limit deadlines still apply. Partial slope, land and Sentinel
+failures say **Partly loaded** and keep available content visible. Native Retry
+requests only missing tiles; 3D refreshes its existing source while retaining
+painted tiles. Leaving a failed tile behind removes its warning when the native tile
 unloads or the terrain viewport changes. No-data areas remain clear, rather
 than being treated as a transport failure or evidence of gentle ground.
+Land providers are independent within each tile: a BC permission or service
+failure cannot erase validated US/Alberta coverage. Each Alberta provider pass
+still requires complete, validated pagination before any of its polygons are
+published. Provider-specific cooldowns survive renderer changes and Full Screen
+handoffs; these contain only named service deadlines, never request URLs.
 
 Retry remains anchored and rejects repeated activation while work is pending.
 After success, a focused Retry becomes a working **Reload** action until focus
@@ -66,6 +71,9 @@ Coverage estimates geographic footprints, not cloud-free pixels. Missing pinned
 captures remain unavailable instead of silently switching to Latest. Temporary
 catalog errors retain already rendered imagery with explicit feedback. Choosing
 a different capture replaces its tiles; failed tiles show a retryable error.
+Image recovery keeps the selected capture and reuses the valid catalog rather
+than starting another search. Search errors have their own **Search failed**
+summary; imagery errors do not disable ready capture choices or change dates.
 
 SNOTEL shares the snow card's isolated metadata client and seven-day public
 catalog cache. Viewport filtering happens locally; NRCS receives no map bounds
@@ -142,9 +150,9 @@ eight scenes per capture, 4 MiB per encoded image, 1024-pixel decoded dimensions
 and 15-second transport/body/decode deadlines. Decoded bitmaps are closed after
 drawing, and cancellation propagates through queued work and fetches. There is
 no extension-managed persistent satellite or analytical tile cache.
-The single slope retry waits 350 ms and uses the same concurrency budget; each
+The single raster retry waits 350 ms and uses the same concurrency budget; each
 attempt retains the 15-second deadline. Turning the layer off also cancels this
-wait. Slope success/failure feedback tracks retained tile coordinates, instead
+wait. Raster success/failure feedback tracks retained tile coordinates, instead
 of preserving the first error for the renderer's entire lifetime. Browser HTTP
 caching remains responsible for reusing successful provider responses.
 

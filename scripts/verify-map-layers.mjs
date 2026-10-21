@@ -50,7 +50,9 @@ try {
     page.on('pageerror', error => errors.push(error.message));
     resources.defer('Sentinel held catalogs', () => held.splice(0).forEach(resolve => resolve()));
     let searches = 0, tileRequests = 0, forbidCatalog = false;
-    const holdCatalog = false, failedCatalog = false, failedTiles = false;
+    const holdCatalog = false, failedCatalog = false;
+    let imageryMode = 'ready', missingImageryUrl = null; const heldImagery = [];
+    resources.defer('held imagery tiles', () => { imageryMode = 'ready'; heldImagery.splice(0).forEach(resolve => resolve()); });
     const capture = id => ({ id, collection: 'sentinel-2-l2a',
         properties: { datetime: new Date(Date.now() - (id === 'scene_new' ? 2 : 3) * 86400000).toISOString(),
             platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 4 },
@@ -105,8 +107,10 @@ try {
                 headers: cors, body: JSON.stringify({ features: catalog }) });
         } else {
             tileRequests++;
-            await route.fulfill({ status: failedTiles ? 503 : 200, contentType: 'image/png', headers: cors,
-                body: failedTiles ? '' : tile(route.request().url().includes('scene_old') ? '#315bb0' : '#347d61') });
+            const url = route.request().url(); if (imageryMode === 'partial') missingImageryUrl ??= url;
+            if (imageryMode === 'hold' && url === missingImageryUrl) await new Promise(resolve => heldImagery.push(resolve));
+            await route.fulfill({ status: imageryMode === 'partial' && url === missingImageryUrl ? 404 : 200, contentType: 'image/png', headers: cors,
+                body: tile(url.includes('scene_old') ? '#315bb0' : '#347d61') });
         }
     });
     let slopeMode = 'ready', missingSlopeUrl = null; const slopeRequests = new Map(), heldSlope = [];
@@ -320,6 +324,7 @@ try {
     await page.getByRole('button', { name: /^Layers/ }).click(); landMode = 'error';
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
     await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Couldn’t load', 'native public-land failure is explained in its row');
+    await wait(() => document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry')?.getAttribute('aria-disabled') === 'false', 'native land retries have settled before user recovery');
     const recovery = page.getByRole('button', { name: /^(Retry|Reload)$/ }); await recovery.focus();
     const recoveryBox = await recovery.boundingBox(); landMode = 'hold'; await recovery.click();
     await waitForCondition(() => heldLand.length, { description: 'retry is waiting on actual public-land tile work', isReady: count => count >= 4 });
@@ -333,6 +338,23 @@ try {
     assert.deepEqual(await recovery.boundingBox(), recoveryBox);
     if (output) await page.screenshot({ path: path.join(output, 'native-recovered.png') });
     cases.push('native readable loading/failure, body wait, guarded retry and focused recovery');
+    await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
+    await verifyCaptureMetadata();
+    const nativePicker = page.getByRole('combobox', { name: 'Sentinel-2 capture' });
+    const nativePinned = await nativePicker.locator('option').nth(1).getAttribute('value');
+    imageryMode = 'partial'; missingImageryUrl = null; await nativePicker.selectOption(nativePinned);
+    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-row-status')?.textContent === 'Partly loaded', 'native imagery explains partial coverage');
+    const searchesBeforeRecovery = searches, imageryRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ });
+    imageryMode = 'hold'; await imageryRetry.click();
+    await waitForCondition(() => heldImagery.length, { description: 'native imagery retries its missing tile', isReady: count => count === 1 });
+    assert.equal(searches, searchesBeforeRecovery, 'image recovery does not repeat the capture search');
+    assert.equal(await nativePicker.inputValue(), nativePinned);
+    imageryMode = 'ready'; heldImagery.splice(0).forEach(resolve => resolve());
+    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-value')?.hidden === false, 'native imagery recovery clears its partial warning');
+    await verifyCaptureMetadata();
+    await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).uncheck();
+    await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
+    cases.push('native imagery recovers the pinned pass without a new catalog or full redraw');
     // Exercise real MAIN -> isolated -> worker tile messages. Native permission
     // prompts are deliberately stubbed so this hidden check cannot steal focus.
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
@@ -402,6 +424,21 @@ try {
         await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay).some(layer => Object.values(layer._tiles || {}).some(({el}) => el.getContext('2d').getImageData(128,128,1,1).data[3] === 0))), { description: 'unsupported Alberta area stays clear' });
         await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
     }
+    const boundaryMap = page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
+    await worker.evaluate(() => { globalThis.__bpbBCPermission.allowed = false; globalThis.__bpbBCPermission.setup = false; delete globalThis.__bpbBCPermission.finish; });
+    await boundaryMap.evaluate(() => mapsPlaceholder.setView([49,-122],10,{animate:false}));
+    await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
+    await page.getByRole('slider', { name: 'Public lands opacity' }).fill('100');
+    await page.getByRole('slider', { name: 'Public lands opacity' }).dispatchEvent('input');
+    await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Partly loaded', 'BC permission does not hide US land coverage');
+    if (output) await page.screenshot({ path: path.join(output, 'land-boundary-partial.png') });
+    await waitForCondition(() => page.locator('iframe#if').screenshot().then(png => countImageColors(png, [[230,159,0]])),
+        { description: 'US land remains painted at the provider boundary', isReady: values => values[0] > 1000 });
+    await page.getByRole('button', { name: 'Allow BC land maps', exact: true }).click();
+    await waitForCondition(() => worker.evaluate(() => typeof globalThis.__bpbBCPermission.finish === 'function'), { description: 'explicit boundary access action' });
+    await worker.evaluate(() => globalThis.__bpbBCPermission.finish(true));
+    await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-value')?.hidden === false, 'boundary provider access recovers missing coverage');
+    cases.push('partial land at the US/BC boundary preserves US coverage and explicit BC access');
     const dem = Buffer.from('UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef', 'base64');
     await context.route('https://tiles.mapterhorn.com/**', route => route.fulfill({contentType:'image/webp',headers:{'access-control-allow-origin':'*'},body:dem}));
     // Full Screen uses the viewport, rather than an unstyled iframe's 300x150
@@ -435,6 +472,19 @@ try {
     const bluePixels=()=>coloredPixels('blue');
     await waitForCondition(bluePixels,{description:'painted pinned capture in hardware 3D',timeoutMs:30000,isReady:count=>count>1000});
     assert.equal(await capturePicker.inputValue(),older,'pinned pass survives engine handoff');
+    await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).uncheck();
+    imageryMode = 'partial'; missingImageryUrl = null;
+    await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
+    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-row-status')?.textContent === 'Partly loaded', 'terrain imagery explains partial coverage');
+    const availableImagery = await waitForCondition(bluePixels, { description: 'available pinned imagery is visible', isReady: count => count > 1000 });
+    const terrainImagerySearches = searches; imageryMode = 'hold';
+    await page.getByRole('button', { name: /^(Retry|Reload)$/ }).click();
+    await waitForCondition(() => heldImagery.length, { description: 'terrain imagery retries its missing tile', isReady: count => count === 1 });
+    assert.ok(await bluePixels() >= availableImagery * .9, 'terrain imagery recovery preserves painted tiles');
+    assert.equal(searches, terrainImagerySearches); assert.equal(await capturePicker.inputValue(), older);
+    imageryMode = 'ready'; heldImagery.splice(0).forEach(resolve => resolve());
+    await wait(() => document.querySelector('[data-layer="sentinel"] .bpb-layers-value')?.hidden === false, 'terrain imagery clears recovered failure');
+    cases.push('hardware imagery recovers the same capture while retaining good textures');
     await capturePicker.selectOption('latest');
     await waitForCondition(()=>coloredPixels('green'),{description:'explicit latest capture painted in 3D',timeoutMs:30000,isReady:count=>count>1000});
     await page.locator('[data-layer="sentinel"] button').click();await page.locator('[data-layer="sentinel"] button').click();
@@ -479,6 +529,7 @@ try {
     landMode = 'error'; await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
     await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Couldn’t load', 'terrain public-land failure is explained');
+    await wait(() => document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry')?.getAttribute('aria-disabled') === 'false', 'terrain land retries have settled before user recovery');
     const terrainRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ }); landMode = 'hold'; await terrainRetry.click();
     await waitForCondition(() => heldLand.length, { description: 'terrain retry waits on actual tile work', isReady: count => count >= 4 });
     assert.equal(await page.locator('[data-layer="land"] .bpb-layers-row-status').textContent(), 'Loading');

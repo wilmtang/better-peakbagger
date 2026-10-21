@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createLeafletOverlays } from '../../src/maps/map-overlay-leaflet.js';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-test('slope retry fills rate-limit-aborted holes while leaving successful native canvases in place', async t => {
+for (const id of ['slope', 'land', 'sentinel']) test(`${id} retry fills missing tiles while leaving successful native canvases in place`, async t => {
     const oldBitmap = globalThis.createImageBitmap;
     globalThis.createImageBitmap = async () => ({ width: 256, height: 256, close() {} });
     t.after(() => { if (oldBitmap === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = oldBitmap; });
@@ -18,6 +18,7 @@ test('slope retry fills rate-limit-aborted holes while leaving successful native
     const map = { getPane: () => ({}), removeLayer(current) { for (const canvas of canvases) current.events.tileunload({ tile: canvas }); } };
     const win = { document, addEventListener() {}, removeEventListener() {}, fetch: (_url, { signal }) => {
         calls++; if (calls === 2 || calls > 3) return Promise.resolve(image());
+        if (id === 'land' && calls === 1) { held.push(null); return Promise.resolve(new Response('', { status: 404 })); }
         return new Promise((resolve, reject) => {
             held.push(resolve); signal.addEventListener('abort', () => reject(new DOMException('Cancelled.', 'AbortError')), { once: true });
         });
@@ -37,12 +38,14 @@ test('slope retry fills rate-limit-aborted holes while leaving successful native
     } } } };
     const owner = createLeafletOverlays({ win, map, onError: (_id, error) => { limited = error.retryAt; } });
     try {
-        owner.set('slope', { enabled: true, opacity: 60 }); await tick();
+        if (id === 'sentinel') owner.scenes([{ id: 'scene_new', bounds: [-122, 46, -121, 47] }], 60);
+        else owner.set(id, { enabled: true, opacity: 60 });
+        await tick();
         const painted = canvases[1].painted; assert.ok(painted > 0);
         held[1](new Response('', { status: 429, headers: { 'retry-after': '120' } })); await tick();
-        assert.equal(done.get(canvases[0]), 'AbortError'); assert.equal(done.get(canvases[2]), 'RateLimitError');
-        owner.retry('slope'); assert.equal(calls, 3, 'the provider cooldown cannot be bypassed');
-        now = limited + 1; owner.retry('slope'); await tick();
+        assert.equal(done.get(canvases[0]), id === 'land' ? 'Error' : 'AbortError'); assert.equal(done.get(canvases[2]), 'RateLimitError');
+        owner.retry(id); await tick(); assert.equal(calls, 3, 'the provider cooldown cannot be bypassed');
+        now = limited + 1; owner.retry(id); await tick();
         assert.equal(canvases[1].painted, painted, 'successful shading is untouched');
         assert.equal(calls, 5, 'both the rejected tile and its aborted neighbor are retried');
         assert.ok(canvases.every(canvas => done.get(canvas) === 'loaded'));

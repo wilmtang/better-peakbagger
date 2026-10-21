@@ -926,3 +926,48 @@ coverage cannot be guaranteed by local recovery. Browser fixtures stub provider
 responses and permission decisions; full live authenticated reproduction,
 physical touch, screen-reader speech and native OS focus remain unproven.
 Prior Canadian coverage and full Firefox map-integration gaps remain separate.
+
+## Follow-up: share raster recovery across overlays
+
+**Fixed and verified:** all three raster overlays now use retained tile outcomes,
+one bounded transient retry, current-view error retirement and recovery that
+keeps valid native canvases/terrain textures. Sentinel imagery retry reuses the
+selected capture and catalog; search failures have a separate summary. Valid
+land provider results remain visible when another regional source fails. Each
+Alberta pass still requires complete, valid pagination before publication.
+BC's narrow worker relay distinguishes temporary failures from permission and
+validation failures. US, BC and Alberta cooldowns remain separate, validated
+service deadlines through frame snapshots and Full Screen handoffs.
+
+All 3,105 tests passed, as did scoped ESLint and web-ext lint (eight owned
+warnings). New land/imagery automatic-recovery and same-capture assertions failed
+against read-only original modules, then passed the fix. Existing renderer stubs
+now model source refresh without inventing another catalog response. Hidden
+Chrome 156.0.8078.4 and Firefox 157 passed eight component cases each at 736/320
+by 800, both themes and normal/double text. The overview remains 232 by 134
+normally and approximately 232 by 245 at doubled text; focus, Retry/Allow
+geometry, scroll, partial permissions and capture-search feedback passed.
+
+Hidden real-extension Chrome at 1000 by 700 passed all native map surfaces,
+missing-imagery-only native recovery without a catalog request, US/BC partial
+coverage and explicit access recovery. Hardware 3D on ANGLE/Metal Apple M3 Pro
+kept the selected imagery pass and painted textures while recovering. Existing
+land, slope, cloud metadata, SNOTEL, palette, alpha and handoff checks passed.
+The new boundary check waits for actual full-opacity pixels after status is
+published, rather than treating metadata as rendered output. An initial run
+also exposed a real mixed-state issue: rows now show Loading while neighboring
+requests are still active, then show partial/failure feedback when settled.
+The final real-manifest Chrome startup/BFCache check passed at 1000 by 760.
+Native boundary, terrain, dark/narrow and enlarged partial feedback was visually
+inspected. Browser verifiers reported teardown.
+
+**Intentionally not changed:** provider coverage, agency colors, opacity,
+capture identity/cloud labels, permissions and activity-data boundaries. No
+persistent tile cache, extra host permission or automatic capture-date switch
+was added. SNOTEL metadata recovery is a separate follow-up unit.
+
+**Changed but not fully proven:** provider responses and permission decisions
+are stubbed in browser fixtures. Live provider failure distributions, native
+permission prompts, screen-reader speech, physical touch and OS focus remain
+unproven. Prior partial Canadian coverage and full Firefox map-integration gaps
+remain separate.

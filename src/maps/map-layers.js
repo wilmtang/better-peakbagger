@@ -6,7 +6,7 @@ import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { SLOPE_BANDS, publicLandInfo, overlayBounds, slopeTileStatus } from './map-overlay-providers.js';
+import { SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -52,7 +52,7 @@ export function installMapLayers(win = window) {
         control.render({ state, statuses, theme: theme() });
         position();
     };
-    const snapshot = () => ({ revision, state, capture, menuOpen: control.isOpen(),
+    const snapshot = () => ({ revision, state, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,
         cooldowns: Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id, statuses[id]?.retryAt || 0])) });
     const relay = () => {
         if (relayFrame !== null) return;
@@ -93,7 +93,7 @@ export function installMapLayers(win = window) {
     const apply = () => {
         relay();
         if (!frameMode && !booting && active && binding) {
-            for (const id of ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], retryAt: statuses[id].retryAt });
+            for (const id of ['sentinel', 'land', 'slope']) binding.engine.set(id, { ...state[id], retryAt: statuses[id].retryAt, providerCooldowns: statuses[id].providerCooldowns });
             binding.sentinel.cooldown(statuses.sentinel.retryAt);
             if (state.sentinel.enabled && state.sentinel.opacity > 0) binding.sentinel.activate(capture);
             else binding.sentinel.deactivate();
@@ -124,7 +124,7 @@ export function installMapLayers(win = window) {
                     message: id === 'sentinel' ? 'Finding captures…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' };
                 paint(); terrain('layerAction', { action: 'retry', id });
             }
-            else if (id === 'sentinel') { binding?.engine.retry(id); binding?.sentinel.retry(); }
+            else if (id === 'sentinel') binding?.sentinel.retry();
             else { statuses[id] = { ...statuses[id], pending: true, error: false, permission: false, retry: true,
                 message: id === 'land' ? 'Loading public lands' : 'Loading slope shading' }; binding?.engine.retry(id); paint(); }
         },
@@ -159,27 +159,25 @@ export function installMapLayers(win = window) {
                 unbind();
                 const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onError(id, error) {
                     if (id === 'sentinel') binding?.sentinel.tileError(error);
+                    else if (id === 'land') return; // Complete provider outcomes supply land feedback below.
                     else { statuses[id] = { ...statuses[id], pending: false, error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: error?.retryAt || 0,
                         message: error?.code === 'bc-permission-required' ? 'Allow BC parcel maps.' : 'Some map tiles are unavailable. Retry.' }; paint();
                     if (error?.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); } }
                 }, onActivity(id, activity) {
                     if (!active || frameMode || booting || !state[id].enabled || state[id].opacity === 0) return;
                     if (id === 'sentinel') binding?.sentinel.tileActivity(activity);
-                    else if (id === 'slope') {
-                        if (statuses[id].retryAt > Date.now()) return;
-                        statuses[id] = { ...statuses[id], ...slopeTileStatus(activity), permission: false, retryAt: 0,
+                    else {
+                        if (id === 'slope' && statuses[id].retryAt > Date.now()) return;
+                        const previous = JSON.stringify(statuses.land.providerCooldowns);
+                        statuses[id] = { ...statuses[id], ...rasterTileStatus(id, activity),
                             retry: activity.error || activity.pending && statuses[id].retry === true };
                         paint();
-                    }
-                    else if (!activity.error && (activity.pending || activity.complete)) {
-                        statuses[id] = { ...statuses[id], pending: activity.pending,
-                            ...(activity.pending || activity.complete ? { error: false, permission: false, retryAt: 0,
-                                retry: activity.pending && statuses[id].retry === true, message: activity.pending ? id === 'land' ? 'Loading public lands' : 'Loading slope shading' : '' } : {}) };
-                        paint();
+                        if (id === 'land' && previous !== JSON.stringify(statuses.land.providerCooldowns)) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
                     }
                 } });
                 const sentinel = createSentinelSession({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() }), fetchImpl: owner.fetch.bind(owner),
                     replaceScenes: scenes => engine.scenes(scenes, state.sentinel.opacity), clearScenes: () => engine.clearSentinel(),
+                    retryTiles: () => engine.retry('sentinel'),
                     onStatus: status => {
                         const previous = statuses.sentinel.retryAt;
                         statuses.sentinel = { ...statuses.sentinel, ...status }; paint(); if (!status.pending && status.message) control.announce(status.message);
@@ -229,6 +227,7 @@ export function installMapLayers(win = window) {
             if (data.type === 'handoff' && !touched) {
                 const next = readLayerSnapshot(data.snapshot);
                 if (next) {
+                    statuses.land.providerCooldowns = next.landCooldowns;
                     Object.assign(state, next.state); capture = next.capture;
                     for (const id of Schema.MAP_OVERLAY_IDS) if (next.cooldowns[id] > Date.now()) statuses[id] = { ...statuses[id], retryAt: next.cooldowns[id], error: true, retry: true, message: 'Map service is busy. Try again later.' };
                     changed(); loadStations();
@@ -270,9 +269,9 @@ export function installMapLayers(win = window) {
             frameMode = booting = false; terrainView = null; revision++; apply(); refresh();
         } else if (data.dir === 'toPage' && data.type === 'layerStatus' && frameMode) {
             const status = readLayerStatus(data); if (status && status.revision === revision) {
-                const previous = statuses[status.id].retryAt;
+                const previous = statuses[status.id].retryAt, previousLand = JSON.stringify(statuses.land.providerCooldowns);
                 statuses[status.id] = { ...statuses[status.id], ...status }; paint(); if (!status.pending && status.message) control.announce(status.message);
-                if (status.retryAt > Date.now() && previous !== status.retryAt) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
+                if (status.retryAt > Date.now() && previous !== status.retryAt || status.id === 'land' && previousLand !== JSON.stringify(statuses.land.providerCooldowns)) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
             }
         } else if (data.dir === 'toPage' && data.type === 'layerCapture' && frameMode) {
             // This acknowledges a choice the frame already applied. Advancing

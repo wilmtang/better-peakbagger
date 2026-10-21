@@ -5,20 +5,23 @@ import { searchSentinel, sentinelView, sentinelTarget } from './sentinel-core.js
 import { mountainTime } from '../time/mountain-time.js';
 import { sentinelCaptureChoice } from './sentinel-layer.js';
 
-export function createSentinelSession({ readView, replaceScenes, clearScenes, onStatus, onCapture = () => {},
+export function createSentinelSession({ readView, replaceScenes, clearScenes, retryTiles = () => {}, onStatus, onCapture = () => {},
     search = searchSentinel, fetchImpl, debounceMs = 300 }) {
     let active = false, disposed = false, revision = 0, controller = null, timer = null;
     let captures = [], target = null, rendered = '', retryAt = 0, tileFailed = false, zone = null, catalogValid = false;
     let status = {};
-    let tilePending = false, retrying = false;
+    let tilePending = false, tilePartial = false, retrying = false;
     const report = () => {
-        if (!status.pending && !tilePending && !status.error) retrying = false;
-        onStatus({ ...status, pending: !status.error && (status.pending === true || tilePending), capturePending: status.pending === true,
-            retry: status.retry === true || retrying, message: tilePending && !status.pending && !status.error ? 'Loading imagery' : status.message });
+        if (!status.pending && !tilePending && !status.error && !tileFailed) retrying = false;
+        onStatus({ ...status, error: status.error === true || tileFailed, partial: tilePartial, captureError: status.error === true,
+            pending: status.pending === true || tilePending, capturePending: status.pending === true,
+            retry: status.retry === true || tileFailed || retrying,
+            message: status.pending || status.error ? status.message : tileFailed ? tilePartial ? 'Some imagery couldn’t load. Available imagery is shown.'
+                : 'Imagery couldn’t load. Retry this capture.' : tilePending ? 'Loading imagery' : status.message });
     };
     const publish = patch => { status = { ...status, ...patch }; report(); };
     const cancel = () => { revision++; controller?.abort(); controller = null; clearTimeout(timer); timer = null; };
-    const clear = () => { rendered = ''; tileFailed = false; tilePending = false; clearScenes(); };
+    const clear = () => { rendered = ''; tileFailed = tilePartial = tilePending = false; clearScenes(); };
     const choose = (retry = false) => {
         const current = target ? captures.find(candidate => candidate.platform === target.platform
             && candidate.orbit === target.orbit && Math.abs(candidate.time - target.time) <= 900000) : captures[0];
@@ -28,9 +31,10 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
         if (target && !current) choices.push(option(target, 'missing'));
         if (current) {
             const key = JSON.stringify(current.scenes.map(scene => [scene.id, scene.bounds]).sort());
-            if (key !== rendered || retry && tileFailed) { tileFailed = false; replaceScenes(current.scenes); tilePending = true; rendered = key; }
+            if (key !== rendered) { tileFailed = tilePartial = false; replaceScenes(current.scenes); tilePending = true; rendered = key; }
+            else if (retry && tileFailed) { tileFailed = tilePartial = false; tilePending = true; retryTiles(); }
         } else clear();
-        publish({ pending: false, error: tileFailed, retry: tileFailed, retryAt: 0, captures: choices,
+        publish({ pending: false, error: false, retry: false, retryAt: 0, captures: choices,
             capture: target && current !== captures[0] ? current?.key || 'missing' : 'latest',
             message: current ? `Coverage ${Math.round(current.coverage * 100)}% · Clouds ${Number.isFinite(current.cloud) ? `${Math.round(current.cloud)}%` : 'unknown'}`
                 : target ? 'This capture does not cover the view.' : 'No captures in the past 30 days.' });
@@ -74,7 +78,13 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
             else { const capture = captures.find(candidate => candidate.key === value); if (!capture) return; target = sentinelTarget(capture); }
             onCapture(target); if (catalogValid) choose(); else void load();
         },
-        retry() { retrying = true; void load(true); },
+        retry() {
+            if (!active || disposed || retryAt > Date.now()) return;
+            retrying = true;
+            if (catalogValid && rendered && tileFailed) {
+                tileFailed = tilePartial = false; tilePending = true; report(); retryTiles();
+            } else void load(true);
+        },
         cooldown(value) {
             if (!Number.isFinite(value) || value <= Date.now() || value <= retryAt) return;
             retryAt = value; cancel();
@@ -83,10 +93,16 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
         tileError(error) {
             if (!active) return;
             tileFailed = true;
-            if (error?.code === 'rate-limit') { retryAt = error.retryAt; cancel(); }
-            publish({ error: true, pending: false, retry: true, retryAt, message: 'Imagery tiles unavailable. Change capture or Retry.' });
+            tilePending = false;
+            if (error?.code === 'rate-limit') { retryAt = error.retryAt; cancel(); status.pending = false; }
+            publish({ retryAt });
         },
-        tileActivity(activity) { if (!active) return; tilePending = activity.pending; report(); },
+        tileActivity(activity) {
+            if (!active) return;
+            tilePending = activity.pending;
+            if (activity.error || activity.complete) { tileFailed = activity.error; tilePartial = activity.partial === true; }
+            report();
+        },
         dispose() { disposed = true; active = false; cancel(); clear(); },
     };
 }

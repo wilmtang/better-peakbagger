@@ -40,10 +40,15 @@ export const OVERLAY_ATTRIBUTION = {
     slope: '<a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a>',
     land: '<a href="https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview">USGS PAD-US 4.1</a> · <a href="https://catalogue.data.gov.bc.ca/dataset/parcelmap-bc-parcel-fabric">ParcelMap BC</a> · <a href="https://geospatial.alberta.ca/arcgis/rest/services/Hosted/Land_use_owndership_NN_project/FeatureServer/10">Alberta Crown parcels</a>',
 };
-export function slopeTileStatus(activity) {
+export function rasterTileStatus(id, activity) {
+    const land = id === 'land';
     return { pending: activity.pending, error: activity.error, partial: activity.partial === true,
-        message: activity.error ? activity.partial ? 'Some slope tiles couldn’t load. Available shading is still shown.'
-            : 'Slope shading couldn’t load. Try again.' : activity.pending ? 'Loading slope shading' : '' };
+        permission: land && activity.permission === true, retryAt: land ? activity.retryAt || 0 : 0,
+        ...(land ? { providerCooldowns: activity.providerCooldowns || {} } : {}),
+        message: activity.permission ? activity.partial ? 'BC maps need access. Other land coverage is shown.' : 'Allow BC parcel maps.'
+            : activity.error ? activity.partial ? land ? 'Some land coverage couldn’t load. Available coverage is shown.' : 'Some slope tiles couldn’t load. Available shading is still shown.'
+                : land ? 'Land coverage couldn’t load. Try again.' : 'Slope shading couldn’t load. Try again.'
+                : activity.pending ? land ? 'Loading public lands' : 'Loading slope shading' : '' };
 }
 export function tileBounds({ z, x, y }) {
     if (![z, x, y].every(Number.isInteger) || z < 0 || z > 24 || y < 0 || y >= 2 ** z) throw new Error('Invalid overlay tile.');
@@ -91,6 +96,7 @@ export function publicLandInfo(bounds) {
         ...CANADIAN_LAND_CLASSES.filter(item => (bc || ab && ['CROWN', 'LOC'].includes(item.value)) && (!us || !['FED', 'LOC'].includes(item.value)))];
     const names = [us && 'US PAD-US', bc && 'BC parcel records', ab && 'SW Alberta parcels'].filter(Boolean);
     return { legend: `${names.join(' · ') || 'No public-land coverage here'}. ${bc || ab ? 'Canadian coverage is partial. ' : ''}Clear areas are unknown. Check local access and camping rules.`,
+        uncovered: coverage.length === 0,
         legendEntries: classes.map(item => ({ label: item.label, color: `rgb(${item.color.join(',')})` })),
         guidanceKeys: [us && 'blm', bc && 'bc', ab && 'ab'].filter(Boolean) };
 }

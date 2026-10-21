@@ -23,6 +23,7 @@ export function createBCTileFetch(send) {
             if (!reply?.ok && reply?.code === 'rate-limit') throw Object.assign(new Error('BC map service is busy. Try again later.'), {
                 code: 'rate-limit', retryAt: Number.isFinite(reply.retryAt) && reply.retryAt > Date.now() && reply.retryAt < Date.now() + 86400000 ? reply.retryAt : Date.now() + 300000,
             });
+            if (!reply?.ok && reply?.code === 'temporary') throw Object.assign(new Error('BC map service is temporarily unavailable.'), { transient: true });
             if (!reply?.ok) throw Object.assign(new Error(reply?.code === 'bc-permission-required' ? 'Allow BC parcel maps.' : 'BC parcels unavailable. Retry.'),
                 { code: reply?.code === 'bc-permission-required' ? 'bc-permission-required' : 'tile-unavailable' });
             if (typeof reply.image !== 'string' || reply.image.length > 1400000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(reply.image)) throw new Error('Invalid BC map tile.');

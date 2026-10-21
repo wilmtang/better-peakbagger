@@ -135,10 +135,11 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
             const shown = current.enabled && (key === 'snotel' || current.opacity > 0);
-            const kind = !shown ? '' : status.permission ? status.pending ? 'loading' : 'permission' : status.error ? 'error' : status.pending ? 'loading' : '';
+            const kind = !shown ? '' : status.pending ? 'loading' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
             const cooldown = status.retryAt > Date.now();
             const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
-                : kind === 'permission' ? 'Needs access' : kind === 'error' ? cooldown ? 'Service busy' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
+                : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
+                    : kind === 'coverage' ? 'No coverage' : kind === 'error' ? cooldown ? 'Service busy' : status.captureError ? 'Search failed' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
             const heldRecovery = shown && detail.recovering && doc.activeElement === detail.retry && !status.permission;
             const recovered = heldRecovery && !status.pending && !status.error;
             row.row.hidden = model.available && !model.available.includes(key);

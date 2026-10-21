@@ -113,6 +113,9 @@ try {
                     assert.equal(await allow.evaluate(element => document.activeElement === element), true);
                 }
                 assert.equal(await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).isVisible(), true);
+                await page.evaluate(() => { Object.assign(window.fixture.statuses.land, { partial: true, pending: false, message: 'BC maps need access. Other land coverage is shown.' }); window.fixture.paint(); });
+                assert.equal(await page.locator('[data-layer="land"] .bpb-layers-row-status').textContent(), 'Partly loaded');
+                assert.deepEqual(await allow.boundingBox(), allowBox, 'partial coverage keeps the permission action anchored');
                 if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-canada.png`) });
                 await page.evaluate(() => { window.fixture.state.land.enabled = false; window.fixture.statuses.land = window.fixture.landInfo(null); window.fixture.paint(); });
                 await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
@@ -130,6 +133,9 @@ try {
             assert.equal(await recovery.evaluate(element => document.activeElement === element), true);
         };
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Couldn’t load');
+        await page.evaluate(() => { window.fixture.state.sentinel.enabled = true; Object.assign(window.fixture.statuses.sentinel, { pending: false, error: true, captureError: true, message: 'Capture search failed. Previous imagery shown.' }); window.fixture.paint(); });
+        assert.equal(await page.locator('[data-layer="sentinel"] .bpb-layers-row-status').textContent(), 'Search failed'); await stableRecovery();
+        await page.evaluate(() => { window.fixture.state.sentinel.enabled = false; Object.assign(window.fixture.statuses.sentinel, { error: false, captureError: false, message: '' }); window.fixture.paint(); });
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-failure.png`) });
         await page.evaluate(() => { window.fixture.statuses.slope = { error: true, partial: true, retry: true, message: 'Some slope tiles couldn’t load. Available shading is still shown.' }; window.fixture.paint(); });
         await stableRecovery();

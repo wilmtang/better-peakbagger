@@ -56,7 +56,7 @@ test('tile activity reports pending through the body, then clears failures only 
         fetchImpl: () => new Promise(resolve => held.push(resolve)) });
     const draw = () => tiles.draw('land', { z: 10, x: 163, y: 359 }, tiles.canvas());
     const first = draw(); await tick(); assert.equal(states.at(-1).pending, true);
-    held.shift()(new Response('', { status: 503 })); await assert.rejects(first);
+    held.shift()(new Response('', { status: 404 })); await assert.rejects(first);
     assert.equal(states.at(-1).pending, false); assert.equal(states.at(-1).error, true);
     assert.equal(tiles.retry('land'), true);
     const next = draw(); await tick(); assert.equal(states.at(-1).pending, true); assert.equal(states.at(-1).error, false);
@@ -64,7 +64,7 @@ test('tile activity reports pending through the body, then clears failures only 
     held.shift()(new Response(new ReadableStream({ start(controller) { body = controller; } }), { headers: { 'content-type': 'image/png' } }));
     await tick(); assert.equal(states.at(-1).pending, true, 'HTTP headers alone do not mean the tile is loaded');
     body.enqueue(new Uint8Array([1])); body.close(); await next;
-    assert.deepEqual(states.at(-1), { id: 'land', pending: false, error: false, complete: true }); tiles.dispose();
+    assert.deepEqual(states.at(-1), { id: 'land', pending: false, error: false, partial: false, complete: true, permission: false, retryAt: 0, providerCooldowns: {} }); tiles.dispose();
 });
 test('cancelled tile completions cannot clear a newer loading batch', async t => {
     mockBitmap(t);
@@ -78,16 +78,41 @@ test('cancelled tile completions cannot clear a newer loading batch', async t =>
     held[1](image()); await current; assert.equal(states.at(-1).complete, true); tiles.dispose();
 });
 
-test('a temporary slope failure recovers once without showing a terminal layer error', async t => {
+for (const id of ['slope', 'land', 'sentinel']) test(`a temporary ${id} failure recovers once without showing a terminal layer error`, async t => {
     mockBitmap(t);
     let calls = 0; const errors = [], states = [];
     const tiles = createOverlayTiles({ document, retryDelayMs: 0, onError: (_id, error) => errors.push(error), onActivity: (_id, state) => states.push(state),
         fetchImpl: async () => ++calls === 1 ? new Response('', { status: 503 }) : new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } }) });
+    if (id === 'sentinel') tiles.setScenes([{ id: 'scene_new', bounds: [-122, 46, -121, 47] }]);
     try {
-        await tiles.draw('slope', { z: 14, x: 2666, y: 5796 }, tiles.canvas());
+        await tiles.draw(id, { z: 14, x: 2666, y: 5796 }, tiles.canvas());
         assert.equal(calls, 2); assert.equal(errors.length, 0);
         assert.equal(states.at(-1).error, false); assert.equal(states.at(-1).complete, true);
     } finally { tiles.dispose(); }
+});
+
+test('a BC permission or service failure cannot erase validated US coverage in the same land tile', async t => {
+    mockBitmap(t);
+    for (const failure of [Object.assign(new Error('Allow BC'), { code: 'bc-permission-required' }), Object.assign(new Error('BC limited'), { code: 'rate-limit', retryAt: Date.now() + 120000 })]) {
+        const states = []; let usCalls = 0, bcCalls = 0;
+        const tiles = createOverlayTiles({ document, onActivity: (_id, state) => states.push(state),
+            fetchImpl: async () => { usCalls++; return new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } }); },
+            fetchBCTile: async () => { bcCalls++; throw failure; } });
+        try {
+            const coordinates = { z: 10, x: 164, y: 351 };
+            await tiles.draw('land', coordinates, tiles.canvas());
+            assert.equal(states.at(-1).partial, true); assert.equal(states.at(-1).error, true);
+            assert.equal(states.at(-1).permission, failure.code === 'bc-permission-required');
+            assert.equal(tiles.failed('land', coordinates), true);
+            assert.equal(usCalls, 1); assert.equal(bcCalls, 1);
+            if (failure.code === 'rate-limit') {
+                await tiles.draw('land', { ...coordinates, x: 163 }, tiles.canvas());
+                assert.equal(bcCalls, 1, 'BC cooldown does not replay provider requests');
+                assert.equal(usCalls, 2, 'the same cooldown does not block valid US coverage');
+                assert.equal(states.at(-1).providerCooldowns.bc, failure.retryAt);
+            }
+        } finally { tiles.dispose(); }
+    }
 });
 
 test('slope feedback describes partial coverage and retires unloaded failures', async t => {

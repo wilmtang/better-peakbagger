@@ -3,7 +3,7 @@
 import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
-import { OVERLAY_ATTRIBUTION, slopeTileStatus } from '../maps/map-overlay-providers.js';
+import { OVERLAY_ATTRIBUTION, rasterTileStatus } from '../maps/map-overlay-providers.js';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
 import { createBCTileFetch } from '../maps/bc-land-client.js';
 
@@ -21,8 +21,9 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     const layers = new Map(), protocol = 'bpb-overlay';
     const error = (id, failure) => {
         if (disposed || failure?.name === 'AbortError') return;
-        if (snapshot && failure?.retryAt > Date.now()) snapshot.cooldowns[id] = failure.retryAt;
+        if (snapshot && id !== 'land' && failure?.retryAt > Date.now()) snapshot.cooldowns[id] = failure.retryAt;
         if (id === 'sentinel') sentinel.tileError(failure);
+        else if (id === 'land') return; // Aggregate outcomes retain other providers.
         else reportRaster(id, { pending: false, error: true, retry: true, retryAt: failure?.retryAt,
             permission: failure?.code === 'bc-permission-required',
             message: failure?.code === 'bc-permission-required' ? 'Allow BC parcel maps.'
@@ -34,14 +35,12 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     const tiles = createOverlayTiles({ document: doc, fetchBCTile, onError: error, onActivity(id, activity) {
         if (disposed || !snapshot?.state[id]?.enabled || snapshot.state[id].opacity === 0) return;
         if (id === 'sentinel') sentinel.tileActivity(activity);
-        else if (id === 'slope') {
-            if (snapshot.cooldowns.slope > Date.now()) return;
-            reportRaster(id, { ...slopeTileStatus(activity), permission: false, retryAt: 0,
+        else {
+            if (id === 'slope' && snapshot.cooldowns.slope > Date.now()) return;
+            if (id === 'land') { snapshot.landCooldowns = activity.providerCooldowns || {}; snapshot.cooldowns.land = activity.retryAt || 0; }
+            reportRaster(id, { ...rasterTileStatus(id, activity),
                 retry: activity.error || activity.pending && rasterStatus[id]?.retry === true });
         }
-        else if (!activity.error && (activity.pending || activity.complete)) reportRaster(id, { pending: activity.pending,
-            ...(activity.pending || activity.complete ? { error: false, permission: false, retryAt: 0,
-                retry: activity.pending && rasterStatus[id]?.retry === true, message: activity.pending ? loadingMessage(id) : '' } : {}) });
     } });
     const tileProtocol = async (request, controller) => {
         const match = /^bpb-overlay:\/\/(sentinel|slope|land)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
@@ -68,7 +67,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             const state = snapshot.state[id];
             if (!state.enabled || state.opacity === 0 || id === 'sentinel' && !scenes.length) { remove(id); continue; }
             let source = layers.get(id);
-            if (snapshot.cooldowns[id] > Date.now() && !source) continue;
+            if (snapshot.cooldowns[id] > Date.now() && !source && !(id === 'land' && Object.keys(snapshot.landCooldowns).length)) continue;
             if (!source) {
                 if (!registered) { maplibre.addProtocol(protocol, tileProtocol); registered = true; }
                 source = `bpb-overlay-${id}-${++sourceRevision}`;
@@ -91,24 +90,26 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     const sentinel = createSentinelSession({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() + 1 }),
         replaceScenes(next) { remove('sentinel'); scenes = next; sceneRevision++; tiles.setScenes(next); paint(); },
         clearScenes() { remove('sentinel'); scenes = []; tiles.setScenes([]); },
+        retryTiles() { if (tiles.retry('sentinel')) map.getSource(layers.get('sentinel'))?.setTiles([`${protocol}://sentinel/${sceneRevision}/{z}/{x}/{y}`]); },
         onStatus: status => { sentinelStatus = status; post('layerStatus', { id: 'sentinel', revision: snapshot?.revision, ...status }); },
         onCapture: target => { if (snapshot) snapshot.capture = target; post('layerCapture', { target }); },
     });
-    const retainSlope = () => {
-        if (snapshot?.state.slope.enabled && map.coveringTiles) tiles.retain('slope',
-            map.coveringTiles({ tileSize: 256, minzoom: 8, maxzoom: 15 }).map(tile => tile.canonical));
+    const retainOverlays = () => {
+        for (const id of ['slope', 'land', 'sentinel']) if (snapshot?.state[id].enabled && map.coveringTiles) tiles.retain(id,
+            map.coveringTiles({ tileSize: 256, minzoom: 8, maxzoom: id === 'sentinel' ? 14 : 15 }).map(tile => tile.canonical));
     };
     return {
         update(value) {
             const next = readLayerSnapshot(value); if (!next || snapshot && next.revision < snapshot.revision) return;
             const first = snapshot === null;
             snapshot = next;
+            tiles.landCooldowns(next.landCooldowns);
             for (const id of ['land', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};
             sentinel.cooldown(next.cooldowns.sentinel);
             if (next.state.sentinel.enabled && next.state.sentinel.opacity > 0) sentinel.activate(next.capture);
             else sentinel.deactivate();
             paint();
-            retainSlope();
+            retainOverlays();
             // A response can settle while a newer opacity/menu snapshot is in
             // transit. Reattach the current provider model to the accepted
             // revision so the outer menu cannot remain stuck in pending.
@@ -123,18 +124,18 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         action({ id, action, capture }) {
             if (action === 'capture' && id === 'sentinel' && typeof capture === 'string') sentinel.select(capture);
             if (action === 'retry' && (id === 'sentinel' ? sentinelStatus.pending : rasterStatus[id]?.pending)) return;
-            if (action === 'retry' && snapshot?.state[id]?.enabled && snapshot.cooldowns[id] <= Date.now() && tiles.retry(id)) {
-                if (id === 'sentinel') sentinel.retry(); else {
+            if (action === 'retry' && snapshot?.state[id]?.enabled && snapshot.cooldowns[id] <= Date.now()) {
+                if (id === 'sentinel') sentinel.retry(); else if (tiles.retry(id)) {
                     reportRaster(id, { pending: true, error: false, permission: false, retry: true, message: loadingMessage(id) });
                     const source = map.getSource(layers.get(id));
-                    if (id === 'slope' && source?.setTiles) source.setTiles([`${protocol}://slope/0/{z}/{x}/{y}`]);
+                    if (source?.setTiles) source.setTiles([`${protocol}://${id}/0/{z}/{x}/{y}`]);
                     else { remove(id); paint(); }
                 }
             }
         },
-        refresh() { retainSlope(); sentinel.refresh(); },
+        refresh() { retainOverlays(); sentinel.refresh(); },
         tileError(source, failure) {
-            for (const [id, current] of layers) if (current === source && !(id === 'slope' && rasterStatus.slope?.error)) error(id, failure);
+            for (const [id, current] of layers) if (current === source && !(id === 'sentinel' ? sentinelStatus.error : rasterStatus[id]?.error)) error(id, failure);
         },
         menuOpen: () => snapshot?.menuOpen === true,
         suspend() { snapshot = null; sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); },

@@ -41,6 +41,13 @@ test('BC broker enforces PNG byte and dimension ceilings', async () => {
         assert.equal((await state.routes.BC_LAND_TILE_GET({ coordinates, requestId: 'one' }, sender)).ok, false);
     }
 });
+test('BC temporary errors survive the narrow relay without treating bad PNG data as retryable', async () => {
+    for (const status of [503, 404, 200]) {
+        const state = setup({ fetchImpl: async () => new Response('', { status, headers: { 'content-type': 'image/png' } }) });
+        const tile = createBCTileFetch(message => state.routes[message.type](message, sender));
+        await assert.rejects(tile(coordinates, { signal: new AbortController().signal }), error => (error.transient === true) === (status === 503));
+    }
+});
 test('BC cancellation belongs to the sender frame and clients stop waiting immediately', async () => {
     let started, transport;
     const ready = new Promise(resolve => { started = resolve; });

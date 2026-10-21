@@ -9,11 +9,11 @@ const capture = (key, time = now) => ({ key, time, platform: 'Sentinel-2B', orbi
     scenes: [{ id: key, bounds: [-122, 46, -121, 47] }] });
 const bounds = { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 };
 function setup(search, { holdTiles = false } = {}) {
-    const statuses = [], scenes = [], selections = []; let cleared = 0, view = { bounds, zoom: 13 };
+    const statuses = [], scenes = [], selections = []; let cleared = 0, retries = 0, view = { bounds, zoom: 13 };
     const session = createSentinelSession({ readView: () => view, search, onStatus: status => statuses.push(status),
         replaceScenes: value => { scenes.push(value); if (!holdTiles) queueMicrotask(() => session.tileActivity({ pending: false, error: false, complete: true })); },
-        clearScenes: () => cleared++, onCapture: value => selections.push(value), debounceMs: 5 });
-    return { session, statuses, scenes, selections, status: () => statuses.at(-1), cleared: () => cleared, view: value => { view = value; } };
+        clearScenes: () => cleared++, retryTiles: () => retries++, onCapture: value => selections.push(value), debounceMs: 5 });
+    return { session, statuses, scenes, selections, status: () => statuses.at(-1), cleared: () => cleared, retries: () => retries, view: value => { view = value; } };
 }
 test('the headless Sentinel model retains identical sources and updates only fresh coverage', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] }); let calls = 0;
@@ -53,6 +53,21 @@ test('the overlay capture list preserves the original date, cloud and accessible
         assert.equal(env.status().captures[3].title, '2026-10-04 18:27 PDT · Clouds unknown');
         for (const item of captures) env.session.select(item === captures[0] ? 'latest' : item.key);
         assert.equal(searches, 1, 'cloud labels reuse the existing capture catalog');
+    } finally { env.session.dispose(); }
+});
+
+test('imagery recovery retries the selected capture without another search or source replacement', async () => {
+    let calls = 0;
+    const env = setup(async () => { calls++; return [capture('new'), capture('old', now - 86400000)]; }, { holdTiles: true });
+    try {
+        env.session.activate(); await tick(); env.session.select('old');
+        env.session.tileActivity({ pending: false, error: true, partial: true, complete: false });
+        assert.equal(env.status().partial, true); assert.equal(env.status().captureError, false);
+        const before = env.scenes.length; env.session.retry();
+        assert.equal(env.retries(), 1); assert.equal(env.scenes.length, before, 'recovery preserves already painted sources');
+        assert.equal(calls, 1); assert.equal(env.status().capture, 'old'); assert.equal(env.status().capturePending, false);
+        env.session.tileActivity({ pending: false, error: false, complete: true });
+        assert.equal(env.status().error, false); assert.equal(env.status().partial, false); assert.match(env.status().message, /Coverage/);
     } finally { env.session.dispose(); }
 });
 test('catalog failure retains imagery, but choosing a pass cannot reuse coverage from the old view', async t => {

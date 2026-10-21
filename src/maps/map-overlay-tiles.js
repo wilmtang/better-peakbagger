@@ -6,29 +6,28 @@ import { overlayTileUrl, tileBounds, publicLandTileSources } from './map-overlay
 import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
+import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.js';
 
 const abortError = () => new DOMException('Cancelled.', 'AbortError');
 const tileKey = ({ z, x, y }) => `${z}/${(x % 2 ** z + 2 ** z) % 2 ** z}/${y}`;
-const pause = (ms, signal) => new Promise((resolve, reject) => {
-    if (signal.aborted) { reject(abortError()); return; }
-    const finish = () => { signal.removeEventListener('abort', abort); resolve(); };
-    const timer = setTimeout(finish, ms);
-    const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(abortError()); };
-    signal.addEventListener('abort', abort, { once: true });
-});
 // A renderer lifetime owns bounded tile work. The browser cache may reuse public
 // tiles; decoded images and scene mosaics never survive this owner.
 export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, fetchBCTile, onError = () => {}, onActivity = () => {}, retryDelayMs = 350 }) {
     let scenes = [], generation = 0, disposed = false;
     const flights = new Set(), blocked = new Map();
     const activity = new Map();
+    const landCooldowns = () => Object.fromEntries([...blocked].filter(([key, error]) => key.startsWith('land:') && error.retryAt > Date.now()).map(([key, error]) => [key.slice(5), error.retryAt]));
     const publish = (id, batch) => {
         if (disposed || activity.get(id) !== batch) return;
         const outcomes = [...(batch.outcomes?.values() || [])];
-        const missing = outcomes.some(item => item.state === 'failed'), loaded = outcomes.some(item => item.state === 'loaded');
+        const missing = outcomes.some(item => item.state === 'failed'), loaded = outcomes.some(item => item.state === 'loaded' || item.partial);
         const pending = outcomes.some(item => item.state === 'pending');
-        const state = id === 'slope' ? { pending, error: missing, partial: missing && loaded, complete: !pending && !missing }
-            : { pending: batch.count > 0 && !batch.error, error: batch.error, complete: batch.count === 0 && batch.successes > 0 && !batch.error };
+        const failures = outcomes.flatMap(item => item.failures || []);
+        const deadlines = failures.filter(error => error.retryAt > Date.now()).map(error => error.retryAt);
+        const state = { pending, error: missing, partial: missing && loaded, complete: !pending && !missing,
+            ...(id === 'land' ? { permission: failures.some(error => error.code === 'bc-permission-required'),
+                retryAt: !loaded && failures.length > 0 && deadlines.length === failures.length ? Math.min(...deadlines) : 0,
+                providerCooldowns: landCooldowns() } : {}) };
         const signature = JSON.stringify(state); if (signature === batch.signature) return;
         batch.signature = signature; onActivity(id, state);
     };
@@ -57,7 +56,7 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                 : fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }));
             if (response.status === 429) throw rateLimitError('Map service', response);
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw Object.assign(new Error('Map tiles unavailable.'),
-                { status: response.status, transient: [408, 500, 502, 503, 504].includes(response.status) });
+                { status: response.status, transient: temporaryHttpStatus(response.status) });
             if (Number(response.headers.get('content-length')) > 4 * 1024 * 1024) throw new Error('Map tile too large.');
             const reader = response.body.getReader(), chunks = []; let bytes = 0;
             try {
@@ -79,28 +78,23 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
             return image;
         } finally { signal.removeEventListener('abort', abort); deadline.clear(); }
     };
-    const slopeBitmap = async (url, signal) => {
-        try { return await bitmap(url, signal); }
-        catch (error) {
-            if (signal.aborted || !(error.transient || error.name === 'TimeoutError' || error instanceof TypeError)) throw error;
-            // Dynamic USGS exports can be slow. Recover one temporary failure,
-            // keeping the same four-request budget and each attempt's deadline.
-            // Rate limits, bad requests and invalid images are never replayed.
-            await pause(retryDelayMs, signal);
-            return bitmap(url, signal);
-        }
-    };
     return {
         setScenes(next) { generation++; scenes = next.slice(0, 8); cancel('sentinel'); },
         cancel,
         retry(id) {
             if (blocked.get(id)?.retryAt > Date.now()) return false;
+            const previous = [...(activity.get(id)?.outcomes.values() || [])];
+            if (id === 'land' && previous.length && previous.every(item => item.state === 'failed' && !item.partial
+                && item.failures?.length && item.failures.every(error => error.retryAt > Date.now()))) return false;
             blocked.delete(id);
-            if (id === 'slope') {
-                const outcomes = new Map([...(activity.get(id)?.outcomes || [])].filter(([, item]) => item.state === 'loaded'));
-                activity.set(id, { count: 0, successes: 0, error: false, outcomes }); abortFlights(id);
-            } else cancel(id);
+            const outcomes = new Map([...(activity.get(id)?.outcomes || [])].filter(([, item]) => item.state === 'loaded'));
+            activity.set(id, { outcomes }); abortFlights(id);
             return true;
+        },
+        failed(id, coordinates) { return activity.get(id)?.outcomes.get(tileKey(coordinates))?.state === 'failed'; },
+        landCooldowns(value) {
+            for (const provider of ['us', 'bc', 'ab']) if (value?.[provider] > Date.now() && value[provider] <= Date.now() + 86400000)
+                blocked.set(`land:${provider}`, Object.assign(new Error('Land service is busy.'), { code: 'rate-limit', retryAt: value[provider] }));
         },
         forget(id, coordinates) { const batch = activity.get(id); if (batch?.outcomes?.delete(tileKey(coordinates))) publish(id, batch); },
         retain(id, coordinates) {
@@ -115,10 +109,10 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
             if (limit?.retryAt > Date.now()) throw limit;
             const controller = new AbortController(), flight = { id, controller }, revision = generation;
             const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true }); flights.add(flight);
-            const batch = activity.get(id) || { count: 0, successes: 0, error: false, ...(id === 'slope' ? { outcomes: new Map() } : {}) };
+            const batch = activity.get(id) || { outcomes: new Map() };
             const key = tileKey(coordinates), outcome = { state: 'pending' };
             batch.outcomes?.set(key, outcome);
-            activity.set(id, batch); batch.count++; publish(id, batch);
+            activity.set(id, batch); publish(id, batch);
             const working = doc.createElement('canvas'); working.width = working.height = 256;
             const context = working.getContext('2d');
             let release;
@@ -139,32 +133,48 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                     : (id === 'sentinel' ? intersecting.map(scene => sentinelTileUrl(scene.id)
                         .replace('{z}', coordinates.z).replace('{x}', coordinates.x).replace('{y}', coordinates.y)) : [overlayTileUrl(id, coordinates)])
                         .map(url => ({ url }));
+                const failures = []; let completed = 0;
                 for (const source of sources) {
-                    if (source.kind === 'parcels') {
-                        await drawAlbertaLand({ context, bbox: source.bbox, fetchImpl, signal: controller.signal }); continue;
-                    }
-                    const image = id === 'slope' ? await slopeBitmap(source.url, controller.signal)
-                        : await bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined);
                     try {
-                        if (disposed || controller.signal.aborted || id === 'sentinel' && revision !== generation) throw abortError();
-                        context.drawImage(image, 0, 0, 256, 256);
-                    } finally { image.close(); }
+                        const providerLimit = blocked.get(`land:${source.provider}`); if (id === 'land' && providerLimit?.retryAt > Date.now()) throw providerLimit;
+                        if (source.kind === 'parcels') {
+                            const parcelCanvas = await retryTransient(async () => {
+                                const tile = doc.createElement('canvas'); tile.width = tile.height = 256;
+                                await drawAlbertaLand({ context: tile.getContext('2d'), bbox: source.bbox, fetchImpl, signal: controller.signal }); return tile;
+                            }, { signal: controller.signal, delayMs: retryDelayMs });
+                            context.drawImage(parcelCanvas, 0, 0);
+                        } else {
+                            const image = await retryTransient(() => bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined),
+                                { signal: controller.signal, delayMs: retryDelayMs });
+                            try {
+                                if (disposed || controller.signal.aborted || id === 'sentinel' && revision !== generation) throw abortError();
+                                context.drawImage(image, 0, 0, 256, 256);
+                            } finally { image.close(); }
+                        }
+                        completed++;
+                    } catch (error) {
+                        if (id !== 'land' || controller.signal.aborted || error.name === 'AbortError') throw error;
+                        if (error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(`land:${source.provider}`, error); }
+                        failures.push(error);
+                    }
                 }
                 if (controller.signal.aborted) throw abortError();
+                if (failures.length && !completed) throw Object.assign(failures[0], { tileFailures: failures });
                 const output = canvas.getContext('2d'); output.clearRect(0, 0, 256, 256); output.drawImage(working, 0, 0);
-                batch.successes++; outcome.state = 'loaded';
+                outcome.state = failures.length ? 'failed' : 'loaded'; outcome.partial = failures.length > 0; outcome.failures = failures;
+                if (failures.length) onError(id, failures[0]);
                 return canvas;
             } catch (error) {
                 if (!controller.signal.aborted && error.name !== 'AbortError' && (!batch.outcomes || batch.outcomes.get(key) === outcome)) {
                     outcome.state = 'failed';
-                    batch.error = true;
-                    if (error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(id, error); abortFlights(id); }
+                    outcome.failures = error.tileFailures || [error];
+                    if (id !== 'land' && error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(id, error); abortFlights(id); }
                     onError(id, error);
                 }
                 throw error;
             } finally {
                 if (outcome.state === 'pending' && batch.outcomes?.get(key) === outcome) batch.outcomes.delete(key);
-                release?.(); flights.delete(flight); signal?.removeEventListener('abort', abort); batch.count--; publish(id, batch);
+                release?.(); flights.delete(flight); signal?.removeEventListener('abort', abort); publish(id, batch);
             }
         },
         canvas() { const canvas = doc.createElement('canvas'); canvas.width = canvas.height = 256; return canvas; },

@@ -4,17 +4,22 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { sentinelTarget } from './sentinel-core.js';
 
 const text = (value, limit = 400) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, limit) : '';
+export const readLandCooldowns = value => Object.fromEntries(['us', 'bc', 'ab'].filter(key => Number.isFinite(value?.[key])
+    && value[key] > Date.now() && value[key] <= Date.now() + 86400000).map(key => [key, value[key]]));
 export function readLayerSnapshot(value) {
     if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1) return null;
     const cooldowns = Object.fromEntries(Schema.MAP_OVERLAY_IDS.map(id => [id,
         Number.isFinite(value.cooldowns?.[id]) && value.cooldowns[id] > Date.now() && value.cooldowns[id] <= Date.now() + 86400000 ? value.cooldowns[id] : 0]));
-    return { revision: value.revision, state: Schema.mapOverlayState(value.state), capture: sentinelTarget(value.capture), menuOpen: value.menuOpen === true, cooldowns };
+    return { revision: value.revision, state: Schema.mapOverlayState(value.state), capture: sentinelTarget(value.capture), menuOpen: value.menuOpen === true, cooldowns,
+        landCooldowns: readLandCooldowns(value.landCooldowns) };
 }
 export function readLayerStatus(value) {
     if (!value || !Schema.MAP_OVERLAY_IDS.includes(value.id)) return null;
     return { id: value.id, revision: Number.isSafeInteger(value.revision) ? value.revision : 0,
         pending: value.pending === true, capturePending: value.id === 'sentinel' && value.capturePending === true,
-        error: value.error === true, partial: value.id === 'slope' && value.partial === true,
+        error: value.error === true, partial: value.id !== 'snotel' && value.partial === true,
+        captureError: value.id === 'sentinel' && value.captureError === true,
+        providerCooldowns: value.id === 'land' ? readLandCooldowns(value.providerCooldowns) : {},
         retry: value.retry === true, permission: value.id === 'land' && value.permission === true,
         retryAt: Number.isFinite(value.retryAt) && value.retryAt > Date.now() && value.retryAt <= Date.now() + 86400000 ? value.retryAt : 0,
         message: text(value.message), capture: text(value.capture, 120), target: sentinelTarget(value.target),

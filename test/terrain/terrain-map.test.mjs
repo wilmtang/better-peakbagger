@@ -2256,7 +2256,7 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         constructor(options) { map = this; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); }
         addControl() {} once(type, callback) { if (type === 'load') this.loadCallback = callback; }
         on(type, callback) { this.handlers.set(type, callback); }
-        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+        addSource(id, source) { this.sources.set(id, { ...source, setData() {}, setTiles(tiles) { this.tiles = tiles; } }); }
         addLayer(layer, before) { const i = this.layers.findIndex(item => item.id === before); if (i < 0) this.layers.push(layer); else this.layers.splice(i, 0, layer); }
         getLayer(id) { return this.layers.find(layer => layer.id === id); }
         removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
@@ -2299,21 +2299,22 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         dispatch({ type: 'layerAction', action: 'basemap', selection: 'terrain' });
         assert.equal(map.getSource('basemap'), undefined); assert.equal(currentSource(), source);
         map.handlers.get('error')({ sourceId, error: new Error('tile unavailable') }); assert.equal(status().retry, true);
-        dispatch({ type: 'layerAction', action: 'retry', id: 'sentinel' }); await answer(2);
-        assert.notEqual(currentSource(), source, 'failed tiles are rebuilt on explicit Retry');
+        dispatch({ type: 'layerAction', action: 'retry', id: 'sentinel' });
+        assert.equal(pending.length, 2, 'imagery recovery does not repeat the catalog search');
+        assert.equal(currentSource(), source, 'failed tiles reload in the existing source');
         dispatch({ type: 'suspend' }); assert.equal(currentSource(), undefined);
         const choicesBeforeResume = messages.filter(message => message.type === 'layerBasemaps').length;
         dispatch({ type: 'resume', ...payload }); dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 3 } });
         assert.ok(messages.filter(message => message.type === 'layerBasemaps').length > choicesBeforeResume, 'resume republishes the preserved user-selected basemap');
-        assert.equal(pending.length, 4);
+        assert.equal(pending.length, 3);
         dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
-        assert.equal(pending[3].options.signal.aborted, true, 'BFCache freeze releases the renderer catalog'); await answer(3);
+        assert.equal(pending[2].options.signal.aborted, true, 'BFCache freeze releases the renderer catalog'); await answer(2);
         dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
         assert.equal(messages.at(-1).type, 'layerResume', 'the restored renderer requests the latest bridge snapshot');
-        dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 3 } }); assert.equal(pending.length, 5);
-        dispatch({ type: 'layers', snapshot: { revision: 2, state: {} } }); assert.equal(pending[4].options.signal.aborted, false, 'stale snapshots cannot turn off newer intent');
-        dispatch({ type: 'layers', snapshot: { revision: 4, state: {} } }); assert.equal(pending[4].options.signal.aborted, true);
-        await answer(4); assert.equal(currentSource(), undefined, 'late catalogs cannot redraw a disabled overlay');
+        dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 3 } }); assert.equal(pending.length, 4);
+        dispatch({ type: 'layers', snapshot: { revision: 2, state: {} } }); assert.equal(pending[3].options.signal.aborted, false, 'stale snapshots cannot turn off newer intent');
+        dispatch({ type: 'layers', snapshot: { revision: 4, state: {} } }); assert.equal(pending[3].options.signal.aborted, true);
+        await answer(3); assert.equal(currentSource(), undefined, 'late catalogs cannot redraw a disabled overlay');
     } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
 });
 

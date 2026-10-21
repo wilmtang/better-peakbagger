@@ -3,6 +3,7 @@
 import { readBoundedResponseText } from '../net/bounded-text.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
+import { temporaryHttpStatus } from '../net/retry-transient.js';
 import regionData from './canadian-land-regions.json' with { type: 'json' };
 
 export const BC_LAND_ORIGIN = 'https://maps.gov.bc.ca';
@@ -93,7 +94,7 @@ export async function drawAlbertaLand({ context, bbox, fetchImpl, signal }) {
                 signal: deadline.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
             }));
             if (response.status === 429) throw rateLimitError('Alberta map service', response);
-            if (!response.ok) throw new Error('Alberta parcels unavailable.');
+            if (!response.ok) throw Object.assign(new Error('Alberta parcels unavailable.'), { transient: temporaryHttpStatus(response.status) });
             const data = JSON.parse(await deadline.run(readBoundedResponseText(response, { maxBytes: 4 * 1024 * 1024, maxChars: 4 * 1024 * 1024, signal: deadline.signal })));
             if (data.error || ![3857, 102100].includes(data.spatialReference?.wkid) || !Array.isArray(data.features) || data.features.length > 500) throw new Error('Invalid Alberta parcels.');
             for (const feature of data.features) {
