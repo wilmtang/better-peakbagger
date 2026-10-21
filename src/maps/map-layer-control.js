@@ -61,7 +61,10 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         }
         if (key === 'sentinel') {
             capture = node('select'); capture.setAttribute('aria-label', 'Sentinel-2 capture');
-            capture.addEventListener('change', () => onCapture(capture.value)); detail.append(capture);
+            capture.addEventListener('change', () => {
+                capture.title = capture.selectedOptions[0]?.title || '';
+                onCapture(capture.value);
+            }); detail.append(capture);
         }
         const legend = node('div', 'bpb-layers-legend'); detail.append(legend);
         const feedback = node('div', 'bpb-layers-feedback');
@@ -135,6 +138,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                     detail.capture.replaceChildren(...captures.map(choice => { const option = node('option', '', choice.label); option.value = choice.id; option.title = choice.title || choice.label; option.setAttribute('aria-label', option.title); return option; }));
                 }
                 detail.capture.value = status.capture || 'latest'; detail.capture.disabled = !current.enabled || status.pending === true;
+                detail.capture.title = detail.capture.selectedOptions[0]?.title || '';
             }
             const showRetry = current.enabled && status.retry === true;
             if (!showRetry && doc.activeElement === detail.retry) row.disclosure.focus({ preventScroll: true });

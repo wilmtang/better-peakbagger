@@ -30,10 +30,14 @@ try {
         import {createMapLayerControl} from './src/maps/map-layer-control.js';
         import {settingsSchema as schema} from './src/settings/settings-schema.js';
         const state=schema.mapOverlayState({slope:{enabled:true,opacity:60}});
-        const statuses={};
+        const statuses={sentinel:{capture:'latest',message:'Coverage 100% · Clouds 3%',captures:[
+            {id:'latest',label:'Latest · 10-07 18:27 · ☁ 3%',title:'Latest · 2026-10-07 18:27 PDT · Clouds 3%'},
+            {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
+            {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]}};
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
+            onCapture:value=>{statuses.sentinel.capture=value;paint()},
             onRetry:id=>{statuses[id]={message:'Loaded'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
@@ -91,6 +95,17 @@ try {
         await trigger.press('Enter'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
         assert.equal(await page.locator('.bpb-layers-details').isVisible(), false, 'reopen starts with the compact overview');
         await trigger.press('Space'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
+        await trigger.click(); await page.locator('[data-layer="sentinel"] input').check();
+        await page.locator('[data-layer="sentinel"] button').click();
+        const capture = page.getByRole('combobox', { name: 'Sentinel-2 capture' });
+        for (const id of ['latest', 'older', 'unknown']) {
+            await capture.selectOption(id);
+            const metadata = await capture.evaluate(element => ({ title: element.title, label: element.selectedOptions[0].textContent,
+                accessible: element.selectedOptions[0].getAttribute('aria-label') }));
+            assert.match(metadata.label, /☁ (?:3%|100%|\?)/); assert.match(metadata.title, /2026-10-0[567] 18:27 PDT · Clouds (?:3%|100%|unknown)$/);
+            assert.equal(metadata.title, metadata.accessible); await stable();
+        }
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-sentinel.png`) });
         cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
     }
     assert.equal(errors.length, 0, errors.join('\n'));

@@ -19,6 +19,14 @@ export const captureDate = (time, zone, includeZone = true) => {
 
 const cloudCover = cloud => Number.isFinite(cloud) ? Math.round(cloud) + '%' : 'unknown';
 
+// Shared by the original picker and overlay menu so compact labels and full
+// date/time/cloud metadata cannot drift between the two presentations.
+export const sentinelCaptureChoice = (capture, zone, id, latest = false) => {
+    const date = captureDate(capture.time, zone, false), cloud = cloudCover(capture.cloud);
+    return { id, label: `${latest ? `Latest · ${date.slice(5)}` : date} · ☁ ${cloud === 'unknown' ? '?' : cloud}`,
+        title: `${latest ? 'Latest · ' : ''}${captureDate(capture.time, zone)} · Clouds ${cloud}` };
+};
+
 // Both map engines share request ownership, capture choice, and honest metadata
 // labels. Engine adapters own only adding/removing their extension-owned tiles.
 export const createSentinelLayer = ({ document: ownerDocument, readView, replaceScenes, clearScenes,
@@ -120,12 +128,11 @@ export const createSentinelLayer = ({ document: ownerDocument, readView, replace
     const captureOption = (capture, value, latest = false) => {
         const option = ownerDocument.createElement('option');
         option.value = value;
-        const date = captureDate(capture.time, captureZone, false);
-        const cloud = cloudCover(capture.cloud);
         // Keep the native picker compact; its tooltip and accessible label retain
         // the full year, timezone, and meaning of the cloud percentage.
-        option.textContent = `${latest ? `Latest · ${date.slice(5)}` : date} · ☁ ${cloud === 'unknown' ? '?' : cloud}`;
-        option.title = `${latest ? 'Latest · ' : ''}${captureDate(capture.time, captureZone)} · Clouds ${cloud}`;
+        const choice = sentinelCaptureChoice(capture, captureZone, value, latest);
+        option.textContent = choice.label;
+        option.title = choice.title;
         option.setAttribute('aria-label', option.title);
         return option;
     };

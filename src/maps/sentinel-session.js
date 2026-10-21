@@ -3,25 +3,20 @@
 
 import { searchSentinel, sentinelView, sentinelTarget } from './sentinel-core.js';
 import { mountainTime } from '../time/mountain-time.js';
-import { captureDate } from './sentinel-layer.js';
+import { sentinelCaptureChoice } from './sentinel-layer.js';
 
 export function createSentinelSession({ readView, replaceScenes, clearScenes, onStatus, onCapture = () => {},
     search = searchSentinel, fetchImpl, debounceMs = 300 }) {
     let active = false, disposed = false, revision = 0, controller = null, timer = null;
     let captures = [], target = null, rendered = '', retryAt = 0, tileFailed = false, zone = null, catalogValid = false;
     let status = {};
-    const date = value => captureDate(value, zone);
     const publish = patch => { status = { ...status, ...patch }; onStatus(status); };
     const cancel = () => { revision++; controller?.abort(); controller = null; clearTimeout(timer); timer = null; };
     const clear = () => { rendered = ''; tileFailed = false; clearScenes(); };
     const choose = (retry = false) => {
         const current = target ? captures.find(candidate => candidate.platform === target.platform
             && candidate.orbit === target.orbit && Math.abs(candidate.time - target.time) <= 900000) : captures[0];
-        const option = (capture, id, latest = false) => {
-            const stamp = date(capture.time), cloud = Number.isFinite(capture.cloud) ? `${Math.round(capture.cloud)}%` : '?';
-            return { id, label: `${latest ? 'Latest · ' : ''}${latest ? stamp.slice(5, 16) : stamp.slice(0, 16)} · ☁ ${cloud}`,
-                title: `${stamp} · Scene clouds ${cloud}` };
-        };
+        const option = (capture, id, latest = false) => sentinelCaptureChoice(capture, zone, id, latest);
         const choices = [captures[0] ? option(captures[0], 'latest', true) : { id: 'latest', label: 'Latest capture' },
             ...captures.slice(1).map(capture => option(capture, capture.key))];
         if (target && !current) choices.push(option(target, 'missing'));

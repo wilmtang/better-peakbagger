@@ -97,6 +97,18 @@ try {
             body: JSON.stringify(url.pathname.endsWith('/stations') ? snotelStations() : snotelFixture(url.searchParams.get('stationTriplets'), url.searchParams.get('duration'), Date.now())) });
     });
     const wait = (fn, description) => waitForCondition(() => page.evaluate(fn), { description, timeoutMs: 20000 });
+    const verifyCaptureMetadata = async () => {
+        const metadata = await page.getByRole('combobox', { name: 'Sentinel-2 capture' }).evaluate(element => ({
+            title: element.title, selected: element.selectedOptions[0]?.title,
+            options: Array.from(element.options, option => ({ label: option.textContent, title: option.title, accessible: option.getAttribute('aria-label') })) }));
+        assert.ok(metadata.options.length > 1, 'the capture dropdown lists dated alternatives');
+        for (const option of metadata.options) {
+            assert.match(option.label, /☁ (?:\d+%|\?)/, 'every capture has cloud coverage in its list item');
+            assert.match(option.title, /Clouds (?:\d+%|unknown)$/);
+            assert.equal(option.accessible, option.title);
+        }
+        assert.equal(metadata.title, metadata.selected, 'the compact picker retains its full date, timezone and cloud tooltip');
+    };
     const registry = await context.newPage();
     await registry.goto('chrome://extensions-internals/');
     const extension = await registry.waitForFunction(() => { try { return JSON.parse(document.body.innerText).find(item => item.name === 'Better Peakbagger'); } catch { return false; } }).then(handle => handle.jsonValue());
@@ -130,6 +142,7 @@ try {
         await page.getByRole('checkbox', { name: 'Sentinel-2 (experimental)', exact: true }).check();
         await page.getByRole('button', { name: /^Adjust Sentinel/ }).click();
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: 'Coverage' }).waitFor();
+        await verifyCaptureMetadata();
         await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).some(layer => layer.options?.bpbOverlay && Object.values(layer._tiles || {}).some(({el}) => el.width && el.getContext?.('2d').getImageData(128,128,1,1).data[3] === 255))), { description: 'decoded opaque Sentinel mosaic tile' });
         const slider = page.getByRole('slider', { name: 'Sentinel-2 (experimental) opacity' });
         await slider.fill('50'); await slider.dispatchEvent('input'); await slider.dispatchEvent('change');
@@ -201,6 +214,7 @@ try {
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
     assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'switching to 3D preserves the expanded menu');
     await wait(() => document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('Coverage'),'preserved Sentinel detail in 3D');
+    await verifyCaptureMetadata();
     const renderer = await terrain.locator('canvas.maplibregl-canvas').evaluate(canvas => {const gl=canvas.getContext('webgl2');const info=gl.getExtension('WEBGL_debug_renderer_info');return info?gl.getParameter(info.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);});
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware renderer required: ${renderer}`);
     const coloredPixels = async color => {

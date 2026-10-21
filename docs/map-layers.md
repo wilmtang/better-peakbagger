@@ -30,6 +30,9 @@ the pinned Sentinel pass. The active renderer owns its provider work; a hidden
 renderer cancels requests and removes its overlay resources.
 
 Sentinel captures show mountain-local time and scene-wide cloud percentages.
+Every capture choice keeps its cloud percentage (or `?` when unknown), and the
+selected picker's tooltip and accessible option label retain the full date,
+timezone and cloud value, matching the original Sentinel control.
 Coverage estimates geographic footprints, not cloud-free pixels. Missing pinned
 captures remain unavailable instead of silently switching to Latest. Temporary
 catalog errors retain already rendered imagery with explicit feedback. Choosing

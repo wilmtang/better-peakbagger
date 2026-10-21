@@ -69,3 +69,28 @@ test('Layers includes a decorative caret beside its accessible disclosure state'
     control.trigger.click(); assert.equal(control.trigger.getAttribute('aria-expanded'), 'false');
     control.dispose(); dom.window.close();
 });
+
+test('Sentinel capture choices retain cloud labels and full selected metadata', () => {
+    const dom = new JSDOM('<body></body>'), selections = [];
+    const control = createMapLayerControl({ document: dom.window.document, onCapture: value => selections.push(value) });
+    dom.window.document.body.append(control.element);
+    const captures = [
+        { id: 'latest', label: 'Latest · 10-07 18:27 · ☁ 3%', title: 'Latest · 2026-10-07 18:27 PDT · Clouds 3%' },
+        { id: 'older', label: '2026-10-06 18:27 · ☁ 100%', title: '2026-10-06 18:27 PDT · Clouds 100%' },
+        { id: 'unknown', label: '2026-10-05 18:27 · ☁ ?', title: '2026-10-05 18:27 PDT · Clouds unknown' },
+    ];
+    const model = { state: Schema.mapOverlayState({ sentinel: { enabled: true } }), statuses: { sentinel: { capture: 'latest', captures } } };
+    control.render(model); control.trigger.click(); dom.window.document.querySelector('[data-layer="sentinel"] button').click();
+    const picker = dom.window.document.querySelector('[aria-label="Sentinel-2 capture"]');
+    assert.deepEqual(Array.from(picker.options, option => option.textContent), captures.map(choice => choice.label));
+    assert.equal(picker.title, captures[0].title, 'the compact closed picker exposes the full date and clouds');
+    for (const choice of captures) {
+        picker.value = choice.id; picker.dispatchEvent(new dom.window.Event('change'));
+        assert.equal(selections.at(-1), choice.id);
+        assert.equal(picker.title, choice.title, 'metadata updates immediately, before an asynchronous renderer reply');
+        assert.equal(picker.selectedOptions[0].getAttribute('aria-label'), choice.title);
+    }
+    control.render({ ...model, statuses: { sentinel: { ...model.statuses.sentinel, capture: 'older' } } });
+    assert.equal(picker.title, captures[1].title, 'renderer updates retain the same full metadata');
+    control.dispose(); dom.window.close();
+});

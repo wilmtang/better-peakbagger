@@ -21,7 +21,25 @@ test('the headless Sentinel model retains identical sources and updates only fre
         env.session.activate(); await tick(); assert.equal(env.scenes.length, 1); assert.match(env.status().message, /Coverage 100% · Clouds 0%/);
         env.session.refresh(); assert.equal(env.status().pending, true); assert.doesNotMatch(env.status().message, /Coverage/);
         t.mock.timers.tick(5); await tick(); assert.equal(env.scenes.length, 1); assert.match(env.status().message, /Coverage 50%/);
-        assert.match(env.status().captures[0].label, /☁ 0%/); assert.match(env.status().captures[0].title, /Scene clouds 0%/);
+        assert.match(env.status().captures[0].label, /☁ 0%/); assert.match(env.status().captures[0].title, /Clouds 0%/);
+    } finally { env.session.dispose(); }
+});
+
+test('the overlay capture list preserves the original date, cloud and accessible tooltip format', async () => {
+    let searches = 0;
+    const captures = [3.4, 0, 100, null].map((cloud, index) => ({ ...capture(`capture-${index}`,
+        Date.parse('2026-10-08T01:27:00Z') - index * 86400000), cloud }));
+    const env = setup(async () => { searches++; return captures; });
+    try {
+        env.session.activate(); await tick();
+        assert.deepEqual(env.status().captures.map(choice => choice.label), [
+            'Latest · 10-07 18:27 · ☁ 3%', '2026-10-06 18:27 · ☁ 0%',
+            '2026-10-05 18:27 · ☁ 100%', '2026-10-04 18:27 · ☁ ?',
+        ]);
+        assert.equal(env.status().captures[0].title, 'Latest · 2026-10-07 18:27 PDT · Clouds 3%');
+        assert.equal(env.status().captures[3].title, '2026-10-04 18:27 PDT · Clouds unknown');
+        for (const item of captures) env.session.select(item === captures[0] ? 'latest' : item.key);
+        assert.equal(searches, 1, 'cloud labels reuse the existing capture catalog');
     } finally { env.session.dispose(); }
 });
 test('catalog failure retains imagery, but choosing a pass cannot reuse coverage from the old view', async t => {
