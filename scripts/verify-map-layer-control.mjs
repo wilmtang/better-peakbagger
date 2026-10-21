@@ -58,7 +58,7 @@ try {
         await page.goto(`https://www.peakbagger.com:${fixture.port}/layer-control.aspx`);
         await page.addStyleTag({ content: css }); await page.addScriptTag({ content: bundle.outputFiles[0].text });
         await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${12 * scale}px`; }, scale);
-        const trigger = page.getByRole('button', { name: /^Layers/ });
+        const trigger = page.getByRole('button', { name: /^Overlays/ });
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         const collapsedTrigger = await trigger.boundingBox();
         const caret = trigger.locator('.bpb-layers-caret');
@@ -157,7 +157,7 @@ try {
         await recovery.click();
         await page.evaluate(() => { window.fixture.statuses.slope = {}; window.fixture.paint(); }); await stableRecovery();
         assert.equal(await recovery.textContent(), 'Reload', 'success retains a real action until the user leaves it');
-        assert.equal(await page.getByText('Layer refreshed.', { exact: true }).isVisible(), true);
+        assert.equal(await page.getByText('Overlay refreshed.', { exact: true }).isVisible(), true);
         assert.equal(await recovery.getAttribute('aria-disabled'), 'false');
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').isVisible(), false);
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-value').isVisible(), true);

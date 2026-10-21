@@ -1,6 +1,6 @@
-# Map layers
+# Map overlays
 
-The **Layers** button at the upper-left of ascent, peak, Full Screen and
+The **Overlays** button at the upper-left of ascent, peak, Full Screen and
 standalone native maps opens one compact overlay menu. The basemap selector
 stays at the upper-right in both 2D and 3D. Enable any combination of overlays;
 closing the menu leaves them visible. Toggling a layer selects its matching
@@ -38,9 +38,9 @@ leaves it; it does not disappear under the pointer or become a fake success
 button. Tile feedback follows complete tile/body/decode work, including queued
 requests; late cancelled work cannot clear newer loading. Capture search and
 imagery loading are tracked separately so Sentinel's dated picker is usable
-while tiles load. Other layers, opacity and the Layers disclosure remain usable.
+while tiles load. Other layers, opacity and the Overlays disclosure remain usable.
 The caret points down when collapsed and up when expanded. Only activating the
-**Layers** button toggles the menu, including Enter or Space while it has focus.
+**Overlays** button toggles the menu, including Enter or Space while it has focus.
 Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 2D and 3D also preserves the open menu and selected detail.
 

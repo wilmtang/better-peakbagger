@@ -23,7 +23,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         return element;
     };
     const element = node('div', 'bpb-map-layers');
-    const trigger = node('button', 'bpb-layers-trigger', 'Layers'); trigger.type = 'button';
+    const trigger = node('button', 'bpb-layers-trigger', 'Overlays'); trigger.type = 'button';
     trigger.setAttribute('aria-expanded', 'false');
     const indicator = node('span', 'bpb-layers-indicator'); indicator.setAttribute('aria-hidden', 'true'); trigger.append(indicator);
     const caret = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -131,7 +131,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled);
         const failed = active.some(key => (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
-        trigger.setAttribute('aria-label', `Layers${active.length ? `, ${active.length} active` : ''}${failed ? ', layer unavailable' : ''}`);
+        trigger.setAttribute('aria-label', `Overlays${active.length ? `, ${active.length} active` : ''}${failed ? ', overlay unavailable' : ''}`);
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
             const shown = current.enabled && (key === 'snotel' || current.opacity > 0);
@@ -162,8 +162,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 item.append(swatch, doc.createTextNode(entry.label)); return item;
             }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
-            detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this layer.'
-                : !shown ? 'Increase opacity to show this layer.' : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Layer refreshed.' : '');
+            detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
+                : !shown ? 'Increase opacity to show this overlay.' : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
                 const signature = JSON.stringify(keys);

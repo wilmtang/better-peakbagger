@@ -13,7 +13,7 @@ test('overlay schema bounds device-local alpha and fails closed on enablement', 
     assert.equal(Object.hasOwn(Schema.DEFAULTS, 'mapOverlays'), false, 'overlay enablement is not a synced preference');
 });
 
-test('compact Layers control separates collapse, enablement and one detail selection', () => {
+test('compact Overlays control separates collapse, enablement and one detail selection', () => {
     const dom = new JSDOM('<body></body>'), document = dom.window.document;
     const changes = [], opacity = [];
     const control = createMapLayerControl({ document, onToggle: (...args) => changes.push(args), onOpacity: (...args) => opacity.push(args) });
@@ -21,6 +21,8 @@ test('compact Layers control separates collapse, enablement and one detail selec
     const state = Schema.mapOverlayState({ slope: { enabled: true, opacity: 60 } });
     const model = { state };
     control.render(model);
+    assert.equal(control.trigger.textContent, 'Overlays');
+    assert.equal(control.trigger.getAttribute('aria-label'), 'Overlays, 1 active');
     const panel = document.querySelector('.bpb-layers-panel'), well = document.querySelector('.bpb-layers-details');
     assert.equal(panel.hidden, true);
     control.trigger.click(); assert.equal(panel.hidden, false); assert.equal(well.hidden, true);
@@ -110,14 +112,14 @@ test('successful recovery keeps a focused action anchored as Reload until the us
     const action = doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry'); action.focus(); action.click();
     render({ pending: true, retry: true }); action.click(); assert.equal(requests.length, 1);
     render({}); assert.equal(action.hidden, false); assert.equal(action.textContent, 'Reload'); assert.equal(doc.activeElement, action);
-    assert.equal(doc.querySelector('.bpb-layers-feedback[data-kind="success"] span').textContent, 'Layer refreshed.');
+    assert.equal(doc.querySelector('.bpb-layers-feedback[data-kind="success"] span').textContent, 'Overlay refreshed.');
     action.click(); assert.equal(requests.length, 2, 'Reload is an actual refresh action rather than a clickable-looking success label');
     render({ pending: true, retry: true }); assert.equal(action.textContent, 'Reload');
     render({}); doc.querySelector('[aria-label="Slope angle opacity"]').focus(); assert.equal(action.hidden, true);
     control.dispose(); dom.window.close();
 });
 
-test('Layers stays expanded through outside interaction and only its button collapses it', () => {
+test('Overlays stays expanded through outside interaction and only its button collapses it', () => {
     const dom = new JSDOM('<body><button id="outside">Map action</button></body>'), document = dom.window.document;
     const control = createMapLayerControl({ document }); document.body.append(control.element);
     control.trigger.click(); document.querySelector('[data-layer="slope"] button').click();
@@ -134,10 +136,10 @@ test('Layers stays expanded through outside interaction and only its button coll
     control.dispose(); dom.window.close();
 });
 
-test('Layers includes a decorative caret beside its accessible disclosure state', () => {
+test('Overlays includes a decorative caret beside its accessible disclosure state', () => {
     const dom = new JSDOM('<body></body>'), control = createMapLayerControl({ document: dom.window.document });
     const caret = control.trigger.querySelector('.bpb-layers-caret');
-    assert.ok(caret, 'a visible caret indicates that Layers is collapsible');
+    assert.ok(caret, 'a visible caret indicates that Overlays is collapsible');
     assert.equal(caret.getAttribute('aria-hidden'), 'true');
     assert.equal(control.trigger.getAttribute('aria-expanded'), 'false');
     control.trigger.click(); assert.equal(control.trigger.getAttribute('aria-expanded'), 'true');

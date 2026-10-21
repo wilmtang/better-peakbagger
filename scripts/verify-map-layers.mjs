@@ -196,7 +196,7 @@ try {
     for (const pathname of ['/map/MasterMap.aspx?t=P', '/Peak.aspx?pid=2296&layersFixture=1', '/climber/ascent.aspx?aid=1&layersFixture=1', '/map/BigMap.aspx?t=OTHER&layersFixture=1']) {
         if (pathname.includes('layersFixture')) await context.route(`${origin}${pathname}`, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>body{margin:16px;font:14px system-ui}iframe{width:100%;height:360px;border:0}</style><h1>Native map fixture</h1><iframe id="if" src="/map/MasterMap.aspx?t=P"></iframe><h2>Following native content</h2><a id="fullscreen" target="_blank" href="/map/BigMap.aspx?t=OTHER&amp;handoff=1">Full Screen</a>' }));
         await page.goto(origin + pathname);
-        await wait(() => document.querySelector('.bpb-layers-trigger') && !document.querySelector('.bpb-map-layers').hidden, 'real extension Layers control');
+        await wait(() => document.querySelector('.bpb-layers-trigger') && !document.querySelector('.bpb-map-layers').hidden, 'real extension Overlays control');
         const native = pathname.includes('MasterMap') ? page : page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
         assert.equal(await native.locator('.bpb-map-layers').count(), pathname.includes('MasterMap') ? 1 : 0, 'one outer owner');
         assert.equal(await native.locator('#selmap').isVisible(), true, 'native basemap picker stays visible in its original corner');
@@ -206,7 +206,7 @@ try {
         assert.ok(Math.abs(mapBox.x + mapBox.width - baseBox.x - baseBox.width - 10) <= 1, 'native basemap stays 10px from the map right edge');
         assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0, 'overlay menu contains no basemap selector');
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, 'starts collapsed');
-        await page.getByRole('button', { name: /^Layers/ }).click();
+        await page.getByRole('button', { name: /^Overlays/ }).click();
         await native.locator('#map').click({ position: { x: mapBox.width - 50, y: 80 } });
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true, 'native map clicks preserve the open overlay menu');
         await native.locator('#selmap').click(); await page.keyboard.press('Escape');
@@ -277,13 +277,13 @@ try {
         await native.evaluate(() => mapsPlaceholder.panBy([10,0], {animate:false}));
         await waitForCondition(() => searches > before, {description:'one active catalog owner refreshes'});
         if(output){await mkdir(output,{recursive:true});await page.screenshot({path:path.join(output,`detail-${cases.length}.png`)});await page.locator('[data-layer="snotel"] button').click();await page.screenshot({path:path.join(output,`overview-${cases.length}.png`)});if(cases.length===1){for(const id of ['slope','land']){await page.locator(`[data-layer="${id}"] button`).click();await page.screenshot({path:path.join(output,`${id}-detail.png`)});await page.locator(`[data-layer="${id}"] button`).click();}}}
-        await page.getByRole('button', {name:/^Layers/}).click();
+        await page.getByRole('button', {name:/^Overlays/}).click();
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         if (output) { await mkdir(output,{recursive:true}); await page.screenshot({path:path.join(output,`map-${cases.length}.png`)}); }
         if(pathname.startsWith('/Peak.aspx')){
-            await page.getByRole('button',{name:/^Layers/}).click();await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
+            await page.getByRole('button',{name:/^Overlays/}).click();await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
             const picker=page.locator('[aria-label="Sentinel-2 capture"]');const chosen=await picker.locator('option').nth(1).getAttribute('value');await picker.selectOption(chosen);
-            await page.getByRole('button',{name:/^Layers/}).click();
+            await page.getByRole('button',{name:/^Overlays/}).click();
             const [destination]=await Promise.all([context.waitForEvent('page'),page.locator('#fullscreen').click()]);await destination.waitForLoadState();
             await destination.waitForFunction(()=>document.querySelector('[data-layer="slope"] input')?.checked===true);
             assert.equal(await destination.locator('.bpb-layers-panel').isVisible(),false,'full-screen handoff starts compact');
@@ -296,7 +296,7 @@ try {
         cases.push(pathname);
     }
     await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
-    await page.getByRole('button', { name: /^Layers/ }).click();
+    await page.getByRole('button', { name: /^Overlays/ }).click();
     const slopeMap = page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
     slopeMode = 'recover'; slopeRequests.clear();
     await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
@@ -325,7 +325,7 @@ try {
     assert.deepEqual(await slopeRecovery.boundingBox(), slopeRecoveryBox);
     cases.push('native slope automatic recovery, partial coverage and retry only missing tiles without clearing good shading');
     await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
-    await page.getByRole('button', { name: /^Layers/ }).click(); landMode = 'error';
+    await page.getByRole('button', { name: /^Overlays/ }).click(); landMode = 'error';
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
     await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Couldn’t load', 'native public-land failure is explained in its row');
     await wait(() => document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry')?.getAttribute('aria-disabled') === 'false', 'native land retries have settled before user recovery');
@@ -377,7 +377,7 @@ try {
         const native = pathname.includes('MasterMap') ? page : page.frames().find(frame => frame.url().includes('/map/MasterMap.aspx'));
         await waitForCondition(() => native.evaluate(() => !!window.mapsPlaceholder), { description: 'Canadian native map ready' });
         await native.evaluate(() => { mapsPlaceholder.setView([54,-124],12,{animate:false}); });
-        await page.getByRole('button', { name: /^Layers/ }).click();
+        await page.getByRole('button', { name: /^Overlays/ }).click();
         await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
         assert.equal(await page.getByRole('slider', { name: 'Public lands opacity' }).isVisible(), true, 'enabling Canadian public lands selects its matching opacity detail');
         const opacity = page.getByRole('slider', { name: 'Public lands opacity' });
@@ -449,7 +449,7 @@ try {
     // HTML default, so corner and navigation measurements match the live shell.
     await context.route(`${origin}/map/BigMap.aspx?t=A&d=1&c=900001`, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><style>html,body,iframe{width:100%;height:100%;margin:0;border:0;display:block}</style><iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001"></iframe>' }));
     await page.goto(`${origin}/map/BigMap.aspx?t=A&d=1&c=900001`);
-    await page.getByRole('button',{name:/^Layers/}).click();
+    await page.getByRole('button',{name:/^Overlays/}).click();
     await page.getByRole('checkbox',{name:'Sentinel-2 (experimental)',exact:true}).check();
     assert.equal(await page.getByRole('slider',{name:'Sentinel-2 (experimental) opacity'}).isVisible(),true);
     const capturePicker = page.getByRole('combobox',{name:'Sentinel-2 capture'});
@@ -505,7 +505,7 @@ try {
     assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'3D map click preserves the expanded menu');
     await canvas.press('Escape');
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'false');
-    assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'Escape leaves 3D without collapsing Layers');
+    assert.equal(await page.locator('.bpb-layers-panel').isVisible(),true,'Escape leaves 3D without collapsing Overlays');
     assert.equal(await page.locator('[aria-label="Sentinel-2 capture"]').inputValue(),older);
     await toggle.click();
     await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
