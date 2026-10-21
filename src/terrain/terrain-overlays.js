@@ -12,11 +12,18 @@ import { createBCTileFetch } from '../maps/bc-land-client.js';
 export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     let snapshot = null, scenes = [], sceneRevision = 0, sourceRevision = 0, disposed = false, registered = false;
     let sentinelStatus = {};
+    const rasterStatus = {};
+    const loadingMessage = id => id === 'land' ? 'Loading public lands' : 'Loading slope shading';
+    const reportRaster = (id, patch) => {
+        rasterStatus[id] = { ...rasterStatus[id], ...patch };
+        post('layerStatus', { id, revision: snapshot?.revision, ...rasterStatus[id] });
+    };
     const layers = new Map(), protocol = 'bpb-overlay';
     const error = (id, failure) => {
+        if (disposed || failure?.name === 'AbortError') return;
         if (snapshot && failure?.retryAt > Date.now()) snapshot.cooldowns[id] = failure.retryAt;
         if (id === 'sentinel') sentinel.tileError(failure);
-        else post('layerStatus', { id, revision: snapshot?.revision, error: true, retry: true, retryAt: failure?.retryAt,
+        else reportRaster(id, { pending: false, error: true, retry: true, retryAt: failure?.retryAt,
             permission: failure?.code === 'bc-permission-required',
             message: failure?.code === 'bc-permission-required' ? 'Allow BC parcel maps.'
                 : failure?.code === 'rate-limit' ? 'Map service is busy. Try again later.' : 'Some map tiles are unavailable. Retry.' });
@@ -24,7 +31,13 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     // This packaged extension frame can call the worker. MAIN-world Leaflet
     // maps use the isolated bridge instead; privileged APIs stay out of them.
     const fetchBCTile = createBCTileFetch(message => (globalThis.browser || globalThis.chrome).runtime.sendMessage(message));
-    const tiles = createOverlayTiles({ document: doc, fetchBCTile, onError: error });
+    const tiles = createOverlayTiles({ document: doc, fetchBCTile, onError: error, onActivity(id, activity) {
+        if (disposed || !snapshot?.state[id]?.enabled || snapshot.state[id].opacity === 0) return;
+        if (id === 'sentinel') sentinel.tileActivity(activity);
+        else if (!activity.error && (activity.pending || activity.complete)) reportRaster(id, { pending: activity.pending,
+            ...(activity.pending || activity.complete ? { error: false, permission: false, retryAt: 0,
+                retry: activity.pending && rasterStatus[id]?.retry === true, message: activity.pending ? loadingMessage(id) : '' } : {}) });
+    } });
     const tileProtocol = async (request, controller) => {
         const match = /^bpb-overlay:\/\/(sentinel|slope|land)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
         if (!match || disposed) throw new Error('Invalid overlay tile.');
@@ -60,6 +73,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 const before = beforeVectors();
                 map.addLayer({ id: source, source, type: 'raster', paint: { 'raster-opacity': state.opacity / 100, 'raster-fade-duration': 0 } }, before);
                 layers.set(id, source);
+                if (id !== 'sentinel') reportRaster(id, { pending: true, error: false, permission: false, retryAt: 0, retry: rasterStatus[id]?.retry === true, message: loadingMessage(id) });
             }
             map.setPaintProperty(source, 'raster-opacity', state.opacity / 100);
         }
@@ -80,6 +94,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             const next = readLayerSnapshot(value); if (!next || snapshot && next.revision < snapshot.revision) return;
             const first = snapshot === null;
             snapshot = next;
+            for (const id of ['land', 'slope']) if (!next.state[id].enabled || next.state[id].opacity === 0) rasterStatus[id] = {};
             sentinel.cooldown(next.cooldowns.sentinel);
             if (next.state.sentinel.enabled && next.state.sentinel.opacity > 0) sentinel.activate(next.capture);
             else sentinel.deactivate();
@@ -88,18 +103,24 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
             // transit. Reattach the current provider model to the accepted
             // revision so the outer menu cannot remain stuck in pending.
             post('layerStatus', { id: 'sentinel', revision: next.revision, ...sentinelStatus });
+            for (const id of ['land', 'slope']) if (next.state[id].enabled) {
+                if (next.cooldowns[id] > Date.now()) reportRaster(id, { pending: false, error: true, permission: false, retry: true,
+                    retryAt: next.cooldowns[id], message: 'Map service is busy. Try again later.' });
+                else if (Object.keys(rasterStatus[id] || {}).length) reportRaster(id, {});
+            }
             return first;
         },
         action({ id, action, capture }) {
             if (action === 'capture' && id === 'sentinel' && typeof capture === 'string') sentinel.select(capture);
+            if (action === 'retry' && (id === 'sentinel' ? sentinelStatus.pending : rasterStatus[id]?.pending)) return;
             if (action === 'retry' && snapshot?.state[id]?.enabled && snapshot.cooldowns[id] <= Date.now() && tiles.retry(id)) {
-                if (id === 'sentinel') sentinel.retry(); else { remove(id); paint(); }
+                if (id === 'sentinel') sentinel.retry(); else { reportRaster(id, { pending: true, error: false, permission: false, retry: true, message: loadingMessage(id) }); remove(id); paint(); }
             }
         },
         refresh() { sentinel.refresh(); },
         tileError(source, failure) { for (const [id, current] of layers) if (current === source) error(id, failure); },
         menuOpen: () => snapshot?.menuOpen === true,
-        suspend() { sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); snapshot = null; },
+        suspend() { snapshot = null; sentinel.deactivate(); for (const id of [...layers.keys()]) remove(id); },
         basemapChanged: paint,
         dispose() { disposed = true; sentinel.dispose(); for (const id of [...layers.keys()]) remove(id); tiles.dispose(); if (registered) maplibre.removeProtocol(protocol); },
     };

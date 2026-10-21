@@ -2287,9 +2287,12 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
         assert.equal(messages.at(-1).type, 'exit', 'map Escape retains its normal exit behavior while Layers stays open');
         assert.equal(messages.slice(beforeInteraction).some(message => message.type === 'layerDismiss'), false, '3D interaction never dismisses Layers');
         const status = () => messages.filter(message => message.type === 'layerStatus').at(-1);
-        assert.match(status().message, /Coverage 100% · Clouds 41%/); assert.notEqual(status().capture, 'latest');
+        // This renderer stub never requests protocol tiles. A completed catalog
+        // must retain its metadata without claiming the imagery has loaded.
+        assert.equal(status().message, 'Loading imagery'); assert.equal(status().pending, true); assert.equal(status().capturePending, false);
+        assert.match(status().captures[0].title, /Clouds 41%/); assert.notEqual(status().capture, 'latest');
         dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 2, state: { sentinel: { enabled: true, opacity: 75 } } } });
-        assert.equal(status().revision, 2); assert.match(status().message, /Coverage 100%/);
+        assert.equal(status().revision, 2); assert.equal(status().message, 'Loading imagery');
         assert.equal(pending.length, 1, 'a newer opacity snapshot republishes status without another catalog request');
         map.handlers.get('moveend')(); t.mock.timers.tick(300); await answer(1);
         assert.equal(currentSource(), source, 'same scenes reuse decoded tile resources');

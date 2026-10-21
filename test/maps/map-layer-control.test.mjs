@@ -78,6 +78,45 @@ test('opacity summaries name the property and sliders explain their direction', 
     control.dispose(); dom.window.close();
 });
 
+test('layer rows explain loading, failure and access without hiding controls or stale off-state warnings', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
+    const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
+    const state = Schema.mapOverlayState({ land: { enabled: true } });
+    const render = status => control.render({ state, statuses: { land: status } });
+    render({ pending: true, message: 'Loading public lands' }); control.trigger.click(); doc.querySelector('[data-layer="land"] button').click();
+    const row = doc.querySelector('[data-layer="land"]'), button = row.querySelector('button');
+    assert.equal(row.querySelector('.bpb-layers-row-status')?.textContent, 'Loading');
+    assert.equal(button.getAttribute('aria-busy'), 'true'); assert.equal(button.disabled, false, 'settings remain available during loading');
+    render({ error: true, retry: true, message: 'Some tiles could not load.' });
+    assert.equal(row.querySelector('.bpb-layers-row-status').textContent, 'Couldn’t load');
+    const retry = doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry'); retry.focus(); retry.click(); assert.deepEqual(retries, ['land']);
+    render({ pending: true, retry: true, message: 'Loading public lands' }); retry.click(); assert.deepEqual(retries, ['land']);
+    assert.equal(doc.activeElement, retry, 'retry retains focus while its request is pending');
+    render({ permission: true, error: true, retry: true, message: 'Allow BC parcel maps.' });
+    assert.equal(row.querySelector('.bpb-layers-row-status').textContent, 'Needs access');
+    state.land.enabled = false; render({ error: true, retry: true, message: 'Previous failure' });
+    assert.equal(row.dataset.status, ''); assert.equal(row.querySelector('.bpb-layers-row-status').hidden, true);
+    assert.equal(doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-feedback').textContent.includes('Previous failure'), false);
+    state.land.enabled = true; render({}); assert.equal(row.querySelector('.bpb-layers-value').hidden, false);
+    assert.equal(row.querySelector('.bpb-layers-value').textContent, 'Opacity25%');
+    control.dispose(); dom.window.close();
+});
+test('successful recovery keeps a focused action anchored as Reload until the user leaves it', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document, requests = [];
+    const control = createMapLayerControl({ document: doc, onRetry: id => requests.push(id) }); doc.body.append(control.element);
+    const state = Schema.mapOverlayState({ slope: { enabled: true } });
+    const render = status => control.render({ state, statuses: { slope: status } });
+    render({ error: true, retry: true }); control.trigger.click(); doc.querySelector('[data-layer="slope"] button').click();
+    const action = doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry'); action.focus(); action.click();
+    render({ pending: true, retry: true }); action.click(); assert.equal(requests.length, 1);
+    render({}); assert.equal(action.hidden, false); assert.equal(action.textContent, 'Reload'); assert.equal(doc.activeElement, action);
+    assert.equal(doc.querySelector('.bpb-layers-feedback[data-kind="success"] span').textContent, 'Layer refreshed.');
+    action.click(); assert.equal(requests.length, 2, 'Reload is an actual refresh action rather than a clickable-looking success label');
+    render({ pending: true, retry: true }); assert.equal(action.textContent, 'Reload');
+    render({}); doc.querySelector('[aria-label="Slope angle opacity"]').focus(); assert.equal(action.hidden, true);
+    control.dispose(); dom.window.close();
+});
+
 test('Layers stays expanded through outside interaction and only its button collapses it', () => {
     const dom = new JSDOM('<body><button id="outside">Map action</button></body>'), document = dom.window.document;
     const control = createMapLayerControl({ document }); document.body.append(control.element);

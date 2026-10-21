@@ -44,7 +44,7 @@ try {
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
             onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
-            onRetry:id=>{statuses[id]={message:'Loaded'};paint()}});
+            onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:'Loading map tiles'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
         window.fixture={control,state,statuses,paint,landInfo:publicLandInfo};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
@@ -118,6 +118,41 @@ try {
                 await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
             }
         }
+        await page.evaluate(() => { window.fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; window.fixture.paint(); });
+        const recovery = page.getByRole('button', { name: /^(Retry|Reload)$/ });
+        await recovery.scrollIntoViewIfNeeded(); await recovery.focus();
+        const recoveryBox = await recovery.boundingBox(), scrollBeforeRecovery = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
+        const recoveryGeometry = await geometry();
+        const stableRecovery = async () => {
+            assert.deepEqual(await geometry(), recoveryGeometry, 'feedback keeps rows, map and following content anchored');
+            assert.deepEqual(await recovery.boundingBox(), recoveryBox, 'Retry/Reload keeps the same pointer target');
+            assert.equal(await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop), scrollBeforeRecovery);
+            assert.equal(await recovery.evaluate(element => document.activeElement === element), true);
+        };
+        assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Couldn’t load');
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-failure.png`) });
+        await recovery.click(); await stableRecovery();
+        assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Loading');
+        assert.equal(await recovery.getAttribute('aria-disabled'), 'true');
+        const requests = await page.evaluate(() => window.fixture.retryRequests);
+        await recovery.press('Enter'); assert.equal(await page.evaluate(() => window.fixture.retryRequests), requests, 'busy retry rejects duplicate keyboard activation');
+        const spinner = page.locator('[data-layer="slope"] .bpb-layers-spinner'); assert.equal(await spinner.isVisible(), true);
+        assert.equal(await spinner.evaluate(element => getComputedStyle(element).animationName), 'bpb-layer-spin');
+        await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+        assert.equal(await spinner.evaluate(element => getComputedStyle(element).animationName), 'none');
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-loading.png`) });
+        await page.emulateMedia({ colorScheme: theme, reducedMotion: 'no-preference' });
+        await page.evaluate(() => { window.fixture.statuses.slope = { error: true, retry: true, message: 'Some tiles could not load.' }; window.fixture.paint(); }); await stableRecovery();
+        await recovery.click();
+        await page.evaluate(() => { window.fixture.statuses.slope = {}; window.fixture.paint(); }); await stableRecovery();
+        assert.equal(await recovery.textContent(), 'Reload', 'success retains a real action until the user leaves it');
+        assert.equal(await page.getByText('Layer refreshed.', { exact: true }).isVisible(), true);
+        assert.equal(await recovery.getAttribute('aria-disabled'), 'false');
+        assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').isVisible(), false);
+        assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-value').isVisible(), true);
+        await page.locator('[data-layer="slope"] input').focus();
+        assert.equal(await recovery.isVisible(), false);
+        await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
         for (const id of ['land', 'sentinel', 'snotel', 'slope']) {
             const checkbox = page.locator(`[data-layer="${id}"] input`);
             await checkbox.focus(); await checkbox.press('Space'); await stable();

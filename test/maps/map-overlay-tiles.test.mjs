@@ -5,6 +5,11 @@ import assert from 'node:assert/strict';
 import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.js';
 const document = { createElement: () => ({ width: 256, height: 256, getContext: () => ({ clearRect() {}, drawImage() {} }) }) };
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const mockBitmap = t => {
+    const previous = globalThis.createImageBitmap;
+    globalThis.createImageBitmap = async () => ({ width: 256, height: 256, close() {} });
+    t.after(() => { if (previous === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = previous; });
+};
 
 test('tile ownership bounds concurrency to four and off aborts queued and active work', async () => {
     const held = [], failures = [];
@@ -43,4 +48,32 @@ test('incomplete Alberta pages never publish a partially colored tile', async ()
     await assert.rejects(tiles.draw('land', coordinates, output), /Incomplete Alberta/);
     assert.equal(filled, 1, 'a working polygon was drawn before the incomplete page was detected');
     assert.equal(published, 0, 'the visible canvas retains its prior content'); tiles.dispose();
+});
+test('tile activity reports pending through the body, then clears failures only after a successful retry', async t => {
+    mockBitmap(t);
+    const states = [], held = [];
+    const tiles = createOverlayTiles({ document, onActivity: (id, state) => states.push({ id, ...state }),
+        fetchImpl: () => new Promise(resolve => held.push(resolve)) });
+    const draw = () => tiles.draw('land', { z: 10, x: 163, y: 359 }, tiles.canvas());
+    const first = draw(); await tick(); assert.equal(states.at(-1).pending, true);
+    held.shift()(new Response('', { status: 503 })); await assert.rejects(first);
+    assert.equal(states.at(-1).pending, false); assert.equal(states.at(-1).error, true);
+    assert.equal(tiles.retry('land'), true);
+    const next = draw(); await tick(); assert.equal(states.at(-1).pending, true); assert.equal(states.at(-1).error, false);
+    let body;
+    held.shift()(new Response(new ReadableStream({ start(controller) { body = controller; } }), { headers: { 'content-type': 'image/png' } }));
+    await tick(); assert.equal(states.at(-1).pending, true, 'HTTP headers alone do not mean the tile is loaded');
+    body.enqueue(new Uint8Array([1])); body.close(); await next;
+    assert.deepEqual(states.at(-1), { id: 'land', pending: false, error: false, complete: true }); tiles.dispose();
+});
+test('cancelled tile completions cannot clear a newer loading batch', async t => {
+    mockBitmap(t);
+    const states = [], held = [];
+    const tiles = createOverlayTiles({ document, onActivity: (_id, state) => states.push(state), fetchImpl: () => new Promise(resolve => held.push(resolve)) });
+    const draw = () => tiles.draw('slope', { z: 10, x: 163, y: 359 }, tiles.canvas());
+    const stale = draw().catch(error => error.name); await tick(); tiles.retry('slope');
+    const current = draw(); await tick();
+    const image = () => new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } });
+    held[0](image()); assert.equal(await stale, 'AbortError'); assert.equal(states.at(-1).pending, true);
+    held[1](image()); await current; assert.equal(states.at(-1).complete, true); tiles.dispose();
 });

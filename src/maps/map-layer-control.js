@@ -46,15 +46,18 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const row = node('div', 'bpb-layers-row'); row.dataset.layer = key;
         const label = node('label', 'bpb-layers-choice');
         const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.setAttribute('aria-label', NAMES[key]);
-        label.append(checkbox, node('span', '', LABELS[key]));
+        label.append(checkbox);
         const disclosure = node('button', 'bpb-layers-disclosure'); disclosure.type = 'button';
         disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}`); disclosure.setAttribute('aria-expanded', 'false');
         disclosure.setAttribute('aria-controls', well.id);
         const value = node('span', 'bpb-layers-value'), amount = node('span', 'bpb-layers-value-number');
         if (key !== 'snotel') value.append(node('span', 'bpb-layers-value-label', 'Opacity'));
         value.append(amount);
+        const summary = node('span', 'bpb-layers-summary'), spinner = node('span', 'bpb-layers-spinner'); spinner.setAttribute('aria-hidden', 'true');
+        const rowStatus = node('span', 'bpb-layers-row-status'); summary.append(spinner, value, rowStatus);
+        const copy = node('span', 'bpb-layers-row-copy'); copy.append(node('span', 'bpb-layers-row-name', LABELS[key]), summary);
         const chevron = node('span', 'bpb-layers-chevron', '›'); chevron.setAttribute('aria-hidden', 'true');
-        disclosure.append(value, chevron); row.append(label, disclosure); panel.append(row);
+        disclosure.append(copy, chevron); row.append(label, disclosure); panel.append(row);
         const detail = node('section', 'bpb-layers-detail'); detail.hidden = true;
         detail.setAttribute('aria-label', `${NAMES[key]} settings`); detail.append(node('div', 'bpb-layers-detail-title', NAMES[key]));
         let slider = null, output = null, capture = null;
@@ -85,8 +88,10 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         retry.addEventListener('click', () => {
             const current = model.statuses?.[key];
             if (current?.pending || current?.retryAt > Date.now() || current?.permission) return;
+            const recovery = details.get(key); recovery.recovering = true; recovery.reloading = retry.textContent === 'Reload';
             onRetry(key);
         });
+        retry.addEventListener('blur', () => { const recovery = details.get(key); recovery.recovering = false; recovery.reloading = false; paint(); });
         action.append(retry); feedback.append(status, action); detail.append(feedback); well.append(detail);
         checkbox.addEventListener('change', () => {
             expanded = key;
@@ -97,8 +102,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             expanded = expanded === key ? null : key;
             paint();
         });
-        rows.set(key, { row, checkbox, disclosure, value: amount });
-        details.set(key, { detail, slider, output, capture, legend, guidance, status, retry, captureKey: '', guidanceKey: '' });
+        rows.set(key, { row, checkbox, disclosure, value, amount, spinner, rowStatus });
+        details.set(key, { detail, slider, output, capture, legend, guidance, feedback, status, retry, captureKey: '', guidanceKey: '' });
     }
     panel.append(well); element.append(trigger, panel, live);
     const position = () => {
@@ -124,18 +129,27 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         trigger.setAttribute('aria-expanded', String(open));
         const state = Schema.mapOverlayState(model.state);
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled);
-        const failed = active.some(key => model.statuses?.[key]?.error);
+        const failed = active.some(key => (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
         trigger.setAttribute('aria-label', `Layers${active.length ? `, ${active.length} active` : ''}${failed ? ', layer unavailable' : ''}`);
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
+            const shown = current.enabled && (key === 'snotel' || current.opacity > 0);
+            const kind = !shown ? '' : status.permission ? status.pending ? 'loading' : 'permission' : status.error ? 'error' : status.pending ? 'loading' : '';
+            const cooldown = status.retryAt > Date.now();
+            const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
+                : kind === 'permission' ? 'Needs access' : kind === 'error' ? cooldown ? 'Service busy' : 'Couldn’t load' : '';
+            const heldRecovery = shown && detail.recovering && doc.activeElement === detail.retry && !status.permission;
+            const recovered = heldRecovery && !status.pending && !status.error;
             row.row.hidden = model.available && !model.available.includes(key);
             row.checkbox.checked = current.enabled; row.checkbox.disabled = status.unavailable === true;
             row.disclosure.setAttribute('aria-expanded', String(open && expanded === key));
             row.row.dataset.selected = String(open && expanded === key);
-            row.disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}${key === 'snotel' ? '' : ` opacity, ${current.opacity} percent`}${status.message ? `: ${status.message}` : ''}`);
-            row.value.textContent = key === 'snotel' ? (Number.isInteger(status.count) ? String(status.count) : '') : `${current.opacity}%`;
-            row.row.dataset.status = status.error ? 'error' : status.pending ? 'pending' : '';
+            row.disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}${key === 'snotel' ? '' : ` opacity, ${current.opacity} percent`}${summary ? `: ${summary}` : ''}`);
+            row.disclosure.setAttribute('aria-busy', String(kind === 'loading'));
+            row.amount.textContent = key === 'snotel' ? current.enabled ? Number.isInteger(status.count) ? `${status.count} in view` : 'Station locations' : 'Off' : `${current.opacity}%`;
+            row.value.hidden = Boolean(kind); row.rowStatus.hidden = !kind; row.rowStatus.textContent = summary;
+            row.spinner.hidden = kind !== 'loading'; row.row.dataset.status = kind;
             detail.detail.hidden = !open || expanded !== key || row.row.hidden;
             if (detail.slider) {
                 detail.slider.value = String(current.opacity); detail.slider.disabled = !current.enabled;
@@ -146,7 +160,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
                 item.append(swatch, doc.createTextNode(entry.label)); return item;
             }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
-            detail.status.textContent = status.message || '';
+            detail.feedback.dataset.kind = recovered ? 'success' : kind;
+            detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this layer.'
+                : !shown ? 'Increase opacity to show this layer.' : cooldown ? `Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Layer refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
                 const signature = JSON.stringify(keys);
@@ -165,15 +181,15 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                     detail.captureKey = signature;
                     detail.capture.replaceChildren(...captures.map(choice => { const option = node('option', '', choice.label); option.value = choice.id; option.title = choice.title || choice.label; option.setAttribute('aria-label', option.title); return option; }));
                 }
-                detail.capture.value = status.capture || 'latest'; detail.capture.disabled = !current.enabled || status.pending === true;
+                detail.capture.value = status.capture || 'latest'; detail.capture.disabled = !current.enabled || (status.capturePending ?? status.pending) === true;
                 detail.capture.title = detail.capture.selectedOptions[0]?.title || '';
             }
-            const showRetry = current.enabled && status.retry === true;
+            const showRetry = shown && (status.retry === true || heldRecovery);
             if (!showRetry && doc.activeElement === detail.retry) row.disclosure.focus({ preventScroll: true });
             detail.retry.hidden = !showRetry;
-            detail.retry.textContent = status.permission ? 'Allow' : 'Retry';
+            detail.retry.textContent = status.permission ? 'Allow' : status.error ? 'Retry' : (heldRecovery && !status.pending || detail.reloading) ? 'Reload' : 'Retry';
             detail.retry.dataset.bpbBcPermission = String(key === 'land' && status.permission === true);
-            detail.retry.setAttribute('aria-label', status.permission ? 'Allow BC land maps' : 'Retry');
+            detail.retry.setAttribute('aria-label', status.permission ? 'Allow BC land maps' : detail.retry.textContent);
             detail.retry.setAttribute('aria-disabled', String(status.pending === true || status.retryAt > Date.now()));
             detail.retry.title = status.retryAt > Date.now() ? `Try again after ${new Date(status.retryAt).toLocaleTimeString()}` : '';
         }

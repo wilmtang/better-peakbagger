@@ -6,11 +6,25 @@ stays at the upper-right in both 2D and 3D. Enable any combination of overlays;
 closing the menu leaves them visible. Toggling a layer selects its matching
 settings below the rows, with a tinted row and downward chevron identifying the
 selected detail. Each row's disclosure also opens or closes those settings
-without changing enablement; only one detail is open at a time.
+without changing enablement; only one detail is open at a time. Clicking the
+layer name selects its settings; its checkbox turns the overlay on or off.
 Raster percentages are explicitly labelled **Opacity**. The slider runs from
 **Clear** (see the base map) to **Solid** (show the overlay at full strength).
 Turning a layer off leaves its own disabled settings selected. Provider updates
 do not change the selected detail or move keyboard focus.
+Each row has a short secondary line: opacity or station count when ready,
+**Loading** with a small spinner during work, **Couldn’t load** on failure, or
+**Needs access** for BC permission. Detailed explanations and **Retry**/**Allow**
+stay in that layer's settings. Turning a layer off hides stale loading/errors.
+Spinner motion stops when reduced motion is requested.
+
+Retry remains anchored and rejects repeated activation while work is pending.
+After success, a focused Retry becomes a working **Reload** action until focus
+leaves it; it does not disappear under the pointer or become a fake success
+button. Tile feedback follows complete tile/body/decode work, including queued
+requests; late cancelled work cannot clear newer loading. Capture search and
+imagery loading are tracked separately so Sentinel's dated picker is usable
+while tiles load. Other layers, opacity and the Layers disclosure remain usable.
 The caret points down when collapsed and up when expanded. Only activating the
 **Layers** button toggles the menu, including Enter or Space while it has focus.
 Map/page clicks, basemap changes and Escape leave it expanded. Switching between

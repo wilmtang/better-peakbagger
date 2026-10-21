@@ -8,10 +8,11 @@ const now = Date.now() - 86400000;
 const capture = (key, time = now) => ({ key, time, platform: 'Sentinel-2B', orbit: '13', coverage: 1, cloud: 0,
     scenes: [{ id: key, bounds: [-122, 46, -121, 47] }] });
 const bounds = { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 };
-function setup(search) {
+function setup(search, { holdTiles = false } = {}) {
     const statuses = [], scenes = [], selections = []; let cleared = 0, view = { bounds, zoom: 13 };
     const session = createSentinelSession({ readView: () => view, search, onStatus: status => statuses.push(status),
-        replaceScenes: value => scenes.push(value), clearScenes: () => cleared++, onCapture: value => selections.push(value), debounceMs: 5 });
+        replaceScenes: value => { scenes.push(value); if (!holdTiles) queueMicrotask(() => session.tileActivity({ pending: false, error: false, complete: true })); },
+        clearScenes: () => cleared++, onCapture: value => selections.push(value), debounceMs: 5 });
     return { session, statuses, scenes, selections, status: () => statuses.at(-1), cleared: () => cleared, view: value => { view = value; } };
 }
 test('the headless Sentinel model retains identical sources and updates only fresh coverage', async t => {
@@ -22,6 +23,18 @@ test('the headless Sentinel model retains identical sources and updates only fre
         env.session.refresh(); assert.equal(env.status().pending, true); assert.doesNotMatch(env.status().message, /Coverage/);
         t.mock.timers.tick(5); await tick(); assert.equal(env.scenes.length, 1); assert.match(env.status().message, /Coverage 50%/);
         assert.match(env.status().captures[0].label, /☁ 0%/); assert.match(env.status().captures[0].title, /Clouds 0%/);
+    } finally { env.session.dispose(); }
+});
+test('Sentinel loading includes imagery tiles while dated capture choices remain usable', async () => {
+    const env = setup(async () => [capture('new'), capture('old', now - 86400000)], { holdTiles: true });
+    try {
+        env.session.activate(); await tick(); assert.equal(env.status().pending, true); assert.equal(env.status().capturePending, false);
+        assert.equal(env.status().message, 'Loading imagery'); assert.equal(env.status().captures.length, 2);
+        env.session.tileActivity({ pending: true, error: false, complete: false });
+        env.session.tileError(new Error('offline')); assert.equal(env.status().pending, false); assert.equal(env.status().retry, true);
+        env.session.retry(); await tick(); assert.equal(env.status().pending, true); assert.equal(env.status().retry, true, 'recovery action remains anchored until imagery finishes');
+        env.session.tileActivity({ pending: false, error: false, complete: true });
+        assert.equal(env.status().pending, false); assert.equal(env.status().retry, false); assert.match(env.status().message, /Coverage/);
     } finally { env.session.dispose(); }
 });
 

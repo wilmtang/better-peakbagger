@@ -7,10 +7,10 @@ import { OVERLAY_ATTRIBUTION } from './map-overlay-providers.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup } from '../snow/snotel-map-marker.js';
 
-export function createLeafletOverlays({ win, map, onError, bridgeWindow = win }) {
+export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win }) {
     const L = win.L, layers = new Map(), controllers = new Map();
     const fetchBCTile = createPageBCTileFetch(bridgeWindow);
-    const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError });
+    const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError, onActivity });
     const z = { sentinel: 250, land: 260, slope: 270 };
     let stations = null, stationKey = '', hasScenes = false;
     const remove = id => {

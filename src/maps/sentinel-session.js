@@ -10,9 +10,15 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
     let active = false, disposed = false, revision = 0, controller = null, timer = null;
     let captures = [], target = null, rendered = '', retryAt = 0, tileFailed = false, zone = null, catalogValid = false;
     let status = {};
-    const publish = patch => { status = { ...status, ...patch }; onStatus(status); };
+    let tilePending = false, retrying = false;
+    const report = () => {
+        if (!status.pending && !tilePending && !status.error) retrying = false;
+        onStatus({ ...status, pending: !status.error && (status.pending === true || tilePending), capturePending: status.pending === true,
+            retry: status.retry === true || retrying, message: tilePending && !status.pending && !status.error ? 'Loading imagery' : status.message });
+    };
+    const publish = patch => { status = { ...status, ...patch }; report(); };
     const cancel = () => { revision++; controller?.abort(); controller = null; clearTimeout(timer); timer = null; };
-    const clear = () => { rendered = ''; tileFailed = false; clearScenes(); };
+    const clear = () => { rendered = ''; tileFailed = false; tilePending = false; clearScenes(); };
     const choose = (retry = false) => {
         const current = target ? captures.find(candidate => candidate.platform === target.platform
             && candidate.orbit === target.orbit && Math.abs(candidate.time - target.time) <= 900000) : captures[0];
@@ -22,7 +28,7 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
         if (target && !current) choices.push(option(target, 'missing'));
         if (current) {
             const key = JSON.stringify(current.scenes.map(scene => [scene.id, scene.bounds]).sort());
-            if (key !== rendered || retry && tileFailed) { tileFailed = false; replaceScenes(current.scenes); rendered = key; }
+            if (key !== rendered || retry && tileFailed) { tileFailed = false; replaceScenes(current.scenes); tilePending = true; rendered = key; }
         } else clear();
         publish({ pending: false, error: tileFailed, retry: tileFailed, retryAt: 0, captures: choices,
             capture: target && current !== captures[0] ? current?.key || 'missing' : 'latest',
@@ -56,7 +62,7 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
             if (active) { if (previous !== JSON.stringify(target)) { if (catalogValid) choose(); else void load(); } return; }
             active = true; void load();
         },
-        deactivate() { active = false; cancel(); clear(); publish({ pending: false }); },
+        deactivate() { active = false; tilePending = false; retrying = false; cancel(); clear(); publish({ pending: false }); },
         refresh() {
             if (!active || retryAt > Date.now()) return;
             cancel(); catalogValid = false; publish({ pending: true, error: false, message: 'Finding captures…' });
@@ -68,7 +74,7 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
             else { const capture = captures.find(candidate => candidate.key === value); if (!capture) return; target = sentinelTarget(capture); }
             onCapture(target); if (catalogValid) choose(); else void load();
         },
-        retry() { void load(true); },
+        retry() { retrying = true; void load(true); },
         cooldown(value) {
             if (!Number.isFinite(value) || value <= Date.now() || value <= retryAt) return;
             retryAt = value; cancel();
@@ -80,6 +86,7 @@ export function createSentinelSession({ readView, replaceScenes, clearScenes, on
             if (error?.code === 'rate-limit') { retryAt = error.retryAt; cancel(); }
             publish({ error: true, pending: false, retry: true, retryAt, message: 'Imagery tiles unavailable. Change capture or Retry.' });
         },
+        tileActivity(activity) { if (!active) return; tilePending = activity.pending; report(); },
         dispose() { disposed = true; active = false; cancel(); clear(); },
     };
 }

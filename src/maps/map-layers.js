@@ -119,9 +119,14 @@ export function installMapLayers(win = window) {
         },
         onRetry(id) {
             if (id === 'snotel') loadStations();
-            else if (frameMode) terrain('layerAction', { action: 'retry', id });
+            else if (frameMode) {
+                statuses[id] = { ...statuses[id], pending: true, error: false, retry: true,
+                    message: id === 'sentinel' ? 'Finding captures…' : id === 'land' ? 'Loading public lands' : 'Loading slope shading' };
+                paint(); terrain('layerAction', { action: 'retry', id });
+            }
             else if (id === 'sentinel') { binding?.engine.retry(id); binding?.sentinel.retry(); }
-            else { statuses[id] = { ...statuses[id], error: false, retry: false, message: '' }; binding?.engine.retry(id); paint(); }
+            else { statuses[id] = { ...statuses[id], pending: true, error: false, permission: false, retry: true,
+                message: id === 'land' ? 'Loading public lands' : 'Loading slope shading' }; binding?.engine.retry(id); paint(); }
         },
         onOpen() { relay(); },
     });
@@ -154,9 +159,18 @@ export function installMapLayers(win = window) {
                 unbind();
                 const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onError(id, error) {
                     if (id === 'sentinel') binding?.sentinel.tileError(error);
-                    else { statuses[id] = { ...statuses[id], error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: error?.retryAt || 0,
+                    else { statuses[id] = { ...statuses[id], pending: false, error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: error?.retryAt || 0,
                         message: error?.code === 'bc-permission-required' ? 'Allow BC parcel maps.' : 'Some map tiles are unavailable. Retry.' }; paint();
                     if (error?.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); } }
+                }, onActivity(id, activity) {
+                    if (!active || frameMode || booting || !state[id].enabled || state[id].opacity === 0) return;
+                    if (id === 'sentinel') binding?.sentinel.tileActivity(activity);
+                    else if (!activity.error && (activity.pending || activity.complete)) {
+                        statuses[id] = { ...statuses[id], pending: activity.pending,
+                            ...(activity.pending || activity.complete ? { error: false, permission: false, retryAt: 0,
+                                retry: activity.pending && statuses[id].retry === true, message: activity.pending ? id === 'land' ? 'Loading public lands' : 'Loading slope shading' : '' } : {}) };
+                        paint();
+                    }
                 } });
                 const sentinel = createSentinelSession({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() }), fetchImpl: owner.fetch.bind(owner),
                     replaceScenes: scenes => engine.scenes(scenes, state.sentinel.opacity), clearScenes: () => engine.clearSentinel(),

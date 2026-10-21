@@ -816,3 +816,52 @@ requests, permissions, agency colors, Sentinel metadata and SNOTEL auto-reveal.
 stubbed. Live authenticated Peakbagger, native browser/OS focus behavior,
 physical touch and screen-reader speech remain outside the hidden checks.
 The prior Canadian coverage and Firefox integration gaps remain separate.
+
+## Follow-up: readable loading and recovery
+
+Rows previously appended an ellipsis or exclamation mark without explaining
+the state. Disabled layers could retain those warnings, analytical overlays
+did not publish tile completion, and successful terrain retries could leave an
+error showing. Sentinel also finished its loading indicator when the capture
+catalog arrived, before imagery finished loading.
+
+**Fixed and verified:** compact secondary lines now show named opacity, station
+counts, Loading with a small spinner, Couldn't load, Needs access or Service
+busy. Settings retain the explanation and an anchored Retry/Allow action.
+Retry blocks duplicate activation during work; a focused successful Retry
+becomes a working Reload until focus leaves, with plain success feedback.
+Actual queued tile/body/decode work drives progress and completion; cancelled
+older work cannot clear a newer request. Known provider cooldowns survive 3D
+revision changes and resume. Disabled/transparent layers suppress stale row
+warnings. Sentinel's dated choices remain usable while imagery tiles load.
+Reduced motion disables spinner animation and hover transitions.
+
+The readable-loading regression first failed against the unmodified control.
+A successful-retry assertion also failed against the read-only HEAD terrain
+module, then passed against the fix. All 3,088 tests, scoped ESLint and web-ext
+lint passed (eight owned warnings). The headless MapLibre unit fixture never
+requests protocol tiles; it now expects Loading imagery rather than claiming
+that a catalog response proves rendered imagery.
+
+Hidden Chrome 156.0.8078.4 and Firefox 157 each passed eight component cases at
+736/320 by 800, both themes and normal/double text. Failure, held loading,
+repeated keyboard activation, successful recovery, focus, reduced motion,
+action/panel/row/map/following-content geometry and scroll were checked.
+The overview remains 232 by 134 normally and approximately 232 by 245 at
+double text. Loading, error and narrow/enlarged results were visually inspected.
+Hidden real-extension Chrome at 1000 by 700 passed native map surfaces and
+hardware 3D on ANGLE/Metal Apple M3 Pro, including real HTTP failure, held retry
+body, completion and anchored recovery. Existing Canadian, Sentinel metadata,
+SNOTEL, opacity, palette, basemap and renderer-handoff checks passed.
+The real-manifest Chrome startup/BFCache check passed at 1000 by 760. All
+verifiers reported teardown; remaining test process/profile paths were audited.
+
+**Intentionally not changed:** collapsible persistent menu, separate basemap
+corners, independent overlays, device-local opacity, provider/permission and
+activity-data boundaries, land colors, cloud metadata and SNOTEL auto-reveal.
+
+**Changed but not fully proven:** providers and permission decisions remain
+stubbed in browser fixtures. Live authenticated Peakbagger, physical touch,
+screen-reader speech and native browser/OS focus behavior remain unproven.
+The prior partial Canadian coverage and full Firefox map-integration gaps
+remain separate.

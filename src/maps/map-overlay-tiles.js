@@ -10,9 +10,16 @@ import { rateLimitError } from '../net/rate-limit.js';
 const abortError = () => new DOMException('Cancelled.', 'AbortError');
 // A renderer lifetime owns bounded tile work. The browser cache may reuse public
 // tiles; decoded images and scene mosaics never survive this owner.
-export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, fetchBCTile, onError = () => {} }) {
+export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, fetchBCTile, onError = () => {}, onActivity = () => {} }) {
     let scenes = [], generation = 0, disposed = false;
     const flights = new Set(), blocked = new Map();
+    const activity = new Map();
+    const publish = (id, batch) => {
+        if (disposed || activity.get(id) !== batch) return;
+        const state = { pending: batch.count > 0 && !batch.error, error: batch.error, complete: batch.count === 0 && batch.successes > 0 && !batch.error };
+        const signature = JSON.stringify(state); if (signature === batch.signature) return;
+        batch.signature = signature; onActivity(id, state);
+    };
     const queue = []; let running = 0;
     const acquire = signal => new Promise((resolve, reject) => {
         const entry = { start: () => { signal.removeEventListener('abort', abort); running++; resolve(() => { running--; queue.shift()?.start(); }); } };
@@ -22,7 +29,13 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
         else if (queue.length < 128) { queue.push(entry); signal.addEventListener('abort', abort, { once: true }); }
         else reject(new Error('Too many overlay tiles. Zoom in.'));
     });
-    const cancel = id => { for (const flight of flights) if (!id || flight.id === id) flight.controller.abort(); };
+    const abortFlights = id => { for (const flight of flights) if (!id || flight.id === id) flight.controller.abort(); };
+    const cancel = id => {
+        for (const key of [...activity.keys()]) if (!id || key === id) {
+            activity.delete(key); if (!disposed) onActivity(key, { pending: false, error: false, complete: false });
+        }
+        abortFlights(id);
+    };
     const bitmap = async (url, signal, bcCoordinates) => {
         const deadline = requestDeadline.createRequestDeadline();
         const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
@@ -63,6 +76,8 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
             if (limit?.retryAt > Date.now()) throw limit;
             const controller = new AbortController(), flight = { id, controller }, revision = generation;
             const abort = () => controller.abort(); signal?.addEventListener('abort', abort, { once: true }); flights.add(flight);
+            const batch = activity.get(id) || { count: 0, successes: 0, error: false };
+            activity.set(id, batch); batch.count++; publish(id, batch);
             const working = doc.createElement('canvas'); working.width = working.height = 256;
             const context = working.getContext('2d');
             let release;
@@ -95,14 +110,16 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                 }
                 if (controller.signal.aborted) throw abortError();
                 const output = canvas.getContext('2d'); output.clearRect(0, 0, 256, 256); output.drawImage(working, 0, 0);
+                batch.successes++;
                 return canvas;
             } catch (error) {
                 if (!controller.signal.aborted && error.name !== 'AbortError') {
-                    if (error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(id, error); cancel(id); }
+                    batch.error = true;
+                    if (error.code === 'rate-limit') { error.retryAt ??= Date.now() + 300000; blocked.set(id, error); abortFlights(id); }
                     onError(id, error);
                 }
                 throw error;
-            } finally { release?.(); flights.delete(flight); signal?.removeEventListener('abort', abort); }
+            } finally { release?.(); flights.delete(flight); signal?.removeEventListener('abort', abort); batch.count--; publish(id, batch); }
         },
         canvas() { const canvas = doc.createElement('canvas'); canvas.width = canvas.height = 256; return canvas; },
         dispose() { disposed = true; cancel(); scenes = []; blocked.clear(); },

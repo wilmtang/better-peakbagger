@@ -110,13 +110,17 @@ try {
         }
     });
     await context.route('https://elevation.nationalmap.gov/**', route => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile('#315bb0') }));
-    await context.route('https://edits.nationalmap.gov/**', route => {
+    let landMode = 'ready'; const heldLand = [];
+    resources.defer('held public-land tiles', () => { landMode = 'ready'; heldLand.splice(0).forEach(resolve => resolve()); });
+    await context.route('https://edits.nationalmap.gov/**', async route => {
         const layers = JSON.parse(new URL(route.request().url()).searchParams.get('dynamicLayers'));
         assert.equal(layers[0].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'BLM'");
         assert.deepEqual(layers[0].drawingInfo.renderer.symbol.color, [230, 159, 0, 255]);
         assert.equal(layers[1].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'USFS'");
         assert.deepEqual(layers[1].drawingInfo.renderer.symbol.color, [0, 114, 178, 255]);
         assert.equal(layers[2].drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
+        if (landMode === 'hold') await new Promise(resolve => heldLand.push(resolve));
+        if (landMode === 'error') return route.fulfill({ status: 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'Unavailable' });
         return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: landTile });
     });
     let bcRequests = 0, albertaRequests = 0;
@@ -274,6 +278,23 @@ try {
         }
         cases.push(pathname);
     }
+    await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
+    await page.getByRole('button', { name: /^Layers/ }).click(); landMode = 'error';
+    await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
+    await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Couldn’t load', 'native public-land failure is explained in its row');
+    const recovery = page.getByRole('button', { name: /^(Retry|Reload)$/ }); await recovery.focus();
+    const recoveryBox = await recovery.boundingBox(); landMode = 'hold'; await recovery.click();
+    await waitForCondition(() => heldLand.length, { description: 'retry is waiting on actual public-land tile work', isReady: count => count >= 4 });
+    assert.equal(await page.locator('[data-layer="land"] .bpb-layers-row-status').textContent(), 'Loading');
+    assert.equal(await recovery.getAttribute('aria-disabled'), 'true'); assert.deepEqual(await recovery.boundingBox(), recoveryBox);
+    const heldCount = heldLand.length; await recovery.press('Enter'); assert.equal(heldLand.length, heldCount, 'repeated activation does not duplicate tile work');
+    if (output) await page.screenshot({ path: path.join(output, 'native-loading.png') });
+    landMode = 'ready'; heldLand.splice(0).forEach(resolve => resolve());
+    await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-value')?.hidden === false, 'successful native retry clears the failure');
+    assert.equal(await recovery.textContent(), 'Reload'); assert.equal(await recovery.evaluate(element => document.activeElement === element), true);
+    assert.deepEqual(await recovery.boundingBox(), recoveryBox);
+    if (output) await page.screenshot({ path: path.join(output, 'native-recovered.png') });
+    cases.push('native readable loading/failure, body wait, guarded retry and focused recovery');
     // Exercise real MAIN -> isolated -> worker tile messages. Native permission
     // prompts are deliberately stubbed so this hidden check cannot steal focus.
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
@@ -417,6 +438,17 @@ try {
     // Terrain lighting shifts blue toward cyan. Require its cool tint here,
     // then prove the colored surface disappears when opacity reaches zero.
     const blue = await waitForCondition(() => coloredPixels('usfs'), { description: 'blue USFS pixels over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
+    landMode = 'error'; await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
+    await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
+    await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-row-status')?.textContent === 'Couldn’t load', 'terrain public-land failure is explained');
+    const terrainRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ }); landMode = 'hold'; await terrainRetry.click();
+    await waitForCondition(() => heldLand.length, { description: 'terrain retry waits on actual tile work', isReady: count => count >= 4 });
+    assert.equal(await page.locator('[data-layer="land"] .bpb-layers-row-status').textContent(), 'Loading');
+    assert.equal(await terrainRetry.getAttribute('aria-disabled'), 'true');
+    landMode = 'ready'; heldLand.splice(0).forEach(resolve => resolve());
+    await wait(() => document.querySelector('[data-layer="land"] .bpb-layers-value')?.hidden === false, 'terrain retry clears stale failure and loading');
+    await waitForCondition(() => coloredPixels('gold'), { description: 'terrain repaints after its recovery', timeoutMs: 30000, isReady: count => count > 1000 });
+    cases.push('terrain readable failure and real retry loading/success');
     await landOpacity.fill('0'); await landOpacity.dispatchEvent('input');
     await waitForCondition(() => coloredPixels('gold'), { description: 'zero opacity exposes the terrain below BLM', timeoutMs: 30000, isReady: count => count < gold / 5 });
     await waitForCondition(() => coloredPixels('usfs'), { description: 'zero opacity exposes the terrain below USFS', timeoutMs: 30000, isReady: count => count < blue / 5 });
