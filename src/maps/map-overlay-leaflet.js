@@ -3,7 +3,7 @@
 
 import { createOverlayTiles } from './map-overlay-tiles.js';
 import { createPageBCTileFetch } from './bc-land-client.js';
-import { OVERLAY_ATTRIBUTION } from './map-overlay-providers.js';
+import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup } from '../snow/snotel-map-marker.js';
 
@@ -40,7 +40,7 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
                 return canvas;
             },
         });
-        const layer = new Grid({ pane, tileSize: 256, minZoom: 8, maxNativeZoom: id === 'sentinel' ? 14 : 15,
+        const layer = new Grid({ pane, tileSize: 256, minZoom: OVERLAY_MIN_ZOOM, maxNativeZoom: id === 'sentinel' ? 14 : 15,
             maxZoom: 24, keepBuffer: 1, updateWhenIdle: true, bpbOverlay: true,
             attribution: id === 'sentinel' ? SENTINEL_ATTRIBUTION : OVERLAY_ATTRIBUTION[id] });
         layer.on('tileunload', event => {

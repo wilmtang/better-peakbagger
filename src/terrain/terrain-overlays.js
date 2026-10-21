@@ -3,7 +3,7 @@
 import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
 import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
-import { OVERLAY_ATTRIBUTION, rasterTileStatus } from '../maps/map-overlay-providers.js';
+import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.js';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
 import { createBCTileFetch } from '../maps/bc-land-client.js';
 
@@ -72,7 +72,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
                 if (!registered) { maplibre.addProtocol(protocol, tileProtocol); registered = true; }
                 source = `bpb-overlay-${id}-${++sourceRevision}`;
                 map.addSource(source, { type: 'raster', tiles: [`${protocol}://${id}/${id === 'sentinel' ? sceneRevision : 0}/{z}/{x}/{y}`],
-                    tileSize: 256, minzoom: 8, maxzoom: id === 'sentinel' ? 14 : 15,
+                    tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : 15,
                     attribution: id === 'sentinel' ? SENTINEL_ATTRIBUTION : OVERLAY_ATTRIBUTION[id] });
                 const before = beforeVectors();
                 map.addLayer({ id: source, source, type: 'raster', paint: { 'raster-opacity': state.opacity / 100, 'raster-fade-duration': 0 } }, before);
@@ -96,7 +96,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
     });
     const retainOverlays = () => {
         for (const id of ['slope', 'land', 'sentinel']) if (snapshot?.state[id].enabled && map.coveringTiles) tiles.retain(id,
-            map.coveringTiles({ tileSize: 256, minzoom: 8, maxzoom: id === 'sentinel' ? 14 : 15 }).map(tile => tile.canonical));
+            map.coveringTiles({ tileSize: 256, minzoom: OVERLAY_MIN_ZOOM, maxzoom: id === 'sentinel' ? 14 : 15 }).map(tile => tile.canonical));
     };
     return {
         update(value) {

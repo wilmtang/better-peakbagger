@@ -210,6 +210,25 @@ test('a failed tile does not hide progress while neighboring tiles are still rec
     control.dispose(); dom.window.close();
 });
 
+test('zoomed-out rasters request a closer view instead of showing stale errors, loading or Retry', () => {
+    const dom = new JSDOM('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element); control.trigger.click();
+    for (const id of ['slope', 'land']) {
+        const state = Schema.mapOverlayState({ [id]: { enabled: true } });
+        const statuses = { [id]: { pending: true, error: true, retry: true, message: 'Loading map tiles' } };
+        control.render({ state, statuses, zoom: 7 }); document.querySelector(`[data-layer="${id}"] button`).click();
+        assert.equal(document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`).textContent, 'Zoom in');
+        assert.match(document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Zoom in to show/);
+        assert.equal(document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').hidden, true);
+        assert.equal(control.trigger.getAttribute('aria-label'), 'Overlays, 1 active', 'a zoom requirement is not a provider failure');
+        control.render({ state, statuses, zoom: 8 });
+        assert.equal(document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`).textContent, 'Loading');
+        assert.equal(document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').hidden, false);
+        document.querySelector(`[data-layer="${id}"] button`).click();
+    }
+    control.dispose(); dom.window.close();
+});
+
 test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
     const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);

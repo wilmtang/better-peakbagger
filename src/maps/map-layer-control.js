@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { OVERLAY_MIN_ZOOM } from './map-overlay-providers.js';
 
 const LABELS = { sentinel: 'Sentinel-2 β', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations' };
 const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
@@ -128,19 +129,21 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         panel.hidden = !open; well.hidden = !open || !expanded;
         trigger.setAttribute('aria-expanded', String(open));
         const state = Schema.mapOverlayState(model.state);
+        const needsZoom = key => (key === 'slope' || key === 'land') && Number.isFinite(model.zoom) && Math.round(model.zoom) < OVERLAY_MIN_ZOOM;
         const active = Schema.MAP_OVERLAY_IDS.filter(key => state[key].enabled);
-        const failed = active.some(key => (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
+        const failed = active.some(key => !needsZoom(key) && (key === 'snotel' || state[key].opacity > 0) && model.statuses?.[key]?.error && !model.statuses[key].permission);
         indicator.dataset.kind = failed ? 'error' : active.length ? 'active' : 'off';
         trigger.setAttribute('aria-label', `Overlays${active.length ? `, ${active.length} active` : ''}${failed ? ', overlay unavailable' : ''}`);
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
             const shown = current.enabled && (key === 'snotel' || current.opacity > 0);
-            const kind = !shown ? '' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
+            const zoomedOut = shown && needsZoom(key);
+            const kind = !shown ? '' : zoomedOut ? 'zoom' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
             const cooldown = status.retryAt > Date.now();
             const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
                 : kind === 'saved' ? 'Refresh failed' : kind === 'zoom' ? 'Zoom in' : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
                     : kind === 'coverage' ? 'No coverage' : kind === 'error' ? cooldown ? 'Service busy' : status.captureError ? 'Search failed' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
-            const heldRecovery = shown && detail.recovering && doc.activeElement === detail.retry && !status.permission;
+            const heldRecovery = shown && !zoomedOut && detail.recovering && doc.activeElement === detail.retry && !status.permission;
             const recovered = heldRecovery && !status.pending && !status.error;
             row.row.hidden = model.available && !model.available.includes(key);
             row.checkbox.checked = current.enabled; row.checkbox.disabled = status.unavailable === true;
@@ -163,7 +166,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
-                : !shown ? 'Increase opacity to show this overlay.' : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
+                : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in to show ${key === 'land' ? 'public lands' : 'slope shading'}.`
+                    : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
                 const signature = JSON.stringify(keys);
@@ -185,7 +189,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.capture.value = status.capture || 'latest'; detail.capture.disabled = !current.enabled || (status.capturePending ?? status.pending) === true;
                 detail.capture.title = detail.capture.selectedOptions[0]?.title || '';
             }
-            const showRetry = shown && (status.retry === true || heldRecovery);
+            const showRetry = shown && !zoomedOut && (status.retry === true || heldRecovery);
             if (!showRetry && doc.activeElement === detail.retry) row.disclosure.focus({ preventScroll: true });
             detail.retry.hidden = !showRetry;
             detail.retry.textContent = status.permission ? 'Allow' : status.error ? 'Retry' : (heldRecovery && !status.pending || detail.reloading) ? 'Reload' : 'Retry';

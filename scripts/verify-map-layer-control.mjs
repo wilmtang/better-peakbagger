@@ -46,7 +46,7 @@ try {
             onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
             onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:id==='snotel'?'Loading stations':'Loading map tiles'};paint()}});
         document.body.append(control.element);
-        function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
+        function paint(){control.render({state,statuses,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
         window.fixture={control,state,statuses,paint,landInfo:publicLandInfo};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
     const page = await context.newPage(), errors = [];
@@ -182,6 +182,17 @@ try {
         for (const status of [{ pending: true, message: 'Loading slope…', retry: true }, { error: true, message: 'Slope is unavailable. Try again.', retry: true }, { message: 'Loaded' }]) {
             await page.evaluate(status => { window.fixture.statuses.slope = status; window.fixture.paint(); }, status); await stable();
         }
+        const zoomGeometry = await geometry(), zoomPanel = await page.locator('.bpb-layers-panel').boundingBox();
+        for (const zoom of [7, 8, 7, 8]) {
+            await page.evaluate(zoom => { window.fixture.zoom = zoom; window.fixture.statuses.slope = { pending: true, retry: true, message: 'Loading slope shading' }; window.fixture.paint(); }, zoom);
+            assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), zoom < 8 ? 'Zoom in' : 'Loading');
+            assert.equal(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').isVisible(), zoom >= 8);
+            assert.deepEqual(await geometry(), zoomGeometry, 'zoom feedback keeps the overview, map and following content anchored');
+            assert.deepEqual(await page.locator('.bpb-layers-panel').boundingBox(), zoomPanel, 'zoom feedback preserves the panel dimensions');
+            assert.equal(await slider.evaluate(element => document.activeElement === element), true);
+            if (screenshots && zoom === 7) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-zoom.png`) });
+        }
+        await page.evaluate(() => { window.fixture.statuses.slope = { message: 'Loaded' }; window.fixture.paint(); });
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-detail.png`) });
         await slider.press('Escape'); assert.equal(await page.locator('.bpb-layers-panel').isVisible(), true);
         assert.equal(await slider.evaluate(element => document.activeElement === element), true, 'Escape keeps focus with the current control');

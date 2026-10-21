@@ -49,7 +49,7 @@ export function installMapLayers(win = window) {
             if (statuses.land.permission && !info.guidanceKeys.includes('bc')) statuses.land = { ...statuses.land, permission: false, pending: false, error: false, retry: false, message: '' };
             statuses.land = { ...statuses.land, ...info };
         }
-        control.render({ state, statuses, theme: theme() });
+        control.render({ state, statuses, theme: theme(), zoom: frameMode ? terrainView?.zoom : binding?.map.getZoom() });
         position();
     };
     const snapshot = () => ({ revision, state, capture, menuOpen: control.isOpen(), landCooldowns: statuses.land.providerCooldowns,

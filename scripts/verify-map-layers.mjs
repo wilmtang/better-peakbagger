@@ -260,6 +260,11 @@ try {
         await waitForCondition(() => landPixels(defaultBlend), { description: 'BLM/USFS default opacity preserves distinct tints', isReady: counts => counts.every(count => count > 1000) });
         if (output && cases.length === 0) { await mkdir(output, { recursive: true }); await page.screenshot({ path: path.join(output, 'native-land-25.png') }); }
         await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
+        await native.evaluate(() => mapsPlaceholder.setZoom(7, { animate: false }));
+        for (const id of ['slope', 'land']) {
+            await wait(() => ['slope', 'land'].every(id => document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`)?.textContent === 'Zoom in'), 'zoomed-out native rasters request a closer view');
+            assert.equal(await page.locator(`[data-layer="${id}"] .bpb-layers-spinner`).isVisible(), false);
+        }
         await native.evaluate(() => {
             mapsPlaceholder.setView([46.851731, -121.760395], 17, { animate: false });
             window.__snotelRevealMoves = 0; mapsPlaceholder.on('moveend', () => window.__snotelRevealMoves++);
@@ -580,6 +585,14 @@ try {
     await waitForCondition(() => coloredPixels('gold'), { description: 'Alberta polygons over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
     assert.ok(albertaRequests > before3DAB, 'terrain queried Alberta class-only geometry');
     if (output) await page.screenshot({ path: path.join(output, 'canada-ab-3d.png') });
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
+    // Each activation must finish its camera change before the next one. With
+    // reduced motion the native navigation buttons complete synchronously.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    for (let step = 0; step < 8; step++) await terrain.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await wait(() => ['slope', 'land'].every(id => document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`)?.textContent === 'Zoom in'), 'zoomed-out hardware rasters request a closer view');
+    if (output) await page.screenshot({ path: path.join(output, 'terrain-zoom.png') });
+    cases.push('native and hardware 3D zoom limits show Zoom in instead of stale loading');
     cases.push('BC Allow pending/denial/retry without layout shift (native prompt stubbed)', 'BC/Alberta native ownership and opacity on all four surfaces', 'Alberta holes/private/unsupported coverage stay clear', 'BC embedded worker sender and Alberta polygons in hardware 3D');
     cases.push('0/50/100 percent mosaic and BLM/USFS pixels with negative control','one-use Full Screen state and pinned pass','3D capture choices, independent base, suspend/resume','off while parked prevents catalog replay', 'BLM/USFS legend, guidance and native/terrain alpha');
     assert.deepEqual(errors, []);

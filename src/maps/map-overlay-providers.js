@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, ALBERTA_PARCEL_EXTENT, intersectsLandBounds } from './canadian-land.js';
 
+export const OVERLAY_MIN_ZOOM = 8;
+
 // One color contract drives both the service request and the visible legend.
 export const SLOPE_BANDS = Object.freeze([
     { from: 20, to: 30, color: [245, 220, 76] },
