@@ -1,5 +1,10 @@
 # Active plans
 
+- [Shared map Layers menu and overlays](map-layers-and-overlays.md) — proposed;
+  one ascent/peak/BigMap control for independent Sentinel-2 imagery, viewport
+  SNOTEL stations, slope angle and public lands, with raster opacity, validated
+  renderer handoffs and explicit provider/rendering proof gates.
+
 - [Repository bugs, engineering, and UX audit — October 19](codebase-audit-2026-10-19.md)
   — all seven fixes and both engineering improvements implemented; local
   verification and independent commits recorded, with terrain warming,
