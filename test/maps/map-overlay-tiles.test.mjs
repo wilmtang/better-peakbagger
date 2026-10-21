@@ -19,15 +19,28 @@ test('tile ownership bounds concurrency to four and off aborts queued and active
 test('tile transport rejects over-budget responses before decoding and surfaces the provider error', async () => {
     const failures = [], tiles = createOverlayTiles({ document, fetchImpl: async () => new Response('', { headers: { 'content-type': 'image/png', 'content-length': String(5 * 1024 * 1024) } }),
         onError: (id, error) => failures.push([id, error.message]) });
-    await assert.rejects(tiles.draw('land', { z: 10, x: 100, y: 100 }, tiles.canvas()), /too large/);
+    await assert.rejects(tiles.draw('land', { z: 10, x: 163, y: 359 }, tiles.canvas()), /too large/);
     assert.deepEqual(failures, [['land', 'Map tile too large.']]); tiles.dispose();
 });
 test('a provider cooldown blocks new tile work until an explicit allowed retry', async () => {
     let requests = 0;
     const tiles = createOverlayTiles({ document, fetchImpl: async () => { requests++; return new Response('', { status: 429, headers: { 'retry-after': '120' } }); } });
-    const draw = () => tiles.draw('land', { z: 10, x: 100, y: 100 }, tiles.canvas());
+    const draw = () => tiles.draw('land', { z: 10, x: 163, y: 359 }, tiles.canvas());
     await assert.rejects(draw(), error => error.code === 'rate-limit');
     assert.equal(tiles.retry('land'), false, 'a renderer command cannot bypass the provider deadline');
     await assert.rejects(draw(), error => error.code === 'rate-limit'); assert.equal(requests, 1);
     tiles.dispose();
+});
+test('incomplete Alberta pages never publish a partially colored tile', async () => {
+    let filled = 0, published = 0;
+    const canvasDocument = { createElement: () => ({ getContext: () => ({ beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() { filled++; } }) }) };
+    const tiles = createOverlayTiles({ document: canvasDocument, fetchImpl: async () => new Response(JSON.stringify({ spatialReference: { wkid: 3857 }, exceededTransferLimit: true,
+        features: [{ attributes: { objectid: 1, crownclass: 'Provincial' }, geometry: { rings: [[[0,0],[1,0],[1,1],[0,0]]] } }],
+    })) });
+    const z = 12, longitude = -115.57, latitude = 51.18;
+    const coordinates = { z, x: Math.floor((longitude + 180) / 360 * 2 ** z), y: Math.floor((1 - Math.asinh(Math.tan(latitude * Math.PI / 180)) / Math.PI) / 2 * 2 ** z) };
+    const output = { getContext: () => ({ clearRect() { published++; }, drawImage() { published++; } }) };
+    await assert.rejects(tiles.draw('land', coordinates, output), /Incomplete Alberta/);
+    assert.equal(filled, 1, 'a working polygon was drawn before the incomplete page was detected');
+    assert.equal(published, 0, 'the visible canvas retains its prior content'); tiles.dispose();
 });

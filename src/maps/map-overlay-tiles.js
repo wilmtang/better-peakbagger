@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { sentinelTileUrl } from './sentinel-core.js';
-import { overlayTileUrl, tileBounds } from './map-overlay-providers.js';
+import { overlayTileUrl, tileBounds, publicLandTileSources } from './map-overlay-providers.js';
+import { drawAlbertaLand } from './canadian-land.js';
 import { requestDeadline } from '../net/request-deadline.js';
 import { rateLimitError } from '../net/rate-limit.js';
 
 const abortError = () => new DOMException('Cancelled.', 'AbortError');
 // A renderer lifetime owns bounded tile work. The browser cache may reuse public
 // tiles; decoded images and scene mosaics never survive this owner.
-export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, onError = () => {} }) {
+export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch, fetchBCTile, onError = () => {} }) {
     let scenes = [], generation = 0, disposed = false;
     const flights = new Set(), blocked = new Map();
     const queue = []; let running = 0;
@@ -22,12 +23,13 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
         else reject(new Error('Too many overlay tiles. Zoom in.'));
     });
     const cancel = id => { for (const flight of flights) if (!id || flight.id === id) flight.controller.abort(); };
-    const bitmap = async (url, signal) => {
+    const bitmap = async (url, signal, bcCoordinates) => {
         const deadline = requestDeadline.createRequestDeadline();
         const abort = () => deadline.abort(); signal.addEventListener('abort', abort, { once: true });
         try {
             if (signal.aborted) throw abortError();
-            const response = await deadline.run(fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }));
+            const response = await deadline.run(bcCoordinates && fetchBCTile ? fetchBCTile(bcCoordinates, { signal: deadline.signal })
+                : fetchImpl(url, { signal: deadline.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }));
             if (response.status === 429) throw rateLimitError('Map service', response);
             if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) throw new Error('Map tiles unavailable.');
             if (Number(response.headers.get('content-length')) > 4 * 1024 * 1024) throw new Error('Map tile too large.');
@@ -77,10 +79,15 @@ export function createOverlayTiles({ document: doc, fetchImpl = globalThis.fetch
                 // Scenes are opaque source images with transparent no-data. Draw
                 // all of them at full alpha, then let the engine fade this ONE
                 // mosaic. Two overlapping scenes at 50% still mean 50%.
-                const urls = id === 'sentinel' ? intersecting.map(scene => sentinelTileUrl(scene.id)
-                    .replace('{z}', coordinates.z).replace('{x}', coordinates.x).replace('{y}', coordinates.y)) : [overlayTileUrl(id, coordinates)];
-                for (const url of urls) {
-                    const image = await bitmap(url, controller.signal);
+                const sources = id === 'land' ? publicLandTileSources(coordinates)
+                    : (id === 'sentinel' ? intersecting.map(scene => sentinelTileUrl(scene.id)
+                        .replace('{z}', coordinates.z).replace('{x}', coordinates.x).replace('{y}', coordinates.y)) : [overlayTileUrl(id, coordinates)])
+                        .map(url => ({ url }));
+                for (const source of sources) {
+                    if (source.kind === 'parcels') {
+                        await drawAlbertaLand({ context, bbox: source.bbox, fetchImpl, signal: controller.signal }); continue;
+                    }
+                    const image = await bitmap(source.url, controller.signal, source.provider === 'bc' ? coordinates : undefined);
                     try {
                         if (disposed || controller.signal.aborted || id === 'sentinel' && revision !== generation) throw abortError();
                         context.drawImage(image, 0, 0, 256, 256);

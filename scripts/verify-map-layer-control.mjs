@@ -33,14 +33,13 @@ try {
     const bundle = await build({ stdin: { contents: `
         import {createMapLayerControl} from './src/maps/map-layer-control.js';
         import {settingsSchema as schema} from './src/settings/settings-schema.js';
-        import {LAND_CLASSES} from './src/maps/map-overlay-providers.js';
+        import {publicLandInfo} from './src/maps/map-overlay-providers.js';
         const state=schema.mapOverlayState({slope:{enabled:true,opacity:60}});
         const statuses={sentinel:{capture:'latest',message:'Coverage 100% · Clouds 3%',captures:[
             {id:'latest',label:'Latest · 10-07 18:27 · ☁ 3%',title:'Latest · 2026-10-07 18:27 PDT · Clouds 3%'},
             {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
             {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]},
-            land:{legend:'USGS PAD-US 4.1 fee ownership. BLM: gold; USFS: blue. Clear areas are unknown. Check local access and camping restrictions.',
-                legendEntries:LAND_CLASSES.filter(item=>item.value!=='DIST').map(item=>({label:item.label,color:'rgb('+item.color.join(',')+')'}))}};
+            land:publicLandInfo(null)};
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
@@ -48,7 +47,7 @@ try {
             onRetry:id=>{statuses[id]={message:'Loaded'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
-        window.fixture={control,state,statuses,paint};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
+        window.fixture={control,state,statuses,paint,landInfo:publicLandInfo};paint();`, resolveDir: root }, bundle: true, write: false, format: 'iife' });
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -90,6 +89,25 @@ try {
                 const detailBox = await page.locator('.bpb-layers-detail:not([hidden])').boundingBox();
                 assert.ok(detailBox.x >= box.x && detailBox.x + detailBox.width <= box.x + box.width, 'land detail stays within compact width');
                 if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-land.png`) });
+                await page.evaluate(() => {
+                    window.fixture.state.land.enabled = true;
+                    window.fixture.statuses.land = { ...window.fixture.landInfo([-125, 53, -124, 54]), permission: true, retry: true, message: 'Allow BC parcel maps.' };
+                    window.fixture.paint();
+                });
+                const allow = page.getByRole('button', { name: 'Allow BC land maps', exact: true });
+                await allow.scrollIntoViewIfNeeded(); const allowBox = await allow.boundingBox();
+                const scroll = await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop);
+                await allow.focus();
+                for (const status of [{ pending: true, message: 'Allow BC parcel maps.' }, { pending: false, error: true, message: 'BC access not granted.' }]) {
+                    await page.evaluate(status => { Object.assign(window.fixture.statuses.land, status); window.fixture.paint(); }, status);
+                    assert.deepEqual(await allow.boundingBox(), allowBox, 'permission pending/denial keep the action anchored');
+                    assert.equal(await page.locator('.bpb-layers-panel').evaluate(element => element.scrollTop), scroll, 'permission feedback preserves menu reading position');
+                    assert.equal(await allow.evaluate(element => document.activeElement === element), true);
+                }
+                assert.equal(await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).isVisible(), true);
+                if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-canada.png`) });
+                await page.evaluate(() => { window.fixture.state.land.enabled = false; window.fixture.statuses.land = window.fixture.landInfo(null); window.fixture.paint(); });
+                await page.locator('.bpb-layers-panel').evaluate(element => { element.scrollTop = 0; });
             }
         }
         const slider = page.getByRole('slider', { name: 'Slope angle opacity' });
@@ -124,6 +142,45 @@ try {
         }
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-sentinel.png`) });
         cases.push({ width, theme, textScale: scale, overview: { width: box.width, height: box.height }, anchored: true });
+    }
+    const setupAssets = new Set(['bc-land/access.html', 'bc-land/access-head.js', 'bc-land/access.js', 'css/panel.css', 'css/gaia-access.css', 'css/bc-land-access.css', 'icons/icon-48.png']);
+    await page.route(`https://www.peakbagger.com:${fixture.port}/dist/**`, async route => {
+        const relative = new URL(route.request().url()).pathname.slice('/dist/'.length);
+        assert.ok(setupAssets.has(relative), `unexpected setup asset ${relative}`);
+        const contentType = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png' }[path.extname(relative)];
+        return route.fulfill({ contentType, body: await readFile(path.join(root, 'dist', relative)) });
+    });
+    await page.addInitScript(() => {
+        if (!window.location.pathname.endsWith('/bc-land/access.html')) return;
+        window.__bcSetup = { requests: 0, notified: 0 };
+        window.chrome = { runtime: {}, storage: { sync: { get: async () => ({ bpbSettings: { theme: 'system' } }) }, onChanged: { addListener() {}, removeListener() {} } },
+            permissions: { request: () => { window.__bcSetup.requests++; return new Promise(resolve => { window.__bcSetup.finish = resolve; }); } },
+            tabs: { sendMessage: async () => { window.__bcSetup.notified++; } } };
+        window.close = () => { window.__bcSetup.closed = true; };
+    });
+    for (const entry of cases) {
+        await page.setViewportSize({ width: entry.width, height: 800 }); await page.emulateMedia({ colorScheme: entry.theme });
+        await page.goto(`https://www.peakbagger.com:${fixture.port}/dist/bc-land/access.html?tab=7`);
+        const allow = page.getByRole('button', { name: 'Allow access', exact: true }); await allow.waitFor();
+        await page.evaluate(scale => { document.querySelectorAll('h1,p,button').forEach(element => { element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * scale}px`; }); }, entry.textScale);
+        const geometry = () => page.evaluate(() => ['h1', '.access-card', 'button'].map(selector => { const box = document.querySelector(selector).getBoundingClientRect(); return [box.x,box.y,box.width,box.height]; }));
+        // Establish the user's focus/reading position before measuring async
+        // feedback; keyboard focus can reveal a partly offscreen action.
+        await allow.scrollIntoViewIfNeeded(); await allow.focus();
+        const before = await geometry(), scroll = await page.evaluate(() => window.scrollY);
+        const stable = async () => { assert.deepEqual(await geometry(), before, 'setup heading, card and action stay anchored through permission decisions'); assert.equal(await page.evaluate(() => window.scrollY), scroll); };
+        await allow.press('Enter'); await page.waitForFunction(() => window.__bcSetup.requests === 1);
+        await allow.press('Enter'); assert.equal(await page.evaluate(() => window.__bcSetup.requests), 1); await stable();
+        assert.equal(await allow.evaluate(element => document.activeElement === element), true);
+        await page.evaluate(() => window.__bcSetup.finish(false)); await page.getByText('Access not granted. Try again.', { exact: true }).waitFor(); await stable();
+        await allow.press('Space'); await page.waitForFunction(() => window.__bcSetup.requests === 2);
+        await page.evaluate(() => window.__bcSetup.finish(true));
+        const back = page.getByRole('button', { name: 'Return to map', exact: true }); await back.waitFor(); await stable();
+        assert.equal(await back.evaluate(element => document.activeElement === element), true);
+        assert.equal(await page.evaluate(() => window.__bcSetup.notified), 1);
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${entry.width}-${entry.theme}-${entry.textScale}x-bc-setup.png`), fullPage: true });
+        await back.click(); assert.equal(await page.evaluate(() => window.__bcSetup.closed), true);
+        entry.setupAnchored = true;
     }
     assert.equal(errors.length, 0, errors.join('\n'));
     assert.equal(cases.length, 8, 'all component selections executed');

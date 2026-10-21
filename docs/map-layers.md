@@ -14,7 +14,7 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | --- | --- | --- |
 | Sentinel-2 (experimental) | 100% | Natural-color imagery from a selected satellite pass in the past 30 days. Clouds and gaps can obscure terrain. |
 | Slope angle | 60% | USGS 3DEP ground slope. Yellow 20–30°, orange 30–35°, red 35–40°, purple 40–45°, dark purple ≥45°. Below 20° and missing data are clear. Resolution varies; this is not an avalanche forecast. |
-| Public lands | 25% | USGS PAD-US 4.1 fee ownership: BLM-managed federal land in saturated gold, USFS-managed federal land in deep blue, then muted colors for other federal, state, local/district and tribal holdings. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
+| Public lands | 25% | USGS PAD-US 4.1 fee ownership, ParcelMap BC ownership records and southwestern Alberta regional parcels. BLM and Canadian provincial Crown land are gold; USFS is deep blue; other recorded ownership uses muted colors. Canadian coverage is partial. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
 | SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, reveal up to three nearby stations within 50 km once. Visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
 Opacity updates immediately. Only opacity preferences are saved on this device;
@@ -60,6 +60,29 @@ fire restrictions still applying. This overlay does not contain current camping
 permissions, closures, campsite locations or road-access rules. Check the local
 BLM office and posted restrictions before choosing a site.
 
+The same **Public lands** row and opacity slider cover BC and Alberta; the
+legend and official rule links follow the visible area. BC shows explicitly
+recorded Crown provincial, federal, Crown agency, local government and First
+Nations ownership. It excludes private, mixed, unclassified and untitled records.
+The [LTSA definitions](https://help.ltsa.ca/parcelmap-bc/owner-type) describe
+untitled parcels as lacking an active title, which alone does not establish
+public ownership. ParcelMap BC is a parcel fabric, not a complete map of
+unsurveyed Crown backcountry. Use **Allow** in the land detail to grant optional
+access to BC maps; denial leaves an explicit retry action and makes no BC
+provider request. Firefox requires a second **Allow access** click in a small
+extension setup tab; it refreshes the original map after a grant. **Return to map**
+closes that setup tab. Repeating setup reuses its existing tab.
+
+Alberta shows explicit provincial and municipal classifications from
+[the government's regional ownership service](https://geospatial.alberta.ca/arcgis/rest/services/Hosted/Land_use_owndership_NN_project/FeatureServer/10).
+Its published extent is southwestern Alberta (roughly 49.14–53.65° N,
+117.85–113.58° W); it excludes Calgary and does not cover the whole province.
+Private and unknown classifications stay clear. Other Canadian provinces and
+territories currently have no coverage. The detail links to
+[BC Crown land rules](https://www2.gov.bc.ca/gov/content/industry/crown-land-water/crown-land/crown-land-uses)
+and [Alberta camping rules](https://www.alberta.ca/camping-on-public-land).
+These ownership records do not establish whether dispersed camping is allowed.
+
 ## Implementation boundaries
 
 `src/maps/map-layers.js` owns the page session and outer control. Embedded
@@ -102,6 +125,27 @@ once to that single image. Sources:
 [PAD-US fee service](https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/0),
 [Esri dynamic-layer export contract](https://developers.arcgis.com/rest/services-reference/enterprise/export-map/).
 
+BC uses a transparent, explicitly classified export from the
+[provincial parcel service](https://maps.gov.bc.ca/arcgis/rest/services/whse/bcgw_pub_whse_cadastre/MapServer/0).
+Its CORS policy requires optional extension host access in both renderers. The
+worker accepts only validated BC tile coordinates from Peakbagger content
+scripts or the packaged terrain frame embedded in a Peakbagger tab. It builds
+the fixed provider URL, checks permission, bounds PNGs to 1 MiB and 256 square
+pixels, limits concurrent jobs to 16, and cancels on owner/tab teardown. No
+general URL proxy or privileged account route is exposed. The trusted Allow
+click requests permission synchronously. Browsers that reject web-page
+activation open the packaged `bc-land/access.html` setup page, where permission
+is requested by another explicit user click. Only that exact extension page can
+acknowledge a grant to the map; its source-tab integer is not persisted.
+
+Alberta's CORS-enabled query service returns class-only polygons. Each tile
+allows four ordered pages of 500 features, 4 MiB per page, 50,000 vertices and a
+single 15-second deadline. Incomplete, malformed or repeated pages fail without
+publishing a partial tile. Even-odd filling preserves polygon holes. Both
+Canadian sources compose into the same opaque working tile before the map
+applies opacity once. Coarse, packaged public-domain Natural Earth province
+outlines select providers only; parcel records determine every colored area.
+
 ## Verification
 
 `npm run verify -- map-layers` runs the compact component checks and real
@@ -110,7 +154,15 @@ and hardware MapLibre. It checks all native map surfaces, independent rasters,
 overlap pixels at 0/50/100%, a failing per-scene-alpha negative control, native
 layer preservation, BLM/USFS classification/legend/guidance and opacity pixels,
 station rendering, pinned captures, 2D/3D suspend/resume
-and a real one-use Full Screen handoff. The historical Sentinel verifier entry
+and a real one-use Full Screen handoff. Canadian checks exercise BC's
+MAIN/isolated/worker relay, Allow pending/denial/retry geometry, both provincial
+sources on all four native surfaces, Alberta holes/private/unsupported areas,
+both sources in hardware 3D, and the packaged setup fallback and grant message.
+The setup page also runs the Chrome/Firefox component matrix with stable
+heading/card/action geometry, pending/denial/retry/success, guarded duplicate
+activation and retained keyboard focus. Permission decisions and provider responses are
+stubbed; this does not establish the browser's native optional-permission prompt
+or current live parcel completeness. The historical Sentinel verifier entry
 delegates to this integration check. Use `BPB_VERIFY_LAYERS_SCREENSHOT_DIR` to
 retain integration screenshots.
 Run `node scripts/verify-map-layer-control.mjs --firefox` for the matching compact

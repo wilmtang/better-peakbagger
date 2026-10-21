@@ -36,6 +36,7 @@ import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { createPackagedPageMatcher } from './sender-policy.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
 import { createMapLayerHandoff } from './map-layer-handoff.js';
+import { createBCLandRoutes } from './bc-land-routes.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
@@ -3403,6 +3404,14 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         'options/drafts.html', 'photos/photos.html',
     ]);
     const isPopupPage = createPackagedPageMatcher(ext, ['popup/popup.html']);
+    const bcLandRoutes = createBCLandRoutes({ ext, isPeakbaggerSender,
+        isTerrainSender: sender => {
+            if (sender.id !== ext.runtime.id || !Number.isInteger(sender.frameId) || sender.frameId < 1 || !isPeakbaggerSenderUrl(sender.tab?.url)) return false;
+            try {
+                const actual = new URL(sender.url), expected = new URL(ext.runtime.getURL('terrain/terrain.html'));
+                return actual.protocol === expected.protocol && actual.host === expected.host && actual.pathname === expected.pathname && !actual.username && !actual.password;
+            } catch { return false; }
+        } });
     const captureControlTypes = new Set([
         'CAPTURE_START', 'CAPTURE_STATUS', 'CAPTURE_CANCEL', 'CAPTURE_CLEAR',
         'CAPTURE_SELECTION', 'CAPTURE_OPEN_DRAFTS', 'CAPTURE_FOCUS_RECOVERY',
@@ -3663,6 +3672,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
+            const bcLandHandler = Object.hasOwn(bcLandRoutes.handlers, type) ? bcLandRoutes.handlers[type] : null;
+            if (bcLandHandler) return bcLandHandler(message, sender);
             if (captureControlTypes.has(type) && !isPopupPage(sender)) {
                 return { ok: false, error: { code: 'forbidden' } };
             }
@@ -3820,6 +3831,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     };
 
     ext.tabs.onRemoved.addListener(tabId => {
+        bcLandRoutes.cancelTab(tabId);
         recentHelperActivations.delete(tabId);
         recentHelperNavigations.delete(tabId);
         terrainActivation.forgetTab(tabId);

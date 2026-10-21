@@ -119,6 +119,33 @@ try {
         assert.equal(layers[2].drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
         return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: landTile });
     });
+    let bcRequests = 0, albertaRequests = 0;
+    const canadianTile = Buffer.from(await page.evaluate(() => {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+        const context = canvas.getContext('2d'); context.fillStyle = '#e69f00'; context.fillRect(0, 0, 112, 256);
+        context.fillStyle = '#ae8596'; context.fillRect(112, 0, 64, 256);
+        return canvas.toDataURL().split(',')[1];
+    }), 'base64');
+    await context.route('https://maps.gov.bc.ca/**', route => {
+        bcRequests++;
+        const url = new URL(route.request().url());
+        assert.equal(url.pathname, '/arcgis/rest/services/whse/bcgw_pub_whse_cadastre/MapServer/export');
+        assert.equal(JSON.parse(url.searchParams.get('dynamicLayers'))[0].drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
+        return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: canadianTile });
+    });
+    await context.route('https://geospatial.alberta.ca/**', route => {
+        albertaRequests++;
+        const params = new URL(route.request().url()).searchParams;
+        assert.equal(params.get('outFields'), 'objectid,crownclass');
+        assert.equal(params.get('resultOffset'), '0');
+        const [left, bottom, right, top] = params.get('geometry').split(',').map(Number);
+        const ring = (x1, y1, x2, y2) => [[left + (right-left)*x1, bottom + (top-bottom)*y1], [left + (right-left)*x2, bottom + (top-bottom)*y1], [left + (right-left)*x2, bottom + (top-bottom)*y2], [left + (right-left)*x1, bottom + (top-bottom)*y2], [left + (right-left)*x1, bottom + (top-bottom)*y1]];
+        return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ spatialReference: { wkid: 3857 }, features: [
+            { attributes: { objectid: 1, crownclass: 'Provincial' }, geometry: { rings: [ring(0,0,.65,1), ring(.2,.2,.4,.4)] } },
+            { attributes: { objectid: 2, crownclass: 'Municipal' }, geometry: { rings: [ring(.65,0,.85,1)] } },
+            { attributes: { objectid: 3, crownclass: 'Private' }, geometry: { rings: [ring(.85,0,1,1)] } },
+        ] }) });
+    });
     await context.route('https://wcc.sc.egov.usda.gov/**', route => {
         const url = new URL(route.request().url());
         return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' },
@@ -246,6 +273,75 @@ try {
         }
         cases.push(pathname);
     }
+    // Exercise real MAIN -> isolated -> worker tile messages. Native permission
+    // prompts are deliberately stubbed so this hidden check cannot steal focus.
+    const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
+    await worker.evaluate(() => {
+        globalThis.__bpbBCPermission = { allowed: false, requests: 0 };
+        const contains = chrome.permissions.contains.bind(chrome.permissions);
+        chrome.permissions.contains = permission => permission.origins?.includes('https://maps.gov.bc.ca/*') ? Promise.resolve(globalThis.__bpbBCPermission.allowed) : contains(permission);
+        chrome.permissions.request = () => {
+            globalThis.__bpbBCPermission.requests++;
+            if (globalThis.__bpbBCPermission.setup) throw new Error('permissions.request requires an extension user action');
+            return new Promise(resolve => { globalThis.__bpbBCPermission.finish = allowed => { globalThis.__bpbBCPermission.allowed = allowed; resolve(allowed); }; });
+        };
+    });
+    for (const [index, pathname] of cases.slice(0, 4).entries()) {
+        await page.goto(origin + pathname);
+        const native = pathname.includes('MasterMap') ? page : page.frames().find(frame => frame.url().includes('/map/MasterMap.aspx'));
+        await waitForCondition(() => native.evaluate(() => !!window.mapsPlaceholder), { description: 'Canadian native map ready' });
+        await native.evaluate(() => { mapsPlaceholder.setView([54,-124],12,{animate:false}); });
+        await page.getByRole('button', { name: /^Layers/ }).click();
+        await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
+        await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
+        const opacity = page.getByRole('slider', { name: 'Public lands opacity' });
+        await opacity.fill('100'); await opacity.dispatchEvent('input');
+        await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).waitFor();
+        if (index === 0) {
+            const allow = page.getByRole('button', { name: 'Allow BC land maps', exact: true });
+            await allow.waitFor(); assert.equal(bcRequests, 0, 'no BC provider traffic before consent');
+            const geometry = await allow.boundingBox();
+            await allow.click();
+            await waitForCondition(() => worker.evaluate(() => globalThis.__bpbBCPermission.requests), { description: 'trusted Allow reaches the worker synchronously', isReady: value => value === 1 });
+            assert.deepEqual(await allow.boundingBox(), geometry, 'Allow remains anchored while permission is pending');
+            assert.equal(await allow.evaluate(element => element === document.activeElement), true, 'permission pending retains action focus');
+            await worker.evaluate(() => globalThis.__bpbBCPermission.finish(false));
+            await wait(() => document.querySelector('.bpb-layers-detail:not([hidden])')?.textContent.includes('BC access not granted.'), 'permission denial feedback');
+            assert.deepEqual(await allow.boundingBox(), geometry, 'denial keeps the action anchored');
+            await worker.evaluate(() => { globalThis.__bpbBCPermission.setup = true; });
+            const [setup] = await Promise.all([context.waitForEvent('page'), allow.click()]); await setup.waitForLoadState();
+            assert.ok(new URL(setup.url()).pathname === '/bc-land/access.html', 'Firefox-style gesture failure opens only the packaged setup');
+            await setup.evaluate(() => { chrome.permissions.request = () => new Promise(resolve => { globalThis.__bcSetupFinish = resolve; }); });
+            await setup.getByRole('button', { name: 'Allow access', exact: true }).click();
+            await setup.waitForFunction(() => typeof globalThis.__bcSetupFinish === 'function');
+            await worker.evaluate(() => { globalThis.__bpbBCPermission.allowed = true; });
+            await setup.evaluate(() => globalThis.__bcSetupFinish(true));
+            await setup.getByRole('button', { name: 'Return to map', exact: true }).waitFor();
+            if (output) await setup.screenshot({ path: path.join(output, 'bc-setup.png') });
+            await Promise.all([setup.waitForEvent('close'), setup.getByRole('button', { name: 'Return to map', exact: true }).click()]);
+        }
+        const screenshot = () => (pathname.includes('MasterMap') ? page.locator('#map') : page.locator('iframe#if')).screenshot();
+        const counts = () => screenshot().then(png => countImageColors(png, [[230,159,0],[174,133,150]]));
+        await waitForCondition(counts, { description: `Crown and municipal BC pixels on ${pathname}`, isReady: values => values.every(value => value > 1000) });
+        if (output) await page.screenshot({ path: path.join(output, `canada-bc-${index}.png`) });
+        await opacity.fill('0'); await opacity.dispatchEvent('input');
+        await waitForCondition(counts, { description: 'zero Canadian land opacity', isReady: values => values.every(value => value < 1000) });
+        const beforeBC = bcRequests;
+        await native.evaluate(() => { mapsPlaceholder.setView([51.18,-115.57],13,{animate:false}); });
+        await page.getByRole('link', { name: 'Alberta camping rules', exact: true }).waitFor();
+        assert.equal(await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).count(), 0, 'Banff does not request BC access');
+        await opacity.fill('100'); await opacity.dispatchEvent('input');
+        await waitForCondition(counts, { description: `Alberta classified polygons on ${pathname}`, isReady: values => values.every(value => value > 1000) });
+        assert.equal(bcRequests, beforeBC, 'Alberta camera uses no BC provider');
+        assert.equal(await native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay).every(layer => Object.values(layer._tiles || {}).filter(tile => tile.loaded).every(({el}) => {
+            const context = el.getContext('2d');
+            return context.getImageData(76,179,1,1).data[3] === 0 && context.getImageData(240,128,1,1).data[3] === 0;
+        }))), true, 'Alberta polygon holes and private parcels remain clear');
+        if (output) await page.screenshot({ path: path.join(output, `canada-ab-${index}.png`) });
+        await native.evaluate(() => { mapsPlaceholder.setView([55,-112],13,{animate:false}); });
+        await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay).some(layer => Object.values(layer._tiles || {}).some(({el}) => el.getContext('2d').getImageData(128,128,1,1).data[3] === 0))), { description: 'unsupported Alberta area stays clear' });
+        await page.getByRole('checkbox', { name: 'Public lands', exact: true }).uncheck();
+    }
     const dem = Buffer.from('UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef', 'base64');
     await context.route('https://tiles.mapterhorn.com/**', route => route.fulfill({contentType:'image/webp',headers:{'access-control-allow-origin':'*'},body:dem}));
     // Full Screen uses the viewport, rather than an unstyled iframe's 300x150
@@ -323,6 +419,28 @@ try {
     await landOpacity.fill('0'); await landOpacity.dispatchEvent('input');
     await waitForCondition(() => coloredPixels('gold'), { description: 'zero opacity exposes the terrain below BLM', timeoutMs: 30000, isReady: count => count < gold / 5 });
     await waitForCondition(() => coloredPixels('usfs'), { description: 'zero opacity exposes the terrain below USFS', timeoutMs: 30000, isReady: count => count < blue / 5 });
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+    const canadianNative = page.frames().find(frame => frame.url().includes('/map/MasterMap.aspx'));
+    await canadianNative.evaluate(() => { mapsPlaceholder.setView([54,-124],12,{animate:false}); });
+    await landOpacity.fill('100'); await landOpacity.dispatchEvent('input');
+    await page.getByRole('link', { name: 'BC Crown land rules', exact: true }).waitFor();
+    const before3DBC = bcRequests;
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true');
+    await waitForCondition(() => coloredPixels('gold'), { description: 'BC Crown parcels through the packaged terrain sender', timeoutMs: 30000, isReady: count => count > 1000 });
+    assert.ok(bcRequests > before3DBC, 'embedded terrain frame received BC tiles from the worker');
+    if (output) await page.screenshot({ path: path.join(output, 'canada-bc-3d.png') });
+    await landOpacity.fill('0'); await landOpacity.dispatchEvent('input');
+    await waitForCondition(() => coloredPixels('gold'), { description: 'zero Crown opacity in hardware terrain', timeoutMs: 30000, isReady: count => count < 1000 });
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+    await canadianNative.evaluate(() => { mapsPlaceholder.setView([51.18,-115.57],13,{animate:false}); });
+    await page.getByRole('link', { name: 'Alberta camping rules', exact: true }).waitFor();
+    const before3DAB = albertaRequests;
+    await landOpacity.fill('100'); await landOpacity.dispatchEvent('input');
+    await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true');
+    await waitForCondition(() => coloredPixels('gold'), { description: 'Alberta polygons over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
+    assert.ok(albertaRequests > before3DAB, 'terrain queried Alberta class-only geometry');
+    if (output) await page.screenshot({ path: path.join(output, 'canada-ab-3d.png') });
+    cases.push('BC Allow pending/denial/retry without layout shift (native prompt stubbed)', 'BC/Alberta native ownership and opacity on all four surfaces', 'Alberta holes/private/unsupported coverage stay clear', 'BC embedded worker sender and Alberta polygons in hardware 3D');
     cases.push('0/50/100 percent mosaic and BLM/USFS pixels with negative control','one-use Full Screen state and pinned pass','3D capture choices, independent base, suspend/resume','off while parked prevents catalog replay', 'BLM/USFS legend, guidance and native/terrain alpha');
     assert.deepEqual(errors, []);
     summary = {browser:'chromium', version:context.browser().version(), hidden:true, leaflet:'1.9.4', cases, viewports:[[1000,700]], renderer, tileRequests, profile:temporaryRoot};

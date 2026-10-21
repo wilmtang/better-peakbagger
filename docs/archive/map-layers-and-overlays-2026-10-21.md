@@ -703,3 +703,76 @@ boundary completeness or camping permission. Live authenticated Peakbagger,
 physical touch, native menus, screen-reader speech and OS focus/window placement
 remain outside the hidden fixture proof. Earlier broad verifier gaps remain
 separate.
+
+## Follow-up: BC and Alberta public-land coverage
+
+The user prioritized BC and Alberta. Both use the existing Public lands row,
+opacity, native/terrain compositor and context-sensitive detail. Explicit
+provincial Crown ownership is gold; other recorded ownership is muted. Blank
+areas remain unknown. No source is presented as camping permission.
+
+BC uses the [provincial ParcelMap service](https://maps.gov.bc.ca/arcgis/rest/services/whse/bcgw_pub_whse_cadastre/MapServer/0)
+with an explicit OWNER_TYPE renderer. Private, mixed, unclassified and untitled
+records are excluded. [LTSA defines untitled records](https://help.ltsa.ca/parcelmap-bc/owner-type)
+as lacking an active title, which alone does not prove public ownership. The
+parcel fabric is partial and does not fill unsurveyed Crown backcountry.
+Alberta uses [the government's regional ownership layer](https://geospatial.alberta.ca/arcgis/rest/services/Hosted/Land_use_owndership_NN_project/FeatureServer/10),
+explicit provincial/municipal classifications only, with its southwestern query
+extent and Calgary exclusion documented. Mineral rights, parks, PLUZ boundaries
+and Crown dispositions were not substituted for surface ownership.
+
+**Fixed and verified:** coordinate-only BC worker requests require optional host
+consent, reject foreign/invalid senders, enforce PNG dimensions/bytes and job
+limits, propagate cancellation and preserve provider cooldowns. The packaged
+terrain frame has a dedicated read-only sender gate; privileged extension UI
+matchers remain unchanged. Alberta bounds paging, bytes, vertices, identities and
+deadline; incomplete pages never publish a partially colored tile. Public-domain
+Natural Earth outlines route providers only, including avoiding BC requests from
+a Banff view. Ownership always comes from the parcel source.
+
+Firefox's documented user-action restriction means a normal page click cannot
+request permission in its worker. That rejection now opens/reuses an extension
+setup tab with its own explicit Allow action; a grant acknowledgement is accepted
+only from that exact packaged page. The setup assertion rejects an in-memory
+reproduction of the prior handler (which only returned failure), then passes
+the final handler. No user files were reset for this negative control.
+
+All 3,079 tests passed, along with scoped ESLint and web-ext lint (eight owned
+warnings). The build produced 50 bundles and includes the Natural Earth notice.
+A bounded live BC ownership query/export confirmed Crown Provincial ownership
+and visibly gold output; an earlier export showed municipal/federal colors.
+The service ignored a requested centroid, so the successful probe used one
+bounded polygon instead. One live Alberta tile passed through the shipped parser
+in one request, rendering two Crown polygons and 20 vertices. These samples do
+not establish complete or current coverage.
+
+Hidden Chrome 156.0.8078.4 real-extension fixtures at 1000 by 700 verified BC and
+Alberta on ascent, peak, BigMap and standalone MasterMap, opacity, Alberta holes,
+private/unsupported areas, permission pending/denial/retry, the actual packaged
+setup tab/grant acknowledgement, and both providers in hardware MapLibre on
+ANGLE/Metal Apple M3 Pro. Existing Sentinel, SNOTEL, US agency palette, basemap,
+menu and handoff checks passed in the same run. Chrome 156 and Firefox 157 each
+passed eight component cases at 736/320 by 800, light/dark and normal/double
+text. Setup idle/pending/denial/retry/success retained action focus and guarded
+duplicate keyboard activation; heading/card/action geometry and document scroll
+remained stable after establishing the initial focused reading position. The
+first Chrome assertion included a one-pixel native focus reveal before its
+baseline; the final assertion measures async transitions after focus, without
+loosening the geometry comparison. The initial setup fixture lacked static
+assets; the final fixture explicitly serves its built HTML, scripts and styles.
+Native Canadian maps, hardware terrain, narrow/dark/double-text details and setup
+pages were visually inspected. Real-manifest Chrome startup/BFCache passed at
+1000 by 760. Verifiers reported teardown, and process/profile cleanup was audited.
+
+**Intentionally not changed:** the compact overview, separate basemap corners,
+25% default opacity, persistence, Sentinel cloud metadata, SNOTEL auto-reveal,
+other overlays and activity-data boundaries. No private-parcel inference,
+camping-allowed classification or coverage in other Canadian provinces exists.
+
+**Changed but not fully proven:** provider responses and permission decisions are
+stubbed in browser fixtures. The browser's native optional-permission prompt,
+full Canadian map/worker integration in Firefox, live authenticated Peakbagger,
+Canadian-specific BFCache recovery, physical touch, screen-reader speech and OS
+focus/window placement remain unproven. Partial provincial coverage, parcel
+currency, roads, closures and camping permissions remain source/product limits;
+the earlier broad verification gaps remain separate.

@@ -1,5 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, ALBERTA_PARCEL_EXTENT, intersectsLandBounds } from './canadian-land.js';
 
 // One color contract drives both the service request and the visible legend.
 export const SLOPE_BANDS = Object.freeze([
@@ -37,7 +38,7 @@ export const LAND_RENDERER = { type: 'uniqueValue', field1: 'Own_Type',
 
 export const OVERLAY_ATTRIBUTION = {
     slope: '<a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a>',
-    land: '<a href="https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview">USGS PAD-US 4.1</a>',
+    land: '<a href="https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview">USGS PAD-US 4.1</a> · <a href="https://catalogue.data.gov.bc.ca/dataset/parcelmap-bc-parcel-fabric">ParcelMap BC</a> · <a href="https://geospatial.alberta.ca/arcgis/rest/services/Hosted/Land_use_owndership_NN_project/FeatureServer/10">Alberta Crown parcels</a>',
 };
 export function tileBounds({ z, x, y }) {
     if (![z, x, y].every(Number.isInteger) || z < 0 || z > 24 || y < 0 || y >= 2 ** z) throw new Error('Invalid overlay tile.');
@@ -69,6 +70,24 @@ export function overlayTileUrl(id, coordinates) {
     } else throw new Error('Unknown overlay.');
     Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
     return url.href;
+}
+
+export function publicLandTileSources(coordinates) {
+    const bbox = tileBounds(coordinates), longitude = value => value / 20037508.342789244 * 180;
+    const latitude = value => Math.atan(Math.sinh(value / 6378137)) * 180 / Math.PI;
+    const geographic = [longitude(bbox[0]), latitude(bbox[1]), longitude(bbox[2]), latitude(bbox[3])];
+    const coverage = landCoverage(geographic).filter(provider => provider !== 'ab' || intersectsLandBounds(geographic, ALBERTA_PARCEL_EXTENT));
+    return coverage.map(provider => ({ provider, bbox, kind: provider === 'ab' ? 'parcels' : 'raster',
+        url: provider === 'us' ? overlayTileUrl('land', coordinates) : provider === 'bc' ? bcLandTileUrl(bbox) : albertaLandTileUrl(bbox) }));
+}
+export function publicLandInfo(bounds) {
+    const coverage = landCoverage(bounds), us = coverage.includes('us'), bc = coverage.includes('bc'), ab = coverage.includes('ab');
+    const classes = [...(us ? LAND_CLASSES.filter(item => item.value !== 'DIST') : []),
+        ...CANADIAN_LAND_CLASSES.filter(item => (bc || ab && ['CROWN', 'LOC'].includes(item.value)) && (!us || !['FED', 'LOC'].includes(item.value)))];
+    const names = [us && 'US PAD-US', bc && 'BC parcel records', ab && 'SW Alberta parcels'].filter(Boolean);
+    return { legend: `${names.join(' · ') || 'No public-land coverage here'}. ${bc || ab ? 'Canadian coverage is partial. ' : ''}Clear areas are unknown. Check local access and camping rules.`,
+        legendEntries: classes.map(item => ({ label: item.label, color: `rgb(${item.color.join(',')})` })),
+        guidanceKeys: [us && 'blm', bc && 'bc', ab && 'ab'].filter(Boolean) };
 }
 
 // Accept only a small geographic view, never a provider URL or an arbitrary query.

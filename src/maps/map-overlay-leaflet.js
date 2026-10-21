@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createOverlayTiles } from './map-overlay-tiles.js';
+import { createPageBCTileFetch } from './bc-land-client.js';
 import { OVERLAY_ATTRIBUTION } from './map-overlay-providers.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup } from '../snow/snotel-map-marker.js';
 
-export function createLeafletOverlays({ win, map, onError }) {
+export function createLeafletOverlays({ win, map, onError, bridgeWindow = win }) {
     const L = win.L, layers = new Map(), controllers = new Map();
-    const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), onError });
+    const fetchBCTile = createPageBCTileFetch(bridgeWindow);
+    const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError });
     const z = { sentinel: 250, land: 260, slope: 270 };
     let stations = null, stationKey = '', hasScenes = false;
     const remove = id => {
@@ -55,6 +57,6 @@ export function createLeafletOverlays({ win, map, onError }) {
             }
             stations.addTo(map);
         },
-        dispose() { for (const id of [...layers.keys()]) remove(id); if (stations) map.removeLayer(stations); for (const controller of controllers.values()) controller.abort(); controllers.clear(); tiles.dispose(); },
+        dispose() { for (const id of [...layers.keys()]) remove(id); if (stations) map.removeLayer(stations); for (const controller of controllers.values()) controller.abort(); controllers.clear(); tiles.dispose(); fetchBCTile.dispose(); },
     };
 }

@@ -5,6 +5,11 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 
 const LABELS = { sentinel: 'Sentinel-2 β', slope: 'Slope angle', land: 'Public lands', snotel: 'SNOTEL stations' };
 const NAMES = { ...LABELS, sentinel: 'Sentinel-2 (experimental)' };
+const LAND_GUIDANCE = {
+    blm: ['BLM camping rules', 'https://www.blm.gov/programs/recreation/camping'],
+    bc: ['BC Crown land rules', 'https://www2.gov.bc.ca/gov/content/industry/crown-land-water/crown-land/crown-land-uses'],
+    ab: ['Alberta camping rules', 'https://www.alberta.ca/camping-on-public-land'],
+};
 
 // Presentation only. The owner supplies validated state and performs all I/O.
 export function createMapLayerControl({ document: doc, onToggle = () => {}, onOpacity = () => {},
@@ -67,17 +72,14 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }); detail.append(capture);
         }
         const legend = node('div', 'bpb-layers-legend'); detail.append(legend);
-        if (key === 'land') {
-            const guidance = node('a', 'bpb-layers-guidance', 'BLM camping rules');
-            guidance.href = 'https://www.blm.gov/programs/recreation/camping';
-            guidance.target = '_blank'; guidance.rel = 'noopener noreferrer'; detail.append(guidance);
-        }
+        const guidance = key === 'land' ? node('div', 'bpb-layers-guidance-links') : null;
+        if (guidance) detail.append(guidance);
         const feedback = node('div', 'bpb-layers-feedback');
         const status = node('span'), action = node('span', 'bpb-layers-recovery');
         const retry = node('button', 'bpb-layers-retry', 'Retry'); retry.type = 'button'; retry.hidden = true;
         retry.addEventListener('click', () => {
             const current = model.statuses?.[key];
-            if (current?.pending || current?.retryAt > Date.now()) return;
+            if (current?.pending || current?.retryAt > Date.now() || current?.permission) return;
             onRetry(key);
         });
         action.append(retry); feedback.append(status, action); detail.append(feedback); well.append(detail);
@@ -87,7 +89,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             paint();
         });
         rows.set(key, { row, checkbox, disclosure, value });
-        details.set(key, { detail, slider, output, capture, legend, status, retry, captureKey: '' });
+        details.set(key, { detail, slider, output, capture, legend, guidance, status, retry, captureKey: '', guidanceKey: '' });
     }
     panel.append(well); element.append(trigger, panel, live);
     const position = () => {
@@ -133,8 +135,19 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
                 swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
                 item.append(swatch, doc.createTextNode(entry.label)); return item;
-            }), doc.createTextNode(status.legend || ''));
+            }), node('div', 'bpb-layers-legend-caption', status.legend || ''));
             detail.status.textContent = status.message || '';
+            if (detail.guidance) {
+                const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];
+                const signature = JSON.stringify(keys);
+                if (signature !== detail.guidanceKey) {
+                    detail.guidanceKey = signature;
+                    detail.guidance.replaceChildren(...keys.map(guide => {
+                        const [label, url] = LAND_GUIDANCE[guide], link = node('a', 'bpb-layers-guidance', label);
+                        link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; return link;
+                    }));
+                }
+            }
             if (detail.capture) {
                 const captures = Array.isArray(status.captures) ? status.captures : [{ id: 'latest', label: 'Latest capture' }];
                 const signature = JSON.stringify(captures);
@@ -148,6 +161,9 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             const showRetry = current.enabled && status.retry === true;
             if (!showRetry && doc.activeElement === detail.retry) row.disclosure.focus({ preventScroll: true });
             detail.retry.hidden = !showRetry;
+            detail.retry.textContent = status.permission ? 'Allow' : 'Retry';
+            detail.retry.dataset.bpbBcPermission = String(key === 'land' && status.permission === true);
+            detail.retry.setAttribute('aria-label', status.permission ? 'Allow BC land maps' : 'Retry');
             detail.retry.setAttribute('aria-disabled', String(status.pending === true || status.retryAt > Date.now()));
             detail.retry.title = status.retryAt > Date.now() ? `Try again after ${new Date(status.retryAt).toLocaleTimeString()}` : '';
         }

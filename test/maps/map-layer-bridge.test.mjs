@@ -9,11 +9,11 @@ import { createMapLayerHandoff } from '../../src/background/map-layer-handoff.js
 
 const bundle = await readFile(new URL('../../dist/content/peak-snow.js', import.meta.url), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function setup({ catalog = snotelStations(), held = false } = {}) {
+function setup({ catalog = snotelStations(), held = false, runtime } = {}) {
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', runScripts: 'outside-only' });
     const win = dom.window, messages = [], requests = [], local = {}, listeners = [];
     win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder; win.AbortController = AbortController;
-    win.chrome = { storage: { sync: { get: async () => ({ bpbSettings: { showSnotel: true } }) },
+    win.chrome = { runtime, storage: { sync: { get: async () => ({ bpbSettings: { showSnotel: true } }) },
         local: { get: async () => local, set: async value => Object.assign(local, value) },
         onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     const response = () => new Response(JSON.stringify(catalog));
@@ -34,6 +34,35 @@ test('the isolated map service persists bounded opacity only and rejects foreign
         env.send(request, 'https://example.com'); env.send(request, env.win.location.origin, null); env.send({ ...request, bounds: [-122, -200, -121, 47] });
         await tick(); assert.equal(env.requests.length, 0);
     } finally { env.close(); }
+});
+
+test('the BC relay narrows coordinate requests, rejects foreign senders and never prompts on scripted clicks', async () => {
+    const env = setup(), calls = [];
+    env.win.chrome.runtime = { sendMessage: async message => { calls.push(message); return { ok: false, code: 'bc-permission-required' }; } };
+    try {
+        const message = { type: 'BC_LAND_TILE_GET', requestId: 'one', coordinates: { z: 12, x: 637, y: 1315 }, url: 'https://evil.example/' };
+        env.send({ type: 'bcTile', message }, 'https://evil.example/');
+        env.send({ type: 'bcTile', message: { ...message, coordinates: { z: 1, x: 0, y: 0 } } });
+        env.send({ type: 'bcTile', message }); await tick();
+        assert.equal(calls.length, 1); assert.equal(Object.hasOwn(calls[0], 'url'), false);
+        assert.ok(env.messages.some(reply => reply.type === 'bcTileReply' && reply.reply.code === 'bc-permission-required'));
+        const button = env.win.document.createElement('button'); button.dataset.bpbBcPermission = 'true'; env.win.document.body.append(button); button.click(); await tick();
+        assert.ok(!calls.some(call => call.type === 'BC_LAND_PERMISSION_REQUEST'));
+    } finally { env.close(); }
+});
+test('only the packaged BC setup page can acknowledge granted access', async () => {
+    const listeners = [], runtime = { id: 'self', getURL: path => `moz-extension://self/${path}`,
+        onMessage: { addListener: listener => listeners.push(listener), removeListener: listener => listeners.splice(listeners.indexOf(listener), 1) } };
+    const env = setup({ runtime });
+    try {
+        const message = { type: 'BC_LAND_PERMISSION_GRANTED' }, handler = listeners[0];
+        for (const sender of [{ id: 'other', url: runtime.getURL('bc-land/access.html') }, { id: 'self', url: 'moz-extension://foreign/bc-land/access.html' },
+            { id: 'self', url: 'https://www.peakbagger.com/bc-land/access.html' }]) handler(message, sender);
+        assert.equal(env.messages.filter(reply => reply.type === 'bcPermission').length, 0);
+        handler(message, { id: 'self', url: runtime.getURL('bc-land/access.html?tab=1') });
+        assert.equal(env.messages.find(reply => reply.type === 'bcPermission')?.ok, true);
+    } finally { env.close(); }
+    assert.equal(listeners.length, 0);
 });
 test('viewport station overflow is explicit and no viewport reaches NRCS', async () => {
     const sample = snotelStations()[0], catalog = Array.from({ length: 51 }, (_, i) => ({ ...sample, stationTriplet: `${1000 + i}:WA:SNTL` }));

@@ -6,7 +6,7 @@ import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { SLOPE_BANDS, LAND_CLASSES, overlayBounds } from './map-overlay-providers.js';
+import { SLOPE_BANDS, publicLandInfo, overlayBounds } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -34,8 +34,7 @@ export function installMapLayers(win = window) {
         sentinel: { legend: 'Copernicus Sentinel-2 · Microsoft Planetary Computer. Scene clouds can obscure coverage.' },
         slope: { legend: 'USGS 3DEP · Below 20° and no data are clear. Ground slope; resolution varies. Not an avalanche forecast.',
             legendEntries: SLOPE_BANDS.map(band => ({ label: band.to === 91 ? '≥45°' : `${band.from}–${band.to}°`, color: `rgb(${band.color.join(',')})` })) },
-        land: { legend: 'USGS PAD-US 4.1 fee ownership. BLM: gold; USFS: blue. Clear areas are unknown. Check local access and camping restrictions.',
-            legendEntries: LAND_CLASSES.filter(item => item.value !== 'DIST').map(item => ({ label: item.label, color: `rgb(${item.color.join(',')})` })) },
+        land: publicLandInfo(null),
         snotel: { legend: 'NRCS active stations in the visible map. Station observations may differ from route conditions.' },
     };
     const post = detail => win.postMessage({ __bpbMapLayers: true, dir: 'toCS', ...detail }, win.location.origin);
@@ -44,6 +43,12 @@ export function installMapLayers(win = window) {
     const frameLifecycle = createMapFrameLifecycle({ document: doc, MutationObserver: win.MutationObserver, selector: FRAME_SELECTOR });
     const theme = () => doc.documentElement.dataset.bpbTheme === 'dark' || doc.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
     const paint = () => {
+        const bounds = stationView();
+        if (bounds) {
+            const info = publicLandInfo(bounds);
+            if (statuses.land.permission && !info.guidanceKeys.includes('bc')) statuses.land = { ...statuses.land, permission: false, pending: false, error: false, retry: false, message: '' };
+            statuses.land = { ...statuses.land, ...info };
+        }
         control.render({ state, statuses, theme: theme() });
         position();
     };
@@ -81,6 +86,7 @@ export function installMapLayers(win = window) {
     };
     const refresh = event => {
         if (event && revealPending) { cancelReveal(); requestId++; post({ type: 'cancel' }); }
+        paint();
         if (!frameMode && !booting) binding?.sentinel.refresh();
         clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
     };
@@ -146,10 +152,11 @@ export function installMapLayers(win = window) {
                 if (!map || !owner.L?.GridLayer || !owner.L?.marker) continue;
                 if (binding?.map === map && binding.win.document === owner.document) { position(); return true; }
                 unbind();
-                const engine = createLeafletOverlays({ win: owner, map, onError(id, error) {
+                const engine = createLeafletOverlays({ win: owner, bridgeWindow: win, map, onError(id, error) {
                     if (id === 'sentinel') binding?.sentinel.tileError(error);
-                    else { statuses[id] = { ...statuses[id], error: true, retry: true, retryAt: error?.retryAt || 0, message: 'Some map tiles are unavailable. Retry.' }; paint();
-                        if (error?.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); } }
+                    else { statuses[id] = { ...statuses[id], error: true, retry: true, permission: error?.code === 'bc-permission-required', retryAt: error?.retryAt || 0,
+                        message: error?.code === 'bc-permission-required' ? 'Allow BC parcel maps.' : 'Some map tiles are unavailable. Retry.' }; paint();
+                    if (error?.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); } }
                 } });
                 const sentinel = createSentinelSession({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() }), fetchImpl: owner.fetch.bind(owner),
                     replaceScenes: scenes => engine.scenes(scenes, state.sentinel.opacity), clearScenes: () => engine.clearSentinel(),
@@ -187,6 +194,18 @@ export function installMapLayers(win = window) {
             }
         }
         if (data.__bpbMapLayers === true && data.dir === 'toPage') {
+            if (data.type === 'bcPermission') {
+                statuses.land.pending = data.pending === true;
+                if (!statuses.land.pending) {
+                    statuses.land.permission = data.ok !== true; statuses.land.error = data.ok !== true;
+                    statuses.land.retry = data.ok !== true;
+                    statuses.land.message = data.ok ? '' : data.setup === true ? 'Allow BC maps in opened tab.' : 'BC access not granted.';
+                    if (data.ok && state.land.enabled) {
+                        if (frameMode) terrain('layerAction', { action: 'retry', id: 'land' }); else binding?.engine.retry('land');
+                    }
+                }
+                paint(); return;
+            }
             if (data.type === 'handoff' && !touched) {
                 const next = readLayerSnapshot(data.snapshot);
                 if (next) {
@@ -245,7 +264,7 @@ export function installMapLayers(win = window) {
                 if (revealPending && terrainView && bounds.some((value, i) => Math.abs(value - terrainView.bounds[i]) > 1e-7)) {
                     cancelReveal(); requestId++; post({ type: 'cancel' });
                 }
-                terrainView = { bounds, zoom: data.zoom }; clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
+                terrainView = { bounds, zoom: data.zoom }; paint(); clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
             }
         }
     };

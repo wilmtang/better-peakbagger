@@ -453,6 +453,17 @@ credits Open-Meteo; underlying datasets retain their provider licences.
 The compact Layers menu offers independent overlays in native and supported 3D
 maps. Opening it makes no provider request. Enabling slope or public lands
 sends tile bounds to USGS 3DEP or PAD-US, with credentials and referrers omitted.
+The public-land overlay also uses ParcelMap BC and a regional Alberta government
+parcel service when the viewed tiles intersect their coverage. BC requires the
+optional `maps.gov.bc.ca` permission, requested only through the explicit
+**Allow** action. Its images pass through a bounded extension-worker broker;
+if the browser requires activation from extension UI, Allow opens a packaged
+permission page whose second explicit click requests access. That page carries
+only the source tab ID, transiently, so a grant can refresh the same map.
+Page messages contain tile coordinates, never an arbitrary URL. Alberta requests
+include tile bounds and only parcel geometry, object IDs and ownership classes,
+never owner names or addresses. Neither service receives account credentials,
+GPX or route data. Canadian coverage is partial; clear areas mean unknown.
 These requests contain no GPX, route, Peakbagger identity or account data.
 Opacity preferences are device-local and excluded from sync/settings backups.
 Enabled selections remain in page memory, except an explicit native Full Screen
@@ -590,6 +601,7 @@ The user can export and import settings without GitHub:
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
 | USGS 3DEP / PAD-US | Viewed-area tile bounds when the slope/public-land overlay is enabled, without credentials or referrers. |
+| ParcelMap BC / Alberta Environment and Protected Areas | Viewed-area tile bounds when public lands is enabled in supported Canadian areas. BC images require explicit optional host access and pass transiently through the extension worker. Alberta returns only geometry, object IDs and ownership classes. No credentials or referrers; no extension-managed persistent parcel cache. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |

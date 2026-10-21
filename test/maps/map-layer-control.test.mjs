@@ -111,3 +111,22 @@ test('Public lands details offer official camping guidance without enlarging the
     assert.equal(guidance.closest('section').hidden, true);
     control.dispose(); dom.window.close();
 });
+
+test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
+    const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
+    const state = Schema.mapOverlayState({ land: { enabled: true } });
+    const statuses = { land: { guidanceKeys: ['bc', 'ab', 'https://evil.example/'], permission: true, retry: true, message: 'Allow BC parcel maps.' } };
+    control.render({ state, statuses }); control.trigger.click(); doc.querySelector('[data-layer="land"] button').click();
+    const links = [...doc.querySelectorAll('.bpb-layers-guidance')];
+    assert.deepEqual(links.map(link => link.textContent), ['BC Crown land rules', 'Alberta camping rules']);
+    links[0].focus(); control.render({ state, statuses: { land: { ...statuses.land, pending: true } } });
+    assert.equal(doc.activeElement, links[0], 'status updates preserve the focused official guidance link');
+    const action = doc.querySelector('[data-bpb-bc-permission="true"]');
+    assert.equal(action.textContent, 'Allow'); assert.equal(action.getAttribute('aria-label'), 'Allow BC land maps');
+    action.click(); assert.deepEqual(retries, [], 'the trusted isolated click owns permission requests');
+    assert.equal(action.getAttribute('aria-disabled'), 'true');
+    control.render({ state, statuses: { land: { ...statuses.land, permission: false, error: true } } });
+    assert.equal(action.textContent, 'Retry'); action.click(); assert.deepEqual(retries, ['land']);
+    control.dispose(); dom.window.close();
+});

@@ -5,6 +5,7 @@ import { createSentinelSession } from '../maps/sentinel-session.js';
 import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
 import { OVERLAY_ATTRIBUTION } from '../maps/map-overlay-providers.js';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
+import { createBCTileFetch } from '../maps/bc-land-client.js';
 
 // The authorized renderer searches its own catalog. No scene geometry, remote
 // tile URLs or executable styles cross the page/frame boundary.
@@ -16,9 +17,14 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }) {
         if (snapshot && failure?.retryAt > Date.now()) snapshot.cooldowns[id] = failure.retryAt;
         if (id === 'sentinel') sentinel.tileError(failure);
         else post('layerStatus', { id, revision: snapshot?.revision, error: true, retry: true, retryAt: failure?.retryAt,
-            message: failure?.code === 'rate-limit' ? 'Map service is busy. Try again later.' : 'Some map tiles are unavailable. Retry.' });
+            permission: failure?.code === 'bc-permission-required',
+            message: failure?.code === 'bc-permission-required' ? 'Allow BC parcel maps.'
+                : failure?.code === 'rate-limit' ? 'Map service is busy. Try again later.' : 'Some map tiles are unavailable. Retry.' });
     };
-    const tiles = createOverlayTiles({ document: doc, onError: error });
+    // This packaged extension frame can call the worker. MAIN-world Leaflet
+    // maps use the isolated bridge instead; privileged APIs stay out of them.
+    const fetchBCTile = createBCTileFetch(message => (globalThis.browser || globalThis.chrome).runtime.sendMessage(message));
+    const tiles = createOverlayTiles({ document: doc, fetchBCTile, onError: error });
     const tileProtocol = async (request, controller) => {
         const match = /^bpb-overlay:\/\/(sentinel|slope|land)\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(request.url);
         if (!match || disposed) throw new Error('Invalid overlay tile.');

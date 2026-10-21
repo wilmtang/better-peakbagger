@@ -77,6 +77,8 @@ export const ENTRIES = [
     { out: 'content/big-map-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'maps/big-map-bridge.js'] },
     { out: 'content/big-map.js', sources: ['ui/page-lifecycle.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'maps/big-map.js'] },
     { out: 'gaia/access-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'] },
+    { out: 'bc-land/access-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'] },
+    { out: 'bc-land/access.js', sources: ['maps/bc-land-access.js'] },
     { out: 'gaia/access.js', sources: ['gaia/gaia-import.js', 'gaia/access.js'] },
     { out: 'onx/access-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'] },
     { out: 'onx/access.js', sources: ['onx/onx-import.js', 'onx/access.js'] },
@@ -147,6 +149,8 @@ export const COPY_FILES = [
     ['src/ascent/ascent-backup.css', 'css/ascent-backup.css'],
     ['src/ascent/ascent-gaia.css', 'css/ascent-gaia.css'],
     ['src/gaia/access.css', 'css/gaia-access.css'],
+    ['src/maps/bc-land-access.html', 'bc-land/access.html'],
+    ['src/maps/bc-land-access.css', 'css/bc-land-access.css'],
     ['src/gaia/access.html', 'gaia/access.html'],
     ['src/onx/access.html', 'onx/access.html'],
     ['src/caltopo/access.html', 'caltopo/access.html'],
@@ -189,6 +193,13 @@ export const GENERATED_FILES = [
 // Reviewed overrides are reserved for shipped material that has no npm package
 // root for the metafile inventory to discover.
 export const NON_PACKAGE_NOTICES = [
+    {
+        key: 'natural-earth-canadian-land-routing',
+        name: 'Natural Earth BC and Alberta routing outlines',
+        version: 'ca96624a56bd078437bca8184e78163e5039ad19',
+        license: 'LicenseRef-Natural-Earth-Public-Domain',
+        noticeFile: 'third_party/natural-earth-NOTICE.txt',
+    },
     {
         key: 'betacreator-symbol-geometry',
         name: 'BetaCreator symbol geometry',
