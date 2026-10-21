@@ -42,6 +42,18 @@ const trackUnitsPatch = value => ['default', 'auto', 'metric', 'imperial'].inclu
 // draws or validates a route resolves through ROUTE_STYLE and BOUNDS.
 const ROUTE_STYLE = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
 const VIEWPORT = { width: 450, height: 450 };
+const MAP_OVERLAY_OPACITY = Object.freeze({ sentinel: 100, slope: 60, land: 25, snotel: 100 });
+const MAP_OVERLAY_IDS = Object.freeze(Object.keys(MAP_OVERLAY_OPACITY));
+const mapOverlayPreferences = value => Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id,
+    id !== 'snotel' && Number.isFinite(value?.[id])
+        ? Math.round(Math.max(0, Math.min(100, value[id]))) : MAP_OVERLAY_OPACITY[id],
+]));
+const mapOverlayState = value => {
+    const preferences = mapOverlayPreferences(Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, value?.[id]?.opacity])));
+    return Object.fromEntries(MAP_OVERLAY_IDS.map(id => [id, {
+        enabled: value?.[id]?.enabled === true, opacity: preferences[id],
+    }]));
+};
 const BOUNDS = {
     routeWidth: { min: 1, max: 12 },
     routeCasingWidth: { min: 3, max: 20 },
@@ -273,6 +285,10 @@ const clean = raw => {
 };
 
 const API = {
+    MAP_OVERLAY_IDS,
+    MAP_OVERLAY_OPACITY,
+    mapOverlayPreferences,
+    mapOverlayState,
     UNIT_KEYS,
     unitOverride,
     trackUnitsPatch,

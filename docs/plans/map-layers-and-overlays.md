@@ -1,6 +1,6 @@
 # Shared map Layers menu and overlays
 
-Status: proposed, October 20, 2026. Planning only; no runtime changes.
+Status: implementation in progress, October 20, 2026.
 Source baseline: `ad48f51d8810` on `main`, with a clean working tree before
 this plan. Runtime evidence below refers to that tree, not to the mockup.
 
@@ -79,9 +79,11 @@ coarse-pointer hit targets around 44 pixels, ordinary readable typography and
 200% zoom support. Increase height for accessibility, rather than shrinking
 controls or stretching the menu across the map.
 
-Keep existing native and 3D basemap selectors, removing only their
-extension-owned Sentinel entries. Remove the separate SNOTEL map button and
-the two floating Sentinel capture panels once their replacements work.
+Include one basemap selector above the four overlay rows. Preserve native
+basemap handlers and available renderer choices, hiding the old selectors only
+after the replacement is bound. Sentinel is an independent overlay. Remove the
+separate SNOTEL map button and the two floating Sentinel capture panels once
+their replacements work.
 The Nearby snow card remains a separate observation surface.
 
 All layers start off for an unrelated new map session. Persist raster opacity
@@ -410,18 +412,20 @@ CAPTCHA or turn planning into provider load testing.
 
 ## Current verification and closure ledger
 
-**Fixed and verified:** no runtime items. Source inspection and the written
-implementation contract are complete. Planning-document checks are recorded
-below after execution.
+**Fixed and verified:** the presentation component and shared opacity/state
+normalization have focused coverage (23 tests). Hidden Chrome component checks
+at 736 and 320 CSS pixels in light and dark themes measured a 232 by 170 pixel
+overview, with anchored rows through pending/error/success updates and keyboard
+opacity/collapse behavior. These checks use stub data, not live map engines.
 
-**Intentionally not changed:** all runtime behavior in this planning turn;
-native basemap controls except the planned Sentinel relocation; 3D subject and
+**Intentionally not changed:** 3D subject and
 consent gates; the analyzer settings-write allowlist; the observation card's
 science, timeout/Refresh and nearby membership contracts; paid private parcels,
 worldwide ownership and regional avalanche overlays.
 
-**Changed but not fully proven:** no runtime code changed. Every L1–L6 unit is
-unimplemented. The earlier larger two-row preview is superseded by the owner's
+**Changed but not fully proven:** the component is not yet wired into the
+extension. Provider, bridge and renderer integration remains open. The earlier
+larger two-row preview is superseded by the owner's
 compact/collapsible requirement, and is not rendered proof of the revised UI.
 That preview and the HTTP provider samples do not prove the four-layer menu,
 real extension messaging, uniform
