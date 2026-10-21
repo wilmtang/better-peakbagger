@@ -153,7 +153,7 @@ try {
             await page.getByRole('button',{name:/^Layers/}).click();await page.getByRole('button',{name:/^Adjust Sentinel/}).click();
             const picker=page.locator('[aria-label="Sentinel-2 capture"]');const chosen=await picker.locator('option').nth(1).getAttribute('value');await picker.selectOption(chosen);
             await page.getByRole('button',{name:/^Layers/}).click();
-            const opened=context.waitForEvent('page');await page.locator('#fullscreen').click();const destination=await opened;await destination.waitForLoadState();
+            const [destination]=await Promise.all([context.waitForEvent('page'),page.locator('#fullscreen').click()]);await destination.waitForLoadState();
             await destination.waitForFunction(()=>document.querySelector('[data-layer="slope"] input')?.checked===true);
             assert.equal(await destination.locator('.bpb-layers-panel').isVisible(),false,'full-screen handoff starts compact');
             assert.equal(await destination.locator('[data-layer="sentinel"] input').isChecked(),true);

@@ -472,6 +472,12 @@ Verification evidence:
 - Map controls passed 10 cases each in Chrome 156 and Playwright Firefox 157:
   peak/ascent/BigMap/peak-BigMap, 1280/375 by 1000, light/dark, 1x/2x text,
   keyboard focus, Escape and stable controls/map/following content/scroll.
+- Verifier navigation now observes the click and new-page promises together.
+  A deliberate missing-link probe reached the expected navigation assertion and
+  resource-stack teardown; a final process/profile audit found no remaining
+  owned map/snow/terrain profiles or browser processes. One profile from the
+  earlier unhandled-promise probe was identified and removed after confirming
+  its browser process had exited.
 - Hardware rendering used ANGLE Metal on Apple M3 Pro. The full Firefox 157
   terrain fixture passed at 1000 by 760 plus narrow/resize checks, including
   authorization negatives, terrain/base/route/peaks, gestures, Sun/Moon bearing,
