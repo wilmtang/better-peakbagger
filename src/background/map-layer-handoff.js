@@ -3,6 +3,8 @@
 import { readLayerSnapshot } from '../maps/map-layer-protocol.js';
 
 const KEY = 'bpbMapLayerHandoffsV1';
+const contextKey = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))))
+    .map(byte => byte.toString(16).padStart(2, '0')).join('');
 const destination = value => {
     try {
         const url = new URL(value);
@@ -17,7 +19,7 @@ export function createMapLayerHandoff({ storage, isPeakbaggerSender, now = Date.
         const next = queue.then(async () => {
             const records = (await storage.get(KEY))[KEY] || [];
             const live = Array.isArray(records) ? records.filter(record => record?.expires > now()).slice(-31) : [];
-            const result = operation(live);
+            const result = await operation(live);
             await storage.set({ [KEY]: live }); return result;
         });
         queue = next.catch(() => {}); return next;
@@ -26,9 +28,9 @@ export function createMapLayerHandoff({ storage, isPeakbaggerSender, now = Date.
         prepare(message, sender) {
             const target = destination(message.destination), snapshot = readLayerSnapshot(message.snapshot);
             if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id) || !target || !snapshot) return { ok: false };
-            return transact(records => {
+            return transact(async records => {
                 for (let i = records.length - 1; i >= 0; i--) if (records[i].source === sender.tab.id) records.splice(i, 1);
-                records.push({ source: sender.tab.id, window: sender.tab.windowId, target, expires: now() + 30000,
+                records.push({ source: sender.tab.id, window: sender.tab.windowId, target: await contextKey(target), expires: now() + 30000,
                     snapshot: { ...snapshot, menuOpen: false } });
                 return { ok: true };
             });
@@ -36,8 +38,9 @@ export function createMapLayerHandoff({ storage, isPeakbaggerSender, now = Date.
         consume(_message, sender) {
             const target = destination(sender?.url);
             if (!isPeakbaggerSender(sender) || !target || !Number.isInteger(sender.tab?.id)) return { ok: false };
-            return transact(records => {
-                const index = records.findIndex(record => record.target === target && record.window === sender.tab.windowId
+            return transact(async records => {
+                const key = await contextKey(target);
+                const index = records.findIndex(record => record.target === key && record.window === sender.tab.windowId
                     && (record.source === sender.tab.id || record.source === sender.tab.openerTabId));
                 if (index < 0) return { ok: false };
                 const [record] = records.splice(index, 1); return { ok: true, snapshot: readLayerSnapshot(record.snapshot) };

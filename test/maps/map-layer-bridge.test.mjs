@@ -66,6 +66,8 @@ test('full-screen handoffs are bounded, expiring, one-use and bound to destinati
     const snapshot = { revision: 5, state: { slope: { enabled: true, opacity: 60 } }, menuOpen: true, cooldowns: { slope: time + 120000 } };
     assert.equal((await service.prepare({ destination: 'https://example.com/map/BigMap.aspx', snapshot }, source)).ok, false);
     await service.prepare({ destination, snapshot }, source);
+    assert.match(values.bpbMapLayerHandoffsV1[0].target, /^[a-f0-9]{64}$/);
+    assert.equal(JSON.stringify(values).includes(destination), false, 'session storage never retains the native map URL');
     assert.equal((await service.consume({}, { url: destination, tab: { id: 9, windowId: 2 } })).ok, false);
     const target = { url: destination, tab: { id: 9, windowId: 2, openerTabId: 7 } };
     const result = await service.consume({}, target); assert.equal(result.ok, true); assert.equal(result.snapshot.state.slope.enabled, true); assert.equal(result.snapshot.menuOpen, false);
