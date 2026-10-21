@@ -31,7 +31,7 @@ const labels = {
 };
 const dateLabel = date => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-export function mountPeakSnow() {
+export function mountPeakSnow({ client: sharedClient } = {}) {
     if (document.getElementById(ID)) return;
     const subject = readPeakWeatherSubject(document, location.href);
     if (!subject) return;
@@ -103,7 +103,7 @@ export function mountPeakSnow() {
     else if (mapRow?.closest('table') === subject.table) mapRow.after(row);
     else subject.table.tBodies[0].append(row);
 
-    const client = createSnotelClient({ storage: chrome.storage.local });
+    const client = sharedClient || createSnotelClient({ storage: chrome.storage.local });
     const mapSource = createSnotelMapSource({ client, subject, onSelect: (station, nearby) => {
         if (!enabled()) return;
         card.dispatchEvent(new Event('bpb:reveal-card'));
@@ -272,7 +272,7 @@ export function mountPeakSnow() {
     const stop = () => { cancel(); mapSource.suspend(); observer?.disconnect(); observer = null; cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
     lifecycle = createPageLifecycle({ onSuspend: stop,
         onResume: () => { mapSource.resume(); document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); beginVisible(); } },
-        onDispose: () => { stop(); mapSource.dispose(); cooldown.dispose(); unsubscribe(); client.clear(); },
+        onDispose: () => { stop(); mapSource.dispose(); cooldown.dispose(); unsubscribe(); if (!sharedClient) client.clear(); },
     });
     const applyPreference = next => {
         if (lifecycle.state === 'disposed') return;
@@ -287,5 +287,3 @@ export function mountPeakSnow() {
     settings.requireCurrent().then(next => { if (!settingsReady) applyPreference(next); }).catch(() => {});
     return { card, lifecycle };
 }
-
-mountPeakSnow();

@@ -39,13 +39,15 @@ export function snotelPopup(doc, station, onSelect) {
     content.append(link); return content;
 }
 
-export function createTerrainSnotelMarkers({ maplibre, document: doc, onSelect }) {
-    let markers = [], openPopup = null;
+export function createTerrainSnotelMarkers({ maplibre, document: doc, onSelect, canSelect = () => true }) {
+    let markers = [], openPopup = null, currentKey = '';
     const closePopup = () => { if (!openPopup) return false; openPopup.remove(); openPopup = null; return true; };
-    const clear = () => { closePopup(); for (const marker of markers) marker.remove(); markers = []; };
+    const clear = () => { closePopup(); for (const marker of markers) marker.remove(); markers = []; currentKey = ''; };
     return {
         clear, closePopup,
         replace(map, stations) {
+            const key = JSON.stringify(stations.map(station => [station, canSelect(station.id)]));
+            if (key === currentKey) return true;
             clear();
             if (!stations.length) return true;
             if (!map || typeof maplibre.Marker !== 'function' || typeof maplibre.Popup !== 'function') return false;
@@ -56,7 +58,7 @@ export function createTerrainSnotelMarkers({ maplibre, document: doc, onSelect }
                     button.title = `${station.name} · SNOTEL`; button.setAttribute('aria-label', button.title); button.append(snotelSymbol(doc));
                     const popup = new maplibre.Popup({ className: 'bpb-snotel-map-popup', focusAfterOpen: false,
                         anchor: 'bottom', offset: 16, maxWidth: 'min(260px, calc(100vw - var(--bpb-snotel-popup-margin, 80px)))' })
-                        .setDOMContent(snotelPopup(doc, station, onSelect));
+                        .setDOMContent(snotelPopup(doc, station, canSelect(station.id) ? onSelect : undefined));
                     popup.on('close', () => { if (openPopup === popup) openPopup = null; });
                     // Own activation as the summit buttons do. Native buttons
                     // provide one keyboard click; MapLibre's marker popup path
@@ -87,7 +89,7 @@ export function createTerrainSnotelMarkers({ maplibre, document: doc, onSelect }
                         .setLngLat([station.longitude, station.latitude]).addTo(map);
                     markers.push(marker);
                 }
-                return true;
+                currentKey = key; return true;
             } catch { clear(); return false; }
         },
     };

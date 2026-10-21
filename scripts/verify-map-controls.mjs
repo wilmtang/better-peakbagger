@@ -183,7 +183,7 @@ try {
             stable(before, await read(), `${label}/active`);
             if (surface === 'peak') {
                 stage = 'layer picker focus';
-                const picker = frame.locator('.bpb-terrain-picker');
+                const picker = page.locator('[aria-label="Base map"]');
                 const pickerState = () => picker.evaluate(element => {
                     const style = getComputedStyle(element), r = element.getBoundingClientRect();
                     // Firefox retains the frame's last activeElement when
@@ -196,7 +196,8 @@ try {
                 for (const scale of [1, 2]) {
                     // Enlarged text also exercises the picker's constrained
                     // width without changing the renderer's camera or canvas.
-                    await frame.locator('#bpb-terrain-map').evaluate((map, scale) => { map.style.fontSize = `${12 * scale}px`; }, scale);
+                    await page.locator('.bpb-map-layers').evaluate((control, scale) => { control.style.fontSize = `${12 * scale}px`; }, scale);
+                    await page.locator('.bpb-layers-trigger').click();
                     const idle = await pickerState();
                     await page.keyboard.press('Tab');
                     await picker.focus();
@@ -206,19 +207,19 @@ try {
                     assert.equal(focused.outline, 'solid', `${label}: native focus halo must be replaced`);
                     assert.equal(focused.scheme, theme, `${label}: native menu must follow the map theme`);
                     assert.equal(focused.width, '2px', `${label}: use the compact map-control focus ring`);
-                    assert.equal(focused.offset, '-2px', `${label}: focus must stay inside the scrolling control stack`);
+                    assert.equal(focused.offset, '2px', `${label}: padded popover leaves room for the focus ring`);
                     assert.equal(focused.color, theme === 'dark' ? 'rgb(121, 184, 255)' : 'rgb(47, 111, 208)');
                     assert.deepEqual(focused.rect, idle.rect, `${label}: focus moved or resized the layer picker`);
-                    await picker.press('Escape');
-                    assert.equal((await pickerState()).focused, true, `${label}: Escape keeps focus in the picker`);
-                    assert.equal(await frame.locator('#bpb-terrain-map').count(), 1, `${label}: picker Escape must not exit 3D`);
                     await picker.press('Tab');
-                    await waitForCondition(pickerState, { description: `${label}: keyboard can leave the picker`,
-                        isReady: state => !state.focused });
+                    await waitForCondition(pickerState, { description: `${label}: keyboard can leave the picker`, isReady: state => !state.focused });
                     assert.deepEqual((await pickerState()).rect, idle.rect, `${label}: blur moved or resized the layer picker`);
+                    await picker.focus();await picker.press('Escape');
+                    assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false, `${label}: Escape collapses the common menu`);
+                    assert.equal(await page.locator('.bpb-layers-trigger').evaluate(element=>document.activeElement===element), true, `${label}: collapse returns focus to Layers`);
+                    assert.equal(await frame.locator('#bpb-terrain-map').count(), 1, `${label}: menu Escape must not exit 3D`);
                     stable(before, await read(), `${label}/picker-${scale}x`);
                 }
-                await frame.locator('#bpb-terrain-map').evaluate(map => { map.style.fontSize = ''; });
+                await page.locator('.bpb-map-layers').evaluate(control => { control.style.fontSize = ''; });
             }
             const group = await frame.locator('.maplibregl-ctrl-group').boundingBox();
             const button = (await read()).button;

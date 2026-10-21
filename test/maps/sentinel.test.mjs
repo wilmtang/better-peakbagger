@@ -23,13 +23,14 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 test('the shipped Sentinel adapter runs in the native map MAIN world and carries its stylesheet', async () => {
     const manifest = JSON.parse(await readFile(new URL('../../manifest.json', import.meta.url), 'utf8'));
-    const entry = manifest.content_scripts.find(script => script.js?.includes('content/sentinel-map.js'));
+    const entry = manifest.content_scripts.find(script => script.js?.includes('content/map-layers.js'));
     assert.equal(entry.world, 'MAIN');
     assert.equal(entry.all_frames, true);
-    assert.ok(entry.matches.every(pattern => /mastermap\.aspx/i.test(pattern) && pattern.startsWith('https:')));
-    assert.deepEqual(entry.css, ['css/sentinel.css']);
-    assert.deepEqual(ENTRIES.find(bundle => bundle.out === 'content/sentinel-map.js').sources, ['maps/sentinel-map.js']);
-    assert.ok(COPY_FILES.some(([source, destination]) => source === 'src/maps/sentinel.css' && destination === 'css/sentinel.css'));
+    assert.ok(entry.matches.every(pattern => pattern.startsWith('https:')));
+    assert.ok(entry.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
+    assert.deepEqual(entry.css, ['css/map-layers.css']);
+    assert.deepEqual(ENTRIES.find(bundle => bundle.out === 'content/map-layers.js').sources, ['maps/map-layers.js']);
+    assert.ok(COPY_FILES.some(([source, destination]) => source === 'src/maps/map-layers.css' && destination === 'css/map-layers.css'));
     assert.equal(manifest.host_permissions.some(pattern => pattern.includes('planetarycomputer')), false, 'direct CORS needs no new persistent provider access');
 });
 

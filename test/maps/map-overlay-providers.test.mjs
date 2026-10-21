@@ -29,6 +29,7 @@ test('tiles wrap at the dateline and viewport station selection does not silentl
     assert.throws(() => tileBounds({ z: 3, x: 0, y: 8 }));
     assert.equal(overlayBounds([-180, -90, 180, 90]), null);
     assert.equal(overlayBounds([-2000, 0, -1990, 10]), null);
+    assert.deepEqual(overlayBounds([170, 50, -170, 60]), [170, 50, 190, 60]);
     const stations = Array.from({ length: 51 }, (_, i) => ({ id: i, longitude: -179, latitude: 51 }));
     assert.equal(viewportStations(stations, [170, 50, 190, 60]).length, 51);
     assert.equal(viewportStations(stations, [170, 52, 190, 60]).length, 0);

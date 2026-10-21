@@ -28,6 +28,7 @@
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
         terrainCacheLimitMb: 256
       };
+      document.documentElement.dataset.bpbTheme = settings.theme;
       // The isolated bridge imports settings and reads chrome.storage now.
       window.chrome.storage = {
         sync: { get: async () => ({ bpbSettings: settings }) },
@@ -36,6 +37,7 @@
     })();
   </script>
   <script src="/scripts/showcase/terrain-activation-fixture.js"></script>
+  <link rel="stylesheet" href="/dist/css/map-layers.css">
 </head>
 <body>
   <a id="subject-peak" href="/peak.aspx?pid=2829" hidden>Mount Shuksan</a>
@@ -46,6 +48,7 @@
     }
   </script>
 
+  <script src="/dist/content/map-layers.js"></script>
   <script src="/dist/content/big-map-bridge.js"></script>
   <script src="/dist/content/big-map.js"></script>
   <script src="/dist/content/terrain-map.js"></script>

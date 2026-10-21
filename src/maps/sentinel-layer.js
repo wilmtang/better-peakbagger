@@ -6,7 +6,7 @@ import { rateLimitMessage } from '../net/rate-limit.js';
 import { createRetryCooldown } from '../ui/retry-cooldown.js';
 import { mountainTime } from '../time/mountain-time.js';
 
-const captureDate = (time, zone, includeZone = true) => {
+export const captureDate = (time, zone, includeZone = true) => {
     const date = mountainTime.localDate(zone, time);
     const minute = mountainTime.localMinute(zone, time);
     if (!date || minute === null) {

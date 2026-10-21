@@ -35,6 +35,7 @@ import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js
 import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { createPackagedPageMatcher } from './sender-policy.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
+import { createMapLayerHandoff } from './map-layer-handoff.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
@@ -3431,6 +3432,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     })();
     const isTerrainFrameSender = sender => !!(terrainFrameUrl && sender?.url === terrainFrameUrl
         && Number.isInteger(sender?.tab?.id));
+    const mapLayerHandoff = createMapLayerHandoff({ storage: ext.storage.session, isPeakbaggerSender });
     const terrainActivation = TerrainActivation.create({
         isPeakbaggerSender,
         isTerrainFrameSender,
@@ -3757,6 +3759,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             case TrustedActions.ISSUE_TYPE: return trustedActions.issue(message, sender);
             case TrustedActions.BEGIN_TYPE: return trustedActions.begin(message, sender);
             case TrustedActions.END_TYPE: return trustedActions.end(message, sender);
+            case 'MAP_LAYERS_HANDOFF_PREPARE': return mapLayerHandoff.prepare(message, sender);
+            case 'MAP_LAYERS_HANDOFF_CONSUME': return mapLayerHandoff.consume(message, sender);
             case TerrainActivation.ISSUE_TYPE: return terrainActivation.issue(message, sender);
             case TerrainActivation.CONSUME_TYPE: return terrainActivation.consumeFrame(message, sender);
             case 'TERRAIN_PREFETCH': return terrainPrefetch.handle(message, sender);

@@ -1174,7 +1174,7 @@ try {
             message: message && message.textContent,
             compassGap: toggleRect && compassRect ? Math.round(toggleRect.top - compassRect.bottom) : null,
             badge: (() => {
-                const select = surface && surface.querySelector('.bpb-terrain-picker');
+                const select = document.querySelector('[aria-label="Base map"]');
                 return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
             })(),
             canvas: surface && surface.querySelector('canvas') && {
@@ -1207,7 +1207,7 @@ try {
     const activeBadge = () => evaluate(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
-        const select = surface && surface.querySelector('.bpb-terrain-picker');
+        const select = document.querySelector('[aria-label="Base map"]');
         return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
     })()`);
     await waitForCondition(() => {
@@ -1985,7 +1985,7 @@ try {
     // Provider warnings use the real rendered controls on the hardware map.
     // Engine status events are injected; transport classification is covered
     // separately. The catalog uses the runtime's fetch path with a 429 stub.
-    const savedPicker = await evaluate(cdp, 'document.getElementById(\'bpb-terrain-frame\').contentDocument.querySelector(\'.bpb-terrain-picker\').value');
+    const savedPicker = await evaluate(cdp, 'document.querySelector(\'[aria-label="Base map"]\').value');
     for (const width of [820, 375]) {
         await cdp.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
         await evaluate(cdp, 'document.getElementById(\'bpb-map-viewport\').scrollIntoView({ block: \'start\' })');
@@ -2016,20 +2016,23 @@ try {
         win.__apiLimitOriginalFetch = win.fetch;
         win.fetch = (url, init) => String(url).startsWith('https://planetarycomputer.microsoft.com/')
             ? Promise.resolve(new win.Response('unreadable', { status: 429, headers: { 'retry-after': '120' } })) : win.__apiLimitOriginalFetch(url, init);
-        const picker = win.document.querySelector('.bpb-terrain-picker');
-        picker.value = 'sentinel'; picker.dispatchEvent(new win.Event('change'));
+        document.querySelector('.bpb-layers-trigger').click();
+        document.querySelector('[data-layer="sentinel"] button').click();
+        const checkbox = document.querySelector('[data-layer="sentinel"] input');
+        checkbox.checked = true; checkbox.dispatchEvent(new Event('change'));
     })()`);
     await waitForPageState(cdp, `(() => {
-        const control = document.getElementById('bpb-terrain-frame').contentDocument.querySelector('.bpb-sentinel');
-        return { ready: control.textContent.includes('Microsoft Planetary Computer request limit reached') && control.querySelector('button').disabled };
+        const control = document.querySelector('[aria-label="Sentinel-2 (experimental) settings"]');
+        return { ready: control.textContent.includes('Satellite service is busy') && control.querySelector('button').getAttribute('aria-disabled') === 'true' };
     })()`);
     await capture(cdp, path.join(outputDir, 'sentinel-rate-limit.png'));
     await evaluate(cdp, `(() => {
         const win = document.getElementById('bpb-terrain-frame').contentWindow;
         win.fetch = win.__apiLimitOriginalFetch; delete win.__apiLimitOriginalFetch;
         win.document.getElementById('bpb-terrain-map').dataset.theme = 'light';
-        const picker = win.document.querySelector('.bpb-terrain-picker');
-        picker.value = ${JSON.stringify(savedPicker)}; picker.dispatchEvent(new win.Event('change'));
+        const checkbox = document.querySelector('[data-layer="sentinel"] input'); checkbox.checked = false; checkbox.dispatchEvent(new Event('change'));
+        const picker = document.querySelector('[aria-label="Base map"]');
+        picker.value = ${JSON.stringify(savedPicker)}; picker.dispatchEvent(new Event('change'));
     })()`);
 
     await clickTerrainToggle(cdp);

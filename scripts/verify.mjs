@@ -22,6 +22,7 @@ const targets = {
     'provider-performance': [['verify-provider-performance.mjs']],
     'map-handoffs': [['verify-map-handoffs.mjs']],
     'map-controls': [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']],
+    'map-layers': [['verify-map-layer-control.mjs'], ['verify-map-layers.mjs']],
     weather: [['verify-ascent-weather.mjs'], ['verify-ascent-weather.mjs', '--firefox']],
     'peak-weather': [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']],
     snow: [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']],

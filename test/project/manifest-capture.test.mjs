@@ -98,13 +98,14 @@ test('climber cards stay in the isolated top-level Peakbagger surface', () => {
         && output === 'css/climber-hover-card.css'));
 });
 
-test('nearby snow is an isolated peak-only bundle without new host permissions', () => {
+test('snow catalog and overlay preferences share an isolated map bundle without new host permissions', () => {
     const entry = contentEntry('content/peak-snow.js');
-    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, false);
-    assert.equal(entry.run_at, 'document_end'); assert.equal(entry.matches.length, 4);
-    assert.ok(entry.matches.every(pattern => /\/peak\.aspx\*$/i.test(pattern)));
-    assert.deepEqual(entry.css, ['css/peak-snow.css']);
-    assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.js']);
+    assert.equal(entry.world || 'ISOLATED', 'ISOLATED'); assert.equal(entry.all_frames, true);
+    assert.equal(entry.run_at, 'document_end');
+    assert.ok(entry.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
+    assert.ok(entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
+    assert.deepEqual(contentEntry('content/peak-cards.js').css, ['css/peak-snow.css']);
+    assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.js', 'maps/map-layer-bridge.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/snow/peak-snow.css' && output === 'css/peak-snow.css'));
     assert.ok(![...manifest.host_permissions, ...manifest.optional_host_permissions].some(pattern => /usda/.test(pattern)));
 });

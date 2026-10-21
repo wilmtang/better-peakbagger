@@ -18,6 +18,8 @@ Data leaves the browser only when a feature requires it:
 - **USDA NRCS** receives public station IDs and relative date ranges when an
   enabled nearby-snow card approaches the viewport. Station matching is local;
   no summit coordinates or GPX are sent to NRCS.
+- **USGS** receives viewed-area tile bounds when slope or public-land overlays
+  are enabled, without GPX, account credentials or referrers.
 - **3D map providers** receive tile requests for the viewed area only after the
   user enables 3D.
 - **Microsoft Planetary Computer** receives viewed-area bounds, a capture search
@@ -71,8 +73,9 @@ permission to read device location. It covers:
 | --- | --- | --- |
 | `storage.sync` | Theme, units, chart, map, weather-card, capture, editor, beta-filter, favorite-source, and backup-toggle preferences | May sync through the user's browser account. |
 | `storage.local` | DEM cache index, custom favorites, owner-scoped Buddy List cache, pending Buddy intents, GitHub token/repository, ImgBB API key, report drafts, weather-model choices, ascent-weather column, summit-weather data-tab selection, and automatic-backup state | Device-local; never browser-synced. |
+| `storage.local` map overlay opacity | Raster opacity percentages only | Device-local; excluded from settings sync, exports and backups. Enabled layers remain in page memory. |
 | `storage.local` public snow catalog | Public SNOTEL station metadata only, with a fetch timestamp | Refreshed after seven days when next used; expired metadata can remain until replaced or extension data is cleared. No peak/location query or observations; excluded from settings exports, sync and backups. |
-| `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, and pending GitHub device authorization | Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
+| `storage.session` | Capture-job metadata, generation-scoped reduced GPX payloads, prepared drafts, temporary Peakbagger helper leases, validated rate-limit cooldown, save-time backup snapshots, ascent-deletion intents/tombstones, pending GitHub device authorization, and bounded Full Screen overlay handoffs | Map handoffs expire after 30 seconds and are removed on consumption. Capture, draft, snapshot, and deletion records expire after 30 minutes. Helper leases expire; cooldown is removed at its validated retry time. Authorization is removed when it completes, fails, or expires. |
 | CacheStorage | Bounded DEM response cache | Browser-managed and subject to eviction. |
 | IndexedDB | Photo catalog, projects, original and thumbnail image blobs, upload journal, ImgBB delete URLs, and deletion tombstones | Device-local; never browser-synced. |
 | Peakbagger `localStorage` | Page-specific filter state and the early theme mirror | Remains with the Peakbagger site data. |
@@ -355,8 +358,8 @@ developer account.
 ### Nearby snow observations
 
 The independent **Settings → General → Show SNOTEL** preference controls the
-Nearby snow card and station map layer on recognized western-US and Alaska
-peak pages. Existing weather opt-outs are retained for older settings until
+Nearby snow card on recognized western-US and Alaska peak pages and the
+viewport station layer on ascent, peak and Full Screen maps. Existing weather opt-outs are retained for older settings until
 SNOTEL is explicitly enabled. When an enabled card approaches the viewport, the
 extension obtains the public NRCS station catalog and matches up to three
 stations locally within 50 km. Public catalog metadata is cached on this device
@@ -445,7 +448,22 @@ retention, including API logs that may contain coordinates and are deleted
 after 90 days. Free hosted API access is for non-commercial use. The card
 credits Open-Meteo; underlying datasets retain their provider licences.
 
-## Optional 3D terrain
+## Optional map overlays and 3D terrain
+
+The compact Layers menu offers independent overlays in native and supported 3D
+maps. Opening it makes no provider request. Enabling slope or public lands
+sends tile bounds to USGS 3DEP or PAD-US, with credentials and referrers omitted.
+These requests contain no GPX, route, Peakbagger identity or account data.
+Opacity preferences are device-local and excluded from sync/settings backups.
+Enabled selections remain in page memory, except an explicit native Full Screen
+action: a one-use, destination- and tab-bound session handoff lasts 30 seconds
+and contains only validated layer state and a Sentinel pass identity.
+
+The SNOTEL layer filters the public national catalog locally for the active
+viewport. NRCS receives no viewport bounds. More than 50 visible stations asks
+the user to zoom in. Only bounded public metadata reaches the renderer; nearby
+card actions retain their existing 50 km membership checks.
+
 
 The **Sentinel-2 (experimental)** layer is also available in the native 2D map.
 Selecting it requests the visible map bounds and the last 30 days of capture
@@ -454,7 +472,7 @@ for a selected satellite pass. Map movements repeat that bounded search. The
 capture picker can select another pass within that window. No route, GPX,
 Peakbagger identity, or account credentials are sent. Catalog results remain in
 memory; the extension does not persist satellite imagery or capture metadata.
-Browser-managed HTTP caching may retain tiles. Switching away cancels catalog
+Browser-managed HTTP caching may retain tiles. Turning the overlay off cancels catalog
 requests and removes the extension-owned imagery. Map coverage estimates how
 much of the visible map falls within the satellite images. Clouds or gaps may
 still obscure covered areas. Cloud cover describes the full satellite images
@@ -571,6 +589,7 @@ The user can export and import settings without GitHub:
 | USDA NRCS | Public SNOTEL station catalog, then selected public station IDs, relative date ranges, snow fields, period convention and quality-filter options when the enabled snow card approaches the viewport, changes stations, refreshes or returns with expired data. Local proximity matching sends no summit coordinates; no credentials or referrer. |
 | Mapterhorn | DEM tiles after 3D activation, including an interaction-triggered pre-request when 3D is enabled. |
 | OpenFreeMap or selected map provider | Style, vector, or raster tiles only when its compatible layer is used in 3D. |
+| USGS 3DEP / PAD-US | Viewed-area tile bounds when the slope/public-land overlay is enabled, without credentials or referrers. |
 | Microsoft Planetary Computer | Viewed-area bounds and date range for capture search, and satellite tiles, only while Sentinel-2 is selected in 2D or 3D. |
 | ImgBB | A user-initiated flattened image upload and later requests for its public URL. |
 | AllTrails, CalTopo, Gaia GPS, and onX Backcountry | The saved Peakbagger GPX after the matching **Send** click, including CalTopo's server-side parsing; review and final Upload, Import, and Save actions remain manual. |

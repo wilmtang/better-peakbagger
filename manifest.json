@@ -51,13 +51,54 @@
         "https://www.peakbagger.com/*MasterMap.aspx*",
         "https://peakbagger.com/*MasterMap.aspx*",
         "https://www.peakbagger.com/*mastermap.aspx*",
-        "https://peakbagger.com/*mastermap.aspx*"
+        "https://peakbagger.com/*mastermap.aspx*",
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/map/BigMap.aspx*",
+        "https://www.peakbagger.com/map/bigmap.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/map/BigMap.aspx*",
+        "https://peakbagger.com/map/bigmap.aspx*"
       ],
-      "js": ["content/sentinel-map.js"],
-      "css": ["css/sentinel.css"],
+      "js": [
+        "content/map-layers.js"
+      ],
+      "css": [
+        "css/map-layers.css"
+      ],
       "run_at": "document_end",
       "all_frames": true,
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.peakbagger.com/*MasterMap.aspx*",
+        "https://peakbagger.com/*MasterMap.aspx*",
+        "https://www.peakbagger.com/*mastermap.aspx*",
+        "https://peakbagger.com/*mastermap.aspx*",
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/map/BigMap.aspx*",
+        "https://www.peakbagger.com/map/bigmap.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/map/BigMap.aspx*",
+        "https://peakbagger.com/map/bigmap.aspx*"
+      ],
+      "js": [
+        "content/peak-snow.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": true
     },
     {
       "matches": ["https://www.peakbagger.com/*", "https://peakbagger.com/*"],
@@ -288,7 +329,7 @@
         "https://peakbagger.com/peak.aspx*"
       ],
       "css": ["css/peak-snow.css"],
-      "js": ["content/peak-snow.js", "content/peak-cards.js"],
+      "js": ["content/peak-cards.js"],
       "run_at": "document_end",
       "all_frames": false
     },

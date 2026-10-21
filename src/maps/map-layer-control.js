@@ -12,6 +12,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const win = doc.defaultView;
     const node = (tag, className, text) => {
         const element = doc.createElement(tag);
+        if (tag === 'select' || tag === 'input') element.setAttribute('form', '');
         if (className) element.className = className;
         if (text !== undefined) element.textContent = text;
         return element;
@@ -29,7 +30,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const well = node('div', 'bpb-layers-details'); well.hidden = true;
     well.id = `${id}-details`;
     const live = node('span', 'bpb-layers-live'); live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
-    let open = false, expanded = null, rect = null, model = {}, baseKey = '', disposed = false;
+    let open = false, expanded = null, rect = null, model = {}, baseKey = '', disposed = false, cooldownTimer = null;
     for (const key of Schema.MAP_OVERLAY_IDS) {
         const row = node('div', 'bpb-layers-row'); row.dataset.layer = key;
         const label = node('label', 'bpb-layers-choice');
@@ -84,11 +85,16 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         element.style.left = `${left}px`; element.style.top = `${top}px`;
         panel.style.width = `${Math.min(232, width - 16)}px`;
         panel.style.left = `${Math.min(0, width - 8 - left - Math.min(232, width - 16))}px`;
-        panel.style.maxHeight = `${Math.max(100, height - Math.max(8, top) - 52)}px`;
+        const panelTop = Number.parseFloat(win.getComputedStyle(panel).top) || 38;
+        panel.style.maxHeight = `${Math.max(40, height - Math.max(8, top) - panelTop - 8)}px`;
         element.hidden = rect.width < 120 || rect.height < 80 || rect.bottom < 42 || rect.top > height - 30;
     };
     const paint = () => {
         if (disposed) return;
+        win.clearTimeout(cooldownTimer);
+        const nextRetry = Math.min(...Object.values(model.statuses || {}).map(status => status.retryAt).filter(value => value > Date.now()));
+        if (Number.isFinite(nextRetry)) cooldownTimer = win.setTimeout(paint, Math.max(1, Math.min(86400000, nextRetry - Date.now() + 1)));
+        element.dataset.theme = model.theme === 'dark' ? 'dark' : 'light';
         panel.hidden = !open; well.hidden = !open || !expanded;
         trigger.setAttribute('aria-expanded', String(open));
         const state = Schema.mapOverlayState(model.state);
@@ -105,6 +111,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }));
         }
         if (typeof model.basemap === 'string') basemap.value = model.basemap;
+        basemap.disabled = model.basemapDisabled === true;
         baseRow.hidden = !choices.length;
         for (const key of Schema.MAP_OVERLAY_IDS) {
             const row = rows.get(key), detail = details.get(key), current = state[key], status = model.statuses?.[key] || {};
@@ -119,14 +126,18 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
                 detail.slider.value = String(current.opacity); detail.slider.disabled = !current.enabled;
                 detail.slider.setAttribute('aria-valuetext', `${current.opacity} percent`); detail.output.value = `${current.opacity}%`;
             }
-            detail.legend.textContent = status.legend || '';
+            detail.legend.replaceChildren(...(status.legendEntries || []).map(entry => {
+                const item = node('span', 'bpb-layers-legend-item'), swatch = node('i');
+                swatch.style.backgroundColor = entry.color; swatch.setAttribute('aria-hidden', 'true');
+                item.append(swatch, doc.createTextNode(entry.label)); return item;
+            }), doc.createTextNode(status.legend || ''));
             detail.status.textContent = status.message || '';
             if (detail.capture) {
                 const captures = Array.isArray(status.captures) ? status.captures : [{ id: 'latest', label: 'Latest capture' }];
                 const signature = JSON.stringify(captures);
                 if (signature !== detail.captureKey) {
                     detail.captureKey = signature;
-                    detail.capture.replaceChildren(...captures.map(choice => { const option = node('option', '', choice.label); option.value = choice.id; option.title = choice.title || choice.label; return option; }));
+                    detail.capture.replaceChildren(...captures.map(choice => { const option = node('option', '', choice.label); option.value = choice.id; option.title = choice.title || choice.label; option.setAttribute('aria-label', option.title); return option; }));
                 }
                 detail.capture.value = status.capture || 'latest'; detail.capture.disabled = !current.enabled || status.pending === true;
             }
@@ -134,10 +145,12 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             if (!showRetry && doc.activeElement === detail.retry) row.disclosure.focus({ preventScroll: true });
             detail.retry.hidden = !showRetry;
             detail.retry.setAttribute('aria-disabled', String(status.pending === true || status.retryAt > Date.now()));
+            detail.retry.title = status.retryAt > Date.now() ? `Try again after ${new Date(status.retryAt).toLocaleTimeString()}` : '';
         }
         position();
     };
     const setOpen = value => {
+        if (open === value) return;
         open = value;
         if (!open) expanded = null;
         paint(); onOpen(open);
@@ -158,6 +171,6 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         isOpen: () => open,
         close({ focus = false } = {}) { setOpen(false); if (focus) trigger.focus({ preventScroll: true }); },
         announce(message) { live.textContent = message; },
-        dispose() { disposed = true; doc.removeEventListener('pointerdown', dismiss, true); doc.removeEventListener('keydown', escape, true); element.remove(); },
+        dispose() { disposed = true; win.clearTimeout(cooldownTimer); doc.removeEventListener('pointerdown', dismiss, true); doc.removeEventListener('keydown', escape, true); element.remove(); },
     };
 }

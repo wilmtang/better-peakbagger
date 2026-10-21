@@ -662,64 +662,40 @@ async function main() {
         });
         await page.goto(`${fixtureOrigin}climber/ascent.aspx?mode=idle&map=wide`);
         await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.disabled === false);
-        const native = page.frameLocator('iframe[src*="MasterMap.aspx"]');
-        await native.locator('#selmap').evaluate((select, time) => {
-            const option = document.createElement('option'); option.value = 'BPB_SENTINEL';
-            option.textContent = 'Sentinel-2';
-            option.dataset.bpbSentinelCapture = JSON.stringify({ time, platform: 'Sentinel-2B', orbit: '13' });
-            select.append(option); select.value = option.value;
-        }, captureTime);
         const toggle = page.locator('#bpb-terrain-toggle');
         await toggle.click();
         const sentinelFrame = page.frameLocator('#bpb-terrain-frame');
-        await sentinelFrame.locator('.bpb-sentinel-stats').filter({ hasText: 'Coverage' }).waitFor();
-        const dateKey = await sentinelFrame.locator('.bpb-sentinel select option:not([value="latest"])').first().getAttribute('value');
+        await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle')?.getAttribute('aria-pressed') === 'true');
+        await page.locator('.bpb-layers-trigger').click();
+        await page.locator('[data-layer="sentinel"] input').check();
+        await page.locator('[data-layer="sentinel"] button').click();
+        const capturePicker = page.locator('[aria-label="Sentinel-2 capture"]');
+        await page.waitForFunction(() => document.querySelector('[aria-label="Sentinel-2 capture"]').options.length > 1);
+        const dateKey = await capturePicker.locator('option').nth(1).getAttribute('value');
         const settle = async value => {
             await page.waitForFunction(expected => {
-                const win = document.getElementById('bpb-terrain-frame').contentWindow;
-                const map = win.__bpbTerrainTestMap;
-                const ids = Object.keys(map.getStyle().sources).filter(id => id.startsWith('bpb-sentinel-'));
-                const scene = expected === 'latest' ? 'scene_1' : 'scene_0';
-                return win.document.querySelector('.bpb-sentinel select').value === expected
-                    && ids.length > 0 && ids.every(id => map.isSourceLoaded(id)
-                        && map.getStyle().sources[id].tiles[0].includes(scene)) && !map.isMoving();
+                const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
+                const ids = Object.keys(map.getStyle().sources).filter(id => id.startsWith('bpb-overlay-sentinel-'));
+                return document.querySelector('[aria-label="Sentinel-2 capture"]').value === expected
+                    && ids.length === 1 && ids.every(id => map.isSourceLoaded(id)) && !map.isMoving();
             }, value);
         };
-        const resume = async capture => {
-            await toggle.click();
-            await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
-            await native.locator('#selmap option[value="BPB_SENTINEL"]').evaluate((option, time) => {
-                if (time == null) delete option.dataset.bpbSentinelCapture;
-                else option.dataset.bpbSentinelCapture = JSON.stringify({ time, platform: 'Sentinel-2B', orbit: '13' });
-            }, capture);
-            await toggle.click();
-        };
-        await settle(dateKey);
-        await resume(null); await settle('latest');
-        await sentinelFrame.locator('.bpb-sentinel select').selectOption(dateKey);
-        await resume(null); await settle(dateKey);
-        await sentinelFrame.locator('.bpb-sentinel select').selectOption('latest');
-        await resume(captureTime); await settle('latest');
+        await settle('latest');await capturePicker.selectOption(dateKey);await settle(dateKey);
+        await toggle.click();await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
+        await toggle.click();await settle(dateKey);
+        await page.locator('.bpb-layers-trigger').click();await page.locator('[data-layer="sentinel"] button').click();
+        await capturePicker.selectOption('latest');await settle('latest');
         const output = process.env.BPB_VERIFY_FIREFOX_SENTINEL_SCREENSHOT_DIR;
-        if (output) await mkdir(output, { recursive: true });
-        for (const [width, theme] of [[1000, 'light'], [1000, 'dark'], [375, 'light'], [375, 'dark']]) {
-            await page.setViewportSize({ width, height: 760 });
-            await settle('latest');
-            await sentinelFrame.locator('#bpb-terrain-map').evaluate((element, value) => { element.dataset.theme = value; }, theme);
-            await page.evaluate(() => {
-                const map = document.getElementById('bpb-terrain-frame').contentWindow.__bpbTerrainTestMap;
-                const sourceId = Object.keys(map.getStyle().sources).find(id => id.startsWith('bpb-sentinel-'));
-                map.fire('error', { sourceId, error: Object.assign(new Error('fixture tile limit'), { status: 429, retryAt: Date.now() + 60000 }) });
-            });
-            const geometry = await sentinelFrame.locator('.bpb-sentinel').evaluate(element => {
-                const warning = element.querySelector('.bpb-sentinel-summary').getBoundingClientRect();
-                const stats = element.querySelector('.bpb-sentinel-stats').getBoundingClientRect();
-                return { shown: !element.querySelector('.bpb-sentinel-summary').hidden,
-                    warningBottom: warning.bottom, statsTop: stats.top };
-            });
-            assert.ok(geometry.shown && geometry.warningBottom <= geometry.statsTop, JSON.stringify(geometry));
-            if (output) await sentinelFrame.locator('.bpb-sentinel').screenshot({ path: `${output}/sentinel-${width}-${theme}.png` });
+        if(output)await mkdir(output,{recursive:true});
+        for(const [width,theme] of [[1000,'light'],[1000,'dark'],[375,'light'],[375,'dark']]){
+            await page.setViewportSize({width,height:760});await settle('latest');
+            await page.evaluate(theme => {document.documentElement.dataset.bpbTheme=theme;const win=document.getElementById('bpb-terrain-frame').contentWindow;const map=win.__bpbTerrainTestMap;const sourceId=Object.keys(map.getStyle().sources).find(id=>id.startsWith('bpb-overlay-sentinel-'));map.fire('error',{sourceId,error:Object.assign(new Error('fixture tile limit'),{status:429,retryAt:Date.now()+60000})});},theme);
+            await page.waitForFunction(()=>document.querySelector('[data-layer="sentinel"]').dataset.status==='error');
+            const geometry=await page.locator('.bpb-layers-panel').evaluate(element=>{const r=element.getBoundingClientRect();return{width:r.width,right:r.right,viewport:window.innerWidth};});
+            assert.ok(geometry.width<=233&&geometry.right<=geometry.viewport,JSON.stringify(geometry));
+            if(output)await page.locator('.bpb-map-layers').screenshot({path:`${output}/sentinel-${width}-${theme}.png`});
         }
+        assert.equal(await sentinelFrame.locator('.bpb-sentinel,.bpb-terrain-picker').count(),0);
         if (errors.length) throw new Error(`Firefox terrain runtime errors:\n${errors.join('\n')}`);
 
         console.log('Firefox terrain verification passed:');
@@ -729,7 +705,7 @@ async function main() {
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right-drag tilt, bearing sync, Ctrl-drag, and resize passed');
         console.log('  - Analyzer and Peak Sun and Moon compasses followed accepted 3D bearing, kept absolute text fixed, and reset in 2D');
         console.log('  - split Key Col legend preserved the exact summit name in light/dark 1000/375px hardware-rendered popups');
-        console.log('  - inherited/explicit Sentinel captures survived real toggles; loaded MapLibre sources and light/dark warning geometry passed');
+        console.log('  - shared-menu Sentinel choices survived suspend/resume; loaded MapLibre sources and light/dark warning geometry passed');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
     } catch (error) {
         primaryError = error;

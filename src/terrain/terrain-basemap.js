@@ -154,7 +154,7 @@ const active = (mapWin, map, select) => {
             .sort((left, right) => (Number(left && left.options && left.options.zIndex) || 0)
                     - (Number(right && right.options && right.options.zIndex) || 0));
         const candidates = [selectedLayer, ...activeLayers]
-            .filter(layer => layer && typeof layer._url === 'string'
+            .filter(layer => layer && layer.options?.bpbOverlay !== true && typeof layer._url === 'string'
                     && (typeof map.hasLayer !== 'function' || map.hasLayer(layer)))
             .filter((layer, index, layers) => layers.indexOf(layer) === index);
 

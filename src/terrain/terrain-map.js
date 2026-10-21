@@ -8,6 +8,9 @@
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
+import { readLayerSnapshot, readLayerStatus, readBasemapChoices } from '../maps/map-layer-protocol.js';
+import { sentinelTarget } from '../maps/sentinel-core.js';
+import { overlayBounds } from '../maps/map-overlay-providers.js';
 import { terrainFailure } from './terrain-failure.js';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
@@ -31,6 +34,7 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
     let frameLoaded = false;
     let frameGeneration = 0;
     let awaitingFrameReady = false;
+    let latestLayers = null;
     let terrainEnabled = false;
     let terrainTheme = 'system';
     let settingsRevision = 0;
@@ -487,12 +491,25 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
                 postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable,
                     rateLimited: data.rateLimited === true,
                     retryAt: Number.isFinite(data.retryAt) && data.retryAt > Date.now() && data.retryAt <= Date.now() + 86400_000 ? data.retryAt : null });
+            } else if (data.type === 'layers') {
+                const snapshot = readLayerSnapshot(data.snapshot);
+                if (!snapshot || latestLayers && snapshot.revision < latestLayers.revision) return;
+                latestLayers = snapshot;
+                if (frameLoaded && !suspended) postToFrame('layers', { snapshot });
+            } else if (data.type === 'layerAction') {
+                if (!frameLoaded || suspended) return;
+                if (data.action === 'basemap' && typeof data.selection === 'string' && /^(?:terrain|vector|\d{1,3})$/.test(data.selection)) {
+                    postToFrame('layerAction', { action: 'basemap', selection: data.selection });
+                } else if (['sentinel', 'slope', 'land'].includes(data.id) && ['retry', 'capture'].includes(data.action)) {
+                    postToFrame('layerAction', { id: data.id, action: data.action, capture: typeof data.capture === 'string' ? data.capture.slice(0, 120) : '' });
+                }
             } else if (data.type === 'snowStations') {
                 const snowStations = readSnotelMapStations(data.snowStations);
                 if (!snowStations) return;
                 const reveal = data.reveal === true && !suspended;
                 if (pendingInit) { pendingInit.snowStations = snowStations; pendingInit.revealSnowStations = reveal; }
-                postToFrame('snowStations', { snowStations, reveal });
+                const conditions = Array.isArray(data.conditions) ? data.conditions.filter(id => snowStations.some(station => station.id === id)) : undefined;
+                postToFrame('snowStations', { snowStations, reveal, conditions });
             } else if (data.type === 'update') {
                 if (pendingInit) {
                     pendingInit.routeStyle = data.routeStyle;
@@ -523,9 +540,25 @@ import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
             if (pendingInit) postToFrame('snowStations', { snowStations: pendingInit.snowStations, reveal: pendingInit.revealSnowStations === true });
             pendingInit = null;
             frameLoaded = true;
+            if (latestLayers) postToFrame('layers', { snapshot: latestLayers });
             frame.style.opacity = '1';
             frame.style.pointerEvents = 'auto';
             postToPage('loaded', { navTop: data.navTop, camera: terrainCamera.clean(data.camera) });
+        } else if (data.type === 'layerResume') {
+            if (!suspended && frameLoaded && latestLayers) postToFrame('layers', { snapshot: latestLayers });
+        } else if (data.type === 'layerStatus') {
+            const status = readLayerStatus(data);
+            if (!suspended && status && status.revision === latestLayers?.revision) postToPage('layerStatus', status);
+        } else if (data.type === 'layerCapture') {
+            if (!suspended && frameLoaded) postToPage('layerCapture', { target: sentinelTarget(data.target) });
+        } else if (data.type === 'layerBasemaps') {
+            const choices = readBasemapChoices(data.choices);
+            if (!suspended && choices.some(choice => choice.id === data.selection)) postToPage('layerBasemaps', { choices, selection: data.selection });
+        } else if (data.type === 'layerView') {
+            const bounds = overlayBounds(data.bounds);
+            if (!suspended && frameLoaded && bounds && Number.isFinite(data.zoom) && data.zoom >= 0 && data.zoom <= 25) postToPage('layerView', { bounds, zoom: data.zoom });
+        } else if (data.type === 'layerDismiss') {
+            if (!suspended && frameLoaded) postToPage('layerDismiss', { focus: data.focus === true });
         } else if (data.type === 'camera') {
             const camera = terrainCamera.clean(data.camera);
             if (camera) postToPage('camera', {

@@ -425,7 +425,7 @@ test('bfcache suspension cancels work, resume reuses data and disposal removes s
         await settled(env);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true })); await settled(env);
-        assert.equal(env.requests.length, 3); assert.equal(env.listeners.length, 1);
+        assert.equal(env.requests.length, 3); assert.equal(env.listeners.length, 2);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide'));
         assert.equal(env.listeners.length, 0);
     } finally { env.close(); }

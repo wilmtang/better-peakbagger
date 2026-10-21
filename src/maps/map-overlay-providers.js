@@ -63,8 +63,9 @@ export function overlayTileUrl(id, coordinates) {
 export function overlayBounds(value) {
     if (!Array.isArray(value) || value.length !== 4 || !value.every(Number.isFinite)) return null;
     const [west, south, east, north] = value;
-    if (south < -85.1 || north > 85.1 || south >= north || east <= west || east - west > 360 || Math.abs(west) > 1080 || Math.abs(east) > 1080) return null;
-    return [west, south, east, north];
+    let width = east - west; if (width < 0) width += 360;
+    if (south < -85.1 || north > 85.1 || south >= north || width <= 0 || width > 360 || Math.abs(west) > 1080 || Math.abs(east) > 1080) return null;
+    return [west, south, west + width, north];
 }
 export function viewportStations(stations, bounds) {
     if (!overlayBounds(bounds)) return [];

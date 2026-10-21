@@ -48,7 +48,8 @@ const armTerrain = (window, type = 'click') => {
 const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
 const frameHarnessBuild = await build({
     stdin: {
-        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.js'))};\nstartTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.authorizeTerrain ? globalThis.authorizeTerrain(request) : true });\n`,
+        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.js'))};\nconst originalPost=window.parent.postMessage.bind(window.parent); window.parent.postMessage=(message,...args)=>{if(message.type==='layerBasemaps')window.__testLayerBasemaps=message;return originalPost(message,...args)};
+startTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.authorizeTerrain ? globalThis.authorizeTerrain(request) : true });\n`,
         resolveDir: root,
         sourcefile: 'terrain-frame-test-harness.js',
         loader: 'js',
@@ -62,6 +63,25 @@ const frameHarnessBuild = await build({
     logLevel: 'silent',
 });
 const frameBundle = frameHarnessBuild.outputFiles[0].text;
+
+const pickerModels = new WeakMap();
+// Exercise the outer menu's typed basemap protocol, rather than the removed
+// frame-owned select. Keep the legacy assertions about availability and swaps.
+function framePicker(window) {
+    if (!pickerModels.has(window)) {
+        let requested = null;
+        pickerModels.set(window, {
+            get options() { return (window.__testLayerBasemaps?.choices || []).map(choice => ({ value: choice.id, textContent: choice.label, disabled: choice.disabled })); },
+            get value() { return window.__testLayerBasemaps?.selection || ''; },
+            set value(value) { requested = value; },
+            get selectedIndex() { return this.options.findIndex(option => option.value === this.value); },
+            dispatchEvent() { window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
+                data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'layerAction', action: 'basemap', selection: requested } })); },
+        });
+    }
+    return pickerModels.get(window);
+}
+
 const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
 
 // Share frame wiring, while each case retains its own renderer and failure model.
@@ -919,7 +939,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
     assert.equal(map.options.style.layers.find(layer => layer.id === 'terrain-hillshade').paint['hillshade-illumination-anchor'], 'map',
         'hillshade is anchored to the map, so rotating/tilting the camera does not swing the light and flip the shading');
-    const picker = () => window.document.querySelector('.bpb-terrain-picker');
+    const picker = () => framePicker(window);
     const notice = () => window.document.querySelector('.bpb-terrain-notice');
     assert.ok(picker(), 'a drape picker is shown when a layer is offered');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'Open Topo Map',
@@ -1202,11 +1222,11 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(messages.at(-1).type, 'weatherContext');
     assert.equal(messages.at(-1).latitude, 46.8); assert.equal(messages.at(-1).longitude, -121.7);
     const pickerPointer = new window.Event('pointerdown', { bubbles: true, cancelable: true });
-    window.document.querySelector('.bpb-terrain-picker').dispatchEvent(pickerPointer);
-    assert.equal(pickerPointer.defaultPrevented, false); assert.equal(messages.at(-1).type, 'weatherDismiss');
+    window.document.getElementById('bpb-terrain-map').dispatchEvent(pickerPointer);
+    assert.equal(pickerPointer.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'weatherDismiss'));
     const weatherWheel = new window.Event('wheel', { bubbles: true, cancelable: true });
     window.document.querySelector('#bpb-terrain-map').dispatchEvent(weatherWheel);
-    assert.equal(weatherWheel.defaultPrevented, false); assert.equal(messages.at(-1).type, 'weatherDismiss');
+    assert.equal(weatherWheel.defaultPrevented, false); assert.ok(messages.slice(-2).some(message => message.type === 'weatherDismiss'));
     assert.deepEqual(JSON.parse(JSON.stringify(focused.options.center)), [-121.60214, 48.83115]);
     assert.equal(focused.options.zoom, 13);
     assert.equal(focused.options.bounds, undefined, 'a summit view does not synthesize route bounds');
@@ -1304,10 +1324,10 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
             basemaps: [layer('CalTopo', 'ct.example.com'), layer('MyTopo', 'mt.example.com'), layer('OpenTopo', 'ot.example.com')]
         }
     }));
-    const picker = () => window.document.querySelector('.bpb-terrain-picker');
+    const picker = () => framePicker(window);
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (experimental)', 'Sentinel-2 (experimental)', 'Terrain only'],
+        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (experimental)', 'Terrain only'],
         'the picker offers every layer plus the vector entry and terrain-only');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
         'the initially-selected native layer is preselected');
@@ -1435,14 +1455,14 @@ test('the extension-provided vector entry grafts the provider style under the ex
     }));
     await new Promise(resolve => window.queueMicrotask(resolve));
 
-    const picker = () => window.document.querySelector('.bpb-terrain-picker');
+    const picker = () => framePicker(window);
     const map = maps[0];
     const frameGlyphs = 'chrome-extension://test-id/fonts/{fontstack}/{range}.pbf';
     const frameSprite = 'chrome-extension://test-id/sprites/terrain';
     map.glyphs = frameGlyphs;
     map.sprite = frameSprite;
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['OSM Vector (experimental)', 'Sentinel-2 (experimental)', 'Terrain only'],
+        ['OSM Vector (experimental)', 'Terrain only'],
         'the vector entry and terrain-only are offered even without page layers');
     assert.equal(picker().value, 'terrain', 'terrain-only stays the default — vector is opt-in');
     assert.equal(fetches.length, 0, 'no provider traffic before the user selects the vector entry');
@@ -2136,7 +2156,7 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
         assert.equal(messages.length, messagesBeforeControlEscape, `${modifier} Escape remains available to the browser`);
     }
     const pickerEscape = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
-    window.document.querySelector('.bpb-terrain-picker').dispatchEvent(pickerEscape);
+    const nativeSelect = window.document.createElement('select'); window.document.body.append(nativeSelect); nativeSelect.dispatchEvent(pickerEscape); nativeSelect.remove();
     assert.equal(pickerEscape.defaultPrevented, false);
     assert.equal(messages.length, messagesBeforeControlEscape, 'the native layer picker owns Escape');
     for (const tag of ['input', 'textarea']) {
@@ -2241,136 +2261,65 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     dom.window.close();
 });
 
-test('explicit Sentinel captures survive resume while untouched captures follow 2D', async () => {
-    const time = Date.now() - 3 * 86400000;
-    const dated = { time, platform: 'Sentinel-2B', orbit: '13' };
-    const catalog = [1, 0].map(offset => ({ id: `scene_${offset}`, collection: 'sentinel-2-l2a',
-        properties: { datetime: new Date(time + offset * 86400000).toISOString(), platform: dated.platform,
-            'sat:relative_orbit': 13, 'eo:cloud_cover': 4 },
-        geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 47], [-122, 47], [-122, 46]]] } }));
-    for (const choice of [null, 'latest', 'dated']) {
-        const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-            runScripts: 'outside-only', pretendToBeVisual: true });
-        let map;
-        class MapStub {
-            constructor(options) { map = this; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); }
-            addControl() {}
-            once(type, callback) { if (type === 'load') this.loadCallback = callback; }
-            on(type, callback) { this.handlers.set(type, callback); }
-            addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-            addLayer(layer) { this.layers.push(layer); }
-            getLayer(id) { return this.layers.find(layer => layer.id === id); }
-            removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-            getSource(id) { return this.sources.get(id); }
-            removeSource(id) { this.sources.delete(id); }
-            getBounds() { return { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 }; }
-            getZoom() { return 13; }
-            setPaintProperty() {}
-            fitBounds() {}
-            resize() {}
-            remove() {}
-        }
-        const dispatch = bootTerrainFrame(dom.window, MapStub, { fetch: async () => ({ ok: true,
-            headers: { get: () => null }, text: async () => JSON.stringify({ features: catalog }) }) });
-        const payload = { routeSegments: [[[46.5, -121.5], [46.51, -121.51]]] };
-        try {
-            dispatch({ type: 'init', ...payload, basemap: { kind: 'sentinel', capture: choice === 'dated' ? null : dated } });
-            map.loadCallback(); await new Promise(resolve => setImmediate(resolve));
-            const select = dom.window.document.querySelector('.bpb-sentinel select');
-            const dateKey = select.options[1].value;
-            if (choice) {
-                select.value = choice === 'dated' ? dateKey : 'latest';
-                select.dispatchEvent(new dom.window.Event('change'));
-            }
-            dispatch({ type: 'suspend' });
-            dispatch({ type: 'resume', ...payload, basemap: { kind: 'sentinel', capture: choice === 'latest' ? dated : null } });
-            await new Promise(resolve => setImmediate(resolve));
-            assert.equal(select.value, choice === 'dated' ? dateKey : 'latest');
-            const id = [...map.sources.keys()].find(id => id.startsWith('bpb-sentinel-'));
-            assert.match(map.getSource(id).tiles[0], choice === 'dated' ? /scene_0/ : /scene_1/);
-            map.handlers.get('error')({ sourceId: id, error: new Error('tile unavailable') });
-            dom.window.document.querySelector('.bpb-sentinel button').click();
-            await new Promise(resolve => setImmediate(resolve));
-            assert.equal(map.getSource(id), undefined, 'failed MapLibre resources are retired on retry');
-            const replacement = [...map.sources.keys()].find(id => id.startsWith('bpb-sentinel-'));
-            assert.match(map.getSource(replacement).tiles[0], choice === 'dated' ? /scene_0/ : /scene_1/);
-        } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
-    }
-});
-
-test('3D Sentinel retains unchanged scenes on camera refresh, aborts on swap, and cleans up on suspend', async t => {
+test('3D overlays retain a pinned pass and native base through suspend, refresh, retry and stale snapshots', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only', pretendToBeVisual: true });
-    const { window } = dom;
-    const maps = [];
+    const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A&d=1', runScripts: 'outside-only', pretendToBeVisual: true });
+    const messages = [], pending = [];
+    let map;
     class MapStub {
-        constructor(options) { this.options = options; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); maps.push(this); }
-        addControl() {}
-        once(type, callback) { if (type === 'load') this.loadCallback = callback; }
+        constructor(options) { map = this; this.sources = new Map(); this.layers = [...options.style.layers]; this.handlers = new Map(); }
+        addControl() {} once(type, callback) { if (type === 'load') this.loadCallback = callback; }
         on(type, callback) { this.handlers.set(type, callback); }
         addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
-        addLayer(layer, before) {
-            const index = this.layers.findIndex(existing => existing.id === before);
-            if (index < 0) this.layers.push(layer); else this.layers.splice(index, 0, layer);
-        }
+        addLayer(layer, before) { const i = this.layers.findIndex(item => item.id === before); if (i < 0) this.layers.push(layer); else this.layers.splice(i, 0, layer); }
         getLayer(id) { return this.layers.find(layer => layer.id === id); }
         removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
-        getSource(id) { return this.sources.get(id); }
-        removeSource(id) { this.sources.delete(id); }
+        getSource(id) { return this.sources.get(id); } removeSource(id) { this.sources.delete(id); }
+        getStyle() { return { layers: this.layers }; } moveLayer() {}
         getBounds() { return { getWest: () => -122, getEast: () => -121, getSouth: () => 46, getNorth: () => 47 }; }
-        getZoom() { return 13; }
-        setPaintProperty() {}
-        fitBounds() {}
-        resize() {}
-        remove() {}
+        getZoom() { return 13; } setPaintProperty() {} fitBounds() {} resize() {} remove() {}
     }
-    const pending = [];
-    const dispatch = bootTerrainFrame(window, MapStub, { fetch: (url, options) => new Promise(resolve => pending.push({ url, options, resolve })) });
-    dispatch({ type: 'init', routeSegments: [[[46.5, -121.5], [46.51, -121.51]]], basemap: { kind: 'sentinel' } });
-    const map = maps[0];
-    assert.equal(pending.length, 0, 'imagery cannot gate terrain startup');
-    map.loadCallback();
-    assert.equal(pending.length, 1);
-    pending[0].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: [{
-        id: 'scene_1', collection: 'sentinel-2-l2a',
-        properties: { datetime: new Date(Date.now() - 2 * 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 41 },
-        geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 47], [-122, 47], [-122, 46]]] }
-    }] }) });
-    await new Promise(resolve => setImmediate(resolve));
-    const sceneId = [...map.sources.keys()].find(id => id.startsWith('bpb-sentinel-'));
-    assert.equal(map.getSource(sceneId).maxzoom, 14);
-    assert.equal(window.document.querySelector('.bpb-terrain-picker').value, 'sentinel');
-    assert.match(window.document.querySelector('.bpb-sentinel').textContent, /Coverage 100% · Clouds 41%/);
-    assert.ok(map.layers.findIndex(layer => layer.id === sceneId) < map.layers.findIndex(layer => layer.id === 'bpb-route'));
-    const sceneSource = map.getSource(sceneId);
-    map.handlers.get('moveend')(); t.mock.timers.tick(300);
-    assert.equal(pending.length, 2);
-    pending[1].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: [{
-        id: 'scene_1', collection: 'sentinel-2-l2a',
-        properties: { datetime: new Date(Date.now() - 2 * 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 41 },
-        geometry: { type: 'Polygon', coordinates: [[[-122, 46], [-121, 46], [-121, 47], [-122, 47], [-122, 46]]] }
-    }] }) });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(map.getSource(sceneId), sceneSource, 'camera refresh preserves the MapLibre raster source and tile cache');
-    assert.equal([...map.sources.keys()].filter(id => id.startsWith('bpb-sentinel-')).length, 1);
-    dispatch({ type: 'suspend' });
-    assert.equal(map.getSource(sceneId), undefined);
-    dispatch({ type: 'resume', routeSegments: [[[46.5, -121.5], [46.51, -121.51]]], basemap: { kind: 'sentinel' } });
-    assert.equal(pending.length, 3);
-    map.handlers.get('error')({ sourceId: sceneId });
-    assert.equal(window.document.querySelector('.bpb-sentinel-summary').textContent, 'Finding captures…',
-        'an old capture tile error cannot overwrite the current capture status');
-    const picker = window.document.querySelector('.bpb-terrain-picker');
-    picker.value = 'terrain';
-    picker.dispatchEvent(new window.Event('change'));
-    assert.equal(pending[2].options.signal.aborted, true);
-    pending[2].resolve({ ok: true, headers: { get: () => null }, text: async () => '{"features":[]}' });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(picker.value, 'terrain');
-    assert.equal(map.getSource(sceneId), undefined);
-    dispatch({ type: 'destroy' });
-    dom.window.close();
+    const dispatch = bootTerrainFrame(dom.window, MapStub, { messages, fetch: (url, options) => new Promise(resolve => pending.push({ url, options, resolve })) });
+    const payload = { routeSegments: [[[46.5, -121.5], [46.51, -121.51]]], basemap: { name: 'Native topo', tiles: ['https://example.com/{z}/{x}/{y}.png'] } };
+    const time = Date.now() - 2 * 86400000;
+    const catalog = [0, 1].map(index => ({ id: `scene_${index}`, collection: 'sentinel-2-l2a', properties: { datetime: new Date(time - index * 86400000).toISOString(), platform: 'Sentinel-2B', 'sat:relative_orbit': 13, 'eo:cloud_cover': 41 }, geometry: { type: 'Polygon', coordinates: [[[-122,46],[-121,46],[-121,47],[-122,47],[-122,46]]] } }));
+    const answer = async index => { pending[index].resolve({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify({ features: catalog }) }); await new Promise(resolve => setImmediate(resolve)); };
+    const snapshot = { revision: 1, state: { sentinel: { enabled: true, opacity: 50 } }, capture: { time: time - 86400000, platform: 'Sentinel-2B', orbit: '13' } };
+    try {
+        dispatch({ type: 'init', ...payload }); map.loadCallback();
+        assert.equal(pending.length, 0, 'providers stay idle until a validated overlay snapshot');
+        dispatch({ type: 'layers', snapshot }); assert.equal(pending.length, 1); await answer(0);
+        const sourceId = [...map.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-'));
+        const currentSource = () => map.getSource([...map.sources.keys()].find(id => id.startsWith('bpb-overlay-sentinel-')));
+        const source = currentSource(); assert.ok(source); assert.equal(source.maxzoom, 14);
+        assert.ok(map.getSource('basemap'), 'imagery keeps the native drape');
+        assert.equal(dom.window.document.querySelector('.bpb-sentinel,.bpb-terrain-picker'), null, 'only the outer shared menu owns presentation');
+        const status = () => messages.filter(message => message.type === 'layerStatus').at(-1);
+        assert.match(status().message, /Coverage 100% · Clouds 41%/); assert.notEqual(status().capture, 'latest');
+        dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 2, state: { sentinel: { enabled: true, opacity: 75 } } } });
+        assert.equal(status().revision, 2); assert.match(status().message, /Coverage 100%/);
+        assert.equal(pending.length, 1, 'a newer opacity snapshot republishes status without another catalog request');
+        map.handlers.get('moveend')(); t.mock.timers.tick(300); await answer(1);
+        assert.equal(currentSource(), source, 'same scenes reuse decoded tile resources');
+        dispatch({ type: 'layerAction', action: 'basemap', selection: 'terrain' });
+        assert.equal(map.getSource('basemap'), undefined); assert.equal(currentSource(), source);
+        map.handlers.get('error')({ sourceId, error: new Error('tile unavailable') }); assert.equal(status().retry, true);
+        dispatch({ type: 'layerAction', action: 'retry', id: 'sentinel' }); await answer(2);
+        assert.notEqual(currentSource(), source, 'failed tiles are rebuilt on explicit Retry');
+        dispatch({ type: 'suspend' }); assert.equal(currentSource(), undefined);
+        const choicesBeforeResume = messages.filter(message => message.type === 'layerBasemaps').length;
+        dispatch({ type: 'resume', ...payload }); dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 3 } });
+        assert.ok(messages.filter(message => message.type === 'layerBasemaps').length > choicesBeforeResume, 'resume republishes the preserved user-selected basemap');
+        assert.equal(pending.length, 4);
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
+        assert.equal(pending[3].options.signal.aborted, true, 'BFCache freeze releases the renderer catalog'); await answer(3);
+        dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+        assert.equal(messages.at(-1).type, 'layerResume', 'the restored renderer requests the latest bridge snapshot');
+        dispatch({ type: 'layers', snapshot: { ...snapshot, revision: 3 } }); assert.equal(pending.length, 5);
+        dispatch({ type: 'layers', snapshot: { revision: 2, state: {} } }); assert.equal(pending[4].options.signal.aborted, false, 'stale snapshots cannot turn off newer intent');
+        dispatch({ type: 'layers', snapshot: { revision: 4, state: {} } }); assert.equal(pending[4].options.signal.aborted, true);
+        await answer(4); assert.equal(currentSource(), undefined, 'late catalogs cannot redraw a disabled overlay');
+    } finally { dispatch({ type: 'destroy' }); dom.window.close(); }
 });
 
 // Boot the terrain frame against a MapLibre stub whose DEM protocol answers
