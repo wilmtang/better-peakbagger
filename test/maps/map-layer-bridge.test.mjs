@@ -9,11 +9,11 @@ import { createMapLayerHandoff } from '../../src/background/map-layer-handoff.js
 
 const bundle = await readFile(new URL('../../dist/content/peak-snow.js', import.meta.url), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
-function setup({ catalog = snotelStations(), held = false, runtime } = {}) {
+function setup({ catalog = snotelStations(), held = false, runtime, syncGet = async () => ({ bpbSettings: { showSnotel: true } }) } = {}) {
     const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', runScripts: 'outside-only' });
     const win = dom.window, messages = [], requests = [], local = {}, listeners = [];
     win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder; win.AbortController = AbortController;
-    win.chrome = { runtime, storage: { sync: { get: async () => ({ bpbSettings: { showSnotel: true } }) },
+    win.chrome = { runtime, storage: { sync: { get: syncGet },
         local: { get: async () => local, set: async value => Object.assign(local, value) },
         onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
     const response = () => new Response(JSON.stringify(catalog));
@@ -24,6 +24,32 @@ function setup({ catalog = snotelStations(), held = false, runtime } = {}) {
         data: { __bpbMapLayers: true, dir: 'toCS', ...detail } }));
     return { win, local, messages, requests, send, listeners, close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
 }
+test('loading opacity preferences cannot publish a false SNOTEL opt-out before settings are known', async () => {
+    let finish;
+    const env = setup({ syncGet: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await tick(); env.send({ type: 'preferences' }); await tick();
+        assert.equal(env.messages.filter(message => message.type === 'preferences').length, 0,
+            'unknown settings must not clear a Full Screen handoff that enabled SNOTEL');
+        env.send({ type: 'stations', requestId: 1, bounds: [-122, 46, -121, 47] }); await tick();
+        assert.equal(env.requests.length, 0, 'unknown settings still fail closed for provider access');
+        finish({ bpbSettings: { showSnotel: true } }); await tick();
+        assert.equal(env.messages.filter(message => message.type === 'preferences').at(-1)?.snotel, true);
+    } finally { env.close(); }
+});
+test('a late startup settings read cannot overwrite a newer SNOTEL opt-out', async () => {
+    let finish;
+    const env = setup({ syncGet: () => new Promise(resolve => { finish = resolve; }) });
+    try {
+        await tick();
+        env.listeners.forEach(listener => listener({ bpbSettings: { newValue: { showSnotel: false } } }, 'sync'));
+        finish({ bpbSettings: { showSnotel: true } }); await tick();
+        env.send({ type: 'preferences' });
+        assert.equal(env.messages.filter(message => message.type === 'preferences').at(-1)?.snotel, false);
+        env.send({ type: 'stations', requestId: 1, bounds: [-122, 46, -121, 47] }); await tick();
+        assert.equal(env.requests.length, 0, 'the newer privacy choice continues to block station requests');
+    } finally { env.close(); }
+});
 test('the isolated map service persists bounded opacity only and rejects foreign requests', async () => {
     const env = setup();
     try {
