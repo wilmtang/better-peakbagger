@@ -14,7 +14,7 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | --- | --- | --- |
 | Sentinel-2 (experimental) | 100% | Natural-color imagery from a selected satellite pass in the past 30 days. Clouds and gaps can obscure terrain. |
 | Slope angle | 60% | USGS 3DEP ground slope. Yellow 20–30°, orange 30–35°, red 35–40°, purple 40–45°, dark purple ≥45°. Below 20° and missing data are clear. Resolution varies; this is not an avalanche forecast. |
-| Public lands | 25% | USGS PAD-US 4.1 fee ownership: BLM-managed federal land in gold, other federal land in green, plus state, local/district and tribal holdings. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
+| Public lands | 25% | USGS PAD-US 4.1 fee ownership: BLM-managed federal land in saturated gold, USFS-managed federal land in deep blue, then muted colors for other federal, state, local/district and tribal holdings. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
 | SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, reveal up to three nearby stations within 50 km once. Visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
 Opacity updates immediately. Only opacity preferences are saved on this device;
@@ -49,9 +49,12 @@ by the current peak's Nearby snow card, within its existing 50 km membership.
 Other stations have an official NRCS link. **Settings → General → Show SNOTEL**
 controls the card and every station layer independently of weather.
 
-Public lands distinguishes BLM using the fee polygon's federal ownership and
-`Mang_Name = BLM`, rather than proclamation/designation boundaries or ownership
-alone. The detail includes [BLM camping rules](https://www.blm.gov/programs/recreation/camping).
+Public lands puts BLM (gold, `#e69f00`) and USFS (blue, `#0072b2`) first in the
+legend. Other federal land is gray, state land purple, local/district land rose,
+and tribal land green, all muted so the two agency colors stand out.
+Both agencies require the fee polygon's federal ownership and matching
+`Mang_Name = BLM` or `USFS`, rather than proclamation/designation boundaries or
+ownership alone. The detail includes [BLM camping rules](https://www.blm.gov/programs/recreation/camping).
 Most BLM land allows dispersed camping, with local closures, access rules and
 fire restrictions still applying. This overlay does not contain current camping
 permissions, closures, campsite locations or road-access rules. Check the local
@@ -91,8 +94,8 @@ no extension-managed persistent satellite or analytical tile cache.
 The provider request and legend share one color definition. Slope uses the
 USGS **Slope Degrees** template followed by explicit inclusive-lower,
 exclusive-upper remapping and a color map. PAD-US uses an explicit `Own_Type`
-renderer on the fee layer, with an invisible default symbol. A filtered BLM
-pass draws on top in the same service export; both map engines apply opacity
+renderer on the fee layer, with an invisible default symbol. Filtered BLM and
+USFS passes draw on top in the same service export; both map engines apply opacity
 once to that single image. Sources:
 [USGS 3DEP service](https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer),
 [Esri raster function contract](https://developers.arcgis.com/rest/services-reference/enterprise/raster-function-objects/),
@@ -105,7 +108,7 @@ once to that single image. Sources:
 unpacked Chrome integration with pinned Leaflet, synthetic provider responses
 and hardware MapLibre. It checks all native map surfaces, independent rasters,
 overlap pixels at 0/50/100%, a failing per-scene-alpha negative control, native
-layer preservation, BLM classification/legend/guidance and opacity pixels,
+layer preservation, BLM/USFS classification/legend/guidance and opacity pixels,
 station rendering, pinned captures, 2D/3D suspend/resume
 and a real one-use Full Screen handoff. The historical Sentinel verifier entry
 delegates to this integration check. Use `BPB_VERIFY_LAYERS_SCREENSHOT_DIR` to

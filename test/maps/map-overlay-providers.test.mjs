@@ -46,8 +46,29 @@ test('BLM-managed federal fee land has its own color without marking unknown lan
     assert.equal(blm.source.mapLayerId, 0, 'fee polygons, never proclamation boundaries');
     assert.deepEqual(blm.drawingInfo.renderer.symbol.color, [...classes.get('BLM').color, 255]);
     assert.equal(layers.indexOf(blm), 0, 'ArcGIS draws the first dynamic layer on top');
-    const other = layers.find(layer => layer !== blm);
+    const other = layers.find(layer => layer.id === 0);
     assert.deepEqual(other.drawingInfo.renderer, LAND_RENDERER);
     assert.equal(LAND_RENDERER.defaultSymbol.style, 'esriSFSNull');
     assert.ok(!LAND_RENDERER.uniqueValueInfos.some(item => ['PVT', 'UNK', 'BLM'].includes(item.value)));
+});
+
+test('BLM and USFS lead the land palette with distinct saturated colors and agency filters', () => {
+    const classes = new Map(LAND_CLASSES.map(category => [category.value, category]));
+    assert.deepEqual(LAND_CLASSES.slice(0, 2).map(category => category.value), ['BLM', 'USFS']);
+    assert.deepEqual(classes.get('BLM').color, [230, 159, 0]);
+    assert.deepEqual(classes.get('USFS').color, [0, 114, 178]);
+    const layers = JSON.parse(new URL(overlayTileUrl('land', { z: 10, x: 163, y: 359 })).searchParams.get('dynamicLayers'));
+    assert.equal(layers.length, 3, 'two agency passes and the ownership fallback share one export');
+    for (const [index, agency] of ['BLM', 'USFS'].entries()) {
+        assert.equal(layers[index].definitionExpression, `Own_Type = 'FED' AND Mang_Name = '${agency}'`);
+        assert.equal(layers[index].source.mapLayerId, 0, 'fee land, never broad administrative boundaries');
+        assert.deepEqual(layers[index].drawingInfo.renderer.symbol.color, [...classes.get(agency).color, 255]);
+        assert.ok(!LAND_RENDERER.uniqueValueInfos.some(item => item.value === agency));
+    }
+    assert.equal(LAND_RENDERER.defaultSymbol.style, 'esriSFSNull');
+    const saturation = color => (Math.max(...color) - Math.min(...color)) / Math.max(...color);
+    for (const category of LAND_CLASSES) {
+        assert.ok(['BLM', 'USFS'].includes(category.value) ? saturation(category.color) > 0.9 : saturation(category.color) < 0.35,
+            `${category.label} keeps the requested visual priority`);
+    }
 });

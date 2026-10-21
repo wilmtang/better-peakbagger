@@ -39,7 +39,7 @@ try {
             {id:'latest',label:'Latest · 10-07 18:27 · ☁ 3%',title:'Latest · 2026-10-07 18:27 PDT · Clouds 3%'},
             {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
             {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]},
-            land:{legend:'USGS PAD-US 4.1 fee ownership; BLM-managed federal land in gold. Clear areas are unknown. Check local access and camping restrictions.',
+            land:{legend:'USGS PAD-US 4.1 fee ownership. BLM: gold; USFS: blue. Clear areas are unknown. Check local access and camping restrictions.',
                 legendEntries:LAND_CLASSES.filter(item=>item.value!=='DIST').map(item=>({label:item.label,color:'rgb('+item.color.join(',')+')'}))}};
         const control=createMapLayerControl({document,
             onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
@@ -86,7 +86,7 @@ try {
                 assert.equal(await guidance.isVisible(), true);
                 await guidance.focus(); assert.equal(await guidance.evaluate(element => document.activeElement === element), true);
                 assert.equal(await guidance.getAttribute('href'), 'https://www.blm.gov/programs/recreation/camping');
-                assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'Other federal', 'State', 'Local', 'Tribal']);
+                assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local', 'Tribal']);
                 const detailBox = await page.locator('.bpb-layers-detail:not([hidden])').boundingBox();
                 assert.ok(detailBox.x >= box.x && detailBox.x + detailBox.width <= box.x + box.width, 'land detail stays within compact width');
                 if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-land.png`) });

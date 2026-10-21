@@ -662,3 +662,44 @@ boundary completeness or current camping permissions. Browser map tiles are
 synthetic outside those probes. Live authenticated Peakbagger, physical touch,
 screen-reader speech, native menus and OS focus/window placement remain unproven.
 The earlier broad verifier gaps remain separate.
+
+## Follow-up: prioritize BLM and USFS colors
+
+The user's palette request supersedes the prior BLM/federal palette. BLM is now
+saturated gold (`#e69f00`), USFS deep blue (`#0072b2`), and both lead the legend.
+Other federal land is muted gray, state purple, local/district rose and tribal
+green. BLM and USFS each require federal fee ownership plus matching management;
+the two filtered agency passes and ownership fallback remain one export shared
+by native and terrain maps. Unknown ownership stays transparent.
+
+**Fixed and verified:** the new regression first failed because the legend and
+service had no distinct USFS category. All 3,060 tests passed, along with scoped
+ESLint and web-ext lint (eight existing warnings). Four bounded live USGS
+attribute/export probes confirmed exact gold BLM pixels at Alabama Hills, blue
+USFS pixels in Deschutes National Forest, gray NPS pixels at Mount Rainier, and
+transparent unclassified ocean. Native real-extension fixtures verified all
+three colors and alpha at 0/25/50/100% on ascent, peak, BigMap and standalone
+MasterMap. Hardware terrain verified warm BLM and cool USFS surfaces and their
+removal at zero alpha. Terrain lighting shifts the blue toward cyan; an initial
+overly strict blue-hue assertion rejected that visible surface, so the final
+assertion recognizes the shaded cool tint and separately requires its removal.
+Exact provider and native RGB assertions remain unchanged.
+
+These map checks ran hidden in Chrome 156.0.8078.4 at 1000 by 700 on ANGLE/Metal
+Apple M3 Pro. Chrome 156 and Firefox 157 each passed eight component cases at
+736/320 by 800, light/dark and normal/double text, including the six-entry
+legend, compact 232-by-134 overview, persistent disclosure, keyboard controls,
+and stable rows/map/following content through pending/error/recovery. The hidden
+real-manifest Chrome startup/BFCache check passed at 1000 by 760. Native default-
+opacity, hardware terrain, narrow/dark and doubled-text details were visually
+inspected.
+
+**Intentionally not changed:** 25% default opacity, menu size and interaction,
+basemap placement, Sentinel/SNOTEL behavior, other overlays, privacy boundaries,
+provider hosts and camping-permission semantics.
+
+**Changed but not fully proven:** these samples do not establish nationwide
+boundary completeness or camping permission. Live authenticated Peakbagger,
+physical touch, native menus, screen-reader speech and OS focus/window placement
+remain outside the hidden fixture proof. Earlier broad verifier gaps remain
+separate.

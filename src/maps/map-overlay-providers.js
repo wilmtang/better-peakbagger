@@ -20,18 +20,20 @@ export const SLOPE_RULE = {
     },
 };
 export const LAND_CLASSES = Object.freeze([
-    { value: 'BLM', label: 'BLM', color: [242, 199, 83] },
-    { value: 'FED', label: 'Other federal', color: [77, 152, 92] },
-    { value: 'STAT', label: 'State', color: [97, 153, 210] },
-    { value: 'LOC', label: 'Local', color: [181, 134, 203] },
-    { value: 'DIST', label: 'District', color: [181, 134, 203] },
-    { value: 'TRIB', label: 'Tribal', color: [210, 148, 76] },
+    { value: 'BLM', label: 'BLM', color: [230, 159, 0] },
+    { value: 'USFS', label: 'USFS', color: [0, 114, 178] },
+    { value: 'FED', label: 'Other federal', color: [145, 145, 145] },
+    { value: 'STAT', label: 'State', color: [151, 132, 166] },
+    { value: 'LOC', label: 'Local', color: [174, 133, 150] },
+    { value: 'DIST', label: 'District', color: [174, 133, 150] },
+    { value: 'TRIB', label: 'Tribal', color: [105, 151, 131] },
 ]);
+const landAgencies = LAND_CLASSES.filter(category => ['BLM', 'USFS'].includes(category.value));
 const symbol = color => ({ type: 'esriSFS', style: 'esriSFSSolid', color: [...color, 255],
     outline: { type: 'esriSLS', style: 'esriSLSSolid', color: [...color, 255], width: 0.6 } });
 export const LAND_RENDERER = { type: 'uniqueValue', field1: 'Own_Type',
     defaultSymbol: { type: 'esriSFS', style: 'esriSFSNull', outline: null },
-    uniqueValueInfos: LAND_CLASSES.filter(category => category.value !== 'BLM').map(category => ({ value: category.value, label: category.label, symbol: symbol(category.color) })) };
+    uniqueValueInfos: LAND_CLASSES.filter(category => !landAgencies.includes(category)).map(category => ({ value: category.value, label: category.label, symbol: symbol(category.color) })) };
 
 export const OVERLAY_ATTRIBUTION = {
     slope: '<a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a>',
@@ -54,13 +56,14 @@ export function overlayTileUrl(id, coordinates) {
     } else if (id === 'land') {
         url = new URL('https://edits.nationalmap.gov/arcgis/rest/services/PAD-US/PAD_US_4_1/MapServer/export');
         params.transparent = 'true';
-        // ArcGIS draws the first layer on top. Both passes are one opaque image;
+        // ArcGIS draws the first layer on top. All passes are one opaque image;
         // the map engine applies the user's opacity once, after composition.
         // Fee ownership plus manager avoids treating designation boundaries or
-        // BLM holdings managed by another agency as BLM-managed land.
+        // holdings managed by another agency as BLM/USFS-managed land.
         params.dynamicLayers = JSON.stringify([
-            { id: 1, source: { type: 'mapLayer', mapLayerId: 0 }, definitionExpression: "Own_Type = 'FED' AND Mang_Name = 'BLM'",
-                drawingInfo: { renderer: { type: 'simple', symbol: symbol(LAND_CLASSES[0].color) } } },
+            ...landAgencies.map((category, index) => ({ id: index + 1, source: { type: 'mapLayer', mapLayerId: 0 },
+                definitionExpression: `Own_Type = 'FED' AND Mang_Name = '${category.value}'`,
+                drawingInfo: { renderer: { type: 'simple', symbol: symbol(category.color) } } })),
             { id: 0, source: { type: 'mapLayer', mapLayerId: 0 }, drawingInfo: { renderer: LAND_RENDERER } },
         ]);
     } else throw new Error('Unknown overlay.');

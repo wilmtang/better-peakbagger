@@ -68,12 +68,32 @@ try {
         </script></body></html>` }));
     // Solid, decoded PNG tiles distinguish loaded satellite imagery from the
     // grey native fallback without using the live imagery service.
-    const tiles = await page.evaluate(() => Object.fromEntries(['#a8b1ba', '#315bb0', '#347d61', '#f2c753'].map(color => {
+    const tiles = await page.evaluate(() => Object.fromEntries(['#a8b1ba', '#315bb0', '#347d61'].map(color => {
         const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
         const context = canvas.getContext('2d'); context.fillStyle = color; context.fillRect(0, 0, 256, 256);
         return [color, canvas.toDataURL().split(',')[1]];
     })));
     const tile = color => Buffer.from(tiles[color], 'base64');
+    // One composed service tile contains BLM, USFS and other federal parcels.
+    const landTile = Buffer.from(await page.evaluate(() => {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+        const context = canvas.getContext('2d');
+        for (const [color, x, width] of [['#e69f00', 0, 96], ['#0072b2', 96, 96], ['#919191', 192, 64]]) {
+            context.fillStyle = color; context.fillRect(x, 0, width, 256);
+        }
+        return canvas.toDataURL().split(',')[1];
+    }), 'base64');
+    const countImageColors = (png, colors) => page.evaluate(async ({ data, colors }) => {
+        const image = new Image(); image.src = 'data:image/png;base64,' + data; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        return colors.map(color => {
+            let count = 0;
+            for (let i = 0; i < pixels.length; i += 4) if (color.every((value, channel) => Math.abs(value - pixels[i + channel]) <= 2)) count++;
+            return count;
+        });
+    }, { data: png.toString('base64'), colors });
     await context.route(`${origin}/native/**`, route => route.fulfill({ contentType: 'image/png', body: tile('#a8b1ba') }));
     await context.route('https://planetarycomputer.microsoft.com/**', async route => {
         const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
@@ -93,9 +113,11 @@ try {
     await context.route('https://edits.nationalmap.gov/**', route => {
         const layers = JSON.parse(new URL(route.request().url()).searchParams.get('dynamicLayers'));
         assert.equal(layers[0].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'BLM'");
-        assert.deepEqual(layers[0].drawingInfo.renderer.symbol.color, [242, 199, 83, 255]);
-        assert.equal(layers[1].drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
-        return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile('#f2c753') });
+        assert.deepEqual(layers[0].drawingInfo.renderer.symbol.color, [230, 159, 0, 255]);
+        assert.equal(layers[1].definitionExpression, "Own_Type = 'FED' AND Mang_Name = 'USFS'");
+        assert.deepEqual(layers[1].drawingInfo.renderer.symbol.color, [0, 114, 178, 255]);
+        assert.equal(layers[2].drawingInfo.renderer.defaultSymbol.style, 'esriSFSNull');
+        return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: landTile });
     });
     await context.route('https://wcc.sc.egov.usda.gov/**', route => {
         const url = new URL(route.request().url());
@@ -171,18 +193,24 @@ try {
         await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay && layer._tiles).length === 3), { description: 'three independently layered rasters' });
         await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
         await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
-        assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'Other federal', 'State', 'Local', 'Tribal']);
+        assert.deepEqual(await page.locator('.bpb-layers-detail:not([hidden]) .bpb-layers-legend-item').allTextContents(), ['BLM', 'USFS', 'Other federal', 'State', 'Local', 'Tribal']);
         assert.equal(await page.getByRole('link', { name: 'BLM camping rules', exact: true }).isVisible(), true);
         const landOpacity = page.getByRole('slider', { name: 'Public lands opacity' });
         const setLandOpacity = async value => { await landOpacity.fill(String(value)); await landOpacity.dispatchEvent('input'); };
+        const palette = [[230, 159, 0], [0, 114, 178], [145, 145, 145]];
+        const landPixels = async colors => countImageColors(await (pathname.includes('MasterMap') ? page.locator('#map') : page.locator('iframe#if')).screenshot(), colors);
         await setLandOpacity(100);
-        await waitForCondition(pixel, { description: `gold BLM overlay on ${pathname}`, isReady: rgba => [242, 199, 83].every((value, i) => Math.abs(value - rgba[i]) <= 2) });
+        await waitForCondition(() => landPixels(palette), { description: `BLM, USFS and other federal colors on ${pathname}`, isReady: counts => counts.every(count => count > 1000) });
         await setLandOpacity(0);
-        const under = await waitForCondition(pixel, { description: 'zero land opacity exposes lower layers', isReady: rgba => Math.abs(rgba[0] - 242) > 20 });
+        await waitForCondition(() => landPixels(palette), { description: 'zero land opacity exposes lower layers', isReady: counts => counts.every(count => count < 1000) });
+        const under = await pixel();
         await setLandOpacity(50);
-        const blended = [242, 199, 83].map((value, i) => Math.round((value + under[i]) / 2));
-        await waitForCondition(pixel, { description: 'BLM opacity applies once to the composed export', isReady: rgba => blended.every((value, i) => Math.abs(value - rgba[i]) <= 2) });
+        const blended = palette.map(color => color.map((value, i) => Math.round((value + under[i]) / 2)));
+        await waitForCondition(() => landPixels(blended), { description: 'BLM/USFS opacity applies once to the composed export', isReady: counts => counts.every(count => count > 1000) });
         await setLandOpacity(25);
+        const defaultBlend = palette.map(color => color.map((value, i) => Math.round(value * 0.25 + under[i] * 0.75)));
+        await waitForCondition(() => landPixels(defaultBlend), { description: 'BLM/USFS default opacity preserves distinct tints', isReady: counts => counts.every(count => count > 1000) });
+        if (output && cases.length === 0) { await mkdir(output, { recursive: true }); await page.screenshot({ path: path.join(output, 'native-land-25.png') }); }
         await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
         await native.evaluate(() => {
             mapsPlaceholder.setView([46.851731, -121.760395], 17, { animate: false });
@@ -246,7 +274,7 @@ try {
     assert.ok(renderer && !/swiftshader|software|llvmpipe/i.test(renderer), `hardware renderer required: ${renderer}`);
     const coloredPixels = async color => {
         const png = await terrain.locator('canvas.maplibregl-canvas').screenshot();
-        return page.evaluate(async ({data,color}) => {const image = new Image();image.src='data:image/png;base64,'+data;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;let count=0;for(let i=0;i<pixels.length;i+=4)if(color==='blue'?pixels[i+2]>pixels[i+1]*1.3&&pixels[i+2]>pixels[i]*1.5:color==='gold'?pixels[i]>pixels[i+1]*1.1&&pixels[i+1]>pixels[i+2]*1.7:pixels[i+1]>pixels[i+2]*1.15&&pixels[i+1]>pixels[i]*1.4)count++;return count;},{data:png.toString('base64'),color});
+        return page.evaluate(async ({data,color}) => {const image = new Image();image.src='data:image/png;base64,'+data;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;let count=0;for(let i=0;i<pixels.length;i+=4)if(color==='blue'?pixels[i+2]>pixels[i+1]*1.3&&pixels[i+2]>pixels[i]*1.5:color==='usfs'?pixels[i+2]>pixels[i]*1.3&&pixels[i+2]>pixels[i+1]*.9:color==='gold'?pixels[i]>pixels[i+1]*1.1&&pixels[i+1]>pixels[i+2]*1.7:pixels[i+1]>pixels[i+2]*1.15&&pixels[i+1]>pixels[i]*1.4)count++;return count;},{data:png.toString('base64'),color});
     };
     const bluePixels=()=>coloredPixels('blue');
     await waitForCondition(bluePixels,{description:'painted pinned capture in hardware 3D',timeoutMs:30000,isReady:count=>count>1000});
@@ -289,9 +317,13 @@ try {
     await landOpacity.fill('100'); await landOpacity.dispatchEvent('input');
     const gold = await waitForCondition(() => coloredPixels('gold'), { description: 'gold BLM pixels over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
     if (output) await page.screenshot({ path: path.join(output, '3d-land.png') });
+    // Terrain lighting shifts blue toward cyan. Require its cool tint here,
+    // then prove the colored surface disappears when opacity reaches zero.
+    const blue = await waitForCondition(() => coloredPixels('usfs'), { description: 'blue USFS pixels over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
     await landOpacity.fill('0'); await landOpacity.dispatchEvent('input');
     await waitForCondition(() => coloredPixels('gold'), { description: 'zero opacity exposes the terrain below BLM', timeoutMs: 30000, isReady: count => count < gold / 5 });
-    cases.push('0/50/100 percent mosaic and BLM pixels with negative control','one-use Full Screen state and pinned pass','3D capture choices, independent base, suspend/resume','off while parked prevents catalog replay', 'BLM legend, guidance and native/terrain alpha');
+    await waitForCondition(() => coloredPixels('usfs'), { description: 'zero opacity exposes the terrain below USFS', timeoutMs: 30000, isReady: count => count < blue / 5 });
+    cases.push('0/50/100 percent mosaic and BLM/USFS pixels with negative control','one-use Full Screen state and pinned pass','3D capture choices, independent base, suspend/resume','off while parked prevents catalog replay', 'BLM/USFS legend, guidance and native/terrain alpha');
     assert.deepEqual(errors, []);
     summary = {browser:'chromium', version:context.browser().version(), hidden:true, leaflet:'1.9.4', cases, viewports:[[1000,700]], renderer, tileRequests, profile:temporaryRoot};
 } catch (error) { primaryError = error; }
