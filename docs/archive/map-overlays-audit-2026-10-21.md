@@ -19,7 +19,8 @@ is maintained in [Map overlays](../map-layers.md).
 | O5 | P2 | Native and terrain station identity keys included selectable membership. A conditions-action update rebuilt every marker and closed the popup containing the focused NRCS link. | `47de8745`: when the station list is unchanged, update only its optional action. Keep popup/marker/link identity and focus. Removing a focused action returns focus to the same official link. Both marker regressions failed before the fix. |
 | O6 | P2 | Sentinel's existing minimum catalog zoom was reported as Search failed even though validation prevented a search. | `9f4160aa`: share the existing catalog minimum with the control. Below it show Zoom in and hide ineffective Retry; actual catalog failures remain visible at supported zooms. The new assertion failed on the prior Search failed label. |
 | O7 | Follow-up | The upper-right native basemap dropdown and its inline white surround stayed light because the scoped MasterMap theme covered only popups. | Extend the native map sheet to theme the select, options and surround with the Overlays palette and an inset keyboard focus ring. Both bundled and hidden Chrome assertions failed before the fix for the picker remaining light. |
-| O8 | Follow-up | Each opacity input reapplied unrelated native rasters and station popups, resent terrain station data, repeated regional polygon work and replaced every legend. | Scope opacity application to the edited raster, cache public-land metadata by viewport, and preserve unchanged legend nodes. Three new assertions failed before the fix for unrelated raster updates, repeated terrain marker messages and replaced swatches. |
+| O8 | Follow-up | Each opacity input reapplied unrelated native rasters and station popups, resent terrain station data, repeated regional polygon work and replaced every legend. | `23d4b18a`: scope native opacity application to the edited raster, cache public-land metadata by viewport, and preserve unchanged legend nodes. Three new assertions failed before the fix for unrelated raster updates, repeated terrain marker messages and replaced swatches. |
+| O9 | Follow-up | Most of a row opened settings while its small checkbox alone toggled visibility. The menu's palette/type/control shapes also differed from BPB's shared panel language. | Make the name and checkbox one large native label target with a separate SVG settings chevron. Use the shared BPB palette, readable 13px type and 8px surfaces/controls with immediate feedback. The name-toggle regression failed before the change. |
 
 The audit found no additional confirmed defect in the inspected provider
 composition, bounded requests, narrow BC worker relay, one-use handoff or
@@ -30,6 +31,22 @@ that no other defect exists.
 
 ### Fixed and verified
 
+- O9: hidden Chrome 156.0.8078.4 and Firefox 157.0 each passed eight component
+  cases at 736/320 × 800, light/dark and normal/doubled text, plus the three
+  neighboring native selector theme cases. Checks cover label clicks, Space,
+  independent settings, disabled coverage, loading, failure, permission, retry,
+  success, opacity feedback, zoom changes, focus and control/map/following-content
+  geometry. Both themes and narrow/doubled-text renders were inspected. Palette
+  and contrast tests pin overlay and neighboring native-picker colors to BPB's
+  shared panel palette. Two enlarged-text shifts reproduced during implementation
+  (the long waiting label and zoom guidance); concise messages removed them
+  without increasing feedback reservations or clipping text.
+  `npm test` passed 3,131 tests on the final source; scoped ESLint and
+  `git diff --check` passed. The real unpacked Chrome startup/BFCache check
+  passed hidden at 1000 × 760. Final native/3D integration also passed hidden
+  at 1000 × 700 with Leaflet 1.9.4 and ANGLE/Metal on Apple M3 Pro; native and
+  hardware 3D renders were inspected. Fixtures stub provider responses and do
+  not establish live service latency or native OS popup appearance.
 - O8: 44 focused map/control/session tests and scoped ESLint passed. Hidden
   Chrome 156.0.8078.4 passed immediate slider feedback, legend reuse, focus and
   stable row/map/following-content checks across all eight component cases.
@@ -85,6 +102,12 @@ that no other defect exists.
 
 ### Intentionally not changed
 
+- O9 preserves the menu's persistent behavior, separate upper-right basemap,
+  single selected detail, checkbox semantics, native light basemap styling and
+  provider/privacy boundaries. The overview remains 232px wide; its height is
+  intentionally 158px at normal text and 304px with doubled text so the larger
+  label target and wrapping remain readable. No settings or decorative motion
+  were added.
 - O8 keeps opacity feedback synchronous, existing provider debounce/retry/rate
   limits, zero-opacity cancellation, validated terrain revisions and Full Screen
   state updates. Actual viewport changes still recompute coverage.
@@ -104,6 +127,9 @@ that no other defect exists.
 
 ### Changed but not fully proven
 
+- O8/O9 establish reduced redundant work and browser-rendered behavior, rather
+  than a measured physical input-latency guarantee. Live provider speed, physical
+  touch feel and native OS select-popup drawing remain outside these fixtures.
 - O7's browser cases use the shipped theme bundle and faithful native selector
   markup with stubbed settings. They establish rendered control styling and DOM
   keyboard focus; native OS dropdown-popup appearance and browser/OS focus

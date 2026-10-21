@@ -230,6 +230,23 @@ test('the native basemap picker keeps readable text and keyboard focus in dark m
     assert.ok(contrast(ring, bg('#selmap')) >= NON_TEXT);
 });
 
+test('map overlays use the BPB panel palette with readable control text in both themes', async () => {
+    const panel = await readFile(path.join(root, 'src/theme/panel.css'), 'utf8');
+    const palette = new Map([...panel.matchAll(/(--(?:light|dark)-[\w-]+):\s*(#[\da-f]+);/g)].map(([, name, value]) => [name, value]));
+    const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
+    const rules = parseRules(css.replace(/\/\*[\s\S]*?\*\//g, ''));
+    assert.equal(bg('#selmap'), palette.get('--dark-input-bg'), 'the neighboring native picker follows BPB inputs');
+    assert.equal(bg('#selboxdiv'), palette.get('--dark-card'));
+    for (const theme of ['light', 'dark']) {
+        const tokens = rules.get(theme === 'light' ? '.bpb-map-layers' : ".bpb-map-layers[data-theme='dark']");
+        for (const [mapToken, panelToken] of Object.entries({ paper: 'card', ink: 'text', muted: 'sub', border: 'border', accent: theme === 'light' ? 'accent' : 'link', 'input-bg': 'input-bg', 'input-border': 'input-border' })) {
+            assert.equal(tokens[`--bpb-layer-${mapToken}`], palette.get(`--${theme}-${panelToken}`), `${theme} ${mapToken} follows BPB's palette`);
+        }
+        for (const token of ['ink', 'muted', 'accent']) assert.ok(contrast(tokens[`--bpb-layer-${token}`], tokens['--bpb-layer-paper']) >= NORMAL, `${theme} ${token} contrast`);
+        assert.ok(contrast(tokens['--bpb-layer-focus'], tokens['--bpb-layer-paper']) >= NON_TEXT);
+    }
+});
+
 test('the GPX analyzer panel has one theming system, not two', async () => {
     const { gpxPanelCss } = await import('../../src/gpx/gpx-panel-css.js');
     const panelRules = parseRules(gpxPanelCss.replace(/\/\*[\s\S]*?\*\//g, ''));

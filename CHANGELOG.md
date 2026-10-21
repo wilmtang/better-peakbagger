@@ -9,6 +9,9 @@
   Overlays outside regional coverage are disabled and stop their work; returning
   to coverage makes them available without switching them back on.
   The native basemap dropdown and its surround now follow dark mode too.
+  Overlay names now provide a larger visibility toggle beside a separate settings
+  chevron, using BPB's warm palette and compact controls. Opacity drags update only
+  the edited overlay and reuse unchanged legends.
 
 - **Make snow-request timeouts clear.** Nearby snow names a timed-out request
   and leaves Refresh available immediately. Retained readings, keyboard focus,

@@ -6,16 +6,20 @@ import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 // Shared by top-level Leaflet maps and the native MasterMap iframe. Repaint
 // controls and popups only; the full site theme would repaint the map itself.
 export const nativeMapDarkCss = `
-html[data-bpb-theme="dark"] #selboxdiv,
 html[data-bpb-theme="dark"] #selmap,
 html[data-bpb-theme="dark"] #selmap option {
     color-scheme: dark;
-    background: #242c26 !important;
-    color: #eef3ee !important;
+    background: #26362c !important;
+    color: #eeeade !important;
 }
-html[data-bpb-theme="dark"] #selboxdiv,
+html[data-bpb-theme="dark"] #selboxdiv {
+    color-scheme: dark;
+    background: #1e2b23 !important;
+    color: #eeeade !important;
+    border-color: #384a3e !important;
+}
 html[data-bpb-theme="dark"] #selmap {
-    border-color: #637165 !important;
+    border-color: #526752 !important;
 }
 html[data-bpb-theme="dark"] #selmap:focus-visible {
     outline: 2px solid #79b8ff;

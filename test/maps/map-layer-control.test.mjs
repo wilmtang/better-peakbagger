@@ -80,6 +80,27 @@ test('opacity summaries name the property and sliders explain their direction', 
     control.dispose(); dom.window.close();
 });
 
+test('the overlay name toggles visibility while its separate chevron only adjusts settings', () => {
+    const dom = new JSDOM('<body></body>'), doc = dom.window.document, toggles = [];
+    const state = Schema.mapOverlayState(); let coverage = {};
+    const control = createMapLayerControl({ document: doc, onToggle(id, enabled) {
+        toggles.push([id, enabled]); state[id].enabled = enabled; control.render({ state, coverage });
+    } }); doc.body.append(control.element); control.render({ state, coverage }); control.trigger.click();
+    const row = doc.querySelector('[data-layer="land"]');
+    try {
+        row.querySelector('.bpb-layers-row-name').click();
+        assert.deepEqual(toggles, [['land', true]], 'clicking the name activates its checkbox exactly once');
+        row.querySelector('button').click(); row.querySelector('button').click();
+        assert.equal(state.land.enabled, true, 'settings never change visibility'); assert.equal(toggles.length, 1);
+        assert.equal(row.querySelector('button').contains(row.querySelector('.bpb-layers-row-name')), false, 'the primary toggle and settings are separate targets');
+        row.querySelector('.bpb-layers-row-name').click(); assert.deepEqual(toggles.at(-1), ['land', false]);
+        coverage = { land: false }; control.render({ state, coverage });
+        row.querySelector('.bpb-layers-row-name').click(); assert.equal(toggles.length, 2, 'an unavailable label cannot activate the disabled overlay');
+        row.querySelector('button').click(); row.querySelector('button').click();
+        assert.match(doc.querySelector('.bpb-layers-detail:not([hidden])').textContent, /No coverage here/);
+    } finally { control.dispose(); dom.window.close(); }
+});
+
 test('opacity and provider updates preserve unchanged legend content', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document;
     const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
@@ -240,7 +261,7 @@ test('zoomed-out rasters request a closer view instead of showing stale errors, 
         const statuses = { [id]: { pending: true, error: true, retry: true, message: 'Loading map tiles' } };
         control.render({ state, statuses, zoom: 7 }); document.querySelector(`[data-layer="${id}"] button`).click();
         assert.equal(document.querySelector(`[data-layer="${id}"] .bpb-layers-row-status`).textContent, 'Zoom in');
-        assert.match(document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Zoom in to show/);
+        assert.match(document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Zoom in for/);
         assert.equal(document.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry').hidden, true);
         assert.equal(control.trigger.getAttribute('aria-label'), 'Overlays, 1 active', 'a zoom requirement is not a provider failure');
         control.render({ state, statuses, zoom: 8 });

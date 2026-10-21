@@ -28,14 +28,17 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
     const trigger = node('button', 'bpb-layers-trigger', 'Overlays'); trigger.type = 'button';
     trigger.setAttribute('aria-expanded', 'false');
     const indicator = node('span', 'bpb-layers-indicator'); indicator.setAttribute('aria-hidden', 'true'); trigger.append(indicator);
-    const caret = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    caret.setAttribute('class', 'bpb-layers-caret'); caret.setAttribute('viewBox', '0 0 12 12');
-    caret.setAttribute('aria-hidden', 'true'); caret.setAttribute('focusable', 'false');
-    const caretPath = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-    caretPath.setAttribute('d', 'm2 4 4 4 4-4'); caretPath.setAttribute('fill', 'none');
-    caretPath.setAttribute('stroke', 'currentColor'); caretPath.setAttribute('stroke-width', '1.5');
-    caretPath.setAttribute('stroke-linecap', 'round'); caretPath.setAttribute('stroke-linejoin', 'round');
-    caret.append(caretPath); trigger.append(caret);
+    const chevron = className => {
+        const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', className); svg.setAttribute('viewBox', '0 0 12 12');
+        svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
+        const path = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'm2 4 4 4 4-4'); path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', 'currentColor'); path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round');
+        svg.append(path); return svg;
+    };
+    trigger.append(chevron('bpb-layers-caret'));
     const panel = node('div', 'bpb-layers-panel'); panel.hidden = true;
     const id = `bpb-layers-${Math.random().toString(36).slice(2)}`;
     panel.id = id; trigger.setAttribute('aria-controls', id);
@@ -58,8 +61,8 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
         const summary = node('span', 'bpb-layers-summary'), spinner = node('span', 'bpb-layers-spinner'); spinner.setAttribute('aria-hidden', 'true');
         const rowStatus = node('span', 'bpb-layers-row-status'); summary.append(spinner, value, rowStatus);
         const copy = node('span', 'bpb-layers-row-copy'); copy.append(node('span', 'bpb-layers-row-name', LABELS[key]), summary);
-        const chevron = node('span', 'bpb-layers-chevron', '›'); chevron.setAttribute('aria-hidden', 'true');
-        disclosure.append(copy, chevron); row.append(label, disclosure); panel.append(row);
+        label.append(copy); disclosure.append(chevron('bpb-layers-chevron'));
+        row.append(label, disclosure); panel.append(row);
         const detail = node('section', 'bpb-layers-detail'); detail.hidden = true;
         detail.setAttribute('aria-label', `${NAMES[key]} settings`); detail.append(node('div', 'bpb-layers-detail-title', NAMES[key]));
         let slider = null, output = null, capture = null;
@@ -144,7 +147,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             const zoomedOut = shown && needsZoom(key);
             const kind = unavailable ? 'coverage' : !shown ? '' : zoomedOut ? 'zoom' : status.pending ? 'loading' : status.saved ? 'saved' : status.overflow ? 'zoom' : status.permission ? 'permission' : status.error ? 'error' : status.uncovered ? 'coverage' : '';
             const cooldown = status.retryAt > Date.now();
-            const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
+            const summary = kind === 'loading' ? status.permission ? 'Waiting' : 'Loading'
                 : kind === 'saved' ? 'Refresh failed' : kind === 'zoom' ? 'Zoom in' : kind === 'permission' ? status.partial ? 'Partly loaded' : 'Needs access'
                     : kind === 'coverage' ? 'No coverage' : kind === 'error' ? cooldown ? 'Service busy' : status.captureError ? 'Search failed' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
             const heldRecovery = shown && !zoomedOut && detail.recovering && doc.activeElement === detail.retry && !status.permission;
@@ -157,7 +160,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             row.row.dataset.selected = String(open && expanded === key);
             row.disclosure.setAttribute('aria-label', `Adjust ${NAMES[key]}${key === 'snotel' ? '' : ` opacity, ${current.opacity} percent`}${summary ? `: ${summary}` : ''}`);
             row.disclosure.setAttribute('aria-busy', String(kind === 'loading'));
-            row.amount.textContent = key === 'snotel' ? current.enabled ? Number.isInteger(status.count) ? `${status.count} in view` : 'Station locations' : 'Off' : `${current.opacity}%`;
+            row.amount.textContent = key === 'snotel' ? current.enabled ? Number.isInteger(status.count) ? `${status.count} in view` : 'On' : 'Off' : `${current.opacity}%`;
             row.value.hidden = Boolean(kind); row.rowStatus.hidden = !kind; row.rowStatus.textContent = summary;
             row.spinner.hidden = kind !== 'loading'; row.row.dataset.status = kind;
             detail.detail.hidden = !open || expanded !== key || row.row.hidden;
@@ -176,7 +179,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             }
             detail.feedback.dataset.kind = recovered ? 'success' : kind;
             detail.status.textContent = unavailable ? 'No coverage here.' : !current.enabled ? status.unavailable ? status.message : 'Turn on to show this overlay.'
-                : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in to show ${key === 'sentinel' ? 'Sentinel-2 imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
+                : !shown ? 'Increase opacity to show this overlay.' : zoomedOut ? `Zoom in for ${key === 'sentinel' ? 'imagery' : key === 'land' ? 'public lands' : 'slope shading'}.`
                     : cooldown ? `${status.saved ? 'Showing loaded locations. ' : ''}Service busy. Retry after ${new Date(status.retryAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.` : status.message || (recovered ? 'Overlay refreshed.' : '');
             if (detail.guidance) {
                 const keys = [...new Set((Array.isArray(status.guidanceKeys) ? status.guidanceKeys : ['blm']).slice(0, 3).filter(guide => Object.hasOwn(LAND_GUIDANCE, guide)))];

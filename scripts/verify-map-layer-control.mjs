@@ -41,14 +41,15 @@ try {
             {id:'older',label:'2026-10-06 18:27 · ☁ 100%',title:'2026-10-06 18:27 PDT · Clouds 100%'},
             {id:'unknown',label:'2026-10-05 18:27 · ☁ ?',title:'2026-10-05 18:27 PDT · Clouds unknown'}]},
             land:publicLandInfo(null),snotel:{legend:'NRCS active stations in the visible map. Station observations may differ from route conditions.'}};
+        const toggles=[];
         const control=createMapLayerControl({document,
-            onToggle:(id,enabled)=>{state[id].enabled=enabled;paint()},
+            onToggle:(id,enabled)=>{toggles.push([id,enabled]);state[id].enabled=enabled;paint()},
             onOpacity:(id,opacity)=>{state[id].opacity=opacity;paint()},
             onCapture:value=>{const status=statuses.sentinel;status.capture=value;status.message='Coverage 100% · Clouds '+status.captures.find(choice=>choice.id===value).title.split(' · Clouds ')[1];paint()},
             onRetry:id=>{window.fixture.retryRequests=(window.fixture.retryRequests||0)+1;statuses[id]={...statuses[id],pending:true,error:false,retry:true,message:id==='snotel'?'Loading stations':'Loading map tiles'};paint()}});
         document.body.append(control.element);
         function paint(){control.render({state,statuses,coverage:window.fixture?.coverage,zoom:window.fixture?.zoom??17,theme:window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'});control.element.dataset.theme=window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';control.position(document.querySelector('#map').getBoundingClientRect())}
-        window.fixture={control,state,statuses,paint,landInfo:publicLandInfo,showPopup:scale=>{
+        window.fixture={control,state,statuses,paint,toggles,landInfo:publicLandInfo,showPopup:scale=>{
             control.dispose();
             const station={id:'679:WA:SNTL',name:'Paradise SNOTEL station',latitude:46.78,longitude:-121.74,elevation:1570};
             const popup=snotelPopup(document,station);popup.id='station-popup';popup.style.fontSize=13*scale+'px';document.body.append(popup);
@@ -110,11 +111,11 @@ try {
                     map: getComputedStyle(document.getElementById('map')).backgroundColor };
             });
             if (theme === 'dark') {
-                assert.equal(appearance.background, 'rgb(36, 44, 38)', 'native picker must turn dark');
-                assert.equal(appearance.surround, appearance.background, 'the white surround must turn dark too');
+                assert.equal(appearance.background, 'rgb(38, 54, 44)', 'native picker must use BPB dark inputs');
+                assert.equal(appearance.surround, 'rgb(30, 43, 35)', 'the white surround must use BPB dark surfaces');
                 assert.equal(appearance.option, appearance.background, 'the option list has a dark fallback');
-                assert.equal(appearance.borderColor, 'rgb(99, 113, 101)', 'the inline black border follows the dark control palette');
-                assert.equal(appearance.color, 'rgb(238, 243, 238)'); assert.equal(appearance.scheme, 'dark');
+                assert.equal(appearance.borderColor, 'rgb(56, 74, 62)', 'the inline black border follows the dark control palette');
+                assert.equal(appearance.color, 'rgb(238, 234, 222)'); assert.equal(appearance.scheme, 'dark');
                 assert.equal(appearance.outline, 'solid'); assert.equal(appearance.outlineWidth, '2px');
             } else assert.equal(appearance.surround, 'rgb(255, 255, 255)', 'light mode restores native styling');
             assert.equal(appearance.focused && appearance.focusVisible, true, 'keyboard focus survives theme updates');
@@ -131,7 +132,7 @@ try {
         await page.setViewportSize({ width, height: 800 }); await page.emulateMedia({ colorScheme: theme });
         await page.goto(`https://www.peakbagger.com:${fixture.port}/layer-control.aspx`);
         await page.addStyleTag({ content: css }); await page.addScriptTag({ content: bundle.outputFiles[0].text });
-        await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${12 * scale}px`; }, scale);
+        await page.locator('.bpb-map-layers').evaluate((element, scale) => { element.style.fontSize = `${13 * scale}px`; }, scale);
         const trigger = page.getByRole('button', { name: /^Overlays/ });
         assert.equal(await page.locator('.bpb-layers-panel').isVisible(), false);
         const collapsedTrigger = await trigger.boundingBox();
@@ -143,7 +144,7 @@ try {
         assert.equal(await caret.evaluate(element => getComputedStyle(element).transform), 'matrix(-1, 0, 0, -1, 0, 0)');
         assert.deepEqual(await trigger.boundingBox(), collapsedTrigger, 'caret rotation does not move or resize the trigger');
         const box = await page.locator('.bpb-layers-panel').boundingBox();
-        assert.ok(box.width <= 233 && box.height <= (scale === 1 ? 135 : 285), `compact overview ${JSON.stringify(box)}`);
+        assert.ok(box.width <= 233 && box.height <= (scale === 1 ? 170 : 340), `compact readable overview ${JSON.stringify(box)}`);
         const mapBox = await page.locator('#map').boundingBox(), triggerBox = await trigger.boundingBox();
         assert.ok(Math.abs(triggerBox.x - mapBox.x - 10) <= 1 && Math.abs(box.x - triggerBox.x) <= 1, 'trigger and menu share the map left inset');
         assert.equal(await page.locator('.bpb-layers-panel [aria-label="Base map"]').count(), 0);
@@ -155,10 +156,21 @@ try {
             const caption = page.locator(`[data-layer="${id}"] .bpb-layers-value-label`);
             assert.equal(await caption.textContent(), 'Opacity');
             assert.equal(await caption.evaluate(element => {
-                const label = element.getBoundingClientRect(), button = element.closest('button').getBoundingClientRect();
-                return label.left >= button.left && label.right <= button.right && label.top >= button.top && label.bottom <= button.bottom;
-            }), true, 'opacity caption fits its compact action');
+                const caption = element.getBoundingClientRect(), label = element.closest('label').getBoundingClientRect();
+                return caption.left >= label.left && caption.right <= label.right && caption.top >= label.top && caption.bottom <= label.bottom;
+            }), true, 'opacity caption fits its primary toggle label');
         }
+        const landToggle = page.locator('[data-layer="land"] input'), landName = page.locator('[data-layer="land"] .bpb-layers-row-name');
+        const choiceBox = await page.locator('[data-layer="land"] label').boundingBox(), rowBox = await page.locator('[data-layer="land"]').boundingBox();
+        assert.ok(choiceBox.width >= rowBox.width * .7, 'the primary visibility toggle gets most of the row');
+        await landName.click(); assert.equal(await landToggle.isChecked(), true); await stable();
+        const toggles = await page.evaluate(() => window.fixture.toggles.length);
+        await page.locator('[data-layer="land"] button').click();
+        assert.equal(await landToggle.isChecked(), true, 'settings never toggle visibility');
+        assert.equal(await page.evaluate(() => window.fixture.toggles.length), toggles, 'settings do not duplicate toggle events');
+        await landName.click(); assert.equal(await landToggle.isChecked(), false); await stable();
+        await landToggle.focus(); await landToggle.press('Space'); assert.equal(await landToggle.isChecked(), true); await stable();
+        await landToggle.press('Space'); assert.equal(await landToggle.isChecked(), false); await stable();
         for (const id of ['sentinel', 'slope', 'land', 'snotel', 'slope']) {
             await page.locator(`[data-layer="${id}"] button`).click(); await stable();
             assert.equal(await page.locator('.bpb-layers-detail:not([hidden])').count(), 1);

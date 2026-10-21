@@ -6,8 +6,12 @@ stays at the upper-right in both 2D and 3D. Enable any combination of overlays;
 closing the menu leaves them visible. Toggling a layer selects its matching
 settings below the rows, with a tinted row and downward chevron identifying the
 selected detail. Each row's disclosure also opens or closes those settings
-without changing enablement; only one detail is open at a time. Clicking the
-layer name selects its settings; its checkbox turns the overlay on or off.
+without changing enablement; only one detail is open at a time. The
+layer name and checkbox form one large visibility toggle; the separate chevron
+opens settings without changing visibility. Checkbox Space activation uses the
+same path as clicking the name. The menu uses BPB's warm panel palette, green
+accents and 8px controls, with immediate hover/pressed feedback and no reflow
+animation.
 Raster percentages are explicitly labelled **Opacity**. The slider runs from
 **Clear** (see the base map) to **Solid** (show the overlay at full strength).
 Turning a layer off leaves its own disabled settings selected. Provider updates
@@ -61,7 +65,10 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | Public lands | 25% | USGS PAD-US 4.1 fee ownership, ParcelMap BC ownership records and southwestern Alberta regional parcels. BLM and Canadian provincial Crown land are gold; USFS is deep blue; other recorded ownership uses muted colors. Canadian coverage is partial. Uncolored areas remain unknown. Ownership does not grant public access or camping permission; this is not a private-parcel map. |
 | SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, reveal up to three nearby stations within 50 km once. Visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
-Opacity updates immediately. Only opacity preferences are saved on this device;
+Opacity updates immediately and changes only the edited raster; station markers
+and unrelated overlays stay untouched. Unchanged legends are reused, and
+regional land metadata is recalculated only when the viewport changes.
+Only opacity preferences are saved on this device;
 unrelated map sessions start with overlays off. A native Full Screen link carries
 the current selection once, for 30 seconds, to its matching destination tab.
 The destination starts with the menu collapsed. The handoff contains no GPX,
