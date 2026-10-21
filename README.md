@@ -48,7 +48,7 @@ gaps may still obscure the terrain.
 The compact **Overlays** menu at the upper-left combines Sentinel imagery,
 slope angle, public lands and SNOTEL, with independent raster opacity.
 The basemap selector stays at the upper-right in both 2D and 3D.
-[Map layers](docs/map-layers.md) · [3D map guide](docs/3d-map.md)
+[Map overlays](docs/map-layers.md) · [Regional coverage table](docs/map-overlay-coverage.md) · [3D map guide](docs/3d-map.md)
 
 ### Put weather and daylight in context
 

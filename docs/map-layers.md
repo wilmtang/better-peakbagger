@@ -17,6 +17,12 @@ Each row has a short secondary line: opacity or station count when ready,
 **Needs access** for BC permission. Detailed explanations and **Retry**/**Allow**
 stay in that layer's settings. Turning a layer off hides stale loading/errors.
 Spinner motion stops when reduced motion is requested.
+The [regional coverage table](map-overlay-coverage.md) lists which overlays are
+offered in each region. Unsupported rows stay in place with disabled toggles and
+**No coverage**. Moving out of coverage turns an active overlay off and cancels
+its work. Moving back makes it available without automatically enabling it.
+Opacity preferences remain intact; partial coverage, zoom requirements,
+permissions and temporary service failures keep their distinct feedback.
 Below their zoom limits, Sentinel, slope and public lands say **Zoom in** instead
 of showing stale loading/errors or an ineffective Retry. Sentinel uses its
 existing capture-search limit; slope and land use the raster tile limit. Zooming

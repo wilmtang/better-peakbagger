@@ -6,6 +6,8 @@
   slope and public lands explain when a closer zoom is needed. SNOTEL preserves Full
   Screen selections through settings startup, follows newer opt-outs, and updates
   available conditions actions without closing an unchanged station's popup.
+  Overlays outside regional coverage are disabled and stop their work; returning
+  to coverage makes them available without switching them back on.
 
 - **Make snow-request timeouts clear.** Nearby snow names a timed-out request
   and leaves Refresh available immediately. Retained readings, keyboard focus,
