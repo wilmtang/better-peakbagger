@@ -14,7 +14,8 @@ export function readLayerStatus(value) {
     if (!value || !Schema.MAP_OVERLAY_IDS.includes(value.id)) return null;
     return { id: value.id, revision: Number.isSafeInteger(value.revision) ? value.revision : 0,
         pending: value.pending === true, capturePending: value.id === 'sentinel' && value.capturePending === true,
-        error: value.error === true, retry: value.retry === true, permission: value.id === 'land' && value.permission === true,
+        error: value.error === true, partial: value.id === 'slope' && value.partial === true,
+        retry: value.retry === true, permission: value.id === 'land' && value.permission === true,
         retryAt: Number.isFinite(value.retryAt) && value.retryAt > Date.now() && value.retryAt <= Date.now() + 86400000 ? value.retryAt : 0,
         message: text(value.message), capture: text(value.capture, 120), target: sentinelTarget(value.target),
         captures: Array.isArray(value.captures) ? value.captures.slice(0, 100).map(choice => ({ id: text(choice?.id, 120), label: text(choice?.label, 180), title: text(choice?.title, 180) })) : undefined };

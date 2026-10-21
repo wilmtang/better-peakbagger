@@ -131,6 +131,11 @@ try {
         };
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Couldn’t load');
         if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-failure.png`) });
+        await page.evaluate(() => { window.fixture.statuses.slope = { error: true, partial: true, retry: true, message: 'Some slope tiles couldn’t load. Available shading is still shown.' }; window.fixture.paint(); });
+        await stableRecovery();
+        assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Partly loaded');
+        assert.equal(await page.getByText('Some slope tiles couldn’t load. Available shading is still shown.', { exact: true }).isVisible(), true);
+        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${width}-${theme}-${scale}x-partial.png`) });
         await recovery.click(); await stableRecovery();
         assert.equal(await page.locator('[data-layer="slope"] .bpb-layers-row-status').textContent(), 'Loading');
         assert.equal(await recovery.getAttribute('aria-disabled'), 'true');

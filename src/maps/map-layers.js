@@ -6,7 +6,7 @@ import { createMapLayerControl } from './map-layer-control.js';
 import { createLeafletOverlays } from './map-overlay-leaflet.js';
 import { createSentinelSession } from './sentinel-session.js';
 import { sentinelTarget } from './sentinel-core.js';
-import { SLOPE_BANDS, publicLandInfo, overlayBounds } from './map-overlay-providers.js';
+import { SLOPE_BANDS, publicLandInfo, overlayBounds, slopeTileStatus } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
@@ -165,6 +165,12 @@ export function installMapLayers(win = window) {
                 }, onActivity(id, activity) {
                     if (!active || frameMode || booting || !state[id].enabled || state[id].opacity === 0) return;
                     if (id === 'sentinel') binding?.sentinel.tileActivity(activity);
+                    else if (id === 'slope') {
+                        if (statuses[id].retryAt > Date.now()) return;
+                        statuses[id] = { ...statuses[id], ...slopeTileStatus(activity), permission: false, retryAt: 0,
+                            retry: activity.error || activity.pending && statuses[id].retry === true };
+                        paint();
+                    }
                     else if (!activity.error && (activity.pending || activity.complete)) {
                         statuses[id] = { ...statuses[id], pending: activity.pending,
                             ...(activity.pending || activity.complete ? { error: false, permission: false, retryAt: 0,

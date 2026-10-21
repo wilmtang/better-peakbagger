@@ -138,7 +138,7 @@ export function createMapLayerControl({ document: doc, onToggle = () => {}, onOp
             const kind = !shown ? '' : status.permission ? status.pending ? 'loading' : 'permission' : status.error ? 'error' : status.pending ? 'loading' : '';
             const cooldown = status.retryAt > Date.now();
             const summary = kind === 'loading' ? status.permission ? 'Waiting for access' : 'Loading'
-                : kind === 'permission' ? 'Needs access' : kind === 'error' ? cooldown ? 'Service busy' : 'Couldn’t load' : '';
+                : kind === 'permission' ? 'Needs access' : kind === 'error' ? cooldown ? 'Service busy' : status.partial ? 'Partly loaded' : 'Couldn’t load' : '';
             const heldRecovery = shown && detail.recovering && doc.activeElement === detail.retry && !status.permission;
             const recovered = heldRecovery && !status.pending && !status.error;
             row.row.hidden = model.available && !model.available.includes(key);

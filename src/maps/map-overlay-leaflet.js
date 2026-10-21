@@ -8,11 +8,23 @@ import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
 import { snotelSymbol, snotelPopup } from '../snow/snotel-map-marker.js';
 
 export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win }) {
-    const L = win.L, layers = new Map(), controllers = new Map();
+    const L = win.L, layers = new Map(), controllers = new Map(), records = new Map();
     const fetchBCTile = createPageBCTileFetch(bridgeWindow);
     const tiles = createOverlayTiles({ document: win.document, fetchImpl: win.fetch.bind(win), fetchBCTile, onError, onActivity });
     const z = { sentinel: 250, land: 260, slope: 270 };
     let stations = null, stationKey = '', hasScenes = false;
+    const draw = record => {
+        const { id, coordinates, canvas, done } = record, controller = new AbortController();
+        controllers.set(canvas, controller); record.failed = false;
+        tiles.draw(id, coordinates, canvas, controller.signal).then(() => {
+            if (records.get(canvas) === record && controllers.get(canvas) === controller) done(null, canvas);
+        }, error => {
+            if (records.get(canvas) !== record || controllers.get(canvas) !== controller) return;
+            // A provider cooldown also aborts neighboring visible requests.
+            // Those holes need retry too; unloaded records were removed above.
+            record.failed = true; done(error, canvas);
+        }).finally(() => { if (controllers.get(canvas) === controller) controllers.delete(canvas); });
+    };
     const remove = id => {
         const layer = layers.get(id); if (layer) { map.removeLayer(layer); layers.delete(id); }
         tiles.cancel(id);
@@ -22,15 +34,19 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         if (!map.getPane(pane)) { map.createPane(pane); map.getPane(pane).style.cssText = `z-index:${z[id]};pointer-events:none`; }
         const Grid = L.GridLayer.extend({
             createTile(coordinates, done) {
-                const canvas = tiles.canvas(), controller = new AbortController(); controllers.set(canvas, controller);
-                tiles.draw(id, coordinates, canvas, controller.signal).then(() => done(null, canvas), error => done(error, canvas)).finally(() => controllers.delete(canvas));
+                const canvas = tiles.canvas(), record = { id, coordinates, canvas, done, failed: false };
+                records.set(canvas, record); draw(record);
                 return canvas;
             },
         });
         const layer = new Grid({ pane, tileSize: 256, minZoom: 8, maxNativeZoom: id === 'sentinel' ? 14 : 15,
             maxZoom: 24, keepBuffer: 1, updateWhenIdle: true, bpbOverlay: true,
             attribution: id === 'sentinel' ? SENTINEL_ATTRIBUTION : OVERLAY_ATTRIBUTION[id] });
-        layer.on('tileunload', event => { controllers.get(event.tile)?.abort(); controllers.delete(event.tile); });
+        layer.on('tileunload', event => {
+            controllers.get(event.tile)?.abort(); controllers.delete(event.tile);
+            const record = records.get(event.tile); records.delete(event.tile);
+            if (record) tiles.forget(id, record.coordinates);
+        });
         layers.set(id, layer); layer.addTo(map); return layer;
     };
     return {
@@ -43,7 +59,15 @@ export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWin
         },
         scenes(scenes, opacity) { remove('sentinel'); hasScenes = scenes.length > 0; tiles.setScenes(scenes); if (hasScenes && opacity > 0) add('sentinel').setOpacity(opacity / 100); },
         clearSentinel() { remove('sentinel'); hasScenes = false; tiles.setScenes([]); },
-        retry(id) { if (tiles.retry(id)) layers.get(id)?.redraw(); },
+        retry(id) {
+            if (!tiles.retry(id)) return;
+            if (id !== 'slope') { layers.get(id)?.redraw(); return; }
+            const visible = [...records.values()].filter(record => record.id === id);
+            const failed = visible.filter(record => record.failed);
+            // Retry only holes. An explicit Reload refreshes in place, leaving
+            // each successful canvas painted until its replacement is ready.
+            for (const record of failed.length ? failed : visible) draw(record);
+        },
         stations(next, { selectable = new Set(), onSelect } = {}) {
             const key = JSON.stringify([next, [...selectable].sort()]); if (key === stationKey) return; stationKey = key;
             if (stations) { map.removeLayer(stations); stations = null; }

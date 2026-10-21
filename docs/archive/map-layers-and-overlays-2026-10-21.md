@@ -865,3 +865,64 @@ stubbed in browser fixtures. Live authenticated Peakbagger, physical touch,
 screen-reader speech and native browser/OS focus behavior remain unproven.
 The prior partial Canadian coverage and full Firefox map-integration gaps
 remain separate.
+
+## Follow-up: slope tile availability and partial recovery
+
+The screenshot showed valid slope shading behind an unavailable warning.
+Inspection reproduced a renderer-wide sticky failure: one rejected tile kept
+the layer in error after later tiles succeeded. Native Retry also redrew all
+tiles, clearing good shading alongside the holes. There was no automatic retry
+for a temporary dynamic-export failure.
+
+The production USGS Slope Degrees rule returned valid PNGs for three bounded
+probes. The Shasta zoom-12 probe took 2.7 seconds; neighboring Gilbert zoom-14
+probes took 8.8 and 6.5 seconds, with public CORS and a 12-hour HTTP cache policy.
+These samples establish reachable, sometimes slow dynamic exports; they do not
+identify the precise rejected request in the user's screenshot. Existing live
+Chrome tabs had no matching failing overlay state; Firefox's main-session
+debugger was unavailable. No user tab was refreshed or brought forward.
+
+**Fixed and verified:** slope retries temporary network/timeout and HTTP
+408/500/502/503/504 failures once after 350 ms within the existing four-tile
+concurrency budget. Each attempt retains its 15-second deadline. Permanent
+errors and rate limits are not replayed; turning the layer off cancels the wait.
+Retained tile outcomes distinguish partial shading from a wholly failed layer.
+Unloaded native tiles and tiles outside the new terrain viewport cannot retain
+old warnings, and late failures cannot poison the new view. Partly loaded
+shading has an explicit explanation. Native Retry requests only failed tiles,
+including neighbors aborted by a rate limit, while keeping good canvases.
+Terrain refreshes the existing raster source and keeps successful textures.
+
+The temporary-failure assertions failed against the original compositor. A
+read-only original Leaflet adapter also failed the regression with visible
+painted content cleared (`0 !== 1`), while the fixed adapter passed. All 3,095
+tests passed; the final strengthened native fixture also passed separately.
+Scoped ESLint and web-ext lint passed with eight owned warnings.
+
+Hidden Chrome 156.0.8078.4 and Firefox 157 each passed eight component cases at
+736/320 by 800, both themes and normal/double text, including partial feedback,
+focus, Retry geometry, scroll and unchanged overview dimensions. Hidden Chrome
+at 1000 by 700 passed all native surfaces, an actual temporary HTTP failure,
+bounded automatic recovery, one missing-tile-only native retry and unchanged
+good canvases. Hardware 3D on ANGLE/Metal Apple M3 Pro retained at least 90% of
+the already-painted slope pixels during held recovery, then cleared the error.
+The surrounding Sentinel, land, SNOTEL, opacity and handoff checks passed too.
+The expanded fixture now restores the selected layer before Canadian checks
+and reads capture metadata atomically with its readiness condition; earlier
+runs exposed those fixture assumptions. Native, hardware, narrow/dark and
+double-text partial/loading states were visually inspected.
+The final real-manifest Chrome startup/BFCache check passed at 1000 by 760.
+All browser verifiers reported teardown; disposable processes and exact profile
+paths were checked and absent before committing.
+
+**Intentionally not changed:** slope classification, 3DEP coverage/resolution,
+no-data transparency, opacity, compact menu, other provider retry policies and
+privacy/permission boundaries. No persistent cache or alternative slope source
+was added. USGS HTTP caching handles successful response reuse.
+
+**Changed but not fully proven:** the original screenshot's exact network
+failure was not captured. Provider availability, load-time distribution and
+coverage cannot be guaranteed by local recovery. Browser fixtures stub provider
+responses and permission decisions; full live authenticated reproduction,
+physical touch, screen-reader speech and native OS focus remain unproven.
+Prior Canadian coverage and full Firefox map-integration gaps remain separate.

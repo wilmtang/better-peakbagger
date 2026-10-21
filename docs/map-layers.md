@@ -18,6 +18,15 @@ Each row has a short secondary line: opacity or station count when ready,
 stay in that layer's settings. Turning a layer off hides stale loading/errors.
 Spinner motion stops when reduced motion is requested.
 
+Slope tiles get one automatic retry for a temporary network failure, timeout or
+HTTP 408/500/502/503/504. Other errors and provider rate limits need explicit
+recovery; rate-limit deadlines still apply. A partial slope failure says
+**Partly loaded** and keeps available shading visible. Native Retry requests
+only missing tiles; 3D refreshes its existing source while retaining painted
+tiles. Leaving a failed tile behind removes its warning when the native tile
+unloads or the terrain viewport changes. No-data areas remain clear, rather
+than being treated as a transport failure or evidence of gentle ground.
+
 Retry remains anchored and rejects repeated activation while work is pending.
 After success, a focused Retry becomes a working **Reload** action until focus
 leaves it; it does not disappear under the pointer or become a fake success
@@ -133,6 +142,11 @@ eight scenes per capture, 4 MiB per encoded image, 1024-pixel decoded dimensions
 and 15-second transport/body/decode deadlines. Decoded bitmaps are closed after
 drawing, and cancellation propagates through queued work and fetches. There is
 no extension-managed persistent satellite or analytical tile cache.
+The single slope retry waits 350 ms and uses the same concurrency budget; each
+attempt retains the 15-second deadline. Turning the layer off also cancels this
+wait. Slope success/failure feedback tracks retained tile coordinates, instead
+of preserving the first error for the renderer's entire lifetime. Browser HTTP
+caching remains responsible for reusing successful provider responses.
 
 The provider request and legend share one color definition. Slope uses the
 USGS **Slope Degrees** template followed by explicit inclusive-lower,

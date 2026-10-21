@@ -109,7 +109,16 @@ try {
                 body: failedTiles ? '' : tile(route.request().url().includes('scene_old') ? '#315bb0' : '#347d61') });
         }
     });
-    await context.route('https://elevation.nationalmap.gov/**', route => route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile('#315bb0') }));
+    let slopeMode = 'ready', missingSlopeUrl = null; const slopeRequests = new Map(), heldSlope = [];
+    resources.defer('held slope tiles', () => { slopeMode = 'ready'; heldSlope.splice(0).forEach(resolve => resolve()); });
+    await context.route('https://elevation.nationalmap.gov/**', async route => {
+        const url = route.request().url(), count = (slopeRequests.get(url) || 0) + 1; slopeRequests.set(url, count);
+        if (slopeMode === 'partial') missingSlopeUrl ??= url;
+        if (slopeMode === 'hold' && url === missingSlopeUrl) await new Promise(resolve => heldSlope.push(resolve));
+        if (slopeMode === 'partial' && url === missingSlopeUrl || slopeMode === 'recover' && count === 1)
+            return route.fulfill({ status: slopeMode === 'partial' ? 404 : 503, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: 'Unavailable' });
+        return route.fulfill({ contentType: 'image/png', headers: { 'access-control-allow-origin': '*' }, body: tile('#315bb0') });
+    });
     let landMode = 'ready'; const heldLand = [];
     resources.defer('held public-land tiles', () => { landMode = 'ready'; heldLand.splice(0).forEach(resolve => resolve()); });
     await context.route('https://edits.nationalmap.gov/**', async route => {
@@ -157,10 +166,10 @@ try {
     });
     const wait = (fn, description) => waitForCondition(() => page.evaluate(fn), { description, timeoutMs: 20000 });
     const verifyCaptureMetadata = async () => {
-        await wait(() => document.querySelector('[aria-label="Sentinel-2 capture"]')?.options.length > 1, 'dated Sentinel capture choices have loaded');
-        const metadata = await page.getByRole('combobox', { name: 'Sentinel-2 capture' }).evaluate(element => ({
+        const metadata = await waitForCondition(() => page.getByRole('combobox', { name: 'Sentinel-2 capture' }).evaluate(element => ({
             title: element.title, selected: element.selectedOptions[0]?.title,
-            options: Array.from(element.options, option => ({ label: option.textContent, title: option.title, accessible: option.getAttribute('aria-label') })) }));
+            options: Array.from(element.options, option => ({ label: option.textContent, title: option.title, accessible: option.getAttribute('aria-label') })) })),
+        { description: 'dated Sentinel capture choices have loaded', timeoutMs: 20000, isReady: value => value.options.length > 1 });
         assert.ok(metadata.options.length > 1, 'the capture dropdown lists dated alternatives');
         for (const option of metadata.options) {
             assert.match(option.label, /☁ (?:\d+%|\?)/, 'every capture has cloud coverage in its list item');
@@ -278,6 +287,35 @@ try {
         }
         cases.push(pathname);
     }
+    await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
+    await page.getByRole('button', { name: /^Layers/ }).click();
+    const slopeMap = page.frames().find(frame => frame.url().includes('MasterMap.aspx'));
+    slopeMode = 'recover'; slopeRequests.clear();
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
+    await wait(() => document.querySelector('[data-layer="slope"] .bpb-layers-value')?.hidden === false, 'temporary slope failures recover automatically');
+    assert.ok([...slopeRequests.values()].some(count => count === 2), 'real transient requests were retried');
+    assert.ok([...slopeRequests.values()].every(count => count <= 2), 'slope recovery stays bounded');
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
+    slopeMode = 'partial'; slopeRequests.clear(); missingSlopeUrl = null;
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
+    await wait(() => document.querySelector('[data-layer="slope"] .bpb-layers-row-status')?.textContent === 'Partly loaded', 'partial slope shading is explained');
+    await slopeMap.evaluate(() => {
+        const layer = Object.values(mapsPlaceholder._layers).find(item => item.options?.pane === 'bpb-overlay-slope');
+        window.__slopeGoodTiles = Object.values(layer._tiles).map(item => item.el).filter(el => el.getContext('2d').getImageData(128, 128, 1, 1).data[3] === 255);
+    });
+    assert.ok(await slopeMap.evaluate(() => window.__slopeGoodTiles.length > 0), 'available shading is painted');
+    if (output) await page.screenshot({ path: path.join(output, 'slope-partial.png') });
+    const slopeRecovery = page.getByRole('button', { name: /^(Retry|Reload)$/ }); await slopeRecovery.focus();
+    const slopeRecoveryBox = await slopeRecovery.boundingBox(), beforeSlopeRequests = [...slopeRequests.values()].reduce((sum, count) => sum + count, 0);
+    slopeMode = 'hold'; await slopeRecovery.click();
+    await waitForCondition(() => heldSlope.length, { description: 'native slope retry waits only for the missing tile', isReady: count => count === 1 });
+    assert.equal([...slopeRequests.values()].reduce((sum, count) => sum + count, 0), beforeSlopeRequests + 1);
+    assert.deepEqual(await slopeRecovery.boundingBox(), slopeRecoveryBox);
+    assert.equal(await slopeMap.evaluate(() => window.__slopeGoodTiles.every(el => el.isConnected && el.getContext('2d').getImageData(128, 128, 1, 1).data[3] === 255)), true, 'retry leaves successful native canvases painted');
+    slopeMode = 'ready'; heldSlope.splice(0).forEach(resolve => resolve());
+    await wait(() => document.querySelector('[data-layer="slope"] .bpb-layers-value')?.hidden === false, 'native slope recovery clears the partial warning');
+    assert.deepEqual(await slopeRecovery.boundingBox(), slopeRecoveryBox);
+    cases.push('native slope automatic recovery, partial coverage and retry only missing tiles without clearing good shading');
     await page.goto(`${origin}/Peak.aspx?pid=2296&layersFixture=1`);
     await page.getByRole('button', { name: /^Layers/ }).click(); landMode = 'error';
     await page.getByRole('checkbox', { name: 'Public lands', exact: true }).check();
@@ -452,6 +490,20 @@ try {
     await landOpacity.fill('0'); await landOpacity.dispatchEvent('input');
     await waitForCondition(() => coloredPixels('gold'), { description: 'zero opacity exposes the terrain below BLM', timeoutMs: 30000, isReady: count => count < gold / 5 });
     await waitForCondition(() => coloredPixels('usfs'), { description: 'zero opacity exposes the terrain below USFS', timeoutMs: 30000, isReady: count => count < blue / 5 });
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
+    slopeMode = 'partial'; missingSlopeUrl = null; slopeRequests.clear();
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).check();
+    await wait(() => document.querySelector('[data-layer="slope"] .bpb-layers-row-status')?.textContent === 'Partly loaded', 'hardware terrain reports partial slope shading');
+    const paintedSlope = await waitForCondition(bluePixels, { description: 'successful slope tiles painted over hardware terrain', timeoutMs: 30000, isReady: count => count > 1000 });
+    const terrainSlopeRetry = page.getByRole('button', { name: /^(Retry|Reload)$/ }); slopeMode = 'hold'; await terrainSlopeRetry.click();
+    await waitForCondition(() => heldSlope.length, { description: 'terrain slope retry holds its missing tile', isReady: count => count === 1 });
+    assert.ok(await bluePixels() >= paintedSlope * .9, 'reloading the existing terrain source keeps successful slope shading visible');
+    if (output) await page.screenshot({ path: path.join(output, 'terrain-slope-loading.png') });
+    slopeMode = 'ready'; heldSlope.splice(0).forEach(resolve => resolve());
+    await wait(() => document.querySelector('[data-layer="slope"] .bpb-layers-value')?.hidden === false, 'terrain slope recovery clears the partial warning');
+    cases.push('hardware terrain keeps available slope shading through partial-tile recovery');
+    await page.getByRole('checkbox', { name: 'Slope angle', exact: true }).uncheck();
+    await page.getByRole('button', { name: /^Adjust Public lands/ }).click();
     await toggle.click(); await page.waitForFunction(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'false');
     const canadianNative = page.frames().find(frame => frame.url().includes('/map/MasterMap.aspx'));
     await canadianNative.evaluate(() => { mapsPlaceholder.setView([54,-124],12,{animate:false}); });

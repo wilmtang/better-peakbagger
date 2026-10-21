@@ -40,6 +40,11 @@ export const OVERLAY_ATTRIBUTION = {
     slope: '<a href="https://www.usgs.gov/3d-elevation-program">USGS 3DEP</a>',
     land: '<a href="https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview">USGS PAD-US 4.1</a> · <a href="https://catalogue.data.gov.bc.ca/dataset/parcelmap-bc-parcel-fabric">ParcelMap BC</a> · <a href="https://geospatial.alberta.ca/arcgis/rest/services/Hosted/Land_use_owndership_NN_project/FeatureServer/10">Alberta Crown parcels</a>',
 };
+export function slopeTileStatus(activity) {
+    return { pending: activity.pending, error: activity.error, partial: activity.partial === true,
+        message: activity.error ? activity.partial ? 'Some slope tiles couldn’t load. Available shading is still shown.'
+            : 'Slope shading couldn’t load. Try again.' : activity.pending ? 'Loading slope shading' : '' };
+}
 export function tileBounds({ z, x, y }) {
     if (![z, x, y].every(Number.isInteger) || z < 0 || z > 24 || y < 0 || y >= 2 ** z) throw new Error('Invalid overlay tile.');
     const n = 2 ** z, wrapped = (x % n + n) % n, span = 40075016.68557849 / n;

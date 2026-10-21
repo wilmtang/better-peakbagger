@@ -12,7 +12,7 @@ test('terrain tile retry publishes loading and clears a real failure after the r
     t.after(() => { if (previous === undefined) delete globalThis.createImageBitmap; else globalThis.createImageBitmap = previous; });
     t.mock.method(globalThis, 'fetch', () => new Promise(resolve => held.push(resolve)));
     const map = { getStyle: () => ({ layers: [...layers.values()] }), getLayer: id => layers.get(id), getSource: id => sources.get(id),
-        addLayer: layer => layers.set(layer.id, layer), addSource: (id, source) => sources.set(id, source),
+        addLayer: layer => layers.set(layer.id, layer), addSource: (id, source) => sources.set(id, { ...source, setTiles(tiles) { this.tiles = tiles; } }),
         removeLayer: id => layers.delete(id), removeSource: id => sources.delete(id), setPaintProperty() {}, moveLayer() {} };
     const document = { createElement: () => ({ getContext: () => ({ clearRect() {}, drawImage() {} }), toBlob: callback => callback(new Blob(['png'])) }) };
     const owner = createTerrainOverlays({ map, document, maplibre: { addProtocol: (_name, handler) => { protocol = handler; }, removeProtocol() {} }, post: (type, value) => posts.push({ type, ...value }) });
@@ -21,9 +21,11 @@ test('terrain tile retry publishes loading and clears a real failure after the r
     try {
         owner.update({ revision: 1, state: { slope: { enabled: true, opacity: 60 } } });
         const first = draw(); await tick(); assert.equal(latest().pending, true);
-        held.shift()(new Response('', { status: 503 })); await assert.rejects(first);
+        held.shift()(new Response('', { status: 404 })); await assert.rejects(first);
         assert.equal(latest().error, true); assert.equal(latest().pending, false); assert.equal(latest().retry, true);
+        const originalSource = [...sources.keys()][0];
         owner.action({ id: 'slope', action: 'retry' }); assert.equal(latest().pending, true); assert.equal(latest().error, false);
+        assert.equal([...sources.keys()][0], originalSource, 'retry retains the painted source rather than removing good shading');
         const retrySource = [...sources.keys()][0]; owner.action({ id: 'slope', action: 'retry' });
         assert.equal([...sources.keys()][0], retrySource, 'repeated actions cannot restart a pending source');
         const next = draw(); await tick();

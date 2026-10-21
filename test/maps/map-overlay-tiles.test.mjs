@@ -77,3 +77,67 @@ test('cancelled tile completions cannot clear a newer loading batch', async t =>
     held[0](image()); assert.equal(await stale, 'AbortError'); assert.equal(states.at(-1).pending, true);
     held[1](image()); await current; assert.equal(states.at(-1).complete, true); tiles.dispose();
 });
+
+test('a temporary slope failure recovers once without showing a terminal layer error', async t => {
+    mockBitmap(t);
+    let calls = 0; const errors = [], states = [];
+    const tiles = createOverlayTiles({ document, retryDelayMs: 0, onError: (_id, error) => errors.push(error), onActivity: (_id, state) => states.push(state),
+        fetchImpl: async () => ++calls === 1 ? new Response('', { status: 503 }) : new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } }) });
+    try {
+        await tiles.draw('slope', { z: 14, x: 2666, y: 5796 }, tiles.canvas());
+        assert.equal(calls, 2); assert.equal(errors.length, 0);
+        assert.equal(states.at(-1).error, false); assert.equal(states.at(-1).complete, true);
+    } finally { tiles.dispose(); }
+});
+
+test('slope feedback describes partial coverage and retires unloaded failures', async t => {
+    mockBitmap(t);
+    const states = []; let fail = true, calls = 0;
+    const tiles = createOverlayTiles({ document, retryDelayMs: 0, onActivity: (_id, state) => states.push(state), fetchImpl: async () => {
+        calls++; return fail ? new Response('', { status: 503 }) : new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } });
+    } });
+    const missing = { z: 14, x: 2666, y: 5796 }, loaded = { ...missing, x: 2667 };
+    try {
+        await assert.rejects(tiles.draw('slope', missing, tiles.canvas())); assert.equal(calls, 2, 'automatic recovery is bounded');
+        fail = false; await tiles.draw('slope', loaded, tiles.canvas());
+        assert.equal(states.at(-1).error, true, 'a real missing tile remains reported');
+        assert.equal(states.at(-1).partial, true, 'available shading is distinct from a failed layer');
+        tiles.forget('slope', missing);
+        assert.equal(states.at(-1).error, false, 'an unloaded tile cannot leave a permanent warning');
+        assert.equal(states.at(-1).complete, true);
+    } finally { tiles.dispose(); }
+});
+
+test('permanent slope errors and rate limits are not automatically retried', async () => {
+    for (const status of [400, 404, 429]) {
+        let calls = 0;
+        const tiles = createOverlayTiles({ document, retryDelayMs: 0, fetchImpl: async () => { calls++; return new Response('', { status }); } });
+        try { await assert.rejects(tiles.draw('slope', { z: 14, x: 2666, y: 5796 }, tiles.canvas())); assert.equal(calls, 1); }
+        finally { tiles.dispose(); }
+    }
+});
+
+test('turning slope off during recovery cancels its delay and starts no replacement request', async () => {
+    let calls = 0, failed;
+    const reachedFailure = new Promise(resolve => { failed = resolve; });
+    const tiles = createOverlayTiles({ document, retryDelayMs: 60000, fetchImpl: async () => { calls++; failed(); return new Response('', { status: 503 }); } });
+    const drawing = tiles.draw('slope', { z: 14, x: 2666, y: 5796 }, tiles.canvas());
+    await reachedFailure; await tick(); tiles.cancel('slope');
+    await assert.rejects(drawing, { name: 'AbortError' }); assert.equal(calls, 1); tiles.dispose();
+});
+
+test('a late offscreen slope failure cannot poison the new view', async t => {
+    mockBitmap(t);
+    const held = [], states = [], errors = [];
+    const tiles = createOverlayTiles({ document, onActivity: (_id, state) => states.push(state), onError: (_id, error) => errors.push(error),
+        fetchImpl: () => new Promise(resolve => held.push(resolve)) });
+    const stale = { z: 14, x: 2666, y: 5796 }, current = { ...stale, x: 2670 };
+    try {
+        const first = tiles.draw('slope', stale, tiles.canvas()).catch(error => error.status); await tick();
+        const next = tiles.draw('slope', current, tiles.canvas()); await tick();
+        tiles.retain('slope', [current]);
+        held[1](new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } })); await next;
+        held[0](new Response('', { status: 404 })); assert.equal(await first, 404);
+        assert.equal(states.at(-1).error, false); assert.equal(errors.length, 0);
+    } finally { tiles.dispose(); }
+});

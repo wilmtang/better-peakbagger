@@ -187,6 +187,18 @@ test('Public lands details offer official camping guidance without enlarging the
     control.dispose(); dom.window.close();
 });
 
+test('partly loaded slope shading is described separately from an unavailable layer', () => {
+    const dom = new JSDOM('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    control.render({ state: Schema.mapOverlayState({ slope: { enabled: true } }), statuses: { slope: {
+        error: true, partial: true, retry: true, message: 'Some slope tiles couldn’t load. Available shading is still shown.',
+    } } });
+    control.trigger.click(); document.querySelector('[data-layer="slope"] button').click();
+    assert.equal(document.querySelector('[data-layer="slope"] .bpb-layers-row-status').textContent, 'Partly loaded');
+    assert.match(document.querySelector('.bpb-layers-detail:not([hidden])').textContent, /Available shading is still shown/);
+    control.dispose(); dom.window.close();
+});
+
 test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
     const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
     const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
