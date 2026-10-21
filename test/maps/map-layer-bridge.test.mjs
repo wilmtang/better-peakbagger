@@ -46,10 +46,39 @@ test('viewport station overflow is explicit and no viewport reaches NRCS', async
         assert.equal(env.requests[0].options.credentials, 'omit');
     } finally { env.close(); }
 });
+
+test('explicit SNOTEL activation discovers nearby offscreen stations without changing passive viewport queries', async () => {
+    const env = setup(), bounds = [-121.761, 46.851, -121.759, 46.853];
+    try {
+        await tick(); env.send({ type: 'stations', requestId: 1, bounds }); await tick(); await tick();
+        assert.equal(env.messages.find(message => message.requestId === 1)?.stations.length, 0, 'passive pans stay viewport-only');
+        env.send({ type: 'stations', requestId: 2, bounds, reveal: true }); await tick(); await tick();
+        const revealed = env.messages.find(message => message.requestId === 2);
+        assert.deepEqual(Array.from(revealed.stations, station => station.id), ['679:WA:SNTL', '375:WA:SNTL']);
+        assert.equal(revealed.nearby, true, 'nearby discovery is explicit in the reply');
+        env.send({ type: 'stations', requestId: 3, bounds: [-121.76, 46.78, -121.74, 46.79], reveal: true }); await tick(); await tick();
+        const visible = env.messages.find(message => message.requestId === 3);
+        assert.equal(visible.stations.length, 1); assert.equal(visible.stations[0].id, '679:WA:SNTL');
+        assert.equal(visible.nearby, false, 'already-visible stations do not expand to a nearby search');
+        env.send({ type: 'stations', requestId: 4, bounds: [-74.01, 40.69, -74, 40.7], reveal: true }); await tick(); await tick();
+        assert.equal(env.messages.find(message => message.requestId === 4)?.stations.length, 0, 'the reveal stays within 50 km');
+        assert.equal(env.requests.length, 1, 'activation reuses the national station catalog');
+        assert.equal(new URL(env.requests[0].url).searchParams.has('bbox'), false, 'discovery coordinates stay local');
+    } finally { env.close(); }
+});
+
+test('SNOTEL activation normalizes wrapped map centers near the date line', async () => {
+    const env = setup({ catalog: [{ ...snotelStations()[0], stationTriplet: '1234:AK:SNTL', latitude: 65.12, longitude: -179.7 }] });
+    try {
+        await tick(); env.send({ type: 'stations', requestId: 1, bounds: [539.8, 64.9, 540.2, 65.1], reveal: true }); await tick(); await tick();
+        const reply = env.messages.find(message => message.requestId === 1);
+        assert.equal(reply.stations.length, 1); assert.equal(reply.nearby, true);
+    } finally { env.close(); }
+});
 test('off cancels the catalog subscriber and late or opted-out work cannot publish stations', async () => {
     const env = setup({ held: true });
     try {
-        await tick(); env.send({ type: 'stations', requestId: 1, bounds: [-180, 0, 0, 85] }); await tick();
+        await tick(); env.send({ type: 'stations', requestId: 1, bounds: [-180, 0, 0, 85], reveal: true }); await tick();
         assert.equal(env.requests.length, 1); env.send({ type: 'cancel' });
         assert.equal(env.requests[0].options.signal.aborted, true); env.requests[0].resolve(); await tick();
         assert.equal(env.messages.some(message => message.type === 'stations'), false);

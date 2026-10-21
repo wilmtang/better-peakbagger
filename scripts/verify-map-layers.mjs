@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global chrome, document, Image, requestAnimationFrame, mapsPlaceholder, nativeTiles, nativeRoute */
+/* global chrome, document, window, Image, requestAnimationFrame, mapsPlaceholder, nativeTiles, nativeRoute */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -163,7 +163,13 @@ try {
         }
         for (const label of ['Slope angle', 'Public lands']) await page.getByRole('checkbox', { name: label, exact: true }).check();
         await waitForCondition(() => native.evaluate(() => Object.values(mapsPlaceholder._layers).filter(layer => layer.options?.bpbOverlay && layer._tiles).length === 3), { description: 'three independently layered rasters' });
+        await native.evaluate(() => {
+            mapsPlaceholder.setView([46.851731, -121.760395], 17, { animate: false });
+            window.__snotelRevealMoves = 0; mapsPlaceholder.on('moveend', () => window.__snotelRevealMoves++);
+        });
         await page.getByRole('checkbox', { name: 'SNOTEL stations', exact: true }).check();
+        await waitForCondition(() => native.evaluate(() => window.__snotelRevealMoves > 0 && mapsPlaceholder.getZoom() < 17
+            && mapsPlaceholder.getBounds().contains([46.78266, -121.74767])), { description: `SNOTEL activation auto-zoom on ${pathname}` });
         await page.getByRole('button', { name: /^Adjust SNOTEL/ }).click();
         await page.locator('.bpb-layers-detail:not([hidden])').filter({ hasText: /stations? in view/ }).waitFor();
         assert.ok(await native.locator('.bpb-snotel-marker').count() > 0, 'viewport stations rendered');

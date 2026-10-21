@@ -128,8 +128,12 @@ Full Screen maps in native 2D and supported 3D. It starts off, and closing the
 menu leaves enabled stations visible. Blue hexagonal snowflakes distinguish
 stations from summit dots. The layer filters the national public catalog
 locally to the visible map. More than 50 visible stations asks the user to zoom
-in; enabling the layer does not move the camera. Opening an edge popup may pan
-just enough to keep it readable.
+in. If activation finds no visible stations, it reveals up to three nearest
+stations within 50 km of the current view once. An already-visible station
+keeps the camera unchanged. The reveal includes the current map center, never
+zooms in, preserves 3D bearing/pitch and respects reduced motion. Later pans
+and renderer switches do not repeat it; a pan during loading cancels a pending
+reveal. Opening an edge popup may pan just enough to keep it readable.
 
 Station popups show name, elevation and an official NRCS link. **Show conditions**
 exists only for a station in the current peak card's authorized nearby set.
@@ -155,8 +159,10 @@ and Firefox against the masked peak page, pinned Leaflet 1.9.4, deterministic
 NRCS JSON and non-flat synthetic DEM tiles. It checks loading, cancellation,
 retry, cached toggling, keyboard station popups, live popup themes, frame
 replacement, settings, 2D/3D switching and parked-frame reuse. The camera starts
-with an explicit view containing the fixture stations: enabling viewport
-stations does not auto-frame the map.
+with both tight offscreen-station views and explicit views containing the
+fixture stations. Activation must reveal offscreen stations once in 2D/3D,
+preserve already-visible stations, respect later pans and cancel pending
+auto-zoom when the user pans before the catalog returns.
 
 Both renderers exercise the authorized conditions action, including a fourth
 nearby station, loading, failure, explicit reselection, distinct readings,

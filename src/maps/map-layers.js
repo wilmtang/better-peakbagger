@@ -9,6 +9,7 @@ import { sentinelTarget } from './sentinel-core.js';
 import { SLOPE_BANDS, LAND_CLASSES, overlayBounds } from './map-overlay-providers.js';
 import { readLayerSnapshot, readLayerStatus } from './map-layer-protocol.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
+import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
 
@@ -25,6 +26,9 @@ export function installMapLayers(win = window) {
     let terrainView = null, snotelAllowed = false, requestId = 0, stations = [];
     let stationTimer = null, relayFrame = null;
     let cardAvailable = false, nearbyRequest = 900000000, nearbyPending = false, nearbyReady = false;
+    let revealPending = false;
+    const nativeReveal = createSnotelMapReveal({ window: win, getMap: () => binding?.map });
+    const cancelReveal = () => { revealPending = false; nativeReveal.cancel(); };
     const selectable = new Set();
     const statuses = {
         sentinel: { legend: 'Copernicus Sentinel-2 · Microsoft Planetary Computer. Scene clouds can obscure coverage.' },
@@ -57,10 +61,14 @@ export function installMapLayers(win = window) {
         const bounds = binding?.map.getBounds();
         return bounds ? overlayBounds([bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]) : null;
     };
-    const sendStations = () => {
+    const sendStations = (reveal = false) => {
         const shown = state.snotel.enabled && active ? stations : [];
-        if (frameMode) terrain('snowStations', { snowStations: shown, conditions: shown.filter(station => selectable.has(station.id)).map(station => station.id) });
-        else binding?.engine.stations(shown, { selectable, onSelect: stationId => snowCard({ type: 'select', stationId }) });
+        if (frameMode) terrain('snowStations', { snowStations: shown, reveal: reveal && shown.length > 0,
+            conditions: shown.filter(station => selectable.has(station.id)).map(station => station.id) });
+        else {
+            binding?.engine.stations(shown, { selectable, onSelect: stationId => snowCard({ type: 'select', stationId }) });
+            if (reveal && shown.length) nativeReveal.show(shown);
+        }
     };
     const loadStations = () => {
         clearTimeout(stationTimer); stationTimer = null;
@@ -69,9 +77,10 @@ export function installMapLayers(win = window) {
         requestId++; post({ type: 'cancel' });
         if (cardAvailable && !nearbyPending && !nearbyReady) { nearbyPending = true; snowCard({ type: 'get', requestId: ++nearbyRequest }); }
         statuses.snotel = { ...statuses.snotel, pending: true, error: false, retry: statuses.snotel.retry === true, message: 'Loading stations…' }; paint();
-        post({ type: 'stations', requestId, bounds });
+        post({ type: 'stations', requestId, bounds, reveal: revealPending });
     };
-    const refresh = () => {
+    const refresh = event => {
+        if (event && revealPending) { cancelReveal(); requestId++; post({ type: 'cancel' }); }
         if (!frameMode && !booting) binding?.sentinel.refresh();
         clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
     };
@@ -91,6 +100,7 @@ export function installMapLayers(win = window) {
         onToggle(id, enabled) {
             state[id].enabled = enabled;
             if (id === 'snotel') {
+                cancelReveal(); revealPending = enabled;
                 requestId++; post({ type: 'cancel' }); stations = [];
                 if (!enabled) { nearbyPending = false; nearbyRequest++; snowCard({ type: 'cancel' }); statuses.snotel.pending = false; }
             }
@@ -118,6 +128,7 @@ export function installMapLayers(win = window) {
         control.position(rect);
     };
     const unbind = () => {
+        nativeReveal.cancel();
         if (!binding) return;
         binding.map.off('moveend', refresh);
         binding.observer?.disconnect(); binding.sentinel.dispose(); binding.engine.dispose();
@@ -189,15 +200,21 @@ export function installMapLayers(win = window) {
                 statuses.snotel.unavailable = !snotelAllowed;
                 if (!snotelAllowed) statuses.snotel.message = 'Enable Show SNOTEL in settings.';
                 else if (!wasAllowed) statuses.snotel.message = '';
-                if (!snotelAllowed) { state.snotel.enabled = false; stations = []; requestId++; }
+                if (!snotelAllowed) { cancelReveal(); state.snotel.enabled = false; stations = []; requestId++; }
                 apply(); if (!wasAllowed && state.snotel.enabled) loadStations();
             } else if (data.type === 'stations' && data.requestId === requestId && state.snotel.enabled && snotelAllowed) {
                 const next = readSnotelMapStations(data.stations);
+                let reveal = false;
                 if (data.error === true || !next) statuses.snotel = { ...statuses.snotel, pending: false, error: true, retry: true,
                     message: 'Stations unavailable. Retry.', retryAt: Number.isFinite(data.retryAt) ? data.retryAt : 0 };
-                else { stations = next; statuses.snotel = { ...statuses.snotel, pending: false, error: false, retry: false, count: next.length,
-                    message: data.overflow === true ? 'More than 50 stations. Zoom in.' : next.length ? `${next.length} stations in view.` : 'No SNOTEL stations in view.' }; }
-                sendStations(); paint();
+                else {
+                    stations = next; reveal = revealPending; revealPending = false;
+                    statuses.snotel = { ...statuses.snotel, pending: false, error: false, retry: false, count: next.length,
+                        message: data.overflow === true ? 'More than 50 stations. Zoom in.'
+                            : data.nearby === true ? next.length ? `${next.length} nearby stations.` : 'No SNOTEL stations within 50 km.'
+                                : next.length ? `${next.length} stations in view.` : 'No SNOTEL stations in view.' };
+                }
+                sendStations(reveal); paint();
                 control.announce(statuses.snotel.message);
                 if (statuses.snotel.retryAt > Date.now()) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
             }
@@ -223,7 +240,13 @@ export function installMapLayers(win = window) {
             // the revision here would discard its immediately-following status.
             capture = sentinelTarget(data.target); relay(); post({ type: 'handoffState', snapshot: snapshot() });
         } else if (data.dir === 'toPage' && data.type === 'layerView' && frameMode) {
-            const bounds = overlayBounds(data.bounds); if (bounds) { terrainView = { bounds, zoom: data.zoom }; clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300); }
+            const bounds = overlayBounds(data.bounds);
+            if (bounds) {
+                if (revealPending && terrainView && bounds.some((value, i) => Math.abs(value - terrainView.bounds[i]) > 1e-7)) {
+                    cancelReveal(); requestId++; post({ type: 'cancel' });
+                }
+                terrainView = { bounds, zoom: data.zoom }; clearTimeout(stationTimer); stationTimer = win.setTimeout(loadStations, 300);
+            }
         }
     };
     win.addEventListener('message', handle);
@@ -231,7 +254,7 @@ export function installMapLayers(win = window) {
     const themeObserver = new win.MutationObserver(paint); themeObserver.observe(doc.documentElement, { attributes: true, attributeFilter: ['data-bpb-theme', 'data-theme'] });
     frameLifecycle.subscribe(start); frameLifecycle.start(); start(); post({ type: 'preferences' }); snowCard({ type: 'availability' });
     const lifecycle = createPageLifecycle({ ownerWindow: win,
-        onSuspend() { active = false; stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
+        onSuspend() { active = false; cancelReveal(); stopPolling(); clearTimeout(stationTimer); post({ type: 'cancel' }); unbind(); },
         onResume() { active = true; start(); post({ type: 'preferences' }); },
         onDispose() { disposed = true; active = false; stopPolling(); clearTimeout(stationTimer); if (relayFrame !== null) win.cancelAnimationFrame(relayFrame);
             post({ type: 'cancel' }); unbind(); frameLifecycle.dispose(); themeObserver.disconnect(); control.dispose();

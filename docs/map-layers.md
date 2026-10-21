@@ -15,7 +15,7 @@ Map/page clicks, basemap changes and Escape leave it expanded. Switching between
 | Sentinel-2 (experimental) | 100% | Natural-color imagery from a selected satellite pass in the past 30 days. Clouds and gaps can obscure terrain. |
 | Slope angle | 60% | USGS 3DEP ground slope. Yellow 20–30°, orange 30–35°, red 35–40°, purple 40–45°, dark purple ≥45°. Below 20° and missing data are clear. Resolution varies; this is not an avalanche forecast. |
 | Public lands | 25% | USGS PAD-US 4.1 fee ownership: federal, state, local/district and tribal holdings. Uncolored areas remain unknown. Ownership does not grant public access, and this is not a private-parcel map. |
-| SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. More than 50 stations asks the user to zoom in. Enabling the layer does not move the camera. |
+| SNOTEL stations | Fully opaque markers | Active NRCS stations in the visible map. If activation finds none, reveal up to three nearby stations within 50 km once. Visible stations keep the camera unchanged; more than 50 visible stations asks the user to zoom in. |
 
 Opacity updates immediately. Only opacity preferences are saved on this device;
 unrelated map sessions start with overlays off. A native Full Screen link carries
@@ -40,7 +40,11 @@ a different capture replaces its tiles; failed tiles show a retryable error.
 
 SNOTEL shares the snow card's isolated metadata client and seven-day public
 catalog cache. Viewport filtering happens locally; NRCS receives no map bounds
-or summit coordinates. **Show conditions** appears only for stations authorized
+or summit coordinates. Explicit activation reveals the nearest three stations
+within 50 km when none are visible, using the original one-time zoom-out and
+reduced-motion behavior. Later pans and renderer changes do not repeat it;
+moving the map while the catalog loads cancels pending auto-zoom.
+**Show conditions** appears only for stations authorized
 by the current peak's Nearby snow card, within its existing 50 km membership.
 Other stations have an official NRCS link. **Settings → General → Show SNOTEL**
 controls the card and every station layer independently of weather.

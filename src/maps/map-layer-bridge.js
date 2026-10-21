@@ -5,6 +5,7 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { settings } from '../settings/settings.js';
 import { createSnotelClient } from '../snow/snotel-client.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
+import { nearbySnotelStations } from '../snow/snotel-data.js';
 import { mountPeakSnow } from '../snow/peak-snow.js';
 import { overlayBounds, viewportStations } from './map-overlay-providers.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.js';
@@ -38,11 +39,19 @@ export function installMapLayerBridge({ ownerWindow = window, storage = chrome.s
         try {
             // The complete national catalog is fetched once. The viewport never
             // reaches NRCS and only a bounded public subset crosses worlds.
-            const visible = viewportStations(await client.stations({ signal: controller.signal }), bounds);
+            const catalog = await client.stations({ signal: controller.signal });
+            const visible = viewportStations(catalog, bounds);
+            const nearby = data.reveal === true && visible.length === 0;
+            // Explicit activation may reveal the nearest stations within 50 km.
+            // Ordinary pan/refresh requests remain bounded to the visible map.
+            const candidates = nearby ? nearbySnotelStations(catalog, {
+                latitude: (bounds[1] + bounds[3]) / 2,
+                longitude: (((bounds[0] + bounds[2]) / 2 + 180) % 360 + 360) % 360 - 180,
+            }) : visible;
             if (owner !== revision || !active || !allowed) return;
-            const stations = visible.length <= 50 ? readSnotelMapStations(visible) : [];
+            const stations = candidates.length <= 50 ? readSnotelMapStations(candidates) : [];
             if (!stations) throw new Error('Invalid stations.');
-            post({ type: 'stations', requestId, stations, overflow: visible.length > 50 });
+            post({ type: 'stations', requestId, stations, nearby, overflow: visible.length > 50 });
         } catch (error) {
             if (owner !== revision || error.name === 'AbortError') return;
             if (error.code === 'rate-limit') retryAt = error.retryAt || Date.now() + 300000;

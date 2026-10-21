@@ -582,3 +582,39 @@ basemap ownership, one-use Full Screen state handoff and 3D eligibility.
 **Changed but not fully proven:** fixture results do not establish live-site
 compatibility, native browser menus/OS focus, physical touch or screen-reader
 speech. The earlier broad verification gaps remain separate.
+
+## Follow-up: preserve Sentinel and SNOTEL interactions
+
+The user's parity correction supersedes the viewport-only, no-auto-zoom
+SNOTEL decision above. Explicit activation reveals up to three stations within
+50 km when the current view contains none, reusing the original reveal helper.
+Visible stations preserve the camera. A user pan cancels a pending reveal;
+later pans and renderer switches never rearm it. Discovery stays local to the
+cached national catalog and carries only validated station metadata to maps.
+
+Sentinel captures again share the legacy date/cloud formatter, including zero
+and unknown cloud coverage, Latest naming, and full date/time/cloud tooltips
+on options and the selected capture. Choosing a capture updates its tooltip
+immediately, including before a 3D-frame reply.
+
+**Fixed and verified:** new assertions first failed on missing capture metadata
+and offscreen-station discovery. All 3,057 tests passed. The component passed
+eight hidden Chrome cases at 736/320 by 800 in both themes and normal/double
+text. Real unpacked Chrome integration passed activation zoom on ascent, peak,
+BigMap and standalone MasterMap at 1000 by 700. Chrome 156.0.8078.4 and Firefox
+158.0.1 each passed 12 snow-map cases at 1440/375 by 1100, both themes and 200%
+zoom, including native/3D reveal, visible-station camera preservation, pan during
+loading, later pans, retry, opt-out and card selection. Hardware rendering was
+ANGLE/Metal on Apple M3 Pro. Native and 3D reveal screenshots were visually
+inspected; map/control/following-content geometry stayed anchored. The hidden
+real-manifest Chrome startup/BFCache check passed at 1000 by 760. Scoped ESLint
+and web-ext lint passed (eight existing warnings).
+
+**Intentionally not changed:** 50 km station discovery, public metadata/data
+consent, observation-card selection/Refresh, overlay persistence and native
+basemap ownership. Offscreen discovery is requested only for activation/retry.
+
+**Changed but not fully proven:** public provider responses are fixture-backed
+in browser checks; live authenticated Peakbagger, physical touch, native select
+menus, screen-reader speech and OS focus/window placement remain unproven.
+The earlier broad verifier gaps remain separate.

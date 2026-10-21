@@ -44,11 +44,74 @@ export async function verifySnowMapCases({ origin, evaluate, evaluateTerrain, na
         await evaluate(()=>document.querySelector('.bpb-terrain-mount-peak').scrollIntoView({block:'center'}));
         await wait(()=>document.querySelector('.bpb-layers-trigger')?.getBoundingClientRect().width>0,'layer control positioned in the visible map');
         await wait(()=>document.getElementById('bpb-terrain-toggle')?.disabled===false,'terrain settings ready');
-        // Viewport discovery deliberately does not auto-frame nearby stations.
-        // Start with an explicit user view containing both catalog fixtures.
+        // An already-visible station should preserve the user's camera.
+        // The separate activation cases below start with stations offscreen.
         await evaluate(()=>{ document.getElementById('Gmap').contentWindow.mapsPlaceholder.setView([46.81,-121.54],9,{animate:false}); });
         assert.equal(await markerCount(),0);
     };
+    const nativeCamera = () => evaluate(() => {
+        const map = document.getElementById('Gmap').contentWindow.mapsPlaceholder, center = map.getCenter();
+        return [center.lat, center.lng, map.getZoom()];
+    });
+    const trackActivation = () => evaluate(() => {
+        window.__snowReplies = 0; window.__snowViews = [];
+        window.addEventListener('message', event => {
+            const data = event.data;
+            if (event.source !== window || event.origin !== window.location.origin || data?.dir !== 'toPage') return;
+            if (data.__bpbMapLayers === true && data.type === 'stations') window.__snowReplies++;
+            if (data.__bpbTerrain === true && data.type === 'layerView') window.__snowViews.push(data.bounds);
+        });
+    });
+    if (selection === 'all') {
+        await prepare(1440, 'light', 'complete'); await trackActivation();
+        await evaluate(() => {
+            const map = document.getElementById('Gmap').contentWindow.mapsPlaceholder;
+            map.setView([46.851731, -121.760395], 16, { animate: false });
+            window.__snowMoves = 0; map.on('moveend', () => window.__snowMoves++);
+        });
+        const before = await nativeCamera(), layout = await geometry();
+        await click('#bpb-snow-map-toggle');
+        await wait(() => window.__snowMoves > 0 && document.getElementById('Gmap').contentWindow.mapsPlaceholder.getBounds().contains([46.78266, -121.74767]), 'activation zoom reveals an offscreen SNOTEL station');
+        await ready(); await waitMarkers(2);
+        const revealed = await nativeCamera(); assert.ok(revealed[2] < before[2], 'activation zooms out to nearby stations');
+        stable(layout, await geometry(), 'SNOTEL activation zoom'); await image('native-auto-zoom');
+        await click('#bpb-snow-map-toggle'); const moves = await evaluate(() => window.__snowMoves);
+        await click('#bpb-snow-map-toggle'); await ready(); await waitMarkers(2);
+        assert.deepEqual(await nativeCamera(), revealed, 'enabling already-visible stations preserves the camera');
+        assert.equal(await evaluate(() => window.__snowMoves), moves, 'visible stations do not start another camera animation');
+        const replies = await evaluate(() => window.__snowReplies);
+        await evaluate(() => { document.getElementById('Gmap').contentWindow.mapsPlaceholder.panBy([50, 0], { animate: false }); });
+        const panned = await nativeCamera();
+        await wait(() => window.__snowReplies > 0, 'station replies observed');
+        await waitForCondition(() => evaluate(() => window.__snowReplies), { description: 'passive viewport refresh after user pan', isReady: value => value > replies });
+        await ready(); assert.deepEqual(await nativeCamera(), panned, 'a later pan is not pulled back to the stations');
+        cases.push({ states: ['native-offscreen-activation-zoom', 'visible-station-keeps-camera', 'passive-pan-keeps-camera'] });
+        await prepare(1440, 'light', 'loading');
+        await evaluate(() => { document.getElementById('Gmap').contentWindow.mapsPlaceholder.setView([46.851731, -121.760395], 17, { animate: false }); });
+        await click('#bpb-snow-map-toggle');
+        await wait(() => document.querySelector('[data-layer="snotel"]').dataset.status === 'pending', 'activation waiting for the station catalog');
+        await evaluate(() => { document.getElementById('Gmap').contentWindow.mapsPlaceholder.panBy([100, 0], { animate: false }); });
+        const userCamera = await nativeCamera(); setMode('complete'); release(); await ready();
+        assert.deepEqual(await nativeCamera(), userCamera, 'a user pan cancels pending auto-zoom before a late catalog arrives');
+        cases.push({ states: ['pending-pan-cancels-reveal'] });
+    }
+    await prepare(375, 'dark', 'complete'); await trackActivation();
+    await evaluate(() => { document.getElementById('Gmap').contentWindow.mapsPlaceholder.setView([46.851731, -121.760395], 17, { animate: false }); });
+    await click('#bpb-terrain-toggle');
+    await wait(() => document.getElementById('bpb-terrain-toggle').getAttribute('aria-pressed') === 'true' && window.__snowViews.length > 0, 'tight 3D camera ready for station activation');
+    const initialBounds = await evaluate(() => window.__snowViews.at(-1));
+    assert.equal(46.78266 >= initialBounds[1] && 46.78266 <= initialBounds[3]
+        && -121.74767 >= initialBounds[0] && -121.74767 <= initialBounds[2], false, 'the station starts outside the 3D view');
+    await click('#bpb-snow-map-toggle');
+    await frameWait(() => Array.from(document.querySelectorAll('.bpb-snotel-marker')).some(marker => {
+        const r = marker.getBoundingClientRect();
+        return r.left >= 0 && r.right <= window.innerWidth && r.top >= 0 && r.bottom <= window.innerHeight;
+    }), '3D activation zoom reveals a fully visible SNOTEL marker');
+    await waitForCondition(() => evaluate(() => window.__snowViews.at(-1)), { description: 'settled 3D station reveal camera',
+        isReady: bounds => bounds && bounds.some((value, i) => Math.abs(value - initialBounds[i]) > 1e-7) });
+    await ready(); await image('terrain-auto-zoom');
+    assert.equal(await evaluate(() => document.querySelector('.bpb-layers-trigger').getAttribute('aria-expanded')), 'true', 'auto-zoom preserves the expanded overlay menu');
+    cases.push({ states: ['3D-offscreen-activation-zoom', 'sticky-overlay-menu'] });
     const popupPalette = () => evaluate(() => {
         const win = document.getElementById('Gmap').contentWindow, popup = win.document.querySelector('.leaflet-popup');
         const style = selector => win.getComputedStyle(popup.querySelector(selector));
