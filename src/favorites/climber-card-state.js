@@ -12,6 +12,32 @@ export const climberCardTarget = (href, label, base) => {
     return { cid, name: name.slice(0, F.NAME_LIMIT), url: F.climberPageUrl(cid) };
 };
 
+// Missing information is not an empty list. Only a matching, already-loaded
+// profile's native Social Networking section can establish availability.
+export const climberProfileLists = (doc, url, cid) => {
+    const unknown = { buddy: null, reverse: null };
+    if (I.profileId(url) !== cid) return unknown;
+    const heading = [...doc.querySelectorAll('#ListLabel h4')]
+        .find(node => node.textContent.trim() === 'Social Networking');
+    let list = heading?.nextElementSibling;
+    while (list && !list.matches('ul,h4')) list = list.nextElementSibling;
+    if (!list?.matches('ul')) return unknown;
+    const links = [...list.querySelectorAll('a[href]')].flatMap(anchor => {
+        try {
+            const link = new URL(anchor.getAttribute('href'), url);
+            return link.origin === new URL(url).origin && !link.username && !link.password
+                && link.searchParams.getAll('cid').length === 1 && link.searchParams.get('cid') === String(cid) ? [link] : [];
+        } catch { return []; }
+    });
+    const complete = links.some(link => /^\/climber\/compare\.aspx$/i.test(link.pathname));
+    const available = report => links.some(link => /^\/report\/report\.aspx$/i.test(link.pathname)
+        && link.searchParams.getAll('r').length === 1 && link.searchParams.get('r') === report);
+    return {
+        buddy: available('b') ? true : complete || /\bNo Buddy list created yet\b/i.test(list.textContent) ? false : null,
+        reverse: available('rb') ? true : complete ? false : null,
+    };
+};
+
 // Rendering never authorizes a write. Worker mutations recheck current lists
 // in their shared lane, including inactive custom favorites and sync reserves.
 export const buddyIntentState = ({ cid, ownerCid, membership, now = Date.now() }) => {

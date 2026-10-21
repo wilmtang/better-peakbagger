@@ -12,7 +12,7 @@ import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { mutateIgnored } from './ignored-client.js';
-import { climberCardTarget, climberCardState } from './climber-card-state.js';
+import { climberCardTarget, climberCardState, climberProfileLists } from './climber-card-state.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
 import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
@@ -22,6 +22,7 @@ const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textar
 const mount = () => {
     if (window !== window.top || document.getElementById('bpb-climber-card')) return;
     const records = new Map();
+    const profileLists = new Map();
     let current = null, membership = null, settings = null, settingsError = '';
     let observer = null, unsubscribe = null, settingsGeneration = 0;
     let openTimer = null, closeTimer = null, positionFrame = null, mutationFrame = null;
@@ -36,6 +37,10 @@ const mount = () => {
     const button = (text, props = {}) => D.element('button', { type: 'button', text, 'data-bpb-climber-ui': '', ...props });
     const title = D.element('div', { id: 'bpb-climber-card-name', class: 'bpb-climber-card-name' });
     const profile = D.element('a', { text: 'View profile ↗', class: 'bpb-climber-card-profile' });
+    const ascents = D.element('a', { text: 'All ascents ↗', class: 'bpb-climber-card-profile' });
+    const buddyList = D.element('a', { text: 'Buddy list ↗', class: 'bpb-climber-card-profile' });
+    const reverseList = D.element('a', { text: 'Reverse buddy list ↗', class: 'bpb-climber-card-profile' });
+    const links = D.element('div', { class: 'bpb-climber-card-links' }, [profile, ascents, buddyList, reverseList]);
     const closeButton = button('×', { class: 'bpb-climber-card-close', 'aria-label': 'Close climber actions' });
     const buddy = button('Add climbing buddy', { id: 'bpb-climber-card-buddy', class: 'bpb-climber-card-action bpb-climber-card-buddy' });
     const signIn = D.element('a', { class: 'bpb-climber-card-action bpb-climber-card-buddy',
@@ -59,7 +64,10 @@ const mount = () => {
     const detail = D.element('div', { id: 'bpb-climber-card-ignore-detail', class: 'bpb-climber-card-detail' });
     const detailText = createStableText(detail);
     detailText.reserve(['Show their reports again', 'Remove from both lists to ignore', 'Remove from favorites to ignore',
-        'Remove from your Buddy List to ignore', 'Refresh your Buddy List before ignoring', 'Ignored climbers can hold up to 1,500 entries.', 'Hide their reports']);
+        'Remove from your Buddy List to ignore', 'Refresh your Buddy List before ignoring', 'Ignored climbers can hold up to 1,500 entries.', 'Hide their reports',
+        'Checking lists…', 'Check buddy status.', "Couldn't finish.", 'Settings unavailable.', 'Lists unavailable.', 'Loading lists…',
+        'Buddy change in progress.', 'Check original account.', 'Unignore to add to lists.', 'Finish list sync first.',
+        'Favorites are full.', 'Saved; check lists.', 'Saved.']);
     const summaryText = D.element('div', { class: 'bpb-climber-card-feedback-summary' });
     const retry = button('Retry', { class: 'bpb-climber-card-retry', hidden: '' });
     const retryText = createStableText(retry); retryText.reserve(['Check status', 'Check lists']);
@@ -67,12 +75,16 @@ const mount = () => {
     const failureDetails = D.element('details', { class: 'bpb-climber-card-feedback-details', hidden: '' }, [
         D.element('summary', { text: 'Details' }), failureText,
     ]);
-    const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [summaryText,
-        D.element('div', { class: 'bpb-climber-card-recovery' }, [retry, failureDetails]),
+    const feedback = D.element('div', { class: 'bpb-climber-card-feedback', id: 'bpb-climber-card-feedback' }, [
+        D.element('div', { class: 'bpb-climber-card-context' }, [detail, summaryText]),
+        D.element('div', { class: 'bpb-climber-card-recovery' }, [
+            D.element('span', { class: 'bpb-climber-card-sizing', 'aria-hidden': 'true', text: 'Check status' }),
+            D.element('span', { class: 'bpb-climber-card-sizing', 'aria-hidden': 'true', text: 'Details' }), retry, failureDetails,
+        ]),
     ]);
-    const heading = D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, profile]), closeButton]);
+    const heading = D.element('div', { class: 'bpb-climber-card-heading' }, [D.element('div', {}, [title, links]), closeButton]);
     const main = D.element('div', { class: 'bpb-climber-card-main' }, [buddy, signIn, favoriteSlot,
-        D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore, detail]),
+        D.element('div', { class: 'bpb-climber-card-ignore-section' }, [ignore]),
     ]);
     const card = D.element('div', { id: 'bpb-climber-card', role: 'dialog', popover: 'manual', hidden: '',
         'data-bpb-climber-ui': '', 'aria-labelledby': title.id }, [
@@ -113,6 +125,11 @@ const mount = () => {
         const view = viewState();
         title.textContent = current.target.name;
         profile.href = current.target.url;
+        ascents.href = `${location.origin}/climber/ClimbListC.aspx?cid=${current.target.cid}&sort=ascentdated&j=-1&y=9999`;
+        buddyList.href = F.buddyListUrl(current.target.cid, location.origin);
+        reverseList.href = `${location.origin}/report/report.aspx?r=rb&cid=${current.target.cid}`;
+        buddyList.hidden = current.lists.buddy === false;
+        reverseList.hidden = current.lists.reverse === false;
         const signedOut = ownerClimberId(document) == null;
         buddy.hidden = view.self || signedOut;
         signIn.hidden = view.self || !signedOut;
@@ -147,6 +164,8 @@ const mount = () => {
                             : view.ignored ? 'Unignore to add to lists.' : view.pending ? 'Finish list sync first.'
                                 : view.favoriteLimit ? 'Favorites are full.' : noticeNeedsCheck ? 'Saved; check lists.' : notice ? 'Saved.' : '';
         summaryText.hidden = !summaryText.textContent;
+        detail.style.visibility = summaryText.hidden ? '' : 'hidden';
+        detail.setAttribute('aria-hidden', String(!summaryText.hidden));
         if (failure) { fullFailure = failure; failureText.textContent = failure; }
         else if (failureDetails.open && fullFailure) failureText.textContent = notice || `Previous message: ${fullFailure}`;
         failureDetails.hidden = !failure && !failureDetails.open;
@@ -269,6 +288,11 @@ const mount = () => {
             failureDetails.open = false; fullFailure = ''; failureText.textContent = '';
             rememberFocusContext(record);
             record.target = targetFor(record.anchor);
+            // Freeze navigation for this opening so a completed buddy request
+            // cannot move the actions or remove a focused link. Reuse its
+            // profile evidence on the next opening, without another request.
+            record.lists = profileLists.get(record.target.cid)
+                || climberProfileLists(document, location.href, record.target.cid);
             record.host.append(card); // Natural keyboard order follows the actions trigger.
         }
         record.trigger.setAttribute('aria-expanded', 'true'); card.hidden = false;
@@ -419,6 +443,7 @@ const mount = () => {
         try {
             const result = await changeBuddy({ api: chrome, target, ownerCid: owner, origin: location.origin,
                 currentOwner: () => ownerClimberId(document), action: view.buddy ? 'remove' : 'add', checkOnly });
+            profileLists.set(target.cid, result.lists);
             // The native profile DOM may still reflect the old relationship.
             if (climberCardTarget(location.href, 'Viewed climber', document.baseURI)?.cid === target.cid) {
                 applyBuddyProfileState(document, result.buddy);

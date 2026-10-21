@@ -12,11 +12,15 @@
     --bpb-cc-border: #d6dccb; --bpb-cc-accent: #2c6244; --bpb-cc-link: #23593e; --bpb-cc-hover: #eaf0e5;
     box-sizing: border-box; position: fixed; inset: auto; z-index: 2147483646; margin: 0; padding: 16px;
     display:flex; flex-direction:column; width: 312px; max-width: calc(100vw - 24px); overflow: hidden; border: 1px solid var(--bpb-cc-border);
+    container: bpb-climber-card / inline-size;
     border-radius: 12px; background: var(--bpb-cc-surface); color: var(--bpb-cc-text); text-align: left;
     box-shadow: 0 8px 28px rgb(29 42 28 / 16%), 0 2px 6px rgb(29 42 28 / 10%);
     font: 14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space: normal; }
 #bpb-climber-card[hidden], #bpb-climber-card [hidden] { display: none !important; }
-#bpb-climber-card .bpb-climber-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+#bpb-climber-card .bpb-climber-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+#bpb-climber-card .bpb-climber-card-heading > div { min-width:0; flex:1; }
+#bpb-climber-card .bpb-climber-card-links { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr); gap:2px 12px; margin-top:4px; }
+#bpb-climber-card .bpb-climber-card-links > :nth-child(3)[hidden] + a { grid-column:1/-1; }
 #bpb-climber-card .bpb-climber-card-heading, #bpb-climber-card .bpb-climber-card-feedback { flex:0 0 auto; }
 #bpb-climber-card .bpb-climber-card-main { min-height:0; overflow:auto; scrollbar-gutter:stable; flex:0 1 auto; }
 #bpb-climber-card :is(.bpb-climber-card-main,.bpb-climber-card-name,.bpb-climber-card-feedback-details p) { overscroll-behavior:contain; }
@@ -26,7 +30,7 @@
 #bpb-climber-card .bpb-climber-card-sizing { visibility:hidden; pointer-events:none; }
 #bpb-climber-card .bpb-climber-card-name { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
 #bpb-climber-card a { color: var(--bpb-cc-link) !important; }
-#bpb-climber-card .bpb-climber-card-profile { font-size: 12px; text-decoration: none; }
+#bpb-climber-card .bpb-climber-card-profile { font-size: .857143em; text-decoration: none; overflow-wrap:anywhere; }
 #bpb-climber-card .bpb-climber-card-profile:hover { text-decoration: underline; }
 #bpb-climber-card button { font: inherit; cursor: pointer; }
 #bpb-climber-card .bpb-climber-card-close { flex: 0 0 auto; width: 28px; height: 28px; padding: 0;
@@ -48,13 +52,16 @@
     border: 0; color: var(--bpb-cc-link); text-align: left; font-size: 12px; }
 #bpb-climber-card .bpb-climber-card-ignore-section { border-top: 1px solid var(--bpb-cc-border); padding-top: 10px; margin-top: 16px; }
 #bpb-climber-card .bpb-climber-card-ignore { margin-top: 0; }
-#bpb-climber-card .bpb-climber-card-detail { margin-top: 6px; }
+#bpb-climber-card .bpb-climber-card-detail { margin: 0; }
 #bpb-climber-card .bpb-climber-card-detail, #bpb-climber-card .bpb-climber-card-feedback { color: var(--bpb-cc-sub);
     font-size: 12px; overflow-wrap: anywhere; }
-#bpb-climber-card .bpb-climber-card-feedback { margin-top:12px; display:grid; grid-template-rows:minmax(2.8em,auto) minmax(2em,auto); }
-#bpb-climber-card .bpb-climber-card-feedback-summary { grid-row:1; }
-#bpb-climber-card .bpb-climber-card-recovery { grid-row:2; display:flex; align-items:flex-start; gap:12px; min-height:2em; }
-#bpb-climber-card .bpb-climber-card-retry, #bpb-climber-card .bpb-climber-card-feedback-details summary { box-sizing:border-box; min-height:2em; margin:0; border:0; background:none; color:var(--bpb-cc-link); padding:0; font:inherit; cursor:pointer; }
+#bpb-climber-card .bpb-climber-card-feedback { margin-top:6px; display:grid; grid-template-columns:minmax(0,1fr) max-content; align-items:start; gap:12px; }
+#bpb-climber-card .bpb-climber-card-context { display:grid; }
+#bpb-climber-card .bpb-climber-card-context > * { grid-area:1/1; min-width:0; }
+#bpb-climber-card .bpb-climber-card-recovery { display:grid; grid-template-rows:repeat(2,minmax(1.5em,auto)); align-items:start; }
+#bpb-climber-card .bpb-climber-card-recovery > :nth-child(odd) { grid-area:1/1; }
+#bpb-climber-card .bpb-climber-card-recovery > :nth-child(even) { grid-area:2/1; }
+#bpb-climber-card .bpb-climber-card-retry, #bpb-climber-card .bpb-climber-card-feedback-details summary { box-sizing:border-box; min-height:1.5em; margin:0; border:0; background:none; color:var(--bpb-cc-link); padding:0; font:inherit; cursor:pointer; }
 #bpb-climber-card .bpb-climber-card-feedback-details p { position:absolute; inset-inline:16px; bottom:calc(16px + var(--bpb-card-footer-height,4.8em) + 8px); box-sizing:border-box; margin:0; padding:8px 10px; max-height:min(25vh,var(--bpb-card-detail-space,12em)); overflow:auto; border:1px solid var(--bpb-cc-border); border-radius:8px; background:var(--bpb-cc-surface); box-shadow:0 3px 12px rgb(0 0 0 / 12%); }
 #bpb-climber-card :is(a,button):focus-visible { outline: 2px solid var(--bpb-cc-link); outline-offset: 2px; }
 #bpb-climber-card-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -63,11 +70,20 @@ html[data-bpb-theme="dark"] .bpb-climber-actions-trigger:focus-visible { outline
 html[data-bpb-theme="dark"] #bpb-climber-card { --bpb-cc-surface: #1e2b23; --bpb-cc-text: #eeeade;
     --bpb-cc-sub: #a6b3a3; --bpb-cc-border: #384a3e; --bpb-cc-accent: #408054; --bpb-cc-link: #7ac78d;
     --bpb-cc-hover: #293d30; box-shadow: 0 8px 28px rgb(0 0 0 / 30%); }
+@container bpb-climber-card (max-width:18em) {
+    /* Enlarged text needs the full line for context, rather than a narrow
+       column reserving many empty lines beside the recovery controls. */
+    #bpb-climber-card .bpb-climber-card-feedback { grid-template-columns:minmax(0,1fr); gap:0; }
+    #bpb-climber-card .bpb-climber-card-recovery { grid-template-columns:max-content max-content; grid-template-rows:minmax(1.5em,auto); gap:12px; }
+    #bpb-climber-card .bpb-climber-card-recovery > :nth-child(odd) { grid-area:1/1; }
+    #bpb-climber-card .bpb-climber-card-recovery > :nth-child(even) { grid-area:1/2; }
+}
 @media (pointer: coarse) {
     .bpb-climber-actions-trigger { width: 44px; height: 44px; opacity: 1; }
     #bpb-climber-card .bpb-climber-card-close { width: 44px; height: 44px; }
     #bpb-climber-card :is(.bpb-climber-card-action,.bpb-climber-card-ignore,.bpb-climber-card-settings,.bpb-climber-card-retry) { min-height: 44px; }
     #bpb-climber-card .bpb-climber-card-recovery, #bpb-climber-card .bpb-climber-card-feedback-details summary { min-height:44px; }
+    #bpb-climber-card .bpb-climber-card-recovery > .bpb-climber-card-sizing { min-height:44px; }
     #bpb-climber-card .bpb-climber-card-settings-sizing { min-height:44px; }
 }
 @media (prefers-reduced-motion: no-preference) {

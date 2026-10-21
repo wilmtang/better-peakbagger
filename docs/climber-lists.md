@@ -12,6 +12,13 @@ The adjacent **⋯** button opens it explicitly with keyboard or touch input.
 The name itself keeps its normal profile-link behavior. Escape, Close, or an
 outside click dismisses the card; Escape returns focus to the actions button.
 
+The card links to the climber's profile, **All ascents** (all years), **Buddy list**,
+and **Reverse buddy list**. An already-loaded matching profile can reveal that
+a list is absent, in which case its link is omitted. Profile responses fetched
+by an explicit Buddy action provide the same evidence for the next opening.
+Elsewhere, availability stays unknown and both links remain available. Checking
+these links never adds a network request or shifts an open card's actions.
+
 In custom-favorites mode, **Add favorite climber** and **Remove favorite climber**
 save directly from the card. In Buddy mode, the card explains the active source
 and links to Settings to choose custom favorites. **Ignore climber** and
@@ -24,6 +31,8 @@ the failed local save. Profile messages appear in a dismissible panel at the
 bottom of the viewport, leaving no empty status row below the climber's name.
 Progress and recovery keep the actions and reading position anchored; opening
 Details is a deliberate disclosure. Dismissing a message does not cancel a save.
+The card shares its compact footer between Ignore help and status messages,
+with space for recovery controls beside them.
 
 **Add climbing buddy** and **Remove climbing buddy** save directly from the card.
 An explicit action fetches a fresh authenticated profile, submits only the chosen

@@ -4,6 +4,7 @@ import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { BUDDY_MESSAGE } from './buddy-state.js';
+import { climberProfileLists } from './climber-card-state.js';
 
 const unsupported = () => { throw new Error('This buddy form is unavailable. Open the profile and try again.'); };
 const hiddenNames = new Set(['__EVENTTARGET', '__EVENTARGUMENT', '__VIEWSTATE', '__VIEWSTATEGENERATOR',
@@ -40,7 +41,7 @@ export const readBuddyProfile = (result, { ownerCid, cid, origin }) => {
     if (!body.get('__VIEWSTATE') || !body.get('__EVENTVALIDATION')) unsupported();
     body.set('__EVENTTARGET', ''); body.set('__EVENTARGUMENT', '');
     body.append(id, value);
-    return { buddy, body, url: destination.href };
+    return { buddy, body, url: destination.href, lists: climberProfileLists(doc, url.href, cid) };
 };
 
 // Only a trusted, explicit action calls this adapter. A status check never
@@ -83,7 +84,7 @@ export const changeBuddy = async ({ api, target, ownerCid, action, origin,
             throw new Error('Peakbagger has not confirmed the requested change.');
         }
         const saved = await send({ phase: 'complete', token: lease.token, buddy: after.buddy });
-        return { buddy: after.buddy, warning: saved.warning || (after.buddy !== (action === 'add') && !lease.checkOnly
+        return { buddy: after.buddy, lists: after.lists, warning: saved.warning || (after.buddy !== (action === 'add') && !lease.checkOnly
             ? 'Peakbagger did not save the buddy change. Try again.' : '') };
     } catch (error) {
         await send({ phase: 'failed', token: lease.token, dispatched }).catch(() => {});

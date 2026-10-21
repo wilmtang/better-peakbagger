@@ -19,7 +19,7 @@ const asset = name => historicalAssets?.has(name) ? historicalAssets.get(name) :
 export function climberCheckOptions(args) {
     const checks = args.find(value => value.startsWith('--checks='))?.slice('--checks='.length) || 'all';
     const onlyVariant = args.find(value => value.startsWith('--variant='))?.slice('--variant='.length);
-    assert.ok(['all', 'profile', 'buddy', 'pending', 'card', 'card-retry', 'baseline', 'regressions'].includes(checks), `Unknown climber checks: ${checks}`);
+    assert.ok(['all', 'profile', 'buddy', 'pending', 'card', 'card-retry', 'card-links', 'baseline', 'regressions'].includes(checks), `Unknown climber checks: ${checks}`);
     for (const argument of args) assert.match(argument, /^--(?:checks|variant)=.+$/, `Unknown argument: ${argument}`);
     if (onlyVariant) assert.match(onlyVariant, /^(chrome|firefox)-(light|dark)-(390|768|1280)-(1|2)$/, 'Unknown climber variant');
     assert.ok(!onlyVariant || !['baseline', 'regressions'].includes(checks), 'Regression contracts use their own explicit viewports');
@@ -416,7 +416,9 @@ export async function verifyCardFeedback(page, origin, variant, retryOnly = fals
     await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite')?.disabled === false);
     await page.waitForFunction(() => document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
     await page.locator('#bpb-climber-card-favorite').scrollIntoViewIfNeeded();
-    const selectors = ['#bpb-climber-card', '#bpb-climber-card-buddy', '#bpb-climber-card-favorite', '#bpb-climber-card-ignore'];
+    const selectors = ['#bpb-climber-card', '.bpb-climber-card-heading', '.bpb-climber-card-links',
+        '#bpb-climber-card-buddy', '#bpb-climber-card-favorite', '#bpb-climber-card-ignore',
+        '#transition-title', '#transition-content', '#transition-next'];
     if (await page.locator('.bpb-climber-card-favorite-slot').count()) selectors.push('.bpb-climber-card-favorite-slot');
     const before = await frame(page, selectors);
     if (anchorTop === 20 || anchorTop === 820) {
@@ -513,6 +515,73 @@ export async function verifyCardFeedback(page, origin, variant, retryOnly = fals
             assert.equal(await page.evaluate(() => globalThis.scrollY), scroll, `body boundary scrolling must not jump the page; ${JSON.stringify(hit)}`);
         }
     }
+}
+
+export async function verifyCompactCard(page, origin, variant) {
+    await boot(page, origin, variant);
+    const requests = [];
+    page.on('request', request => requests.push(request.url()));
+    await page.addStyleTag({ content: await asset('css/climber-hover-card.css') });
+    await page.addStyleTag({ content: '.bpb-climber-link:has(#transition-person){position:fixed;left:30px;top:720px}' + (variant.textScale === 2
+        ? '#bpb-climber-card{font-size:28px}#bpb-climber-card .bpb-climber-card-name{font-size:34px}#bpb-climber-card :is(.bpb-climber-card-detail,.bpb-climber-card-feedback){font-size:24px}' : '') });
+    await page.addScriptTag({ content: await asset('content/climber-hover-card.js') });
+    await page.locator('#transition-person + .bpb-climber-actions-trigger').click();
+    await page.waitForFunction(() => document.getElementById('bpb-climber-card-favorite')?.disabled === false
+        && document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
+    const emptyTail = await page.evaluate(() => document.getElementById('bpb-climber-card').getBoundingClientRect().bottom
+        - document.getElementById('bpb-climber-card-ignore').getBoundingClientRect().bottom);
+    if (variant.textScale === 1) assert.ok(emptyTail <= 84,
+        `idle card leaves ${emptyTail}px below Ignore; compact help and recovery must share space`);
+    const links = page.locator('.bpb-climber-card-links a');
+    assert.equal(await links.count(), 4);
+    assert.equal(await links.nth(2).textContent(), 'Buddy list ↗');
+    const ascents = new URL(await links.nth(1).getAttribute('href'));
+    assert.equal(ascents.pathname, '/climber/ClimbListC.aspx');
+    assert.deepEqual(Object.fromEntries(ascents.searchParams), { cid: '900002', sort: 'ascentdated', j: '-1', y: '9999' });
+    assert.equal(new URL(await links.nth(2).getAttribute('href')).searchParams.get('r'), 'b');
+    assert.equal(new URL(await links.nth(3).getAttribute('href')).searchParams.get('r'), 'rb');
+    const inside = () => {
+        const card = document.getElementById('bpb-climber-card'), c = card.getBoundingClientRect();
+        return card.scrollWidth <= card.clientWidth + 1 && c.left >= 0 && c.right <= innerWidth
+            && [...card.querySelectorAll('.bpb-climber-card-links a')].filter(link => !link.hidden).every(link => {
+                const r = link.getBoundingClientRect(); return r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom;
+            });
+    };
+    assert.equal(await page.evaluate(inside), true, 'profile links must remain readable within the card');
+    await capture(page, variant, 'compact-idle');
+    if (process.env.BPB_JITTER_ARTIFACTS && variant.width !== 768) await page.locator('#bpb-climber-card').screenshot({
+        path: path.join(process.env.BPB_JITTER_ARTIFACTS, `${variant.name}-compact-card.png`),
+    });
+    if (variant.width === 390) {
+        await page.keyboard.press('Escape');
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.locator('#transition-person + .bpb-climber-actions-trigger').focus();
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(() => !document.getElementById('bpb-climber-card').hidden
+            && document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
+        assert.equal(await page.evaluate(inside), true, 'links must wrap at 320px, including enlarged text');
+        await capture(page, { ...variant, name: `${variant.name}-w320` }, 'compact-idle');
+    }
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+        const label = document.createElement('span'); label.id = 'ListLabel';
+        label.innerHTML = '<h4>Social Networking</h4><p>Reports showing a climber\'s buddies and other climbers.</p><ul>'
+            + '<li>No Buddy list created yet.</li><li><a href="/report/report.aspx?r=rb&cid=900002">Reverse Buddy List</a></li>'
+            + '<li><a href="/climber/Compare.aspx?cid=900002">Compare Climbers</a></li></ul>';
+        document.querySelector('main').append(label);
+        document.getElementById('transition-person').textContent = 'Morgan Longlastname of the Eastern Cascades';
+    });
+    await page.locator('#transition-person + .bpb-climber-actions-trigger').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !document.getElementById('bpb-climber-card').hidden
+        && document.getElementById('bpb-climber-card').getAnimations().every(animation => animation.playState === 'finished'));
+    assert.equal(await links.nth(2).isVisible(), false, 'existing native profile establishes absent buddy list');
+    assert.equal(await links.nth(3).isVisible(), true);
+    if (variant.textScale === 1) assert.equal(await links.nth(3).evaluate(link => link.getBoundingClientRect().height
+        <= parseFloat(getComputedStyle(link).lineHeight) + 1), true, 'a lone reverse-list link should use the full row without wrapping');
+    assert.equal(await page.evaluate(inside), true, 'long names cannot clip the navigation');
+    await capture(page, variant, 'compact-no-buddies-long-name');
+    assert.deepEqual(requests, [], 'opening and reading list availability must never fetch');
 }
 
 export async function verifyRegressionContracts(context, origin, expectBroken = false) {
@@ -615,6 +684,14 @@ async function run() {
                         if (checks === 'pending' || checks === 'all') {
                             const pendingPage = await context.newPage(); pendingPage.setDefaultTimeout(10000);
                             await verifyPendingMembership(pendingPage, origin, variant);
+                        }
+                        if (checks === 'card-links' || checks === 'all') {
+                            await verifyCompactCard(page, origin, variant);
+                            if (checks === 'card-links') {
+                                const cardPage = await context.newPage(); cardPage.setDefaultTimeout(10000);
+                                await verifyCardFeedback(cardPage, origin, variant, false, 720);
+                                await cardPage.close();
+                            }
                         }
                         if (checks === 'card' || checks === 'card-retry' || checks === 'all') {
                             for (const anchor of checks === 'card-retry' ? [720] : [20, 440, 820]) {
