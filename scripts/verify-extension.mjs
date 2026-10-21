@@ -1873,6 +1873,7 @@ try {
                 hostDisplay: getComputedStyle(host).display,
                 sameHost: button.parentElement === host && heading.parentElement === host,
                 buttonWidth: buttonRect.width,
+                buttonHeight: buttonRect.height,
                 followsHeading: buttonRect.left >= headingRect.right - 1,
                 verticallyAligned: buttonRect.top < headingRect.bottom && buttonRect.bottom > headingRect.top,
                 headingFits: headingRect.left >= 0 && headingRect.right <= innerWidth,
@@ -1897,7 +1898,8 @@ try {
             && favoriteToggle?.pressed === 'false'
             && ['inline-flex', 'flex'].includes(favoriteToggle?.hostDisplay)
             && favoriteToggle?.sameHost
-            && favoriteToggle?.buttonWidth === 30
+            && favoriteToggle?.buttonWidth === 32
+            && favoriteToggle?.buttonHeight === 32
             && favoriteToggle?.headingFits
             && favoriteToggle?.theme === 'dark'
             && favoriteToggle?.caption?.source === 'black'

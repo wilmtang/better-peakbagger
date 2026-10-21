@@ -313,11 +313,11 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         const style = document.createElement('style');
         style.id = 'bpb-climber-favorite-style';
         style.textContent = `
-#TitleLabel.bpb-climber-favorite-host { display: inline-flex; align-items: baseline; justify-content: center;
+#TitleLabel.bpb-climber-favorite-host { display: inline-flex; align-items: center; justify-content: center;
     flex-wrap: wrap; gap: 8px; max-width: 100%; vertical-align: middle; }
 #TitleLabel.bpb-climber-favorite-host > h1 { flex: 0 1 auto; min-width: 0; }
 #bpb-climber-favorite { appearance: none; display: inline-flex; flex: 0 0 auto; align-items: center;
-    justify-content: center; width: 30px; height: 30px; margin: 0; padding: 0 0 2px;
+    justify-content: center; box-sizing: border-box; width: 32px; height: 32px; margin: 0; padding: 0 0 2px;
     border: 1px solid #8fab96; border-radius: 50%; background: #f3f8f4; color: #2f6b3f;
     font: 700 20px/1 Arial, Helvetica, sans-serif; cursor: pointer; }
 #bpb-climber-favorite:hover { border-color: #2f6b3f; background: #e7f1e9; }

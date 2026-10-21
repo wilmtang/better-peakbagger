@@ -143,6 +143,13 @@ async function capture(page, variant, state) {
         await page.screenshot({ path: path.join(process.env.BPB_JITTER_ARTIFACTS, `${variant.name}-${state}.png`) });
     }
 }
+async function visibleProfileFeedback(page) {
+    assert.equal(await page.locator('#bpb-climber-profile-feedback').evaluate(region => {
+        const r = region.getBoundingClientRect(), note = region.querySelector('#bpb-climber-membership-note').getBoundingClientRect();
+        return !region.hidden && getComputedStyle(region).position === 'fixed' && r.top >= 0 && r.left >= 0
+            && r.bottom <= innerHeight && r.right <= innerWidth && note.top >= r.top && note.bottom <= r.bottom;
+    }), true, 'profile feedback and its message are visible inside the viewport');
+}
 async function boot(page, origin, variant) {
     await page.addInitScript(install, variant);
     let buddy = false; let posts = 0; let failPost = false; let failRead = false;
@@ -249,14 +256,28 @@ export async function verifyProfileFeedback(page, origin, variant) {
     await boot(page, origin, variant);
     const before = await frame(page);
     await capture(page, variant, 'idle');
-    if (variant.width === 1280 && variant.textScale === 1) {
-        // Allow the status row and native table spacing, without reintroducing
-        // the heading's default margins or an oversized empty status area.
-        const contentHeight = Math.max(...['#TitleLabel h1', '#bpb-climber-favorite', '#bpb-climber-ignore']
-            .map(selector => before.boxes[selector].height));
-        assert.ok(before.boxes['#transition-title'].height <= contentHeight + 48,
-            `profile header leaves excessive empty vertical space: ${before.boxes['#transition-title'].height - contentHeight}px beyond its title and controls`);
-    }
+    assert.equal(await page.locator('#bpb-climber-profile-feedback').isVisible(), false, 'idle profiles have no empty feedback panel');
+    const header = await page.evaluate(() => {
+        const rect = selector => document.querySelector(selector).getBoundingClientRect();
+        const ignore = rect('#bpb-climber-ignore'), favorite = rect('#bpb-climber-favorite');
+        const label = document.querySelector('#bpb-climber-ignore > span:not([data-sizing-text])');
+        const range = document.createRange(); range.selectNodeContents(label);
+        const text = range.getBoundingClientRect();
+        const host = rect('#TitleLabel'), title = rect('#TitleLabel h1'), table = rect('#transition-title');
+        return { labelOffset: text.y + text.height / 2 - (ignore.y + ignore.height / 2),
+            controlOffset: favorite.y + favorite.height / 2 - (ignore.y + ignore.height / 2),
+            sameRow: Math.abs(favorite.y - ignore.y) < Math.max(favorite.height, ignore.height),
+            titleOffset: title.y + title.height / 2 - (ignore.y + ignore.height / 2),
+            titleSameRow: Math.abs(title.y - ignore.y) < Math.max(title.height, ignore.height),
+            emptySpace: table.height - host.height, gap: rect('#UpdatePanel1').top - host.bottom };
+    });
+    const defects = [];
+    if (Math.abs(header.labelOffset) > 1) defects.push(`Ignore text is vertically off center by ${header.labelOffset}px`);
+    if (header.sameRow && Math.abs(header.controlOffset) > 1) defects.push(`profile controls are vertically misaligned by ${header.controlOffset}px`);
+    if (header.titleSameRow && Math.abs(header.titleOffset) > 1) defects.push(`title and controls are vertically misaligned by ${header.titleOffset}px`);
+    if (header.emptySpace > 8) defects.push(`profile header reserves ${header.emptySpace}px of empty space`);
+    if (header.gap > 12) defects.push(`Buddy row is separated from the header by ${header.gap}px`);
+    assert.deepEqual(defects, [], `profile header layout: ${JSON.stringify(header)}`);
     for (const key of ['favorite', 'ignore']) {
         const selector = `#bpb-climber-${key}`;
         for (const success of [false, true, true]) {
@@ -265,12 +286,24 @@ export async function verifyProfileFeedback(page, origin, variant) {
             await page.waitForFunction(key => globalThis.__climber.pending.has(key), key);
             assert.equal(await page.evaluate(() => document.activeElement.id), `bpb-climber-${key}`, 'pending profile action retains focus');
             await sample(page, before, `${key} pending`);
+            await visibleProfileFeedback(page);
             await capture(page, variant, `${key}-pending`);
+            if (!success) {
+                await page.getByRole('button', { name: 'Dismiss message' }).focus();
+                await page.keyboard.press('Enter');
+                assert.equal(await page.locator('#bpb-climber-profile-feedback').isVisible(), false);
+                assert.equal(await page.evaluate(() => document.activeElement.id), `bpb-climber-${key}`, 'dismissal returns focus to the current profile action');
+                await page.evaluate(() => globalThis.__climber.publish({ bpbBuddyCache: globalThis.__climber.store.bpbBuddyCache }));
+                await sample(page, before, `${key} dismissed pending feedback`);
+                assert.equal(await page.locator('#bpb-climber-profile-feedback').isVisible(), false, 'an identical storage repaint does not undo dismissal');
+                assert.equal(await page.evaluate(key => globalThis.__climber.pending.has(key), key), true, 'dismissal does not cancel the save');
+            }
             await page.evaluate(({ key, success }) => globalThis.__climber.release(key, success), { key, success });
             await page.waitForFunction(selector => document.querySelector(selector).getAttribute('aria-busy') === 'false', selector);
             await sample(page, before, `${key} ${success ? 'success' : 'error'}`);
             if (!success) {
                 await page.locator('#bpb-climber-profile-feedback').filter({ hasText: 'not saved' }).waitFor();
+                await visibleProfileFeedback(page);
                 const retry = page.locator('#bpb-climber-profile-retry');
                 assert.equal(await retry.isVisible(), true, 'visible recovery, not tooltip-only');
                 await page.evaluate(key => {
@@ -290,15 +323,23 @@ export async function verifyProfileFeedback(page, origin, variant) {
                 assert.ok((await details.locator('p').textContent()).length > 250, 'complete error retained');
                 await details.locator('summary').click();
                 assert.equal(await details.locator('p').isVisible(), true, 'full failure is explicitly readable');
+                assert.equal(await details.locator('p').evaluate(element => getComputedStyle(element).fontSize),
+                    await page.locator('#bpb-climber-membership-note').evaluate(element => getComputedStyle(element).fontSize),
+                    'full error details respect enlarged feedback text');
+                await sample(page, before, `${key} details expanded`);
+                await capture(page, variant, `${key}-details`);
                 await details.locator('summary').click();
                 await sample(page, before, `${key} detail collapsed`);
+                const retryBefore = await frame(page, ['#bpb-climber-profile-retry']);
                 await retry.click();
                 await page.waitForFunction(key => globalThis.__climber.pending.has(key), key);
                 await sample(page, before, `${key} recovery pending`);
+                await sample(page, retryBefore, `${key} recovery button pending`, ['#bpb-climber-profile-retry']);
                 assert.equal(await retry.isDisabled(), true, 'pending Retry is unavailable');
                 await page.evaluate(key => globalThis.__climber.release(key, false), key);
                 await page.waitForFunction(() => document.getElementById('bpb-climber-profile-retry')?.getAttribute('aria-disabled') === 'false');
                 await sample(page, before, `${key} repeated error`);
+                await sample(page, retryBefore, `${key} recovery button repeated error`, ['#bpb-climber-profile-retry']);
             }
         }
     }

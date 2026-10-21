@@ -48,3 +48,31 @@ test('new failures supersede old feedback and unavailable recovery never acts cl
     ui.set('ignore', { text: 'New failure', error: 'new', retry() {}, disabled: true, priority: 80 });
     assert.equal(doc.getElementById('bpb-climber-profile-retry').disabled, true);
 });
+
+test('idle feedback is hidden, dismissal persists through identical paints, and new states reappear', t => {
+    const dom = new JSDOM('<span id="TitleLabel"><h1>Name</h1><button id="action">Ignore</button></span>');
+    t.after(() => dom.window.close());
+    const doc = dom.window.document, ui = climberProfileFeedback(doc);
+    const region = doc.getElementById('bpb-climber-profile-feedback');
+    const action = doc.getElementById('action');
+    assert.equal(region.hidden, true);
+    action.focus();
+    const error = { text: 'Ignore not saved.', error: 'Full explanation', retry() {} };
+    ui.set('ignore', error);
+    assert.equal(region.hidden, false);
+    region.querySelector('details').open = true;
+    const dismiss = region.querySelector('[aria-label="Dismiss message"]');
+    dismiss.focus(); dismiss.click();
+    assert.equal(region.hidden, true);
+    assert.equal(doc.activeElement, action, 'dismissal returns focus to the action that opened feedback');
+    assert.equal(region.querySelector('details').open, false);
+    ui.set('ignore', error);
+    assert.equal(region.hidden, true, 'storage repaints must not reopen a dismissed message');
+    ui.set('ignore', { text: 'Saving ignored climbers…', busy: true });
+    assert.equal(region.hidden, false);
+    ui.set('ignore', null);
+    assert.equal(region.hidden, true);
+    ui.announce('Saved.');
+    assert.equal(region.contains(doc.getElementById('bpb-climber-profile-announcement')), false,
+        'announcements remain available when visual feedback is dismissed');
+});

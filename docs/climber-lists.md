@@ -20,8 +20,10 @@ The labels change after a confirmed save. A failed save keeps a short visible
 message; **Details** shows the complete explanation. **Check lists** refreshes
 the card's list state without repeating a save. Use the original action to try
 a failed Favorite or Ignore save again. On profiles, **Retry** explicitly retries
-the failed local save. Progress and recovery keep the actions and reading
-position anchored; opening Details is a deliberate disclosure.
+the failed local save. Profile messages appear in a dismissible panel at the
+bottom of the viewport, leaving no empty status row below the climber's name.
+Progress and recovery keep the actions and reading position anchored; opening
+Details is a deliberate disclosure. Dismissing a message does not cancel a save.
 
 **Add climbing buddy** and **Remove climbing buddy** save directly from the card.
 An explicit action fetches a fresh authenticated profile, submits only the chosen
